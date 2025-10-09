@@ -67,6 +67,8 @@ npm run dev
 
 Open [http://localhost:3001](http://localhost:3001) in your browser.
 
+**Note**: This app is configured with base path `/app2` for nginx reverse proxy setup. If using nginx on port 8080, access via [http://localhost:8080/app2](http://localhost:8080/app2).
+
 ## Step 4: Create Your First Account
 
 1. Navigate to the signup page

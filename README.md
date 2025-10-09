@@ -44,6 +44,7 @@ A modern fitness tracking web application built with Next.js, Supabase, and Tail
    ```
 
 6. Open [http://localhost:3001](http://localhost:3001) in your browser
+   - Or if using nginx reverse proxy: [http://localhost:8080/app2](http://localhost:8080/app2)
 
 ## Project Structure
 

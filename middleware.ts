@@ -29,13 +29,18 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes
-  if (!user && request.nextUrl.pathname.startsWith("/app")) {
+  const pathname = request.nextUrl.pathname;
+
+  // Public routes (auth pages) - Next.js strips basePath in middleware
+  const isAuthPage = pathname === "/login" || pathname === "/signup";
+
+  // Redirect unauthenticated users to login (except if already on auth pages)
+  if (!user && !isAuthPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/signup")) {
+  // Redirect authenticated users away from auth pages to home
+  if (user && isAuthPage) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
