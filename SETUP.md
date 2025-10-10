@@ -39,8 +39,12 @@ Replace the values with your Supabase project credentials:
 
 1. Open your Supabase project dashboard
 2. Go to the SQL Editor
-3. Copy the contents of `supabase/schema.sql`
-4. Paste and run the SQL in the editor
+3. Run the main schema:
+   - Copy the contents of `supabase/schema.sql`
+   - Paste and run the SQL in the editor
+4. Run the schedule feature schema:
+   - Copy the contents of `supabase/schedule_schema.sql`
+   - Paste and run the SQL in the editor
 5. Verify that all tables, policies, and triggers were created successfully
 
 You should see these tables in the Table Editor:
@@ -50,6 +54,9 @@ You should see these tables in the Table Editor:
 - nutrition_logs
 - weight_logs
 - water_logs
+- event_categories (with 6 default categories)
+- schedule_events
+- event_templates (with 12 default templates)
 
 ### 2.4 Configure Authentication (Optional)
 
@@ -106,6 +113,15 @@ Try these alternatives:
 - View today's summary (calories, workouts, water)
 - See recent workout history
 - Track current weight vs goal
+
+### Schedule (NEW)
+- Daily calendar view (5:00 AM to 4:59 AM)
+- Color-coded event categories (Meals, Exercise, Pet Care, Work, Personal, Other)
+- Real-time current time indicator
+- Create one-time and recurring events
+- Mark events as completed, in-progress, or cancelled
+- Support for overlapping events
+- Quick event creation with templates
 
 ### Workouts
 - Log workouts with type, duration, and calories
