@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "@/components/nav/bottom-nav";
 import { PageTransition } from "@/components/ui/page-transition";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 
 export default async function AppLayout({
   children,
@@ -19,7 +20,9 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-gray-950 pb-20">
-      <PageTransition>{children}</PageTransition>
+      <PullToRefresh>
+        <PageTransition>{children}</PageTransition>
+      </PullToRefresh>
       <BottomNav />
     </div>
   );

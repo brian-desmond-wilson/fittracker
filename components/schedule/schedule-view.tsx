@@ -5,6 +5,8 @@ import { ScheduleEvent, EventCategory } from "@/types/schedule";
 import { TimeGrid, HOUR_HEIGHT } from "./time-grid";
 import { CurrentTimeIndicator } from "./current-time-indicator";
 import { EventCard } from "./event-card";
+import { EventDetailModal } from "./event-detail-modal";
+import { EditEventModal } from "./edit-event-modal";
 import { detectOverlappingEvents } from "@/lib/schedule-utils";
 
 interface ScheduleViewProps {
@@ -14,6 +16,9 @@ interface ScheduleViewProps {
 
 export function ScheduleView({ events, categories }: ScheduleViewProps) {
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
+  const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timelineHeight = 24 * HOUR_HEIGHT;
 
@@ -28,8 +33,12 @@ export function ScheduleView({ events, categories }: ScheduleViewProps) {
 
   const handleEventClick = (event: ScheduleEvent) => {
     setSelectedEvent(event);
-    // TODO: Open event detail modal
-    console.log("Event clicked:", event);
+    setDetailModalOpen(true);
+  };
+
+  const handleEditEvent = (event: ScheduleEvent) => {
+    setEditingEvent(event);
+    setEditModalOpen(true);
   };
 
   useEffect(() => {
@@ -92,6 +101,21 @@ export function ScheduleView({ events, categories }: ScheduleViewProps) {
         </div>
       </div>
 
+      {/* Event Detail Modal */}
+      <EventDetailModal
+        event={selectedEvent}
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        onEdit={handleEditEvent}
+      />
+
+      {/* Edit Event Modal */}
+      <EditEventModal
+        event={editingEvent}
+        categories={categories}
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+      />
     </div>
   );
 }
