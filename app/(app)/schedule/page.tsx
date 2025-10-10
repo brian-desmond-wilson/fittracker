@@ -48,7 +48,7 @@ export default async function SchedulePage() {
   const today = new Date();
 
   return (
-    <div className="relative min-h-screen bg-gray-950">
+    <div className="relative bg-gray-950">
       <BackgroundLogo />
 
       <div className="relative z-10 max-w-4xl mx-auto">
@@ -67,8 +67,8 @@ export default async function SchedulePage() {
           </div>
         </div>
 
-        {/* Schedule View */}
-        <div className="relative">
+        {/* Schedule View - Fixed height accounting for header (88px) and bottom nav (80px) */}
+        <div className="relative" style={{ height: "calc(100vh - 168px)" }}>
           <ScheduleView events={events} categories={categories} />
         </div>
       </div>
