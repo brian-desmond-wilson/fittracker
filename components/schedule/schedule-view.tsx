@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScheduleEvent, EventCategory } from "@/types/schedule";
-import { TimeGrid } from "./time-grid";
+import { TimeGrid, HOUR_HEIGHT } from "./time-grid";
 import { CurrentTimeIndicator } from "./current-time-indicator";
 import { EventCard } from "./event-card";
 import { detectOverlappingEvents } from "@/lib/schedule-utils";
@@ -14,6 +14,8 @@ interface ScheduleViewProps {
 
 export function ScheduleView({ events, categories }: ScheduleViewProps) {
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const timelineHeight = 24 * HOUR_HEIGHT;
 
   // Enhance events with category data
   const enhancedEvents = events.map((event) => ({
@@ -30,37 +32,70 @@ export function ScheduleView({ events, categories }: ScheduleViewProps) {
     console.log("Event clicked:", event);
   };
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+
+    // Calculate offset from 5am
+    let hoursFrom5am = hours - 5;
+    if (hoursFrom5am < 0) hoursFrom5am += 24;
+
+    const scrollPosition =
+      hoursFrom5am * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT - 100;
+
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const clampedPosition = Math.min(Math.max(0, scrollPosition), maxScroll);
+
+    container.scrollTop = clampedPosition;
+  }, []);
+
   return (
-    <div className="relative">
-      <TimeGrid />
+    <div className="relative w-full h-full">
+      <div
+        ref={scrollContainerRef}
+        className="relative h-full overflow-y-auto overflow-x-hidden scrollbar-hide"
+      >
+        <div className="relative" style={{ height: `${timelineHeight}px` }}>
+          <TimeGrid />
 
-      {/* Events container */}
-      <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{ height: `${24 * 80}px` }}>
-        <div className="relative h-full pointer-events-auto">
-          {eventPositions.map(({ event, top, height, column, totalColumns }) => (
-            <EventCard
-              key={event.id}
-              event={event}
-              style={{
-                top: `${top}px`,
-                height: `${height}px`,
-                left: `${64 + (column * (100 / totalColumns))}px`,
-                width: totalColumns > 1 ? `${100 / totalColumns}%` : undefined,
-                right: totalColumns === 1 ? "8px" : undefined,
-              }}
-              onClick={() => handleEventClick(event)}
-            />
-          ))}
+          {/* Events container */}
+          <div className="absolute inset-0 pl-12 pointer-events-none">
+            <div className="relative h-full">
+              {eventPositions.map(
+                ({ event, top, height, column, totalColumns }) => (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    style={{
+                      top: `${top}px`,
+                      height: `${height}px`,
+                      left: `${48 + column * (100 / totalColumns)}px`,
+                      width:
+                        totalColumns > 1
+                          ? `${100 / totalColumns}%`
+                          : undefined,
+                      right: totalColumns === 1 ? "8px" : undefined,
+                    }}
+                    onClick={() => handleEventClick(event)}
+                  />
+                ),
+              )}
 
-          {/* Current time indicator on top of events */}
-          <CurrentTimeIndicator />
+              {/* Current time indicator on top of events */}
+              <CurrentTimeIndicator />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Empty state */}
       {events.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center p-8">
+        <div className="absolute top-1/3 left-0 right-0 flex justify-center pointer-events-none">
+          <div className="text-center p-8 bg-gray-950/80 rounded-lg backdrop-blur-sm">
             <p className="text-gray-400 text-lg mb-2">No events scheduled</p>
             <p className="text-gray-500 text-sm">
               Tap a time slot or use the + button to add an event

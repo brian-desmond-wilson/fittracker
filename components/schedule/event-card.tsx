@@ -57,6 +57,7 @@ export function EventCard({ event, style, onClick }: EventCardProps) {
         "absolute left-16 right-2 rounded-lg p-2 text-left transition-all",
         "border-l-4 bg-gray-900/90 hover:bg-gray-800/90",
         "border border-gray-800 shadow-lg",
+        "pointer-events-auto",
         "flex flex-col gap-1",
         event.status === "completed" && "opacity-60",
         event.status === "cancelled" && "opacity-40",
