@@ -92,17 +92,6 @@ export function ScheduleView({ events, categories }: ScheduleViewProps) {
         </div>
       </div>
 
-      {/* Empty state */}
-      {events.length === 0 && (
-        <div className="absolute top-1/3 left-0 right-0 flex justify-center pointer-events-none">
-          <div className="text-center p-8 bg-gray-950/80 rounded-lg backdrop-blur-sm">
-            <p className="text-gray-400 text-lg mb-2">No events scheduled</p>
-            <p className="text-gray-500 text-sm">
-              Tap a time slot or use the + button to add an event
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -42,7 +42,7 @@ export function CurrentTimeIndicator() {
       style={{ top: `${position}px` }}
     >
       {/* Time label */}
-      <div className="absolute left-1 -top-3 bg-primary text-gray-950 text-xs font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap">
+      <div className="absolute left-12 -translate-x-full -top-3 bg-primary text-gray-950 text-xs font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap z-20 pr-3">
         {currentTime}
       </div>
 
@@ -50,7 +50,7 @@ export function CurrentTimeIndicator() {
       <div className="absolute left-12 right-0 h-0.5 bg-primary shadow-[0_0_10px_rgba(34,197,94,0.8)]" />
 
       {/* Circle indicator */}
-      <div className="absolute left-12 -top-1.5 w-3 h-3 bg-primary rounded-full shadow-lg" />
+      <div className="absolute left-12 -top-1.5 w-3 h-3 bg-primary rounded-full shadow-lg z-10" />
     </div>
   );
 }
