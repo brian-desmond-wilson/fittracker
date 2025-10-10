@@ -24,6 +24,7 @@
     "date-fns": "^4.1.0",
     "lucide-react": "^0.469.0",
     "next": "15.5.4",
+    "nextjs-toploader": "^3.9.17",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.6.0"

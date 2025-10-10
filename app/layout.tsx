@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -22,7 +23,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <NextTopLoader
+          color="#22C55E"
+          height={3}
+          showSpinner={false}
+          speed={200}
+          shadow="0 0 10px #22C55E,0 0 5px #22C55E"
+        />
+        {children}
+      </body>
     </html>
   );
 }

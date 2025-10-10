@@ -48,7 +48,10 @@ export function BottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center py-3 px-2 transition-colors",
+                "flex flex-col items-center justify-center py-3 px-2",
+                "transition-all duration-150 ease-out",
+                "active:scale-90 active:bg-gray-800/50",
+                "touch-manipulation",
                 isActive
                   ? "text-primary"
                   : "text-gray-400 hover:text-gray-300"
