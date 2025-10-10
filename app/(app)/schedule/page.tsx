@@ -30,6 +30,10 @@ async function getScheduleData(userId: string) {
     ? getEventsForDate(allEvents as ScheduleEvent[], today)
     : [];
 
+  console.log("Today date:", today);
+  console.log("All events from DB:", allEvents);
+  console.log("Filtered events for today:", todayEvents);
+
   return {
     events: todayEvents as ScheduleEvent[],
     categories: (categories || []) as EventCategory[],

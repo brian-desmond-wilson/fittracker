@@ -72,13 +72,13 @@ export function EventDetailModal({
 
     setDeleting(true);
     try {
-      const response = await fetch(`/api/schedule/events/${event.id}`, {
+      const response = await fetch(`/app2/api/schedule/events/${event.id}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
         onOpenChange(false);
-        router.refresh();
+        window.location.reload();
       } else {
         alert("Failed to delete event");
       }
@@ -95,14 +95,14 @@ export function EventDetailModal({
   ) => {
     setUpdatingStatus(true);
     try {
-      const response = await fetch(`/api/schedule/events/${event.id}`, {
+      const response = await fetch(`/app2/api/schedule/events/${event.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
 
       if (response.ok) {
-        router.refresh();
+        window.location.reload();
       } else {
         alert("Failed to update status");
       }

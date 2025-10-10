@@ -36,37 +36,56 @@ export function AddEventModal({ categories }: AddEventModalProps) {
     e.preventDefault();
     setLoading(true);
 
+    console.log("Form submitted with data:", formData);
+
     try {
-      const response = await fetch("/api/schedule/events", {
+      const payload = {
+        ...formData,
+        start_time: formData.start_time + ":00",
+        end_time: formData.end_time + ":00",
+        date: formData.is_recurring ? null : formData.date,
+        recurrence_days: formData.is_recurring && formData.recurrence_days.length === 0
+          ? null
+          : formData.recurrence_days,
+      };
+
+      console.log("Sending payload:", payload);
+
+      const response = await fetch("/app2/api/schedule/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          start_time: formData.start_time + ":00",
-          end_time: formData.end_time + ":00",
-          date: formData.is_recurring ? null : formData.date,
-          recurrence_days: formData.is_recurring && formData.recurrence_days.length === 0
-            ? null
-            : formData.recurrence_days,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (response.ok) {
-        setOpen(false);
-        setFormData({
-          title: "",
-          category_id: "",
-          start_time: "09:00",
-          end_time: "09:30",
-          is_recurring: false,
-          recurrence_days: [],
-          date: new Date().toISOString().split("T")[0],
-          notes: "",
-        });
-        router.refresh();
+      console.log("Response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("API Error:", errorData);
+        alert(`Failed to create event: ${errorData.error || "Unknown error"}`);
+        return;
       }
+
+      const data = await response.json();
+      console.log("Event created successfully:", data);
+
+      setOpen(false);
+      setFormData({
+        title: "",
+        category_id: "",
+        start_time: "09:00",
+        end_time: "09:30",
+        is_recurring: false,
+        recurrence_days: [],
+        date: new Date().toISOString().split("T")[0],
+        notes: "",
+      });
+
+      // Force a hard refresh to show new event immediately
+      window.location.reload();
     } catch (error) {
       console.error("Failed to create event:", error);
+      alert("Failed to create event. Check console for details.");
     } finally {
       setLoading(false);
     }

@@ -69,24 +69,37 @@ export function shouldEventRecur(
 ): boolean {
   if (!event.is_recurring) {
     // One-time event: check if date matches
-    if (!event.date) return false;
-    const eventDate = new Date(event.date);
-    return (
+    if (!event.date) {
+      console.log(`Event ${event.title}: No date, skipping`);
+      return false;
+    }
+
+    // Parse date string as local date (YYYY-MM-DD)
+    const [year, month, day] = event.date.split('-').map(Number);
+    const eventDate = new Date(year, month - 1, day); // month is 0-indexed
+
+    const matches = (
       eventDate.getFullYear() === targetDate.getFullYear() &&
       eventDate.getMonth() === targetDate.getMonth() &&
       eventDate.getDate() === targetDate.getDate()
     );
+
+    console.log(`Event ${event.title}: date=${event.date}, eventDate=${eventDate}, targetDate=${targetDate}, matches=${matches}`);
+    return matches;
   }
 
   // Recurring event
   if (!event.recurrence_days || event.recurrence_days.length === 0) {
     // Recurs every day
+    console.log(`Event ${event.title}: Recurring daily`);
     return true;
   }
 
   // Check if target date's day of week is in recurrence_days
   const dayOfWeek = targetDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  return event.recurrence_days.includes(dayOfWeek);
+  const matches = event.recurrence_days.includes(dayOfWeek);
+  console.log(`Event ${event.title}: Recurring on days ${event.recurrence_days}, today=${dayOfWeek}, matches=${matches}`);
+  return matches;
 }
 
 export function getEventsForDate(

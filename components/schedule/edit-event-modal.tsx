@@ -60,7 +60,7 @@ export function EditEventModal({
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/schedule/events/${event.id}`, {
+      const response = await fetch(`/app2/api/schedule/events/${event.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -80,7 +80,7 @@ export function EditEventModal({
 
       if (response.ok) {
         onOpenChange(false);
-        router.refresh();
+        window.location.reload();
       } else {
         alert("Failed to update event");
       }
