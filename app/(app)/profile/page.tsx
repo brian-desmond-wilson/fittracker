@@ -5,6 +5,7 @@ import { LogoutButton } from "@/components/profile/logout-button";
 import { User, Mail, ShieldCheck } from "lucide-react";
 import { DevTaskManager } from "@/components/profile/admin/dev-task-manager";
 import type { DevTask } from "@/types/dev-task";
+import { PushOptIn } from "@/components/notifications/push-opt-in";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -83,7 +84,10 @@ export default async function ProfilePage() {
         <ProfileForm profile={profile} userId={user.id} />
 
         {profile?.is_admin && (
-          <DevTaskManager initialTasks={devTasks} />
+          <>
+            <PushOptIn />
+            <DevTaskManager initialTasks={devTasks} />
+          </>
         )}
 
         {/* Actions */}

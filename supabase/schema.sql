@@ -90,6 +90,15 @@ CREATE TABLE dev_tasks (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ======================
 -- TRIGGERS
 -- ======================
@@ -160,6 +169,7 @@ ALTER TABLE nutrition_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weight_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE water_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dev_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
 CREATE POLICY "Users can view own profile"
@@ -300,10 +310,25 @@ CREATE POLICY "Admins can delete dev tasks"
   ON dev_tasks FOR DELETE
   USING (auth_is_admin() AND auth.uid() = user_id);
 
+-- Push subscription policies
+CREATE POLICY "Users can view own push subscriptions"
+  ON push_subscriptions FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own push subscriptions"
+  ON push_subscriptions FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own push subscriptions"
+  ON push_subscriptions FOR DELETE
+  USING (auth.uid() = user_id);
+
 -- Indexes for dev tasks
 CREATE INDEX idx_dev_tasks_user_status ON dev_tasks(user_id, status);
 CREATE INDEX idx_dev_tasks_user_priority ON dev_tasks(user_id, priority);
 CREATE INDEX idx_dev_tasks_user_created_at ON dev_tasks(user_id, created_at DESC);
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
+CREATE INDEX idx_push_subscriptions_endpoint ON push_subscriptions(endpoint);
 
 -- ======================
 -- INDEXES
