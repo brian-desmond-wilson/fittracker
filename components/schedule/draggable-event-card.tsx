@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { EventCard } from "./event-card";
@@ -15,7 +16,7 @@ interface DraggableEventCardProps {
   isPending?: boolean;
 }
 
-export function DraggableEventCard({
+export const DraggableEventCard = memo(function DraggableEventCard({
   event,
   style,
   onClick,
@@ -49,4 +50,4 @@ export function DraggableEventCard({
       />
     </div>
   );
-}
+});

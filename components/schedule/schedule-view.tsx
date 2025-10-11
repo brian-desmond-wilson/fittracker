@@ -11,6 +11,7 @@ import { EventDetailModal } from "./event-detail-modal";
 import { EditEventModal } from "./edit-event-modal";
 import { QuickAddModal } from "./quick-add-modal";
 import { TemplatesDrawer } from "./templates-drawer";
+import { EmptyState } from "./empty-state";
 import { detectOverlappingEvents } from "@/lib/schedule-utils";
 import { Loader2, Zap } from "lucide-react";
 import {
@@ -45,13 +46,6 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timelineHeight = 24 * HOUR_HEIGHT;
 
-  // Debug logging
-  console.log('ScheduleView Debug:', {
-    eventsCount: events.length,
-    events: events,
-    categoriesCount: categories.length,
-  });
-
   // Configure drag sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -69,12 +63,6 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
 
   // Calculate positions for all events, handling overlaps
   const eventPositions = detectOverlappingEvents(enhancedEvents);
-
-  console.log('Event Positions Debug:', {
-    enhancedEventsCount: enhancedEvents.length,
-    eventPositionsCount: eventPositions.length,
-    eventPositions: eventPositions,
-  });
 
   const handleEventClick = (event: ScheduleEvent) => {
     setSelectedEvent(event);
@@ -266,46 +254,53 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
           <span>Templates</span>
         </button>
 
-        <div
-          ref={scrollContainerRef}
-          className="relative h-full overflow-y-auto overflow-x-hidden scrollbar-hide"
-        >
-          <div className="relative" style={{ height: `${timelineHeight}px` }}>
-            <TimeGrid onTimeSlotClick={handleTimeSlotClick} />
+        {events.length === 0 ? (
+          <EmptyState
+            onAddEvent={() => setQuickAddModalOpen(true)}
+            onOpenTemplates={() => setTemplatesDrawerOpen(true)}
+          />
+        ) : (
+          <div
+            ref={scrollContainerRef}
+            className="relative h-full overflow-y-auto overflow-x-hidden scrollbar-hide"
+          >
+            <div className="relative" style={{ height: `${timelineHeight}px` }}>
+              <TimeGrid onTimeSlotClick={handleTimeSlotClick} />
 
-            {/* Events container */}
-            <div className="absolute inset-0 pl-12 pointer-events-none">
-              <div className="relative h-full">
-                {eventPositions.map(
-                  ({ event, top, height, column, totalColumns }) => (
-                    <DraggableEventCard
-                      key={event.id}
-                      event={event}
-                      style={{
-                        top: `${top}px`,
-                        height: `${height}px`,
-                        left: `${48 + column * (100 / totalColumns)}px`,
-                        width:
-                          totalColumns > 1
-                            ? `${100 / totalColumns}%`
-                            : undefined,
-                        right: totalColumns === 1 ? "8px" : undefined,
-                      }}
-                      onClick={() => handleEventClick(event)}
-                      onSwipeComplete={() => handleSwipeComplete(event.id)}
-                      onSwipeCancel={() => handleSwipeCancel(event.id)}
-                      isDragging={activeId === event.id}
-                      isPending={pendingUpdates.has(event.id)}
-                    />
-                  ),
-                )}
+              {/* Events container */}
+              <div className="absolute inset-0 pl-12 pointer-events-none">
+                <div className="relative h-full">
+                  {eventPositions.map(
+                    ({ event, top, height, column, totalColumns }) => (
+                      <DraggableEventCard
+                        key={event.id}
+                        event={event}
+                        style={{
+                          top: `${top}px`,
+                          height: `${height}px`,
+                          left: `${48 + column * (100 / totalColumns)}px`,
+                          width:
+                            totalColumns > 1
+                              ? `${100 / totalColumns}%`
+                              : undefined,
+                          right: totalColumns === 1 ? "8px" : undefined,
+                        }}
+                        onClick={() => handleEventClick(event)}
+                        onSwipeComplete={() => handleSwipeComplete(event.id)}
+                        onSwipeCancel={() => handleSwipeCancel(event.id)}
+                        isDragging={activeId === event.id}
+                        isPending={pendingUpdates.has(event.id)}
+                      />
+                    ),
+                  )}
 
-                {/* Current time indicator on top of events */}
-                <CurrentTimeIndicator />
+                  {/* Current time indicator on top of events */}
+                  <CurrentTimeIndicator />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Drag Overlay */}
         <DragOverlay>

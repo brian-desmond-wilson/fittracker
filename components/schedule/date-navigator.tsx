@@ -54,7 +54,7 @@ export function DateNavigator({ currentDate }: DateNavigatorProps) {
     <div className="flex items-center gap-2">
       <button
         onClick={goToPreviousDay}
-        className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+        className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-800 rounded-lg transition-colors"
         aria-label="Previous day"
       >
         <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -63,7 +63,7 @@ export function DateNavigator({ currentDate }: DateNavigatorProps) {
       {!isToday() && (
         <button
           onClick={goToToday}
-          className="px-3 py-1 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-md transition-colors"
+          className="px-4 py-2.5 min-h-[44px] text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-md transition-colors"
         >
           Today
         </button>
@@ -71,7 +71,7 @@ export function DateNavigator({ currentDate }: DateNavigatorProps) {
 
       <button
         onClick={goToNextDay}
-        className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+        className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-800 rounded-lg transition-colors"
         aria-label="Next day"
       >
         <ChevronRight className="w-5 h-5 text-gray-400" />

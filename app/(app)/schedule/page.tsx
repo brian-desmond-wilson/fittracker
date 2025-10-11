@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { BackgroundLogo } from "@/components/ui/background-logo";
 import { ScheduleView } from "@/components/schedule/schedule-view";
+import { ScheduleErrorBoundary } from "@/components/schedule/schedule-error-boundary";
 import { AddEventModal } from "@/components/schedule/add-event-modal";
 import { DateNavigator } from "@/components/schedule/date-navigator";
 import { CategoryManagerButton } from "@/components/schedule/category-manager-button";
@@ -27,12 +28,6 @@ async function getScheduleData(userId: string, targetDate: Date) {
   // Fetch all events (recurring and target date's one-time events)
   const targetDateStr = targetDate.toISOString().split("T")[0];
 
-  console.log('Query Debug:', {
-    userId,
-    targetDateStr,
-    targetDateISO: targetDate.toISOString(),
-  });
-
   const { data: allEvents, error } = await supabase
     .from("schedule_events")
     .select("*")
@@ -40,21 +35,14 @@ async function getScheduleData(userId: string, targetDate: Date) {
     .or(`is_recurring.eq.true,date.eq.${targetDateStr}`)
     .order("start_time");
 
-  console.log('Supabase Query Result:', {
-    allEventsCount: allEvents?.length || 0,
-    allEvents,
-    error,
-  });
+  if (error) {
+    console.error('Failed to fetch events:', error);
+  }
 
   // Filter events for target date based on recurrence rules
   const dateEvents = allEvents
     ? getEventsForDate(allEvents as ScheduleEvent[], targetDate)
     : [];
-
-  console.log('After getEventsForDate:', {
-    dateEventsCount: dateEvents.length,
-    dateEvents,
-  });
 
   return {
     events: dateEvents as ScheduleEvent[],
@@ -86,15 +74,6 @@ export default async function SchedulePage({
 
   const { events, categories, templates } = await getScheduleData(user.id, targetDate);
 
-  // Debug logging
-  console.log('Schedule Page Debug:', {
-    targetDate: targetDate.toISOString(),
-    eventsCount: events.length,
-    events: events,
-    categoriesCount: categories.length,
-    templatesCount: templates.length,
-  });
-
   return (
     <div className="relative bg-gray-950">
       <BackgroundLogo />
@@ -121,7 +100,9 @@ export default async function SchedulePage({
 
         {/* Schedule View - Fixed height accounting for header (88px) and bottom nav (80px) */}
         <div className="relative" style={{ height: "calc(100vh - 168px)" }}>
-          <ScheduleView events={events} categories={categories} templates={templates} />
+          <ScheduleErrorBoundary>
+            <ScheduleView events={events} categories={categories} templates={templates} />
+          </ScheduleErrorBoundary>
         </div>
       </div>
     </div>

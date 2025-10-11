@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { useSwipeable } from "react-swipeable";
 import { ScheduleEvent } from "@/types/schedule";
 import { Check, X, Clock, Repeat, Loader2 } from "lucide-react";
@@ -16,7 +16,7 @@ interface EventCardProps {
   isPending?: boolean;
 }
 
-export function EventCard({
+export const EventCard = memo(function EventCard({
   event,
   style,
   onClick,
@@ -212,4 +212,4 @@ export function EventCard({
     </button>
     </div>
   );
-}
+});
