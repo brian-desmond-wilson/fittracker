@@ -603,6 +603,13 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
   const [editDescription, setEditDescription] = useState(task.description ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (isEditing && !expanded) {
+      setExpanded(true);
+    }
+  }, [isEditing, expanded]);
 
   const handleStatusChange = async (status: DevTask["status"]) => {
     setError(null);
@@ -610,6 +617,7 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
       await onUpdate(task.id, { status });
     } catch (err: any) {
       setError(err.message || "Failed to change status");
+      throw err;
     }
   };
 
@@ -619,6 +627,7 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
       await onUpdate(task.id, { priority });
     } catch (err: any) {
       setError(err.message || "Failed to change priority");
+      throw err;
     }
   };
 
@@ -657,31 +666,53 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900/70 p-4 shadow-sm">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 text-left"
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        <div className="flex items-center gap-3">
+          {task.status === "done" ? (
+            <CheckCircle2 className="w-5 h-5 text-primary" />
+          ) : (
+            <CircleDot className="w-5 h-5 text-gray-500" />
+          )}
+          <span
+            className={cn(
+              "text-lg font-semibold text-white",
+              task.status === "done" && "line-through text-gray-500"
+            )}
+          >
+            {task.title}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "px-2 py-1 rounded-full border text-xs font-semibold uppercase tracking-wide",
+              PRIORITY_COLORS[task.priority]
+            )}
+          >
+            {priorityLabel}
+          </span>
+          <ChevronDown
+            className={cn(
+              "w-5 h-5 text-gray-500 transition-transform",
+              expanded && "rotate-180"
+            )}
+          />
+        </div>
+      </button>
+
+      <div className={cn("mt-4 space-y-3", !expanded && "hidden")}>
         <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            {task.status === "done" ? (
-              <CheckCircle2 className="w-5 h-5 text-primary" />
-            ) : (
-              <CircleDot className="w-5 h-5 text-gray-500" />
-            )}
-            {isEditing ? (
-              <input
-                className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-              />
-            ) : (
-              <h4
-                className={cn(
-                  "text-lg font-semibold text-white",
-                  task.status === "done" && "line-through text-gray-500"
-                )}
-              >
-                {task.title}
-              </h4>
-            )}
-          </div>
+          {isEditing ? (
+            <input
+              className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+            />
+          ) : null}
 
           {isEditing ? (
             <textarea
@@ -705,14 +736,6 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
             <span className="px-2 py-1 rounded-full border border-primary/40 text-primary/90 bg-primary/10 uppercase tracking-wide font-semibold">
               {task.section}
             </span>
-            <span
-              className={cn(
-                "px-2 py-1 rounded-full border text-xs font-semibold uppercase tracking-wide",
-                PRIORITY_COLORS[task.priority]
-              )}
-            >
-              {priorityLabel}
-            </span>
             <span className="text-gray-500">
               Status:{" "}
               <span className="text-gray-300">{STATUS_LABELS[task.status]}</span>
@@ -735,7 +758,7 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
               className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
               value={task.status}
               onChange={(e) =>
-                    handleStatusChange(e.target.value as DevTaskStatus)
+                handleStatusChange(e.target.value as DevTaskStatus)
               }
             >
               {["open", "in_progress", "done"].map((value) => (
@@ -748,7 +771,7 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
               className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
               value={task.priority}
               onChange={(e) =>
-                    handlePriorityChange(e.target.value as DevTaskPriority)
+                handlePriorityChange(e.target.value as DevTaskPriority)
               }
             >
               {["high", "medium", "low"].map((value) => (
