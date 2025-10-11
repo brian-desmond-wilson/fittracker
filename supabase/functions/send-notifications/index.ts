@@ -21,12 +21,20 @@ interface PushSubscriptionRow {
 interface SentNotificationRow {
   event_id: string;
   user_id: string;
+  notification_date: string;
+}
+
+interface DueEvent {
+  event: ScheduleEvent;
+  notificationDate: string;
+  eventUtcDate: Date;
 }
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const vapidPublicKey = Deno.env.get("PUSH_PUBLIC_KEY");
 const vapidPrivateKey = Deno.env.get("PUSH_PRIVATE_KEY");
 const notificationEmail = Deno.env.get("PUSH_CONTACT_EMAIL") ?? "notifications@fittracker.app";
+const timezoneOffsetMinutes = Number(Deno.env.get("LOCAL_TIMEZONE_UTC_OFFSET_MINUTES") ?? "0");
 
 if (!supabaseUrl || !serviceRoleKey) {
   throw new Error("Missing Supabase credentials for Edge Function");
@@ -105,43 +113,63 @@ serve(async () => {
       return new Response(JSON.stringify({ error: eventsError.message }), { status: 500 });
     }
 
-    const dueByUser = new Map<string, ScheduleEvent[]>();
+    const dueByUser = new Map<string, DueEvent[]>();
+    const dueEventIds = new Set<string>();
 
     for (const event of events ?? []) {
       if (!shouldEventTrigger(event, now)) continue;
+      const eventDateString = event.date ?? todayStr;
+      const [year, month, day] = eventDateString.split("-").map(Number);
+      const [startHour, startMinute] = event.start_time.split(":").map(Number);
+      const eventUtcMillis =
+        Date.UTC(year, month - 1, day, startHour, startMinute) - timezoneOffsetMinutes * 60 * 1000;
+      const eventUtcDate = new Date(eventUtcMillis);
 
-      const eventStart = new Date(`${todayStr}T${event.start_time}Z`);
-      if (eventStart < bufferStart || eventStart > now) continue;
+      if (eventUtcDate < bufferStart || eventUtcDate > now) continue;
+
+      const dueEvent: DueEvent = {
+        event,
+        notificationDate: eventDateString,
+        eventUtcDate,
+      };
 
       const bucket = dueByUser.get(event.user_id) ?? [];
-      bucket.push(event);
+      bucket.push(dueEvent);
       dueByUser.set(event.user_id, bucket);
+      dueEventIds.add(event.id);
     }
 
-    const { data: sentRecords } = await supabase
-      .from("sent_notifications")
-      .select("event_id, user_id");
+    let sentSet = new Set<string>();
+    if (dueEventIds.size > 0) {
+      const { data: sentRecords } = await supabase
+        .from("sent_notifications")
+        .select("event_id, user_id, notification_date")
+        .in("event_id", Array.from(dueEventIds));
 
-    const sentSet = new Set(sentRecords?.map((row: SentNotificationRow) => `${row.event_id}:${row.user_id}`) ?? []);
+      sentSet = new Set(
+        sentRecords?.map((row: SentNotificationRow) => `${row.event_id}:${row.user_id}:${row.notification_date}`) ?? []
+      );
+    }
 
     const messages: Promise<void>[] = [];
     let delivered = 0;
+    const newSentRecords: { event_id: string; user_id: string; notification_date: string }[] = [];
 
     for (const subscription of subscriptions as PushSubscriptionRow[]) {
       const dueEvents = dueByUser.get(subscription.user_id);
       if (!dueEvents || dueEvents.length === 0) continue;
 
-      const pendingEvents = dueEvents.filter(
-        (event) => !sentSet.has(`${event.id}:${subscription.user_id}`)
+      const pendingEvents = dueEvents.filter((due) =>
+        !sentSet.has(`${due.event.id}:${subscription.user_id}:${due.notificationDate}`)
       );
 
       if (pendingEvents.length === 0) continue;
 
       const payload = {
-        title: pendingEvents[0].title,
+        title: pendingEvents[0].event.title,
         body: pendingEvents.length > 1
           ? `${pendingEvents.length} events starting now`
-          : `${pendingEvents[0].title} starts now`,
+          : `${pendingEvents[0].event.title} starts now`,
         data: {
           url: `${Deno.env.get("PWA_BASE_URL") ?? "https://fittracker.app/app2"}/schedule?date=${todayStr}`,
         },
@@ -160,10 +188,16 @@ serve(async () => {
           .sendNotification(pushSubscription, JSON.stringify(payload))
           .then(() => {
             delivered += 1;
-        pendingEvents.forEach((event) => {
-          sentSet.add(`${event.id}:${subscription.user_id}`);
-        });
-      })
+            pendingEvents.forEach((due) => {
+              const key = `${due.event.id}:${subscription.user_id}:${due.notificationDate}`;
+              sentSet.add(key);
+              newSentRecords.push({
+                event_id: due.event.id,
+                user_id: subscription.user_id,
+                notification_date: due.notificationDate,
+              });
+            });
+          })
           .catch(async (error: any) => {
             console.error("Push notification failed", error);
             if (error?.statusCode === 410 || error?.statusCode === 404) {
@@ -178,12 +212,10 @@ serve(async () => {
 
     await Promise.all(messages);
 
-    if (sentSet.size > 0) {
-      const rows = Array.from(sentSet).map((key) => {
-        const [event_id, user_id] = key.split(":");
-        return { event_id, user_id };
+    if (newSentRecords.length > 0) {
+      await supabase.from("sent_notifications").upsert(newSentRecords, {
+        onConflict: "event_id,user_id,notification_date",
       });
-      await supabase.from("sent_notifications").upsert(rows, { ignoreDuplicates: true });
     }
 
     return new Response(JSON.stringify({ delivered }), { status: 200 });

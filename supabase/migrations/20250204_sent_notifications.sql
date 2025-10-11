@@ -3,8 +3,9 @@ create table if not exists sent_notifications (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null references schedule_events(id) on delete cascade,
   user_id uuid not null references profiles(id) on delete cascade,
+  notification_date date not null,
   sent_at timestamptz not null default now(),
-  unique (event_id, user_id)
+  unique (event_id, user_id, notification_date)
 );
 
 alter table sent_notifications enable row level security;
@@ -17,5 +18,5 @@ create policy "Users can insert own sent notifications"
   on sent_notifications for insert
   with check (auth.uid() = user_id);
 
-create index if not exists idx_sent_notifications_event_user
-  on sent_notifications(event_id, user_id);
+create index if not exists idx_sent_notifications_event_user_date
+  on sent_notifications(event_id, user_id, notification_date);

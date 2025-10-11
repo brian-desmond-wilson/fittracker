@@ -120,6 +120,17 @@ export const EventCard = memo(function EventCard({
     return undefined;
   };
 
+  // Calculate event duration in minutes
+  const getDurationMinutes = () => {
+    const [startHours, startMinutes] = event.start_time.split(":").map(Number);
+    const [endHours, endMinutes] = event.end_time.split(":").map(Number);
+    const startTotal = startHours * 60 + startMinutes;
+    const endTotal = endHours * 60 + endMinutes;
+    return endTotal - startTotal;
+  };
+
+  const isShortEvent = getDurationMinutes() <= 15;
+
   return (
     <div
       {...handlers}
@@ -147,13 +158,15 @@ export const EventCard = memo(function EventCard({
         style={{
           borderLeftColor: event.category?.color || "#6B7280",
           backgroundColor: getSwipeBackgroundColor(),
+          height: '100%',
         }}
         className={cn(
-          "relative w-full rounded-lg p-2 text-left transition-colors",
+          "relative w-full rounded-lg text-left transition-colors",
           "border-l-4 bg-gray-900/90 hover:bg-gray-800/90",
           "border border-gray-800 shadow-lg",
-          "flex flex-col gap-1",
+          "flex flex-col",
           "overflow-hidden",
+          isShortEvent ? "p-1 gap-0" : "p-2 gap-1",
           event.status === "completed" && "opacity-60",
           event.status === "cancelled" && "opacity-40",
           event.status === "in_progress" && "ring-2 ring-primary/50",
@@ -169,45 +182,84 @@ export const EventCard = memo(function EventCard({
             <span className="ml-2 text-xs font-medium text-gray-300">Updating</span>
           </div>
         )}
-      {/* Header with title and status */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {IconComponent && (
-            <IconComponent
-              className="w-4 h-4 flex-shrink-0"
-              style={{ color: event.category?.color }}
-            />
-          )}
-          <span
-            className={cn(
-              "text-sm font-medium text-white truncate",
-              event.status === "cancelled" && "line-through"
+      {isShortEvent ? (
+        // Compact layout for short events (15 minutes or less)
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            {IconComponent && (
+              <IconComponent
+                className="w-3 h-3 flex-shrink-0"
+                style={{ color: event.category?.color }}
+              />
             )}
-          >
-            {event.title}
-          </span>
-          {event.is_recurring && (
-            <Repeat className="w-3 h-3 text-gray-500 flex-shrink-0" />
+            <span
+              className={cn(
+                "text-xs font-medium text-white truncate",
+                event.status === "cancelled" && "line-through"
+              )}
+            >
+              {event.title}
+            </span>
+            {event.is_recurring && (
+              <Repeat className="w-2.5 h-2.5 text-gray-500 flex-shrink-0" />
+            )}
+            <span className="text-[10px] text-gray-400 whitespace-nowrap">
+              {formatTime(event.start_time)} - {formatTime(event.end_time)}
+            </span>
+          </div>
+          {getStatusIcon() && (
+            <div
+              className="flex-shrink-0"
+              style={{ color: event.category?.color }}
+            >
+              {getStatusIcon()}
+            </div>
           )}
         </div>
-        {getStatusIcon() && (
-          <div
-            className="flex-shrink-0"
-            style={{ color: event.category?.color }}
-          >
-            {getStatusIcon()}
+      ) : (
+        // Standard layout for longer events
+        <>
+          {/* Header with title and status */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              {IconComponent && (
+                <IconComponent
+                  className="w-4 h-4 flex-shrink-0"
+                  style={{ color: event.category?.color }}
+                />
+              )}
+              <span
+                className={cn(
+                  "text-sm font-medium text-white truncate",
+                  event.status === "cancelled" && "line-through"
+                )}
+              >
+                {event.title}
+              </span>
+              {event.is_recurring && (
+                <Repeat className="w-3 h-3 text-gray-500 flex-shrink-0" />
+              )}
+            </div>
+            {getStatusIcon() && (
+              <div
+                className="flex-shrink-0"
+                style={{ color: event.category?.color }}
+              >
+                {getStatusIcon()}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Time range */}
-      <div className="text-xs text-gray-400">
-        {formatTime(event.start_time)} - {formatTime(event.end_time)}
-      </div>
+          {/* Time range */}
+          <div className="text-xs text-gray-400">
+            {formatTime(event.start_time)} - {formatTime(event.end_time)}
+          </div>
 
-      {/* Category name (if height allows) */}
-      {event.category && (
-        <div className="text-xs text-gray-500 truncate">{event.category.name}</div>
+          {/* Category name (if height allows) */}
+          {event.category && (
+            <div className="text-xs text-gray-500 truncate">{event.category.name}</div>
+          )}
+        </>
       )}
     </button>
     </div>

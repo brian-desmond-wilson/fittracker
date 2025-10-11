@@ -42,7 +42,7 @@ export const DraggableEventCard = memo(function DraggableEventCard({
     <div ref={setNodeRef} style={draggableStyle} {...attributes} {...listeners}>
       <EventCard
         event={event}
-        style={{ position: 'relative', top: 0, left: 0, right: 0 }}
+        style={{ position: 'relative', top: 0, left: 0, right: 0, height: '100%' }}
         onClick={onClick}
         onSwipeComplete={onSwipeComplete}
         onSwipeCancel={onSwipeCancel}

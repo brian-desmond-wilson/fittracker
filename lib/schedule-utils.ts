@@ -21,7 +21,10 @@ export function calculateEventPosition(event: ScheduleEvent): {
 
   const height = duration * HOUR_HEIGHT;
 
-  return { top, height: Math.max(height, 20) }; // Minimum height of 20px
+  // Minimum height is 15 minutes: (15/60) * 80px = 20px
+  const MIN_DISPLAY_HEIGHT = (15 / 60) * HOUR_HEIGHT; // 20px
+
+  return { top, height: Math.max(height, MIN_DISPLAY_HEIGHT) };
 }
 
 export function detectOverlappingEvents(events: ScheduleEvent[]): EventPosition[] {

@@ -103,8 +103,9 @@ CREATE TABLE sent_notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   event_id UUID NOT NULL REFERENCES schedule_events(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  notification_date DATE NOT NULL,
   sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (event_id, user_id)
+  UNIQUE (event_id, user_id, notification_date)
 );
 
 -- ======================
