@@ -12,6 +12,7 @@ interface DraggableEventCardProps {
   onSwipeComplete?: () => void;
   onSwipeCancel?: () => void;
   isDragging?: boolean;
+  isPending?: boolean;
 }
 
 export function DraggableEventCard({
@@ -21,6 +22,7 @@ export function DraggableEventCard({
   onSwipeComplete,
   onSwipeCancel,
   isDragging,
+  isPending,
 }: DraggableEventCardProps) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: event.id,
@@ -30,8 +32,9 @@ export function DraggableEventCard({
     ...style,
     position: 'absolute',
     transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.5 : 1,
-    cursor: isDragging ? "grabbing" : "grab",
+    opacity: isDragging ? 0.5 : isPending ? 0.7 : 1,
+    cursor: isDragging ? "grabbing" : isPending ? "wait" : "grab",
+    pointerEvents: isPending ? "none" : undefined,
   };
 
   return (
@@ -42,6 +45,7 @@ export function DraggableEventCard({
         onClick={onClick}
         onSwipeComplete={onSwipeComplete}
         onSwipeCancel={onSwipeCancel}
+        isPending={isPending}
       />
     </div>
   );

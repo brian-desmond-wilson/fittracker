@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSwipeable } from "react-swipeable";
 import { ScheduleEvent } from "@/types/schedule";
-import { Check, X, Clock, Repeat } from "lucide-react";
+import { Check, X, Clock, Repeat, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as LucideIcons from "lucide-react";
 
@@ -13,9 +13,17 @@ interface EventCardProps {
   onClick: () => void;
   onSwipeComplete?: () => void;
   onSwipeCancel?: () => void;
+  isPending?: boolean;
 }
 
-export function EventCard({ event, style, onClick, onSwipeComplete, onSwipeCancel }: EventCardProps) {
+export function EventCard({
+  event,
+  style,
+  onClick,
+  onSwipeComplete,
+  onSwipeCancel,
+  isPending,
+}: EventCardProps) {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
 
@@ -145,12 +153,22 @@ export function EventCard({ event, style, onClick, onSwipeComplete, onSwipeCance
           "border-l-4 bg-gray-900/90 hover:bg-gray-800/90",
           "border border-gray-800 shadow-lg",
           "flex flex-col gap-1",
+          "overflow-hidden",
           event.status === "completed" && "opacity-60",
           event.status === "cancelled" && "opacity-40",
           event.status === "in_progress" && "ring-2 ring-primary/50",
           isPast() && event.status === "pending" && "opacity-40"
         )}
+        disabled={isPending}
+        aria-busy={isPending}
+        aria-live="polite"
       >
+        {isPending && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-gray-900/70 backdrop-blur-sm pointer-events-none">
+            <Loader2 className="w-4 h-4 text-primary animate-spin" />
+            <span className="ml-2 text-xs font-medium text-gray-300">Updating</span>
+          </div>
+        )}
       {/* Header with title and status */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">

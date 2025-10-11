@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ScheduleEvent, EventCategory, EventTemplate } from "@/types/schedule";
 import { TimeGrid, HOUR_HEIGHT } from "./time-grid";
@@ -12,7 +12,7 @@ import { EditEventModal } from "./edit-event-modal";
 import { QuickAddModal } from "./quick-add-modal";
 import { TemplatesDrawer } from "./templates-drawer";
 import { detectOverlappingEvents } from "@/lib/schedule-utils";
-import { Zap } from "lucide-react";
+import { Loader2, Zap } from "lucide-react";
 import {
   DndContext,
   DragEndEvent,
@@ -40,6 +40,8 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
   const [templatesDrawerOpen, setTemplatesDrawerOpen] = useState(false);
   const [quickAddTime, setQuickAddTime] = useState<{ hour: number; minute: number } | undefined>();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [pendingUpdates, setPendingUpdates] = useState<Set<string>>(new Set());
+  const [isRefreshing, startRefresh] = useTransition();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timelineHeight = 24 * HOUR_HEIGHT;
 
@@ -89,8 +91,27 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
     setQuickAddModalOpen(true);
   };
 
+  const markPending = (eventId: string) => {
+    setPendingUpdates((prev) => {
+      if (prev.has(eventId)) return prev;
+      const next = new Set(prev);
+      next.add(eventId);
+      return next;
+    });
+  };
+
+  const clearPending = (eventId: string) => {
+    setPendingUpdates((prev) => {
+      if (!prev.has(eventId)) return prev;
+      const next = new Set(prev);
+      next.delete(eventId);
+      return next;
+    });
+  };
+
   const handleSwipeComplete = async (eventId: string) => {
     try {
+      markPending(eventId);
       const response = await fetch(`/app2/api/schedule/events/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -98,15 +119,19 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
       });
 
       if (response.ok) {
-        router.refresh();
+        startRefresh(() => router.refresh());
+      } else {
+        clearPending(eventId);
       }
     } catch (error) {
       console.error("Failed to complete event:", error);
+      clearPending(eventId);
     }
   };
 
   const handleSwipeCancel = async (eventId: string) => {
     try {
+      markPending(eventId);
       const response = await fetch(`/app2/api/schedule/events/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -114,10 +139,13 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
       });
 
       if (response.ok) {
-        router.refresh();
+        startRefresh(() => router.refresh());
+      } else {
+        clearPending(eventId);
       }
     } catch (error) {
       console.error("Failed to cancel event:", error);
+      clearPending(eventId);
     }
   };
 
@@ -166,6 +194,7 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
 
     // Update the event in the database
     try {
+      markPending(active.id as string);
       const response = await fetch(`/app2/api/schedule/events/${active.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -176,10 +205,13 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
       });
 
       if (response.ok) {
-        router.refresh();
+        startRefresh(() => router.refresh());
+      } else {
+        clearPending(active.id as string);
       }
     } catch (error) {
       console.error("Failed to reschedule event:", error);
+      clearPending(active.id as string);
     }
   };
 
@@ -204,6 +236,12 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
     container.scrollTop = clampedPosition;
   }, []);
 
+  useEffect(() => {
+    if (!isRefreshing) {
+      setPendingUpdates((prev) => (prev.size === 0 ? prev : new Set<string>()));
+    }
+  }, [isRefreshing]);
+
   return (
     <DndContext
       sensors={sensors}
@@ -212,6 +250,13 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
       onDragEnd={handleDragEnd}
     >
       <div className="relative w-full h-full">
+        {(pendingUpdates.size > 0 || isRefreshing) && (
+          <div className="pointer-events-none fixed top-24 right-4 z-30 flex items-center gap-2 rounded-full bg-gray-900/95 px-3 py-2 text-xs font-medium text-gray-300 shadow-lg backdrop-blur-sm">
+            <Loader2 className="h-4 w-4 text-primary animate-spin" />
+            <span>{isRefreshing ? "Refreshing schedule…" : "Updating event…"}</span>
+          </div>
+        )}
+
         {/* Floating Templates Button - positioned to avoid bottom nav (80px) */}
         <button
           onClick={() => setTemplatesDrawerOpen(true)}
@@ -250,6 +295,7 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
                       onSwipeComplete={() => handleSwipeComplete(event.id)}
                       onSwipeCancel={() => handleSwipeCancel(event.id)}
                       isDragging={activeId === event.id}
+                      isPending={pendingUpdates.has(event.id)}
                     />
                   ),
                 )}
