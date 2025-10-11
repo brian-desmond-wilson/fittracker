@@ -54,7 +54,7 @@ async function getScheduleData(userId: string, targetDate: Date) {
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: { date?: string };
+  searchParams: Promise<{ date?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -64,8 +64,9 @@ export default async function SchedulePage({
   if (!user) return null;
 
   // Parse date from query params or use today (in local timezone)
-  const targetDate = searchParams.date
-    ? new Date(searchParams.date + "T00:00:00")
+  const params = await searchParams;
+  const targetDate = params?.date
+    ? new Date(params.date + "T00:00:00")
     : (() => {
         const now = new Date();
         // Create a date in local timezone by getting local date components
