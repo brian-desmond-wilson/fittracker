@@ -37,7 +37,12 @@ export function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-lg border-t border-gray-800 pb-safe">
+    <nav
+      className="fixed left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-lg border-t border-gray-800 pb-safe"
+      style={{
+        bottom: `calc(env(safe-area-inset-bottom) + var(--app-keyboard-offset, 0px))`,
+      }}
+    >
       <div className="grid grid-cols-5 max-w-lg mx-auto">
         {navItems.map((item) => {
           const isActive = pathname === item.href;

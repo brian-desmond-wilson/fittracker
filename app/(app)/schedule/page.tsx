@@ -101,7 +101,10 @@ export default async function SchedulePage({
         </div>
 
         {/* Schedule View - Fixed height accounting for header (88px) and bottom nav (80px) */}
-        <div className="relative" style={{ height: "calc(100vh - 168px)" }}>
+        <div
+          className="relative"
+          style={{ height: "calc(var(--app-height, 100vh) - 168px)" }}
+        >
           <ScheduleErrorBoundary>
             <ScheduleView events={events} categories={categories} templates={templates} />
           </ScheduleErrorBoundary>

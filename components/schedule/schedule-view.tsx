@@ -249,7 +249,10 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
         <button
           onClick={() => setTemplatesDrawerOpen(true)}
           className="fixed right-4 z-20 flex items-center gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-gray-950 font-medium rounded-full shadow-lg transition-all"
-          style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
+          style={{
+            bottom:
+              "calc(96px + env(safe-area-inset-bottom, 0px) + var(--app-keyboard-offset, 0px))",
+          }}
         >
           <Zap className="w-5 h-5" />
           <span>Templates</span>
