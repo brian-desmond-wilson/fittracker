@@ -99,6 +99,14 @@ CREATE TABLE push_subscriptions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE sent_notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id UUID NOT NULL REFERENCES schedule_events(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (event_id, user_id)
+);
+
 -- ======================
 -- TRIGGERS
 -- ======================
@@ -170,6 +178,7 @@ ALTER TABLE weight_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE water_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dev_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sent_notifications ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
 CREATE POLICY "Users can view own profile"
@@ -322,6 +331,14 @@ CREATE POLICY "Users can insert own push subscriptions"
 CREATE POLICY "Users can delete own push subscriptions"
   ON push_subscriptions FOR DELETE
   USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can view own sent notifications"
+  ON sent_notifications FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own sent notifications"
+  ON sent_notifications FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
 
 -- Indexes for dev tasks
 CREATE INDEX idx_dev_tasks_user_status ON dev_tasks(user_id, status);
