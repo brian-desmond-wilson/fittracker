@@ -248,7 +248,8 @@ export function ScheduleView({ events, categories, templates }: ScheduleViewProp
         {/* Floating Templates Button - positioned to avoid bottom nav (80px) */}
         <button
           onClick={() => setTemplatesDrawerOpen(true)}
-          className="fixed bottom-14 right-4 z-20 flex items-center gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-gray-950 font-medium rounded-full shadow-lg transition-all"
+          className="fixed right-4 z-20 flex items-center gap-2 px-4 py-3 bg-primary hover:bg-primary/90 text-gray-950 font-medium rounded-full shadow-lg transition-all"
+          style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}
         >
           <Zap className="w-5 h-5" />
           <span>Templates</span>

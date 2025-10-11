@@ -81,14 +81,16 @@ export default async function SchedulePage({
       <div className="relative z-10 max-w-4xl mx-auto">
         {/* Header */}
         <div className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-lg border-b border-gray-800 px-6 py-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-white">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-2xl font-bold text-white whitespace-nowrap">
                 {formatDateHeader(targetDate)}
               </h1>
-              <CategoryManagerButton categories={categories} />
             </div>
-            <AddEventModal categories={categories} />
+            <div className="flex items-center gap-2">
+              <CategoryManagerButton categories={categories} />
+              <AddEventModal categories={categories} />
+            </div>
           </div>
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-400">

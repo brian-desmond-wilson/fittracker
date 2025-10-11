@@ -12,25 +12,36 @@ import {
 import { Label } from "@/components/ui/label";
 import { Plus } from "lucide-react";
 import { EventCategory } from "@/types/schedule";
+import {
+  TimePicker,
+  TimeValue,
+  to24HourString,
+  from24HourString,
+} from "./time-picker";
 
 interface AddEventModalProps {
   categories: EventCategory[];
 }
 
+const DEFAULT_START: TimeValue = from24HourString("09:00");
+const DEFAULT_END: TimeValue = from24HourString("09:30");
+
+const createInitialFormState = () => ({
+  title: "",
+  category_id: "",
+  start_time: { ...DEFAULT_START },
+  end_time: { ...DEFAULT_END },
+  is_recurring: false,
+  recurrence_days: [] as number[],
+  date: new Date().toISOString().split("T")[0],
+  notes: "",
+});
+
 export function AddEventModal({ categories }: AddEventModalProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    title: "",
-    category_id: "",
-    start_time: "09:00",
-    end_time: "09:30",
-    is_recurring: false,
-    recurrence_days: [] as number[],
-    date: new Date().toISOString().split("T")[0],
-    notes: "",
-  });
+  const [formData, setFormData] = useState(() => createInitialFormState());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +50,8 @@ export function AddEventModal({ categories }: AddEventModalProps) {
     try {
       const payload = {
         ...formData,
-        start_time: formData.start_time + ":00",
-        end_time: formData.end_time + ":00",
+        start_time: `${to24HourString(formData.start_time)}:00`,
+        end_time: `${to24HourString(formData.end_time)}:00`,
         date: formData.is_recurring ? null : formData.date,
         recurrence_days: formData.is_recurring && formData.recurrence_days.length === 0
           ? null
@@ -60,16 +71,7 @@ export function AddEventModal({ categories }: AddEventModalProps) {
       }
 
       setOpen(false);
-      setFormData({
-        title: "",
-        category_id: "",
-        start_time: "09:00",
-        end_time: "09:30",
-        is_recurring: false,
-        recurrence_days: [],
-        date: new Date().toISOString().split("T")[0],
-        notes: "",
-      });
+      setFormData(createInitialFormState());
 
       router.refresh();
     } catch (error) {
@@ -102,9 +104,11 @@ export function AddEventModal({ categories }: AddEventModalProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-gray-950 font-medium rounded-lg transition-colors">
-          <Plus className="w-5 h-5" />
-          <span>Add Event</span>
+        <button
+          className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-800 rounded-lg transition-colors"
+          aria-label="Add event"
+        >
+          <Plus className="w-5 h-5 text-gray-400" />
         </button>
       </DialogTrigger>
       <DialogContent className="bg-gray-900 border-gray-800 max-w-md">
@@ -144,31 +148,23 @@ export function AddEventModal({ categories }: AddEventModalProps) {
           </div>
 
           {/* Time Range */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="start_time" className="text-gray-300">Start Time</Label>
-              <input
-                id="start_time"
-                type="time"
-                required
-                value={formData.start_time}
-                onChange={(e) => setFormData(prev => ({ ...prev, start_time: e.target.value }))}
-                className="w-full mt-1.5 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                step="900"
-              />
-            </div>
-            <div>
-              <Label htmlFor="end_time" className="text-gray-300">End Time</Label>
-              <input
-                id="end_time"
-                type="time"
-                required
-                value={formData.end_time}
-                onChange={(e) => setFormData(prev => ({ ...prev, end_time: e.target.value }))}
-                className="w-full mt-1.5 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                step="900"
-              />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <TimePicker
+              id="start_time"
+              label="Start Time"
+              value={formData.start_time}
+              onChange={(value) =>
+                setFormData((prev) => ({ ...prev, start_time: value }))
+              }
+            />
+            <TimePicker
+              id="end_time"
+              label="End Time"
+              value={formData.end_time}
+              onChange={(value) =>
+                setFormData((prev) => ({ ...prev, end_time: value }))
+              }
+            />
           </div>
 
           {/* Recurring Toggle */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EventCategory } from "@/types/schedule";
+import { TimeValue, from24HourString, to24HourString } from "./time-picker";
 
 interface QuickAddModalProps {
   open: boolean;
@@ -31,20 +32,38 @@ export function QuickAddModal({
   const [loading, setLoading] = useState(false);
 
   // Calculate start and end times
-  const getTimeString = (hour: number, minute: number) => {
-    return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
-  };
+  const { startValue, endValue } = useMemo(() => {
+    const baseDate = new Date();
+    if (prefilledTime) {
+      baseDate.setHours(prefilledTime.hour, prefilledTime.minute, 0, 0);
+    } else {
+      baseDate.setSeconds(0, 0);
+    }
 
-  const startTime = prefilledTime
-    ? getTimeString(prefilledTime.hour, prefilledTime.minute)
-    : "09:00";
+    const startVal = from24HourString(
+      `${baseDate.getHours().toString().padStart(2, "0")}:${baseDate
+        .getMinutes()
+        .toString()
+        .padStart(2, "0")}`,
+    );
 
-  const endTime = prefilledTime
-    ? getTimeString(
-        prefilledTime.hour,
-        (prefilledTime.minute + 30) % 60
-      )
-    : "09:30";
+    const endDate = new Date(baseDate.getTime() + 30 * 60000);
+    const endVal = from24HourString(
+      `${endDate.getHours().toString().padStart(2, "0")}:${endDate
+        .getMinutes()
+        .toString()
+        .padStart(2, "0")}`,
+    );
+
+    return { startValue: startVal, endValue: endVal };
+  }, [prefilledTime, open]);
+
+  const formatDisplayTime = (value: TimeValue) =>
+    `${value.hour}:${value.minute.toString().padStart(2, "0")} ${value.meridiem}`;
+
+  const displayTimeRange = `${formatDisplayTime(startValue)} - ${formatDisplayTime(
+    endValue,
+  )}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,8 +73,8 @@ export function QuickAddModal({
       const eventData = {
         title,
         category_id: categoryId,
-        start_time: startTime + ":00",
-        end_time: endTime + ":00",
+        start_time: `${to24HourString(startValue)}:00`,
+        end_time: `${to24HourString(endValue)}:00`,
         date: new Date().toISOString().split("T")[0],
         is_recurring: false,
         recurrence_days: null,
@@ -106,7 +125,7 @@ export function QuickAddModal({
           {/* Time Display */}
           <div className="text-center">
             <div className="text-2xl font-bold text-primary">
-              {startTime} - {endTime}
+              {displayTimeRange}
             </div>
             <div className="text-xs text-gray-500 mt-1">30 minutes</div>
           </div>

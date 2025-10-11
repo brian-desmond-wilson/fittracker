@@ -10,6 +10,12 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ScheduleEvent, EventCategory } from "@/types/schedule";
+import {
+  TimePicker,
+  TimeValue,
+  from24HourString,
+  to24HourString,
+} from "./time-picker";
 
 interface EditEventModalProps {
   event: ScheduleEvent | null;
@@ -29,8 +35,8 @@ export function EditEventModal({
   const [formData, setFormData] = useState({
     title: "",
     category_id: "",
-    start_time: "09:00",
-    end_time: "09:30",
+    start_time: from24HourString("09:00"),
+    end_time: from24HourString("09:30"),
     is_recurring: false,
     recurrence_days: [] as number[],
     date: new Date().toISOString().split("T")[0],
@@ -43,8 +49,8 @@ export function EditEventModal({
       setFormData({
         title: event.title,
         category_id: event.category_id || "",
-        start_time: event.start_time.substring(0, 5), // HH:MM
-        end_time: event.end_time.substring(0, 5), // HH:MM
+        start_time: from24HourString(event.start_time),
+        end_time: from24HourString(event.end_time),
         is_recurring: event.is_recurring,
         recurrence_days: event.recurrence_days || [],
         date: event.date || new Date().toISOString().split("T")[0],
@@ -66,8 +72,8 @@ export function EditEventModal({
         body: JSON.stringify({
           title: formData.title,
           category_id: formData.category_id,
-          start_time: formData.start_time + ":00",
-          end_time: formData.end_time + ":00",
+          start_time: `${to24HourString(formData.start_time)}:00`,
+          end_time: `${to24HourString(formData.end_time)}:00`,
           is_recurring: formData.is_recurring,
           date: formData.is_recurring ? null : formData.date,
           recurrence_days:
@@ -160,42 +166,29 @@ export function EditEventModal({
           </div>
 
           {/* Time Range */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="start_time" className="text-gray-300">
-                Start Time
-              </Label>
-              <input
-                id="start_time"
-                type="time"
-                required
-                value={formData.start_time}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    start_time: e.target.value,
-                  }))
-                }
-                className="w-full mt-1.5 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                step="900"
-              />
-            </div>
-            <div>
-              <Label htmlFor="end_time" className="text-gray-300">
-                End Time
-              </Label>
-              <input
-                id="end_time"
-                type="time"
-                required
-                value={formData.end_time}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, end_time: e.target.value }))
-                }
-                className="w-full mt-1.5 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                step="900"
-              />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <TimePicker
+              id="edit_start_time"
+              label="Start Time"
+              value={formData.start_time}
+              onChange={(value: TimeValue) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  start_time: value,
+                }))
+              }
+            />
+            <TimePicker
+              id="edit_end_time"
+              label="End Time"
+              value={formData.end_time}
+              onChange={(value: TimeValue) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  end_time: value,
+                }))
+              }
+            />
           </div>
 
           {/* Recurring Toggle */}
