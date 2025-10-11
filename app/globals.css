@@ -73,6 +73,15 @@
   }
 }
 
+@keyframes topbar-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 /* Mobile bottom navigation safe area */
 @supports (padding: max(0px)) {
   .pb-safe {
