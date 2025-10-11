@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 export function ViewportProvider({ children }: { children: React.ReactNode }) {
   const initialHeightRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
+  const focusResetTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -50,25 +51,48 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
       timeoutRef.current = window.setTimeout(updateViewportVars, delay);
     };
 
+    const resetOffsetIfNoFocus = () => {
+      const active = document.activeElement;
+      if (!active || active === document.body) {
+        document.documentElement.style.setProperty("--app-keyboard-offset", "0px");
+      }
+    };
+
     scheduleViewportUpdate();
 
-    window.addEventListener("resize", () => scheduleViewportUpdate());
-    window.addEventListener("orientationchange", () => scheduleViewportUpdate(200));
-    viewport?.addEventListener("resize", () => scheduleViewportUpdate());
-    viewport?.addEventListener("scroll", () => scheduleViewportUpdate());
-    document.addEventListener("focusin", () => scheduleViewportUpdate());
-    document.addEventListener("focusout", () => scheduleViewportUpdate(200));
+    const handleWindowResize = () => scheduleViewportUpdate();
+    const handleOrientationChange = () => scheduleViewportUpdate(200);
+    const handleViewportResize = () => scheduleViewportUpdate();
+    const handleViewportScroll = () => scheduleViewportUpdate();
+    const handleFocusIn = () => scheduleViewportUpdate();
+    const handleFocusOut = () => {
+      scheduleViewportUpdate(200);
+      if (focusResetTimeoutRef.current) {
+        window.clearTimeout(focusResetTimeoutRef.current);
+      }
+      focusResetTimeoutRef.current = window.setTimeout(resetOffsetIfNoFocus, 350);
+    };
+
+    window.addEventListener("resize", handleWindowResize);
+    window.addEventListener("orientationchange", handleOrientationChange);
+    viewport?.addEventListener("resize", handleViewportResize);
+    viewport?.addEventListener("scroll", handleViewportScroll);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
 
     return () => {
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
       }
-      window.removeEventListener("resize", () => scheduleViewportUpdate());
-      window.removeEventListener("orientationchange", () => scheduleViewportUpdate(200));
-      viewport?.removeEventListener("resize", () => scheduleViewportUpdate());
-      viewport?.removeEventListener("scroll", () => scheduleViewportUpdate());
-      document.removeEventListener("focusin", () => scheduleViewportUpdate());
-      document.removeEventListener("focusout", () => scheduleViewportUpdate(200));
+      if (focusResetTimeoutRef.current) {
+        window.clearTimeout(focusResetTimeoutRef.current);
+      }
+      window.removeEventListener("resize", handleWindowResize);
+      window.removeEventListener("orientationchange", handleOrientationChange);
+      viewport?.removeEventListener("resize", handleViewportResize);
+      viewport?.removeEventListener("scroll", handleViewportScroll);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
     };
   }, []);
 

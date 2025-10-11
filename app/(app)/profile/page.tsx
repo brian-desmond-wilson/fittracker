@@ -2,7 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { BackgroundLogo } from "@/components/ui/background-logo";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { LogoutButton } from "@/components/profile/logout-button";
-import { User, Mail } from "lucide-react";
+import { User, Mail, ShieldCheck } from "lucide-react";
+import { DevTaskManager } from "@/components/profile/admin/dev-task-manager";
+import type { DevTask } from "@/types/dev-task";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -18,6 +20,18 @@ export default async function ProfilePage() {
     .eq("id", user.id)
     .single();
 
+  let devTasks: DevTask[] = [];
+
+  if (profile?.is_admin) {
+    const { data: tasks } = await supabase
+      .from("dev_tasks")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    devTasks = tasks ?? [];
+  }
+
   return (
     <div className="relative min-h-screen">
       <BackgroundLogo />
@@ -27,6 +41,12 @@ export default async function ProfilePage() {
         <div className="pt-4">
           <h1 className="text-3xl font-bold text-white mb-1">Profile</h1>
           <p className="text-gray-400 text-sm">Manage your account and goals</p>
+          {profile?.is_admin && (
+            <div className="flex items-center gap-2 mt-3 text-sm text-primary">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Administrator access</span>
+            </div>
+          )}
         </div>
 
         {/* Profile Card */}
@@ -61,6 +81,10 @@ export default async function ProfilePage() {
 
         {/* Goals & Settings */}
         <ProfileForm profile={profile} userId={user.id} />
+
+        {profile?.is_admin && (
+          <DevTaskManager initialTasks={devTasks} />
+        )}
 
         {/* Actions */}
         <div className="space-y-3">

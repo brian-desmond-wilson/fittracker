@@ -5,6 +5,7 @@ export interface Profile {
   height_cm: number | null;
   target_weight_kg: number | null;
   target_calories: number | null;
+  is_admin: boolean;
   created_at: string;
   updated_at: string;
 }

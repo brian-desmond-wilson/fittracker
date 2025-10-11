@@ -13,6 +13,7 @@ CREATE TABLE profiles (
   height_cm DECIMAL(5, 2),
   target_weight_kg DECIMAL(5, 2),
   target_calories INTEGER,
+  is_admin BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -75,6 +76,20 @@ CREATE TABLE water_logs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Development Tasks (Admin-only)
+CREATE TABLE dev_tasks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  section TEXT NOT NULL CHECK (section IN ('home', 'schedule', 'track', 'progress', 'profile', 'settings', 'other')),
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL CHECK (status IN ('open', 'in_progress', 'done')) DEFAULT 'open',
+  priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high')) DEFAULT 'medium',
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ======================
 -- TRIGGERS
 -- ======================
@@ -94,6 +109,12 @@ CREATE TRIGGER update_profiles_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+-- Apply trigger to dev_tasks table
+CREATE TRIGGER update_dev_tasks_updated_at
+  BEFORE UPDATE ON dev_tasks
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
 -- Function to create profile on user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -107,6 +128,19 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Helper function to determine admin status
+CREATE OR REPLACE FUNCTION public.auth_is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND is_admin = TRUE
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
 
 -- Trigger to automatically create profile on signup
 CREATE TRIGGER on_auth_user_created
@@ -125,6 +159,7 @@ ALTER TABLE exercises ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nutrition_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weight_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE water_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dev_tasks ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
 CREATE POLICY "Users can view own profile"
@@ -247,6 +282,28 @@ CREATE POLICY "Users can update own water logs"
 CREATE POLICY "Users can delete own water logs"
   ON water_logs FOR DELETE
   USING (auth.uid() = user_id);
+
+-- Development tasks policies (admin only)
+CREATE POLICY "Admins can view own dev tasks"
+  ON dev_tasks FOR SELECT
+  USING (auth_is_admin() AND auth.uid() = user_id);
+
+CREATE POLICY "Admins can insert dev tasks"
+  ON dev_tasks FOR INSERT
+  WITH CHECK (auth_is_admin() AND auth.uid() = user_id);
+
+CREATE POLICY "Admins can update dev tasks"
+  ON dev_tasks FOR UPDATE
+  USING (auth_is_admin() AND auth.uid() = user_id);
+
+CREATE POLICY "Admins can delete dev tasks"
+  ON dev_tasks FOR DELETE
+  USING (auth_is_admin() AND auth.uid() = user_id);
+
+-- Indexes for dev tasks
+CREATE INDEX idx_dev_tasks_user_status ON dev_tasks(user_id, status);
+CREATE INDEX idx_dev_tasks_user_priority ON dev_tasks(user_id, priority);
+CREATE INDEX idx_dev_tasks_user_created_at ON dev_tasks(user_id, created_at DESC);
 
 -- ======================
 -- INDEXES
