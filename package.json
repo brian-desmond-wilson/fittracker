@@ -27,6 +27,7 @@
     "nextjs-toploader": "^3.9.17",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-swipeable": "^7.0.2",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {

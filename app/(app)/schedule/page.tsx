@@ -3,7 +3,7 @@ import { BackgroundLogo } from "@/components/ui/background-logo";
 import { ScheduleView } from "@/components/schedule/schedule-view";
 import { AddEventModal } from "@/components/schedule/add-event-modal";
 import { formatDateHeader, getEventsForDate } from "@/lib/schedule-utils";
-import { ScheduleEvent, EventCategory } from "@/types/schedule";
+import { ScheduleEvent, EventCategory, EventTemplate } from "@/types/schedule";
 
 async function getScheduleData(userId: string) {
   const supabase = await createClient();
@@ -15,6 +15,13 @@ async function getScheduleData(userId: string) {
     .select("*")
     .or(`user_id.eq.${userId},is_default.eq.true`)
     .order("name");
+
+  // Fetch event templates (user's + system)
+  const { data: templates } = await supabase
+    .from("event_templates")
+    .select("*")
+    .or(`user_id.eq.${userId},is_system_template.eq.true`)
+    .order("title");
 
   // Fetch all events (recurring and today's one-time events)
   const todayStr = today.toISOString().split("T")[0];
@@ -30,13 +37,10 @@ async function getScheduleData(userId: string) {
     ? getEventsForDate(allEvents as ScheduleEvent[], today)
     : [];
 
-  console.log("Today date:", today);
-  console.log("All events from DB:", allEvents);
-  console.log("Filtered events for today:", todayEvents);
-
   return {
     events: todayEvents as ScheduleEvent[],
     categories: (categories || []) as EventCategory[],
+    templates: (templates || []) as EventTemplate[],
   };
 }
 
@@ -48,7 +52,7 @@ export default async function SchedulePage() {
 
   if (!user) return null;
 
-  const { events, categories } = await getScheduleData(user.id);
+  const { events, categories, templates } = await getScheduleData(user.id);
   const today = new Date();
 
   return (
@@ -73,7 +77,7 @@ export default async function SchedulePage() {
 
         {/* Schedule View - Fixed height accounting for header (88px) and bottom nav (80px) */}
         <div className="relative" style={{ height: "calc(100vh - 168px)" }}>
-          <ScheduleView events={events} categories={categories} />
+          <ScheduleView events={events} categories={categories} templates={templates} />
         </div>
       </div>
     </div>

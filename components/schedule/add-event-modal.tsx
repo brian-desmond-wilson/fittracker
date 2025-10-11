@@ -36,8 +36,6 @@ export function AddEventModal({ categories }: AddEventModalProps) {
     e.preventDefault();
     setLoading(true);
 
-    console.log("Form submitted with data:", formData);
-
     try {
       const payload = {
         ...formData,
@@ -49,25 +47,17 @@ export function AddEventModal({ categories }: AddEventModalProps) {
           : formData.recurrence_days,
       };
 
-      console.log("Sending payload:", payload);
-
       const response = await fetch("/app2/api/schedule/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      console.log("Response status:", response.status);
-
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("API Error:", errorData);
         alert(`Failed to create event: ${errorData.error || "Unknown error"}`);
         return;
       }
-
-      const data = await response.json();
-      console.log("Event created successfully:", data);
 
       setOpen(false);
       setFormData({
