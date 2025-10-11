@@ -5,6 +5,7 @@ export type DevTaskSection =
   | "progress"
   | "profile"
   | "settings"
+  | "training"
   | "other";
 
 export type DevTaskStatus = "open" | "in_progress" | "done";

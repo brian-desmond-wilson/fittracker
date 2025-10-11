@@ -80,7 +80,7 @@ CREATE TABLE water_logs (
 CREATE TABLE dev_tasks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
-  section TEXT NOT NULL CHECK (section IN ('home', 'schedule', 'track', 'progress', 'profile', 'settings', 'other')),
+  section TEXT NOT NULL CHECK (section IN ('home', 'schedule', 'track', 'progress', 'profile', 'settings', 'training', 'other')),
   title TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL CHECK (status IN ('open', 'in_progress', 'done')) DEFAULT 'open',

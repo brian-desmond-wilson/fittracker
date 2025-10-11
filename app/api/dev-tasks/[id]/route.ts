@@ -8,6 +8,7 @@ const ALLOWED_SECTIONS = [
   "progress",
   "profile",
   "settings",
+  "training",
   "other",
 ] as const;
 
@@ -89,10 +90,10 @@ function validateUpdatePayload(body: any): UpdatePayload {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const taskId = params.id;
+    const { id: taskId } = await context.params;
     if (!taskId) {
       return NextResponse.json({ error: "Task id is required" }, { status: 400 });
     }
@@ -142,10 +143,10 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const taskId = params.id;
+    const { id: taskId } = await context.params;
     if (!taskId) {
       return NextResponse.json({ error: "Task id is required" }, { status: 400 });
     }

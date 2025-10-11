@@ -45,6 +45,7 @@ const SECTION_OPTIONS: { value: SectionOption; label: string }[] = [
   { value: "progress", label: "Progress" },
   { value: "profile", label: "Profile" },
   { value: "settings", label: "Settings" },
+  { value: "training", label: "Training" },
   { value: "other", label: "Other" },
 ];
 

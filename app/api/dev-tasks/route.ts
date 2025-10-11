@@ -8,6 +8,7 @@ const ALLOWED_SECTIONS = [
   "progress",
   "profile",
   "settings",
+  "training",
   "other",
 ] as const;
 
