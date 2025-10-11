@@ -78,7 +78,7 @@ export function EventDetailModal({
 
       if (response.ok) {
         onOpenChange(false);
-        window.location.reload();
+        router.refresh();
       } else {
         alert("Failed to delete event");
       }
@@ -102,7 +102,7 @@ export function EventDetailModal({
       });
 
       if (response.ok) {
-        window.location.reload();
+        router.refresh();
       } else {
         alert("Failed to update status");
       }

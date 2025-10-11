@@ -80,7 +80,7 @@ export function EditEventModal({
 
       if (response.ok) {
         onOpenChange(false);
-        window.location.reload();
+        router.refresh();
       } else {
         alert("Failed to update event");
       }

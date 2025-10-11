@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ export function QuickAddModal({
   prefilledTime,
   onEventCreated,
 }: QuickAddModalProps) {
+  const router = useRouter();
   const [title, setTitle] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -77,7 +79,7 @@ export function QuickAddModal({
       setTitle("");
       setCategoryId("");
       onOpenChange(false);
-      window.location.reload();
+      router.refresh();
     } catch (error) {
       console.error("Failed to create event:", error);
       alert("Failed to create event");

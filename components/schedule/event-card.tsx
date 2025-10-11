@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSwipeable } from "react-swipeable";
 import { ScheduleEvent } from "@/types/schedule";
-import { Check, X, Clock } from "lucide-react";
+import { Check, X, Clock, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as LucideIcons from "lucide-react";
 
@@ -115,7 +115,7 @@ export function EventCard({ event, style, onClick, onSwipeComplete, onSwipeCance
   return (
     <div
       {...handlers}
-      className="absolute pointer-events-auto"
+      className="pointer-events-auto"
       style={{
         ...style,
         transform: `translateX(${swipeOffset}px)`,
@@ -168,6 +168,9 @@ export function EventCard({ event, style, onClick, onSwipeComplete, onSwipeCance
           >
             {event.title}
           </span>
+          {event.is_recurring && (
+            <Repeat className="w-3 h-3 text-gray-500 flex-shrink-0" />
+          )}
         </div>
         {getStatusIcon() && (
           <div

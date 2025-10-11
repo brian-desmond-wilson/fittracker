@@ -2,12 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import { BackgroundLogo } from "@/components/ui/background-logo";
 import { ScheduleView } from "@/components/schedule/schedule-view";
 import { AddEventModal } from "@/components/schedule/add-event-modal";
+import { DateNavigator } from "@/components/schedule/date-navigator";
+import { CategoryManagerButton } from "@/components/schedule/category-manager-button";
 import { formatDateHeader, getEventsForDate } from "@/lib/schedule-utils";
 import { ScheduleEvent, EventCategory, EventTemplate } from "@/types/schedule";
 
-async function getScheduleData(userId: string) {
+async function getScheduleData(userId: string, targetDate: Date) {
   const supabase = await createClient();
-  const today = new Date();
 
   // Fetch all categories (user's + defaults)
   const { data: categories } = await supabase
@@ -23,28 +24,50 @@ async function getScheduleData(userId: string) {
     .or(`user_id.eq.${userId},is_system_template.eq.true`)
     .order("title");
 
-  // Fetch all events (recurring and today's one-time events)
-  const todayStr = today.toISOString().split("T")[0];
-  const { data: allEvents } = await supabase
+  // Fetch all events (recurring and target date's one-time events)
+  const targetDateStr = targetDate.toISOString().split("T")[0];
+
+  console.log('Query Debug:', {
+    userId,
+    targetDateStr,
+    targetDateISO: targetDate.toISOString(),
+  });
+
+  const { data: allEvents, error } = await supabase
     .from("schedule_events")
     .select("*")
     .eq("user_id", userId)
-    .or(`is_recurring.eq.true,date.eq.${todayStr}`)
+    .or(`is_recurring.eq.true,date.eq.${targetDateStr}`)
     .order("start_time");
 
-  // Filter events for today based on recurrence rules
-  const todayEvents = allEvents
-    ? getEventsForDate(allEvents as ScheduleEvent[], today)
+  console.log('Supabase Query Result:', {
+    allEventsCount: allEvents?.length || 0,
+    allEvents,
+    error,
+  });
+
+  // Filter events for target date based on recurrence rules
+  const dateEvents = allEvents
+    ? getEventsForDate(allEvents as ScheduleEvent[], targetDate)
     : [];
 
+  console.log('After getEventsForDate:', {
+    dateEventsCount: dateEvents.length,
+    dateEvents,
+  });
+
   return {
-    events: todayEvents as ScheduleEvent[],
+    events: dateEvents as ScheduleEvent[],
     categories: (categories || []) as EventCategory[],
     templates: (templates || []) as EventTemplate[],
   };
 }
 
-export default async function SchedulePage() {
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams: { date?: string };
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -52,8 +75,25 @@ export default async function SchedulePage() {
 
   if (!user) return null;
 
-  const { events, categories, templates } = await getScheduleData(user.id);
-  const today = new Date();
+  // Parse date from query params or use today (in local timezone)
+  const targetDate = searchParams.date
+    ? new Date(searchParams.date + "T00:00:00")
+    : (() => {
+        const now = new Date();
+        // Create a date in local timezone by getting local date components
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      })();
+
+  const { events, categories, templates } = await getScheduleData(user.id, targetDate);
+
+  // Debug logging
+  console.log('Schedule Page Debug:', {
+    targetDate: targetDate.toISOString(),
+    eventsCount: events.length,
+    events: events,
+    categoriesCount: categories.length,
+    templatesCount: templates.length,
+  });
 
   return (
     <div className="relative bg-gray-950">
@@ -62,16 +102,20 @@ export default async function SchedulePage() {
       <div className="relative z-10 max-w-4xl mx-auto">
         {/* Header */}
         <div className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-lg border-b border-gray-800 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold text-white">
-                {formatDateHeader(today)}
+                {formatDateHeader(targetDate)}
               </h1>
-              <p className="text-sm text-gray-400 mt-1">
-                {events.length} {events.length === 1 ? "event" : "events"} scheduled
-              </p>
+              <CategoryManagerButton categories={categories} />
             </div>
             <AddEventModal categories={categories} />
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-400">
+              {events.length} {events.length === 1 ? "event" : "events"} scheduled
+            </p>
+            <DateNavigator currentDate={targetDate} />
           </div>
         </div>
 

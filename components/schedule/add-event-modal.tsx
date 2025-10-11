@@ -71,8 +71,7 @@ export function AddEventModal({ categories }: AddEventModalProps) {
         notes: "",
       });
 
-      // Force a hard refresh to show new event immediately
-      window.location.reload();
+      router.refresh();
     } catch (error) {
       console.error("Failed to create event:", error);
       alert("Failed to create event. Check console for details.");
@@ -187,7 +186,46 @@ export function AddEventModal({ categories }: AddEventModalProps) {
           {/* Recurrence Days */}
           {formData.is_recurring && (
             <div>
-              <Label className="text-gray-300 mb-2 block">Repeat On (leave empty for daily)</Label>
+              <Label className="text-gray-300 mb-2 block">Repeat On</Label>
+
+              {/* Quick patterns */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, recurrence_days: [] }))}
+                  className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
+                    formData.recurrence_days.length === 0
+                      ? "bg-primary text-gray-950"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+                >
+                  Daily
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, recurrence_days: [1, 2, 3, 4, 5] }))}
+                  className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
+                    JSON.stringify(formData.recurrence_days.sort()) === JSON.stringify([1,2,3,4,5])
+                      ? "bg-primary text-gray-950"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+                >
+                  Weekdays
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, recurrence_days: [0, 6] }))}
+                  className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
+                    JSON.stringify(formData.recurrence_days.sort()) === JSON.stringify([0,6])
+                      ? "bg-primary text-gray-950"
+                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  }`}
+                >
+                  Weekends
+                </button>
+              </div>
+
+              {/* Individual days */}
               <div className="flex gap-2">
                 {days.map((day) => (
                   <button

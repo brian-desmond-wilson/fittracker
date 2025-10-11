@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ export function TemplatesDrawer({
   categories,
   onTemplateSelect,
 }: TemplatesDrawerProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   const handleTemplateClick = async (template: EventTemplate) => {
@@ -70,7 +72,7 @@ export function TemplatesDrawer({
 
       onTemplateSelect(template);
       onOpenChange(false);
-      window.location.reload();
+      router.refresh();
     } catch (error) {
       console.error("Failed to create event from template:", error);
       alert("Failed to create event");
