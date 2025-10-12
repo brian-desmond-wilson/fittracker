@@ -62,6 +62,24 @@
   }
   .app-shell {
     min-height: 100vh;
+    min-height: 100svh;
+    min-height: 100lvh;
+    height: auto;
+  }
+  @supports (min-height: 100dvh) {
+    .app-shell {
+      min-height: 100dvh;
+      height: 100dvh;
+    }
+  }
+  .bottom-nav {
+    will-change: opacity;
+    transition: opacity 0.2s ease;
+  }
+  html.keyboard-open .bottom-nav,
+  body.keyboard-open .bottom-nav {
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
@@ -112,12 +130,13 @@
     overscroll-behavior-y: contain;
   }
 
-  /* Ensure bottom nav stays fixed in iOS PWA */
+  /* Bottom nav stays fixed with hardware acceleration */
   nav[class*="fixed"] {
     position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
     -webkit-transform: translate3d(0, 0, 0) !important;
     transform: translate3d(0, 0, 0) !important;
-    -webkit-backface-visibility: hidden !important;
-    backface-visibility: hidden !important;
   }
 }

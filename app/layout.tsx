@@ -14,6 +14,12 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "FitTracker",
   },
+  viewport: {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    interactiveWidget: "overlays-content",
+  },
 };
 
 export default function RootLayout({
