@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Calendar, Plus, TrendingUp, User } from "lucide-react";
@@ -15,6 +16,17 @@ const navItems = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  const [shouldHide, setShouldHide] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any)?.Capacitor) {
+      setShouldHide(true);
+    }
+  }, []);
+
+  if (shouldHide) {
+    return null;
+  }
 
   return (
     <nav

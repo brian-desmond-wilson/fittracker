@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: "out",
   bundledWebRuntime: false,
   server: {
-    url: "https://your-production-domain.example.com/app2",
+    url: "https://unvivified-precranial-aileen.ngrok-free.dev/app2",
     cleartext: false,
   },
 };
