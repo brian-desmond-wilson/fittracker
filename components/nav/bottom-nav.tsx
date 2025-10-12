@@ -6,31 +6,11 @@ import { Home, Calendar, Plus, TrendingUp, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  {
-    href: "/",
-    label: "Home",
-    icon: Home,
-  },
-  {
-    href: "/schedule",
-    label: "Schedule",
-    icon: Calendar,
-  },
-  {
-    href: "/track",
-    label: "Track",
-    icon: Plus,
-  },
-  {
-    href: "/progress",
-    label: "Progress",
-    icon: TrendingUp,
-  },
-  {
-    href: "/profile",
-    label: "Profile",
-    icon: User,
-  },
+  { href: "/", label: "Home", icon: Home },
+  { href: "/schedule", label: "Schedule", icon: Calendar },
+  { href: "/track", label: "Track", icon: Plus },
+  { href: "/progress", label: "Progress", icon: TrendingUp },
+  { href: "/profile", label: "Profile", icon: User },
 ];
 
 export function BottomNav() {
@@ -57,9 +37,7 @@ export function BottomNav() {
                 "transition-all duration-150 ease-out",
                 "active:scale-90 active:bg-gray-800/50",
                 "touch-manipulation",
-                isActive
-                  ? "text-primary"
-                  : "text-gray-400 hover:text-gray-300"
+                isActive ? "text-primary" : "text-gray-400 hover:text-gray-300"
               )}
             >
               <Icon className={cn("w-6 h-6 mb-1", isActive && "stroke-[2.5]")} />

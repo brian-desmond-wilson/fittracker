@@ -6,6 +6,8 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
   const initialHeightRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const focusResetTimeoutRef = useRef<number | null>(null);
+  const keyboardVisibleRef = useRef(false);
+  const editableFocusedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -13,6 +15,27 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
     }
 
     const viewport = window.visualViewport;
+
+    const applyKeyboardOffset = (rawOffset: number) => {
+      const root = document.documentElement;
+      const body = document.body;
+
+      const shouldApply =
+        rawOffset > 0 && (editableFocusedRef.current || keyboardVisibleRef.current);
+      const clamped = shouldApply ? rawOffset : 0;
+
+      root.style.setProperty("--app-keyboard-offset", `${clamped}px`);
+
+      if (clamped > 0) {
+        keyboardVisibleRef.current = true;
+        root.classList.add("keyboard-open");
+        body.classList.add("keyboard-open");
+      } else {
+        keyboardVisibleRef.current = false;
+        root.classList.remove("keyboard-open");
+        body.classList.remove("keyboard-open");
+      }
+    };
 
     const updateViewportVars = () => {
       if (timeoutRef.current) {
@@ -29,19 +52,17 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
       }
 
       const initialHeight = initialHeightRef.current ?? baseInnerHeight;
-
-      const viewportHeight = viewport
-        ? viewport.height + viewport.offsetTop
-        : baseInnerHeight;
-
+      const viewportHeight = viewport ? viewport.height : baseInnerHeight;
       const keyboardDelta = initialHeight - viewportHeight;
-      const keyboardThreshold = 80;
+      const keyboardThreshold = 40;
       const keyboardOffset =
         keyboardDelta > keyboardThreshold ? keyboardDelta : 0;
 
-      const root = document.documentElement;
-      root.style.setProperty("--app-height", `${initialHeight}px`);
-      root.style.setProperty("--app-keyboard-offset", `${keyboardOffset}px`);
+      document.documentElement.style.setProperty(
+        "--app-height",
+        `${initialHeight}px`
+      );
+      applyKeyboardOffset(keyboardOffset);
     };
 
     const scheduleViewportUpdate = (delay = 0) => {
@@ -54,7 +75,7 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
     const resetOffsetIfNoFocus = () => {
       const active = document.activeElement;
       if (!active || active === document.body) {
-        document.documentElement.style.setProperty("--app-keyboard-offset", "0px");
+        applyKeyboardOffset(0);
       }
     };
 
@@ -63,9 +84,20 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
     const handleWindowResize = () => scheduleViewportUpdate();
     const handleOrientationChange = () => scheduleViewportUpdate(200);
     const handleViewportResize = () => scheduleViewportUpdate();
-    const handleViewportScroll = () => scheduleViewportUpdate();
-    const handleFocusIn = () => scheduleViewportUpdate();
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditable =
+        !!target &&
+        (target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target.isContentEditable ||
+          target.getAttribute("role") === "textbox");
+
+      editableFocusedRef.current = isEditable;
+      scheduleViewportUpdate();
+    };
     const handleFocusOut = () => {
+      editableFocusedRef.current = false;
       scheduleViewportUpdate(200);
       if (focusResetTimeoutRef.current) {
         window.clearTimeout(focusResetTimeoutRef.current);
@@ -76,7 +108,6 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("orientationchange", handleOrientationChange);
     viewport?.addEventListener("resize", handleViewportResize);
-    viewport?.addEventListener("scroll", handleViewportScroll);
     document.addEventListener("focusin", handleFocusIn);
     document.addEventListener("focusout", handleFocusOut);
 
@@ -90,9 +121,9 @@ export function ViewportProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("resize", handleWindowResize);
       window.removeEventListener("orientationchange", handleOrientationChange);
       viewport?.removeEventListener("resize", handleViewportResize);
-      viewport?.removeEventListener("scroll", handleViewportScroll);
       document.removeEventListener("focusin", handleFocusIn);
       document.removeEventListener("focusout", handleFocusOut);
+      applyKeyboardOffset(0);
     };
   }, []);
 
