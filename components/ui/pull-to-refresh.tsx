@@ -20,7 +20,9 @@ const isScrollable = (el: HTMLElement) => {
   );
 };
 
-const findScrollableParent = (start: EventTarget | null): HTMLElement | Window => {
+const findScrollableParent = (
+  start: EventTarget | null
+): HTMLElement | Window => {
   let current = start instanceof HTMLElement ? start : null;
 
   while (current && current !== document.body) {
@@ -87,10 +89,21 @@ export function PullToRefresh({ children }: PullToRefreshProps) {
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) return;
       const scroller = findScrollableParent(event.target);
-      const windowAtTop =
-        window.scrollY <= 0 && document.documentElement.scrollTop <= 0;
+      const containerParent = containerRef.current?.parentElement ?? null;
+      const isWindowScroller = scroller === window;
+      const isContainerScroller =
+        scroller instanceof HTMLElement && scroller === containerParent;
 
-      if (scroller !== window || !windowAtTop) {
+      if (!isWindowScroller && !isContainerScroller) {
+        isTrackingRef.current = false;
+        return;
+      }
+
+      const isAtTop = isWindowScroller
+        ? window.scrollY <= 0 && document.documentElement.scrollTop <= 0
+        : scroller instanceof HTMLElement && scroller.scrollTop <= 0;
+
+      if (!isAtTop) {
         isTrackingRef.current = false;
         return;
       }

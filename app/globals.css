@@ -60,6 +60,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  .app-shell {
+    min-height: 100vh;
+  }
 }
 
 /* Custom scrollbar */
@@ -86,5 +89,35 @@
 @supports (padding: max(0px)) {
   .pb-safe {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* Fix for iOS PWA bottom navigation */
+@media (display-mode: standalone) {
+  html,
+  body {
+    position: relative;
+    min-height: var(--app-height, 100vh);
+    height: var(--app-height, 100vh);
+    overflow-x: hidden;
+    overflow-y: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  .app-shell {
+    min-height: var(--app-height, 100vh);
+    height: var(--app-height, 100vh);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  /* Ensure bottom nav stays fixed in iOS PWA */
+  nav[class*="fixed"] {
+    position: fixed !important;
+    -webkit-transform: translate3d(0, 0, 0) !important;
+    transform: translate3d(0, 0, 0) !important;
+    -webkit-backface-visibility: hidden !important;
+    backface-visibility: hidden !important;
   }
 }

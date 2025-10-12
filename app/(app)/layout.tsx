@@ -21,12 +21,19 @@ export default async function AppLayout({
 
   return (
     <ViewportProvider>
-      <div className="min-h-screen bg-gray-950 pb-20">
+      <div
+        className="app-shell bg-gray-950"
+        style={{
+          minHeight: "var(--app-height, 100vh)",
+          paddingBottom:
+            "calc(96px + env(safe-area-inset-bottom, 0px) + var(--app-keyboard-offset, 0px))",
+        }}
+      >
         <PullToRefresh>
           <PageTransition>{children}</PageTransition>
         </PullToRefresh>
-        <BottomNav />
       </div>
+      <BottomNav />
     </ViewportProvider>
   );
 }
