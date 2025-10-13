@@ -46,6 +46,18 @@ A modern fitness tracking web application built with Next.js, Supabase, and Tail
 6. Open [http://localhost:3001](http://localhost:3001) in your browser
    - Or if using nginx reverse proxy: [http://localhost:8080/app2](http://localhost:8080/app2)
 
+### Mobile (Expo)
+
+The native client lives in `mobile/` and is built with Expo Router.
+
+```bash
+cd mobile
+npm install
+npm run start
+```
+
+Configure your Supabase credentials via `mobile/.env` (see `mobile/README.md` for details) and scan the QR code with Expo Go or run `npm run ios` to launch the simulator.
+
 ## Project Structure
 
 ```
