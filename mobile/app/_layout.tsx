@@ -42,12 +42,28 @@ export default function RootLayout() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inTabsGroup = segments[0] === "(tabs)";
 
-    if (session && inAuthGroup) {
-      // Redirect to tabs if logged in
-      router.replace("/(tabs)/home");
-    } else if (!session && !inAuthGroup) {
+    // Re-check session from storage when navigating to auth group
+    if (inAuthGroup && session) {
+      // Double-check if session is really valid by checking storage
+      supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+        if (currentSession) {
+          // Session is valid, redirect to tabs
+          router.replace("/(tabs)/home");
+        } else {
+          // Session is not valid, update state
+          setSession(null);
+        }
+      });
+      return;
+    }
+
+    if (!session && !inAuthGroup) {
       // Redirect to sign-in if not logged in
+      router.replace("/(auth)/sign-in");
+    } else if (!session && inTabsGroup) {
+      // If session is null but we're in tabs, force redirect to sign-in
       router.replace("/(auth)/sign-in");
     }
   }, [session, segments, loading]);

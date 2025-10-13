@@ -3,13 +3,42 @@ import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
 import { ThemedScreen } from "@/src/components/ThemedScreen";
 import { colors } from "@/src/lib/colors";
+import * as SecureStore from "expo-secure-store";
+import { AppState } from "react-native";
 
 export default function Profile() {
   const router = useRouter();
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
-    router.replace("/(auth)/sign-in");
+    try {
+      // First, manually clear all storage to ensure clean state
+      const keysToDelete = [
+        'supabase.auth.token',
+        'sb-tffxvrjvkhpyxsagrjga-auth-token',
+        `sb-${process.env.EXPO_PUBLIC_SUPABASE_URL?.split('//')[1]?.split('.')[0]}-auth-token`
+      ];
+
+      for (const key of keysToDelete) {
+        try {
+          await SecureStore.deleteItemAsync(key);
+        } catch (e) {
+          // Key might not exist, that's OK
+        }
+      }
+
+      // Try to sign out from Supabase (ignore errors since session might be gone)
+      try {
+        await supabase.auth.signOut();
+      } catch (error) {
+        // Ignore sign out errors - session might already be invalid
+      }
+
+      // Force redirect to sign-in
+      router.replace("/(auth)/sign-in");
+    } catch (error) {
+      // Still redirect even if there's an error
+      router.replace("/(auth)/sign-in");
+    }
   }
 
   return (
