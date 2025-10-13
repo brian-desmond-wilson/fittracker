@@ -10,15 +10,16 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: "hsl(217.2, 32.6%, 17.5%)",
           borderTopColor: "hsl(217.2, 32.6%, 17.5%)",
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 60,
+          paddingBottom: 24,
+          paddingTop: 12,
+          height: 88,
         },
         tabBarActiveTintColor: "hsl(142, 76%, 36%)",
         tabBarInactiveTintColor: "hsl(215, 20.2%, 65.1%)",
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: "500",
+          marginBottom: 4,
         },
       }}
     >
