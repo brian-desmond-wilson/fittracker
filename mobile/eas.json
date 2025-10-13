@@ -12,7 +12,8 @@
       "distribution": "internal",
       "ios": {
         "simulator": false
-      }
+      },
+      "node": "20.19.4"
     },
     "production": {
       "ios": {

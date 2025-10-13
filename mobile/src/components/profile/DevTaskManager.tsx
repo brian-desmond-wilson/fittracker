@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   CircleDot,
   Trash2,
+  Edit3,
 } from "lucide-react-native";
 import { supabase } from "../../lib/supabase";
 import {
@@ -50,7 +51,7 @@ const SECTION_OPTIONS: { value: SectionOption; label: string }[] = [
 
 const STATUS_OPTIONS: { value: StatusOption; label: string }[] = [
   { value: "all", label: "All statuses" },
-  { value: "active", label: "In Progress" },
+  { value: "active", label: "Active (Open + In Progress)" },
   { value: "open", label: "Open" },
   { value: "in_progress", label: "In Progress" },
   { value: "done", label: "Completed" },
@@ -588,6 +589,41 @@ interface TaskCardProps {
 
 function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: task.title,
+    description: task.description || "",
+    section: task.section,
+    priority: task.priority,
+    status: task.status,
+  });
+
+  const handleSaveEdit = () => {
+    if (!editForm.title.trim()) {
+      Alert.alert("Error", "Title is required");
+      return;
+    }
+
+    onUpdate(task.id, {
+      title: editForm.title.trim(),
+      description: editForm.description.trim() || null,
+      section: editForm.section,
+      priority: editForm.priority,
+      status: editForm.status,
+    });
+    setEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditForm({
+      title: task.title,
+      description: task.description || "",
+      section: task.section,
+      priority: task.priority,
+      status: task.status,
+    });
+    setEditing(false);
+  };
 
   return (
     <View style={styles.card}>
@@ -633,7 +669,7 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
         </View>
       </TouchableOpacity>
 
-      {expanded && (
+      {expanded && !editing && (
         <View style={styles.cardContent}>
           {task.description && (
             <Text
@@ -652,6 +688,14 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
             </View>
             <Text style={styles.cardMetaText}>
               Status: <Text style={styles.cardMetaValue}>{STATUS_LABELS[task.status]}</Text>
+            </Text>
+          </View>
+
+          <View style={styles.cardMeta}>
+            <Text style={styles.cardMetaText}>
+              Created: <Text style={styles.cardMetaValue}>
+                {new Date(task.created_at).toLocaleDateString()}
+              </Text>
             </Text>
           </View>
 
@@ -690,12 +734,115 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                 {PRIORITY_OPTIONS.find((o) => o.value === task.priority)?.label}
               </Text>
             </TouchableOpacity>
+          </View>
+
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setEditing(true)}
+            >
+              <Edit3 size={14} color="#FFFFFF" />
+              <Text style={styles.cancelButtonText}>Edit</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.modalButton, styles.deleteButtonLarge]}
               onPress={() => onDelete(task.id)}
             >
-              <Trash2 size={16} color="#EF4444" />
+              <Trash2 size={14} color="#EF4444" />
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {expanded && editing && (
+        <View style={styles.cardContent}>
+          <TextInput
+            style={styles.input}
+            placeholder="Task title"
+            placeholderTextColor="#6B7280"
+            value={editForm.title}
+            onChangeText={(text) => setEditForm((prev) => ({ ...prev, title: text }))}
+          />
+
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Add additional context..."
+            placeholderTextColor="#6B7280"
+            value={editForm.description}
+            onChangeText={(text) => setEditForm((prev) => ({ ...prev, description: text }))}
+            multiline
+            numberOfLines={3}
+          />
+
+          <View style={styles.cardMeta}>
+            <View style={styles.sectionBadge}>
+              <Text style={styles.sectionBadgeText}>{editForm.section.toUpperCase()}</Text>
+            </View>
+            <Text style={styles.cardMetaText}>
+              Status: <Text style={styles.cardMetaValue}>{STATUS_LABELS[editForm.status]}</Text>
+            </Text>
+          </View>
+
+          <View style={styles.cardMeta}>
+            <Text style={styles.cardMetaText}>
+              Created: <Text style={styles.cardMetaValue}>
+                {new Date(task.created_at).toLocaleDateString()}
+              </Text>
+            </Text>
+          </View>
+
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.selectSmall}
+              onPress={() => {
+                Alert.alert(
+                  "Status",
+                  "Change status",
+                  ["open", "in_progress", "done"].map((status) => ({
+                    text: STATUS_LABELS[status as DevTaskStatus],
+                    onPress: () => setEditForm((prev) => ({ ...prev, status: status as DevTaskStatus })),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectSmallText}>{STATUS_LABELS[editForm.status]}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.selectSmall}
+              onPress={() => {
+                Alert.alert(
+                  "Priority",
+                  "Change priority",
+                  ["high", "medium", "low"].map((priority) => ({
+                    text: PRIORITY_OPTIONS.find((o) => o.value === priority)?.label || priority,
+                    onPress: () =>
+                      setEditForm((prev) => ({ ...prev, priority: priority as DevTaskPriority })),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectSmallText}>
+                {PRIORITY_OPTIONS.find((o) => o.value === editForm.priority)?.label}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.addButton]}
+              onPress={handleSaveEdit}
+            >
+              <Text style={styles.addButtonText}>Save</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={handleCancelEdit}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1077,5 +1224,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#0A0F1E",
+  },
+  deleteButtonLarge: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#EF4444",
   },
 });
