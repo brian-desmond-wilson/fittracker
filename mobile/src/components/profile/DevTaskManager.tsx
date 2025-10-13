@@ -1,0 +1,1081 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Modal,
+} from "react-native";
+import {
+  SlidersHorizontal,
+  RefreshCw,
+  Search,
+  Plus,
+  ChevronDown,
+  CheckCircle2,
+  CircleDot,
+  Trash2,
+} from "lucide-react-native";
+import { supabase } from "../../lib/supabase";
+import {
+  DevTask,
+  DevTaskSection,
+  DevTaskStatus,
+  DevTaskPriority,
+} from "../../types/dev-task";
+
+interface DevTaskManagerProps {
+  userId: string;
+}
+
+type SectionOption = "all" | DevTaskSection;
+type StatusOption = "all" | DevTaskStatus | "active";
+type PriorityOption = "all" | DevTaskPriority;
+
+const SECTION_OPTIONS: { value: SectionOption; label: string }[] = [
+  { value: "all", label: "All sections" },
+  { value: "home", label: "Home" },
+  { value: "schedule", label: "Schedule" },
+  { value: "track", label: "Track" },
+  { value: "progress", label: "Progress" },
+  { value: "profile", label: "Profile" },
+  { value: "settings", label: "Settings" },
+  { value: "training", label: "Training" },
+  { value: "other", label: "Other" },
+];
+
+const STATUS_OPTIONS: { value: StatusOption; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "active", label: "In Progress" },
+  { value: "open", label: "Open" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "done", label: "Completed" },
+];
+
+const PRIORITY_OPTIONS: { value: PriorityOption; label: string }[] = [
+  { value: "all", label: "All priorities" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+];
+
+const SORT_OPTIONS = [
+  { value: "created_desc", label: "Newest first" },
+  { value: "created_asc", label: "Oldest first" },
+];
+
+const PRIORITY_COLORS: Record<DevTaskPriority, string> = {
+  high: "#EF4444",
+  medium: "#EAB308",
+  low: "#10B981",
+};
+
+const STATUS_LABELS: Record<DevTaskStatus, string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  done: "Completed",
+};
+
+export function DevTaskManager({ userId }: DevTaskManagerProps) {
+  const [tasks, setTasks] = useState<DevTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sectionFilter, setSectionFilter] = useState<SectionOption>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusOption>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityOption>("all");
+  const [sortOption, setSortOption] = useState("created_desc");
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(true);
+
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    section: "schedule" as DevTaskSection,
+    priority: "medium" as DevTaskPriority,
+    status: "open" as DevTaskStatus,
+  });
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      let query = supabase
+        .from("dev_tasks")
+        .select("*")
+        .eq("user_id", userId);
+
+      // Apply filters
+      if (sectionFilter !== "all") {
+        query = query.eq("section", sectionFilter);
+      }
+
+      if (statusFilter === "active") {
+        query = query.in("status", ["open", "in_progress"]);
+      } else if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      }
+
+      if (priorityFilter !== "all") {
+        query = query.eq("priority", priorityFilter);
+      }
+
+      // Apply sorting
+      if (sortOption === "created_desc") {
+        query = query.order("created_at", { ascending: false });
+      } else if (sortOption === "created_asc") {
+        query = query.order("created_at", { ascending: true });
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Apply search filter in memory
+      let filteredData = data || [];
+      if (searchTerm.trim()) {
+        const search = searchTerm.toLowerCase();
+        filteredData = filteredData.filter(
+          (task) =>
+            task.title.toLowerCase().includes(search) ||
+            task.description?.toLowerCase().includes(search)
+        );
+      }
+
+      setTasks(filteredData);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      Alert.alert("Error", "Failed to load tasks");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [userId, sectionFilter, statusFilter, priorityFilter, sortOption, searchTerm]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  const activeTasks = useMemo(
+    () => tasks.filter((task) => task.status !== "done"),
+    [tasks]
+  );
+
+  const completedTasks = useMemo(
+    () => tasks.filter((task) => task.status === "done"),
+    [tasks]
+  );
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchTasks();
+  };
+
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim()) {
+      Alert.alert("Error", "Title is required");
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("dev_tasks").insert({
+        user_id: userId,
+        title: newTask.title.trim(),
+        description: newTask.description.trim() || null,
+        section: newTask.section,
+        priority: newTask.priority,
+        status: newTask.status,
+      });
+
+      if (error) throw error;
+
+      setNewTask({
+        title: "",
+        description: "",
+        section: "schedule",
+        priority: "medium",
+        status: "open",
+      });
+      setShowAddForm(false);
+      fetchTasks();
+    } catch (error) {
+      console.error("Error creating task:", error);
+      Alert.alert("Error", "Failed to create task");
+    }
+  };
+
+  const handleUpdateTask = async (
+    id: string,
+    updates: Partial<Omit<DevTask, "id" | "user_id" | "created_at" | "updated_at">>
+  ) => {
+    try {
+      const updateData: any = { ...updates };
+
+      // If status is being changed to done, set completed_at
+      if (updates.status === "done") {
+        updateData.completed_at = new Date().toISOString();
+      } else if (updates.status && updates.status !== "done") {
+        updateData.completed_at = null;
+      }
+
+      const { error } = await supabase
+        .from("dev_tasks")
+        .update(updateData)
+        .eq("id", id);
+
+      if (error) throw error;
+
+      fetchTasks();
+    } catch (error) {
+      console.error("Error updating task:", error);
+      Alert.alert("Error", "Failed to update task");
+    }
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    Alert.alert(
+      "Delete Task",
+      "Are you sure you want to delete this task?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from("dev_tasks")
+                .delete()
+                .eq("id", id);
+
+              if (error) throw error;
+
+              fetchTasks();
+            } catch (error) {
+              console.error("Error deleting task:", error);
+              Alert.alert("Error", "Failed to delete task");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <View style={styles.headerIcon}>
+            <SlidersHorizontal size={20} color="#22C55E" />
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Dev Notebook</Text>
+            <Text style={styles.subtitle}>
+              Capture quick development notes, backlog items, and mark them complete when
+              delivered.
+            </Text>
+          </View>
+        </View>
+        <View style={styles.headerRight}>
+          <Text style={styles.activeCount}>
+            <Text style={styles.activeCountNumber}>{activeTasks.length}</Text> active
+          </Text>
+          <TouchableOpacity
+            onPress={handleRefresh}
+            style={styles.refreshButton}
+            disabled={refreshing}
+          >
+            <RefreshCw size={16} color="#9CA3AF" />
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Filters */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters}>
+        <View style={styles.searchContainer}>
+          <Search size={16} color="#6B7280" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search tasks..."
+            placeholderTextColor="#6B7280"
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+          />
+        </View>
+      </ScrollView>
+
+      <View style={styles.filterRow}>
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => {
+            Alert.alert(
+              "Section",
+              "Choose a section",
+              SECTION_OPTIONS.map((option) => ({
+                text: option.label,
+                onPress: () => setSectionFilter(option.value),
+              }))
+            );
+          }}
+        >
+          <Text style={styles.filterButtonText}>
+            {SECTION_OPTIONS.find((o) => o.value === sectionFilter)?.label}
+          </Text>
+          <ChevronDown size={16} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => {
+            Alert.alert(
+              "Status",
+              "Choose a status",
+              STATUS_OPTIONS.map((option) => ({
+                text: option.label,
+                onPress: () => setStatusFilter(option.value),
+              }))
+            );
+          }}
+        >
+          <Text style={styles.filterButtonText}>
+            {STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label}
+          </Text>
+          <ChevronDown size={16} color="#9CA3AF" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.filterRow}>
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => {
+            Alert.alert(
+              "Priority",
+              "Choose a priority",
+              PRIORITY_OPTIONS.map((option) => ({
+                text: option.label,
+                onPress: () => setPriorityFilter(option.value),
+              }))
+            );
+          }}
+        >
+          <Text style={styles.filterButtonText}>
+            {PRIORITY_OPTIONS.find((o) => o.value === priorityFilter)?.label}
+          </Text>
+          <ChevronDown size={16} color="#9CA3AF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => {
+            Alert.alert(
+              "Sort",
+              "Choose sort order",
+              SORT_OPTIONS.map((option) => ({
+                text: option.label,
+                onPress: () => setSortOption(option.value),
+              }))
+            );
+          }}
+        >
+          <Text style={styles.filterButtonText}>
+            {SORT_OPTIONS.find((o) => o.value === sortOption)?.label}
+          </Text>
+          <ChevronDown size={16} color="#9CA3AF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Add Task Button */}
+      <TouchableOpacity
+        style={styles.addTaskButton}
+        onPress={() => setShowAddForm(true)}
+      >
+        <Plus size={20} color="#22C55E" />
+        <Text style={styles.addTaskButtonText}>Add a new task</Text>
+      </TouchableOpacity>
+
+      {/* Active Tasks */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>ACTIVE TASKS ({activeTasks.length})</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#22C55E" style={styles.loader} />
+        ) : activeTasks.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              No active tasks. Add a new note above to get started.
+            </Text>
+          </View>
+        ) : (
+          activeTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onUpdate={handleUpdateTask}
+              onDelete={handleDeleteTask}
+            />
+          ))
+        )}
+      </View>
+
+      {/* Completed Tasks */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={styles.completedHeader}
+          onPress={() => setShowCompleted(!showCompleted)}
+        >
+          <Text style={styles.sectionTitle}>COMPLETED ({completedTasks.length})</Text>
+          <ChevronDown
+            size={16}
+            color="#9CA3AF"
+            style={[
+              styles.chevron,
+              showCompleted && styles.chevronRotated,
+            ]}
+          />
+        </TouchableOpacity>
+        {showCompleted &&
+          completedTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onUpdate={handleUpdateTask}
+              onDelete={handleDeleteTask}
+            />
+          ))}
+      </View>
+
+      {/* Add Task Modal */}
+      <Modal
+        visible={showAddForm}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAddForm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add a new task</Text>
+            <Text style={styles.modalSubtitle}>Capture a quick note or backlog item.</Text>
+
+            <Text style={styles.label}>TITLE</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Short task title"
+              placeholderTextColor="#6B7280"
+              value={newTask.title}
+              onChangeText={(text) => setNewTask((prev) => ({ ...prev, title: text }))}
+            />
+
+            <Text style={styles.label}>SECTION</Text>
+            <TouchableOpacity
+              style={styles.select}
+              onPress={() => {
+                Alert.alert(
+                  "Section",
+                  "Choose a section",
+                  SECTION_OPTIONS.filter((o) => o.value !== "all").map((option) => ({
+                    text: option.label,
+                    onPress: () =>
+                      setNewTask((prev) => ({
+                        ...prev,
+                        section: option.value as DevTaskSection,
+                      })),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectText}>
+                {SECTION_OPTIONS.find((o) => o.value === newTask.section)?.label}
+              </Text>
+              <ChevronDown size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <Text style={styles.label}>PRIORITY</Text>
+            <TouchableOpacity
+              style={styles.select}
+              onPress={() => {
+                Alert.alert(
+                  "Priority",
+                  "Choose a priority",
+                  PRIORITY_OPTIONS.filter((o) => o.value !== "all").map((option) => ({
+                    text: option.label,
+                    onPress: () =>
+                      setNewTask((prev) => ({
+                        ...prev,
+                        priority: option.value as DevTaskPriority,
+                      })),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectText}>
+                {PRIORITY_OPTIONS.find((o) => o.value === newTask.priority)?.label}
+              </Text>
+              <ChevronDown size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <Text style={styles.label}>DESCRIPTION</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Optional details, acceptance criteria, notes..."
+              placeholderTextColor="#6B7280"
+              value={newTask.description}
+              onChangeText={(text) =>
+                setNewTask((prev) => ({ ...prev, description: text }))
+              }
+              multiline
+              numberOfLines={4}
+            />
+
+            <Text style={styles.label}>STATUS</Text>
+            <TouchableOpacity
+              style={styles.select}
+              onPress={() => {
+                Alert.alert(
+                  "Status",
+                  "Choose a status",
+                  ["open", "in_progress", "done"].map((status) => ({
+                    text: STATUS_LABELS[status as DevTaskStatus],
+                    onPress: () =>
+                      setNewTask((prev) => ({
+                        ...prev,
+                        status: status as DevTaskStatus,
+                      })),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectText}>{STATUS_LABELS[newTask.status]}</Text>
+              <ChevronDown size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowAddForm(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.addButton]}
+                onPress={handleCreateTask}
+              >
+                <Plus size={16} color="#0A0F1E" />
+                <Text style={styles.addButtonText}>Add Task</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+interface TaskCardProps {
+  task: DevTask;
+  onUpdate: (
+    id: string,
+    updates: Partial<Omit<DevTask, "id" | "user_id" | "created_at" | "updated_at">>
+  ) => void;
+  onDelete: (id: string) => void;
+}
+
+function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.cardHeader}
+        onPress={() => setExpanded(!expanded)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.cardHeaderLeft}>
+          {task.status === "done" ? (
+            <CheckCircle2 size={20} color="#22C55E" />
+          ) : (
+            <CircleDot size={20} color="#6B7280" />
+          )}
+          <Text
+            style={[
+              styles.cardTitle,
+              task.status === "done" && styles.cardTitleCompleted,
+            ]}
+            numberOfLines={1}
+          >
+            {task.title}
+          </Text>
+        </View>
+        <View style={styles.cardHeaderRight}>
+          <View
+            style={[
+              styles.priorityBadge,
+              { backgroundColor: `${PRIORITY_COLORS[task.priority]}20` },
+            ]}
+          >
+            <Text
+              style={[styles.priorityText, { color: PRIORITY_COLORS[task.priority] }]}
+            >
+              {task.priority.toUpperCase()}
+            </Text>
+          </View>
+          <ChevronDown
+            size={16}
+            color="#9CA3AF"
+            style={[styles.chevron, expanded && styles.chevronRotated]}
+          />
+        </View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={styles.cardContent}>
+          {task.description && (
+            <Text
+              style={[
+                styles.cardDescription,
+                task.status === "done" && styles.cardDescriptionCompleted,
+              ]}
+            >
+              {task.description}
+            </Text>
+          )}
+
+          <View style={styles.cardMeta}>
+            <View style={styles.sectionBadge}>
+              <Text style={styles.sectionBadgeText}>{task.section.toUpperCase()}</Text>
+            </View>
+            <Text style={styles.cardMetaText}>
+              Status: <Text style={styles.cardMetaValue}>{STATUS_LABELS[task.status]}</Text>
+            </Text>
+          </View>
+
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.selectSmall}
+              onPress={() => {
+                Alert.alert(
+                  "Status",
+                  "Change status",
+                  ["open", "in_progress", "done"].map((status) => ({
+                    text: STATUS_LABELS[status as DevTaskStatus],
+                    onPress: () => onUpdate(task.id, { status: status as DevTaskStatus }),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectSmallText}>{STATUS_LABELS[task.status]}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.selectSmall}
+              onPress={() => {
+                Alert.alert(
+                  "Priority",
+                  "Change priority",
+                  ["high", "medium", "low"].map((priority) => ({
+                    text: PRIORITY_OPTIONS.find((o) => o.value === priority)?.label || priority,
+                    onPress: () =>
+                      onUpdate(task.id, { priority: priority as DevTaskPriority }),
+                  }))
+                );
+              }}
+            >
+              <Text style={styles.selectSmallText}>
+                {PRIORITY_OPTIONS.find((o) => o.value === task.priority)?.label}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => onDelete(task.id)}
+            >
+              <Trash2 size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: "#111827",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#1F2937",
+    padding: 16,
+    marginBottom: 16,
+  },
+  header: {
+    marginBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  headerIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+  headerText: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    lineHeight: 16,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  activeCount: {
+    fontSize: 12,
+    color: "#9CA3AF",
+  },
+  activeCountNumber: {
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#374151",
+  },
+  refreshButtonText: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
+  filters: {
+    marginBottom: 12,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#374151",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    minWidth: 250,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 14,
+  },
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  filterButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#374151",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  filterButtonText: {
+    fontSize: 12,
+    color: "#FFFFFF",
+    fontWeight: "500",
+  },
+  addTaskButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderRadius: 8,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: "#374151",
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  addTaskButtonText: {
+    fontSize: 14,
+    color: "#22C55E",
+    fontWeight: "500",
+  },
+  section: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#9CA3AF",
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  completedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  loader: {
+    paddingVertical: 32,
+  },
+  emptyState: {
+    backgroundColor: "rgba(31, 41, 55, 0.5)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#1F2937",
+    padding: 16,
+  },
+  emptyStateText: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    textAlign: "center",
+  },
+  card: {
+    backgroundColor: "rgba(31, 41, 55, 0.5)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#1F2937",
+    marginBottom: 8,
+    overflow: "hidden",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 12,
+  },
+  cardHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    flex: 1,
+  },
+  cardTitleCompleted: {
+    textDecorationLine: "line-through",
+    color: "#6B7280",
+  },
+  cardHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  priorityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  priorityText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  chevron: {
+    transform: [{ rotate: "0deg" }],
+  },
+  chevronRotated: {
+    transform: [{ rotate: "180deg" }],
+  },
+  cardContent: {
+    padding: 12,
+    paddingTop: 0,
+    gap: 12,
+  },
+  cardDescription: {
+    fontSize: 12,
+    color: "#D1D5DB",
+    lineHeight: 18,
+  },
+  cardDescriptionCompleted: {
+    textDecorationLine: "line-through",
+    color: "#6B7280",
+  },
+  cardMeta: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  sectionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+  },
+  sectionBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#22C55E",
+    letterSpacing: 0.5,
+  },
+  cardMetaText: {
+    fontSize: 11,
+    color: "#6B7280",
+  },
+  cardMetaValue: {
+    color: "#D1D5DB",
+  },
+  cardActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  selectSmall: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1F2937",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#374151",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  selectSmallText: {
+    fontSize: 12,
+    color: "#FFFFFF",
+  },
+  deleteButton: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#111827",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: "#1F2937",
+    padding: 20,
+    maxHeight: "90%",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#9CA3AF",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#374151",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#FFFFFF",
+    marginBottom: 16,
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  select: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#374151",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  selectText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+  },
+  modalButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  cancelButton: {
+    backgroundColor: "#1F2937",
+    borderWidth: 1,
+    borderColor: "#374151",
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  addButton: {
+    backgroundColor: "#22C55E",
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0A0F1E",
+  },
+});

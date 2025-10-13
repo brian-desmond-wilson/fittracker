@@ -12,15 +12,17 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
-import { User, Mail } from "lucide-react-native";
+import { User, Mail, ShieldCheck } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DevTaskManager } from "@/src/components/profile/DevTaskManager";
 
 interface Profile {
   full_name: string | null;
   height_cm: number | null;
   target_weight_kg: number | null;
   target_calories: number | null;
+  is_admin: boolean;
 }
 
 export default function Profile() {
@@ -30,6 +32,7 @@ export default function Profile() {
   const [userEmail, setUserEmail] = useState("");
   const [memberSince, setMemberSince] = useState("");
   const [userId, setUserId] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -67,6 +70,7 @@ export default function Profile() {
         .single();
 
       if (profile) {
+        setIsAdmin(profile.is_admin || false);
         setFormData({
           full_name: profile.full_name || "",
           height_cm: profile.height_cm?.toString() || "",
@@ -181,6 +185,13 @@ export default function Profile() {
               <Text style={styles.memberLabel}>Member since</Text>
               <Text style={styles.memberDate}>{memberSince}</Text>
             </View>
+
+            {isAdmin && (
+              <View style={styles.adminBadge}>
+                <ShieldCheck size={16} color="#22C55E" />
+                <Text style={styles.adminBadgeText}>Administrator access</Text>
+              </View>
+            )}
           </View>
 
           {/* Personal Information & Goals Card */}
@@ -260,6 +271,9 @@ export default function Profile() {
               )}
             </TouchableOpacity>
           </View>
+
+          {/* Dev Notebook - Admin Only */}
+          {isAdmin && <DevTaskManager userId={userId} />}
 
           {/* Sign Out Button */}
           <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -349,6 +363,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: "#FFFFFF",
+  },
+  adminBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 16,
+  },
+  adminBadgeText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#22C55E",
   },
   cardTitle: {
     fontSize: 20,
