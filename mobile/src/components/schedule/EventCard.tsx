@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { ScheduleEvent } from "../../types/schedule";
 import * as LucideIcons from "lucide-react-native";
 import { Clock, Repeat, Check, X } from "lucide-react-native";
@@ -58,8 +58,7 @@ export const EventCard = memo(function EventCard({
   const borderColor = event.category?.color || "#6B7280";
 
   return (
-    <TouchableOpacity
-      onPress={onClick}
+    <View
       style={[
         styles.card,
         style,
@@ -68,7 +67,6 @@ export const EventCard = memo(function EventCard({
         event.status === "cancelled" && styles.cancelled,
         isShortEvent ? styles.shortPadding : styles.normalPadding,
       ]}
-      activeOpacity={0.8}
     >
       {isShortEvent ? (
         // Compact layout for short events
@@ -171,7 +169,7 @@ export const EventCard = memo(function EventCard({
           )}
         </>
       )}
-    </TouchableOpacity>
+    </View>
   );
 });
 

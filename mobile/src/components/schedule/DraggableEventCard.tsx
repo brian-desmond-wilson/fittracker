@@ -23,6 +23,7 @@ export function DraggableEventCard({
 }: DraggableEventCardProps) {
   const pan = useRef(new Animated.ValueXY()).current;
   const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
   const originalTopRef = useRef(style.top);
 
   // Update originalTop when the component re-renders with new position
@@ -36,21 +37,26 @@ export function DraggableEventCard({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponder: () => true,
         onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponder: (_, gestureState) => {
-          // Only start dragging if vertical movement is significant
-          return Math.abs(gestureState.dy) > 5;
+          const isDraggingVertically = Math.abs(gestureState.dy) > 5;
+          console.log('onMoveShouldSetPanResponder:', { dy: gestureState.dy, isDraggingVertically });
+          if (isDraggingVertically && !isDraggingRef.current) {
+            console.log('Setting isDragging and disabling scroll');
+            isDraggingRef.current = true;
+            setIsDragging(true);
+            onDragStart?.();
+          }
+          return isDraggingVertically;
         },
-        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-          return Math.abs(gestureState.dy) > 5;
-        },
+        onMoveShouldSetPanResponderCapture: () => false,
         onPanResponderTerminationRequest: () => false,
         onShouldBlockNativeResponder: () => true,
 
         onPanResponderGrant: () => {
-          setIsDragging(true);
-          onDragStart?.();
+          console.log('onPanResponderGrant called');
+          // Don't set dragging yet, wait for move
           pan.setOffset({
             x: 0,
             y: (pan.y as any)._value,
@@ -58,24 +64,34 @@ export function DraggableEventCard({
           pan.setValue({ x: 0, y: 0 });
         },
 
-        onPanResponderMove: Animated.event(
-          [
-            null,
-            {
-              dy: pan.y,
-            },
-          ],
-          { useNativeDriver: false }
-        ),
+        onPanResponderMove: (evt, gestureState) => {
+          // Update pan position when dragging vertically
+          const isDraggingVertically = Math.abs(gestureState.dy) > 5;
+          if (isDraggingVertically) {
+            pan.setValue({ x: 0, y: gestureState.dy });
+          }
+        },
 
         onPanResponderRelease: (_, gestureState) => {
           pan.flattenOffset();
 
-          // Check if it was a tap (minimal movement)
-          if (Math.abs(gestureState.dy) < 5 && Math.abs(gestureState.dx) < 5) {
-            setIsDragging(false);
+          // Check if there was significant vertical movement
+          const hadVerticalMovement = Math.abs(gestureState.dy) > 5;
+
+          console.log('PanResponder Release:', {
+            dy: gestureState.dy,
+            dx: gestureState.dx,
+            isDraggingRef: isDraggingRef.current,
+            hadVerticalMovement
+          });
+
+          // If was dragging or had vertical movement, handle the drop
+          if (isDraggingRef.current || hadVerticalMovement) {
+            // Continue with drag logic below
+          } else {
+            // Was a tap - call onClick
+            console.log('Calling onClick for event:', event.title);
             pan.setValue({ x: 0, y: 0 });
-            onDragEnd?.();
             onClick();
             return;
           }
@@ -114,6 +130,7 @@ export function DraggableEventCard({
             useNativeDriver: false,
             friction: 7,
           }).start(() => {
+            isDraggingRef.current = false;
             setIsDragging(false);
             onDragEnd?.();
 
@@ -141,13 +158,18 @@ export function DraggableEventCard({
       ]}
       {...panResponder.panHandlers}
     >
-      <EventCard event={event} style={styles.card} onClick={() => {}} />
+      <View style={styles.card}>
+        <EventCard event={event} style={styles.eventCard} onClick={() => {}} />
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    flex: 1,
+  },
+  eventCard: {
     flex: 1,
   },
 });
