@@ -742,6 +742,8 @@ interface TaskCardProps {
 function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [editForm, setEditForm] = useState({
     title: task.title,
     description: task.description || "",
@@ -854,37 +856,20 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
           <View style={styles.cardActions}>
             <TouchableOpacity
               style={styles.selectSmall}
-              onPress={() => {
-                Alert.alert(
-                  "Status",
-                  "Change status",
-                  ["open", "in_progress", "done"].map((status) => ({
-                    text: STATUS_LABELS[status as DevTaskStatus],
-                    onPress: () => onUpdate(task.id, { status: status as DevTaskStatus }),
-                  }))
-                );
-              }}
+              onPress={() => setShowStatusDropdown(true)}
             >
               <Text style={styles.selectSmallText}>{STATUS_LABELS[task.status]}</Text>
+              <ChevronDown size={12} color="#9CA3AF" />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.selectSmall}
-              onPress={() => {
-                Alert.alert(
-                  "Priority",
-                  "Change priority",
-                  ["high", "medium", "low"].map((priority) => ({
-                    text: PRIORITY_OPTIONS.find((o) => o.value === priority)?.label || priority,
-                    onPress: () =>
-                      onUpdate(task.id, { priority: priority as DevTaskPriority }),
-                  }))
-                );
-              }}
+              onPress={() => setShowPriorityDropdown(true)}
             >
               <Text style={styles.selectSmallText}>
                 {PRIORITY_OPTIONS.find((o) => o.value === task.priority)?.label}
               </Text>
+              <ChevronDown size={12} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
 
@@ -948,37 +933,20 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
           <View style={styles.cardActions}>
             <TouchableOpacity
               style={styles.selectSmall}
-              onPress={() => {
-                Alert.alert(
-                  "Status",
-                  "Change status",
-                  ["open", "in_progress", "done"].map((status) => ({
-                    text: STATUS_LABELS[status as DevTaskStatus],
-                    onPress: () => setEditForm((prev) => ({ ...prev, status: status as DevTaskStatus })),
-                  }))
-                );
-              }}
+              onPress={() => setShowStatusDropdown(true)}
             >
               <Text style={styles.selectSmallText}>{STATUS_LABELS[editForm.status]}</Text>
+              <ChevronDown size={12} color="#9CA3AF" />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.selectSmall}
-              onPress={() => {
-                Alert.alert(
-                  "Priority",
-                  "Change priority",
-                  ["high", "medium", "low"].map((priority) => ({
-                    text: PRIORITY_OPTIONS.find((o) => o.value === priority)?.label || priority,
-                    onPress: () =>
-                      setEditForm((prev) => ({ ...prev, priority: priority as DevTaskPriority })),
-                  }))
-                );
-              }}
+              onPress={() => setShowPriorityDropdown(true)}
             >
               <Text style={styles.selectSmallText}>
                 {PRIORITY_OPTIONS.find((o) => o.value === editForm.priority)?.label}
               </Text>
+              <ChevronDown size={12} color="#9CA3AF" />
             </TouchableOpacity>
           </View>
 
@@ -998,6 +966,88 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
             </TouchableOpacity>
           </View>
         </View>
+      )}
+
+      {/* Status Dropdown Modal */}
+      {showStatusDropdown && (
+        <Modal transparent visible={showStatusDropdown} animationType="fade">
+          <TouchableWithoutFeedback onPress={() => setShowStatusDropdown(false)}>
+            <View style={styles.dropdownModalOverlay}>
+              <View style={styles.dropdownModalContent}>
+                <Text style={styles.dropdownModalTitle}>Change Status</Text>
+                <ScrollView style={styles.dropdownModalScroll}>
+                  {["open", "in_progress", "done"].map((status) => (
+                    <TouchableOpacity
+                      key={status}
+                      style={[
+                        styles.dropdownModalItem,
+                        (editing ? editForm.status : task.status) === status && styles.dropdownModalItemSelected,
+                      ]}
+                      onPress={() => {
+                        if (editing) {
+                          setEditForm((prev) => ({ ...prev, status: status as DevTaskStatus }));
+                        } else {
+                          onUpdate(task.id, { status: status as DevTaskStatus });
+                        }
+                        setShowStatusDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownModalItemText,
+                          (editing ? editForm.status : task.status) === status && styles.dropdownModalItemTextSelected,
+                        ]}
+                      >
+                        {STATUS_LABELS[status as DevTaskStatus]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
+
+      {/* Priority Dropdown Modal */}
+      {showPriorityDropdown && (
+        <Modal transparent visible={showPriorityDropdown} animationType="fade">
+          <TouchableWithoutFeedback onPress={() => setShowPriorityDropdown(false)}>
+            <View style={styles.dropdownModalOverlay}>
+              <View style={styles.dropdownModalContent}>
+                <Text style={styles.dropdownModalTitle}>Change Priority</Text>
+                <ScrollView style={styles.dropdownModalScroll}>
+                  {["high", "medium", "low"].map((priority) => (
+                    <TouchableOpacity
+                      key={priority}
+                      style={[
+                        styles.dropdownModalItem,
+                        (editing ? editForm.priority : task.priority) === priority && styles.dropdownModalItemSelected,
+                      ]}
+                      onPress={() => {
+                        if (editing) {
+                          setEditForm((prev) => ({ ...prev, priority: priority as DevTaskPriority }));
+                        } else {
+                          onUpdate(task.id, { priority: priority as DevTaskPriority });
+                        }
+                        setShowPriorityDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownModalItemText,
+                          (editing ? editForm.priority : task.priority) === priority && styles.dropdownModalItemTextSelected,
+                        ]}
+                      >
+                        {PRIORITY_OPTIONS.find((o) => o.value === priority)?.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       )}
     </View>
   );
