@@ -47,9 +47,6 @@ export function CurrentTimeIndicator() {
 
       {/* Line */}
       <View style={styles.line} />
-
-      {/* Circle indicator */}
-      <View style={styles.circle} />
     </View>
   );
 }
@@ -76,6 +73,7 @@ const styles = StyleSheet.create({
     elevation: 4,
     transform: [{ translateX: -100 }],
     paddingRight: 12,
+    zIndex: 10,
   },
   timeLabelText: {
     color: "#0A0F1E",
@@ -84,7 +82,7 @@ const styles = StyleSheet.create({
   },
   line: {
     position: "absolute",
-    left: 48,
+    left: 0,
     right: 0,
     height: 2,
     backgroundColor: "#22C55E",
@@ -93,20 +91,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 10,
     elevation: 2,
-  },
-  circle: {
-    position: "absolute",
-    left: 48,
-    top: -6,
-    width: 12,
-    height: 12,
-    backgroundColor: "#22C55E",
-    borderRadius: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-    zIndex: 10,
   },
 });
