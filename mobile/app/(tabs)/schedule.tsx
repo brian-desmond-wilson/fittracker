@@ -17,6 +17,7 @@ import {
   Plus,
   Settings,
   Zap,
+  Bell,
 } from "lucide-react-native";
 import { TimeGrid, HOUR_HEIGHT } from "@/src/components/schedule/TimeGrid";
 import { CurrentTimeIndicator } from "@/src/components/schedule/CurrentTimeIndicator";
@@ -24,6 +25,7 @@ import { DraggableEventCard } from "@/src/components/schedule/DraggableEventCard
 import { CategoryManager } from "@/src/components/schedule/CategoryManager";
 import { EventDetailModal } from "@/src/components/schedule/EventDetailModal";
 import { EditEventModal } from "@/src/components/schedule/EditEventModal";
+import { NotificationSettings } from "@/src/components/schedule/NotificationSettings";
 import {
   ScheduleEvent,
   EventCategory,
@@ -34,6 +36,7 @@ import {
   getEventsForDate,
   detectOverlappingEvents,
 } from "@/src/lib/schedule-utils";
+import { useNotifications } from "@/src/hooks/useNotifications";
 
 export default function Schedule() {
   const [loading, setLoading] = useState(true);
@@ -47,10 +50,14 @@ export default function Schedule() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const timelineHeight = 24 * HOUR_HEIGHT;
+
+  // Initialize notifications hook
+  const { rescheduleAll, updateSettings, scheduleNotification, cancelNotification } = useNotifications();
 
   useEffect(() => {
     loadScheduleData();
@@ -122,6 +129,9 @@ export default function Schedule() {
       setEvents(enhancedEvents);
       setCategories((categoriesData || []) as EventCategory[]);
       setTemplates((templatesData || []) as EventTemplate[]);
+
+      // Schedule notifications for all events
+      await rescheduleAll(enhancedEvents, selectedDate);
     } catch (error) {
       console.error("Error loading schedule data:", error);
     } finally {
@@ -183,6 +193,9 @@ export default function Schedule() {
     if (!selectedEvent) return;
 
     try {
+      // Cancel notifications for this event
+      await cancelNotification(selectedEvent.id);
+
       const { error } = await supabase
         .from("schedule_events")
         .delete()
@@ -228,11 +241,10 @@ export default function Schedule() {
   ) => {
     try {
       // Optimistically update the local state immediately
+      const updatedEvent = { ...event, start_time: newStartTime, end_time: newEndTime };
       setEvents((prevEvents) =>
         prevEvents.map((e) =>
-          e.id === event.id
-            ? { ...e, start_time: newStartTime, end_time: newEndTime }
-            : e
+          e.id === event.id ? updatedEvent : e
         )
       );
 
@@ -249,7 +261,12 @@ export default function Schedule() {
         console.error("Error updating event time:", error);
         // Revert on error by reloading
         await loadScheduleData();
+        return;
       }
+
+      // Reschedule notifications for this event with new time
+      await cancelNotification(event.id);
+      await scheduleNotification(updatedEvent, selectedDate);
     } catch (error) {
       console.error("Error updating event time:", error);
       // Revert on error by reloading
@@ -278,6 +295,12 @@ export default function Schedule() {
             </Text>
           </View>
           <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setShowNotificationSettings(true)}
+            >
+              <Bell size={20} color="#9CA3AF" />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerButton}
               onPress={() => setShowCategoryManager(true)}
@@ -463,6 +486,13 @@ export default function Schedule() {
         onClose={() => setShowCategoryManager(false)}
         categories={categories}
         onUpdate={loadScheduleData}
+      />
+
+      {/* Notification Settings */}
+      <NotificationSettings
+        visible={showNotificationSettings}
+        onClose={() => setShowNotificationSettings(false)}
+        onSave={(settings) => updateSettings(settings, events, selectedDate)}
       />
     </SafeAreaView>
   );
