@@ -20,7 +20,7 @@ import {
 } from "lucide-react-native";
 import { TimeGrid, HOUR_HEIGHT } from "@/src/components/schedule/TimeGrid";
 import { CurrentTimeIndicator } from "@/src/components/schedule/CurrentTimeIndicator";
-import { EventCard } from "@/src/components/schedule/EventCard";
+import { DraggableEventCard } from "@/src/components/schedule/DraggableEventCard";
 import { CategoryManager } from "@/src/components/schedule/CategoryManager";
 import { EventDetailModal } from "@/src/components/schedule/EventDetailModal";
 import { EditEventModal } from "@/src/components/schedule/EditEventModal";
@@ -47,6 +47,7 @@ export default function Schedule() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const timelineHeight = 24 * HOUR_HEIGHT;
@@ -220,6 +221,42 @@ export default function Schedule() {
     }
   };
 
+  const handleEventDrop = async (
+    event: ScheduleEvent,
+    newStartTime: string,
+    newEndTime: string
+  ) => {
+    try {
+      // Optimistically update the local state immediately
+      setEvents((prevEvents) =>
+        prevEvents.map((e) =>
+          e.id === event.id
+            ? { ...e, start_time: newStartTime, end_time: newEndTime }
+            : e
+        )
+      );
+
+      // Update the database in the background
+      const { error } = await supabase
+        .from("schedule_events")
+        .update({
+          start_time: newStartTime,
+          end_time: newEndTime,
+        })
+        .eq("id", event.id);
+
+      if (error) {
+        console.error("Error updating event time:", error);
+        // Revert on error by reloading
+        await loadScheduleData();
+      }
+    } catch (error) {
+      console.error("Error updating event time:", error);
+      // Revert on error by reloading
+      await loadScheduleData();
+    }
+  };
+
   const eventPositions = detectOverlappingEvents(events);
 
   if (loading) {
@@ -293,6 +330,7 @@ export default function Schedule() {
             ref={scrollViewRef}
             style={styles.scrollView}
             showsVerticalScrollIndicator={false}
+            scrollEnabled={scrollEnabled}
           >
             <View style={{ height: timelineHeight }}>
               <TimeGrid />
@@ -302,7 +340,7 @@ export default function Schedule() {
                 <View style={{ height: timelineHeight }}>
                   {eventPositions.map(
                     ({ event, top, height, column, totalColumns }) => (
-                      <EventCard
+                      <DraggableEventCard
                         key={event.id}
                         event={event}
                         style={{
@@ -317,6 +355,9 @@ export default function Schedule() {
                           right: totalColumns === 1 ? 8 : undefined,
                         }}
                         onClick={() => handleEventClick(event)}
+                        onDrop={handleEventDrop}
+                        onDragStart={() => setScrollEnabled(false)}
+                        onDragEnd={() => setScrollEnabled(true)}
                       />
                     )
                   )}
