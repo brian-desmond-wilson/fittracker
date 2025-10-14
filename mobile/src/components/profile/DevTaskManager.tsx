@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  TouchableWithoutFeedback,
 } from "react-native";
 import {
   SlidersHorizontal,
@@ -94,6 +95,12 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
+
+  // Dropdown visibility states
+  const [showSectionDropdown, setShowSectionDropdown] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
 
   const [newTask, setNewTask] = useState({
     title: "",
@@ -250,7 +257,7 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
           style: "destructive",
           onPress: async () => {
             try {
-              const { error } = await supabase
+              const { error} = await supabase
                 .from("dev_tasks")
                 .delete()
                 .eq("id", id);
@@ -268,8 +275,16 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
     );
   };
 
+  const closeAllDropdowns = () => {
+    setShowSectionDropdown(false);
+    setShowStatusDropdown(false);
+    setShowPriorityDropdown(false);
+    setShowSortDropdown(false);
+  };
+
   return (
-    <View style={styles.container}>
+    <TouchableWithoutFeedback onPress={closeAllDropdowns}>
+      <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -317,14 +332,10 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
         <TouchableOpacity
           style={styles.filterButton}
           onPress={() => {
-            Alert.alert(
-              "Section",
-              "Choose a section",
-              SECTION_OPTIONS.map((option) => ({
-                text: option.label,
-                onPress: () => setSectionFilter(option.value),
-              }))
-            );
+            setShowSectionDropdown(!showSectionDropdown);
+            setShowStatusDropdown(false);
+            setShowPriorityDropdown(false);
+            setShowSortDropdown(false);
           }}
         >
           <Text style={styles.filterButtonText}>
@@ -336,14 +347,10 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
         <TouchableOpacity
           style={styles.filterButton}
           onPress={() => {
-            Alert.alert(
-              "Status",
-              "Choose a status",
-              STATUS_OPTIONS.map((option) => ({
-                text: option.label,
-                onPress: () => setStatusFilter(option.value),
-              }))
-            );
+            setShowStatusDropdown(!showStatusDropdown);
+            setShowSectionDropdown(false);
+            setShowPriorityDropdown(false);
+            setShowSortDropdown(false);
           }}
         >
           <Text style={styles.filterButtonText}>
@@ -357,14 +364,10 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
         <TouchableOpacity
           style={styles.filterButton}
           onPress={() => {
-            Alert.alert(
-              "Priority",
-              "Choose a priority",
-              PRIORITY_OPTIONS.map((option) => ({
-                text: option.label,
-                onPress: () => setPriorityFilter(option.value),
-              }))
-            );
+            setShowPriorityDropdown(!showPriorityDropdown);
+            setShowSectionDropdown(false);
+            setShowStatusDropdown(false);
+            setShowSortDropdown(false);
           }}
         >
           <Text style={styles.filterButtonText}>
@@ -376,14 +379,10 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
         <TouchableOpacity
           style={styles.filterButton}
           onPress={() => {
-            Alert.alert(
-              "Sort",
-              "Choose sort order",
-              SORT_OPTIONS.map((option) => ({
-                text: option.label,
-                onPress: () => setSortOption(option.value),
-              }))
-            );
+            setShowSortDropdown(!showSortDropdown);
+            setShowSectionDropdown(false);
+            setShowStatusDropdown(false);
+            setShowPriorityDropdown(false);
           }}
         >
           <Text style={styles.filterButtonText}>
@@ -392,6 +391,151 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
           <ChevronDown size={16} color="#9CA3AF" />
         </TouchableOpacity>
       </View>
+
+      {/* Dropdown Modals */}
+      {showSectionDropdown && (
+        <Modal transparent visible={showSectionDropdown} animationType="fade">
+          <TouchableWithoutFeedback onPress={() => setShowSectionDropdown(false)}>
+            <View style={styles.dropdownModalOverlay}>
+              <View style={styles.dropdownModalContent}>
+                <Text style={styles.dropdownModalTitle}>Section</Text>
+                <ScrollView style={styles.dropdownModalScroll}>
+                  {SECTION_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.dropdownModalItem,
+                        option.value === sectionFilter && styles.dropdownModalItemSelected,
+                      ]}
+                      onPress={() => {
+                        setSectionFilter(option.value);
+                        setShowSectionDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownModalItemText,
+                          option.value === sectionFilter && styles.dropdownModalItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
+
+      {showStatusDropdown && (
+        <Modal transparent visible={showStatusDropdown} animationType="fade">
+          <TouchableWithoutFeedback onPress={() => setShowStatusDropdown(false)}>
+            <View style={styles.dropdownModalOverlay}>
+              <View style={styles.dropdownModalContent}>
+                <Text style={styles.dropdownModalTitle}>Status</Text>
+                <ScrollView style={styles.dropdownModalScroll}>
+                  {STATUS_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.dropdownModalItem,
+                        option.value === statusFilter && styles.dropdownModalItemSelected,
+                      ]}
+                      onPress={() => {
+                        setStatusFilter(option.value);
+                        setShowStatusDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownModalItemText,
+                          option.value === statusFilter && styles.dropdownModalItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
+
+      {showPriorityDropdown && (
+        <Modal transparent visible={showPriorityDropdown} animationType="fade">
+          <TouchableWithoutFeedback onPress={() => setShowPriorityDropdown(false)}>
+            <View style={styles.dropdownModalOverlay}>
+              <View style={styles.dropdownModalContent}>
+                <Text style={styles.dropdownModalTitle}>Priority</Text>
+                <ScrollView style={styles.dropdownModalScroll}>
+                  {PRIORITY_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.dropdownModalItem,
+                        option.value === priorityFilter && styles.dropdownModalItemSelected,
+                      ]}
+                      onPress={() => {
+                        setPriorityFilter(option.value);
+                        setShowPriorityDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownModalItemText,
+                          option.value === priorityFilter && styles.dropdownModalItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
+
+      {showSortDropdown && (
+        <Modal transparent visible={showSortDropdown} animationType="fade">
+          <TouchableWithoutFeedback onPress={() => setShowSortDropdown(false)}>
+            <View style={styles.dropdownModalOverlay}>
+              <View style={styles.dropdownModalContent}>
+                <Text style={styles.dropdownModalTitle}>Sort</Text>
+                <ScrollView style={styles.dropdownModalScroll}>
+                  {SORT_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.dropdownModalItem,
+                        option.value === sortOption && styles.dropdownModalItemSelected,
+                      ]}
+                      onPress={() => {
+                        setSortOption(option.value);
+                        setShowSortDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownModalItemText,
+                          option.value === sortOption && styles.dropdownModalItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      )}
 
       {/* Add Task Button */}
       <TouchableOpacity
@@ -574,7 +718,8 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
           </View>
         </View>
       </Modal>
-    </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -958,6 +1103,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#FFFFFF",
     fontWeight: "500",
+  },
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  dropdownModalContent: {
+    backgroundColor: "#111827",
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "#374151",
+    width: "100%",
+    maxWidth: 400,
+    maxHeight: 400,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  dropdownModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: "#374151",
+  },
+  dropdownModalScroll: {
+    maxHeight: 300,
+  },
+  dropdownModalItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#1F2937",
+  },
+  dropdownModalItemSelected: {
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+  },
+  dropdownModalItemText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "400",
+  },
+  dropdownModalItemTextSelected: {
+    color: "#22C55E",
+    fontWeight: "600",
   },
   addTaskButton: {
     flexDirection: "row",
