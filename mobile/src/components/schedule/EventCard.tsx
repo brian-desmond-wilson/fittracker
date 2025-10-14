@@ -50,7 +50,10 @@ export const EventCard = memo(function EventCard({
     return endTotal - startTotal;
   };
 
-  const isShortEvent = getDurationMinutes() <= 15;
+  const durationMinutes = getDurationMinutes();
+  const isShortEvent = false; // Disable ultra-compact layout
+  const isMediumEvent = durationMinutes < 45; // Use consistent medium layout for all events < 45 min
+  const showCategory = durationMinutes >= 60; // Only show category for events 60+ minutes
 
   const borderColor = event.category?.color || "#6B7280";
 
@@ -98,8 +101,39 @@ export const EventCard = memo(function EventCard({
             <View style={styles.statusIcon}>{getStatusIcon()}</View>
           )}
         </View>
+      ) : isMediumEvent ? (
+        // Medium event layout - title and time on same row
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            {IconComponent && (
+              <IconComponent
+                size={14}
+                color={event.category?.color}
+                style={styles.icon}
+              />
+            )}
+            <Text
+              style={[
+                styles.titleMedium,
+                event.status === "cancelled" && styles.strikethrough,
+              ]}
+              numberOfLines={1}
+            >
+              {event.title}
+            </Text>
+            {event.is_recurring && (
+              <Repeat size={10} color="#6B7280" style={styles.icon} />
+            )}
+            <Text style={styles.timeInline} numberOfLines={1}>
+              {formatTime(event.start_time)} - {formatTime(event.end_time)}
+            </Text>
+          </View>
+          {getStatusIcon() && (
+            <View style={styles.statusIcon}>{getStatusIcon()}</View>
+          )}
+        </View>
       ) : (
-        // Standard layout
+        // Standard layout for longer events
         <>
           <View style={styles.header}>
             <View style={styles.titleRow}>
@@ -127,10 +161,10 @@ export const EventCard = memo(function EventCard({
               <View style={styles.statusIcon}>{getStatusIcon()}</View>
             )}
           </View>
-          <Text style={styles.time}>
+          <Text style={styles.time} numberOfLines={1}>
             {formatTime(event.start_time)} - {formatTime(event.end_time)}
           </Text>
-          {event.category && (
+          {showCategory && event.category && (
             <Text style={styles.category} numberOfLines={1}>
               {event.category.name}
             </Text>
@@ -153,13 +187,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 4,
+    justifyContent: "center",
   },
   normalPadding: {
     padding: 8,
     gap: 4,
   },
   shortPadding: {
-    padding: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
   },
   completed: {
     opacity: 0.6,
@@ -170,7 +206,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 8,
   },
   titleRow: {
@@ -188,9 +224,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     flex: 1,
   },
+  titleMedium: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#FFFFFF",
+    flexShrink: 1,
+  },
   time: {
     fontSize: 12,
     color: "#9CA3AF",
+  },
+  timeInline: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    flexShrink: 0,
+    marginLeft: 8,
   },
   category: {
     fontSize: 12,
