@@ -21,6 +21,7 @@ import {
   CircleDot,
   Trash2,
   Edit3,
+  X,
 } from "lucide-react-native";
 import { supabase } from "../../lib/supabase";
 import {
@@ -314,19 +315,25 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
         </View>
       </View>
 
-      {/* Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters}>
-        <View style={styles.searchContainer}>
-          <Search size={16} color="#6B7280" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search tasks..."
-            placeholderTextColor="#6B7280"
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-          />
-        </View>
-      </ScrollView>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Search size={16} color="#6B7280" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search tasks..."
+          placeholderTextColor="#6B7280"
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+        />
+        {searchTerm.length > 0 && (
+          <TouchableOpacity
+            onPress={() => setSearchTerm("")}
+            style={styles.clearButton}
+          >
+            <X size={16} color="#9CA3AF" />
+          </TouchableOpacity>
+        )}
+      </View>
 
       <View style={styles.filterRow}>
         <TouchableOpacity
@@ -1059,9 +1066,6 @@ const styles = StyleSheet.create({
     color: "#9CA3AF",
     fontWeight: "500",
   },
-  filters: {
-    marginBottom: 12,
-  },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1071,8 +1075,7 @@ const styles = StyleSheet.create({
     borderColor: "#374151",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginRight: 8,
-    minWidth: 250,
+    marginBottom: 12,
   },
   searchIcon: {
     marginRight: 8,
@@ -1081,6 +1084,10 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#FFFFFF",
     fontSize: 14,
+  },
+  clearButton: {
+    padding: 4,
+    marginLeft: 4,
   },
   filterRow: {
     flexDirection: "row",
