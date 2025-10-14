@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
@@ -29,6 +30,8 @@ export default function Profile() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [userEmail, setUserEmail] = useState("");
   const [memberSince, setMemberSince] = useState("");
   const [userId, setUserId] = useState("");
@@ -82,7 +85,15 @@ export default function Profile() {
       console.error("Error loading user data:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadUserData();
+    // Increment refresh key to force DevTaskManager to remount and reload data
+    setRefreshKey(prev => prev + 1);
   }
 
   async function handleSave() {
@@ -161,6 +172,16 @@ export default function Profile() {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#22C55E"
+              colors={["#22C55E"]}
+              title="Pull to refresh"
+              titleColor="#9CA3AF"
+            />
+          }
         >
           {/* User Profile Card */}
           <View style={styles.card}>
@@ -273,7 +294,7 @@ export default function Profile() {
           </View>
 
           {/* Dev Notebook - Admin Only */}
-          {isAdmin && <DevTaskManager userId={userId} />}
+          {isAdmin && <DevTaskManager key={refreshKey} userId={userId} />}
 
           {/* Sign Out Button */}
           <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
