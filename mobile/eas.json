@@ -16,6 +16,7 @@
       "node": "20.19.4"
     },
     "production": {
+      "autoIncrement": true,
       "ios": {
         "simulator": false
       }
