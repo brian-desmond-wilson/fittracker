@@ -41,12 +41,13 @@ export function DraggableEventCard({
         onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponder: (_, gestureState) => {
           const isDraggingVertically = Math.abs(gestureState.dy) > 5;
-          console.log('onMoveShouldSetPanResponder:', { dy: gestureState.dy, isDraggingVertically });
           if (isDraggingVertically && !isDraggingRef.current) {
-            console.log('Setting isDragging and disabling scroll');
             isDraggingRef.current = true;
             setIsDragging(true);
-            onDragStart?.();
+            if (onDragStart) {
+              // Use setTimeout to ensure state update propagates
+              setTimeout(() => onDragStart(), 0);
+            }
           }
           return isDraggingVertically;
         },
@@ -55,7 +56,6 @@ export function DraggableEventCard({
         onShouldBlockNativeResponder: () => true,
 
         onPanResponderGrant: () => {
-          console.log('onPanResponderGrant called');
           // Don't set dragging yet, wait for move
           pan.setOffset({
             x: 0,
@@ -68,6 +68,14 @@ export function DraggableEventCard({
           // Update pan position when dragging vertically
           const isDraggingVertically = Math.abs(gestureState.dy) > 5;
           if (isDraggingVertically) {
+            // Disable scroll if not already disabled
+            if (!isDraggingRef.current) {
+              isDraggingRef.current = true;
+              setIsDragging(true);
+              if (onDragStart) {
+                setTimeout(() => onDragStart(), 0);
+              }
+            }
             pan.setValue({ x: 0, y: gestureState.dy });
           }
         },
@@ -78,19 +86,11 @@ export function DraggableEventCard({
           // Check if there was significant vertical movement
           const hadVerticalMovement = Math.abs(gestureState.dy) > 5;
 
-          console.log('PanResponder Release:', {
-            dy: gestureState.dy,
-            dx: gestureState.dx,
-            isDraggingRef: isDraggingRef.current,
-            hadVerticalMovement
-          });
-
           // If was dragging or had vertical movement, handle the drop
           if (isDraggingRef.current || hadVerticalMovement) {
             // Continue with drag logic below
           } else {
             // Was a tap - call onClick
-            console.log('Calling onClick for event:', event.title);
             pan.setValue({ x: 0, y: 0 });
             onClick();
             return;
