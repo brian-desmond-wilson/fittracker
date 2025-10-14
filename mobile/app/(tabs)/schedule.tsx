@@ -22,6 +22,8 @@ import { TimeGrid, HOUR_HEIGHT } from "@/src/components/schedule/TimeGrid";
 import { CurrentTimeIndicator } from "@/src/components/schedule/CurrentTimeIndicator";
 import { EventCard } from "@/src/components/schedule/EventCard";
 import { CategoryManager } from "@/src/components/schedule/CategoryManager";
+import { EventDetailModal } from "@/src/components/schedule/EventDetailModal";
+import { EditEventModal } from "@/src/components/schedule/EditEventModal";
 import {
   ScheduleEvent,
   EventCategory,
@@ -41,6 +43,7 @@ export default function Schedule() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
@@ -153,6 +156,68 @@ export default function Schedule() {
   const handleEventClick = (event: ScheduleEvent) => {
     setSelectedEvent(event);
     setShowEventModal(true);
+  };
+
+  const handleUpdateStatus = async (status: string) => {
+    if (!selectedEvent) return;
+
+    try {
+      const { error } = await supabase
+        .from("schedule_events")
+        .update({ status })
+        .eq("id", selectedEvent.id);
+
+      if (error) throw error;
+
+      // Reload events
+      await loadScheduleData();
+      // Update selected event
+      setSelectedEvent({ ...selectedEvent, status });
+    } catch (error) {
+      console.error("Error updating event status:", error);
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!selectedEvent) return;
+
+    try {
+      const { error } = await supabase
+        .from("schedule_events")
+        .delete()
+        .eq("id", selectedEvent.id);
+
+      if (error) throw error;
+
+      setShowEventModal(false);
+      setSelectedEvent(null);
+      await loadScheduleData();
+    } catch (error) {
+      console.error("Error deleting event:", error);
+    }
+  };
+
+  const handleEditEvent = () => {
+    setShowEventModal(false);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEvent = async (updates: Partial<ScheduleEvent>) => {
+    if (!selectedEvent) return;
+
+    try {
+      const { error } = await supabase
+        .from("schedule_events")
+        .update(updates)
+        .eq("id", selectedEvent.id);
+
+      if (error) throw error;
+
+      setShowEditModal(false);
+      await loadScheduleData();
+    } catch (error) {
+      console.error("Error updating event:", error);
+    }
   };
 
   const eventPositions = detectOverlappingEvents(events);
@@ -274,31 +339,24 @@ export default function Schedule() {
         </TouchableOpacity>
       </View>
 
-      {/* Event Detail Modal (simplified) */}
-      <Modal
+      {/* Event Detail Modal */}
+      <EventDetailModal
         visible={showEventModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowEventModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{selectedEvent?.title}</Text>
-            <Text style={styles.modalText}>
-              {selectedEvent?.start_time} - {selectedEvent?.end_time}
-            </Text>
-            {selectedEvent?.notes && (
-              <Text style={styles.modalText}>{selectedEvent.notes}</Text>
-            )}
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => setShowEventModal(false)}
-            >
-              <Text style={styles.modalButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        event={selectedEvent}
+        onClose={() => setShowEventModal(false)}
+        onEdit={handleEditEvent}
+        onDelete={handleDeleteEvent}
+        onUpdateStatus={handleUpdateStatus}
+      />
+
+      {/* Edit Event Modal */}
+      <EditEventModal
+        visible={showEditModal}
+        event={selectedEvent}
+        categories={categories}
+        onClose={() => setShowEditModal(false)}
+        onSave={handleSaveEvent}
+      />
 
       {/* Add Event Modal (simplified) */}
       <Modal
