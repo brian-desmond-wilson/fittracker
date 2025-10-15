@@ -27,6 +27,7 @@ import { CategoryManager } from "@/src/components/schedule/CategoryManager";
 import { EventDetailModal } from "@/src/components/schedule/EventDetailModal";
 import { EditEventModal } from "@/src/components/schedule/EditEventModal";
 import { NotificationSettings } from "@/src/components/schedule/NotificationSettings";
+import { AddEventModal } from "@/src/components/schedule/AddEventModal";
 import {
   ScheduleEvent,
   EventCategory,
@@ -108,8 +109,12 @@ export default function Schedule() {
         .or(`user_id.eq.${user.id},is_system_template.eq.true`)
         .order("title");
 
-      // Fetch events
-      const targetDateStr = selectedDate.toISOString().split("T")[0];
+      // Fetch events - use local date string to avoid timezone issues
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      const targetDateStr = `${year}-${month}-${day}`;
+
       const { data: allEvents } = await supabase
         .from("schedule_events")
         .select("*")
@@ -440,28 +445,14 @@ export default function Schedule() {
         onSave={handleSaveEvent}
       />
 
-      {/* Add Event Modal (simplified) */}
-      <Modal
+      {/* Add Event Modal */}
+      <AddEventModal
         visible={showAddModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Event</Text>
-            <Text style={styles.modalText}>
-              Feature coming soon - will match PWA functionality
-            </Text>
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => setShowAddModal(false)}
-            >
-              <Text style={styles.modalButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowAddModal(false)}
+        categories={categories}
+        selectedDate={selectedDate}
+        onEventCreated={loadScheduleData}
+      />
 
       {/* Templates Modal (simplified) */}
       <Modal
