@@ -103,6 +103,11 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
+  // Add Task modal dropdown states
+  const [showAddSectionDropdown, setShowAddSectionDropdown] = useState(false);
+  const [showAddPriorityDropdown, setShowAddPriorityDropdown] = useState(false);
+  const [showAddStatusDropdown, setShowAddStatusDropdown] = useState(false);
+
   const [newTask, setNewTask] = useState({
     title: "",
     description: "",
@@ -627,20 +632,7 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
             <Text style={styles.label}>SECTION</Text>
             <TouchableOpacity
               style={styles.select}
-              onPress={() => {
-                Alert.alert(
-                  "Section",
-                  "Choose a section",
-                  SECTION_OPTIONS.filter((o) => o.value !== "all").map((option) => ({
-                    text: option.label,
-                    onPress: () =>
-                      setNewTask((prev) => ({
-                        ...prev,
-                        section: option.value as DevTaskSection,
-                      })),
-                  }))
-                );
-              }}
+              onPress={() => setShowAddSectionDropdown(true)}
             >
               <Text style={styles.selectText}>
                 {SECTION_OPTIONS.find((o) => o.value === newTask.section)?.label}
@@ -651,20 +643,7 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
             <Text style={styles.label}>PRIORITY</Text>
             <TouchableOpacity
               style={styles.select}
-              onPress={() => {
-                Alert.alert(
-                  "Priority",
-                  "Choose a priority",
-                  PRIORITY_OPTIONS.filter((o) => o.value !== "all").map((option) => ({
-                    text: option.label,
-                    onPress: () =>
-                      setNewTask((prev) => ({
-                        ...prev,
-                        priority: option.value as DevTaskPriority,
-                      })),
-                  }))
-                );
-              }}
+              onPress={() => setShowAddPriorityDropdown(true)}
             >
               <Text style={styles.selectText}>
                 {PRIORITY_OPTIONS.find((o) => o.value === newTask.priority)?.label}
@@ -688,20 +667,7 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
             <Text style={styles.label}>STATUS</Text>
             <TouchableOpacity
               style={styles.select}
-              onPress={() => {
-                Alert.alert(
-                  "Status",
-                  "Choose a status",
-                  ["open", "in_progress", "done"].map((status) => ({
-                    text: STATUS_LABELS[status as DevTaskStatus],
-                    onPress: () =>
-                      setNewTask((prev) => ({
-                        ...prev,
-                        status: status as DevTaskStatus,
-                      })),
-                  }))
-                );
-              }}
+              onPress={() => setShowAddStatusDropdown(true)}
             >
               <Text style={styles.selectText}>{STATUS_LABELS[newTask.status]}</Text>
               <ChevronDown size={16} color="#9CA3AF" />
@@ -722,6 +688,120 @@ export function DevTaskManager({ userId }: DevTaskManagerProps) {
                 <Text style={styles.addButtonText}>Add Task</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Section Dropdown Modal */}
+            {showAddSectionDropdown && (
+              <Modal transparent visible={showAddSectionDropdown} animationType="fade">
+                <TouchableWithoutFeedback onPress={() => setShowAddSectionDropdown(false)}>
+                  <View style={styles.dropdownModalOverlay}>
+                    <View style={styles.dropdownModalContent}>
+                      <Text style={styles.dropdownModalTitle}>Section</Text>
+                      <Text style={styles.dropdownModalSubtitle}>Choose a section for this task</Text>
+                      <ScrollView style={styles.dropdownModalScroll}>
+                        {SECTION_OPTIONS.filter((o) => o.value !== "all").map((option) => (
+                          <TouchableOpacity
+                            key={option.value}
+                            style={[
+                              styles.dropdownModalItem,
+                              option.value === newTask.section && styles.dropdownModalItemSelected,
+                            ]}
+                            onPress={() => {
+                              setNewTask((prev) => ({ ...prev, section: option.value as DevTaskSection }));
+                              setShowAddSectionDropdown(false);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.dropdownModalItemText,
+                                option.value === newTask.section && styles.dropdownModalItemTextSelected,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                </TouchableWithoutFeedback>
+              </Modal>
+            )}
+
+            {/* Priority Dropdown Modal */}
+            {showAddPriorityDropdown && (
+              <Modal transparent visible={showAddPriorityDropdown} animationType="fade">
+                <TouchableWithoutFeedback onPress={() => setShowAddPriorityDropdown(false)}>
+                  <View style={styles.dropdownModalOverlay}>
+                    <View style={styles.dropdownModalContent}>
+                      <Text style={styles.dropdownModalTitle}>Priority</Text>
+                      <Text style={styles.dropdownModalSubtitle}>Choose a priority level</Text>
+                      <ScrollView style={styles.dropdownModalScroll}>
+                        {PRIORITY_OPTIONS.filter((o) => o.value !== "all").map((option) => (
+                          <TouchableOpacity
+                            key={option.value}
+                            style={[
+                              styles.dropdownModalItem,
+                              option.value === newTask.priority && styles.dropdownModalItemSelected,
+                            ]}
+                            onPress={() => {
+                              setNewTask((prev) => ({ ...prev, priority: option.value as DevTaskPriority }));
+                              setShowAddPriorityDropdown(false);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.dropdownModalItemText,
+                                option.value === newTask.priority && styles.dropdownModalItemTextSelected,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                </TouchableWithoutFeedback>
+              </Modal>
+            )}
+
+            {/* Status Dropdown Modal */}
+            {showAddStatusDropdown && (
+              <Modal transparent visible={showAddStatusDropdown} animationType="fade">
+                <TouchableWithoutFeedback onPress={() => setShowAddStatusDropdown(false)}>
+                  <View style={styles.dropdownModalOverlay}>
+                    <View style={styles.dropdownModalContent}>
+                      <Text style={styles.dropdownModalTitle}>Status</Text>
+                      <Text style={styles.dropdownModalSubtitle}>Choose a status for this task</Text>
+                      <ScrollView style={styles.dropdownModalScroll}>
+                        {["open", "in_progress", "done"].map((status) => (
+                          <TouchableOpacity
+                            key={status}
+                            style={[
+                              styles.dropdownModalItem,
+                              newTask.status === status && styles.dropdownModalItemSelected,
+                            ]}
+                            onPress={() => {
+                              setNewTask((prev) => ({ ...prev, status: status as DevTaskStatus }));
+                              setShowAddStatusDropdown(false);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.dropdownModalItemText,
+                                newTask.status === status && styles.dropdownModalItemTextSelected,
+                              ]}
+                            >
+                              {STATUS_LABELS[status as DevTaskStatus]}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
+                </TouchableWithoutFeedback>
+              </Modal>
+            )}
           </View>
         </View>
       </Modal>
@@ -1190,7 +1270,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  dropdownModalSubtitle: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     borderBottomWidth: 2,
     borderBottomColor: "#374151",
   },
