@@ -1,5 +1,6 @@
 import React, { useRef, useState, useMemo } from "react";
-import { Animated, PanResponder, View, StyleSheet } from "react-native";
+import { PanResponder, View, StyleSheet } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { EventCard } from "./EventCard";
 import { ScheduleEvent } from "../../types/schedule";
 import { HOUR_HEIGHT } from "./TimeGrid";
@@ -21,18 +22,20 @@ export function DraggableEventCard({
   onDragStart,
   onDragEnd,
 }: DraggableEventCardProps) {
-  const pan = useRef(new Animated.ValueXY()).current;
+  const translateY = useSharedValue(0);
   const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
   const originalTopRef = useRef(style.top);
+  const currentDragY = useRef(0);
 
   // Update originalTop when the component re-renders with new position
   React.useEffect(() => {
     if (!isDragging) {
       originalTopRef.current = style.top;
-      pan.setValue({ x: 0, y: 0 });
+      translateY.value = 0;
+      currentDragY.current = 0;
     }
-  }, [style.top, isDragging, pan]);
+  }, [style.top, isDragging, translateY]);
 
   const panResponder = useMemo(
     () =>
@@ -57,11 +60,7 @@ export function DraggableEventCard({
 
         onPanResponderGrant: () => {
           // Don't set dragging yet, wait for move
-          pan.setOffset({
-            x: 0,
-            y: (pan.y as any)._value,
-          });
-          pan.setValue({ x: 0, y: 0 });
+          currentDragY.current = translateY.value;
         },
 
         onPanResponderMove: (evt, gestureState) => {
@@ -76,13 +75,12 @@ export function DraggableEventCard({
                 setTimeout(() => onDragStart(), 0);
               }
             }
-            pan.setValue({ x: 0, y: gestureState.dy });
+            translateY.value = gestureState.dy;
+            currentDragY.current = gestureState.dy;
           }
         },
 
         onPanResponderRelease: (_, gestureState) => {
-          pan.flattenOffset();
-
           // Check if there was significant vertical movement
           const hadVerticalMovement = Math.abs(gestureState.dy) > 5;
 
@@ -91,13 +89,14 @@ export function DraggableEventCard({
             // Continue with drag logic below
           } else {
             // Was a tap - call onClick
-            pan.setValue({ x: 0, y: 0 });
+            translateY.value = 0;
+            currentDragY.current = 0;
             onClick();
             return;
           }
 
           // Calculate new time based on drag distance
-          const draggedY = (pan.y as any)._value;
+          const draggedY = currentDragY.current;
           const newTop = originalTopRef.current + draggedY;
 
           // Snap to 15-minute intervals
@@ -125,11 +124,11 @@ export function DraggableEventCard({
           const newEndTime = `${newEndHour.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}:00`;
 
           // Animate to snapped position
-          Animated.spring(pan, {
-            toValue: { x: 0, y: snappedTop - originalTopRef.current },
-            useNativeDriver: false,
-            friction: 7,
-          }).start(() => {
+          const targetY = snappedTop - originalTopRef.current;
+          translateY.value = withSpring(targetY, {
+            damping: 15,
+            stiffness: 150,
+          }, () => {
             isDraggingRef.current = false;
             setIsDragging(false);
             onDragEnd?.();
@@ -138,24 +137,26 @@ export function DraggableEventCard({
             if (newStartTime !== event.start_time) {
               onDrop(event, newStartTime, newEndTime);
             } else {
-              pan.setValue({ x: 0, y: 0 });
+              translateY.value = 0;
+              currentDragY.current = 0;
             }
           });
         },
       }),
-    [pan, event, onClick, onDrop, onDragStart, onDragEnd, originalTopRef]
+    [translateY, event, onClick, onDrop, onDragStart, onDragEnd]
   );
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: translateY.value }],
+      zIndex: isDragging ? 1000 : 1,
+      opacity: isDragging ? 0.8 : 1,
+    };
+  });
 
   return (
     <Animated.View
-      style={[
-        style,
-        {
-          transform: [{ translateY: pan.y }],
-          zIndex: isDragging ? 1000 : 1,
-          opacity: isDragging ? 0.8 : 1,
-        },
-      ]}
+      style={[style, animatedStyle]}
       {...panResponder.panHandlers}
     >
       <View style={styles.card}>
