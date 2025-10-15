@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet, AppState, AppStateStatus } from "react-native";
 import { supabase } from "@/src/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
+import { shouldRescheduleNotifications } from "@/src/services/notificationService";
 
 const styles = StyleSheet.create({
   loadingContainer: {
@@ -20,6 +21,7 @@ export default function RootLayout() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const segments = useSegments();
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     // Get initial session
@@ -37,6 +39,36 @@ export default function RootLayout() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Listen for app state changes to trigger notification rescheduling
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [session]);
+
+  const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+    // App is coming to foreground
+    if (
+      appState.current.match(/inactive|background/) &&
+      nextAppState === 'active' &&
+      session
+    ) {
+      console.log('=== App became active ===');
+
+      // Check if we should reschedule (once per day)
+      const shouldReschedule = await shouldRescheduleNotifications();
+      if (shouldReschedule) {
+        console.log('📅 Triggering notification reschedule on app open');
+        // Note: The actual rescheduling will happen in the Schedule screen's useNotifications hook
+        // This just logs that we detected the need to reschedule
+      }
+    }
+
+    appState.current = nextAppState;
+  };
 
   useEffect(() => {
     if (loading) return;

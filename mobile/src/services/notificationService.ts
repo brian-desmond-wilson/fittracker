@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ScheduleEvent } from '../types/schedule';
 
 const NOTIFICATION_SETTINGS_KEY = '@notification_settings';
+const LAST_RESCHEDULE_KEY = '@last_notification_reschedule';
 
 export interface NotificationSettings {
   enabled: boolean;
@@ -92,6 +93,46 @@ export async function saveNotificationSettings(settings: NotificationSettings): 
 }
 
 /**
+ * Get the last reschedule date
+ */
+async function getLastRescheduleDate(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(LAST_RESCHEDULE_KEY);
+  } catch (error) {
+    console.error('Error getting last reschedule date:', error);
+    return null;
+  }
+}
+
+/**
+ * Save the last reschedule date
+ */
+async function saveLastRescheduleDate(): Promise<void> {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    await AsyncStorage.setItem(LAST_RESCHEDULE_KEY, today);
+  } catch (error) {
+    console.error('Error saving last reschedule date:', error);
+  }
+}
+
+/**
+ * Check if we should reschedule notifications (once per day)
+ */
+export async function shouldRescheduleNotifications(): Promise<boolean> {
+  const lastReschedule = await getLastRescheduleDate();
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+  if (!lastReschedule || lastReschedule !== today) {
+    console.log(`Should reschedule: last=${lastReschedule}, today=${today}`);
+    return true;
+  }
+
+  console.log(`Already rescheduled today: ${today}`);
+  return false;
+}
+
+/**
  * Calculate the trigger date for a notification
  */
 function calculateTriggerDate(eventDate: Date, minutesBefore: number): Date {
@@ -161,7 +202,7 @@ export async function scheduleEventNotification(
 }
 
 /**
- * Schedule notifications for a recurring event (next 30 days)
+ * Schedule notifications for a recurring event (next 30 days, including today)
  */
 export async function scheduleRecurringNotifications(
   event: ScheduleEvent,
@@ -181,9 +222,9 @@ export async function scheduleRecurringNotifications(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  console.log(`    Checking next 30 days for matching days: ${event.recurrence_days.join(', ')}`);
+  console.log(`    Checking next 30 days (including today) for matching days: ${event.recurrence_days.join(', ')}`);
 
-  // Schedule for next 30 days
+  // Schedule for next 30 days (starting from today, i=0)
   for (let i = 0; i < 30; i++) {
     const checkDate = new Date(today);
     checkDate.setDate(checkDate.getDate() + i);
@@ -191,7 +232,8 @@ export async function scheduleRecurringNotifications(
     // Check if this day matches the recurrence pattern
     const dayOfWeek = checkDate.getDay();
     if (event.recurrence_days.includes(dayOfWeek)) {
-      console.log(`    Day ${i}: ${checkDate.toLocaleDateString()} matches (day ${dayOfWeek})`);
+      const dayLabel = i === 0 ? 'TODAY' : `Day ${i}`;
+      console.log(`    ${dayLabel}: ${checkDate.toLocaleDateString()} matches (day ${dayOfWeek})`);
       const notificationId = await scheduleEventNotification(event, checkDate, settings);
       if (notificationId) {
         notificationIds.push(notificationId);
@@ -245,6 +287,7 @@ export async function rescheduleAllNotifications(
     console.log('=== Rescheduling Notifications ===');
     console.log('Settings:', settings);
     console.log('Events count:', events.length);
+    console.log('Selected date:', selectedDate.toLocaleDateString());
 
     // Cancel all existing notifications
     await cancelAllNotifications();
@@ -274,12 +317,17 @@ export async function rescheduleAllNotifications(
       }
     }
 
+    // Save the reschedule date
+    await saveLastRescheduleDate();
+    console.log('✅ Saved reschedule date');
+
     // Debug: show all scheduled notifications
     const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
     console.log(`Total scheduled notifications: ${allScheduled.length}`);
     allScheduled.forEach((n, i) => {
       const trigger = n.trigger as any;
-      console.log(`  ${i + 1}. ${n.content.title} at ${trigger.type === 'date' ? new Date(trigger.value) : 'unknown'}`);
+      const triggerDate = trigger.type === 'date' ? new Date(trigger.value).toLocaleString() : 'unknown';
+      console.log(`  ${i + 1}. ${n.content.title} at ${triggerDate}`);
     });
   } catch (error) {
     console.error('Error rescheduling notifications:', error);

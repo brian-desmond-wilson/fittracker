@@ -39,6 +39,7 @@ import {
   detectOverlappingEvents,
 } from "@/src/lib/schedule-utils";
 import { useNotifications } from "@/src/hooks/useNotifications";
+import { shouldRescheduleNotifications } from "@/src/services/notificationService";
 
 export default function Schedule() {
   const [loading, setLoading] = useState(true);
@@ -65,6 +66,21 @@ export default function Schedule() {
   useEffect(() => {
     loadScheduleData();
   }, [selectedDate]);
+
+  // Check and reschedule notifications on app open (once per day)
+  useEffect(() => {
+    async function checkAndReschedule() {
+      const shouldReschedule = await shouldRescheduleNotifications();
+      if (shouldReschedule && events.length > 0) {
+        console.log('🔄 Auto-rescheduling notifications on Schedule screen mount');
+        await rescheduleAll(events, selectedDate);
+      }
+    }
+
+    if (!loading && events.length > 0) {
+      checkAndReschedule();
+    }
+  }, [loading, events.length]); // Run when loading completes and events are loaded
 
   useEffect(() => {
     // Scroll to current time on mount
