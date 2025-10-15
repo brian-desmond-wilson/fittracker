@@ -19,6 +19,7 @@ import {
   ChevronDown,
   CheckCircle2,
   CircleDot,
+  CircleDashed,
   Trash2,
   Edit3,
   X,
@@ -869,6 +870,8 @@ function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
         <View style={styles.cardHeaderLeft}>
           {task.status === "done" ? (
             <CheckCircle2 size={20} color="#22C55E" />
+          ) : task.status === "in_progress" ? (
+            <CircleDashed size={20} color="#3B82F6" />
           ) : (
             <CircleDot size={20} color="#6B7280" />
           )}
