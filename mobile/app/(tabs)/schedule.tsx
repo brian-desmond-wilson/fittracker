@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/src/lib/supabase";
@@ -40,6 +41,7 @@ import { useNotifications } from "@/src/hooks/useNotifications";
 
 export default function Schedule() {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [categories, setCategories] = useState<EventCategory[]>([]);
   const [templates, setTemplates] = useState<EventTemplate[]>([]);
@@ -136,7 +138,13 @@ export default function Schedule() {
       console.error("Error loading schedule data:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadScheduleData();
   }
 
   const goToPreviousDay = () => {
@@ -354,6 +362,16 @@ export default function Schedule() {
             style={styles.scrollView}
             showsVerticalScrollIndicator={false}
             scrollEnabled={scrollEnabled}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="#22C55E"
+                colors={["#22C55E"]}
+                title="Pull to refresh"
+                titleColor="#9CA3AF"
+              />
+            }
           >
             <View style={{ height: timelineHeight }}>
               <TimeGrid />
