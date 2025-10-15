@@ -38,6 +38,13 @@ export const DEFAULT_MORNING_TASKS: DefaultTaskConfig[] = [
     task_type: 'simple',
   },
   {
+    title: 'Feed the Dog',
+    description: 'Feed your dog breakfast',
+    estimated_minutes: 3,
+    is_required: false,
+    task_type: 'simple',
+  },
+  {
     title: 'Quick Breakfast',
     description: 'Eat a quick, healthy breakfast',
     estimated_minutes: 10,
