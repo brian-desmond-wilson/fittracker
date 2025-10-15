@@ -22,10 +22,11 @@ export default function GoingToBedButton({ onBedtimeSet }: GoingToBedButtonProps
   }, []);
 
   const checkVisibility = async () => {
+    // TEMPORARY: Always show for testing (remove time check)
     // Check if current time is after 10 PM (22:00)
     const now = new Date();
     const currentHour = now.getHours();
-    const isAfter10PM = currentHour >= 22;
+    const isAfter10PM = true; // currentHour >= 22;
 
     setIsVisible(isAfter10PM);
 

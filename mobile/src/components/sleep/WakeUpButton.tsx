@@ -34,11 +34,12 @@ export default function WakeUpButton({ onWakeUp }: WakeUpButtonProps) {
         const bedtimeDate = new Date(storedBedtime);
         const now = new Date();
 
+        // TEMPORARY: Skip time check for testing
         // Check if bedtime was from yesterday or today (before current time)
         const hoursSinceBedtime = (now.getTime() - bedtimeDate.getTime()) / (1000 * 60 * 60);
 
         // Show wake up button if bedtime was within last 24 hours
-        if (hoursSinceBedtime > 0 && hoursSinceBedtime < 24) {
+        if (true) { // hoursSinceBedtime > 0 && hoursSinceBedtime < 24
           // Check if user already woke up today
           const todayDateStr = getDateString(now);
 
