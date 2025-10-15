@@ -312,34 +312,26 @@ export function DevTaskManager({ userId, onClose }: DevTaskManagerProps) {
           showsVerticalScrollIndicator={true}
         >
           <TouchableWithoutFeedback onPress={closeAllDropdowns}>
-            <View style={styles.container}>
-              {/* Header */}
-              <View style={styles.header}>
-                <View style={styles.headerLeft}>
-                  <View style={styles.headerIcon}>
-                    <SlidersHorizontal size={20} color="#22C55E" />
-                  </View>
-                  <View style={styles.headerText}>
-                    <Text style={styles.title}>Dev Notebook</Text>
-                    <Text style={styles.subtitle}>
-                      Capture quick development notes, backlog items, and mark them complete when
-                      delivered.
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.headerRight}>
-                  <Text style={styles.activeCount}>
-                    <Text style={styles.activeCountNumber}>{activeTasks.length}</Text> active
-                  </Text>
-                  <TouchableOpacity
-                    onPress={handleRefresh}
-                    style={styles.refreshButton}
-                    disabled={refreshing}
-                  >
-                    <RefreshCw size={16} color="#9CA3AF" />
-                    <Text style={styles.refreshButtonText}>Refresh</Text>
-                  </TouchableOpacity>
-                </View>
+            <View>
+              {/* Page Title */}
+              <Text style={styles.pageTitle}>Development Tasks</Text>
+              <Text style={styles.pageSubtitle}>
+                Capture quick development notes, backlog items, and mark them complete when delivered.
+              </Text>
+
+              {/* Stats and Refresh */}
+              <View style={styles.statsRow}>
+                <Text style={styles.activeCount}>
+                  <Text style={styles.activeCountNumber}>{activeTasks.length}</Text> active tasks
+                </Text>
+                <TouchableOpacity
+                  onPress={handleRefresh}
+                  style={styles.refreshButton}
+                  disabled={refreshing}
+                >
+                  <RefreshCw size={20} color="#9CA3AF" />
+                  <Text style={styles.refreshButtonText}>Refresh</Text>
+                </TouchableOpacity>
               </View>
 
       {/* Search Bar */}
@@ -1186,67 +1178,49 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 100,
   },
-  container: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1F2937",
-    padding: 16,
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
   },
-  header: {
+  pageSubtitle: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginBottom: 24,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  headerIcon: {
-    marginRight: 8,
-    marginTop: 2,
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    lineHeight: 16,
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
   activeCount: {
-    fontSize: 12,
-    color: "#9CA3AF",
+    fontSize: 16,
+    color: '#9CA3AF',
   },
   activeCountNumber: {
-    fontWeight: "600",
-    color: "#FFFFFF",
+    fontWeight: '600',
+    fontSize: 20,
+    color: '#FFFFFF',
   },
   refreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 8,
+    backgroundColor: '#111827',
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: '#374151',
   },
   refreshButtonText: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    fontWeight: "500",
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '500',
   },
   searchContainer: {
     flexDirection: "row",
@@ -1255,26 +1229,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#374151",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 16,
   },
   clearButton: {
     padding: 4,
-    marginLeft: 4,
+    marginLeft: 8,
   },
   filterRow: {
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
+    gap: 12,
+    marginBottom: 16,
   },
   filterButton: {
     flex: 1,
@@ -1285,11 +1259,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#374151",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   filterButtonText: {
-    fontSize: 12,
+    fontSize: 14,
     color: "#FFFFFF",
     fontWeight: "500",
   },
@@ -1363,24 +1337,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 2,
     borderStyle: "dashed",
-    borderColor: "#374151",
-    paddingVertical: 12,
-    marginBottom: 16,
+    borderColor: "#22C55E",
+    paddingVertical: 16,
+    marginBottom: 24,
   },
   addTaskButtonText: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#22C55E",
-    fontWeight: "500",
+    fontWeight: "600",
   },
   section: {
-    marginBottom: 16,
+    marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "700",
     color: "#9CA3AF",
-    letterSpacing: 0.5,
-    marginBottom: 12,
+    letterSpacing: 1,
+    marginBottom: 16,
+    textTransform: "uppercase",
   },
   completedHeader: {
     flexDirection: "row",
@@ -1404,18 +1379,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   card: {
-    backgroundColor: "rgba(31, 41, 55, 0.5)",
+    backgroundColor: "#111827",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#1F2937",
-    marginBottom: 8,
+    marginBottom: 12,
     overflow: "hidden",
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 12,
+    padding: 16,
   },
   cardHeaderLeft: {
     flexDirection: "row",
@@ -1424,7 +1399,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
     flex: 1,
@@ -1455,14 +1430,14 @@ const styles = StyleSheet.create({
     transform: [{ rotate: "180deg" }],
   },
   cardContent: {
-    padding: 12,
+    padding: 16,
     paddingTop: 0,
     gap: 12,
   },
   cardDescription: {
-    fontSize: 12,
+    fontSize: 14,
     color: "#D1D5DB",
-    lineHeight: 18,
+    lineHeight: 20,
   },
   cardDescriptionCompleted: {
     textDecorationLine: "line-through",
