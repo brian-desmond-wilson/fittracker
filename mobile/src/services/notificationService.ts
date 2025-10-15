@@ -115,8 +115,8 @@ export async function scheduleEventNotification(
 
   try {
     const [hours, minutes] = event.start_time.split(':').map(Number);
-    const eventDate = new Date(date);
-    eventDate.setHours(hours, minutes, 0, 0);
+    // Create a new date object preserving the local date
+    const eventDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0);
 
     const now = new Date();
     console.log(`  Event: ${event.title}`);
@@ -262,7 +262,9 @@ export async function rescheduleAllNotifications(
         const ids = await scheduleRecurringNotifications(event, settings);
         console.log(`  Scheduled ${ids.length} recurring notifications`);
       } else if (event.date) {
-        const eventDate = new Date(event.date);
+        // Parse date string as local date (YYYY-MM-DD)
+        const [year, month, day] = event.date.split('-').map(Number);
+        const eventDate = new Date(year, month - 1, day);
         const notificationId = await scheduleEventNotification(event, eventDate, settings);
         console.log(`  Scheduled single notification: ${notificationId}`);
       } else {
