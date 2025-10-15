@@ -11,6 +11,8 @@ import {
   Modal,
   TouchableWithoutFeedback,
   StatusBar,
+  Animated,
+  PanResponder,
 } from "react-native";
 import {
   SlidersHorizontal,
@@ -121,6 +123,29 @@ export function DevTaskManager({ userId, onClose }: DevTaskManagerProps) {
     priority: "medium" as DevTaskPriority,
     status: "open" as DevTaskStatus,
   });
+
+  // Pan responder for swipe-down gesture
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only respond to vertical swipes
+        return Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Only allow downward swipes
+        if (gestureState.dy > 0) {
+          // Could add animation here if desired
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // If swiped down more than 100 pixels, close the modal
+        if (gestureState.dy > 100) {
+          setShowAddForm(false);
+        }
+      },
+    })
+  ).current;
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -633,10 +658,16 @@ export function DevTaskManager({ userId, onClose }: DevTaskManagerProps) {
           animationType="slide"
           onRequestClose={() => setShowAddForm(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Add a new task</Text>
-              <Text style={styles.modalSubtitle}>Capture a quick note or backlog item.</Text>
+          <TouchableWithoutFeedback onPress={() => setShowAddForm(false)}>
+            <View style={styles.modalOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.modalContent}>
+                  {/* Drag Handle Area */}
+                  <View {...panResponder.panHandlers} style={styles.modalDragArea}>
+                    <View style={styles.modalHandle} />
+                    <Text style={styles.modalTitle}>Add a new task</Text>
+                    <Text style={styles.modalSubtitle}>Capture a quick note or backlog item.</Text>
+                  </View>
 
               <Text style={styles.label}>TITLE</Text>
               <TextInput
@@ -820,8 +851,10 @@ export function DevTaskManager({ userId, onClose }: DevTaskManagerProps) {
                   </TouchableWithoutFeedback>
                 </Modal>
               )}
+                </View>
+              </TouchableWithoutFeedback>
             </View>
-          </View>
+          </TouchableWithoutFeedback>
         </Modal>
       </View>
     </>
@@ -1502,17 +1535,30 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: "#111827",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderWidth: 1,
-    borderColor: "#1F2937",
-    padding: 20,
-    maxHeight: "90%",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 12,
+    maxHeight: "85%",
+  },
+  modalDragArea: {
+    paddingVertical: 8,
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+  },
+  modalHandle: {
+    width: 36,
+    height: 5,
+    backgroundColor: "#374151",
+    borderRadius: 3,
+    alignSelf: "center",
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
