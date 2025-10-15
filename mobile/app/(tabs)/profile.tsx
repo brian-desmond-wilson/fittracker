@@ -255,9 +255,7 @@ export default function Profile() {
           statusBarTranslucent={false}
           onRequestClose={() => setActiveModal(null)}
         >
-          <SafeAreaView style={styles.devTasksContainer} edges={['top']}>
-            <DevTaskManager userId={userId} />
-          </SafeAreaView>
+          <DevTaskManager userId={userId} onClose={() => setActiveModal(null)} />
         </Modal>
       )}
     </SafeAreaView>
