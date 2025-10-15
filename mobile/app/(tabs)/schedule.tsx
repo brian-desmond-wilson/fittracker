@@ -9,8 +9,10 @@ import {
   Modal,
   TextInput,
   RefreshControl,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useIsFocused } from "@react-navigation/native";
 import { supabase } from "@/src/lib/supabase";
 import {
   ChevronLeft,
@@ -42,6 +44,7 @@ import { useNotifications } from "@/src/hooks/useNotifications";
 import { shouldRescheduleNotifications } from "@/src/services/notificationService";
 
 export default function Schedule() {
+  const isFocused = useIsFocused();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
@@ -82,25 +85,53 @@ export default function Schedule() {
     }
   }, [loading, events.length]); // Run when loading completes and events are loaded
 
+  // Scroll to current time, centered vertically
+  const scrollToCurrentTime = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+
+    let hoursFrom5am = hours - 5;
+    if (hoursFrom5am < 0) hoursFrom5am += 24;
+
+    // Calculate position of current time
+    const currentTimePosition =
+      hoursFrom5am * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
+
+    // Get viewport height
+    const viewportHeight = Dimensions.get('window').height;
+    // Account for header (~120px), safe area top, and tab bar (~80px)
+    const headerHeight = 120;
+    const tabBarHeight = 80;
+    const scrollableHeight = viewportHeight - headerHeight - tabBarHeight;
+
+    // Center the current time by offsetting by half the scrollable viewport height
+    // Add a small adjustment (50px) to scroll slightly further down
+    const scrollPosition = currentTimePosition - (scrollableHeight / 2) + 50;
+
+    scrollViewRef.current?.scrollTo({
+      y: Math.max(0, scrollPosition),
+      animated: true,
+    });
+  };
+
   useEffect(() => {
-    // Scroll to current time on mount
-    setTimeout(() => {
-      const now = new Date();
-      const hours = now.getHours();
-      const minutes = now.getMinutes();
+    // Scroll to current time after data is loaded
+    if (!loading) {
+      setTimeout(() => {
+        scrollToCurrentTime();
+      }, 300);
+    }
+  }, [loading]);
 
-      let hoursFrom5am = hours - 5;
-      if (hoursFrom5am < 0) hoursFrom5am += 24;
-
-      const scrollPosition =
-        hoursFrom5am * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT - 100;
-
-      scrollViewRef.current?.scrollTo({
-        y: Math.max(0, scrollPosition),
-        animated: true,
-      });
-    }, 100);
-  }, []);
+  useEffect(() => {
+    // Scroll to current time every time the tab becomes focused
+    if (isFocused && !loading) {
+      setTimeout(() => {
+        scrollToCurrentTime();
+      }, 300);
+    }
+  }, [isFocused]);
 
   async function loadScheduleData() {
     try {
