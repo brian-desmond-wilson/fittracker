@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  PanResponder,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { X, Calendar } from "lucide-react-native";
 import { EventCategory } from "@/src/types/schedule";
@@ -134,6 +136,29 @@ export function AddEventModal({
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  // Pan responder for swipe-down gesture
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only respond to vertical swipes
+        return Math.abs(gestureState.dy) > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Only allow downward swipes
+        if (gestureState.dy > 0) {
+          // Could add animation here if desired
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // If swiped down more than 100 pixels, close the modal
+        if (gestureState.dy > 100) {
+          onClose();
+        }
+      },
+    })
+  ).current;
+
   const handleSubmit = async () => {
     if (!formData.title.trim()) {
       alert("Please enter an event title");
@@ -224,15 +249,22 @@ export function AddEventModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Add New Event</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color="#9CA3AF" />
-            </TouchableOpacity>
-          </View>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContent}>
+              {/* Drag Handle Area */}
+              <View {...panResponder.panHandlers} style={styles.modalDragArea}>
+                <View style={styles.modalHandle} />
+              </View>
+
+              {/* Header */}
+              <View style={styles.header}>
+                <Text style={styles.title}>Add New Event</Text>
+                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                  <X size={24} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
 
           <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
             {/* Event Title */}
@@ -608,8 +640,10 @@ export function AddEventModal({
               </TouchableOpacity>
             </Modal>
           )}
+            </View>
+          </TouchableWithoutFeedback>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -624,10 +658,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#111827",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: 20,
+    paddingTop: 12,
     paddingHorizontal: 20,
     paddingBottom: 34,
     maxHeight: "90%",
+  },
+  modalDragArea: {
+    paddingVertical: 8,
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  modalHandle: {
+    width: 36,
+    height: 5,
+    backgroundColor: "#374151",
+    borderRadius: 3,
+    marginBottom: 8,
   },
   header: {
     flexDirection: "row",
