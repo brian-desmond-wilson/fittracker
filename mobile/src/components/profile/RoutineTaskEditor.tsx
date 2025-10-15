@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -44,6 +44,27 @@ export function RoutineTaskEditor({
     task?.checklist_items || []
   );
   const [newChecklistItem, setNewChecklistItem] = useState('');
+
+  // Update state when task prop changes (for editing existing tasks)
+  useEffect(() => {
+    if (task) {
+      setTitle(task.title);
+      setDescription(task.description || '');
+      setEstimatedMinutes(task.estimated_minutes.toString());
+      setIsRequired(task.is_required);
+      setTaskType(task.task_type);
+      setChecklistItems(task.checklist_items || []);
+    } else {
+      // Reset to defaults when creating new task
+      setTitle('');
+      setDescription('');
+      setEstimatedMinutes('5');
+      setIsRequired(true);
+      setTaskType('simple');
+      setChecklistItems([]);
+    }
+    setNewChecklistItem('');
+  }, [task, visible]); // Include visible to reset when modal reopens
 
   const handleSave = () => {
     if (!title.trim()) {
