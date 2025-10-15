@@ -160,14 +160,12 @@ export function CategoryManager({
   return (
     <Modal
       visible={visible}
-      transparent
       animationType="slide"
+      presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
-          <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
-            <View style={styles.modal}>
+      <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+        <View style={styles.modal}>
               {/* Header */}
               <View style={styles.header}>
                 <Text style={styles.title}>Manage Categories</Text>
@@ -362,29 +360,18 @@ export function CategoryManager({
               </KeyboardAvoidingView>
             </View>
           </SafeAreaView>
-        </View>
-      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "flex-end",
-  },
-  modalContainer: {
-    height: "85%",
-  },
   safeArea: {
+    flex: 1,
     backgroundColor: "#111827",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
   },
   modal: {
-    backgroundColor: "#111827",
     flex: 1,
+    backgroundColor: "#111827",
   },
   header: {
     flexDirection: "row",
@@ -538,17 +525,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    padding: 12,
-    backgroundColor: "rgba(31, 41, 55, 0.3)",
+    padding: 16,
+    backgroundColor: "transparent",
     borderWidth: 2,
-    borderStyle: "dashed",
-    borderColor: "#374151",
-    borderRadius: 8,
+    borderColor: "#3B82F6",
+    borderRadius: 12,
   },
   addButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#9CA3AF",
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
   footer: {
     paddingHorizontal: 20,
