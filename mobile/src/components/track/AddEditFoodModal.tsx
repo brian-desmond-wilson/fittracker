@@ -11,6 +11,7 @@ import {
   Modal,
   Image,
   ActionSheetIOS,
+  ActivityIndicator,
 } from "react-native";
 import { X, Camera, Barcode, Trash2 } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -18,6 +19,8 @@ import * as ImagePicker from "expo-image-picker";
 import { colors } from "@/src/lib/colors";
 import { FoodInventoryItem, FoodLocation } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { BarcodeScannerModal } from "./BarcodeScannerModal";
+import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
 
 interface AddEditFoodModalProps {
   visible: boolean;
@@ -80,7 +83,9 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
   // UI State
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showUnitPicker, setShowUnitPicker] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadingProductData, setLoadingProductData] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -229,6 +234,72 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
           },
         },
       ]);
+    }
+  };
+
+  const handleBarcodeScanned = async (scannedBarcode: string) => {
+    setBarcode(scannedBarcode);
+    setLoadingProductData(true);
+
+    try {
+      const productData = await getProductByBarcode(scannedBarcode);
+
+      if (productData) {
+        // Auto-populate form fields
+        if (productData.name && !name) {
+          setName(productData.name);
+        }
+        if (productData.brand && !brand) {
+          setBrand(productData.brand);
+        }
+        if (productData.category && !category) {
+          setCategory(productData.category);
+        }
+        if (productData.servingSize && !servingSize) {
+          setServingSize(productData.servingSize);
+        }
+        if (productData.calories !== null && !calories) {
+          setCalories(productData.calories.toString());
+        }
+        if (productData.protein !== null && !protein) {
+          setProtein(productData.protein.toString());
+        }
+        if (productData.carbs !== null && !carbs) {
+          setCarbs(productData.carbs.toString());
+        }
+        if (productData.fats !== null && !fats) {
+          setFats(productData.fats.toString());
+        }
+        if (productData.sugars !== null && !sugars) {
+          setSugars(productData.sugars.toString());
+        }
+        if (productData.imagePrimaryUrl && !imagePrimary) {
+          setImagePrimary(productData.imagePrimaryUrl);
+        }
+        if (productData.imageFrontUrl && !imageFront) {
+          setImageFront(productData.imageFrontUrl);
+        }
+        if (productData.imageBackUrl && !imageBack) {
+          setImageBack(productData.imageBackUrl);
+        }
+
+        Alert.alert(
+          "Product Found!",
+          `${productData.name}${productData.brand ? ` by ${productData.brand}` : ""} has been loaded.`,
+          [{ text: "OK" }]
+        );
+      } else {
+        Alert.alert(
+          "Product Not Found",
+          "No product information found for this barcode. You can enter details manually.",
+          [{ text: "OK" }]
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching product data:", error);
+      Alert.alert("Error", "Failed to fetch product information. Please enter details manually.");
+    } finally {
+      setLoadingProductData(false);
     }
   };
 
@@ -460,10 +531,17 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
                 <Text style={styles.label}>Barcode</Text>
                 <TouchableOpacity
                   style={styles.scanButton}
-                  onPress={() => Alert.alert("Barcode Scanner", "Scanner coming soon!")}
+                  onPress={() => setShowBarcodeScanner(true)}
+                  disabled={loadingProductData}
                 >
-                  <Barcode size={16} color={colors.foreground} />
-                  <Text style={styles.scanButtonText}>Scan</Text>
+                  {loadingProductData ? (
+                    <ActivityIndicator size="small" color={colors.foreground} />
+                  ) : (
+                    <>
+                      <Barcode size={16} color={colors.foreground} />
+                      <Text style={styles.scanButtonText}>Scan</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
               <TextInput
@@ -473,7 +551,11 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
                 value={barcode}
                 onChangeText={setBarcode}
                 keyboardType="numeric"
+                editable={!loadingProductData}
               />
+              {loadingProductData && (
+                <Text style={styles.loadingText}>Loading product information...</Text>
+              )}
             </View>
           </View>
 
@@ -801,6 +883,13 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
             </View>
           </View>
         </Modal>
+
+        {/* Barcode Scanner Modal */}
+        <BarcodeScannerModal
+          visible={showBarcodeScanner}
+          onClose={() => setShowBarcodeScanner(false)}
+          onBarcodeScanned={handleBarcodeScanned}
+        />
       </View>
     </Modal>
   );
@@ -1069,5 +1158,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#EF4444",
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#8B5CF6",
+    fontStyle: "italic",
   },
 });
