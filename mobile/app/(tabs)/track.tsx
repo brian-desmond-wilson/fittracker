@@ -16,6 +16,7 @@ import { WaterScreen } from "@/src/components/track/WaterScreen";
 import { WeightScreen } from "@/src/components/track/WeightScreen";
 import { SleepScreen } from "@/src/components/track/SleepScreen";
 import { FoodInventoryScreen } from "@/src/components/track/FoodInventoryScreen";
+import { MeasurementsScreen } from "@/src/components/track/MeasurementsScreen";
 import { colors } from "@/src/lib/colors";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
@@ -209,6 +210,16 @@ export default function Track() {
         onRequestClose={() => setActiveModal(null)}
       >
         <FoodInventoryScreen onClose={() => setActiveModal(null)} />
+      </Modal>
+
+      {/* Measurements Modal */}
+      <Modal
+        visible={activeModal === "measurements"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <MeasurementsScreen onClose={() => setActiveModal(null)} />
       </Modal>
     </SafeAreaView>
   );
