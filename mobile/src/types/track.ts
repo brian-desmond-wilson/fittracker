@@ -1,4 +1,6 @@
 // Food Inventory Types
+export type FoodLocation = "fridge" | "freezer" | "pantry";
+
 export interface FoodInventoryItem {
   id: string;
   user_id: string;
@@ -6,8 +8,52 @@ export interface FoodInventoryItem {
   quantity: number;
   unit: string;
   category: string | null;
+  brand: string | null;
+  flavor: string | null;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fats: number | null;
+  sugars: number | null;
+  serving_size: string | null;
+  expiration_date: string | null; // YYYY-MM-DD
+  location: FoodLocation | null;
+  restock_threshold: number;
+  barcode: string | null;
+  image_primary_url: string | null;
+  image_front_url: string | null;
+  image_back_url: string | null;
+  image_side_url: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface FoodCategory {
+  id: string;
+  user_id: string;
+  name: string;
+  icon: string | null; // Lucide icon name
+  color: string | null; // Hex color
+  is_default: boolean;
+  created_at: string;
+}
+
+export type ShoppingListPriority = 1 | 2 | 3; // 1=high, 2=medium, 3=low
+
+export interface ShoppingListItem {
+  id: string;
+  user_id: string;
+  food_inventory_id: string | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  category: string | null;
+  priority: ShoppingListPriority;
+  is_purchased: boolean;
+  notes: string | null;
+  created_at: string;
+  purchased_at: string | null;
 }
 
 // Meal & Nutrition Types
