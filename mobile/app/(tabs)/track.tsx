@@ -14,6 +14,7 @@ import {
 import { TrackingCard } from "@/src/components/track/TrackingCard";
 import { WaterScreen } from "@/src/components/track/WaterScreen";
 import { WeightScreen } from "@/src/components/track/WeightScreen";
+import { SleepScreen } from "@/src/components/track/SleepScreen";
 import { colors } from "@/src/lib/colors";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
@@ -187,6 +188,16 @@ export default function Track() {
         onRequestClose={() => setActiveModal(null)}
       >
         <WeightScreen onClose={() => setActiveModal(null)} />
+      </Modal>
+
+      {/* Sleep Modal */}
+      <Modal
+        visible={activeModal === "sleep"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <SleepScreen onClose={() => setActiveModal(null)} />
       </Modal>
     </SafeAreaView>
   );
