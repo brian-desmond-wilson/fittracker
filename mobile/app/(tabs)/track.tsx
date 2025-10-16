@@ -18,6 +18,7 @@ import { SleepScreen } from "@/src/components/track/SleepScreen";
 import { FoodInventoryScreen } from "@/src/components/track/FoodInventoryScreen";
 import { MeasurementsScreen } from "@/src/components/track/MeasurementsScreen";
 import { ProgressPhotosScreen } from "@/src/components/track/ProgressPhotosScreen";
+import { MealsScreen } from "@/src/components/track/MealsScreen";
 import { colors } from "@/src/lib/colors";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
@@ -231,6 +232,16 @@ export default function Track() {
         onRequestClose={() => setActiveModal(null)}
       >
         <ProgressPhotosScreen onClose={() => setActiveModal(null)} />
+      </Modal>
+
+      {/* Meals Modal */}
+      <Modal
+        visible={activeModal === "meals"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <MealsScreen onClose={() => setActiveModal(null)} />
       </Modal>
     </SafeAreaView>
   );
