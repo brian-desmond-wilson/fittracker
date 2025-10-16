@@ -5,15 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/src/lib/supabase";
-import { Flame, Timer, Droplet } from "lucide-react-native";
+import { Flame, Timer, Droplet, Menu, User } from "lucide-react-native";
 import GoingToBedButton from "@/src/components/sleep/GoingToBedButton";
 import WakeUpButton from "@/src/components/sleep/WakeUpButton";
 import SleepQualityModal from "@/src/components/sleep/SleepQualityModal";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
 import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard";
+import DrawerMenu from "@/src/components/drawer/DrawerMenu";
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
@@ -23,6 +26,7 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [morningRoutineWizardVisible, setMorningRoutineWizardVisible] = useState(false);
   const [routineBannerKey, setRoutineBannerKey] = useState(0);
+  const [drawerVisible, setDrawerVisible] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -80,6 +84,22 @@ export default function Home() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      {/* Top Navigation Bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={() => setDrawerVisible(true)}
+          style={styles.iconButton}
+        >
+          <Menu size={24} color="#9CA3AF" strokeWidth={2} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {}} // Profile icon - does nothing for now
+          style={styles.iconButton}
+        >
+          <User size={24} color="#9CA3AF" strokeWidth={2} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -185,6 +205,12 @@ export default function Home() {
         }}
         onComplete={handleRoutineComplete}
       />
+
+      {/* Drawer Menu */}
+      <DrawerMenu
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -199,6 +225,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#0A0F1E",
+  },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#0A0F1E",
+    borderBottomWidth: 1,
+    borderBottomColor: "#1E293B",
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: 8,
   },
   scrollView: {
     flex: 1,
