@@ -15,6 +15,7 @@ import { TrackingCard } from "@/src/components/track/TrackingCard";
 import { WaterScreen } from "@/src/components/track/WaterScreen";
 import { WeightScreen } from "@/src/components/track/WeightScreen";
 import { SleepScreen } from "@/src/components/track/SleepScreen";
+import { FoodInventoryScreen } from "@/src/components/track/FoodInventoryScreen";
 import { colors } from "@/src/lib/colors";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
@@ -198,6 +199,16 @@ export default function Track() {
         onRequestClose={() => setActiveModal(null)}
       >
         <SleepScreen onClose={() => setActiveModal(null)} />
+      </Modal>
+
+      {/* Food Inventory Modal */}
+      <Modal
+        visible={activeModal === "food-inventory"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <FoodInventoryScreen onClose={() => setActiveModal(null)} />
       </Modal>
     </SafeAreaView>
   );
