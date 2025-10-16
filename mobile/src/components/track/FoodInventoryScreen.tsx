@@ -15,6 +15,7 @@ import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide
 import { colors } from "@/src/lib/colors";
 import { FoodInventoryItem } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { AddEditFoodModal } from "./AddEditFoodModal";
 
 interface FoodInventoryScreenProps {
   onClose: () => void;
@@ -31,6 +32,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortType>("name");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  // Modal state
+  const [showAddEditModal, setShowAddEditModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<FoodInventoryItem | null>(null);
 
   useEffect(() => {
     fetchInventory();
@@ -70,6 +75,25 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddItem = () => {
+    setEditingItem(null);
+    setShowAddEditModal(true);
+  };
+
+  const handleEditItem = (item: FoodInventoryItem) => {
+    setEditingItem(item);
+    setShowAddEditModal(true);
+  };
+
+  const handleModalSave = () => {
+    fetchInventory();
+  };
+
+  const handleModalClose = () => {
+    setShowAddEditModal(false);
+    setEditingItem(null);
   };
 
   const handleDeleteItem = async (itemId: string) => {
@@ -219,7 +243,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.addButton}
-              onPress={() => Alert.alert("Add Item", "Add item modal coming soon!")}
+              onPress={handleAddItem}
               activeOpacity={0.7}
             >
               <Plus size={20} color="#FFFFFF" />
@@ -295,7 +319,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                   const isLowStock = item.quantity <= item.restock_threshold && item.quantity > 0;
 
                   return (
-                    <View key={item.id} style={styles.itemCard}>
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.itemCard}
+                      onPress={() => handleEditItem(item)}
+                      activeOpacity={0.7}
+                    >
                       {/* Item Image */}
                       <View style={styles.itemImage}>
                         {item.image_primary_url ? (
@@ -359,7 +388,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                           <ShoppingCart size={18} color="#FFFFFF" />
                         </TouchableOpacity>
                       )}
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
@@ -368,6 +397,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
           <View style={{ height: 40 }} />
         </ScrollView>
+
+        {/* Add/Edit Modal */}
+        <AddEditFoodModal
+          visible={showAddEditModal}
+          onClose={handleModalClose}
+          onSave={handleModalSave}
+          item={editingItem}
+        />
       </View>
     </>
   );
