@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,10 @@ import {
   TextInput,
   RefreshControl,
   Dimensions,
+  Pressable,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  GestureResponderEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused } from "@react-navigation/native";
@@ -30,6 +34,7 @@ import { EventDetailModal } from "@/src/components/schedule/EventDetailModal";
 import { EditEventModal } from "@/src/components/schedule/EditEventModal";
 import { NotificationSettings } from "@/src/components/schedule/NotificationSettings";
 import { AddEventModal } from "@/src/components/schedule/AddEventModal";
+import { QuickAddEventModal } from "@/src/components/schedule/QuickAddEventModal";
 import {
   ScheduleEvent,
   EventCategory,
@@ -55,13 +60,32 @@ export default function Schedule() {
   const [showEventModal, setShowEventModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
+  const [quickAddStartTime, setQuickAddStartTime] = useState("09:00");
   const [showTemplates, setShowTemplates] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const scrollViewTopRef = useRef(0);
 
   const timelineHeight = 24 * HOUR_HEIGHT;
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+  }, []);
+
+  const handleScrollViewLayout = useCallback(() => {
+    scrollViewRef.current?.measureInWindow((_x, y) => {
+      scrollViewTopRef.current = y;
+    });
+  }, []);
+
+  useEffect(() => {
+    // Ensure we capture the initial position after mount
+    handleScrollViewLayout();
+  }, [handleScrollViewLayout]);
 
   // Initialize notifications hook
   const { rescheduleAll, updateSettings, scheduleNotification, cancelNotification } = useNotifications();
@@ -294,6 +318,37 @@ export default function Schedule() {
     }
   };
 
+  const handleTimelinePress = useCallback((event: GestureResponderEvent) => {
+    const pageY = event.nativeEvent.pageY || 0;
+    const scrollViewTop = scrollViewTopRef.current;
+
+    const visibleY = pageY - scrollViewTop;
+    const absoluteY = visibleY + scrollOffsetRef.current;
+
+    const clampedY = Math.max(0, Math.min(timelineHeight, absoluteY));
+
+    const totalMinutesFrom5am = Math.floor((clampedY / HOUR_HEIGHT) * 60);
+    const snappedMinutes = Math.round(totalMinutesFrom5am / 15) * 15;
+    const hoursFrom5am = Math.floor(snappedMinutes / 60);
+    const minutes = snappedMinutes % 60;
+    const hour = (5 + hoursFrom5am) % 24;
+
+    const timeString = `${hour.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+
+    console.log('Timeline tap:', {
+      pageY,
+      scrollViewTop,
+      visibleY,
+      scrollOffset: scrollOffsetRef.current,
+      absoluteY,
+      clampedY,
+      timeString,
+    });
+
+    setQuickAddStartTime(timeString);
+    setShowQuickAddModal(true);
+  }, [timelineHeight]);
+
   const handleEventDrop = async (
     event: ScheduleEvent,
     newStartTime: string,
@@ -414,6 +469,9 @@ export default function Schedule() {
             style={styles.scrollView}
             showsVerticalScrollIndicator={false}
             scrollEnabled={scrollEnabled}
+            onLayout={handleScrollViewLayout}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -425,12 +483,16 @@ export default function Schedule() {
               />
             }
           >
-            <View style={{ height: timelineHeight }}>
+            <View
+              style={{ height: timelineHeight }}
+              onStartShouldSetResponder={() => true}
+              onResponderRelease={handleTimelinePress}
+            >
               <TimeGrid />
 
               {/* Events container */}
-              <View style={[styles.eventsContainer, { paddingLeft: 48 }]}>
-                <View style={{ height: timelineHeight }}>
+              <View style={[styles.eventsContainer, { paddingLeft: 48 }]} pointerEvents="box-none">
+                <View style={{ height: timelineHeight }} pointerEvents="box-none">
                   {eventPositions.map(
                     ({ event, top, height, column, totalColumns }) => (
                       <DraggableEventCard
@@ -549,6 +611,16 @@ export default function Schedule() {
         visible={showNotificationSettings}
         onClose={() => setShowNotificationSettings(false)}
         onSave={(settings) => updateSettings(settings, events, selectedDate)}
+      />
+
+      {/* Quick Add Event Modal */}
+      <QuickAddEventModal
+        visible={showQuickAddModal}
+        onClose={() => setShowQuickAddModal(false)}
+        categories={categories}
+        selectedDate={selectedDate}
+        startTime={quickAddStartTime}
+        onEventCreated={loadScheduleData}
       />
     </SafeAreaView>
   );

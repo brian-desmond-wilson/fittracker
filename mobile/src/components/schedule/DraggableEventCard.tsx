@@ -1,6 +1,11 @@
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useCallback } from "react";
 import { PanResponder, View, StyleSheet } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  runOnJS,
+} from "react-native-reanimated";
 import { EventCard } from "./EventCard";
 import { ScheduleEvent } from "../../types/schedule";
 import { HOUR_HEIGHT } from "./TimeGrid";
@@ -36,6 +41,20 @@ export function DraggableEventCard({
       currentDragY.current = 0;
     }
   }, [style.top, isDragging, translateY]);
+
+  const finalizeDrop = useCallback(
+    (changed: boolean, newStart: string, newEnd: string) => {
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      currentDragY.current = 0;
+      onDragEnd?.();
+
+      if (changed) {
+        onDrop(event, newStart, newEnd);
+      }
+    },
+    [event, onDrop, onDragEnd]
+  );
 
   const panResponder = useMemo(
     () =>
@@ -125,25 +144,22 @@ export function DraggableEventCard({
 
           // Animate to snapped position
           const targetY = snappedTop - originalTopRef.current;
-          translateY.value = withSpring(targetY, {
-            damping: 15,
-            stiffness: 150,
-          }, () => {
-            isDraggingRef.current = false;
-            setIsDragging(false);
-            onDragEnd?.();
+          const hasChanged = newStartTime !== event.start_time;
 
-            // Only update if time changed
-            if (newStartTime !== event.start_time) {
-              onDrop(event, newStartTime, newEndTime);
-            } else {
+          translateY.value = withSpring(
+            targetY,
+            {
+              damping: 15,
+              stiffness: 150,
+            },
+            () => {
               translateY.value = 0;
-              currentDragY.current = 0;
+              runOnJS(finalizeDrop)(hasChanged, newStartTime, newEndTime);
             }
-          });
+          );
         },
       }),
-    [translateY, event, onClick, onDrop, onDragStart, onDragEnd]
+    [translateY, event, onClick, onDrop, onDragStart, onDragEnd, finalizeDrop]
   );
 
   const animatedStyle = useAnimatedStyle(() => {
