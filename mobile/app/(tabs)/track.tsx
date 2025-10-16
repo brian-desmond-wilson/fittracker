@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Utensils,
@@ -12,10 +12,14 @@ import {
   Moon,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
+import { WaterScreen } from "@/src/components/track/WaterScreen";
+import { WeightScreen } from "@/src/components/track/WeightScreen";
 import { colors } from "@/src/lib/colors";
-import { TrackingCategoryConfig } from "@/src/types/track";
+import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
 export default function Track() {
+  const [activeModal, setActiveModal] = useState<TrackingCategory | null>(null);
+
   // Category configuration with prioritized ordering
   const trackingCategories: TrackingCategoryConfig[] = [
     // Nutrition & Food Section
@@ -98,10 +102,8 @@ export default function Track() {
     Moon,
   };
 
-  const handleCardPress = (categoryId: string) => {
-    console.log(`Navigate to ${categoryId} screen`);
-    // TODO: Navigate to detail screen
-    // Will be implemented in Phase 3
+  const handleCardPress = (categoryId: TrackingCategory) => {
+    setActiveModal(categoryId);
   };
 
   const nutritionCategories = trackingCategories.filter((c) => c.section === "nutrition");
@@ -166,6 +168,26 @@ export default function Track() {
         {/* Bottom Spacing */}
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* Water Modal */}
+      <Modal
+        visible={activeModal === "water"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <WaterScreen onClose={() => setActiveModal(null)} />
+      </Modal>
+
+      {/* Weight Modal */}
+      <Modal
+        visible={activeModal === "weight"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <WeightScreen onClose={() => setActiveModal(null)} />
+      </Modal>
     </SafeAreaView>
   );
 }
