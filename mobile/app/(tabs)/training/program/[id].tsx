@@ -134,9 +134,6 @@ export default function ProgramDetail() {
               style={styles.bannerImage}
             />
 
-            {/* Gradient Overlay */}
-            <View style={styles.bannerGradient} />
-
             {/* Program Title Overlay */}
             <View style={styles.bannerContent}>
               <Text style={styles.bannerTitle}>{program.title}</Text>
@@ -277,14 +274,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     backgroundColor: colors.muted,
-  },
-  bannerGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 120,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
   },
   bannerContent: {
     position: "absolute",

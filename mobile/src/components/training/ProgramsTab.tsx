@@ -250,7 +250,7 @@ export default function ProgramsTab() {
               <ProgramCard
                 key={program.id}
                 program={program}
-                onPress={() => router.push(`/program/${program.id}`)}
+                onPress={() => router.push(`/(tabs)/training/program/${program.id}`)}
               />
             ))}
           </View>
@@ -264,7 +264,7 @@ export default function ProgramsTab() {
               <ProgramCard
                 key={program.id}
                 program={program}
-                onPress={() => router.push(`/program/${program.id}`)}
+                onPress={() => router.push(`/(tabs)/training/program/${program.id}`)}
               />
             ))}
           </View>

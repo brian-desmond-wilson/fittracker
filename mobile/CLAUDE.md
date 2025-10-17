@@ -5,6 +5,7 @@ This document contains important patterns, conventions, and lessons learned duri
 ## Table of Contents
 - [Safe Area Handling](#safe-area-handling)
 - [Modal Navigation Pattern](#modal-navigation-pattern)
+- [Nested Stack Navigation in Tabs](#nested-stack-navigation-in-tabs)
 
 ---
 
@@ -218,7 +219,79 @@ See `/app/(tabs)/profile.tsx` for how modals are set up and managed.
 
 ---
 
+---
+
+## Nested Stack Navigation in Tabs
+
+### The Pattern
+
+When you need sub-pages within a tab that keep the bottom tab bar visible, use a nested Stack navigator within the tab.
+
+### Implementation
+
+**Directory Structure:**
+```
+app/
+  (tabs)/
+    training/
+      _layout.tsx          # Stack navigator for training
+      index.tsx            # Main training page
+      program/
+        [id].tsx           # Program detail page
+```
+
+**1. Create Stack Layout (_layout.tsx):**
+```tsx
+import { Stack } from "expo-router";
+
+export default function TrainingLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen name="program/[id]" />
+    </Stack>
+  );
+}
+```
+
+**2. Navigate with Full Path:**
+```tsx
+// In ProgramsTab.tsx (component rendered by index.tsx)
+router.push(`/(tabs)/training/program/${program.id}`)
+```
+
+**3. Back Navigation:**
+```tsx
+// In program/[id].tsx
+router.back()  // Returns to training index
+```
+
+### Key Benefits
+
+- Bottom tab bar remains visible on all screens
+- Native back gesture support
+- Clean navigation stack management
+- Consistent with mobile app patterns
+
+### Working Example
+
+The Training tab uses this pattern:
+- `/app/(tabs)/training/_layout.tsx` - Stack configuration
+- `/app/(tabs)/training/index.tsx` - Main training page with Programs/Workouts/Exercises tabs
+- `/app/(tabs)/training/program/[id].tsx` - Program detail page (keeps bottom tabs visible)
+
+---
+
 ## Version History
+
+- **2025-10-17**: Added nested stack navigation pattern
+  - Documented nested stack navigation within tabs
+  - Explained how to keep bottom tab bar visible on sub-pages
+  - Added Training tab as working example
 
 - **2025-10-15**: Initial documentation
   - Documented safe area handling pattern with `useSafeAreaInsets()`
