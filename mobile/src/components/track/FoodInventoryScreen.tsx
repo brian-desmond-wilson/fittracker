@@ -212,7 +212,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     if (diffDays < 0) return { text: "Expired", color: "#EF4444" };
     if (diffDays === 0) return { text: "Expires today", color: "#F59E0B" };
     if (diffDays <= 7) return { text: `${diffDays}d left`, color: "#F59E0B" };
-    return { text: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }), color: colors.mutedForeground };
+    return { text: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), color: colors.mutedForeground };
   };
 
   return (
