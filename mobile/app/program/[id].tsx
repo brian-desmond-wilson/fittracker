@@ -144,22 +144,22 @@ export default function ProgramDetail() {
         <View style={styles.statsContainer}>
           <View style={styles.statBox}>
             <Calendar size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue}>{program.duration_weeks} weeks</Text>
+            <Text style={styles.statValue} numberOfLines={1}>{program.duration_weeks} weeks</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Clock size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue}>{program.minutes_per_session} min</Text>
+            <Text style={styles.statValue} numberOfLines={1}>{program.minutes_per_session} min</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <BarChart3 size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue}>{program.days_per_week} days/wk</Text>
+            <Text style={styles.statValue} numberOfLines={1}>{program.days_per_week} days/wk</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <TrendingUp size={18} color="#F59E0B" strokeWidth={2} />
-            <Text style={styles.statValue}>{program.difficulty_level}</Text>
+            <Text style={styles.statValue} numberOfLines={1}>{program.difficulty_level}</Text>
           </View>
         </View>
 
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     flexDirection: "row",
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingVertical: 16,
     backgroundColor: colors.secondary,
     borderBottomWidth: 1,
@@ -306,16 +306,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     gap: 6,
+    paddingHorizontal: 2,
   },
   statDivider: {
     width: 1,
     backgroundColor: colors.border,
-    marginHorizontal: 8,
+    marginHorizontal: 3,
   },
   statValue: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "600",
     color: colors.foreground,
+    textAlign: "center",
   },
   tabBar: {
     flexDirection: "row",
