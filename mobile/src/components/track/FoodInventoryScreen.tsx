@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { FoodInventoryItem } from "@/src/types/track";
+import { FoodInventoryItem, FoodInventoryItemWithLocations } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { AddEditFoodModal } from "./AddEditFoodModal";
 
@@ -28,12 +28,13 @@ type SortType = "name" | "date" | "expiration" | "quantity";
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<TabType>("in-stock");
-  const [items, setItems] = useState<FoodInventoryItem[]>([]);
+  const [items, setItems] = useState<FoodInventoryItemWithLocations[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortType>("name");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   // Modal state
   const [showAddEditModal, setShowAddEditModal] = useState(false);
@@ -55,22 +56,62 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         return;
       }
 
-      const query = supabase
+      // Fetch food inventory items
+      const { data: foodItems, error: foodError } = await supabase
         .from("food_inventory")
         .select("*")
         .eq("user_id", user.id);
 
-      if (activeTab === "in-stock") {
-        query.gt("quantity", 0);
-      } else {
-        query.eq("quantity", 0);
-      }
+      if (foodError) throw foodError;
 
-      const { data, error } = await query;
+      // Fetch all locations for these items
+      const { data: locations, error: locError } = await supabase
+        .from("food_inventory_locations")
+        .select("*")
+        .eq("user_id", user.id);
 
-      if (error) throw error;
+      if (locError) throw locError;
 
-      setItems(data || []);
+      // Combine the data
+      const itemsWithLocations: FoodInventoryItemWithLocations[] = (foodItems || []).map(item => {
+        const itemLocations = (locations || []).filter(loc => loc.food_inventory_id === item.id);
+
+        // Calculate quantities
+        const total_quantity = item.storage_type === 'single-location'
+          ? item.quantity
+          : itemLocations.reduce((sum, loc) => sum + loc.quantity, 0);
+
+        const ready_quantity = item.storage_type === 'single-location'
+          ? item.quantity
+          : itemLocations
+              .filter(loc => loc.is_ready_to_consume)
+              .reduce((sum, loc) => sum + loc.quantity, 0);
+
+        const storage_quantity = item.storage_type === 'single-location'
+          ? 0
+          : itemLocations
+              .filter(loc => !loc.is_ready_to_consume)
+              .reduce((sum, loc) => sum + loc.quantity, 0);
+
+        return {
+          ...item,
+          locations: itemLocations,
+          total_quantity,
+          ready_quantity,
+          storage_quantity,
+        };
+      });
+
+      // Filter by tab
+      const filtered = itemsWithLocations.filter(item => {
+        if (activeTab === "in-stock") {
+          return item.total_quantity > 0;
+        } else {
+          return item.total_quantity === 0;
+        }
+      });
+
+      setItems(filtered);
     } catch (error: any) {
       console.error("Error fetching inventory:", error);
       Alert.alert("Error", "Failed to load inventory");
@@ -192,14 +233,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           if (!b.expiration_date) return -1;
           return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
         case "quantity":
-          return a.quantity - b.quantity;
+          return a.total_quantity - b.total_quantity;
         default:
           return 0;
       }
     });
 
   // Group by category
-  const groupedItems: Record<string, FoodInventoryItem[]> = {};
+  const groupedItems: Record<string, FoodInventoryItemWithLocations[]> = {};
   filteredItems.forEach((item) => {
     const category = item.category || "Uncategorized";
     if (!groupedItems[category]) {
@@ -337,7 +378,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                 <Text style={styles.categoryTitle}>{category}</Text>
                 {groupedItems[category].map((item) => {
                   const expiration = formatExpirationDate(item.expiration_date);
-                  const isLowStock = item.quantity <= item.restock_threshold && item.quantity > 0;
+
+                  // Low stock logic: check both single and multi-location items
+                  const isLowStock = item.storage_type === 'single-location'
+                    ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
+                    : (item.ready_quantity <= (item.fridge_restock_threshold || 0) && item.ready_quantity > 0) ||
+                      (item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0);
 
                   return (
                     <TouchableOpacity
@@ -365,7 +411,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                         {item.brand && <Text style={styles.itemBrand}>{item.brand}</Text>}
                         <View style={styles.itemMeta}>
                           <Text style={styles.itemQuantity}>
-                            {item.quantity} {item.unit}
+                            {item.total_quantity} {item.unit}
+                            {item.storage_type === 'multi-location' && item.ready_quantity > 0 && (
+                              <Text style={styles.itemQuantityDetail}> ({item.ready_quantity} ready)</Text>
+                            )}
                           </Text>
                           {isLowStock && (
                             <View style={styles.lowStockBadge}>
@@ -381,18 +430,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                       </View>
 
                       {/* Actions */}
-                      {activeTab === "in-stock" && (
+                      {activeTab === "in-stock" && item.storage_type === 'single-location' && (
                         <View style={styles.itemActions}>
                           <TouchableOpacity
                             style={styles.qtyButton}
-                            onPress={() => handleUpdateQuantity(item.id, item.quantity, -1)}
+                            onPress={() => handleUpdateQuantity(item.id, item.total_quantity, -1)}
                             activeOpacity={0.7}
                           >
                             <Text style={styles.qtyButtonText}>−</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.qtyButton}
-                            onPress={() => handleUpdateQuantity(item.id, item.quantity, 1)}
+                            onPress={() => handleUpdateQuantity(item.id, item.total_quantity, 1)}
                             activeOpacity={0.7}
                           >
                             <Text style={styles.qtyButtonText}>+</Text>
@@ -631,6 +680,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: colors.foreground,
+  },
+  itemQuantityDetail: {
+    fontSize: 12,
+    fontWeight: "400",
+    color: colors.mutedForeground,
   },
   lowStockBadge: {
     backgroundColor: "rgba(239, 68, 68, 0.1)",

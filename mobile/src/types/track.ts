@@ -1,5 +1,6 @@
 // Food Inventory Types
 export type FoodLocation = "fridge" | "freezer" | "pantry";
+export type StorageType = "single-location" | "multi-location";
 
 export interface FoodInventoryItem {
   id: string;
@@ -25,8 +26,31 @@ export interface FoodInventoryItem {
   image_back_url: string | null;
   image_side_url: string | null;
   notes: string | null;
+  storage_type: StorageType;
+  requires_refrigeration: boolean;
+  fridge_restock_threshold: number | null;
+  total_restock_threshold: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface FoodInventoryLocation {
+  id: string;
+  food_inventory_id: string;
+  user_id: string;
+  location: FoodLocation;
+  quantity: number;
+  is_ready_to_consume: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FoodInventoryItemWithLocations extends Omit<FoodInventoryItem, 'quantity' | 'location'> {
+  locations: FoodInventoryLocation[];
+  total_quantity: number;
+  ready_quantity: number;
+  storage_quantity: number;
 }
 
 export interface FoodCategory {

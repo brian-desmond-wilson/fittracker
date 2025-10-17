@@ -13,14 +13,22 @@ import {
   ActionSheetIOS,
   ActivityIndicator,
 } from "react-native";
-import { X, Camera, Barcode, Trash2 } from "lucide-react-native";
+import { X, Camera, Barcode, Trash2, Plus } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { colors } from "@/src/lib/colors";
-import { FoodInventoryItem, FoodLocation } from "@/src/types/track";
+import { FoodInventoryItem, FoodLocation, StorageType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
+
+interface LocationEntry {
+  id: string;
+  location: FoodLocation;
+  quantity: string;
+  isReadyToConsume: boolean;
+  notes: string;
+}
 
 interface AddEditFoodModalProps {
   visible: boolean;
@@ -54,10 +62,17 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
   const [barcode, setBarcode] = useState("");
 
   // Quantity & Storage
+  const [storageType, setStorageType] = useState<StorageType>("single-location");
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("count");
   const [location, setLocation] = useState<FoodLocation | null>(null);
   const [restockThreshold, setRestockThreshold] = useState("1");
+  const [requiresRefrigeration, setRequiresRefrigeration] = useState(false);
+  const [fridgeRestockThreshold, setFridgeRestockThreshold] = useState("");
+  const [totalRestockThreshold, setTotalRestockThreshold] = useState("");
+
+  // Multi-location entries
+  const [locationEntries, setLocationEntries] = useState<LocationEntry[]>([]);
 
   // Nutritional Info
   const [calories, setCalories] = useState("");
@@ -95,10 +110,14 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
       setFlavor(item.flavor || "");
       setCategory(item.category || "");
       setBarcode(item.barcode || "");
+      setStorageType(item.storage_type);
       setQuantity(item.quantity.toString());
       setUnit(item.unit);
       setLocation(item.location);
       setRestockThreshold(item.restock_threshold.toString());
+      setRequiresRefrigeration(item.requires_refrigeration);
+      setFridgeRestockThreshold(item.fridge_restock_threshold?.toString() || "");
+      setTotalRestockThreshold(item.total_restock_threshold?.toString() || "");
       setCalories(item.calories?.toString() || "");
       setProtein(item.protein?.toString() || "");
       setCarbs(item.carbs?.toString() || "");
@@ -111,11 +130,40 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
       setImageFront(item.image_front_url);
       setImageBack(item.image_back_url);
       setImageSide(item.image_side_url);
+
+      // For multi-location items, fetch location entries
+      if (item.storage_type === 'multi-location') {
+        fetchLocationEntries(item.id);
+      }
     } else {
       // Reset form for new item
       resetForm();
     }
   }, [item, visible]);
+
+  const fetchLocationEntries = async (itemId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("food_inventory_locations")
+        .select("*")
+        .eq("food_inventory_id", itemId)
+        .order("is_ready_to_consume", { ascending: false });
+
+      if (error) throw error;
+
+      const entries: LocationEntry[] = (data || []).map(loc => ({
+        id: loc.id,
+        location: loc.location,
+        quantity: loc.quantity.toString(),
+        isReadyToConsume: loc.is_ready_to_consume,
+        notes: loc.notes || "",
+      }));
+
+      setLocationEntries(entries);
+    } catch (error) {
+      console.error("Error fetching location entries:", error);
+    }
+  };
 
   const resetForm = () => {
     setName("");
@@ -123,10 +171,15 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
     setFlavor("");
     setCategory("");
     setBarcode("");
+    setStorageType("single-location");
     setQuantity("");
     setUnit("count");
     setLocation(null);
     setRestockThreshold("1");
+    setRequiresRefrigeration(false);
+    setFridgeRestockThreshold("");
+    setTotalRestockThreshold("");
+    setLocationEntries([]);
     setCalories("");
     setProtein("");
     setCarbs("");
@@ -368,6 +421,27 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
     }
   };
 
+  const addLocationEntry = () => {
+    const newEntry: LocationEntry = {
+      id: Date.now().toString(), // Temporary ID for new entries
+      location: "fridge",
+      quantity: "",
+      isReadyToConsume: true,
+      notes: "",
+    };
+    setLocationEntries([...locationEntries, newEntry]);
+  };
+
+  const updateLocationEntry = (id: string, updates: Partial<LocationEntry>) => {
+    setLocationEntries(locationEntries.map(entry =>
+      entry.id === id ? { ...entry, ...updates } : entry
+    ));
+  };
+
+  const removeLocationEntry = (id: string) => {
+    setLocationEntries(locationEntries.filter(entry => entry.id !== id));
+  };
+
   const handleSave = async () => {
     // Validation
     if (!name.trim()) {
@@ -375,9 +449,25 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
       return;
     }
 
-    if (!quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) < 0) {
-      Alert.alert("Validation Error", "Valid quantity is required");
-      return;
+    // Validate based on storage type
+    if (storageType === 'single-location') {
+      if (!quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) < 0) {
+        Alert.alert("Validation Error", "Valid quantity is required");
+        return;
+      }
+    } else {
+      // Multi-location validation
+      if (locationEntries.length === 0) {
+        Alert.alert("Validation Error", "Please add at least one location entry");
+        return;
+      }
+
+      for (const entry of locationEntries) {
+        if (!entry.quantity || isNaN(parseFloat(entry.quantity)) || parseFloat(entry.quantity) < 0) {
+          Alert.alert("Validation Error", "All location entries must have valid quantities");
+          return;
+        }
+      }
     }
 
     try {
@@ -417,10 +507,14 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
         flavor: flavor.trim() || null,
         category: category.trim() || null,
         barcode: barcode.trim() || null,
-        quantity: parseInt(quantity),
+        storage_type: storageType,
+        quantity: storageType === 'single-location' ? parseInt(quantity) : 0,
         unit: unit,
-        location: location,
+        location: storageType === 'single-location' ? location : null,
         restock_threshold: parseInt(restockThreshold) || 1,
+        requires_refrigeration: requiresRefrigeration,
+        fridge_restock_threshold: fridgeRestockThreshold ? parseInt(fridgeRestockThreshold) : null,
+        total_restock_threshold: totalRestockThreshold ? parseInt(totalRestockThreshold) : null,
         calories: calories ? parseInt(calories) : null,
         protein: protein ? parseFloat(protein) : null,
         carbs: carbs ? parseFloat(carbs) : null,
@@ -435,6 +529,8 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
         image_side_url: sideUrl,
       };
 
+      let itemId: string;
+
       if (isEdit && item) {
         // Update existing item
         const { error } = await supabase
@@ -443,12 +539,67 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
           .eq("id", item.id);
 
         if (error) throw error;
+        itemId = item.id;
+
+        // For multi-location items, handle location entries
+        if (storageType === 'multi-location') {
+          // Delete existing locations
+          const { error: deleteError } = await supabase
+            .from("food_inventory_locations")
+            .delete()
+            .eq("food_inventory_id", itemId);
+
+          if (deleteError) throw deleteError;
+
+          // Insert new locations
+          const locationsToInsert = locationEntries.map(entry => ({
+            food_inventory_id: itemId,
+            user_id: user.id,
+            location: entry.location,
+            quantity: parseInt(entry.quantity),
+            is_ready_to_consume: entry.isReadyToConsume,
+            notes: entry.notes || null,
+          }));
+
+          const { error: insertError } = await supabase
+            .from("food_inventory_locations")
+            .insert(locationsToInsert);
+
+          if (insertError) throw insertError;
+        }
+
         Alert.alert("Success", "Item updated successfully");
       } else {
         // Create new item
-        const { error } = await supabase.from("food_inventory").insert([itemData]);
+        const { data, error } = await supabase
+          .from("food_inventory")
+          .insert([itemData])
+          .select()
+          .single();
 
         if (error) throw error;
+        if (!data) throw new Error("Failed to create item");
+
+        itemId = data.id;
+
+        // For multi-location items, insert location entries
+        if (storageType === 'multi-location') {
+          const locationsToInsert = locationEntries.map(entry => ({
+            food_inventory_id: itemId,
+            user_id: user.id,
+            location: entry.location,
+            quantity: parseInt(entry.quantity),
+            is_ready_to_consume: entry.isReadyToConsume,
+            notes: entry.notes || null,
+          }));
+
+          const { error: locError } = await supabase
+            .from("food_inventory_locations")
+            .insert(locationsToInsert);
+
+          if (locError) throw locError;
+        }
+
         Alert.alert("Success", "Item added successfully");
       }
 
@@ -563,62 +714,302 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quantity & Storage</Text>
 
-            <View style={styles.row}>
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>
-                  Quantity <Text style={styles.required}>*</Text>
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={quantity}
-                  onChangeText={setQuantity}
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Unit</Text>
-                <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
-                  <Text style={styles.pickerButtonText}>{unit}</Text>
+            {/* Storage Type Toggle */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Storage Type</Text>
+              <View style={styles.storageTypeButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.storageTypeButton,
+                    storageType === "single-location" && styles.storageTypeButtonActive,
+                  ]}
+                  onPress={() => setStorageType("single-location")}
+                >
+                  <Text
+                    style={[
+                      styles.storageTypeButtonText,
+                      storageType === "single-location" && styles.storageTypeButtonTextActive,
+                    ]}
+                  >
+                    Single Location
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.storageTypeButton,
+                    storageType === "multi-location" && styles.storageTypeButtonActive,
+                  ]}
+                  onPress={() => setStorageType("multi-location")}
+                >
+                  <Text
+                    style={[
+                      styles.storageTypeButtonText,
+                      storageType === "multi-location" && styles.storageTypeButtonTextActive,
+                    ]}
+                  >
+                    Multiple Locations
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Location</Text>
-              <View style={styles.locationButtons}>
-                {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
-                  <TouchableOpacity
-                    key={loc}
-                    style={[styles.locationButton, location === loc && styles.locationButtonActive]}
-                    onPress={() => setLocation(loc)}
-                  >
-                    <Text
-                      style={[
-                        styles.locationButtonText,
-                        location === loc && styles.locationButtonTextActive,
-                      ]}
-                    >
-                      {loc.charAt(0).toUpperCase() + loc.slice(1)}
+            {/* Single Location Fields */}
+            {storageType === "single-location" && (
+              <>
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>
+                      Quantity <Text style={styles.required}>*</Text>
                     </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={quantity}
+                      onChangeText={setQuantity}
+                      keyboardType="numeric"
+                    />
+                  </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Restock Threshold</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Notify when quantity reaches..."
-                placeholderTextColor={colors.mutedForeground}
-                value={restockThreshold}
-                onChangeText={setRestockThreshold}
-                keyboardType="numeric"
-              />
-            </View>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Unit</Text>
+                    <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
+                      <Text style={styles.pickerButtonText}>{unit}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Location</Text>
+                  <View style={styles.locationButtons}>
+                    {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
+                      <TouchableOpacity
+                        key={loc}
+                        style={[styles.locationButton, location === loc && styles.locationButtonActive]}
+                        onPress={() => setLocation(loc)}
+                      >
+                        <Text
+                          style={[
+                            styles.locationButtonText,
+                            location === loc && styles.locationButtonTextActive,
+                          ]}
+                        >
+                          {loc.charAt(0).toUpperCase() + loc.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Restock Threshold</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Notify when quantity reaches..."
+                    placeholderTextColor={colors.mutedForeground}
+                    value={restockThreshold}
+                    onChangeText={setRestockThreshold}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </>
+            )}
+
+            {/* Multi-Location Fields */}
+            {storageType === "multi-location" && (
+              <>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Unit</Text>
+                  <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
+                    <Text style={styles.pickerButtonText}>{unit}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Requires Refrigeration Toggle */}
+                <View style={styles.field}>
+                  <View style={styles.toggleRow}>
+                    <View>
+                      <Text style={styles.label}>Requires Refrigeration</Text>
+                      <Text style={styles.helpText}>
+                        Does this item need to be kept cold?
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.toggle,
+                        requiresRefrigeration && styles.toggleActive,
+                      ]}
+                      onPress={() => setRequiresRefrigeration(!requiresRefrigeration)}
+                    >
+                      <View
+                        style={[
+                          styles.toggleThumb,
+                          requiresRefrigeration && styles.toggleThumbActive,
+                        ]}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Location Entries */}
+                <View style={styles.field}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>
+                      Locations <Text style={styles.required}>*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.addLocationButton}
+                      onPress={addLocationEntry}
+                    >
+                      <Plus size={16} color="#FFFFFF" />
+                      <Text style={styles.addLocationButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {locationEntries.length === 0 && (
+                    <Text style={styles.emptyText}>
+                      No locations added yet. Tap "Add" to create one.
+                    </Text>
+                  )}
+
+                  {locationEntries.map((entry) => (
+                    <View key={entry.id} style={styles.locationEntryCard}>
+                      <View style={styles.locationEntryHeader}>
+                        <View style={styles.locationEntryRow}>
+                          <View style={styles.locationEntryField}>
+                            <Text style={styles.locationEntryLabel}>Location</Text>
+                            <View style={styles.locationEntryButtons}>
+                              {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
+                                <TouchableOpacity
+                                  key={loc}
+                                  style={[
+                                    styles.locationEntryButton,
+                                    entry.location === loc && styles.locationEntryButtonActive,
+                                  ]}
+                                  onPress={() => updateLocationEntry(entry.id, { location: loc })}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.locationEntryButtonText,
+                                      entry.location === loc && styles.locationEntryButtonTextActive,
+                                    ]}
+                                  >
+                                    {loc.charAt(0).toUpperCase() + loc.slice(1)}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </View>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.removeLocationButton}
+                          onPress={() => removeLocationEntry(entry.id)}
+                        >
+                          <Trash2 size={18} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.locationEntryRow}>
+                        <View style={[styles.locationEntryField, { flex: 1 }]}>
+                          <Text style={styles.locationEntryLabel}>Quantity</Text>
+                          <TextInput
+                            style={styles.locationEntryInput}
+                            placeholder="0"
+                            placeholderTextColor={colors.mutedForeground}
+                            value={entry.quantity}
+                            onChangeText={(value) => updateLocationEntry(entry.id, { quantity: value })}
+                            keyboardType="numeric"
+                          />
+                        </View>
+
+                        <View style={[styles.locationEntryField, { flex: 1 }]}>
+                          <Text style={styles.locationEntryLabel}>Status</Text>
+                          <View style={styles.locationEntryButtons}>
+                            <TouchableOpacity
+                              style={[
+                                styles.statusButton,
+                                entry.isReadyToConsume && styles.statusButtonActive,
+                              ]}
+                              onPress={() => updateLocationEntry(entry.id, { isReadyToConsume: true })}
+                            >
+                              <Text
+                                style={[
+                                  styles.statusButtonText,
+                                  entry.isReadyToConsume && styles.statusButtonTextActive,
+                                ]}
+                              >
+                                Ready
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[
+                                styles.statusButton,
+                                !entry.isReadyToConsume && styles.statusButtonActive,
+                              ]}
+                              onPress={() => updateLocationEntry(entry.id, { isReadyToConsume: false })}
+                            >
+                              <Text
+                                style={[
+                                  styles.statusButtonText,
+                                  !entry.isReadyToConsume && styles.statusButtonTextActive,
+                                ]}
+                              >
+                                Storage
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.locationEntryField}>
+                        <Text style={styles.locationEntryLabel}>Notes (optional)</Text>
+                        <TextInput
+                          style={styles.locationEntryInput}
+                          placeholder="e.g., Bottom shelf, left side"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={entry.notes}
+                          onChangeText={(value) => updateLocationEntry(entry.id, { notes: value })}
+                        />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Threshold Fields */}
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Ready Threshold</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Min ready qty"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={fridgeRestockThreshold}
+                      onChangeText={setFridgeRestockThreshold}
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.helpText}>
+                      Move from storage when ready qty is low
+                    </Text>
+                  </View>
+
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Total Threshold</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Min total qty"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={totalRestockThreshold}
+                      onChangeText={setTotalRestockThreshold}
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.helpText}>
+                      Add to shopping list when total is low
+                    </Text>
+                  </View>
+                </View>
+              </>
+            )}
           </View>
 
           {/* Nutritional Information Section */}
@@ -1062,6 +1453,169 @@ const styles = StyleSheet.create({
     color: colors.foreground,
   },
   locationButtonTextActive: {
+    color: "#FFFFFF",
+  },
+  storageTypeButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  storageTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  storageTypeButtonActive: {
+    backgroundColor: "#8B5CF6",
+    borderColor: "#8B5CF6",
+  },
+  storageTypeButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  storageTypeButtonTextActive: {
+    color: "#FFFFFF",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  toggle: {
+    width: 51,
+    height: 31,
+    borderRadius: 15.5,
+    backgroundColor: colors.border,
+    padding: 2,
+    justifyContent: "center",
+  },
+  toggleActive: {
+    backgroundColor: "#8B5CF6",
+  },
+  toggleThumb: {
+    width: 27,
+    height: 27,
+    borderRadius: 13.5,
+    backgroundColor: "#FFFFFF",
+  },
+  toggleThumbActive: {
+    transform: [{ translateX: 20 }],
+  },
+  helpText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    marginTop: 4,
+  },
+  addLocationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#8B5CF6",
+    borderRadius: 6,
+  },
+  addLocationButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    fontStyle: "italic",
+    textAlign: "center",
+    paddingVertical: 16,
+  },
+  locationEntryCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  locationEntryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  locationEntryRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
+  },
+  locationEntryField: {
+    flex: 1,
+  },
+  locationEntryLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.foreground,
+    marginBottom: 6,
+  },
+  locationEntryButtons: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  locationEntryButton: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  locationEntryButtonActive: {
+    backgroundColor: "#8B5CF6",
+    borderColor: "#8B5CF6",
+  },
+  locationEntryButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  locationEntryButtonTextActive: {
+    color: "#FFFFFF",
+  },
+  locationEntryInput: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.foreground,
+  },
+  removeLocationButton: {
+    padding: 4,
+  },
+  statusButton: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  statusButtonActive: {
+    backgroundColor: "#10B981",
+    borderColor: "#10B981",
+  },
+  statusButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  statusButtonTextActive: {
     color: "#FFFFFF",
   },
   clearButton: {
