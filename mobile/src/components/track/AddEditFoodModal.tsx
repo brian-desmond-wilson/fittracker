@@ -879,7 +879,7 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
                     <View style={styles.field}>
                       <Text style={styles.label}>Location</Text>
                       <View style={styles.locationButtons}>
-                        {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
+                        {(["fridge", "freezer", "pantry", "cabinet"] as FoodLocation[]).map((loc) => (
                           <TouchableOpacity
                             key={loc}
                             style={[styles.locationButton, location === loc && styles.locationButtonActive]}
@@ -981,7 +981,7 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
                             <View style={styles.locationEntryField}>
                               <Text style={styles.locationEntryLabel}>Location</Text>
                               <View style={styles.locationEntryButtons}>
-                                {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
+                                {(["fridge", "freezer", "pantry", "cabinet"] as FoodLocation[]).map((loc) => (
                                   <TouchableOpacity
                                     key={loc}
                                     style={[

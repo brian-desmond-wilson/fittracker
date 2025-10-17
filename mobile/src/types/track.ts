@@ -1,5 +1,5 @@
 // Food Inventory Types
-export type FoodLocation = "fridge" | "freezer" | "pantry";
+export type FoodLocation = "fridge" | "freezer" | "pantry" | "cabinet";
 export type StorageType = "single-location" | "multi-location";
 
 export interface FoodInventoryItem {

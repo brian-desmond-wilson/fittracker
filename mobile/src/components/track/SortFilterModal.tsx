@@ -93,6 +93,7 @@ export function SortFilterModal({
     { value: "fridge", label: "Fridge" },
     { value: "freezer", label: "Freezer" },
     { value: "pantry", label: "Pantry" },
+    { value: "cabinet", label: "Cabinet" },
   ];
 
   const stockStatusOptions: {
