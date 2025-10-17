@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,56 +7,30 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { Search, TrendingUp, BarChart3, Clock, User } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { useRouter } from "expo-router";
+import { fetchPublishedPrograms, fetchUserProgramInstances } from "@/src/lib/supabase/training";
+import { supabase } from "@/src/lib/supabase/supabase";
+import type { ProgramTemplateWithRelations, ProgramInstanceWithRelations } from "@/src/types/training";
 
-// Mock data for programs
-const MOCK_PROGRAMS = [
-  {
-    id: "1",
-    title: "Project Mass",
-    creator: "Dr. Jacob Wilson",
-    durationWeeks: 14,
-    daysPerWeek: 6,
-    minutesPerSession: 75,
-    primaryGoal: "Hybrid",
-    difficultyLevel: "Intermediate",
-    coverImageUrl: "https://via.placeholder.com/400x250/1a1a1a/ffffff?text=PROJECT+MASS",
-    rating: 4.8,
-    isActive: true,
-  },
-  {
-    id: "2",
-    title: "Strength Foundation",
-    creator: "Mike Israetel",
-    durationWeeks: 12,
-    daysPerWeek: 4,
-    minutesPerSession: 60,
-    primaryGoal: "Strength",
-    difficultyLevel: "Beginner",
-    coverImageUrl: "https://via.placeholder.com/400x250/2a2a2a/ffffff?text=STRENGTH",
-    rating: 4.6,
-    isActive: false,
-  },
-  {
-    id: "3",
-    title: "Hypertrophy Block",
-    creator: "Dr. Jacob Wilson",
-    durationWeeks: 8,
-    daysPerWeek: 5,
-    minutesPerSession: 90,
-    primaryGoal: "Hypertrophy",
-    difficultyLevel: "Advanced",
-    coverImageUrl: "https://via.placeholder.com/400x250/1a2a3a/ffffff?text=HYPERTROPHY",
-    rating: 4.9,
-    isActive: false,
-  },
-];
+interface ProgramDisplayData {
+  id: string;
+  title: string;
+  creator: string;
+  durationWeeks: number;
+  daysPerWeek: number;
+  minutesPerSession: number;
+  primaryGoal: string;
+  difficultyLevel: string;
+  coverImageUrl: string | null;
+  isActive: boolean;
+}
 
 interface ProgramCardProps {
-  program: typeof MOCK_PROGRAMS[0];
+  program: ProgramDisplayData;
   onPress: () => void;
 }
 
@@ -127,8 +101,62 @@ export default function ProgramsTab() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "my-programs">("all");
+  const [programs, setPrograms] = useState<ProgramDisplayData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredPrograms = MOCK_PROGRAMS.filter((program) => {
+  useEffect(() => {
+    loadPrograms();
+  }, []);
+
+  async function loadPrograms() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Fetch all published programs
+      const publishedPrograms = await fetchPublishedPrograms();
+
+      // Fetch user's active program instances if logged in
+      let userProgramInstances: ProgramInstanceWithRelations[] = [];
+      if (user) {
+        userProgramInstances = await fetchUserProgramInstances(user.id);
+      }
+
+      // Create a Set of program IDs that the user has active instances for
+      const activeProgramIds = new Set(
+        userProgramInstances
+          .filter(instance => instance.status === 'active')
+          .map(instance => instance.program_id)
+      );
+
+      // Map Supabase data to display format
+      const mappedPrograms: ProgramDisplayData[] = publishedPrograms.map(program => ({
+        id: program.id,
+        title: program.title,
+        creator: program.creator_name,
+        durationWeeks: program.duration_weeks,
+        daysPerWeek: program.days_per_week,
+        minutesPerSession: program.minutes_per_session,
+        primaryGoal: program.primary_goal,
+        difficultyLevel: program.difficulty_level,
+        coverImageUrl: program.cover_image_url,
+        isActive: activeProgramIds.has(program.id),
+      }));
+
+      setPrograms(mappedPrograms);
+    } catch (err) {
+      console.error('Error loading programs:', err);
+      setError('Failed to load programs. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredPrograms = programs.filter((program) => {
     const matchesSearch =
       program.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       program.creator.toLowerCase().includes(searchQuery.toLowerCase());
@@ -141,6 +169,29 @@ export default function ProgramsTab() {
 
   const myPrograms = filteredPrograms.filter((p) => p.isActive);
   const discoverPrograms = filteredPrograms.filter((p) => !p.isActive);
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading programs...</Text>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.errorTitle}>Oops!</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={loadPrograms}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -261,6 +312,39 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.mutedForeground,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: colors.foreground,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primaryForeground,
   },
   searchContainer: {
     paddingHorizontal: 20,
