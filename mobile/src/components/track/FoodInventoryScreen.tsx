@@ -17,6 +17,7 @@ import { colors } from "@/src/lib/colors";
 import { FoodInventoryItem, FoodInventoryItemWithLocations } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { AddEditFoodModal } from "./AddEditFoodModal";
+import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences } from "./SortFilterModal";
 
 interface FoodInventoryScreenProps {
   onClose: () => void;
@@ -32,17 +33,38 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<SortType>("name");
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   // Modal state
   const [showAddEditModal, setShowAddEditModal] = useState(false);
   const [editingItem, setEditingItem] = useState<FoodInventoryItem | null>(null);
 
+  // Sort & Filter state
+  const [showSortFilterModal, setShowSortFilterModal] = useState(false);
+  const [currentSort, setCurrentSort] = useState<SortOption>("name-asc");
+  const [currentFilters, setCurrentFilters] = useState<FilterOptions>({
+    locations: [],
+    categories: [],
+    stockStatus: [],
+    storageTypes: [],
+    showExpired: true,
+  });
+
   useEffect(() => {
     fetchInventory();
   }, [activeTab]);
+
+  useEffect(() => {
+    // Load saved sort/filter preferences on mount
+    const loadPreferences = async () => {
+      const prefs = await loadSortFilterPreferences();
+      if (prefs) {
+        setCurrentSort(prefs.sort);
+        setCurrentFilters(prefs.filters);
+      }
+    };
+    loadPreferences();
+  }, []);
 
   const fetchInventory = async () => {
     try {
@@ -217,23 +239,76 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // Filter and sort items
   const filteredItems = items
     .filter((item) => {
+      // Search filter
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.brand && item.brand.toLowerCase().includes(searchQuery.toLowerCase()));
-      const matchesCategory = !selectedCategory || item.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+
+      // Location filter
+      const matchesLocation = currentFilters.locations.length === 0 ||
+        (item.storage_type === 'single-location' && item.location && currentFilters.locations.includes(item.location)) ||
+        (item.storage_type === 'multi-location' && item.locations.some(loc => currentFilters.locations.includes(loc.location)));
+
+      // Category filter
+      const matchesCategory = currentFilters.categories.length === 0 ||
+        currentFilters.categories.includes(item.category || "Uncategorized");
+
+      // Stock status filter
+      const matchesStockStatus = currentFilters.stockStatus.length === 0 || currentFilters.stockStatus.some(status => {
+        if (status === "low-stock") {
+          return item.storage_type === 'single-location'
+            ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
+            : (item.ready_quantity <= (item.fridge_restock_threshold || 0) && item.ready_quantity > 0) ||
+              (item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0);
+        }
+        if (status === "expiring-soon") {
+          if (!item.expiration_date) return false;
+          const daysUntilExpiration = Math.ceil(
+            (new Date(item.expiration_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+          );
+          return daysUntilExpiration >= 0 && daysUntilExpiration <= 7;
+        }
+        if (status === "out-of-stock") {
+          return item.total_quantity === 0;
+        }
+        return false;
+      });
+
+      // Storage type filter
+      const matchesStorageType = currentFilters.storageTypes.length === 0 ||
+        currentFilters.storageTypes.includes(item.storage_type);
+
+      // Expired items filter
+      const matchesExpired = currentFilters.showExpired || !item.expiration_date ||
+        new Date(item.expiration_date) >= new Date();
+
+      return matchesSearch && matchesLocation && matchesCategory && matchesStockStatus && matchesStorageType && matchesExpired;
     })
     .sort((a, b) => {
-      switch (sortBy) {
-        case "name":
+      switch (currentSort) {
+        case "name-asc":
           return a.name.localeCompare(b.name);
-        case "date":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case "expiration":
+        case "name-desc":
+          return b.name.localeCompare(a.name);
+        case "quantity-low":
+          return a.total_quantity - b.total_quantity;
+        case "quantity-high":
+          return b.total_quantity - a.total_quantity;
+        case "expiration-soon":
+          if (!a.expiration_date && !b.expiration_date) return 0;
           if (!a.expiration_date) return 1;
           if (!b.expiration_date) return -1;
           return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
-        case "quantity":
-          return a.total_quantity - b.total_quantity;
+        case "expiration-late":
+          if (!a.expiration_date && !b.expiration_date) return 0;
+          if (!a.expiration_date) return 1;
+          if (!b.expiration_date) return -1;
+          return new Date(b.expiration_date).getTime() - new Date(a.expiration_date).getTime();
+        case "category-asc":
+          return (a.category || "Uncategorized").localeCompare(b.category || "Uncategorized");
+        case "date-newest":
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case "date-oldest":
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         default:
           return 0;
       }
@@ -250,6 +325,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   });
 
   const categories = Object.keys(groupedItems).sort();
+
+  // Get available categories for modal
+  const availableCategories = Array.from(new Set(items.map(item => item.category || "Uncategorized"))).sort();
+
+  // Handler for applying sort/filter
+  const handleApplySortFilter = (sort: SortOption, filters: FilterOptions) => {
+    setCurrentSort(sort);
+    setCurrentFilters(filters);
+  };
 
   const formatExpirationDate = (dateStr: string | null) => {
     if (!dateStr) return null;
@@ -336,7 +420,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           </View>
           <TouchableOpacity
             style={styles.filterButton}
-            onPress={() => Alert.alert("Sort & Filter", "Sort and filter options coming soon!")}
+            onPress={() => setShowSortFilterModal(true)}
             activeOpacity={0.7}
           >
             <Filter size={20} color={colors.foreground} />
@@ -474,6 +558,16 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           onClose={handleModalClose}
           onSave={handleModalSave}
           item={editingItem}
+        />
+
+        {/* Sort & Filter Modal */}
+        <SortFilterModal
+          visible={showSortFilterModal}
+          onClose={() => setShowSortFilterModal(false)}
+          onApply={handleApplySortFilter}
+          availableCategories={availableCategories}
+          currentSort={currentSort}
+          currentFilters={currentFilters}
         />
       </View>
     </>
