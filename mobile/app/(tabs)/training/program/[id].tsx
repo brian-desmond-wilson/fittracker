@@ -8,6 +8,7 @@ import {
   Image,
   StatusBar,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -29,6 +30,7 @@ export default function ProgramDetail() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [program, setProgram] = useState<ProgramTemplateWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const programId = params.id as string;
@@ -48,7 +50,13 @@ export default function ProgramDetail() {
       setError('Failed to load program details');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadProgram();
   }
 
   const tabs: { key: Tab; label: string }[] = [
@@ -126,6 +134,16 @@ export default function ProgramDetail() {
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              title="Pull to refresh"
+              titleColor={colors.mutedForeground}
+            />
+          }
         >
           {/* Cover Image Banner */}
           <View style={styles.bannerContainer}>
