@@ -9,6 +9,7 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
 import { Flame, Timer, Droplet, Menu, User } from "lucide-react-native";
 import GoingToBedButton from "@/src/components/sleep/GoingToBedButton";
@@ -19,6 +20,7 @@ import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard"
 import DrawerMenu from "@/src/components/drawer/DrawerMenu";
 
 export default function Home() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
   const [sleepQualityModalVisible, setSleepQualityModalVisible] = useState(false);
@@ -93,7 +95,7 @@ export default function Home() {
           <Menu size={24} color="#9CA3AF" strokeWidth={2} />
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => {}} // Profile icon - does nothing for now
+          onPress={() => router.push("/profile")}
           style={styles.iconButton}
         >
           <User size={24} color="#9CA3AF" strokeWidth={2} />
