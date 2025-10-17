@@ -114,73 +114,81 @@ export default function ProgramDetail() {
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Cover Image Banner */}
-        <View style={styles.bannerContainer}>
-          <Image
-            source={{ uri: program.cover_image_url || 'https://via.placeholder.com/400x250/1a1a1a/ffffff?text=PROGRAM' }}
-            style={styles.bannerImage}
-          />
-
-          {/* Back Button Overlay */}
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
-            <Text style={styles.backText}>Training</Text>
+        {/* Fixed Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+            <ChevronLeft size={24} color={colors.foreground} />
+            <Text style={styles.headerText}>Training</Text>
           </TouchableOpacity>
+        </View>
 
-          {/* Gradient Overlay */}
-          <View style={styles.bannerGradient} />
+        {/* Scrollable Content */}
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Cover Image Banner */}
+          <View style={styles.bannerContainer}>
+            <Image
+              source={{ uri: program.cover_image_url || 'https://via.placeholder.com/400x250/1a1a1a/ffffff?text=PROGRAM' }}
+              style={styles.bannerImage}
+            />
 
-          {/* Program Title Overlay */}
-          <View style={styles.bannerContent}>
-            <Text style={styles.bannerTitle}>{program.title}</Text>
-            <View style={styles.bannerCreator}>
-              <User size={14} color="#FFFFFF" />
-              <Text style={styles.bannerCreatorText}>by {program.creator_name}</Text>
+            {/* Gradient Overlay */}
+            <View style={styles.bannerGradient} />
+
+            {/* Program Title Overlay */}
+            <View style={styles.bannerContent}>
+              <Text style={styles.bannerTitle}>{program.title}</Text>
+              <View style={styles.bannerCreator}>
+                <User size={14} color="#FFFFFF" />
+                <Text style={styles.bannerCreatorText}>by {program.creator_name}</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Program Stats Row */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statBox}>
-            <Calendar size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue} numberOfLines={1}>{program.duration_weeks} weeks</Text>
+          {/* Program Stats Row */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statBox}>
+              <Calendar size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.statValue} numberOfLines={1}>{program.duration_weeks} weeks</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Clock size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.statValue} numberOfLines={1}>{program.minutes_per_session} min</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <BarChart3 size={18} color={colors.primary} strokeWidth={2} />
+              <Text style={styles.statValue} numberOfLines={1}>{program.days_per_week} days/wk</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <TrendingUp size={18} color="#F59E0B" strokeWidth={2} />
+              <Text style={styles.statValue} numberOfLines={1}>{program.difficulty_level}</Text>
+            </View>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Clock size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue} numberOfLines={1}>{program.minutes_per_session} min</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <BarChart3 size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue} numberOfLines={1}>{program.days_per_week} days/wk</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <TrendingUp size={18} color="#F59E0B" strokeWidth={2} />
-            <Text style={styles.statValue} numberOfLines={1}>{program.difficulty_level}</Text>
-          </View>
-        </View>
 
-        {/* Tab Bar */}
-        <View style={styles.tabBar}>
-          {tabs.map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-              onPress={() => setActiveTab(tab.key)}
-            >
-              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                {tab.label}
-              </Text>
-              {activeTab === tab.key && <View style={styles.tabIndicator} />}
-            </TouchableOpacity>
-          ))}
-        </View>
+          {/* Tab Bar */}
+          <View style={styles.tabBar}>
+            {tabs.map((tab) => (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+                onPress={() => setActiveTab(tab.key)}
+              >
+                <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                  {tab.label}
+                </Text>
+                {activeTab === tab.key && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            ))}
+          </View>
 
-        {/* Tab Content */}
-        {renderTabContent()}
+          {/* Tab Content */}
+          {renderTabContent()}
+        </ScrollView>
       </View>
     </>
   );
@@ -190,6 +198,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  headerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  headerText: {
+    fontSize: 17,
+    color: colors.foreground,
+    fontWeight: "500",
+  },
+  scrollView: {
+    flex: 1,
   },
   centerContent: {
     justifyContent: "center",
@@ -249,20 +277,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     backgroundColor: colors.muted,
-  },
-  backButton: {
-    position: "absolute",
-    top: 12,
-    left: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    zIndex: 10,
-  },
-  backText: {
-    fontSize: 17,
-    color: "#FFFFFF",
-    fontWeight: "500",
   },
   bannerGradient: {
     position: "absolute",

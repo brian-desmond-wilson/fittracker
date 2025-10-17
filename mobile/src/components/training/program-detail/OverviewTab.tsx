@@ -18,11 +18,7 @@ export default function OverviewTab({ program }: OverviewTabProps) {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.container}>
       {/* About This Program */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About This Program</Text>
@@ -129,16 +125,13 @@ export default function OverviewTab({ program }: OverviewTabProps) {
           daysPerWeek: program.days_per_week,
         }}
       />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     backgroundColor: colors.background,
-  },
-  content: {
     padding: 20,
   },
   section: {
