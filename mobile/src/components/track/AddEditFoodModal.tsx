@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,10 @@ import {
   Image,
   ActionSheetIOS,
   ActivityIndicator,
+  Animated,
+  LayoutAnimation,
 } from "react-native";
-import { X, Camera, Barcode, Trash2, Plus } from "lucide-react-native";
+import { X, Camera, Barcode, Trash2, Plus, ChevronDown } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { colors } from "@/src/lib/colors";
@@ -37,6 +39,8 @@ interface AddEditFoodModalProps {
   item?: FoodInventoryItem | null;
 }
 
+type SectionKey = "basic" | "storage" | "nutrition" | "expiration" | "images" | "notes";
+
 const PREDEFINED_CATEGORIES = [
   "Produce",
   "Protein",
@@ -50,6 +54,45 @@ const PREDEFINED_CATEGORIES = [
 ];
 
 const UNITS = ["oz", "lbs", "g", "kg", "ml", "L", "count", "servings"];
+
+// Section Header Component
+interface SectionHeaderProps {
+  title: string;
+  sectionKey: SectionKey;
+  isExpanded: boolean;
+  hasError: boolean;
+  onPress: () => void;
+}
+
+function SectionHeader({ title, sectionKey, isExpanded, hasError, onPress }: SectionHeaderProps) {
+  const rotateAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotateAnim, {
+      toValue: isExpanded ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [isExpanded]);
+
+  const rotate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "180deg"],
+  });
+
+  return (
+    <TouchableOpacity
+      style={[styles.sectionHeader, hasError && styles.sectionHeaderError]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text style={[styles.sectionTitle, hasError && styles.sectionTitleError]}>{title}</Text>
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <ChevronDown size={20} color={hasError ? "#EF4444" : colors.foreground} />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
 
 export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFoodModalProps) {
   const isEdit = !!item;
@@ -101,6 +144,10 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingProductData, setLoadingProductData] = useState(false);
+
+  // Accordion state
+  const [expandedSection, setExpandedSection] = useState<SectionKey>("basic");
+  const [validationErrors, setValidationErrors] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (item) {
@@ -192,6 +239,8 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
     setImageFront(null);
     setImageBack(null);
     setImageSide(null);
+    setExpandedSection("basic");
+    setValidationErrors(new Set());
   };
 
   const requestPermissions = async () => {
@@ -442,9 +491,22 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
     setLocationEntries(locationEntries.filter(entry => entry.id !== id));
   };
 
+  const toggleSection = (section: SectionKey) => {
+    if (Platform.OS === 'ios') {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    setExpandedSection(expandedSection === section ? expandedSection : section);
+  };
+
   const handleSave = async () => {
+    // Clear previous validation errors
+    const errors = new Set<string>();
+
     // Validation
     if (!name.trim()) {
+      errors.add("name");
+      setValidationErrors(errors);
+      setExpandedSection("basic");
       Alert.alert("Validation Error", "Product name is required");
       return;
     }
@@ -452,23 +514,34 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
     // Validate based on storage type
     if (storageType === 'single-location') {
       if (!quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) < 0) {
+        errors.add("quantity");
+        setValidationErrors(errors);
+        setExpandedSection("storage");
         Alert.alert("Validation Error", "Valid quantity is required");
         return;
       }
     } else {
       // Multi-location validation
       if (locationEntries.length === 0) {
+        errors.add("locationEntries");
+        setValidationErrors(errors);
+        setExpandedSection("storage");
         Alert.alert("Validation Error", "Please add at least one location entry");
         return;
       }
 
       for (const entry of locationEntries) {
         if (!entry.quantity || isNaN(parseFloat(entry.quantity)) || parseFloat(entry.quantity) < 0) {
+          errors.add("locationEntries");
+          setValidationErrors(errors);
+          setExpandedSection("storage");
           Alert.alert("Validation Error", "All location entries must have valid quantities");
           return;
         }
       }
     }
+
+    setValidationErrors(new Set());
 
     try {
       setSaving(true);
@@ -628,561 +701,632 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Basic Information Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Basic Information</Text>
+            <SectionHeader
+              title="Basic Information"
+              sectionKey="basic"
+              isExpanded={expandedSection === "basic"}
+              hasError={validationErrors.has("name")}
+              onPress={() => toggleSection("basic")}
+            />
 
-            <View style={styles.field}>
-              <Text style={styles.label}>
-                Product Name <Text style={styles.required}>*</Text>
-              </Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Greek Yogurt"
-                placeholderTextColor={colors.mutedForeground}
-                value={name}
-                onChangeText={setName}
-              />
-            </View>
+            {expandedSection === "basic" && (
+              <View style={styles.sectionContent}>
+                <View style={styles.field}>
+                  <Text style={styles.label}>
+                    Product Name <Text style={styles.required}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      validationErrors.has("name") && styles.inputError,
+                    ]}
+                    placeholder="e.g., Greek Yogurt"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={name}
+                    onChangeText={setName}
+                  />
+                </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Brand</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Chobani"
-                placeholderTextColor={colors.mutedForeground}
-                value={brand}
-                onChangeText={setBrand}
-              />
-            </View>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Brand</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Chobani"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={brand}
+                    onChangeText={setBrand}
+                  />
+                </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Flavor / Variety</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., Vanilla, Strawberry"
-                placeholderTextColor={colors.mutedForeground}
-                value={flavor}
-                onChangeText={setFlavor}
-              />
-            </View>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Flavor / Variety</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Vanilla, Strawberry"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={flavor}
+                    onChangeText={setFlavor}
+                  />
+                </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Category</Text>
-              <TouchableOpacity
-                style={styles.pickerButton}
-                onPress={() => setShowCategoryPicker(true)}
-              >
-                <Text style={[styles.pickerButtonText, !category && styles.placeholder]}>
-                  {category || "Select category"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Category</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => setShowCategoryPicker(true)}
+                  >
+                    <Text style={[styles.pickerButtonText, !category && styles.placeholder]}>
+                      {category || "Select category"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.field}>
-              <View style={styles.labelRow}>
-                <Text style={styles.label}>Barcode</Text>
-                <TouchableOpacity
-                  style={styles.scanButton}
-                  onPress={() => setShowBarcodeScanner(true)}
-                  disabled={loadingProductData}
-                >
-                  {loadingProductData ? (
-                    <ActivityIndicator size="small" color={colors.foreground} />
-                  ) : (
-                    <>
-                      <Barcode size={16} color={colors.foreground} />
-                      <Text style={styles.scanButtonText}>Scan</Text>
-                    </>
+                <View style={styles.field}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Barcode</Text>
+                    <TouchableOpacity
+                      style={styles.scanButton}
+                      onPress={() => setShowBarcodeScanner(true)}
+                      disabled={loadingProductData}
+                    >
+                      {loadingProductData ? (
+                        <ActivityIndicator size="small" color={colors.foreground} />
+                      ) : (
+                        <>
+                          <Barcode size={16} color={colors.foreground} />
+                          <Text style={styles.scanButtonText}>Scan</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter or scan barcode"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={barcode}
+                    onChangeText={setBarcode}
+                    keyboardType="numeric"
+                    editable={!loadingProductData}
+                  />
+                  {loadingProductData && (
+                    <Text style={styles.loadingText}>Loading product information...</Text>
                   )}
-                </TouchableOpacity>
+                </View>
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter or scan barcode"
-                placeholderTextColor={colors.mutedForeground}
-                value={barcode}
-                onChangeText={setBarcode}
-                keyboardType="numeric"
-                editable={!loadingProductData}
-              />
-              {loadingProductData && (
-                <Text style={styles.loadingText}>Loading product information...</Text>
-              )}
-            </View>
+            )}
           </View>
 
           {/* Quantity & Storage Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quantity & Storage</Text>
+            <SectionHeader
+              title="Quantity & Storage"
+              sectionKey="storage"
+              isExpanded={expandedSection === "storage"}
+              hasError={validationErrors.has("quantity") || validationErrors.has("locationEntries")}
+              onPress={() => toggleSection("storage")}
+            />
 
-            {/* Storage Type Toggle */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Storage Type</Text>
-              <View style={styles.storageTypeButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.storageTypeButton,
-                    storageType === "single-location" && styles.storageTypeButtonActive,
-                  ]}
-                  onPress={() => setStorageType("single-location")}
-                >
-                  <Text
-                    style={[
-                      styles.storageTypeButtonText,
-                      storageType === "single-location" && styles.storageTypeButtonTextActive,
-                    ]}
-                  >
-                    Single Location
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.storageTypeButton,
-                    storageType === "multi-location" && styles.storageTypeButtonActive,
-                  ]}
-                  onPress={() => setStorageType("multi-location")}
-                >
-                  <Text
-                    style={[
-                      styles.storageTypeButtonText,
-                      storageType === "multi-location" && styles.storageTypeButtonTextActive,
-                    ]}
-                  >
-                    Multiple Locations
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Single Location Fields */}
-            {storageType === "single-location" && (
-              <>
-                <View style={styles.row}>
-                  <View style={[styles.field, styles.fieldHalf]}>
-                    <Text style={styles.label}>
-                      Quantity <Text style={styles.required}>*</Text>
-                    </Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="0"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={quantity}
-                      onChangeText={setQuantity}
-                      keyboardType="numeric"
-                    />
-                  </View>
-
-                  <View style={[styles.field, styles.fieldHalf]}>
-                    <Text style={styles.label}>Unit</Text>
-                    <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
-                      <Text style={styles.pickerButtonText}>{unit}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
+            {expandedSection === "storage" && (
+              <View style={styles.sectionContent}>
+                {/* Storage Type Toggle */}
                 <View style={styles.field}>
-                  <Text style={styles.label}>Location</Text>
-                  <View style={styles.locationButtons}>
-                    {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
-                      <TouchableOpacity
-                        key={loc}
-                        style={[styles.locationButton, location === loc && styles.locationButtonActive]}
-                        onPress={() => setLocation(loc)}
-                      >
-                        <Text
-                          style={[
-                            styles.locationButtonText,
-                            location === loc && styles.locationButtonTextActive,
-                          ]}
-                        >
-                          {loc.charAt(0).toUpperCase() + loc.slice(1)}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Restock Threshold</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Notify when quantity reaches..."
-                    placeholderTextColor={colors.mutedForeground}
-                    value={restockThreshold}
-                    onChangeText={setRestockThreshold}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </>
-            )}
-
-            {/* Multi-Location Fields */}
-            {storageType === "multi-location" && (
-              <>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Unit</Text>
-                  <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
-                    <Text style={styles.pickerButtonText}>{unit}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Requires Refrigeration Toggle */}
-                <View style={styles.field}>
-                  <View style={styles.toggleRow}>
-                    <View>
-                      <Text style={styles.label}>Requires Refrigeration</Text>
-                      <Text style={styles.helpText}>
-                        Does this item need to be kept cold?
-                      </Text>
-                    </View>
+                  <Text style={styles.label}>Storage Type</Text>
+                  <View style={styles.storageTypeButtons}>
                     <TouchableOpacity
                       style={[
-                        styles.toggle,
-                        requiresRefrigeration && styles.toggleActive,
+                        styles.storageTypeButton,
+                        storageType === "single-location" && styles.storageTypeButtonActive,
                       ]}
-                      onPress={() => setRequiresRefrigeration(!requiresRefrigeration)}
+                      onPress={() => setStorageType("single-location")}
                     >
-                      <View
+                      <Text
                         style={[
-                          styles.toggleThumb,
-                          requiresRefrigeration && styles.toggleThumbActive,
+                          styles.storageTypeButtonText,
+                          storageType === "single-location" && styles.storageTypeButtonTextActive,
                         ]}
-                      />
+                      >
+                        Single Location
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.storageTypeButton,
+                        storageType === "multi-location" && styles.storageTypeButtonActive,
+                      ]}
+                      onPress={() => setStorageType("multi-location")}
+                    >
+                      <Text
+                        style={[
+                          styles.storageTypeButtonText,
+                          storageType === "multi-location" && styles.storageTypeButtonTextActive,
+                        ]}
+                      >
+                        Multiple Locations
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* Location Entries */}
-                <View style={styles.field}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>
-                      Locations <Text style={styles.required}>*</Text>
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.addLocationButton}
-                      onPress={addLocationEntry}
-                    >
-                      <Plus size={16} color="#FFFFFF" />
-                      <Text style={styles.addLocationButtonText}>Add</Text>
-                    </TouchableOpacity>
-                  </View>
+                {/* Single Location Fields */}
+                {storageType === "single-location" && (
+                  <>
+                    <View style={styles.row}>
+                      <View style={[styles.field, styles.fieldHalf]}>
+                        <Text style={styles.label}>
+                          Quantity <Text style={styles.required}>*</Text>
+                        </Text>
+                        <TextInput
+                          style={[
+                            styles.input,
+                            validationErrors.has("quantity") && styles.inputError,
+                          ]}
+                          placeholder="0"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={quantity}
+                          onChangeText={setQuantity}
+                          keyboardType="numeric"
+                        />
+                      </View>
 
-                  {locationEntries.length === 0 && (
-                    <Text style={styles.emptyText}>
-                      No locations added yet. Tap "Add" to create one.
-                    </Text>
-                  )}
+                      <View style={[styles.field, styles.fieldHalf]}>
+                        <Text style={styles.label}>Unit</Text>
+                        <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
+                          <Text style={styles.pickerButtonText}>{unit}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
 
-                  {locationEntries.map((entry) => (
-                    <View key={entry.id} style={styles.locationEntryCard}>
-                      <View style={styles.locationEntryHeader}>
-                        <View style={styles.locationEntryRow}>
-                          <View style={styles.locationEntryField}>
-                            <Text style={styles.locationEntryLabel}>Location</Text>
-                            <View style={styles.locationEntryButtons}>
-                              {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
-                                <TouchableOpacity
-                                  key={loc}
-                                  style={[
-                                    styles.locationEntryButton,
-                                    entry.location === loc && styles.locationEntryButtonActive,
-                                  ]}
-                                  onPress={() => updateLocationEntry(entry.id, { location: loc })}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.locationEntryButtonText,
-                                      entry.location === loc && styles.locationEntryButtonTextActive,
-                                    ]}
-                                  >
-                                    {loc.charAt(0).toUpperCase() + loc.slice(1)}
-                                  </Text>
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          </View>
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Location</Text>
+                      <View style={styles.locationButtons}>
+                        {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
+                          <TouchableOpacity
+                            key={loc}
+                            style={[styles.locationButton, location === loc && styles.locationButtonActive]}
+                            onPress={() => setLocation(loc)}
+                          >
+                            <Text
+                              style={[
+                                styles.locationButtonText,
+                                location === loc && styles.locationButtonTextActive,
+                              ]}
+                            >
+                              {loc.charAt(0).toUpperCase() + loc.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Restock Threshold</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Notify when quantity reaches..."
+                        placeholderTextColor={colors.mutedForeground}
+                        value={restockThreshold}
+                        onChangeText={setRestockThreshold}
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </>
+                )}
+
+                {/* Multi-Location Fields */}
+                {storageType === "multi-location" && (
+                  <>
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Unit</Text>
+                      <TouchableOpacity style={styles.pickerButton} onPress={() => setShowUnitPicker(true)}>
+                        <Text style={styles.pickerButtonText}>{unit}</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Requires Refrigeration Toggle */}
+                    <View style={styles.field}>
+                      <View style={styles.toggleRow}>
+                        <View>
+                          <Text style={styles.label}>Requires Refrigeration</Text>
+                          <Text style={styles.helpText}>
+                            Does this item need to be kept cold?
+                          </Text>
                         </View>
-
                         <TouchableOpacity
-                          style={styles.removeLocationButton}
-                          onPress={() => removeLocationEntry(entry.id)}
+                          style={[
+                            styles.toggle,
+                            requiresRefrigeration && styles.toggleActive,
+                          ]}
+                          onPress={() => setRequiresRefrigeration(!requiresRefrigeration)}
                         >
-                          <Trash2 size={18} color="#EF4444" />
+                          <View
+                            style={[
+                              styles.toggleThumb,
+                              requiresRefrigeration && styles.toggleThumbActive,
+                            ]}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Location Entries */}
+                    <View style={styles.field}>
+                      <View style={styles.labelRow}>
+                        <Text style={styles.label}>
+                          Locations <Text style={styles.required}>*</Text>
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.addLocationButton}
+                          onPress={addLocationEntry}
+                        >
+                          <Plus size={16} color="#FFFFFF" />
+                          <Text style={styles.addLocationButtonText}>Add</Text>
                         </TouchableOpacity>
                       </View>
 
-                      <View style={styles.locationEntryRow}>
-                        <View style={[styles.locationEntryField, { flex: 1 }]}>
-                          <Text style={styles.locationEntryLabel}>Quantity</Text>
-                          <TextInput
-                            style={styles.locationEntryInput}
-                            placeholder="0"
-                            placeholderTextColor={colors.mutedForeground}
-                            value={entry.quantity}
-                            onChangeText={(value) => updateLocationEntry(entry.id, { quantity: value })}
-                            keyboardType="numeric"
-                          />
-                        </View>
+                      {locationEntries.length === 0 && (
+                        <Text style={styles.emptyText}>
+                          No locations added yet. Tap "Add" to create one.
+                        </Text>
+                      )}
 
-                        <View style={[styles.locationEntryField, { flex: 1 }]}>
-                          <Text style={styles.locationEntryLabel}>Status</Text>
-                          <View style={styles.locationEntryButtons}>
+                      {validationErrors.has("locationEntries") && locationEntries.length === 0 && (
+                        <View style={styles.errorBox}>
+                          <Text style={styles.errorText}>Please add at least one location</Text>
+                        </View>
+                      )}
+
+                      {locationEntries.map((entry) => (
+                        <View key={entry.id} style={styles.locationEntryCard}>
+                          <View style={styles.locationEntryHeader}>
+                            <View style={styles.locationEntryField}>
+                              <Text style={styles.locationEntryLabel}>Location</Text>
+                              <View style={styles.locationEntryButtons}>
+                                {(["fridge", "freezer", "pantry"] as FoodLocation[]).map((loc) => (
+                                  <TouchableOpacity
+                                    key={loc}
+                                    style={[
+                                      styles.locationEntryButton,
+                                      entry.location === loc && styles.locationEntryButtonActive,
+                                    ]}
+                                    onPress={() => updateLocationEntry(entry.id, { location: loc })}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.locationEntryButtonText,
+                                        entry.location === loc && styles.locationEntryButtonTextActive,
+                                      ]}
+                                    >
+                                      {loc.charAt(0).toUpperCase() + loc.slice(1)}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </View>
+                            </View>
+
                             <TouchableOpacity
-                              style={[
-                                styles.statusButton,
-                                entry.isReadyToConsume && styles.statusButtonActive,
-                              ]}
-                              onPress={() => updateLocationEntry(entry.id, { isReadyToConsume: true })}
+                              style={styles.removeLocationButton}
+                              onPress={() => removeLocationEntry(entry.id)}
                             >
-                              <Text
-                                style={[
-                                  styles.statusButtonText,
-                                  entry.isReadyToConsume && styles.statusButtonTextActive,
-                                ]}
-                              >
-                                Ready
-                              </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[
-                                styles.statusButton,
-                                !entry.isReadyToConsume && styles.statusButtonActive,
-                              ]}
-                              onPress={() => updateLocationEntry(entry.id, { isReadyToConsume: false })}
-                            >
-                              <Text
-                                style={[
-                                  styles.statusButtonText,
-                                  !entry.isReadyToConsume && styles.statusButtonTextActive,
-                                ]}
-                              >
-                                Storage
-                              </Text>
+                              <Trash2 size={18} color="#EF4444" />
                             </TouchableOpacity>
                           </View>
+
+                          <View style={styles.locationEntryRow}>
+                            <View style={[styles.locationEntryField, { flex: 1 }]}>
+                              <Text style={styles.locationEntryLabel}>Quantity</Text>
+                              <TextInput
+                                style={styles.locationEntryInput}
+                                placeholder="0"
+                                placeholderTextColor={colors.mutedForeground}
+                                value={entry.quantity}
+                                onChangeText={(value) => updateLocationEntry(entry.id, { quantity: value })}
+                                keyboardType="numeric"
+                              />
+                            </View>
+
+                            <View style={[styles.locationEntryField, { flex: 1 }]}>
+                              <Text style={styles.locationEntryLabel}>Status</Text>
+                              <View style={styles.locationEntryButtons}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.statusButton,
+                                    entry.isReadyToConsume && styles.statusButtonActive,
+                                  ]}
+                                  onPress={() => updateLocationEntry(entry.id, { isReadyToConsume: true })}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.statusButtonText,
+                                      entry.isReadyToConsume && styles.statusButtonTextActive,
+                                    ]}
+                                  >
+                                    Ready
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.statusButton,
+                                    !entry.isReadyToConsume && styles.statusButtonActive,
+                                  ]}
+                                  onPress={() => updateLocationEntry(entry.id, { isReadyToConsume: false })}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.statusButtonText,
+                                      !entry.isReadyToConsume && styles.statusButtonTextActive,
+                                    ]}
+                                  >
+                                    Storage
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
+
+                          <View style={styles.locationEntryField}>
+                            <Text style={styles.locationEntryLabel}>Notes (optional)</Text>
+                            <TextInput
+                              style={styles.locationEntryInput}
+                              placeholder="e.g., Bottom shelf, left side"
+                              placeholderTextColor={colors.mutedForeground}
+                              value={entry.notes}
+                              onChangeText={(value) => updateLocationEntry(entry.id, { notes: value })}
+                            />
+                          </View>
                         </View>
+                      ))}
+                    </View>
+
+                    {/* Threshold Fields */}
+                    <View style={styles.row}>
+                      <View style={[styles.field, styles.fieldHalf]}>
+                        <Text style={styles.label}>Ready Threshold</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="Min ready qty"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={fridgeRestockThreshold}
+                          onChangeText={setFridgeRestockThreshold}
+                          keyboardType="numeric"
+                        />
+                        <Text style={styles.helpText}>
+                          Move from storage when ready qty is low
+                        </Text>
                       </View>
 
-                      <View style={styles.locationEntryField}>
-                        <Text style={styles.locationEntryLabel}>Notes (optional)</Text>
+                      <View style={[styles.field, styles.fieldHalf]}>
+                        <Text style={styles.label}>Total Threshold</Text>
                         <TextInput
-                          style={styles.locationEntryInput}
-                          placeholder="e.g., Bottom shelf, left side"
+                          style={styles.input}
+                          placeholder="Min total qty"
                           placeholderTextColor={colors.mutedForeground}
-                          value={entry.notes}
-                          onChangeText={(value) => updateLocationEntry(entry.id, { notes: value })}
+                          value={totalRestockThreshold}
+                          onChangeText={setTotalRestockThreshold}
+                          keyboardType="numeric"
                         />
+                        <Text style={styles.helpText}>
+                          Add to shopping list when total is low
+                        </Text>
                       </View>
                     </View>
-                  ))}
-                </View>
-
-                {/* Threshold Fields */}
-                <View style={styles.row}>
-                  <View style={[styles.field, styles.fieldHalf]}>
-                    <Text style={styles.label}>Ready Threshold</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Min ready qty"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={fridgeRestockThreshold}
-                      onChangeText={setFridgeRestockThreshold}
-                      keyboardType="numeric"
-                    />
-                    <Text style={styles.helpText}>
-                      Move from storage when ready qty is low
-                    </Text>
-                  </View>
-
-                  <View style={[styles.field, styles.fieldHalf]}>
-                    <Text style={styles.label}>Total Threshold</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Min total qty"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={totalRestockThreshold}
-                      onChangeText={setTotalRestockThreshold}
-                      keyboardType="numeric"
-                    />
-                    <Text style={styles.helpText}>
-                      Add to shopping list when total is low
-                    </Text>
-                  </View>
-                </View>
-              </>
+                  </>
+                )}
+              </View>
             )}
           </View>
 
           {/* Nutritional Information Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Nutritional Information</Text>
+            <SectionHeader
+              title="Nutritional Information"
+              sectionKey="nutrition"
+              isExpanded={expandedSection === "nutrition"}
+              hasError={false}
+              onPress={() => toggleSection("nutrition")}
+            />
 
-            <View style={styles.row}>
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Calories</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={calories}
-                  onChangeText={setCalories}
-                  keyboardType="numeric"
-                />
-              </View>
+            {expandedSection === "nutrition" && (
+              <View style={styles.sectionContent}>
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Calories</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={calories}
+                      onChangeText={setCalories}
+                      keyboardType="numeric"
+                    />
+                  </View>
 
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Serving Size</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., 1 cup"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={servingSize}
-                  onChangeText={setServingSize}
-                />
-              </View>
-            </View>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Serving Size</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g., 1 cup"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={servingSize}
+                      onChangeText={setServingSize}
+                    />
+                  </View>
+                </View>
 
-            <View style={styles.row}>
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Protein (g)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={protein}
-                  onChangeText={setProtein}
-                  keyboardType="decimal-pad"
-                />
-              </View>
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Protein (g)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={protein}
+                      onChangeText={setProtein}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
 
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Carbs (g)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={carbs}
-                  onChangeText={setCarbs}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-            </View>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Carbs (g)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={carbs}
+                      onChangeText={setCarbs}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
 
-            <View style={styles.row}>
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Fats (g)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={fats}
-                  onChangeText={setFats}
-                  keyboardType="decimal-pad"
-                />
-              </View>
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Fats (g)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={fats}
+                      onChangeText={setFats}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
 
-              <View style={[styles.field, styles.fieldHalf]}>
-                <Text style={styles.label}>Sugars (g)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={sugars}
-                  onChangeText={setSugars}
-                  keyboardType="decimal-pad"
-                />
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Sugars (g)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={sugars}
+                      onChangeText={setSugars}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           {/* Expiration Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Expiration</Text>
+            <SectionHeader
+              title="Expiration"
+              sectionKey="expiration"
+              isExpanded={expandedSection === "expiration"}
+              hasError={false}
+              onPress={() => toggleSection("expiration")}
+            />
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Expiration Date</Text>
-              <TouchableOpacity
-                style={styles.pickerButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Text style={[styles.pickerButtonText, !expirationDate && styles.placeholder]}>
-                  {expirationDate
-                    ? expirationDate.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })
-                    : "Select date"}
-                </Text>
-              </TouchableOpacity>
-              {expirationDate && (
-                <TouchableOpacity
-                  style={styles.clearButton}
-                  onPress={() => setExpirationDate(null)}
-                >
-                  <Text style={styles.clearButtonText}>Clear</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            {expandedSection === "expiration" && (
+              <View style={styles.sectionContent}>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Expiration Date</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text style={[styles.pickerButtonText, !expirationDate && styles.placeholder]}>
+                      {expirationDate
+                        ? expirationDate.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        : "Select date"}
+                    </Text>
+                  </TouchableOpacity>
+                  {expirationDate && (
+                    <TouchableOpacity
+                      style={styles.clearButton}
+                      onPress={() => setExpirationDate(null)}
+                    >
+                      <Text style={styles.clearButtonText}>Clear</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Images Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Product Images</Text>
-            <Text style={styles.sectionSubtitle}>Add photos to easily identify your products</Text>
+            <SectionHeader
+              title="Product Images"
+              sectionKey="images"
+              isExpanded={expandedSection === "images"}
+              hasError={false}
+              onPress={() => toggleSection("images")}
+            />
 
-            <View style={styles.imageGrid}>
-              {[
-                { label: "Primary", image: imagePrimary, type: "primary" as const },
-                { label: "Front", image: imageFront, type: "front" as const },
-                { label: "Back", image: imageBack, type: "back" as const },
-                { label: "Side", image: imageSide, type: "side" as const },
-              ].map(({ label, image, type }) => (
-                <View key={label} style={styles.imageContainer}>
-                  <TouchableOpacity
-                    style={[styles.imagePlaceholder, image && styles.imageWithPhoto]}
-                    onPress={() => pickImage(type)}
-                  >
-                    {image ? (
-                      <Image source={{ uri: image }} style={styles.productImage} />
-                    ) : (
-                      <>
-                        <Camera size={32} color={colors.mutedForeground} />
-                        <Text style={styles.imagePlaceholderText}>{label}</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  {image && (
-                    <TouchableOpacity
-                      style={styles.removeImageButton}
-                      onPress={() => {
-                        if (type === "primary") setImagePrimary(null);
-                        else if (type === "front") setImageFront(null);
-                        else if (type === "back") setImageBack(null);
-                        else if (type === "side") setImageSide(null);
-                      }}
-                    >
-                      <Trash2 size={16} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  )}
+            {expandedSection === "images" && (
+              <View style={styles.sectionContent}>
+                <Text style={styles.sectionSubtitle}>Add photos to easily identify your products</Text>
+
+                <View style={styles.imageGrid}>
+                  {[
+                    { label: "Primary", image: imagePrimary, type: "primary" as const },
+                    { label: "Front", image: imageFront, type: "front" as const },
+                    { label: "Back", image: imageBack, type: "back" as const },
+                    { label: "Side", image: imageSide, type: "side" as const },
+                  ].map(({ label, image, type }) => (
+                    <View key={label} style={styles.imageContainer}>
+                      <TouchableOpacity
+                        style={[styles.imagePlaceholder, image && styles.imageWithPhoto]}
+                        onPress={() => pickImage(type)}
+                      >
+                        {image ? (
+                          <Image source={{ uri: image }} style={styles.productImage} />
+                        ) : (
+                          <>
+                            <Camera size={32} color={colors.mutedForeground} />
+                            <Text style={styles.imagePlaceholderText}>{label}</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      {image && (
+                        <TouchableOpacity
+                          style={styles.removeImageButton}
+                          onPress={() => {
+                            if (type === "primary") setImagePrimary(null);
+                            else if (type === "front") setImageFront(null);
+                            else if (type === "back") setImageBack(null);
+                            else if (type === "side") setImageSide(null);
+                          }}
+                        >
+                          <Trash2 size={16} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
+              </View>
+            )}
           </View>
 
           {/* Notes Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Notes</Text>
-
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Additional notes..."
-              placeholderTextColor={colors.mutedForeground}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
+            <SectionHeader
+              title="Notes"
+              sectionKey="notes"
+              isExpanded={expandedSection === "notes"}
+              hasError={false}
+              onPress={() => toggleSection("notes")}
             />
+
+            {expandedSection === "notes" && (
+              <View style={styles.sectionContent}>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Additional notes..."
+                  placeholderTextColor={colors.mutedForeground}
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+            )}
           </View>
 
           <View style={{ height: 100 }} />
@@ -1344,16 +1488,32 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   section: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: colors.background,
+  },
+  sectionHeaderError: {
+    backgroundColor: "#FEF2F2",
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
     color: colors.foreground,
-    marginBottom: 4,
+  },
+  sectionTitleError: {
+    color: "#EF4444",
+  },
+  sectionContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
   sectionSubtitle: {
     fontSize: 14,
@@ -1394,6 +1554,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: colors.foreground,
+  },
+  inputError: {
+    borderColor: "#EF4444",
+    borderWidth: 2,
   },
   textArea: {
     height: 100,
@@ -1530,6 +1694,20 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     textAlign: "center",
     paddingVertical: 16,
+  },
+  errorBox: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#EF4444",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#EF4444",
+    fontWeight: "600",
+    textAlign: "center",
   },
   locationEntryCard: {
     backgroundColor: colors.card,
