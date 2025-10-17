@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   Image,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Calendar, Clock, BarChart3, TrendingUp, User } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { fetchProgramById } from "@/src/lib/supabase/training";
+import type { ProgramTemplateWithRelations } from "@/src/types/training";
 import OverviewTab from "@/src/components/training/program-detail/OverviewTab";
 import ScheduleTab from "@/src/components/training/program-detail/ScheduleTab";
 import MediaTab from "@/src/components/training/program-detail/MediaTab";
@@ -19,55 +22,34 @@ import HistoryTab from "@/src/components/training/program-detail/HistoryTab";
 
 type Tab = "overview" | "schedule" | "media" | "history";
 
-// Mock program data (will be replaced with actual data from database)
-const MOCK_PROGRAM = {
-  id: "1",
-  title: "Project Mass",
-  creator: "Dr. Jacob Wilson",
-  durationWeeks: 14,
-  daysPerWeek: 6,
-  minutesPerSession: 75,
-  primaryGoal: "Hybrid",
-  difficultyLevel: "Intermediate",
-  coverImageUrl: "https://via.placeholder.com/400x250/1a1a1a/ffffff?text=PROJECT+MASS",
-  description:
-    "14-week advanced DUP program combining heavy strength work with high-volume hypertrophy training",
-  goals: ["Hybrid", "Progressive Overload", "Form Focus"],
-  cycles: [
-    {
-      id: "1",
-      name: "Foundation",
-      weeks: 4,
-      description: "Build base strength with progressive overload",
-    },
-    {
-      id: "2",
-      name: "Accumulation",
-      weeks: 5,
-      description: "High-volume hypertrophy phase",
-    },
-    {
-      id: "3",
-      name: "Intensification",
-      weeks: 3,
-      description: "Increased intensity with lower volume",
-    },
-    {
-      id: "4",
-      name: "Realization",
-      weeks: 2,
-      description: "Peak strength and test maxes",
-    },
-  ],
-};
-
 export default function ProgramDetail() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [program, setProgram] = useState<ProgramTemplateWithRelations | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const programId = params.id as string;
+
+  useEffect(() => {
+    loadProgram();
+  }, [programId]);
+
+  async function loadProgram() {
+    try {
+      setLoading(true);
+      setError(null);
+      const programData = await fetchProgramById(programId);
+      setProgram(programData);
+    } catch (err) {
+      console.error('Error loading program:', err);
+      setError('Failed to load program details');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "overview", label: "Overview" },
@@ -77,9 +59,11 @@ export default function ProgramDetail() {
   ];
 
   const renderTabContent = () => {
+    if (!program) return null;
+
     switch (activeTab) {
       case "overview":
-        return <OverviewTab program={MOCK_PROGRAM} />;
+        return <OverviewTab program={program} />;
       case "schedule":
         return <ScheduleTab programId={programId} />;
       case "media":
@@ -91,13 +75,51 @@ export default function ProgramDetail() {
     }
   };
 
+  // Show loading state
+  if (loading) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" />
+        <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading program...</Text>
+        </View>
+      </>
+    );
+  }
+
+  // Show error state
+  if (error || !program) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" />
+        <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.errorBackButton}>
+            <ChevronLeft size={24} color={colors.foreground} />
+            <Text style={styles.errorBackText}>Back</Text>
+          </TouchableOpacity>
+          <View style={styles.errorContent}>
+            <Text style={styles.errorTitle}>Oops!</Text>
+            <Text style={styles.errorText}>{error || 'Program not found'}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={loadProgram}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Cover Image Banner */}
         <View style={styles.bannerContainer}>
-          <Image source={{ uri: MOCK_PROGRAM.coverImageUrl }} style={styles.bannerImage} />
+          <Image
+            source={{ uri: program.cover_image_url || 'https://via.placeholder.com/400x250/1a1a1a/ffffff?text=PROGRAM' }}
+            style={styles.bannerImage}
+          />
 
           {/* Back Button Overlay */}
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
@@ -110,10 +132,10 @@ export default function ProgramDetail() {
 
           {/* Program Title Overlay */}
           <View style={styles.bannerContent}>
-            <Text style={styles.bannerTitle}>{MOCK_PROGRAM.title}</Text>
+            <Text style={styles.bannerTitle}>{program.title}</Text>
             <View style={styles.bannerCreator}>
               <User size={14} color="#FFFFFF" />
-              <Text style={styles.bannerCreatorText}>by {MOCK_PROGRAM.creator}</Text>
+              <Text style={styles.bannerCreatorText}>by {program.creator_name}</Text>
             </View>
           </View>
         </View>
@@ -122,22 +144,22 @@ export default function ProgramDetail() {
         <View style={styles.statsContainer}>
           <View style={styles.statBox}>
             <Calendar size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue}>{MOCK_PROGRAM.durationWeeks} weeks</Text>
+            <Text style={styles.statValue}>{program.duration_weeks} weeks</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Clock size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue}>{MOCK_PROGRAM.minutesPerSession} min</Text>
+            <Text style={styles.statValue}>{program.minutes_per_session} min</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <BarChart3 size={18} color={colors.primary} strokeWidth={2} />
-            <Text style={styles.statValue}>{MOCK_PROGRAM.daysPerWeek} days/wk</Text>
+            <Text style={styles.statValue}>{program.days_per_week} days/wk</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <TrendingUp size={18} color="#F59E0B" strokeWidth={2} />
-            <Text style={styles.statValue}>{MOCK_PROGRAM.difficultyLevel}</Text>
+            <Text style={styles.statValue}>{program.difficulty_level}</Text>
           </View>
         </View>
 
@@ -168,6 +190,55 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.mutedForeground,
+  },
+  errorBackButton: {
+    position: "absolute",
+    top: 60,
+    left: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  errorBackText: {
+    fontSize: 17,
+    color: colors.foreground,
+    fontWeight: "500",
+  },
+  errorContent: {
+    alignItems: "center",
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: colors.foreground,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primaryForeground,
   },
   bannerContainer: {
     position: "relative",
