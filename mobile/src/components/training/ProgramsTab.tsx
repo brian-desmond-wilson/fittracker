@@ -13,7 +13,7 @@ import { Search, TrendingUp, BarChart3, Clock, User } from "lucide-react-native"
 import { colors } from "@/src/lib/colors";
 import { useRouter } from "expo-router";
 import { fetchPublishedPrograms, fetchUserProgramInstances } from "@/src/lib/supabase/training";
-import { supabase } from "@/src/lib/supabase/supabase";
+import { supabase } from "@/src/lib/supabase";
 import type { ProgramTemplateWithRelations, ProgramInstanceWithRelations } from "@/src/types/training";
 
 interface ProgramDisplayData {
