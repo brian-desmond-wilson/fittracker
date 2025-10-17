@@ -732,20 +732,6 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
                 </TouchableOpacity>
               )}
             </View>
-
-            {showDatePicker && (
-              <DateTimePicker
-                value={expirationDate || new Date()}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={(event, selectedDate) => {
-                  setShowDatePicker(Platform.OS === "ios");
-                  if (selectedDate) {
-                    setExpirationDate(selectedDate);
-                  }
-                }}
-              />
-            )}
           </View>
 
           {/* Images Section */}
@@ -890,6 +876,52 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
           onClose={() => setShowBarcodeScanner(false)}
           onBarcodeScanned={handleBarcodeScanned}
         />
+
+        {/* Date Picker Modal */}
+        {showDatePicker && Platform.OS === "ios" && (
+          <Modal transparent visible={showDatePicker} animationType="fade">
+            <TouchableOpacity
+              style={styles.datePickerModal}
+              activeOpacity={1}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <View style={styles.datePickerModalContent}>
+                <View style={styles.datePickerHeader}>
+                  <Text style={styles.datePickerTitle}>Expiration Date</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.datePickerDone}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={expirationDate || new Date()}
+                  mode="date"
+                  display="spinner"
+                  textColor="#000000"
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) {
+                      setExpirationDate(selectedDate);
+                    }
+                  }}
+                />
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {/* Android Date Picker */}
+        {showDatePicker && Platform.OS === "android" && (
+          <DateTimePicker
+            value={expirationDate || new Date()}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) {
+                setExpirationDate(selectedDate);
+              }
+            }}
+          />
+        )}
       </View>
     </Modal>
   );
@@ -1164,5 +1196,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#8B5CF6",
     fontStyle: "italic",
+  },
+  datePickerModal: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "flex-end",
+    alignItems: "center",
+  },
+  datePickerModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    width: "100%",
+    paddingBottom: 34,
+  },
+  datePickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  datePickerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#000000",
+  },
+  datePickerDone: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#8B5CF6",
   },
 });
