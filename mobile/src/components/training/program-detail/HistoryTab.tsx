@@ -1,39 +1,71 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Calendar, CheckCircle2, TrendingUp } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { colors } from "@/src/lib/colors";
+import { supabase } from "@/src/lib/supabase";
+import type { ProgramInstanceWithRelations } from "@/src/types/training";
 
 interface HistoryTabProps {
   programId: string;
 }
 
-// Mock program instance data
-const MOCK_INSTANCES = [
-  {
-    id: "1",
-    name: "Summer Build 2024",
-    startDate: "2024-06-01",
-    endDate: "2024-09-08",
-    status: "completed",
-    completionPercentage: 100,
-    workoutsCompleted: 84,
-    totalWorkouts: 84,
-  },
-  {
-    id: "2",
-    name: "Project Mass - Take 1",
-    startDate: "2024-01-15",
-    endDate: "2024-03-22",
-    status: "incomplete",
-    completionPercentage: 65,
-    workoutsCompleted: 55,
-    totalWorkouts: 84,
-  },
-];
+interface InstanceDisplay {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  completionPercentage: number;
+  workoutsCompleted: number;
+  totalWorkouts: number;
+}
 
 export default function HistoryTab({ programId }: HistoryTabProps) {
   const router = useRouter();
+  const [instances, setInstances] = useState<InstanceDisplay[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadProgramInstances();
+  }, [programId]);
+
+  async function loadProgramInstances() {
+    try {
+      setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Fetch all program instances for this user and program
+      const { data, error } = await supabase
+        .from('program_instances')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('program_id', programId)
+        .order('start_date', { ascending: false });
+
+      if (error) throw error;
+
+      // Map database instances to display format
+      const mappedInstances: InstanceDisplay[] = (data || []).map(instance => ({
+        id: instance.id,
+        name: instance.instance_name,
+        startDate: instance.start_date,
+        endDate: instance.actual_end_date || instance.expected_end_date,
+        status: instance.status,
+        completionPercentage: Math.round((instance.workouts_completed / instance.total_workouts) * 100),
+        workoutsCompleted: instance.workouts_completed,
+        totalWorkouts: instance.total_workouts,
+      }));
+
+      setInstances(mappedInstances);
+    } catch (error) {
+      console.error('Error loading program instances:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -59,12 +91,23 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
         return "Completed";
       case "active":
         return "Active";
-      case "incomplete":
-        return "Incomplete";
+      case "paused":
+        return "Paused";
+      case "abandoned":
+        return "Abandoned";
       default:
-        return status;
+        return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading history...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -72,7 +115,7 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {MOCK_INSTANCES.length === 0 ? (
+      {instances.length === 0 ? (
         <View style={styles.emptyState}>
           <Calendar size={48} color={colors.mutedForeground} />
           <Text style={styles.emptyStateTitle}>No Program History</Text>
@@ -86,11 +129,11 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
           <View style={styles.header}>
             <Text style={styles.sectionTitle}>Program History</Text>
             <Text style={styles.sectionSubtitle}>
-              {MOCK_INSTANCES.length} {MOCK_INSTANCES.length === 1 ? "attempt" : "attempts"}
+              {instances.length} {instances.length === 1 ? "attempt" : "attempts"}
             </Text>
           </View>
 
-          {MOCK_INSTANCES.map((instance) => (
+          {instances.map((instance) => (
             <TouchableOpacity
               key={instance.id}
               style={styles.instanceCard}
@@ -168,6 +211,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.mutedForeground,
   },
   content: {
     padding: 20,
