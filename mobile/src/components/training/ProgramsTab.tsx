@@ -199,10 +199,7 @@ export default function ProgramsTab() {
               <ProgramCard
                 key={program.id}
                 program={program}
-                onPress={() => {
-                  // TODO: Navigate to program detail
-                  console.log("Navigate to program:", program.id);
-                }}
+                onPress={() => router.push(`/program/${program.id}`)}
               />
             ))}
           </View>
@@ -216,10 +213,7 @@ export default function ProgramsTab() {
               <ProgramCard
                 key={program.id}
                 program={program}
-                onPress={() => {
-                  // TODO: Navigate to program detail
-                  console.log("Navigate to program:", program.id);
-                }}
+                onPress={() => router.push(`/program/${program.id}`)}
               />
             ))}
           </View>
@@ -233,10 +227,7 @@ export default function ProgramsTab() {
                 <ProgramCard
                   key={program.id}
                   program={program}
-                  onPress={() => {
-                    // TODO: Navigate to program detail
-                    console.log("Navigate to program:", program.id);
-                  }}
+                  onPress={() => router.push(`/program/${program.id}`)}
                 />
               ))
             ) : (
