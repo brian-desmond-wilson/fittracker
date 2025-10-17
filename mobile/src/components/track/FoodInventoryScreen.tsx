@@ -9,6 +9,7 @@ import {
   Alert,
   TextInput,
   Image,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide-react-native";
@@ -29,6 +30,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [activeTab, setActiveTab] = useState<TabType>("in-stock");
   const [items, setItems] = useState<FoodInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortType>("name");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -74,7 +76,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       Alert.alert("Error", "Failed to load inventory");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchInventory();
   };
 
   const handleAddItem = () => {
@@ -211,8 +219,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
     if (diffDays < 0) return { text: "Expired", color: "#EF4444" };
     if (diffDays === 0) return { text: "Expires today", color: "#F59E0B" };
-    if (diffDays <= 7) return { text: `${diffDays}d left`, color: "#F59E0B" };
-    return { text: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), color: colors.mutedForeground };
+    if (diffDays <= 7) return { text: `Exp: ${diffDays}d left`, color: "#F59E0B" };
+    return { text: `Exp: ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`, color: colors.mutedForeground };
   };
 
   return (
@@ -295,7 +303,20 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         </View>
 
         {/* Items List */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              title="Pull to refresh"
+              titleColor={colors.mutedForeground}
+            />
+          }
+        >
           {loading ? (
             <Text style={styles.emptyText}>Loading...</Text>
           ) : filteredItems.length === 0 ? (
@@ -351,12 +372,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                               <Text style={styles.lowStockText}>Low Stock</Text>
                             </View>
                           )}
-                          {expiration && (
-                            <Text style={[styles.itemExpiration, { color: expiration.color }]}>
-                              {expiration.text}
-                            </Text>
-                          )}
                         </View>
+                        {expiration && (
+                          <Text style={[styles.itemExpiration, { color: expiration.color }]}>
+                            {expiration.text}
+                          </Text>
+                        )}
                       </View>
 
                       {/* Actions */}
@@ -624,7 +645,7 @@ const styles = StyleSheet.create({
   },
   itemExpiration: {
     fontSize: 12,
-    marginLeft: "auto",
+    marginTop: 4,
   },
   itemActions: {
     flexDirection: "row",

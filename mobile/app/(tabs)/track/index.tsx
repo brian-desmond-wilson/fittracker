@@ -1,6 +1,7 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Modal } from "react-native";
+import React from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import {
   Utensils,
   Droplets,
@@ -12,19 +13,11 @@ import {
   Moon,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
-import { WaterScreen } from "@/src/components/track/WaterScreen";
-import { WeightScreen } from "@/src/components/track/WeightScreen";
-import { SleepScreen } from "@/src/components/track/SleepScreen";
-import { FoodInventoryScreen } from "@/src/components/track/FoodInventoryScreen";
-import { MeasurementsScreen } from "@/src/components/track/MeasurementsScreen";
-import { ProgressPhotosScreen } from "@/src/components/track/ProgressPhotosScreen";
-import { MealsScreen } from "@/src/components/track/MealsScreen";
-import { WorkoutsScreen } from "@/src/components/track/WorkoutsScreen";
 import { colors } from "@/src/lib/colors";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
 export default function Track() {
-  const [activeModal, setActiveModal] = useState<TrackingCategory | null>(null);
+  const router = useRouter();
 
   // Category configuration with prioritized ordering
   const trackingCategories: TrackingCategoryConfig[] = [
@@ -109,7 +102,7 @@ export default function Track() {
   };
 
   const handleCardPress = (categoryId: TrackingCategory) => {
-    setActiveModal(categoryId);
+    router.push(`/(tabs)/track/${categoryId}`);
   };
 
   const nutritionCategories = trackingCategories.filter((c) => c.section === "nutrition");
@@ -174,86 +167,6 @@ export default function Track() {
         {/* Bottom Spacing */}
         <View style={{ height: 32 }} />
       </ScrollView>
-
-      {/* Water Modal */}
-      <Modal
-        visible={activeModal === "water"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <WaterScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Weight Modal */}
-      <Modal
-        visible={activeModal === "weight"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <WeightScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Sleep Modal */}
-      <Modal
-        visible={activeModal === "sleep"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <SleepScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Food Inventory Modal */}
-      <Modal
-        visible={activeModal === "food-inventory"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <FoodInventoryScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Measurements Modal */}
-      <Modal
-        visible={activeModal === "measurements"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <MeasurementsScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Progress Photos Modal */}
-      <Modal
-        visible={activeModal === "photos"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <ProgressPhotosScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Meals Modal */}
-      <Modal
-        visible={activeModal === "meals"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <MealsScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Workouts Modal */}
-      <Modal
-        visible={activeModal === "workouts"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <WorkoutsScreen onClose={() => setActiveModal(null)} />
-      </Modal>
     </SafeAreaView>
   );
 }
