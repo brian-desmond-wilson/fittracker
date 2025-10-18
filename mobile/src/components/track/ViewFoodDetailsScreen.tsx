@@ -12,7 +12,8 @@ import {
   NativeSyntheticEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Package } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { ChevronLeft, Package, Pencil } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { FoodInventoryItemWithCategories } from "@/src/types/track";
 
@@ -25,6 +26,7 @@ interface ViewFoodDetailsScreenProps {
 
 export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -76,6 +78,13 @@ export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenPr
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push(`/(tabs)/track/food-inventory/edit/${item.id}`)}
+            style={styles.editButton}
+          >
+            <Pencil size={20} color="#FFFFFF" />
+            <Text style={styles.editText}>Edit</Text>
           </TouchableOpacity>
         </View>
 
@@ -271,6 +280,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#0A0F1E",
   },
   header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -282,6 +294,15 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   backText: {
+    fontSize: 17,
+    color: "#FFFFFF",
+  },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  editText: {
     fontSize: 17,
     color: "#FFFFFF",
   },

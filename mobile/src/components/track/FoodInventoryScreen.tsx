@@ -217,8 +217,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleEditItem = (item: FoodInventoryItem) => {
-    setEditingItem(item);
-    setShowAddEditModal(true);
+    router.push(`/(tabs)/track/food-inventory/edit/${item.id}`);
   };
 
   const handleModalSave = () => {
