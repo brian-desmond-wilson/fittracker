@@ -1002,7 +1002,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   restockFridgeBadgeOverlay: {
-    backgroundColor: "rgba(249, 115, 22, 0.9)",
+    backgroundColor: "rgba(59, 130, 246, 0.9)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 4,
