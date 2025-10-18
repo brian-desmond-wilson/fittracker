@@ -12,12 +12,14 @@ import {
   RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { FoodInventoryItem, FoodInventoryItemWithLocations } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { AddEditFoodModal } from "./AddEditFoodModal";
 import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences } from "./SortFilterModal";
+import { SwipeableItemRow } from "./SwipeableItemRow";
 
 interface FoodInventoryScreenProps {
   onClose: () => void;
@@ -168,25 +170,31 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    Alert.alert("Delete Item", "Are you sure you want to delete this item?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const { error } = await supabase.from("food_inventory").delete().eq("id", itemId);
+    try {
+      // Delete associated shopping list items first
+      const { error: shoppingListError } = await supabase
+        .from("shopping_list")
+        .delete()
+        .eq("food_inventory_id", itemId);
 
-            if (error) throw error;
+      if (shoppingListError) {
+        console.error("Error deleting shopping list items:", shoppingListError);
+        // Continue with deletion even if shopping list delete fails
+      }
 
-            await fetchInventory();
-          } catch (error: any) {
-            console.error("Error deleting item:", error);
-            Alert.alert("Error", "Failed to delete item");
-          }
-        },
-      },
-    ]);
+      // Delete the inventory item (CASCADE will handle locations)
+      const { error } = await supabase
+        .from("food_inventory")
+        .delete()
+        .eq("id", itemId);
+
+      if (error) throw error;
+
+      await fetchInventory();
+    } catch (error: any) {
+      console.error("Error deleting item:", error);
+      Alert.alert("Error", "Failed to delete item");
+    }
   };
 
   const handleUpdateQuantity = async (itemId: string, currentQty: number, delta: number) => {
@@ -351,9 +359,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   return (
     <>
       <StatusBar barStyle="light-content" />
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
-        <View style={styles.header}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+          {/* Header */}
+          <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Track</Text>
@@ -470,12 +479,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                       (item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0);
 
                   return (
-                    <TouchableOpacity
+                    <SwipeableItemRow
                       key={item.id}
-                      style={styles.itemCard}
-                      onPress={() => handleEditItem(item)}
-                      activeOpacity={0.7}
+                      onDelete={() => handleDeleteItem(item.id)}
                     >
+                      <TouchableOpacity
+                        style={styles.itemCard}
+                        onPress={() => handleEditItem(item)}
+                        activeOpacity={0.7}
+                      >
                       {/* Item Image */}
                       <View style={styles.itemImage}>
                         {item.image_primary_url ? (
@@ -542,7 +554,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                           <ShoppingCart size={18} color="#FFFFFF" />
                         </TouchableOpacity>
                       )}
-                    </TouchableOpacity>
+                      </TouchableOpacity>
+                    </SwipeableItemRow>
                   );
                 })}
               </View>
@@ -569,7 +582,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           currentSort={currentSort}
           currentFilters={currentFilters}
         />
-      </View>
+        </View>
+      </GestureHandlerRootView>
     </>
   );
 }
