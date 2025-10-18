@@ -162,6 +162,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   const handleDeleteItem = async (itemId: string) => {
     try {
+      // Optimistic update: remove item from local state immediately
+      setItems(prevItems => prevItems.filter(item => item.id !== itemId));
+
       // Delete associated shopping list items first
       const { error: shoppingListError } = await supabase
         .from("shopping_list")
@@ -179,9 +182,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         .delete()
         .eq("id", itemId);
 
-      if (error) throw error;
-
-      await fetchInventory();
+      if (error) {
+        // If deletion fails, revert by re-fetching
+        await fetchInventory();
+        throw error;
+      }
     } catch (error: any) {
       console.error("Error deleting item:", error);
       Alert.alert("Error", "Failed to delete item");
@@ -450,11 +455,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                 {groupedItems[category].map((item) => {
                   const expiration = formatExpirationDate(item.expiration_date);
 
-                  // Low stock logic: check both single and multi-location items
-                  const isLowStock = item.storage_type === 'single-location'
+                  // Badge logic: separate badges for ready stock and total stock
+                  const needsRestockFridge = item.storage_type === 'multi-location' &&
+                    item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
+                    item.ready_quantity >= 0;
+
+                  const isLowTotalStock = item.storage_type === 'single-location'
                     ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
-                    : (item.ready_quantity <= (item.fridge_restock_threshold || 0) && item.ready_quantity > 0) ||
-                      (item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0);
+                    : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
 
                   return (
                     <SwipeableItemRow
@@ -490,7 +498,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                               <Text style={styles.itemQuantityDetail}> ({item.ready_quantity} ready)</Text>
                             )}
                           </Text>
-                          {isLowStock && (
+                          {needsRestockFridge && (
+                            <View style={styles.restockFridgeBadge}>
+                              <Text style={styles.restockFridgeText}>Restock Fridge</Text>
+                            </View>
+                          )}
+                          {isLowTotalStock && (
                             <View style={styles.lowStockBadge}>
                               <Text style={styles.lowStockText}>Low Stock</Text>
                             </View>
@@ -763,6 +776,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     color: "#EF4444",
+  },
+  restockFridgeBadge: {
+    backgroundColor: "rgba(249, 115, 22, 0.1)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  restockFridgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#F97316",
   },
   itemExpiration: {
     fontSize: 12,
