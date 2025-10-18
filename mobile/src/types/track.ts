@@ -8,7 +8,6 @@ export interface FoodInventoryItem {
   name: string;
   quantity: number;
   unit: string;
-  category: string | null;
   brand: string | null;
   flavor: string | null;
   calories: number | null;
@@ -53,14 +52,29 @@ export interface FoodInventoryItemWithLocations extends Omit<FoodInventoryItem, 
   storage_quantity: number;
 }
 
+// Major food categories (12 main categories)
 export interface FoodCategory {
   id: string;
-  user_id: string;
   name: string;
-  icon: string | null; // Lucide icon name
-  color: string | null; // Hex color
-  is_default: boolean;
+  slug: string;
+  display_order: number;
   created_at: string;
+}
+
+// Subcategories for each major category
+export interface FoodSubcategory {
+  id: string;
+  category_id: string;
+  name: string;
+  slug: string;
+  display_order: number;
+  created_at: string;
+}
+
+// Food inventory item with category and subcategory data
+export interface FoodInventoryItemWithCategories extends FoodInventoryItemWithLocations {
+  categories: FoodCategory[];
+  subcategories: FoodSubcategory[];
 }
 
 export type ShoppingListPriority = 1 | 2 | 3; // 1=high, 2=medium, 3=low
@@ -72,7 +86,6 @@ export interface ShoppingListItem {
   name: string;
   quantity: number;
   unit: string;
-  category: string | null;
   priority: ShoppingListPriority;
   is_purchased: boolean;
   notes: string | null;

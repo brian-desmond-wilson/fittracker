@@ -16,24 +16,37 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { FoodInventoryItem, FoodInventoryItemWithLocations, FoodLocation } from "@/src/types/track";
+import {
+  FoodInventoryItem,
+  FoodInventoryItemWithLocations,
+  FoodLocation,
+  FoodCategory,
+  FoodSubcategory,
+  FoodInventoryItemWithCategories
+} from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { AddEditFoodModal } from "./AddEditFoodModal";
 import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences } from "./SortFilterModal";
 import { SwipeableItemRow } from "./SwipeableItemRow";
 import { RestockModal } from "./RestockModal";
+import { CategoryTabs } from "./CategoryTabs";
+import { SubcategoryPills } from "./SubcategoryPills";
 
 interface FoodInventoryScreenProps {
   onClose: () => void;
 }
 
-type TabType = "in-stock" | "out-of-stock";
-type SortType = "name" | "date" | "expiration" | "quantity";
-
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<TabType>("in-stock");
-  const [items, setItems] = useState<FoodInventoryItemWithLocations[]>([]);
+
+  // Category & Subcategory state
+  const [categories, setCategories] = useState<FoodCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<FoodSubcategory[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>([]);
+
+  // Inventory data state
+  const [items, setItems] = useState<FoodInventoryItemWithCategories[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -58,7 +71,32 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [restockingItem, setRestockingItem] = useState<FoodInventoryItemWithLocations | null>(null);
 
+  // Fetch categories and subcategories on mount
   useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const [categoriesResult, subcategoriesResult] = await Promise.all([
+          supabase.from("food_categories").select("*").order("display_order"),
+          supabase.from("food_subcategories").select("*").order("display_order"),
+        ]);
+
+        if (categoriesResult.error) throw categoriesResult.error;
+        if (subcategoriesResult.error) throw subcategoriesResult.error;
+
+        setCategories(categoriesResult.data || []);
+        setSubcategories(subcategoriesResult.data || []);
+
+        // Set default selected category to "All Products"
+        const allProductsCategory = categoriesResult.data?.find(cat => cat.slug === "all-products");
+        if (allProductsCategory) {
+          setSelectedCategoryId(allProductsCategory.id);
+        }
+      } catch (error: any) {
+        console.error("Error fetching categories:", error);
+      }
+    };
+
+    fetchCategories();
     fetchInventory();
   }, []);
 
@@ -86,25 +124,27 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         return;
       }
 
-      // Fetch food inventory items
-      const { data: foodItems, error: foodError } = await supabase
-        .from("food_inventory")
-        .select("*")
-        .eq("user_id", user.id);
+      // Fetch food inventory items, locations, and category/subcategory mappings in parallel
+      const [foodResult, locationsResult, categoryMapsResult, subcategoryMapsResult] = await Promise.all([
+        supabase.from("food_inventory").select("*").eq("user_id", user.id),
+        supabase.from("food_inventory_locations").select("*").eq("user_id", user.id),
+        supabase.from("food_inventory_category_map").select("*, food_categories(*)").eq("user_id", user.id),
+        supabase.from("food_inventory_subcategory_map").select("*, food_subcategories(*)").eq("user_id", user.id),
+      ]);
 
-      if (foodError) throw foodError;
+      if (foodResult.error) throw foodResult.error;
+      if (locationsResult.error) throw locationsResult.error;
+      if (categoryMapsResult.error) throw categoryMapsResult.error;
+      if (subcategoryMapsResult.error) throw subcategoryMapsResult.error;
 
-      // Fetch all locations for these items
-      const { data: locations, error: locError } = await supabase
-        .from("food_inventory_locations")
-        .select("*")
-        .eq("user_id", user.id);
-
-      if (locError) throw locError;
+      const foodItems = foodResult.data || [];
+      const locations = locationsResult.data || [];
+      const categoryMaps = categoryMapsResult.data || [];
+      const subcategoryMaps = subcategoryMapsResult.data || [];
 
       // Combine the data
-      const itemsWithLocations: FoodInventoryItemWithLocations[] = (foodItems || []).map(item => {
-        const itemLocations = (locations || []).filter(loc => loc.food_inventory_id === item.id);
+      const itemsWithCategories: FoodInventoryItemWithCategories[] = foodItems.map(item => {
+        const itemLocations = locations.filter(loc => loc.food_inventory_id === item.id);
 
         // Calculate quantities
         const total_quantity = item.storage_type === 'single-location'
@@ -123,16 +163,29 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               .filter(loc => !loc.is_ready_to_consume)
               .reduce((sum, loc) => sum + loc.quantity, 0);
 
+        // Get categories and subcategories for this item
+        const itemCategories = categoryMaps
+          .filter(map => map.food_inventory_id === item.id)
+          .map(map => map.food_categories)
+          .filter(Boolean) as FoodCategory[];
+
+        const itemSubcategories = subcategoryMaps
+          .filter(map => map.food_inventory_id === item.id)
+          .map(map => map.food_subcategories)
+          .filter(Boolean) as FoodSubcategory[];
+
         return {
           ...item,
           locations: itemLocations,
           total_quantity,
           ready_quantity,
           storage_quantity,
+          categories: itemCategories,
+          subcategories: itemSubcategories,
         };
       });
 
-      setItems(itemsWithLocations);
+      setItems(itemsWithCategories);
     } catch (error: any) {
       console.error("Error fetching inventory:", error);
       Alert.alert("Error", "Failed to load inventory");
@@ -214,7 +267,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           name: item.name,
           quantity: item.restock_threshold || 1,
           unit: item.unit,
-          category: item.category,
           priority: 2,
         },
       ]);
@@ -349,10 +401,31 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // Filter and sort items
   const filteredItems = items
     .filter((item) => {
-      // Tab filter (in-stock vs out-of-stock)
-      const matchesTab = activeTab === "in-stock"
-        ? item.total_quantity > 0
-        : item.total_quantity === 0;
+      // Get the selected category
+      const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+
+      // Category filter based on selected tab
+      let matchesCategory = true;
+      if (selectedCategory) {
+        if (selectedCategory.slug === "all-products") {
+          // "All Products" shows all in-stock items
+          matchesCategory = item.total_quantity > 0;
+        } else if (selectedCategory.slug === "out-of-stock") {
+          // "Out of Stock" shows all out-of-stock items
+          matchesCategory = item.total_quantity === 0;
+        } else {
+          // For specific categories, check if item belongs to that category
+          matchesCategory = item.categories.some(cat => cat.id === selectedCategoryId);
+
+          // If item doesn't belong to selected category, exclude it
+          if (!matchesCategory) return false;
+
+          // If subcategories are selected, further filter by subcategories
+          if (selectedSubcategoryIds.length > 0) {
+            matchesCategory = item.subcategories.some(sub => selectedSubcategoryIds.includes(sub.id));
+          }
+        }
+      }
 
       // Search filter
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -362,10 +435,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       const matchesLocation = currentFilters.locations.length === 0 ||
         (item.storage_type === 'single-location' && item.location && currentFilters.locations.includes(item.location)) ||
         (item.storage_type === 'multi-location' && item.locations.some(loc => currentFilters.locations.includes(loc.location)));
-
-      // Category filter
-      const matchesCategory = currentFilters.categories.length === 0 ||
-        currentFilters.categories.includes(item.category || "Uncategorized");
 
       // Stock status filter
       const matchesStockStatus = currentFilters.stockStatus.length === 0 || currentFilters.stockStatus.some(status => {
@@ -396,7 +465,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       const matchesExpired = currentFilters.showExpired || !item.expiration_date ||
         new Date(item.expiration_date) >= new Date();
 
-      return matchesTab && matchesSearch && matchesLocation && matchesCategory && matchesStockStatus && matchesStorageType && matchesExpired;
+      return matchesCategory && matchesSearch && matchesLocation && matchesStockStatus && matchesStorageType && matchesExpired;
     })
     .sort((a, b) => {
       switch (currentSort) {
@@ -419,7 +488,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           if (!b.expiration_date) return -1;
           return new Date(b.expiration_date).getTime() - new Date(a.expiration_date).getTime();
         case "category-asc":
-          return (a.category || "Uncategorized").localeCompare(b.category || "Uncategorized");
+          // Sort by first category name
+          const aFirstCategory = a.categories[0]?.name || "Uncategorized";
+          const bFirstCategory = b.categories[0]?.name || "Uncategorized";
+          return aFirstCategory.localeCompare(bFirstCategory);
         case "date-newest":
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         case "date-oldest":
@@ -429,20 +501,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       }
     });
 
-  // Group by category
-  const groupedItems: Record<string, FoodInventoryItemWithLocations[]> = {};
-  filteredItems.forEach((item) => {
-    const category = item.category || "Uncategorized";
-    if (!groupedItems[category]) {
-      groupedItems[category] = [];
-    }
-    groupedItems[category].push(item);
-  });
-
-  const categories = Object.keys(groupedItems).sort();
-
-  // Get available categories for modal
-  const availableCategories = Array.from(new Set(items.map(item => item.category || "Uncategorized"))).sort();
+  // Get available category names for sort/filter modal (from all categories in the database)
+  const availableCategories = categories
+    .filter(cat => cat.slug !== "all-products" && cat.slug !== "out-of-stock")
+    .map(cat => cat.name)
+    .sort();
 
   // Handler for applying sort/filter
   const handleApplySortFilter = (sort: SortOption, filters: FilterOptions) => {
@@ -507,27 +570,40 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             </TouchableOpacity>
           </View>
 
-          {/* Tabs */}
-          <View style={styles.tabs}>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "in-stock" && styles.tabActive]}
-              onPress={() => setActiveTab("in-stock")}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.tabText, activeTab === "in-stock" && styles.tabTextActive]}>
-                In Stock
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "out-of-stock" && styles.tabActive]}
-              onPress={() => setActiveTab("out-of-stock")}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.tabText, activeTab === "out-of-stock" && styles.tabTextActive]}>
-                Out of Stock
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Category Tabs */}
+          <CategoryTabs
+            categories={categories}
+            selectedCategoryId={selectedCategoryId}
+            onSelectCategory={(categoryId) => {
+              setSelectedCategoryId(categoryId);
+              setSelectedSubcategoryIds([]); // Clear subcategory filters when changing category
+            }}
+          />
+
+          {/* Subcategory Pills (hidden for "All Products" and "Out of Stock") */}
+          {selectedCategoryId && (() => {
+            const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+            const isAllProducts = selectedCategory?.slug === "all-products";
+            const isOutOfStock = selectedCategory?.slug === "out-of-stock";
+
+            if (!isAllProducts && !isOutOfStock) {
+              const categorySubcategories = subcategories.filter(sub => sub.category_id === selectedCategoryId);
+              return (
+                <SubcategoryPills
+                  subcategories={categorySubcategories}
+                  selectedSubcategoryIds={selectedSubcategoryIds}
+                  onToggleSubcategory={(subcategoryId) => {
+                    setSelectedSubcategoryIds(prev =>
+                      prev.includes(subcategoryId)
+                        ? prev.filter(id => id !== subcategoryId)
+                        : [...prev, subcategoryId]
+                    );
+                  }}
+                />
+              );
+            }
+            return null;
+          })()}
 
         {/* Items List */}
         <ScrollView
@@ -550,98 +626,111 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             <View style={styles.emptyState}>
               <Package size={64} color={colors.mutedForeground} strokeWidth={1.5} />
               <Text style={styles.emptyText}>
-                {activeTab === "in-stock" ? "No items in stock" : "No out of stock items"}
+                {(() => {
+                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+                  if (selectedCategory?.slug === "out-of-stock") {
+                    return "No out of stock items";
+                  }
+                  return "No items found";
+                })()}
               </Text>
               <Text style={styles.emptySubtext}>
-                {activeTab === "in-stock"
-                  ? "Add items to start tracking your inventory"
-                  : "Items with zero quantity will appear here"}
+                {(() => {
+                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+                  if (selectedCategory?.slug === "out-of-stock") {
+                    return "Items with zero quantity will appear here";
+                  }
+                  if (selectedCategory?.slug === "all-products") {
+                    return "Add items to start tracking your inventory";
+                  }
+                  return "Try adjusting your filters or add items to this category";
+                })()}
               </Text>
             </View>
           ) : (
-            categories.map((category) => (
-              <View key={category} style={styles.categorySection}>
-                <Text style={styles.categoryTitle}>{category}</Text>
-                {groupedItems[category].map((item) => {
-                  const expiration = formatExpirationDate(item.expiration_date);
+            <View style={styles.itemsList}>
+              {filteredItems.map((item) => {
+                const expiration = formatExpirationDate(item.expiration_date);
 
-                  // Badge logic: separate badges for ready stock and total stock
-                  const needsRestockFridge = item.storage_type === 'multi-location' &&
-                    item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
-                    item.ready_quantity >= 0;
+                // Badge logic: separate badges for ready stock and total stock
+                const needsRestockFridge = item.storage_type === 'multi-location' &&
+                  item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
+                  item.ready_quantity >= 0;
 
-                  const isLowTotalStock = item.storage_type === 'single-location'
-                    ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
-                    : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
+                const isLowTotalStock = item.storage_type === 'single-location'
+                  ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
+                  : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
 
-                  return (
-                    <SwipeableItemRow
-                      key={item.id}
-                      onDelete={() => handleDeleteItem(item.id)}
+                // Check if item is out of stock for showing shopping cart button
+                const isOutOfStock = item.total_quantity === 0;
+
+                return (
+                  <SwipeableItemRow
+                    key={item.id}
+                    onDelete={() => handleDeleteItem(item.id)}
+                  >
+                    <Pressable
+                      style={styles.itemCard}
+                      onPress={() => handleEditItem(item)}
+                      onLongPress={() => handleLongPress(item)}
                     >
-                      <Pressable
-                        style={styles.itemCard}
-                        onPress={() => handleEditItem(item)}
-                        onLongPress={() => handleLongPress(item)}
-                      >
-                      {/* Item Image */}
-                      <View style={styles.itemImage}>
-                        {item.image_primary_url ? (
-                          <Image
-                            source={{ uri: item.image_primary_url }}
-                            style={styles.image}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <Package size={32} color={colors.mutedForeground} />
-                        )}
-                      </View>
-
-                      {/* Item Info */}
-                      <View style={styles.itemInfo}>
-                        <Text style={styles.itemName}>{item.name}</Text>
-                        {item.brand && <Text style={styles.itemBrand}>{item.brand}</Text>}
-                        <View style={styles.itemMeta}>
-                          <Text style={styles.itemQuantity}>
-                            {item.total_quantity} {item.unit}
-                            {item.storage_type === 'multi-location' && item.ready_quantity > 0 && (
-                              <Text style={styles.itemQuantityDetail}> ({item.ready_quantity} ready)</Text>
-                            )}
-                          </Text>
-                          {needsRestockFridge && (
-                            <View style={styles.restockFridgeBadge}>
-                              <Text style={styles.restockFridgeText}>Restock Fridge</Text>
-                            </View>
-                          )}
-                          {isLowTotalStock && (
-                            <View style={styles.lowStockBadge}>
-                              <Text style={styles.lowStockText}>Low Stock</Text>
-                            </View>
-                          )}
-                        </View>
-                        {expiration && (
-                          <Text style={[styles.itemExpiration, { color: expiration.color }]}>
-                            {expiration.text}
-                          </Text>
-                        )}
-                      </View>
-
-                      {/* Actions */}
-                      {activeTab === "out-of-stock" && (
-                        <TouchableOpacity
-                          style={styles.restockButton}
-                          onPress={() => handleAddToShoppingList(item)}
-                          activeOpacity={0.7}
-                        >
-                          <ShoppingCart size={18} color="#FFFFFF" />
-                        </TouchableOpacity>
+                    {/* Item Image */}
+                    <View style={styles.itemImage}>
+                      {item.image_primary_url ? (
+                        <Image
+                          source={{ uri: item.image_primary_url }}
+                          style={styles.image}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Package size={32} color={colors.mutedForeground} />
                       )}
-                      </Pressable>
-                    </SwipeableItemRow>
-                  );
-                })}
-              </View>
-            ))
+                    </View>
+
+                    {/* Item Info */}
+                    <View style={styles.itemInfo}>
+                      <Text style={styles.itemName}>{item.name}</Text>
+                      {item.brand && <Text style={styles.itemBrand}>{item.brand}</Text>}
+                      <View style={styles.itemMeta}>
+                        <Text style={styles.itemQuantity}>
+                          {item.total_quantity} {item.unit}
+                          {item.storage_type === 'multi-location' && item.ready_quantity > 0 && (
+                            <Text style={styles.itemQuantityDetail}> ({item.ready_quantity} ready)</Text>
+                          )}
+                        </Text>
+                        {needsRestockFridge && (
+                          <View style={styles.restockFridgeBadge}>
+                            <Text style={styles.restockFridgeText}>Restock Fridge</Text>
+                          </View>
+                        )}
+                        {isLowTotalStock && (
+                          <View style={styles.lowStockBadge}>
+                            <Text style={styles.lowStockText}>Low Stock</Text>
+                          </View>
+                        )}
+                      </View>
+                      {expiration && (
+                        <Text style={[styles.itemExpiration, { color: expiration.color }]}>
+                          {expiration.text}
+                        </Text>
+                      )}
+                    </View>
+
+                    {/* Actions */}
+                    {isOutOfStock && (
+                      <TouchableOpacity
+                        style={styles.restockButton}
+                        onPress={() => handleAddToShoppingList(item)}
+                        activeOpacity={0.7}
+                      >
+                        <ShoppingCart size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    )}
+                    </Pressable>
+                  </SwipeableItemRow>
+                );
+              })}
+            </View>
           )}
 
           <View style={{ height: 40 }} />
@@ -724,35 +813,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  tabs: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 16,
-    backgroundColor: "#FFFFFF",
-    paddingBottom: 16,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-  },
-  tabActive: {
-    backgroundColor: "#8B5CF6",
-    borderColor: "#8B5CF6",
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  tabTextActive: {
-    color: "#FFFFFF",
-  },
   searchBar: {
     flex: 1,
     flexDirection: "row",
@@ -803,17 +863,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-  categorySection: {
-    marginBottom: 24,
+  itemsList: {
     paddingHorizontal: 20,
-  },
-  categoryTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#6B7280",
-    marginBottom: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   itemCard: {
     flexDirection: "row",
