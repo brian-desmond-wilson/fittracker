@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,16 @@ import {
   TouchableOpacity,
   StatusBar,
   Image,
+  Dimensions,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Package } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { FoodInventoryItemWithCategories } from "@/src/types/track";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
 interface ViewFoodDetailsScreenProps {
   item: FoodInventoryItemWithCategories;
@@ -20,6 +25,22 @@ interface ViewFoodDetailsScreenProps {
 
 export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenProps) {
   const insets = useSafeAreaInsets();
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Collect all available images
+  const images = [
+    item.image_primary_url,
+    item.image_front_url,
+    item.image_back_url,
+    item.image_side_url,
+  ].filter((url): url is string => url !== null && url !== undefined);
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const scrollPosition = event.nativeEvent.contentOffset.x;
+    const index = Math.round(scrollPosition / SCREEN_WIDTH);
+    setActiveImageIndex(index);
+  };
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "Not set";
@@ -60,14 +81,45 @@ export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenPr
 
         {/* Scrollable Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Product Image */}
+          {/* Product Image Carousel */}
           <View style={styles.imageSection}>
-            {item.image_primary_url ? (
-              <Image
-                source={{ uri: item.image_primary_url }}
-                style={styles.productImage}
-                resizeMode="contain"
-              />
+            {images.length > 0 ? (
+              <>
+                <ScrollView
+                  ref={scrollViewRef}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onScroll={handleScroll}
+                  scrollEventThrottle={16}
+                  style={styles.imageCarousel}
+                >
+                  {images.map((imageUrl, index) => (
+                    <View key={index} style={styles.imageContainer}>
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={styles.productImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ))}
+                </ScrollView>
+
+                {/* Pagination Dots */}
+                {images.length > 1 && (
+                  <View style={styles.paginationContainer}>
+                    {images.map((_, index) => (
+                      <View
+                        key={index}
+                        style={[
+                          styles.paginationDot,
+                          index === activeImageIndex && styles.paginationDotActive,
+                        ]}
+                      />
+                    ))}
+                  </View>
+                )}
+              </>
             ) : (
               <View style={styles.imagePlaceholder}>
                 <Package size={80} color={colors.mutedForeground} />
@@ -237,9 +289,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   imageSection: {
-    alignItems: "center",
-    paddingVertical: 24,
     backgroundColor: "#FFFFFF",
+    paddingBottom: 16,
+  },
+  imageCarousel: {
+    width: SCREEN_WIDTH,
+    height: 250,
+  },
+  imageContainer: {
+    width: SCREEN_WIDTH,
+    height: 250,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
   },
   productImage: {
     width: 200,
@@ -253,6 +315,26 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
+    marginVertical: 24,
+    alignSelf: "center",
+  },
+  paginationContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 8,
+    gap: 6,
+  },
+  paginationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#D1D5DB",
+  },
+  paginationDotActive: {
+    backgroundColor: "#111827",
+    width: 8,
+    height: 8,
   },
   titleSection: {
     padding: 20,
