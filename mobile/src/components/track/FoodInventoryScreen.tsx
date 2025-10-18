@@ -779,6 +779,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           renderItem={renderGridItem}
           keyExtractor={(item) => item.id}
           numColumns={NUM_COLUMNS}
+          style={styles.flatList}
           contentContainerStyle={styles.gridContainer}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
@@ -952,6 +953,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   // Grid Layout Styles
+  flatList: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
   gridContainer: {
     paddingHorizontal: GRID_PADDING,
     paddingTop: 16,
