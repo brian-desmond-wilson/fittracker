@@ -22,7 +22,7 @@ import { colors } from "@/src/lib/colors";
 import { FoodInventoryItem, FoodLocation, StorageType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
-import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
+import { getProductByBarcode, ProductData } from "@/src/services/openFoodFactsApi";
 
 interface LocationEntry {
   id: string;
@@ -35,8 +35,10 @@ interface LocationEntry {
 interface AddEditFoodModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (newItemId?: string) => void;
   item?: FoodInventoryItem | null;
+  barcodeData?: ProductData;
+  barcode?: string;
 }
 
 type SectionKey = "basic" | "storage" | "nutrition" | "expiration" | "images" | "notes";
@@ -94,7 +96,7 @@ function SectionHeader({ title, sectionKey, isExpanded, hasError, onPress }: Sec
   );
 }
 
-export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFoodModalProps) {
+export function AddEditFoodModal({ visible, onClose, onSave, item, barcodeData, barcode: barcodeFromProps }: AddEditFoodModalProps) {
   const isEdit = !!item;
 
   // Basic Info
@@ -185,6 +187,29 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
     } else {
       // Reset form for new item
       resetForm();
+
+      // Pre-fill form with barcode data if provided
+      if (!isEdit && barcodeData) {
+        setName(barcodeData.name);
+        setBrand(barcodeData.brand || "");
+        setBarcode(barcodeFromProps || "");
+        setCalories(barcodeData.calories?.toString() || "");
+        setProtein(barcodeData.protein?.toString() || "");
+        setCarbs(barcodeData.carbs?.toString() || "");
+        setFats(barcodeData.fats?.toString() || "");
+        setSugars(barcodeData.sugars?.toString() || "");
+        setServingSize(barcodeData.servingSize || "");
+        // Set images if available
+        if (barcodeData.imagePrimaryUrl) {
+          setImagePrimary(barcodeData.imagePrimaryUrl);
+        }
+        if (barcodeData.imageFrontUrl) {
+          setImageFront(barcodeData.imageFrontUrl);
+        }
+        if (barcodeData.imageBackUrl) {
+          setImageBack(barcodeData.imageBackUrl);
+        }
+      }
     }
   }, [item, visible]);
 
@@ -642,12 +667,13 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
         }
 
         Alert.alert("Success", "Item updated successfully");
+        onSave();
       } else {
         // Create new item
         const { data, error } = await supabase
           .from("food_inventory")
           .insert([itemData])
-          .select()
+          .select('id')
           .single();
 
         if (error) throw error;
@@ -674,9 +700,15 @@ export function AddEditFoodModal({ visible, onClose, onSave, item }: AddEditFood
         }
 
         Alert.alert("Success", "Item added successfully");
+
+        // Pass the new item's ID to onSave
+        if (data) {
+          onSave(data.id);
+        } else {
+          onSave();
+        }
       }
 
-      onSave();
       onClose();
     } catch (error: any) {
       console.error("Error saving item:", error);

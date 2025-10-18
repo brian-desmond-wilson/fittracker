@@ -35,6 +35,8 @@ import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences }
 import { RestockModal } from "./RestockModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
+import { BarcodeScannerModal } from "./BarcodeScannerModal";
+import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
 
 interface FoodInventoryScreenProps {
   onClose: () => void;
@@ -81,6 +83,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // Restock modal state
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [restockingItem, setRestockingItem] = useState<FoodInventoryItemWithLocations | null>(null);
+
+  // Barcode scanner state
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
   // Fetch categories and subcategories on mount
   useEffect(() => {
@@ -472,6 +477,29 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
+  const handleBarcodeScanned = async (barcode: string) => {
+    try {
+      const productData = await getProductByBarcode(barcode);
+
+      if (!productData) {
+        Alert.alert("Product Not Found", "Could not find product information for this barcode.");
+        return;
+      }
+
+      // Navigate to preview page with barcode data
+      router.push({
+        pathname: "/(tabs)/track/food-inventory/preview" as any,
+        params: {
+          productData: JSON.stringify(productData),
+          barcode: barcode,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error processing barcode:", error);
+      Alert.alert("Error", "Failed to process barcode scan");
+    }
+  };
+
   // Filter and sort items
   const filteredItems = items
     .filter((item) => {
@@ -705,10 +733,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  onPress={() => {
-                    // TODO: Implement barcode scanner
-                    Alert.alert("Barcode Scanner", "Barcode scanning feature coming soon!");
-                  }}
+                  onPress={() => setShowBarcodeScanner(true)}
                   activeOpacity={0.7}
                   style={styles.searchActionButton}
                 >
@@ -855,6 +880,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           }}
           item={restockingItem}
           onConfirm={handleRestockConfirm}
+        />
+
+        {/* Barcode Scanner Modal */}
+        <BarcodeScannerModal
+          visible={showBarcodeScanner}
+          onClose={() => setShowBarcodeScanner(false)}
+          onBarcodeScanned={handleBarcodeScanned}
         />
         </View>
       </GestureHandlerRootView>

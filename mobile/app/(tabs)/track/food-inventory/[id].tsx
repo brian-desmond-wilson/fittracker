@@ -143,7 +143,13 @@ export default function FoodItemDetailsPage() {
     );
   }
 
-  return <ViewFoodDetailsScreen item={item} onClose={() => router.back()} />;
+  return (
+    <ViewFoodDetailsScreen
+      item={item}
+      onClose={() => router.back()}
+      onRefresh={fetchItemDetails}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

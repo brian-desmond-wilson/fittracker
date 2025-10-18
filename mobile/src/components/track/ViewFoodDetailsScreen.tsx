@@ -10,10 +10,11 @@ import {
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Package, Pencil } from "lucide-react-native";
+import { ChevronLeft, Package, Pencil, Plus } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { FoodInventoryItemWithCategories } from "@/src/types/track";
 
@@ -22,12 +23,16 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 interface ViewFoodDetailsScreenProps {
   item: FoodInventoryItemWithCategories;
   onClose: () => void;
+  onRefresh?: () => Promise<void>;
+  isPreview?: boolean;
+  onAddToInventory?: () => void;
 }
 
-export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenProps) {
+export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = false, onAddToInventory }: ViewFoodDetailsScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Collect all available images
@@ -42,6 +47,17 @@ export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenPr
     const scrollPosition = event.nativeEvent.contentOffset.x;
     const index = Math.round(scrollPosition / SCREEN_WIDTH);
     setActiveImageIndex(index);
+  };
+
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      setRefreshing(true);
+      try {
+        await onRefresh();
+      } finally {
+        setRefreshing(false);
+      }
+    }
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -79,17 +95,38 @@ export function ViewFoodDetailsScreen({ item, onClose }: ViewFoodDetailsScreenPr
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push(`/(tabs)/track/food-inventory/edit/${item.id}`)}
-            style={styles.editButton}
-          >
-            <Pencil size={20} color="#FFFFFF" />
-            <Text style={styles.editText}>Edit</Text>
-          </TouchableOpacity>
+          {isPreview ? (
+            <TouchableOpacity
+              onPress={onAddToInventory}
+              style={styles.addButton}
+            >
+              <Plus size={20} color="#FFFFFF" />
+              <Text style={styles.addText}>Add</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => router.push(`/(tabs)/track/food-inventory/edit/${item.id}`)}
+              style={styles.editButton}
+            >
+              <Pencil size={20} color="#FFFFFF" />
+              <Text style={styles.editText}>Edit</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Scrollable Content */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#8B5CF6"
+              colors={["#8B5CF6"]}
+            />
+          }
+        >
           {/* Product Image Carousel */}
           <View style={styles.imageSection}>
             {images.length > 0 ? (
@@ -303,6 +340,15 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   editText: {
+    fontSize: 17,
+    color: "#FFFFFF",
+  },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  addText: {
     fontSize: 17,
     color: "#FFFFFF",
   },
