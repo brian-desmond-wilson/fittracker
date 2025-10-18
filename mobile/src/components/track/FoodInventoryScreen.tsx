@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   StatusBar,
   Alert,
   TextInput,
@@ -15,11 +16,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { FoodInventoryItem, FoodInventoryItemWithLocations } from "@/src/types/track";
+import { FoodInventoryItem, FoodInventoryItemWithLocations, FoodLocation } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { AddEditFoodModal } from "./AddEditFoodModal";
 import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences } from "./SortFilterModal";
 import { SwipeableItemRow } from "./SwipeableItemRow";
+import { RestockModal } from "./RestockModal";
 
 interface FoodInventoryScreenProps {
   onClose: () => void;
@@ -51,6 +53,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     storageTypes: [],
     showExpired: true,
   });
+
+  // Restock modal state
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [restockingItem, setRestockingItem] = useState<FoodInventoryItemWithLocations | null>(null);
 
   useEffect(() => {
     fetchInventory();
@@ -219,6 +225,124 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     } catch (error: any) {
       console.error("Error adding to shopping list:", error);
       Alert.alert("Error", "Failed to add to shopping list");
+    }
+  };
+
+  const handleLongPress = (item: FoodInventoryItemWithLocations) => {
+    // Only show restock modal for multi-location items with "Restock Fridge" badge
+    if (item.storage_type === 'multi-location') {
+      setRestockingItem(item);
+      setShowRestockModal(true);
+    }
+  };
+
+  const handleRestockConfirm = async (sourceLocation: FoodLocation | "store", quantity: number) => {
+    if (!restockingItem) return;
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
+
+      // Find the target location (ready to consume) and source location
+      const targetLocation = restockingItem.locations.find(loc => loc.is_ready_to_consume);
+
+      if (!targetLocation) {
+        Alert.alert("Error", "Could not find target location");
+        return;
+      }
+
+      if (sourceLocation === "store") {
+        // From Store: Just increment the target location quantity (adds to total)
+        const { error: updateError } = await supabase
+          .from("food_inventory_locations")
+          .update({
+            quantity: targetLocation.quantity + quantity,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetLocation.id);
+
+        if (updateError) throw updateError;
+      } else {
+        // From another location: decrement source, increment target
+        const sourceLocationData = restockingItem.locations.find(loc => loc.location === sourceLocation);
+
+        if (!sourceLocationData) {
+          Alert.alert("Error", "Could not find source location");
+          return;
+        }
+
+        // Update both locations in parallel
+        const [targetResult, sourceResult] = await Promise.all([
+          supabase
+            .from("food_inventory_locations")
+            .update({
+              quantity: targetLocation.quantity + quantity,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", targetLocation.id),
+          supabase
+            .from("food_inventory_locations")
+            .update({
+              quantity: sourceLocationData.quantity - quantity,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", sourceLocationData.id),
+        ]);
+
+        if (targetResult.error) throw targetResult.error;
+        if (sourceResult.error) throw sourceResult.error;
+      }
+
+      // Optimistic update: update local state
+      setItems(prevItems =>
+        prevItems.map(item => {
+          if (item.id !== restockingItem.id) return item;
+
+          const updatedLocations = item.locations.map(loc => {
+            if (loc.id === targetLocation.id) {
+              return { ...loc, quantity: loc.quantity + quantity };
+            }
+            if (sourceLocation !== "store") {
+              const sourceLocationData = item.locations.find(l => l.location === sourceLocation);
+              if (sourceLocationData && loc.id === sourceLocationData.id) {
+                return { ...loc, quantity: loc.quantity - quantity };
+              }
+            }
+            return loc;
+          });
+
+          // Recalculate totals
+          const total_quantity = sourceLocation === "store"
+            ? item.total_quantity + quantity
+            : item.total_quantity;
+
+          const ready_quantity = updatedLocations
+            .filter(loc => loc.is_ready_to_consume)
+            .reduce((sum, loc) => sum + loc.quantity, 0);
+
+          const storage_quantity = updatedLocations
+            .filter(loc => !loc.is_ready_to_consume)
+            .reduce((sum, loc) => sum + loc.quantity, 0);
+
+          return {
+            ...item,
+            locations: updatedLocations,
+            total_quantity,
+            ready_quantity,
+            storage_quantity,
+          };
+        })
+      );
+
+      Alert.alert("Success", `Restocked ${quantity} ${restockingItem.unit} of ${restockingItem.name}`);
+    } catch (error: any) {
+      console.error("Error restocking item:", error);
+      Alert.alert("Error", "Failed to restock item");
+      // Re-fetch to revert optimistic update
+      await fetchInventory();
     }
   };
 
@@ -469,10 +593,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                       key={item.id}
                       onDelete={() => handleDeleteItem(item.id)}
                     >
-                      <TouchableOpacity
+                      <Pressable
                         style={styles.itemCard}
                         onPress={() => handleEditItem(item)}
-                        activeOpacity={0.7}
+                        onLongPress={() => handleLongPress(item)}
                       >
                       {/* Item Image */}
                       <View style={styles.itemImage}>
@@ -526,7 +650,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                           <ShoppingCart size={18} color="#FFFFFF" />
                         </TouchableOpacity>
                       )}
-                      </TouchableOpacity>
+                      </Pressable>
                     </SwipeableItemRow>
                   );
                 })}
@@ -553,6 +677,17 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           availableCategories={availableCategories}
           currentSort={currentSort}
           currentFilters={currentFilters}
+        />
+
+        {/* Restock Modal */}
+        <RestockModal
+          visible={showRestockModal}
+          onClose={() => {
+            setShowRestockModal(false);
+            setRestockingItem(null);
+          }}
+          item={restockingItem}
+          onConfirm={handleRestockConfirm}
         />
         </View>
       </GestureHandlerRootView>
