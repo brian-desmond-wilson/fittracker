@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter } from "lucide-react-native";
+import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter, ScanBarcode, X } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import {
   FoodInventoryItem,
@@ -545,6 +545,26 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                 value={searchQuery}
                 onChangeText={setSearchQuery}
               />
+              {searchQuery.length > 0 ? (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery("")}
+                  activeOpacity={0.7}
+                  style={styles.searchActionButton}
+                >
+                  <X size={20} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => {
+                    // TODO: Implement barcode scanner
+                    Alert.alert("Barcode Scanner", "Barcode scanning feature coming soon!");
+                  }}
+                  activeOpacity={0.7}
+                  style={styles.searchActionButton}
+                >
+                  <ScanBarcode size={20} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              )}
             </View>
             <TouchableOpacity
               style={styles.filterButton}
@@ -829,6 +849,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: colors.foreground,
+  },
+  searchActionButton: {
+    padding: 4,
   },
   filterButton: {
     width: 44,
