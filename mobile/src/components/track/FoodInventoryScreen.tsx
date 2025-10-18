@@ -200,6 +200,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const handleUpdateQuantity = async (itemId: string, currentQty: number, delta: number) => {
     const newQty = Math.max(0, currentQty + delta);
 
+    // Optimistically update the UI
+    setItems(prevItems =>
+      prevItems.map(item =>
+        item.id === itemId
+          ? { ...item, quantity: newQty, total_quantity: newQty }
+          : item
+      )
+    );
+
     try {
       const { error } = await supabase
         .from("food_inventory")
@@ -207,11 +216,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         .eq("id", itemId);
 
       if (error) throw error;
-
-      await fetchInventory();
     } catch (error: any) {
       console.error("Error updating quantity:", error);
       Alert.alert("Error", "Failed to update quantity");
+      // Revert the optimistic update on error
+      await fetchInventory();
     }
   };
 
