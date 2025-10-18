@@ -292,6 +292,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const handleLongPress = (item: FoodInventoryItemWithLocations) => {
     const isOutOfStock = item.total_quantity === 0;
     const needsRestockFridge = item.storage_type === 'multi-location' &&
+      item.requires_refrigeration === true &&
       item.fridge_restock_threshold != null &&
       item.fridge_restock_threshold > 0 &&
       item.ready_quantity <= item.fridge_restock_threshold;
@@ -603,6 +604,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
     // Badge logic
     const needsRestockFridge = item.storage_type === 'multi-location' &&
+      item.requires_refrigeration === true &&
       item.fridge_restock_threshold != null &&
       item.fridge_restock_threshold > 0 &&
       item.ready_quantity <= item.fridge_restock_threshold;
