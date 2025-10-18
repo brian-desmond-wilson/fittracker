@@ -292,8 +292,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const handleLongPress = (item: FoodInventoryItemWithLocations) => {
     const isOutOfStock = item.total_quantity === 0;
     const needsRestockFridge = item.storage_type === 'multi-location' &&
-      item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
-      item.ready_quantity >= 0;
+      item.fridge_restock_threshold != null &&
+      item.fridge_restock_threshold > 0 &&
+      item.ready_quantity <= item.fridge_restock_threshold;
 
     // Build action sheet options dynamically
     const options: string[] = ['Edit Details', 'Delete Item'];
@@ -602,8 +603,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
     // Badge logic
     const needsRestockFridge = item.storage_type === 'multi-location' &&
-      item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
-      item.ready_quantity >= 0;
+      item.fridge_restock_threshold != null &&
+      item.fridge_restock_threshold > 0 &&
+      item.ready_quantity <= item.fridge_restock_threshold;
 
     const isLowTotalStock = item.storage_type === 'single-location'
       ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
