@@ -468,28 +468,36 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       <StatusBar barStyle="light-content" />
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={[styles.container, { paddingTop: insets.top }]}>
-          {/* Header */}
+          {/* Header with Back, Search, and Filter */}
           <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
-            <Text style={styles.backText}>Track</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Title & Actions */}
-        <View style={styles.titleContainer}>
-          <View style={styles.titleRow}>
-            <Package size={28} color="#8B5CF6" strokeWidth={2} />
-            <Text style={styles.pageTitle}>Food Inventory</Text>
-          </View>
-          <View style={styles.actionButtons}>
+            <TouchableOpacity onPress={onClose} style={styles.backButton}>
+              <ChevronLeft size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={styles.searchBar}>
+              <Search size={20} color={colors.mutedForeground} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search items..."
+                placeholderTextColor={colors.mutedForeground}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
             <TouchableOpacity
-              style={styles.iconButton}
-              onPress={() => Alert.alert("Shopping List", "Coming soon!")}
+              style={styles.filterButton}
+              onPress={() => setShowSortFilterModal(true)}
               activeOpacity={0.7}
             >
-              <ShoppingCart size={24} color={colors.foreground} />
+              <Filter size={20} color={colors.foreground} />
             </TouchableOpacity>
+          </View>
+
+          {/* Title & Actions */}
+          <View style={styles.titleContainer}>
+            <View style={styles.titleRow}>
+              <Package size={28} color="#8B5CF6" strokeWidth={2} />
+              <Text style={styles.pageTitle}>Food Inventory</Text>
+            </View>
             <TouchableOpacity
               style={styles.addButton}
               onPress={handleAddItem}
@@ -498,50 +506,28 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               <Plus size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Tabs */}
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === "in-stock" && styles.tabActive]}
-            onPress={() => setActiveTab("in-stock")}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, activeTab === "in-stock" && styles.tabTextActive]}>
-              In Stock
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === "out-of-stock" && styles.tabActive]}
-            onPress={() => setActiveTab("out-of-stock")}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, activeTab === "out-of-stock" && styles.tabTextActive]}>
-              Out of Stock
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Search & Sort */}
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
-            <Search size={20} color={colors.mutedForeground} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search items..."
-              placeholderTextColor={colors.mutedForeground}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+          {/* Tabs */}
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "in-stock" && styles.tabActive]}
+              onPress={() => setActiveTab("in-stock")}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.tabText, activeTab === "in-stock" && styles.tabTextActive]}>
+                In Stock
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === "out-of-stock" && styles.tabActive]}
+              onPress={() => setActiveTab("out-of-stock")}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.tabText, activeTab === "out-of-stock" && styles.tabTextActive]}>
+                Out of Stock
+              </Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.filterButton}
-            onPress={() => setShowSortFilterModal(true)}
-            activeOpacity={0.7}
-          >
-            <Filter size={20} color={colors.foreground} />
-          </TouchableOpacity>
-        </View>
 
         {/* Items List */}
         <ScrollView
@@ -701,19 +687,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    gap: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  backText: {
-    fontSize: 17,
-    color: colors.foreground,
+    padding: 4,
   },
   titleContainer: {
     paddingHorizontal: 20,
@@ -721,6 +704,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
   },
   titleRow: {
     flexDirection: "row",
@@ -730,21 +714,7 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontSize: 28,
     fontWeight: "bold",
-    color: colors.foreground,
-  },
-  actionButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
+    color: "#111827",
   },
   addButton: {
     width: 44,
@@ -759,6 +729,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 12,
     marginBottom: 16,
+    backgroundColor: "#FFFFFF",
+    paddingBottom: 16,
   },
   tab: {
     flex: 1,
@@ -780,12 +752,6 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: "#FFFFFF",
-  },
-  searchContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 16,
   },
   searchBar: {
     flex: 1,
@@ -816,6 +782,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    backgroundColor: "#FFFFFF",
   },
   emptyState: {
     alignItems: "center",
@@ -843,7 +810,7 @@ const styles = StyleSheet.create({
   categoryTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: "#6B7280",
     marginBottom: 12,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -851,9 +818,9 @@ const styles = StyleSheet.create({
   itemCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.card,
+    backgroundColor: "#F9FAFB",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "#E5E7EB",
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
@@ -862,10 +829,12 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 8,
-    backgroundColor: colors.background,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   image: {
     width: 60,
@@ -878,12 +847,12 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: "#111827",
     marginBottom: 4,
   },
   itemBrand: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: "#6B7280",
     marginBottom: 6,
   },
   itemMeta: {
@@ -894,12 +863,12 @@ const styles = StyleSheet.create({
   itemQuantity: {
     fontSize: 14,
     fontWeight: "500",
-    color: colors.foreground,
+    color: "#374151",
   },
   itemQuantityDetail: {
     fontSize: 12,
     fontWeight: "400",
-    color: colors.mutedForeground,
+    color: "#6B7280",
   },
   lowStockBadge: {
     backgroundColor: "rgba(239, 68, 68, 0.1)",
