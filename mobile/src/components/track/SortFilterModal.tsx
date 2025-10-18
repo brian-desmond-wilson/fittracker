@@ -138,13 +138,26 @@ export function SortFilterModal({
     );
   };
 
-  const handleClearAll = () => {
-    setSelectedSort("name-asc");
-    setSelectedLocations([]);
-    setSelectedCategories([]);
-    setSelectedStockStatus([]);
-    setSelectedStorageTypes([]);
-    setShowExpired(true);
+  const handleClearAll = async () => {
+    const clearedFilters: FilterOptions = {
+      locations: [],
+      categories: [],
+      stockStatus: [],
+      storageTypes: [],
+      showExpired: true,
+    };
+
+    // Save cleared filters to AsyncStorage
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY_SORT, "name-asc");
+      await AsyncStorage.setItem(STORAGE_KEY_FILTERS, JSON.stringify(clearedFilters));
+    } catch (error) {
+      console.error("Error saving cleared filters:", error);
+    }
+
+    // Apply the cleared filters
+    onApply("name-asc", clearedFilters);
+    onClose();
   };
 
   const handleApply = async () => {

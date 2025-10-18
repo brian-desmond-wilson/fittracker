@@ -54,7 +54,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   useEffect(() => {
     fetchInventory();
-  }, [activeTab]);
+  }, []);
 
   useEffect(() => {
     // Load saved sort/filter preferences on mount
@@ -126,16 +126,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         };
       });
 
-      // Filter by tab
-      const filtered = itemsWithLocations.filter(item => {
-        if (activeTab === "in-stock") {
-          return item.total_quantity > 0;
-        } else {
-          return item.total_quantity === 0;
-        }
-      });
-
-      setItems(filtered);
+      setItems(itemsWithLocations);
     } catch (error: any) {
       console.error("Error fetching inventory:", error);
       Alert.alert("Error", "Failed to load inventory");
@@ -229,6 +220,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // Filter and sort items
   const filteredItems = items
     .filter((item) => {
+      // Tab filter (in-stock vs out-of-stock)
+      const matchesTab = activeTab === "in-stock"
+        ? item.total_quantity > 0
+        : item.total_quantity === 0;
+
       // Search filter
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.brand && item.brand.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -271,7 +267,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       const matchesExpired = currentFilters.showExpired || !item.expiration_date ||
         new Date(item.expiration_date) >= new Date();
 
-      return matchesSearch && matchesLocation && matchesCategory && matchesStockStatus && matchesStorageType && matchesExpired;
+      return matchesTab && matchesSearch && matchesLocation && matchesCategory && matchesStockStatus && matchesStorageType && matchesExpired;
     })
     .sort((a, b) => {
       switch (currentSort) {
