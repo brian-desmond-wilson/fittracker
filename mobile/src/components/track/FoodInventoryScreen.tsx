@@ -17,6 +17,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter, ScanBarcode, X } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
@@ -47,6 +48,7 @@ const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS
 
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   // Category & Subcategory state
   const [categories, setCategories] = useState<FoodCategory[]>([]);
@@ -289,7 +291,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleLongPress = (item: FoodInventoryItemWithLocations) => {
+  const handleLongPress = (item: FoodInventoryItemWithCategories) => {
     const isOutOfStock = item.total_quantity === 0;
     const needsRestockFridge = item.storage_type === 'multi-location' &&
       item.requires_refrigeration === true &&
@@ -298,8 +300,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       item.ready_quantity <= item.fridge_restock_threshold;
 
     // Build action sheet options dynamically
-    const options: string[] = ['Edit Details', 'Delete Item'];
+    const options: string[] = ['View Details', 'Edit Details', 'Delete Item'];
     const actions: (() => void)[] = [
+      () => router.push(`/(tabs)/track/food-inventory/${item.id}`),
       () => handleEditItem(item),
       () => {
         Alert.alert(
@@ -313,16 +316,16 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       }
     ];
 
-    // Add "Add to Shopping List" if out of stock
+    // Add "Add to Shopping List" if out of stock (insert at position 2, after "Edit Details")
     if (isOutOfStock) {
-      options.splice(1, 0, 'Add to Shopping List');
-      actions.splice(1, 0, () => handleAddToShoppingList(item));
+      options.splice(2, 0, 'Add to Shopping List');
+      actions.splice(2, 0, () => handleAddToShoppingList(item));
     }
 
     // Add "Restock Fridge" if multi-location and needs restock
     if (needsRestockFridge) {
-      options.splice(isOutOfStock ? 2 : 1, 0, 'Restock Fridge');
-      actions.splice(isOutOfStock ? 2 : 1, 0, () => {
+      options.splice(isOutOfStock ? 3 : 2, 0, 'Restock Fridge');
+      actions.splice(isOutOfStock ? 3 : 2, 0, () => {
         setRestockingItem(item);
         setShowRestockModal(true);
       });
@@ -616,7 +619,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     return (
       <Pressable
         style={styles.gridItem}
-        onPress={() => handleEditItem(item)}
+        onPress={() => router.push(`/(tabs)/track/food-inventory/${item.id}`)}
         onLongPress={() => handleLongPress(item)}
       >
         {/* Product Image with Badges Overlay */}

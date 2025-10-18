@@ -8,7 +8,8 @@ export default function TrackLayout() {
       }}
     >
       <Stack.Screen name="index" />
-      <Stack.Screen name="food-inventory" />
+      <Stack.Screen name="food-inventory/index" />
+      <Stack.Screen name="food-inventory/[id]" />
       <Stack.Screen name="meals" />
       <Stack.Screen name="water" />
       <Stack.Screen name="weight" />
