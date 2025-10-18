@@ -11,6 +11,10 @@ import {
   TextInput,
   Image,
   RefreshControl,
+  FlatList,
+  Dimensions,
+  ActionSheetIOS,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -27,7 +31,6 @@ import {
 import { supabase } from "@/src/lib/supabase";
 import { AddEditFoodModal } from "./AddEditFoodModal";
 import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences } from "./SortFilterModal";
-import { SwipeableItemRow } from "./SwipeableItemRow";
 import { RestockModal } from "./RestockModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
@@ -35,6 +38,12 @@ import { SubcategoryPills } from "./SubcategoryPills";
 interface FoodInventoryScreenProps {
   onClose: () => void;
 }
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const GRID_PADDING = 20;
+const GRID_GAP = 12;
+const NUM_COLUMNS = 3;
+const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const insets = useSafeAreaInsets();
@@ -281,10 +290,71 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleLongPress = (item: FoodInventoryItemWithLocations) => {
-    // Only show restock modal for multi-location items with "Restock Fridge" badge
-    if (item.storage_type === 'multi-location') {
-      setRestockingItem(item);
-      setShowRestockModal(true);
+    const isOutOfStock = item.total_quantity === 0;
+    const needsRestockFridge = item.storage_type === 'multi-location' &&
+      item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
+      item.ready_quantity >= 0;
+
+    // Build action sheet options dynamically
+    const options: string[] = ['Edit Details', 'Delete Item'];
+    const actions: (() => void)[] = [
+      () => handleEditItem(item),
+      () => {
+        Alert.alert(
+          "Delete Item",
+          `Are you sure you want to delete ${item.name}?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Delete", style: "destructive", onPress: () => handleDeleteItem(item.id) }
+          ]
+        );
+      }
+    ];
+
+    // Add "Add to Shopping List" if out of stock
+    if (isOutOfStock) {
+      options.splice(1, 0, 'Add to Shopping List');
+      actions.splice(1, 0, () => handleAddToShoppingList(item));
+    }
+
+    // Add "Restock Fridge" if multi-location and needs restock
+    if (needsRestockFridge) {
+      options.splice(isOutOfStock ? 2 : 1, 0, 'Restock Fridge');
+      actions.splice(isOutOfStock ? 2 : 1, 0, () => {
+        setRestockingItem(item);
+        setShowRestockModal(true);
+      });
+    }
+
+    options.push('Cancel');
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: options.length - 1,
+          destructiveButtonIndex: options.indexOf('Delete Item'),
+        },
+        (buttonIndex) => {
+          if (buttonIndex < actions.length) {
+            actions[buttonIndex]();
+          }
+        }
+      );
+    } else {
+      // For Android, use Alert with buttons
+      Alert.alert(
+        item.name,
+        'Choose an action',
+        [
+          ...actions.map((action, index) => ({
+            text: options[index],
+            onPress: action,
+            style: options[index] === 'Delete Item' ? 'destructive' as const : 'default' as const,
+          })),
+          { text: 'Cancel', style: 'cancel' as const },
+        ]
+      );
     }
   };
 
@@ -526,6 +596,80 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     return { text: `Exp: ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`, color: colors.mutedForeground };
   };
 
+  // Render function for grid items
+  const renderGridItem = ({ item }: { item: FoodInventoryItemWithCategories }) => {
+    const expiration = formatExpirationDate(item.expiration_date);
+
+    // Badge logic
+    const needsRestockFridge = item.storage_type === 'multi-location' &&
+      item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
+      item.ready_quantity >= 0;
+
+    const isLowTotalStock = item.storage_type === 'single-location'
+      ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
+      : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
+
+    return (
+      <Pressable
+        style={styles.gridItem}
+        onPress={() => handleEditItem(item)}
+        onLongPress={() => handleLongPress(item)}
+      >
+        {/* Product Image with Badges Overlay */}
+        <View style={styles.gridImageContainer}>
+          {item.image_primary_url ? (
+            <Image
+              source={{ uri: item.image_primary_url }}
+              style={styles.gridImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.gridImagePlaceholder}>
+              <Package size={40} color={colors.mutedForeground} />
+            </View>
+          )}
+
+          {/* Badges overlayed on top-right of image */}
+          <View style={styles.badgeContainer}>
+            {needsRestockFridge && (
+              <View style={styles.restockFridgeBadgeOverlay}>
+                <Text style={styles.badgeOverlayText}>Restock Fridge</Text>
+              </View>
+            )}
+            {isLowTotalStock && (
+              <View style={styles.lowStockBadgeOverlay}>
+                <Text style={styles.badgeOverlayText}>Low Stock</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Product Info Below Image */}
+        <View style={styles.gridItemInfo}>
+          <Text style={styles.gridItemName} numberOfLines={2}>
+            {item.name}
+          </Text>
+          {item.brand && (
+            <Text style={styles.gridItemBrand} numberOfLines={1}>
+              {item.brand}
+            </Text>
+          )}
+          <Text style={styles.gridItemQuantity}>
+            Qty: {item.total_quantity} {item.unit}
+            {item.storage_type === 'multi-location' && item.ready_quantity > 0 && (
+              <Text style={styles.gridItemQuantityDetail}> ({item.ready_quantity} Ready)</Text>
+            )}
+          </Text>
+          {expiration && (
+            <Text style={[styles.gridItemExpiration, { color: expiration.color }]}>
+              {expiration.text}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
+
   return (
     <>
       <StatusBar barStyle="light-content" />
@@ -625,9 +769,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             return null;
           })()}
 
-        {/* Items List */}
-        <ScrollView
-          style={styles.content}
+        {/* Items Grid */}
+        <FlatList
+          data={filteredItems}
+          renderItem={renderGridItem}
+          keyExtractor={(item) => item.id}
+          numColumns={NUM_COLUMNS}
+          contentContainerStyle={styles.gridContainer}
+          columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -639,122 +788,38 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               titleColor={colors.mutedForeground}
             />
           }
-        >
-          {loading ? (
-            <Text style={styles.emptyText}>Loading...</Text>
-          ) : filteredItems.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Package size={64} color={colors.mutedForeground} strokeWidth={1.5} />
-              <Text style={styles.emptyText}>
-                {(() => {
-                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-                  if (selectedCategory?.slug === "out-of-stock") {
-                    return "No out of stock items";
-                  }
-                  return "No items found";
-                })()}
-              </Text>
-              <Text style={styles.emptySubtext}>
-                {(() => {
-                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-                  if (selectedCategory?.slug === "out-of-stock") {
-                    return "Items with zero quantity will appear here";
-                  }
-                  if (selectedCategory?.slug === "all-products") {
-                    return "Add items to start tracking your inventory";
-                  }
-                  return "Try adjusting your filters or add items to this category";
-                })()}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.itemsList}>
-              {filteredItems.map((item) => {
-                const expiration = formatExpirationDate(item.expiration_date);
-
-                // Badge logic: separate badges for ready stock and total stock
-                const needsRestockFridge = item.storage_type === 'multi-location' &&
-                  item.ready_quantity <= (item.fridge_restock_threshold || 0) &&
-                  item.ready_quantity >= 0;
-
-                const isLowTotalStock = item.storage_type === 'single-location'
-                  ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
-                  : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
-
-                // Check if item is out of stock for showing shopping cart button
-                const isOutOfStock = item.total_quantity === 0;
-
-                return (
-                  <SwipeableItemRow
-                    key={item.id}
-                    onDelete={() => handleDeleteItem(item.id)}
-                  >
-                    <Pressable
-                      style={styles.itemCard}
-                      onPress={() => handleEditItem(item)}
-                      onLongPress={() => handleLongPress(item)}
-                    >
-                    {/* Item Image */}
-                    <View style={styles.itemImage}>
-                      {item.image_primary_url ? (
-                        <Image
-                          source={{ uri: item.image_primary_url }}
-                          style={styles.image}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <Package size={32} color={colors.mutedForeground} />
-                      )}
-                    </View>
-
-                    {/* Item Info */}
-                    <View style={styles.itemInfo}>
-                      <Text style={styles.itemName}>{item.name}</Text>
-                      {item.brand && <Text style={styles.itemBrand}>{item.brand}</Text>}
-                      <View style={styles.itemMeta}>
-                        <Text style={styles.itemQuantity}>
-                          {item.total_quantity} {item.unit}
-                          {item.storage_type === 'multi-location' && item.ready_quantity > 0 && (
-                            <Text style={styles.itemQuantityDetail}> ({item.ready_quantity} ready)</Text>
-                          )}
-                        </Text>
-                        {needsRestockFridge && (
-                          <View style={styles.restockFridgeBadge}>
-                            <Text style={styles.restockFridgeText}>Restock Fridge</Text>
-                          </View>
-                        )}
-                        {isLowTotalStock && (
-                          <View style={styles.lowStockBadge}>
-                            <Text style={styles.lowStockText}>Low Stock</Text>
-                          </View>
-                        )}
-                      </View>
-                      {expiration && (
-                        <Text style={[styles.itemExpiration, { color: expiration.color }]}>
-                          {expiration.text}
-                        </Text>
-                      )}
-                    </View>
-
-                    {/* Actions */}
-                    {isOutOfStock && (
-                      <TouchableOpacity
-                        style={styles.restockButton}
-                        onPress={() => handleAddToShoppingList(item)}
-                        activeOpacity={0.7}
-                      >
-                        <ShoppingCart size={18} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    )}
-                    </Pressable>
-                  </SwipeableItemRow>
-                );
-              })}
-            </View>
-          )}
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
+          ListEmptyComponent={
+            loading ? (
+              <Text style={styles.emptyText}>Loading...</Text>
+            ) : (
+              <View style={styles.emptyState}>
+                <Package size={64} color={colors.mutedForeground} strokeWidth={1.5} />
+                <Text style={styles.emptyText}>
+                  {(() => {
+                    const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+                    if (selectedCategory?.slug === "out-of-stock") {
+                      return "No out of stock items";
+                    }
+                    return "No items found";
+                  })()}
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  {(() => {
+                    const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+                    if (selectedCategory?.slug === "out-of-stock") {
+                      return "Items with zero quantity will appear here";
+                    }
+                    if (selectedCategory?.slug === "all-products") {
+                      return "Add items to start tracking your inventory";
+                    }
+                    return "Try adjusting your filters or add items to this category";
+                  })()}
+                </Text>
+              </View>
+            )
+          }
+          ListFooterComponent={<View style={{ height: 40 }} />}
+        />
 
         {/* Add/Edit Modal */}
         <AddEditFoodModal
@@ -863,10 +928,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  content: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -886,115 +947,99 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-  itemsList: {
-    paddingHorizontal: 20,
+  // Grid Layout Styles
+  gridContainer: {
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 16,
+    backgroundColor: "#FFFFFF",
   },
-  itemCard: {
-    flexDirection: "row",
-    alignItems: "center",
+  gridRow: {
+    justifyContent: "flex-start",
+    gap: GRID_GAP,
+    marginBottom: GRID_GAP,
+  },
+  gridItem: {
+    width: ITEM_WIDTH,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  gridImageContainer: {
+    width: ITEM_WIDTH,
+    height: ITEM_WIDTH,
+    position: "relative",
     backgroundColor: "#F9FAFB",
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  itemImage: {
-    width: 60,
-    height: 60,
     borderRadius: 8,
-    backgroundColor: "#FFFFFF",
+  },
+  gridImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
+  },
+  gridImagePlaceholder: {
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
   },
-  image: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
+  badgeContainer: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    gap: 4,
   },
-  itemInfo: {
-    flex: 1,
+  lowStockBadgeOverlay: {
+    backgroundColor: "rgba(239, 68, 68, 0.9)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
-  itemName: {
-    fontSize: 16,
-    fontWeight: "600",
+  restockFridgeBadgeOverlay: {
+    backgroundColor: "rgba(249, 115, 22, 0.9)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  badgeOverlayText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  gridItemInfo: {
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  gridItemName: {
+    fontSize: 12,
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 4,
+    marginBottom: 2,
+    lineHeight: 16,
   },
-  itemBrand: {
-    fontSize: 14,
+  gridItemBrand: {
+    fontSize: 11,
     color: "#6B7280",
-    marginBottom: 6,
+    marginBottom: 4,
+    lineHeight: 14,
   },
-  itemMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  itemQuantity: {
-    fontSize: 14,
+  gridItemQuantity: {
+    fontSize: 11,
     fontWeight: "500",
     color: "#374151",
+    marginBottom: 2,
   },
-  itemQuantityDetail: {
-    fontSize: 12,
+  gridItemQuantityDetail: {
+    fontSize: 10,
     fontWeight: "400",
     color: "#6B7280",
   },
-  lowStockBadge: {
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  lowStockText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#EF4444",
-  },
-  restockFridgeBadge: {
-    backgroundColor: "rgba(249, 115, 22, 0.1)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  restockFridgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#F97316",
-  },
-  itemExpiration: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  itemActions: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  qtyButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  restockButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#8B5CF6",
-    alignItems: "center",
-    justifyContent: "center",
+  gridItemExpiration: {
+    fontSize: 10,
+    marginTop: 2,
   },
 });
