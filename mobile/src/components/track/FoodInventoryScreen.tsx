@@ -197,33 +197,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleUpdateQuantity = async (itemId: string, currentQty: number, delta: number) => {
-    const newQty = Math.max(0, currentQty + delta);
-
-    // Optimistically update the UI
-    setItems(prevItems =>
-      prevItems.map(item =>
-        item.id === itemId
-          ? { ...item, quantity: newQty, total_quantity: newQty }
-          : item
-      )
-    );
-
-    try {
-      const { error } = await supabase
-        .from("food_inventory")
-        .update({ quantity: newQty })
-        .eq("id", itemId);
-
-      if (error) throw error;
-    } catch (error: any) {
-      console.error("Error updating quantity:", error);
-      Alert.alert("Error", "Failed to update quantity");
-      // Revert the optimistic update on error
-      await fetchInventory();
-    }
-  };
-
   const handleAddToShoppingList = async (item: FoodInventoryItem) => {
     try {
       const {
@@ -535,25 +508,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                       </View>
 
                       {/* Actions */}
-                      {activeTab === "in-stock" && item.storage_type === 'single-location' && (
-                        <View style={styles.itemActions}>
-                          <TouchableOpacity
-                            style={styles.qtyButton}
-                            onPress={() => handleUpdateQuantity(item.id, item.total_quantity, -1)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.qtyButtonText}>−</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.qtyButton}
-                            onPress={() => handleUpdateQuantity(item.id, item.total_quantity, 1)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.qtyButtonText}>+</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
                       {activeTab === "out-of-stock" && (
                         <TouchableOpacity
                           style={styles.restockButton}
