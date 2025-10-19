@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X } from "lucide-react-native";
+import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import {
   FoodInventoryItem,
@@ -527,6 +527,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
       : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
 
+    const hasNoCategories = item.categories.length === 0;
+
     return (
       <Pressable
         style={styles.gridItem}
@@ -560,6 +562,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               </View>
             )}
           </View>
+
+          {/* Uncategorized icon overlay on bottom-left */}
+          {hasNoCategories && (
+            <View style={styles.uncategorizedIconContainer}>
+              <Tag size={18} color="#F59E0B" strokeWidth={2.5} />
+            </View>
+          )}
         </View>
 
         {/* Product Info Below Image */}
@@ -898,6 +907,22 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     textTransform: "uppercase",
     letterSpacing: 0.3,
+  },
+  uncategorizedIconContainer: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   gridItemInfo: {
     paddingTop: 8,
