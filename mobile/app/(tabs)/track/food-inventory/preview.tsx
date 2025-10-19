@@ -1,18 +1,16 @@
-import React, { useState } from "react";
+import React from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { View, Text, TouchableOpacity, StatusBar, StyleSheet, ActivityIndicator, Modal } from "react-native";
+import { View, Text, TouchableOpacity, StatusBar, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Plus } from "lucide-react-native";
+import { ChevronLeft } from "lucide-react-native";
 import { ViewFoodDetailsScreen } from "@/src/components/track/ViewFoodDetailsScreen";
 import { FoodInventoryItemWithCategories } from "@/src/types/track";
 import { ProductData } from "@/src/services/openFoodFactsApi";
-import { AddEditFoodModal } from "@/src/components/track/AddEditFoodModal";
 
 export default function FoodProductPreviewPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { productData: productDataString, barcode } = useLocalSearchParams<{ productData: string; barcode: string }>();
-  const [showAddModal, setShowAddModal] = useState(false);
 
   if (!productDataString || !barcode) {
     return (
@@ -74,38 +72,23 @@ export default function FoodProductPreviewPage() {
   };
 
   const handleAddToInventory = () => {
-    setShowAddModal(true);
-  };
-
-  const handleModalSave = (newItemId: string) => {
-    setShowAddModal(false);
-    // Navigate to the newly created item's detail page
-    router.replace(`/(tabs)/track/food-inventory/${newItemId}`);
-  };
-
-  const handleModalClose = () => {
-    setShowAddModal(false);
+    // Navigate to the add page with barcode data
+    router.push({
+      pathname: "/(tabs)/track/food-inventory/add" as any,
+      params: {
+        productData: productDataString,
+        barcode: barcode,
+      },
+    });
   };
 
   return (
-    <>
-      <ViewFoodDetailsScreen
-        item={previewItem}
-        onClose={() => router.back()}
-        isPreview={true}
-        onAddToInventory={handleAddToInventory}
-      />
-
-      {/* Add to Inventory Modal */}
-      <AddEditFoodModal
-        visible={showAddModal}
-        onClose={handleModalClose}
-        onSave={handleModalSave}
-        item={null}
-        barcodeData={productData}
-        barcode={barcode}
-      />
-    </>
+    <ViewFoodDetailsScreen
+      item={previewItem}
+      onClose={() => router.back()}
+      isPreview={true}
+      onAddToInventory={handleAddToInventory}
+    />
   );
 }
 

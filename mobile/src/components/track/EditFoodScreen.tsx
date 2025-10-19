@@ -36,7 +36,8 @@ interface LocationEntry {
 interface EditFoodScreenProps {
   item: FoodInventoryItemWithCategories;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (newItemId?: string) => void;  // Changed to accept optional newItemId
+  isNew?: boolean;  // NEW prop to indicate if this is a new item
 }
 
 type SectionKey = "basic" | "storage" | "nutrition" | "expiration" | "images" | "notes";
@@ -82,7 +83,7 @@ function SectionHeader({ title, sectionKey, isExpanded, hasError, onPress }: Sec
   );
 }
 
-export function EditFoodScreen({ item, onClose, onSave }: EditFoodScreenProps) {
+export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoodScreenProps) {
   const insets = useSafeAreaInsets();
 
   // Categories & Subcategories Data
@@ -627,90 +628,160 @@ export function EditFoodScreen({ item, onClose, onSave }: EditFoodScreenProps) {
         image_side_url: sideUrl,
       };
 
-      // Update existing item
-      const { error } = await supabase
-        .from("food_inventory")
-        .update(itemData)
-        .eq("id", item.id);
+      let foodItemId: string;
 
-      if (error) throw error;
+      if (isNew) {
+        // CREATE new item
+        const { data: newItem, error: insertError } = await supabase
+          .from("food_inventory")
+          .insert(itemData)
+          .select('id')
+          .single();
 
-      // For multi-location items, handle location entries
-      if (storageType === 'multi-location') {
-        // Delete existing locations
-        const { error: deleteError } = await supabase
-          .from("food_inventory_locations")
+        if (insertError) throw insertError;
+        if (!newItem) throw new Error("Failed to create item");
+
+        foodItemId = newItem.id;
+
+        // For multi-location items, insert location entries
+        if (storageType === 'multi-location') {
+          const locationsToInsert = locationEntries.map(entry => ({
+            food_inventory_id: foodItemId,
+            user_id: user.id,
+            location: entry.location,
+            quantity: parseInt(entry.quantity),
+            is_ready_to_consume: entry.isReadyToConsume,
+            notes: entry.notes || null,
+          }));
+
+          const { error: locationInsertError } = await supabase
+            .from("food_inventory_locations")
+            .insert(locationsToInsert);
+
+          if (locationInsertError) throw locationInsertError;
+        }
+
+        // Insert category mappings
+        if (selectedCategoryIds.length > 0) {
+          const categoryMappings = selectedCategoryIds.map(categoryId => ({
+            food_inventory_id: foodItemId,
+            category_id: categoryId,
+            user_id: user.id,
+          }));
+
+          const { error: categoryInsertError } = await supabase
+            .from("food_inventory_category_map")
+            .insert(categoryMappings);
+
+          if (categoryInsertError) throw categoryInsertError;
+        }
+
+        // Insert subcategory mappings
+        if (selectedSubcategoryIds.length > 0) {
+          const subcategoryMappings = selectedSubcategoryIds.map(subcategoryId => ({
+            food_inventory_id: foodItemId,
+            subcategory_id: subcategoryId,
+            user_id: user.id,
+          }));
+
+          const { error: subcategoryInsertError } = await supabase
+            .from("food_inventory_subcategory_map")
+            .insert(subcategoryMappings);
+
+          if (subcategoryInsertError) throw subcategoryInsertError;
+        }
+
+        Alert.alert("Success", "Item added successfully");
+        onSave(foodItemId);
+        onClose();
+      } else {
+        // UPDATE existing item
+        const { error } = await supabase
+          .from("food_inventory")
+          .update(itemData)
+          .eq("id", item.id);
+
+        if (error) throw error;
+
+        foodItemId = item.id;
+
+        // For multi-location items, handle location entries
+        if (storageType === 'multi-location') {
+          // Delete existing locations
+          const { error: deleteError } = await supabase
+            .from("food_inventory_locations")
+            .delete()
+            .eq("food_inventory_id", item.id);
+
+          if (deleteError) throw deleteError;
+
+          // Insert new locations
+          const locationsToInsert = locationEntries.map(entry => ({
+            food_inventory_id: item.id,
+            user_id: user.id,
+            location: entry.location,
+            quantity: parseInt(entry.quantity),
+            is_ready_to_consume: entry.isReadyToConsume,
+            notes: entry.notes || null,
+          }));
+
+          const { error: insertError } = await supabase
+            .from("food_inventory_locations")
+            .insert(locationsToInsert);
+
+          if (insertError) throw insertError;
+        }
+
+        // Handle category and subcategory mappings
+        // Delete existing category mappings
+        const { error: deleteCategoryError } = await supabase
+          .from("food_inventory_category_map")
           .delete()
           .eq("food_inventory_id", item.id);
 
-        if (deleteError) throw deleteError;
+        if (deleteCategoryError) throw deleteCategoryError;
 
-        // Insert new locations
-        const locationsToInsert = locationEntries.map(entry => ({
-          food_inventory_id: item.id,
-          user_id: user.id,
-          location: entry.location,
-          quantity: parseInt(entry.quantity),
-          is_ready_to_consume: entry.isReadyToConsume,
-          notes: entry.notes || null,
-        }));
-
-        const { error: insertError } = await supabase
-          .from("food_inventory_locations")
-          .insert(locationsToInsert);
-
-        if (insertError) throw insertError;
-      }
-
-      // Handle category and subcategory mappings
-      // Delete existing category mappings
-      const { error: deleteCategoryError } = await supabase
-        .from("food_inventory_category_map")
-        .delete()
-        .eq("food_inventory_id", item.id);
-
-      if (deleteCategoryError) throw deleteCategoryError;
-
-      // Delete existing subcategory mappings
-      const { error: deleteSubcategoryError } = await supabase
-        .from("food_inventory_subcategory_map")
-        .delete()
-        .eq("food_inventory_id", item.id);
-
-      if (deleteSubcategoryError) throw deleteSubcategoryError;
-
-      // Insert new category mappings
-      if (selectedCategoryIds.length > 0) {
-        const categoryMappings = selectedCategoryIds.map(categoryId => ({
-          food_inventory_id: item.id,
-          category_id: categoryId,
-          user_id: user.id,
-        }));
-
-        const { error: categoryInsertError } = await supabase
-          .from("food_inventory_category_map")
-          .insert(categoryMappings);
-
-        if (categoryInsertError) throw categoryInsertError;
-      }
-
-      // Insert new subcategory mappings
-      if (selectedSubcategoryIds.length > 0) {
-        const subcategoryMappings = selectedSubcategoryIds.map(subcategoryId => ({
-          food_inventory_id: item.id,
-          subcategory_id: subcategoryId,
-          user_id: user.id,
-        }));
-
-        const { error: subcategoryInsertError } = await supabase
+        // Delete existing subcategory mappings
+        const { error: deleteSubcategoryError } = await supabase
           .from("food_inventory_subcategory_map")
-          .insert(subcategoryMappings);
+          .delete()
+          .eq("food_inventory_id", item.id);
 
-        if (subcategoryInsertError) throw subcategoryInsertError;
+        if (deleteSubcategoryError) throw deleteSubcategoryError;
+
+        // Insert new category mappings
+        if (selectedCategoryIds.length > 0) {
+          const categoryMappings = selectedCategoryIds.map(categoryId => ({
+            food_inventory_id: item.id,
+            category_id: categoryId,
+            user_id: user.id,
+          }));
+
+          const { error: categoryInsertError } = await supabase
+            .from("food_inventory_category_map")
+            .insert(categoryMappings);
+
+          if (categoryInsertError) throw categoryInsertError;
+        }
+
+        // Insert new subcategory mappings
+        if (selectedSubcategoryIds.length > 0) {
+          const subcategoryMappings = selectedSubcategoryIds.map(subcategoryId => ({
+            food_inventory_id: item.id,
+            subcategory_id: subcategoryId,
+            user_id: user.id,
+          }));
+
+          const { error: subcategoryInsertError } = await supabase
+            .from("food_inventory_subcategory_map")
+            .insert(subcategoryMappings);
+
+          if (subcategoryInsertError) throw subcategoryInsertError;
+        }
+
+        Alert.alert("Success", "Item updated successfully");
+        onSave();
       }
-
-      Alert.alert("Success", "Item updated successfully");
-      onSave();
     } catch (error: any) {
       console.error("Error saving item:", error);
       Alert.alert("Error", "Failed to save item");
@@ -729,7 +800,7 @@ export function EditFoodScreen({ item, onClose, onSave }: EditFoodScreenProps) {
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Product</Text>
+          <Text style={styles.headerTitle}>{isNew ? "Add Product" : "Edit Product"}</Text>
           <View style={{ width: 24 }} />
         </View>
 
