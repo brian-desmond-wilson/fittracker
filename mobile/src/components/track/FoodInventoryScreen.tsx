@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { ChevronLeft, Plus, Search, Package, ShoppingCart, Filter, ScanBarcode, X } from "lucide-react-native";
+import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import {
   FoodInventoryItem,
@@ -30,8 +30,6 @@ import {
   FoodInventoryItemWithCategories
 } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
-import { AddEditFoodModal } from "./AddEditFoodModal";
-import { SortFilterModal, SortOption, FilterOptions, loadSortFilterPreferences } from "./SortFilterModal";
 import { RestockModal } from "./RestockModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
@@ -64,21 +62,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-
-  // Modal state
-  const [showAddEditModal, setShowAddEditModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<FoodInventoryItem | null>(null);
-
-  // Sort & Filter state
-  const [showSortFilterModal, setShowSortFilterModal] = useState(false);
-  const [currentSort, setCurrentSort] = useState<SortOption>("name-asc");
-  const [currentFilters, setCurrentFilters] = useState<FilterOptions>({
-    locations: [],
-    categories: [],
-    stockStatus: [],
-    storageTypes: [],
-    showExpired: true,
-  });
 
   // Restock modal state
   const [showRestockModal, setShowRestockModal] = useState(false);
@@ -116,17 +99,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     fetchInventory();
   }, []);
 
-  useEffect(() => {
-    // Load saved sort/filter preferences on mount
-    const loadPreferences = async () => {
-      const prefs = await loadSortFilterPreferences();
-      if (prefs) {
-        setCurrentSort(prefs.sort);
-        setCurrentFilters(prefs.filters);
-      }
-    };
-    loadPreferences();
-  }, []);
 
   const fetchInventory = async () => {
     try {
@@ -217,21 +189,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleAddItem = () => {
-    setEditingItem(null);
-    setShowAddEditModal(true);
+    router.push("/(tabs)/track/food-inventory/add");
   };
 
   const handleEditItem = (item: FoodInventoryItem) => {
     router.push(`/(tabs)/track/food-inventory/edit/${item.id}`);
-  };
-
-  const handleModalSave = () => {
-    fetchInventory();
-  };
-
-  const handleModalClose = () => {
-    setShowAddEditModal(false);
-    setEditingItem(null);
   };
 
   const handleDeleteItem = async (itemId: string) => {
@@ -500,7 +462,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  // Filter and sort items
+  // Filter items
   const filteredItems = items
     .filter((item) => {
       // Get the selected category
@@ -533,87 +495,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (item.brand && item.brand.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      // Location filter
-      const matchesLocation = currentFilters.locations.length === 0 ||
-        (item.storage_type === 'single-location' && item.location && currentFilters.locations.includes(item.location)) ||
-        (item.storage_type === 'multi-location' && item.locations.some(loc => currentFilters.locations.includes(loc.location)));
-
-      // Stock status filter
-      const matchesStockStatus = currentFilters.stockStatus.length === 0 || currentFilters.stockStatus.some(status => {
-        if (status === "low-stock") {
-          return item.storage_type === 'single-location'
-            ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
-            : (item.ready_quantity <= (item.fridge_restock_threshold || 0) && item.ready_quantity > 0) ||
-              (item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0);
-        }
-        if (status === "expiring-soon") {
-          if (!item.expiration_date) return false;
-          const daysUntilExpiration = Math.ceil(
-            (new Date(item.expiration_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-          );
-          return daysUntilExpiration >= 0 && daysUntilExpiration <= 7;
-        }
-        if (status === "out-of-stock") {
-          return item.total_quantity === 0;
-        }
-        return false;
-      });
-
-      // Storage type filter
-      const matchesStorageType = currentFilters.storageTypes.length === 0 ||
-        currentFilters.storageTypes.includes(item.storage_type);
-
-      // Expired items filter
-      const matchesExpired = currentFilters.showExpired || !item.expiration_date ||
-        new Date(item.expiration_date) >= new Date();
-
-      return matchesCategory && matchesSearch && matchesLocation && matchesStockStatus && matchesStorageType && matchesExpired;
+      return matchesCategory && matchesSearch;
     })
-    .sort((a, b) => {
-      switch (currentSort) {
-        case "name-asc":
-          return a.name.localeCompare(b.name);
-        case "name-desc":
-          return b.name.localeCompare(a.name);
-        case "quantity-low":
-          return a.total_quantity - b.total_quantity;
-        case "quantity-high":
-          return b.total_quantity - a.total_quantity;
-        case "expiration-soon":
-          if (!a.expiration_date && !b.expiration_date) return 0;
-          if (!a.expiration_date) return 1;
-          if (!b.expiration_date) return -1;
-          return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
-        case "expiration-late":
-          if (!a.expiration_date && !b.expiration_date) return 0;
-          if (!a.expiration_date) return 1;
-          if (!b.expiration_date) return -1;
-          return new Date(b.expiration_date).getTime() - new Date(a.expiration_date).getTime();
-        case "category-asc":
-          // Sort by first category name
-          const aFirstCategory = a.categories[0]?.name || "Uncategorized";
-          const bFirstCategory = b.categories[0]?.name || "Uncategorized";
-          return aFirstCategory.localeCompare(bFirstCategory);
-        case "date-newest":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        case "date-oldest":
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        default:
-          return 0;
-      }
-    });
-
-  // Get available category names for sort/filter modal (from all categories in the database)
-  const availableCategories = categories
-    .filter(cat => cat.slug !== "all-products" && cat.slug !== "out-of-stock")
-    .map(cat => cat.name)
-    .sort();
-
-  // Handler for applying sort/filter
-  const handleApplySortFilter = (sort: SortOption, filters: FilterOptions) => {
-    setCurrentSort(sort);
-    setCurrentFilters(filters);
-  };
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const formatExpirationDate = (dateStr: string | null) => {
     if (!dateStr) return null;
@@ -709,7 +593,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       <StatusBar barStyle="light-content" />
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={[styles.container, { paddingTop: insets.top }]}>
-          {/* Header with Back, Search, and Filter */}
+          {/* Header with Back, Search, and Add Button */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <ChevronLeft size={24} color="#FFFFFF" />
@@ -742,27 +626,20 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               )}
             </View>
             <TouchableOpacity
-              style={styles.filterButton}
-              onPress={() => setShowSortFilterModal(true)}
-              activeOpacity={0.7}
-            >
-              <Filter size={20} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Title & Actions */}
-          <View style={styles.titleContainer}>
-            <View style={styles.titleRow}>
-              <Package size={28} color="#8B5CF6" strokeWidth={2} />
-              <Text style={styles.pageTitle}>Food Inventory</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.addButton}
+              style={styles.headerAddButton}
               onPress={handleAddItem}
               activeOpacity={0.7}
             >
               <Plus size={20} color="#FFFFFF" />
             </TouchableOpacity>
+          </View>
+
+          {/* Title */}
+          <View style={styles.titleContainer}>
+            <View style={styles.titleRow}>
+              <Package size={28} color="#8B5CF6" strokeWidth={2} />
+              <Text style={styles.pageTitle}>Food Inventory</Text>
+            </View>
           </View>
 
           {/* Category Tabs */}
@@ -853,24 +730,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           ListFooterComponent={<View style={{ height: 40 }} />}
         />
 
-        {/* Add/Edit Modal */}
-        <AddEditFoodModal
-          visible={showAddEditModal}
-          onClose={handleModalClose}
-          onSave={handleModalSave}
-          item={editingItem}
-        />
-
-        {/* Sort & Filter Modal */}
-        <SortFilterModal
-          visible={showSortFilterModal}
-          onClose={() => setShowSortFilterModal(false)}
-          onApply={handleApplySortFilter}
-          availableCategories={availableCategories}
-          currentSort={currentSort}
-          currentFilters={currentFilters}
-        />
-
         {/* Restock Modal */}
         <RestockModal
           visible={showRestockModal}
@@ -914,9 +773,6 @@ const styles = StyleSheet.create({
   titleContainer: {
     paddingHorizontal: 20,
     paddingVertical: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     backgroundColor: "#FFFFFF",
   },
   titleRow: {
@@ -929,10 +785,10 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#111827",
   },
-  addButton: {
+  headerAddButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 8,
     backgroundColor: "#8B5CF6",
     alignItems: "center",
     justifyContent: "center",
@@ -956,16 +812,6 @@ const styles = StyleSheet.create({
   },
   searchActionButton: {
     padding: 4,
-  },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
   },
   emptyState: {
     alignItems: "center",
