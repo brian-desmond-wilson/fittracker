@@ -610,7 +610,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         quantity: storageType === 'single-location' ? parseInt(quantity) : 0,
         unit: unit,
         location: storageType === 'single-location' ? location : null,
-        restock_threshold: parseInt(restockThreshold) || 1,
+        restock_threshold: restockThreshold ? parseInt(restockThreshold) : 0,
         requires_refrigeration: requiresRefrigeration,
         fridge_restock_threshold: fridgeRestockThreshold ? parseInt(fridgeRestockThreshold) : null,
         total_restock_threshold: totalRestockThreshold ? parseInt(totalRestockThreshold) : null,
