@@ -497,7 +497,16 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
       return matchesCategory && matchesSearch;
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      // Sort by expiration date - items expiring soonest first
+      // Items without expiration dates go to the end
+      if (!a.expiration_date && !b.expiration_date) return 0;
+      if (!a.expiration_date) return 1; // a goes to end
+      if (!b.expiration_date) return -1; // b goes to end
+
+      // Both have expiration dates - sort by date (earliest first)
+      return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
+    });
 
   const formatExpirationDate = (dateStr: string | null) => {
     if (!dateStr) return null;
@@ -566,7 +575,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           {/* Uncategorized icon overlay on bottom-left */}
           {hasNoCategories && (
             <View style={styles.uncategorizedIconContainer}>
-              <Tag size={18} color="#F59E0B" strokeWidth={2.5} />
+              <Tag size={18} color="#8B5CF6" strokeWidth={2.5} />
             </View>
           )}
         </View>

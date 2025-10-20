@@ -1,32 +1,90 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Dumbbell } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
 import ExercisesTab from "@/src/components/training/ExercisesTab";
 
-type Tab = "programs" | "workouts" | "exercises";
+type WorkoutMode = "crossfit" | "strength";
+type CrossFitTab = "classes" | "wods" | "movements";
+type StrengthTab = "programs" | "workouts" | "exercises";
 
 export default function Training() {
-  const [activeTab, setActiveTab] = useState<Tab>("programs");
+  const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("crossfit");
+  const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
+  const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
 
-  const tabs: { key: Tab; label: string }[] = [
+  const crossfitTabs: { key: CrossFitTab; label: string }[] = [
+    { key: "classes", label: "Classes" },
+    { key: "wods", label: "WODs" },
+    { key: "movements", label: "Movements" },
+  ];
+
+  const strengthTabs: { key: StrengthTab; label: string }[] = [
     { key: "programs", label: "Programs" },
     { key: "workouts", label: "Workouts" },
     { key: "exercises", label: "Exercises" },
   ];
 
+  const handleCrossFitPress = () => {
+    setWorkoutMode("crossfit");
+  };
+
+  const handleStrengthPress = () => {
+    setWorkoutMode("strength");
+  };
+
   const renderTabContent = () => {
-    switch (activeTab) {
-      case "programs":
-        return <ProgramsTab />;
-      case "workouts":
-        return <WorkoutsTab />;
-      case "exercises":
-        return <ExercisesTab />;
-      default:
-        return null;
+    if (workoutMode === "crossfit") {
+      switch (crossfitTab) {
+        case "classes":
+          return <View style={{ flex: 1, padding: 20 }}><Text style={{ color: colors.foreground }}>Classes Tab (Coming Soon)</Text></View>;
+        case "wods":
+          return <View style={{ flex: 1, padding: 20 }}><Text style={{ color: colors.foreground }}>WODs Tab (Coming Soon)</Text></View>;
+        case "movements":
+          return <View style={{ flex: 1, padding: 20 }}><Text style={{ color: colors.foreground }}>Movements Tab (Coming Soon)</Text></View>;
+        default:
+          return null;
+      }
+    } else {
+      switch (strengthTab) {
+        case "programs":
+          return <ProgramsTab />;
+        case "workouts":
+          return <WorkoutsTab />;
+        case "exercises":
+          return <ExercisesTab />;
+        default:
+          return null;
+      }
+    }
+  };
+
+  const getSearchPlaceholder = () => {
+    if (workoutMode === "crossfit") {
+      switch (crossfitTab) {
+        case "classes":
+          return "Search classes...";
+        case "wods":
+          return "Search WODs...";
+        case "movements":
+          return "Search movements...";
+        default:
+          return "Search...";
+      }
+    } else {
+      switch (strengthTab) {
+        case "programs":
+          return "Search programs...";
+        case "workouts":
+          return "Search workouts...";
+        case "exercises":
+          return "Search exercises...";
+        default:
+          return "Search...";
+      }
     }
   };
 
@@ -35,22 +93,49 @@ export default function Training() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Training</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={handleCrossFitPress} activeOpacity={0.7} style={styles.iconButton}>
+            <Image
+              source={require('@/assets/kettlebell.png')}
+              style={styles.kettlebellIcon}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleStrengthPress} activeOpacity={0.7} style={styles.iconButton}>
+            <Dumbbell size={24} color={colors.primary} strokeWidth={2} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tab Bar */}
       <View style={styles.tabBar}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-            onPress={() => setActiveTab(tab.key)}
-          >
-            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-              {tab.label}
-            </Text>
-            {activeTab === tab.key && <View style={styles.tabIndicator} />}
-          </TouchableOpacity>
-        ))}
+        {workoutMode === "crossfit" ? (
+          crossfitTabs.map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, crossfitTab === tab.key && styles.tabActive]}
+              onPress={() => setCrossfitTab(tab.key)}
+            >
+              <Text style={[styles.tabText, crossfitTab === tab.key && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+              {crossfitTab === tab.key && <View style={styles.tabIndicator} />}
+            </TouchableOpacity>
+          ))
+        ) : (
+          strengthTabs.map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, strengthTab === tab.key && styles.tabActive]}
+              onPress={() => setStrengthTab(tab.key)}
+            >
+              <Text style={[styles.tabText, strengthTab === tab.key && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+              {strengthTab === tab.key && <View style={styles.tabIndicator} />}
+            </TouchableOpacity>
+          ))
+        )}
       </View>
 
       {/* Tab Content */}
@@ -65,6 +150,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
@@ -74,6 +162,21 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: "bold",
     color: colors.foreground,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  kettlebellIcon: {
+    width: 24,
+    height: 24,
+    tintColor: colors.primary,
   },
   tabBar: {
     flexDirection: "row",

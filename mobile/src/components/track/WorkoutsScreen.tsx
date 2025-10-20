@@ -1,15 +1,26 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Dumbbell, Clock } from "lucide-react-native";
+import { ChevronLeft, Dumbbell } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 
 interface WorkoutsScreenProps {
   onClose: () => void;
 }
 
+type WorkoutType = "crossfit" | "strength" | null;
+
 export function WorkoutsScreen({ onClose }: WorkoutsScreenProps) {
   const insets = useSafeAreaInsets();
+  const [selectedType, setSelectedType] = React.useState<WorkoutType>("crossfit");
+
+  const handleCrossFitPress = () => {
+    setSelectedType("crossfit");
+  };
+
+  const handleStrengthPress = () => {
+    setSelectedType("strength");
+  };
 
   return (
     <>
@@ -24,57 +35,52 @@ export function WorkoutsScreen({ onClose }: WorkoutsScreenProps) {
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Title */}
+          {/* Title with Workout Type Buttons */}
           <View style={styles.titleContainer}>
-            <Dumbbell size={32} color="#EF4444" strokeWidth={2} />
-            <Text style={styles.pageTitle}>Workouts</Text>
-          </View>
-
-          {/* Coming Soon Card */}
-          <View style={styles.comingSoonCard}>
-            <View style={styles.iconContainer}>
-              <Clock size={48} color="#EF4444" strokeWidth={1.5} />
+            <View style={styles.titleLeft}>
+              <Dumbbell size={32} color="#EF4444" strokeWidth={2} />
+              <Text style={styles.pageTitle}>Workouts</Text>
             </View>
-            <Text style={styles.comingSoonTitle}>Coming Soon</Text>
-            <Text style={styles.comingSoonText}>
-              Workout tracking is currently under development.
-            </Text>
-            <Text style={styles.comingSoonDescription}>
-              This feature will allow you to log and track your workouts, including exercises, sets,
-              reps, and weights for bodybuilding, CrossFit, cardio, and custom routines.
-            </Text>
-          </View>
-
-          {/* Feature List */}
-          <View style={styles.featureSection}>
-            <Text style={styles.featureTitle}>Planned Features</Text>
-            <View style={styles.featureList}>
-              <View style={styles.featureItem}>
-                <View style={styles.featureBullet} />
-                <Text style={styles.featureText}>Multiple workout types (bodybuilding, CrossFit, cardio)</Text>
-              </View>
-              <View style={styles.featureItem}>
-                <View style={styles.featureBullet} />
-                <Text style={styles.featureText}>Exercise library with custom exercises</Text>
-              </View>
-              <View style={styles.featureItem}>
-                <View style={styles.featureBullet} />
-                <Text style={styles.featureText}>Track sets, reps, and weights</Text>
-              </View>
-              <View style={styles.featureItem}>
-                <View style={styles.featureBullet} />
-                <Text style={styles.featureText}>Workout duration and time tracking</Text>
-              </View>
-              <View style={styles.featureItem}>
-                <View style={styles.featureBullet} />
-                <Text style={styles.featureText}>Integration with calendar schedule</Text>
-              </View>
-              <View style={styles.featureItem}>
-                <View style={styles.featureBullet} />
-                <Text style={styles.featureText}>Progress tracking and workout history</Text>
-              </View>
+            <View style={styles.workoutTypeButtons}>
+              <TouchableOpacity style={styles.workoutTypeButton} onPress={handleCrossFitPress} activeOpacity={0.7}>
+                <Image
+                  source={require('@/assets/kettlebell.png')}
+                  style={styles.kettlebellIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.workoutTypeLabel}>CrossFit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.workoutTypeButton} onPress={handleStrengthPress} activeOpacity={0.7}>
+                <Dumbbell size={24} color="#EF4444" strokeWidth={2} />
+                <Text style={styles.workoutTypeLabel}>Strength</Text>
+              </TouchableOpacity>
             </View>
           </View>
+
+          {/* Conditional Content based on selected workout type */}
+          {selectedType === "crossfit" && (
+            <View style={styles.placeholderContainer}>
+              <Text style={styles.placeholderTitle}>CrossFit Workouts</Text>
+              <Text style={styles.placeholderText}>
+                CrossFit workout tracking will be available here.
+              </Text>
+              <Text style={styles.placeholderText}>
+                Track WODs, benchmark workouts, AMRAP, EMOM, and more.
+              </Text>
+            </View>
+          )}
+
+          {selectedType === "strength" && (
+            <View style={styles.placeholderContainer}>
+              <Text style={styles.placeholderTitle}>Strength Training</Text>
+              <Text style={styles.placeholderText}>
+                Strength training workout tracking will be available here.
+              </Text>
+              <Text style={styles.placeholderText}>
+                Track exercises, sets, reps, weight, and progressive overload.
+              </Text>
+            </View>
+          )}
 
           {/* Bottom Spacing */}
           <View style={{ height: 40 }} />
@@ -110,78 +116,58 @@ const styles = StyleSheet.create({
   titleContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 24,
+  },
+  titleLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   pageTitle: {
     fontSize: 28,
     fontWeight: "bold",
     color: colors.foreground,
   },
-  comingSoonCard: {
-    marginHorizontal: 20,
-    marginBottom: 32,
-    padding: 32,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.3)",
+  workoutTypeButtons: {
+    flexDirection: "row",
+    gap: 16,
+  },
+  workoutTypeButton: {
     alignItems: "center",
+    gap: 4,
   },
-  iconContainer: {
-    marginBottom: 20,
-    padding: 16,
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
-    borderRadius: 50,
+  kettlebellIcon: {
+    width: 24,
+    height: 24,
+    tintColor: "#EF4444",
   },
-  comingSoonTitle: {
-    fontSize: 24,
+  workoutTypeLabel: {
+    fontSize: 12,
+    color: colors.foreground,
+    fontWeight: "500",
+  },
+  placeholderContainer: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    padding: 24,
+    backgroundColor: "rgba(239, 68, 68, 0.05)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+  },
+  placeholderTitle: {
+    fontSize: 20,
     fontWeight: "bold",
-    color: "#EF4444",
+    color: colors.foreground,
     marginBottom: 12,
   },
-  comingSoonText: {
-    fontSize: 16,
-    color: colors.foreground,
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  comingSoonDescription: {
-    fontSize: 14,
+  placeholderText: {
+    fontSize: 15,
     color: colors.mutedForeground,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  featureSection: {
-    paddingHorizontal: 20,
-  },
-  featureTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 16,
-  },
-  featureList: {
-    gap: 12,
-  },
-  featureItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  featureBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#EF4444",
-    marginTop: 7,
-  },
-  featureText: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.foreground,
     lineHeight: 22,
+    marginBottom: 8,
   },
 });
