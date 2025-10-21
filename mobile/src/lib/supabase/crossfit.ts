@@ -5,6 +5,7 @@ import type {
   ExerciseWithVariations,
   VariationCategory,
   VariationOption,
+  VariationOptionWithCategory,
   WODFormat,
   WODCategory,
   WOD,
@@ -17,8 +18,11 @@ import type {
   ClassPart,
   CreateWODInput,
   CreateClassInput,
+  CreateMovementInput,
   UpdateWODInput,
   UpdateClassInput,
+  MovementCategory,
+  ScoringType,
 } from '../../types/crossfit';
 
 // ============================================================================
@@ -110,12 +114,16 @@ export async function fetchMovements(goalTypeId?: string): Promise<ExerciseWithV
     .select(`
       *,
       goal_type:goal_types(*),
+      movement_category:movement_categories(*),
       variations:exercise_variations(
         *,
         variation_option:variation_options(
           *,
           category:variation_categories(*)
         )
+      ),
+      scoring_types:exercise_scoring_types(
+        scoring_type:scoring_types(*)
       )
     `)
     .eq('is_movement', true)
@@ -142,9 +150,15 @@ export async function fetchMovements(goalTypeId?: string): Promise<ExerciseWithV
       ? `${exercise.name} + ${variationNames.join(' + ')}`
       : exercise.name;
 
+    // Flatten scoring_types
+    const scoringTypes = exercise.scoring_types
+      ?.map((st: any) => st.scoring_type)
+      .filter(Boolean) || [];
+
     return {
       ...exercise,
       full_name,
+      scoring_types: scoringTypes,
     };
   });
 
@@ -160,12 +174,16 @@ export async function searchMovements(query: string): Promise<ExerciseWithVariat
     .select(`
       *,
       goal_type:goal_types(*),
+      movement_category:movement_categories(*),
       variations:exercise_variations(
         *,
         variation_option:variation_options(
           *,
           category:variation_categories(*)
         )
+      ),
+      scoring_types:exercise_scoring_types(
+        scoring_type:scoring_types(*)
       )
     `)
     .eq('is_movement', true)
@@ -188,9 +206,15 @@ export async function searchMovements(query: string): Promise<ExerciseWithVariat
       ? `${exercise.name} + ${variationNames.join(' + ')}`
       : exercise.name;
 
+    // Flatten scoring_types
+    const scoringTypes = exercise.scoring_types
+      ?.map((st: any) => st.scoring_type)
+      .filter(Boolean) || [];
+
     return {
       ...exercise,
       full_name,
+      scoring_types: scoringTypes,
     };
   });
 
@@ -236,6 +260,173 @@ export async function fetchMovementById(movementId: string): Promise<ExerciseWit
     ...data,
     full_name,
   };
+}
+
+// ============================================================================
+// MOVEMENT CREATION & MANAGEMENT
+// ============================================================================
+
+/**
+ * Fetch all movement categories (Weightlifting, Gymnastics, Monostructural, Recovery)
+ */
+export async function fetchMovementCategories(): Promise<MovementCategory[]> {
+  const { data, error } = await supabase
+    .from('movement_categories')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching movement categories:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all scoring types (Reps, Rounds, Weight, Time, Distance, Calories, Height, None)
+ */
+export async function fetchScoringTypes(): Promise<ScoringType[]> {
+  const { data, error } = await supabase
+    .from('scoring_types')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching scoring types:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all variation options grouped by category
+ */
+export async function fetchVariationOptions(): Promise<VariationOptionWithCategory[]> {
+  const { data, error } = await supabase
+    .from('variation_options')
+    .select(`
+      *,
+      category:variation_categories(*)
+    `)
+    .order('category.display_order, display_order');
+
+  if (error) {
+    console.error('Error fetching variation options:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Create a new custom variation option
+ * Returns the new variation option ID
+ */
+export async function createVariationOption(
+  categoryId: string,
+  name: string,
+  description?: string
+): Promise<string> {
+  // Get the max display_order for this category
+  const { data: maxOrder } = await supabase
+    .from('variation_options')
+    .select('display_order')
+    .eq('category_id', categoryId)
+    .order('display_order', { ascending: false })
+    .limit(1)
+    .single();
+
+  const nextOrder = (maxOrder?.display_order || 0) + 1;
+
+  const { data, error } = await supabase
+    .from('variation_options')
+    .insert({
+      category_id: categoryId,
+      name,
+      description,
+      display_order: nextOrder,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('Error creating variation option:', error);
+    throw error;
+  }
+
+  return data.id;
+}
+
+/**
+ * Create a new movement
+ * Returns the created exercise ID
+ */
+export async function createMovement(input: CreateMovementInput): Promise<string> {
+  try {
+    // 1. Insert the exercise
+    const { data: exercise, error: exerciseError } = await supabase
+      .from('exercises')
+      .insert({
+        name: input.name,
+        description: input.description,
+        slug: input.name.toLowerCase().replace(/\s+/g, '-'),
+        goal_type_id: input.goal_type_id,
+        movement_category_id: input.movement_category_id,
+        video_url: input.video_url,
+        image_url: input.image_url,
+        is_movement: true,
+        is_official: false,
+        created_by: input.created_by,
+      })
+      .select('id')
+      .single();
+
+    if (exerciseError) {
+      console.error('Error creating exercise:', exerciseError);
+      throw exerciseError;
+    }
+
+    // 2. Insert variation options (if any)
+    if (input.variation_option_ids && input.variation_option_ids.length > 0) {
+      const variationInserts = input.variation_option_ids.map(optionId => ({
+        exercise_id: exercise.id,
+        variation_option_id: optionId,
+      }));
+
+      const { error: variationError } = await supabase
+        .from('exercise_variations')
+        .insert(variationInserts);
+
+      if (variationError) {
+        console.error('Error inserting exercise variations:', variationError);
+        throw variationError;
+      }
+    }
+
+    // 3. Insert scoring types (if any)
+    if (input.scoring_type_ids && input.scoring_type_ids.length > 0) {
+      const scoringInserts = input.scoring_type_ids.map(scoringTypeId => ({
+        exercise_id: exercise.id,
+        scoring_type_id: scoringTypeId,
+      }));
+
+      const { error: scoringError } = await supabase
+        .from('exercise_scoring_types')
+        .insert(scoringInserts);
+
+      if (scoringError) {
+        console.error('Error inserting exercise scoring types:', scoringError);
+        throw scoringError;
+      }
+    }
+
+    return exercise.id;
+  } catch (error) {
+    console.error('Error in createMovement:', error);
+    throw error;
+  }
 }
 
 // ============================================================================

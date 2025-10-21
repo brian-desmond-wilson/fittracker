@@ -24,6 +24,10 @@ export type ClassPartType = 'WOD' | 'Strength' | 'Skill' | 'Warm-up' | 'Cool-dow
 
 export type VariationCategoryName = 'Position' | 'Stance' | 'Equipment' | 'Style';
 
+export type MovementCategoryName = 'Weightlifting' | 'Gymnastics' | 'Monostructural' | 'Recovery';
+
+export type ScoringTypeName = 'Reps' | 'Rounds' | 'Weight' | 'Time' | 'Distance' | 'Calories' | 'Height' | 'None';
+
 // ============================================================================
 // DATABASE TABLE TYPES
 // ============================================================================
@@ -33,6 +37,29 @@ export interface GoalType {
   name: GoalTypeName;
   description: string | null;
   display_order: number;
+  created_at: string;
+}
+
+export interface MovementCategory {
+  id: string;
+  name: MovementCategoryName;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface ScoringType {
+  id: string;
+  name: ScoringTypeName;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface ExerciseScoringType {
+  id: string;
+  exercise_id: string;
+  scoring_type_id: string;
   created_at: string;
 }
 
@@ -47,6 +74,7 @@ export interface Exercise {
   // CrossFit-specific
   is_movement: boolean;
   goal_type_id: string | null;
+  movement_category_id: string | null;
 
   // Categorization
   category: string | null;
@@ -56,11 +84,17 @@ export interface Exercise {
   // Media
   demo_video_url: string | null;
   thumbnail_url: string | null;
+  video_url: string | null;
+  image_url: string | null;
 
   // Instructions
   setup_instructions: string | null;
   execution_cues: string[] | null;
   common_mistakes: string[] | null;
+
+  // Ownership (hybrid approach)
+  is_official: boolean;
+  created_by: string | null;
 }
 
 export interface VariationCategory {
@@ -215,6 +249,8 @@ export interface ExerciseWithVariations extends Exercise {
     };
   })[];
   goal_type?: GoalType;
+  movement_category?: MovementCategory;
+  scoring_types?: ScoringType[];
   full_name?: string; // Computed: "Front Squat + Pause + Barbell"
 }
 
@@ -301,6 +337,25 @@ export interface CreateExerciseInput {
   setup_instructions?: string;
   execution_cues?: string[];
   common_mistakes?: string[];
+}
+
+export interface CreateMovementInput {
+  name: string;
+  full_name?: string;
+  description?: string;
+  goal_type_id: string;
+  movement_category_id: string;
+  video_url?: string;
+  image_url?: string;
+  is_movement: true;
+  is_official: false;
+  created_by: string;
+  variation_option_ids?: string[];
+  scoring_type_ids?: string[];
+}
+
+export interface VariationOptionWithCategory extends VariationOption {
+  category: VariationCategory;
 }
 
 // ============================================================================

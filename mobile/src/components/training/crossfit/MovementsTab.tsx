@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
+import { AddMovementScreen } from './AddMovementScreen';
 
 type MovementCategory = 'All' | 'Oly lifts' | 'Gymnastics' | 'Cardio';
 
@@ -16,6 +18,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
 
   const categories: MovementCategory[] = ['All', 'Oly lifts', 'Gymnastics', 'Cardio'];
 
@@ -177,17 +180,53 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
                 <Text style={styles.movementIconText}>{getMovementIcon(movement)}</Text>
               </View>
               <View style={styles.movementInfo}>
-                <Text style={styles.movementName}>
-                  {movement.full_name || movement.name}
-                </Text>
+                <View style={styles.movementNameRow}>
+                  <Text style={styles.movementName}>
+                    {movement.full_name || movement.name}
+                  </Text>
+                  {movement.is_official ? (
+                    <View style={styles.officialBadge}>
+                      <Text style={styles.officialBadgeText}>Official</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.customBadge}>
+                      <Text style={styles.customBadgeText}>Custom</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.movementCategory}>
-                  {movement.goal_type?.name || 'General'}
+                  {movement.movement_category?.name || movement.goal_type?.name || 'General'}
                 </Text>
               </View>
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
+
+      {/* FAB - Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setAddModalVisible(true)}
+        activeOpacity={0.8}
+      >
+        <Plus size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* Add Movement Modal */}
+      <Modal
+        visible={addModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <AddMovementScreen
+          onClose={() => setAddModalVisible(false)}
+          onSave={() => {
+            setAddModalVisible(false);
+            loadMovements();
+          }}
+        />
+      </Modal>
     </View>
   );
 }
@@ -285,14 +324,66 @@ const styles = StyleSheet.create({
   movementInfo: {
     flex: 1,
   },
+  movementNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   movementName: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.foreground,
-    marginBottom: 4,
+    flex: 1,
   },
   movementCategory: {
     fontSize: 14,
     color: colors.mutedForeground,
+  },
+  officialBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  officialBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#22C55E',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  customBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  customBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#3B82F6',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
