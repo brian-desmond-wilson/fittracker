@@ -273,7 +273,7 @@ CREATE TABLE IF NOT EXISTS classes (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
 
   -- Class info
-  class_date DATE NOT NULL,
+  date DATE NOT NULL,
   name TEXT NOT NULL,
   duration_minutes INTEGER DEFAULT 60,
 
@@ -282,7 +282,7 @@ CREATE TABLE IF NOT EXISTS classes (
 );
 
 CREATE INDEX idx_classes_user ON classes(user_id);
-CREATE INDEX idx_classes_date ON classes(class_date);
+CREATE INDEX idx_classes_date ON classes(date);
 
 -- ============================================================================
 -- 13. CLASS PARTS (Flexible workout components within a class)
@@ -320,6 +320,11 @@ ALTER TABLE wods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
 
 -- Exercises: Public read, authenticated users can create/update their own
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Exercises are viewable by everyone" ON exercises;
+DROP POLICY IF EXISTS "Authenticated users can create exercises" ON exercises;
+DROP POLICY IF EXISTS "Users can update their own exercises" ON exercises;
+
 CREATE POLICY "Exercises are viewable by everyone"
   ON exercises FOR SELECT
   USING (true);
