@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
-import { Clock, Zap } from 'lucide-react-native';
+import { Clock, Zap, Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODCategoryName, WODWithDetails, WODCategory } from '@/src/types/crossfit';
 import { fetchWODs, searchWODs, fetchWODCategories } from '@/src/lib/supabase/crossfit';
 import { WODDetailScreen } from './WODDetailScreen';
+import { AddWODWizard } from './AddWODWizard';
 
 interface WODsTabProps {
   searchQuery: string;
@@ -18,6 +19,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [selectedWODId, setSelectedWODId] = useState<string | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -175,6 +177,31 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
         )}
       </ScrollView>
 
+      {/* FAB - Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setAddModalVisible(true)}
+        activeOpacity={0.8}
+      >
+        <Plus size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* Add WOD Modal */}
+      <Modal
+        visible={addModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <AddWODWizard
+          onClose={() => setAddModalVisible(false)}
+          onSave={() => {
+            setAddModalVisible(false);
+            loadWODs();
+          }}
+        />
+      </Modal>
+
       {/* WOD Detail Modal */}
       <Modal
         visible={selectedWODId !== null}
@@ -308,5 +335,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.foreground,
     lineHeight: 20,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
