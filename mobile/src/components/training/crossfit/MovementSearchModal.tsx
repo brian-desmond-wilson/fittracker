@@ -24,6 +24,7 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
   const [searchQuery, setSearchQuery] = useState('');
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -42,10 +43,13 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
   const loadMovements = async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await fetchMovements();
+      console.log('MovementSearchModal - Loaded movements:', data.length, data);
       setMovements(data);
-    } catch (error) {
-      console.error('Error loading movements:', error);
+    } catch (error: any) {
+      console.error('MovementSearchModal - Error loading movements:', error);
+      setError(`Failed to load movements: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -59,10 +63,13 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
 
     try {
       setLoading(true);
+      setError(null);
       const results = await searchMovements(searchQuery.trim());
+      console.log('MovementSearchModal - Search results for "' + searchQuery + '":', results.length, results);
       setMovements(results);
-    } catch (error) {
-      console.error('Error searching movements:', error);
+    } catch (error: any) {
+      console.error('MovementSearchModal - Error searching movements:', error);
+      setError(`Search failed: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -106,15 +113,21 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
           </View>
 
           {/* Movements List */}
-          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
             {loading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
               </View>
+            ) : error ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>{error}</Text>
+              </View>
             ) : movements.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyStateText}>
-                  {searchQuery ? `No results for "${searchQuery}"` : 'No movements found'}
+                  {searchQuery
+                    ? `No results for "${searchQuery}"`
+                    : 'No movements found. Create movements in the Movements tab first.'}
                 </Text>
               </View>
             ) : (
@@ -160,9 +173,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderRadius: 16,
     width: '100%',
-    maxHeight: '80%',
+    height: 500,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -196,6 +210,10 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+    minHeight: 300,
+  },
+  listContent: {
+    paddingBottom: 20,
   },
   loadingContainer: {
     padding: 40,

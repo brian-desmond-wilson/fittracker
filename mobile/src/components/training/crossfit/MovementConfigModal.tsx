@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderRadius: 16,
     width: '100%',
-    maxHeight: '90%',
+    height: 600,
     borderWidth: 1,
     borderColor: colors.border,
   },
