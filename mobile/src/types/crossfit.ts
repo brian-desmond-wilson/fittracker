@@ -68,6 +68,7 @@ export interface Exercise {
   created_at: string;
   updated_at: string;
   name: string;
+  full_name: string | null;
   slug: string;
   description: string | null;
 
@@ -251,7 +252,6 @@ export interface ExerciseWithVariations extends Exercise {
   goal_type?: GoalType;
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
-  full_name?: string; // Computed: "Front Squat + Pause + Barbell"
 }
 
 export interface WODMovementWithDetails extends WODMovement {

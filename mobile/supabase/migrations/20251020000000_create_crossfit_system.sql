@@ -77,7 +77,8 @@ SELECT id, 'Back', 3 FROM variation_categories WHERE name = 'Position'
 UNION ALL
 SELECT id, 'Goblet', 4 FROM variation_categories WHERE name = 'Position'
 UNION ALL
-SELECT id, 'Zercher', 5 FROM variation_categories WHERE name = 'Position';
+SELECT id, 'Zercher', 5 FROM variation_categories WHERE name = 'Position'
+ON CONFLICT (category_id, name) DO NOTHING;
 
 -- Stance variations
 INSERT INTO variation_options (category_id, name, display_order)
@@ -87,7 +88,8 @@ SELECT id, 'Wide', 2 FROM variation_categories WHERE name = 'Stance'
 UNION ALL
 SELECT id, 'Narrow', 3 FROM variation_categories WHERE name = 'Stance'
 UNION ALL
-SELECT id, 'Split', 4 FROM variation_categories WHERE name = 'Stance';
+SELECT id, 'Split', 4 FROM variation_categories WHERE name = 'Stance'
+ON CONFLICT (category_id, name) DO NOTHING;
 
 -- Equipment variations
 INSERT INTO variation_options (category_id, name, display_order)
@@ -97,7 +99,8 @@ SELECT id, 'Dumbbell', 2 FROM variation_categories WHERE name = 'Equipment'
 UNION ALL
 SELECT id, 'Kettlebell', 3 FROM variation_categories WHERE name = 'Equipment'
 UNION ALL
-SELECT id, 'Bodyweight', 4 FROM variation_categories WHERE name = 'Equipment';
+SELECT id, 'Bodyweight', 4 FROM variation_categories WHERE name = 'Equipment'
+ON CONFLICT (category_id, name) DO NOTHING;
 
 -- Style variations
 INSERT INTO variation_options (category_id, name, display_order)
@@ -107,7 +110,8 @@ SELECT id, 'Tempo', 2 FROM variation_categories WHERE name = 'Style'
 UNION ALL
 SELECT id, 'Jump', 3 FROM variation_categories WHERE name = 'Style'
 UNION ALL
-SELECT id, 'Eccentric', 4 FROM variation_categories WHERE name = 'Style';
+SELECT id, 'Eccentric', 4 FROM variation_categories WHERE name = 'Style'
+ON CONFLICT (category_id, name) DO NOTHING;
 
 -- ============================================================================
 -- 5. EXERCISE VARIATIONS (Links exercises to variation options)
@@ -350,35 +354,43 @@ CREATE POLICY "Users can update their own exercises"
   USING (true); -- Allow all updates for now (exercises are shared)
 
 -- WODs: Users can only see and manage their own WODs
+DROP POLICY IF EXISTS "Users can view their own WODs" ON wods;
 CREATE POLICY "Users can view their own WODs"
   ON wods FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own WODs" ON wods;
 CREATE POLICY "Users can create their own WODs"
   ON wods FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own WODs" ON wods;
 CREATE POLICY "Users can update their own WODs"
   ON wods FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own WODs" ON wods;
 CREATE POLICY "Users can delete their own WODs"
   ON wods FOR DELETE
   USING (auth.uid() = user_id);
 
 -- Classes: Users can only see and manage their own classes
+DROP POLICY IF EXISTS "Users can view their own classes" ON classes;
 CREATE POLICY "Users can view their own classes"
   ON classes FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own classes" ON classes;
 CREATE POLICY "Users can create their own classes"
   ON classes FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own classes" ON classes;
 CREATE POLICY "Users can update their own classes"
   ON classes FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own classes" ON classes;
 CREATE POLICY "Users can delete their own classes"
   ON classes FOR DELETE
   USING (auth.uid() = user_id);

@@ -64,12 +64,18 @@ CREATE INDEX idx_exercise_scoring_types_exercise ON exercise_scoring_types(exerc
 -- 4. ALTER EXERCISES TABLE - Add movement creation fields
 -- ============================================================================
 
+-- Make columns nullable to match TypeScript interface
+ALTER TABLE exercises ALTER COLUMN category DROP NOT NULL;
+ALTER TABLE exercises ALTER COLUMN muscle_groups DROP NOT NULL;
+ALTER TABLE exercises ALTER COLUMN equipment DROP NOT NULL;
+
 -- Add new columns for movement creation
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS movement_category_id UUID REFERENCES movement_categories(id);
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS video_url TEXT;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS is_official BOOLEAN DEFAULT FALSE;
 ALTER TABLE exercises ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id);
+ALTER TABLE exercises ADD COLUMN IF NOT EXISTS full_name TEXT;
 
 -- Drop existing indexes if they exist
 DROP INDEX IF EXISTS idx_exercises_movement_category;
@@ -142,126 +148,126 @@ BEGIN
 
   -- Insert official movements (only if they don't exist)
   -- Weightlifting movements
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Back Squat', 'Back Squat', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Back Squat' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Back Squat', 'back-squat', 'Back Squat', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'back-squat');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Front Squat', 'Front Squat', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Front Squat' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Front Squat', 'front-squat', 'Front Squat', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'front-squat');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Overhead Squat', 'Overhead Squat', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Overhead Squat' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Overhead Squat', 'overhead-squat', 'Overhead Squat', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'overhead-squat');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Deadlift', 'Deadlift', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Deadlift' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Deadlift', 'deadlift', 'Deadlift', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'deadlift');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Clean', 'Clean', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Clean' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Clean', 'clean', 'Clean', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'clean');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Snatch', 'Snatch', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Snatch' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Snatch', 'snatch', 'Snatch', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'snatch');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Thruster', 'Thruster', true, weightlifting_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Thruster' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Thruster', 'thruster', 'Thruster', true, weightlifting_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'thruster');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Wall Ball', 'Wall Ball', true, weightlifting_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Wall Ball' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Wall Ball', 'wall-ball', 'Wall Ball', true, weightlifting_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'wall-ball');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Bench Press', 'Bench Press', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Bench Press' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Bench Press', 'bench-press', 'Bench Press', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'bench-press');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Overhead Press', 'Overhead Press', true, weightlifting_id, strength_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Overhead Press' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Overhead Press', 'overhead-press', 'Overhead Press', true, weightlifting_id, strength_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'overhead-press');
 
   -- Gymnastics movements
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Pull-up', 'Pull-up', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Pull-up' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Pull-up', 'pull-up', 'Pull-up', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'pull-up');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Chest-to-Bar', 'Chest-to-Bar Pull-up', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Chest-to-Bar' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Chest-to-Bar', 'chest-to-bar', 'Chest-to-Bar Pull-up', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'chest-to-bar');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Muscle-up', 'Muscle-up', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Muscle-up' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Muscle-up', 'muscle-up', 'Muscle-up', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'muscle-up');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Push-up', 'Push-up', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Push-up' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Push-up', 'push-up', 'Push-up', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'push-up');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Handstand Push-up', 'Handstand Push-up', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Handstand Push-up' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Handstand Push-up', 'handstand-push-up', 'Handstand Push-up', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'handstand-push-up');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Dip', 'Dip', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Dip' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Dip', 'dip', 'Dip', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'dip');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Toes-to-Bar', 'Toes-to-Bar', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Toes-to-Bar' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Toes-to-Bar', 'toes-to-bar', 'Toes-to-Bar', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'toes-to-bar');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Handstand Walk', 'Handstand Walk', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Handstand Walk' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Handstand Walk', 'handstand-walk', 'Handstand Walk', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'handstand-walk');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Rope Climb', 'Rope Climb', true, gymnastics_id, skill_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Rope Climb' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Rope Climb', 'rope-climb', 'Rope Climb', true, gymnastics_id, skill_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'rope-climb');
 
   -- Monostructural movements
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Run', 'Run', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Run' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Run', 'run', 'Run', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'run');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Row', 'Row', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Row' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Row', 'row', 'Row', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'row');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Bike', 'Bike (Assault/Echo)', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Bike' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Bike', 'bike', 'Bike (Assault/Echo)', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'bike');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Ski Erg', 'Ski Erg', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Ski Erg' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Ski Erg', 'ski-erg', 'Ski Erg', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'ski-erg');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Jump Rope', 'Jump Rope', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Jump Rope' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Jump Rope', 'jump-rope', 'Jump Rope', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'jump-rope');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Double-Under', 'Double-Under', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Double-Under' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Double-Under', 'double-under', 'Double-Under', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'double-under');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Swimming', 'Swimming', true, monostructural_id, metcon_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Swimming' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Swimming', 'swimming', 'Swimming', true, monostructural_id, metcon_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'swimming');
 
   -- Recovery movements
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Foam Roll', 'Foam Rolling', true, recovery_id, recovery_goal_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Foam Roll' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Foam Roll', 'foam-roll', 'Foam Rolling', true, recovery_id, recovery_goal_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'foam-roll');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Stretch', 'Stretching', true, recovery_id, recovery_goal_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Stretch' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Stretch', 'stretch', 'Stretching', true, recovery_id, recovery_goal_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'stretch');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Mobility Work', 'Mobility Work', true, recovery_id, recovery_goal_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Mobility Work' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Mobility Work', 'mobility-work', 'Mobility Work', true, recovery_id, recovery_goal_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'mobility-work');
 
-  INSERT INTO exercises (name, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
-  SELECT 'Cool-Down Walk', 'Cool-Down Walk', true, recovery_id, recovery_goal_id, true, null
-  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE name = 'Cool-Down Walk' AND is_official = true);
+  INSERT INTO exercises (name, slug, full_name, is_movement, movement_category_id, goal_type_id, is_official, created_by)
+  SELECT 'Cool-Down Walk', 'cool-down-walk', 'Cool-Down Walk', true, recovery_id, recovery_goal_id, true, null
+  WHERE NOT EXISTS (SELECT 1 FROM exercises WHERE slug = 'cool-down-walk');
 END $$;
