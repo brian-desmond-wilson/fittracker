@@ -5,11 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Image,
   ActivityIndicator,
 } from "react-native";
-import { Search, TrendingUp, BarChart3, Clock, User } from "lucide-react-native";
+import { TrendingUp, BarChart3, Clock, User } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { useRouter } from "expo-router";
 import { fetchPublishedPrograms, fetchUserProgramInstances } from "@/src/lib/supabase/training";
@@ -97,10 +96,13 @@ function ProgramCard({ program, onPress }: ProgramCardProps) {
   );
 }
 
-export default function ProgramsTab() {
+interface ProgramsTabProps {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+}
+
+export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTabProps) {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | "my-programs">("all");
   const [programs, setPrograms] = useState<ProgramDisplayData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,10 +163,7 @@ export default function ProgramsTab() {
       program.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       program.creator.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesFilter =
-      activeFilter === "all" || (activeFilter === "my-programs" && program.isActive);
-
-    return matchesSearch && matchesFilter;
+    return matchesSearch;
   });
 
   const myPrograms = filteredPrograms.filter((p) => p.isActive);
@@ -195,47 +194,6 @@ export default function ProgramsTab() {
 
   return (
     <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Search size={20} color={colors.mutedForeground} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search programs..."
-            placeholderTextColor={colors.mutedForeground}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterTab, activeFilter === "all" && styles.filterTabActive]}
-          onPress={() => setActiveFilter("all")}
-        >
-          <Text
-            style={[styles.filterTabText, activeFilter === "all" && styles.filterTabTextActive]}
-          >
-            Discover
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, activeFilter === "my-programs" && styles.filterTabActive]}
-          onPress={() => setActiveFilter("my-programs")}
-        >
-          <Text
-            style={[
-              styles.filterTabText,
-              activeFilter === "my-programs" && styles.filterTabTextActive,
-            ]}
-          >
-            My Programs ({myPrograms.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Programs List */}
       <ScrollView
         style={styles.scrollView}
@@ -243,7 +201,7 @@ export default function ProgramsTab() {
         showsVerticalScrollIndicator={false}
       >
         {/* My Programs Section */}
-        {activeFilter === "all" && myPrograms.length > 0 && (
+        {myPrograms.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>MY PROGRAMS</Text>
             {myPrograms.map((program) => (
@@ -257,7 +215,7 @@ export default function ProgramsTab() {
         )}
 
         {/* Discover Programs Section */}
-        {activeFilter === "all" && discoverPrograms.length > 0 && (
+        {discoverPrograms.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DISCOVER PROGRAMS</Text>
             {discoverPrograms.map((program) => (
@@ -267,28 +225,6 @@ export default function ProgramsTab() {
                 onPress={() => router.push(`/(tabs)/training/program/${program.id}`)}
               />
             ))}
-          </View>
-        )}
-
-        {/* My Programs Filter View */}
-        {activeFilter === "my-programs" && (
-          <View style={styles.section}>
-            {myPrograms.length > 0 ? (
-              myPrograms.map((program) => (
-                <ProgramCard
-                  key={program.id}
-                  program={program}
-                  onPress={() => router.push(`/program/${program.id}`)}
-                />
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateTitle}>No Active Programs</Text>
-                <Text style={styles.emptyStateText}>
-                  Start a program from the Discover tab to begin your training journey.
-                </Text>
-              </View>
-            )}
           </View>
         )}
 
@@ -346,53 +282,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.primaryForeground,
   },
-  searchContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.secondary,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  filterContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 16,
-  },
-  filterTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: colors.secondary,
-  },
-  filterTabActive: {
-    backgroundColor: colors.primary,
-  },
-  filterTabText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-  },
-  filterTabTextActive: {
-    color: colors.primaryForeground,
-  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
+    paddingTop: 16,
   },
   section: {
     marginBottom: 24,

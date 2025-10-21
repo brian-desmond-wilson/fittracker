@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Dumbbell } from "lucide-react-native";
+import { Dumbbell, Search } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
@@ -18,6 +18,7 @@ export default function Training() {
   const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("crossfit");
   const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const crossfitTabs: { key: CrossFitTab; label: string }[] = [
     { key: "classes", label: "Classes" },
@@ -43,18 +44,18 @@ export default function Training() {
     if (workoutMode === "crossfit") {
       switch (crossfitTab) {
         case "classes":
-          return <ClassesTab />;
+          return <ClassesTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
         case "wods":
-          return <WODsTab />;
+          return <WODsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
         case "movements":
-          return <MovementsTab />;
+          return <MovementsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
         default:
           return null;
       }
     } else {
       switch (strengthTab) {
         case "programs":
-          return <ProgramsTab />;
+          return <ProgramsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
         case "workouts":
           return <WorkoutsTab />;
         case "exercises":
@@ -93,9 +94,18 @@ export default function Training() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
-      {/* Header */}
+      {/* Header with Search */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Training</Text>
+        <View style={styles.searchContainer}>
+          <Search size={20} color={colors.mutedForeground} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={getSearchPlaceholder()}
+            placeholderTextColor={colors.mutedForeground}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
         <View style={styles.headerButtons}>
           <TouchableOpacity onPress={handleCrossFitPress} activeOpacity={0.7} style={styles.iconButton}>
             <Image
@@ -155,15 +165,25 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
+  searchContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.input,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     color: colors.foreground,
   },
   headerButtons: {

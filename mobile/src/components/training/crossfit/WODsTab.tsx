@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal } from 'react-native';
-import { Search, Clock, Zap } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { Clock, Zap } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODCategoryName, WODWithDetails, WODCategory } from '@/src/types/crossfit';
 import { fetchWODs, searchWODs, fetchWODCategories } from '@/src/lib/supabase/crossfit';
 import { WODDetailScreen } from './WODDetailScreen';
 
-export default function WODsTab() {
+interface WODsTabProps {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+}
+
+export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
   const [selectedCategory, setSelectedCategory] = useState<WODCategoryName>('All');
-  const [searchQuery, setSearchQuery] = useState('');
   const [wods, setWods] = useState<WODWithDetails[]>([]);
   const [categories, setCategories] = useState<WODCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,26 +93,13 @@ export default function WODsTab() {
 
   return (
     <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Search size={20} color={colors.mutedForeground} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search WODs..."
-          placeholderTextColor={colors.mutedForeground}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searching && <ActivityIndicator size="small" color={colors.primary} />}
-      </View>
-
       {/* Category Filter Pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoryScrollView}
-        contentContainerStyle={styles.categoryContainer}
-      >
+      <View style={styles.categoryWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryContainer}
+        >
         {categoryOptions.map((category) => (
           <TouchableOpacity
             key={category}
@@ -129,7 +120,8 @@ export default function WODsTab() {
             </Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* WODs List */}
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -206,23 +198,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.input,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    margin: 16,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  categoryScrollView: {
-    maxHeight: 50,
+  categoryWrapper: {
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 12,
   },
   categoryContainer: {
     paddingHorizontal: 16,
@@ -250,7 +230,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    marginTop: 16,
   },
   contentContainer: {
     padding: 16,

@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
-import { Search } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
 
 type MovementCategory = 'All' | 'Oly lifts' | 'Gymnastics' | 'Cardio';
 
-export default function MovementsTab() {
+interface MovementsTabProps {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+}
+
+export default function MovementsTab({ searchQuery, onSearchChange }: MovementsTabProps) {
   const [selectedCategory, setSelectedCategory] = useState<MovementCategory>('All');
-  const [searchQuery, setSearchQuery] = useState('');
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -117,26 +120,13 @@ export default function MovementsTab() {
 
   return (
     <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Search size={20} color={colors.mutedForeground} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search movements..."
-          placeholderTextColor={colors.mutedForeground}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searching && <ActivityIndicator size="small" color={colors.primary} />}
-      </View>
-
       {/* Category Filter Pills */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoryScrollView}
-        contentContainerStyle={styles.categoryContainer}
-      >
+      <View style={styles.categoryWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryContainer}
+        >
         {categories.map((category) => (
           <TouchableOpacity
             key={category}
@@ -157,7 +147,8 @@ export default function MovementsTab() {
             </Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* Movements List */}
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -206,23 +197,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.input,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    margin: 16,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  categoryScrollView: {
-    maxHeight: 50,
+  categoryWrapper: {
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 12,
   },
   categoryContainer: {
     paddingHorizontal: 16,
@@ -250,7 +229,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    marginTop: 16,
   },
   contentContainer: {
     padding: 16,

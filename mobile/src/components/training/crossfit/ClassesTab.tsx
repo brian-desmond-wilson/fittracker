@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Alert } from 'react-native';
-import { Search, Calendar, Plus, Clock } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert } from 'react-native';
+import { Calendar, Plus, Clock } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ClassWithDetails } from '@/src/types/crossfit';
 import { fetchClasses, searchClasses } from '@/src/lib/supabase/crossfit';
 import { ClassDetailScreen } from './ClassDetailScreen';
 import { supabase } from '@/src/lib/supabase';
 
-export default function ClassesTab() {
-  const [searchQuery, setSearchQuery] = useState('');
+interface ClassesTabProps {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+}
+
+export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabProps) {
   const [classes, setClasses] = useState<ClassWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -104,24 +108,6 @@ export default function ClassesTab() {
 
   return (
     <View style={styles.container}>
-      {/* Header with Search and Add Button */}
-      <View style={styles.header}>
-        <View style={styles.searchContainer}>
-          <Search size={20} color={colors.mutedForeground} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search classes..."
-            placeholderTextColor={colors.mutedForeground}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searching && <ActivityIndicator size="small" color={colors.primary} />}
-        </View>
-        <TouchableOpacity style={styles.addButton} onPress={handleCreateClass} activeOpacity={0.7}>
-          <Plus size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-
       {/* Classes List */}
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {loading ? (
@@ -195,35 +181,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.input,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   content: {
     flex: 1,
