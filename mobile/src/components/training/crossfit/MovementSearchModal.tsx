@@ -45,10 +45,9 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
       setLoading(true);
       setError(null);
       const data = await fetchMovements();
-      console.log('MovementSearchModal - Loaded movements:', data.length, data);
       setMovements(data);
     } catch (error: any) {
-      console.error('MovementSearchModal - Error loading movements:', error);
+      console.error('Error loading movements:', error);
       setError(`Failed to load movements: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
@@ -65,10 +64,9 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
       setLoading(true);
       setError(null);
       const results = await searchMovements(searchQuery.trim());
-      console.log('MovementSearchModal - Search results for "' + searchQuery + '":', results.length, results);
       setMovements(results);
     } catch (error: any) {
-      console.error('MovementSearchModal - Error searching movements:', error);
+      console.error('Error searching movements:', error);
       setError(`Search failed: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
