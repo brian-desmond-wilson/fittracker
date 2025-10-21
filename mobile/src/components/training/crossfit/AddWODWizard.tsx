@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
@@ -6,6 +6,8 @@ import { colors } from '@/src/lib/colors';
 import { WODBasicsStep } from './WODBasicsStep';
 import { WODMovementsStep } from './WODMovementsStep';
 import { WODPreviewStep } from './WODPreviewStep';
+import { fetchWODFormats, fetchWODCategories } from '@/src/lib/supabase/crossfit';
+import type { WODFormat, WODCategory } from '@/src/types/crossfit';
 
 interface AddWODWizardProps {
   onClose: () => void;
@@ -66,6 +68,25 @@ export function AddWODWizard({ onClose, onSave }: AddWODWizardProps) {
     category_id: '',
     movements: [],
   });
+  const [formats, setFormats] = useState<WODFormat[]>([]);
+  const [categories, setCategories] = useState<WODCategory[]>([]);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, []);
+
+  const loadReferenceData = async () => {
+    try {
+      const [formatsData, categoriesData] = await Promise.all([
+        fetchWODFormats(),
+        fetchWODCategories(),
+      ]);
+      setFormats(formatsData);
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error loading reference data:', error);
+    }
+  };
 
   const handleNext = () => {
     // Validate current step before proceeding
@@ -163,6 +184,8 @@ export function AddWODWizard({ onClose, onSave }: AddWODWizardProps) {
           {currentStep === 3 && (
             <WODPreviewStep
               formData={formData}
+              formatName={formats.find(f => f.id === formData.format_id)?.name}
+              categoryName={categories.find(c => c.id === formData.category_id)?.name}
               onSave={onSave}
               onClose={onClose}
             />

@@ -181,14 +181,20 @@ export interface WODMovement {
   // Scaling options per movement
   rx_reps: number | null;
   rx_weight_lbs: number | null;
+  rx_distance: number | null;
+  rx_time: number | null;
   rx_movement_variation: string | null;
 
   l2_reps: number | null;
   l2_weight_lbs: number | null;
+  l2_distance: number | null;
+  l2_time: number | null;
   l2_movement_variation: string | null;
 
   l1_reps: number | null;
   l1_weight_lbs: number | null;
+  l1_distance: number | null;
+  l1_time: number | null;
   l1_movement_variation: string | null;
 
   // Notes
@@ -291,6 +297,8 @@ export interface CreateWODInput {
   score_type_distance?: boolean;
   score_type_calories?: boolean;
   notes?: string;
+  scaling_levels?: { level: string; description?: string }[];
+  movements?: CreateWODMovementInput[];
 }
 
 export interface CreateWODMovementInput {
@@ -298,12 +306,18 @@ export interface CreateWODMovementInput {
   movement_order: number;
   rx_reps?: number;
   rx_weight_lbs?: number;
+  rx_distance?: number;
+  rx_time?: number;
   rx_movement_variation?: string;
   l2_reps?: number;
   l2_weight_lbs?: number;
+  l2_distance?: number;
+  l2_time?: number;
   l2_movement_variation?: string;
   l1_reps?: number;
   l1_weight_lbs?: number;
+  l1_distance?: number;
+  l1_time?: number;
   l1_movement_variation?: string;
   notes?: string;
 }
