@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS exercise_variations (
 );
 
 -- Index for searching variations by exercise
+DROP INDEX IF EXISTS idx_exercise_variations_exercise;
 CREATE INDEX idx_exercise_variations_exercise ON exercise_variations(exercise_id);
 
 -- ============================================================================
@@ -193,6 +194,9 @@ CREATE TABLE IF NOT EXISTS wods (
   notes TEXT
 );
 
+DROP INDEX IF EXISTS idx_wods_user;
+DROP INDEX IF EXISTS idx_wods_category;
+DROP INDEX IF EXISTS idx_wods_format;
 CREATE INDEX idx_wods_user ON wods(user_id);
 CREATE INDEX idx_wods_category ON wods(category_id);
 CREATE INDEX idx_wods_format ON wods(format_id);
@@ -210,6 +214,7 @@ CREATE TABLE IF NOT EXISTS wod_scaling_levels (
   UNIQUE(wod_id, level_name)
 );
 
+DROP INDEX IF EXISTS idx_wod_scaling_levels_wod;
 CREATE INDEX idx_wod_scaling_levels_wod ON wod_scaling_levels(wod_id);
 
 -- ============================================================================
@@ -240,6 +245,8 @@ CREATE TABLE IF NOT EXISTS wod_movements (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP INDEX IF EXISTS idx_wod_movements_wod;
+DROP INDEX IF EXISTS idx_wod_movements_exercise;
 CREATE INDEX idx_wod_movements_wod ON wod_movements(wod_id);
 CREATE INDEX idx_wod_movements_exercise ON wod_movements(exercise_id);
 
@@ -260,6 +267,7 @@ CREATE TABLE IF NOT EXISTS movement_standards (
   UNIQUE(wod_movement_id, scaling_level, standard_name)
 );
 
+DROP INDEX IF EXISTS idx_movement_standards_wod_movement;
 CREATE INDEX idx_movement_standards_wod_movement ON movement_standards(wod_movement_id);
 
 -- ============================================================================
@@ -281,6 +289,8 @@ CREATE TABLE IF NOT EXISTS classes (
   notes TEXT
 );
 
+DROP INDEX IF EXISTS idx_classes_user;
+DROP INDEX IF EXISTS idx_classes_date;
 CREATE INDEX idx_classes_user ON classes(user_id);
 CREATE INDEX idx_classes_date ON classes(date);
 
@@ -307,6 +317,8 @@ CREATE TABLE IF NOT EXISTS class_parts (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+DROP INDEX IF EXISTS idx_class_parts_class;
+DROP INDEX IF EXISTS idx_class_parts_wod;
 CREATE INDEX idx_class_parts_class ON class_parts(class_id);
 CREATE INDEX idx_class_parts_wod ON class_parts(wod_id);
 
@@ -396,6 +408,11 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Drop existing triggers if they exist
+DROP TRIGGER IF EXISTS update_exercises_updated_at ON exercises;
+DROP TRIGGER IF EXISTS update_wods_updated_at ON wods;
+DROP TRIGGER IF EXISTS update_classes_updated_at ON classes;
 
 CREATE TRIGGER update_exercises_updated_at
   BEFORE UPDATE ON exercises
