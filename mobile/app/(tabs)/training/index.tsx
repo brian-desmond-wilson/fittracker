@@ -6,6 +6,9 @@ import { colors } from "@/src/lib/colors";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
 import ExercisesTab from "@/src/components/training/ExercisesTab";
+import ClassesTab from "@/src/components/training/crossfit/ClassesTab";
+import WODsTab from "@/src/components/training/crossfit/WODsTab";
+import MovementsTab from "@/src/components/training/crossfit/MovementsTab";
 
 type WorkoutMode = "crossfit" | "strength";
 type CrossFitTab = "classes" | "wods" | "movements";
@@ -40,11 +43,11 @@ export default function Training() {
     if (workoutMode === "crossfit") {
       switch (crossfitTab) {
         case "classes":
-          return <View style={{ flex: 1, padding: 20 }}><Text style={{ color: colors.foreground }}>Classes Tab (Coming Soon)</Text></View>;
+          return <ClassesTab />;
         case "wods":
-          return <View style={{ flex: 1, padding: 20 }}><Text style={{ color: colors.foreground }}>WODs Tab (Coming Soon)</Text></View>;
+          return <WODsTab />;
         case "movements":
-          return <View style={{ flex: 1, padding: 20 }}><Text style={{ color: colors.foreground }}>Movements Tab (Coming Soon)</Text></View>;
+          return <MovementsTab />;
         default:
           return null;
       }
