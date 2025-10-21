@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS goal_types (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Insert predefined goal types
+-- Insert predefined goal types (skip if already exist)
 INSERT INTO goal_types (name, description, display_order) VALUES
   ('MetCon', 'Conditioning / endurance', 1),
   ('Strength', 'Load / power output', 2),
@@ -23,44 +23,16 @@ INSERT INTO goal_types (name, description, display_order) VALUES
   ('Mobility', 'Joint control, dynamic range work', 4),
   ('Stretching', 'Static flexibility work', 5),
   ('Recovery', 'Broader rest, self-care, or passive recovery', 6),
-  ('Cool-Down', 'Short, guided transition period post-workout', 7);
+  ('Cool-Down', 'Short, guided transition period post-workout', 7)
+ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================================
--- 2. EXERCISES TABLE (Core movements - extends existing or creates new)
+-- 2. EXERCISES TABLE (Core movements - extends existing table)
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS exercises (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-  -- Basic info
-  name TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
-  description TEXT,
-
-  -- CrossFit-specific fields
-  is_movement BOOLEAN DEFAULT FALSE, -- True if this is a CrossFit movement
-  goal_type_id UUID REFERENCES goal_types(id),
-
-  -- Categorization (from existing training.ts)
-  category TEXT, -- 'Compound', 'Isolation', 'Accessory', 'Cardio'
-  muscle_groups TEXT[],
-  equipment TEXT[],
-
-  -- Media
-  demo_video_url TEXT,
-  thumbnail_url TEXT,
-
-  -- Instructions
-  setup_instructions TEXT,
-  execution_cues TEXT[],
-  common_mistakes TEXT[]
-);
-
--- Index for fast movement lookups
-CREATE INDEX idx_exercises_is_movement ON exercises(is_movement) WHERE is_movement = true;
-CREATE INDEX idx_exercises_goal_type ON exercises(goal_type_id);
+-- Note: The exercises table already exists in the database
+-- CrossFit-specific columns (is_movement, goal_type_id) will be added
+-- in migration 20251020000001_alter_exercises_add_crossfit_fields.sql
 
 -- ============================================================================
 -- 3. VARIATION CATEGORIES (Predefined categories for exercise variations)
@@ -78,7 +50,8 @@ INSERT INTO variation_categories (name, description, display_order) VALUES
   ('Position', 'Body or bar position variants (Front, Back, Overhead, etc.)', 1),
   ('Stance', 'Foot/leg positioning (Sumo, Wide, Narrow, Split, etc.)', 2),
   ('Equipment', 'Loading method (Barbell, Dumbbell, Kettlebell, Bodyweight, etc.)', 3),
-  ('Style', 'Movement style (Pause, Tempo, Jump, Eccentric, etc.)', 4);
+  ('Style', 'Movement style (Pause, Tempo, Jump, Eccentric, etc.)', 4)
+ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================================
 -- 4. VARIATION OPTIONS (Predefined options within each category)
@@ -167,7 +140,8 @@ INSERT INTO wod_formats (name, description) VALUES
   ('EMOM', 'Every Minute on the Minute'),
   ('For Time', 'Complete prescribed work as fast as possible'),
   ('Chipper', 'Long list of movements done once each'),
-  ('Tabata', '20 seconds work, 10 seconds rest, 8 rounds');
+  ('Tabata', '20 seconds work, 10 seconds rest, 8 rounds')
+ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================================
 -- 7. WOD CATEGORIES (Daily WOD, Heroes, The Girls)
@@ -185,7 +159,8 @@ INSERT INTO wod_categories (name, description, display_order) VALUES
   ('All', 'All WODs', 0),
   ('Daily WOD', 'Custom WODs created by the box', 1),
   ('Heroes', 'Benchmark WODs named after fallen soldiers', 2),
-  ('The Girls', 'Classic CrossFit benchmark WODs', 3);
+  ('The Girls', 'Classic CrossFit benchmark WODs', 3)
+ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================================
 -- 8. WODS (WOD templates - reusable)
