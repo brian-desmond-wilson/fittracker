@@ -310,14 +310,21 @@ export async function fetchVariationOptions(): Promise<VariationOptionWithCatego
       *,
       category:variation_categories(*)
     `)
-    .order('category.display_order, display_order');
+    .order('display_order');
 
   if (error) {
     console.error('Error fetching variation options:', error);
     throw error;
   }
 
-  return data || [];
+  // Sort by category display_order in JavaScript since we can't do it in the query
+  const sorted = (data || []).sort((a, b) => {
+    const categoryOrder = (a.category?.display_order || 0) - (b.category?.display_order || 0);
+    if (categoryOrder !== 0) return categoryOrder;
+    return (a.display_order || 0) - (b.display_order || 0);
+  });
+
+  return sorted;
 }
 
 /**
