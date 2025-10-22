@@ -542,7 +542,13 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         description: input.description,
         format_id: input.format_id,
         category_id: input.category_id,
+
+        // For Time specific fields (new)
+        rep_scheme_type: input.rep_scheme_type,
+        rep_scheme: input.rep_scheme,
+
         time_cap_minutes: input.time_cap_minutes,
+        notes: input.notes,
         score_type_time: input.score_type_time,
         score_type_rounds: input.score_type_rounds,
         score_type_reps: input.score_type_reps,
@@ -581,21 +587,31 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         wod_id: wod.id,
         exercise_id: movement.exercise_id,
         movement_order: index,
+
+        // Rx - Gender split weights (new)
         rx_reps: movement.rx_reps,
-        rx_weight_lbs: movement.rx_weight_lbs,
+        rx_weight_men_lbs: movement.rx_weight_men_lbs,
+        rx_weight_women_lbs: movement.rx_weight_women_lbs,
         rx_distance: movement.rx_distance,
         rx_time: movement.rx_time,
         rx_movement_variation: movement.rx_movement_variation,
+
+        // L2 - Gender split weights (new)
         l2_reps: movement.l2_reps,
-        l2_weight_lbs: movement.l2_weight_lbs,
+        l2_weight_men_lbs: movement.l2_weight_men_lbs,
+        l2_weight_women_lbs: movement.l2_weight_women_lbs,
         l2_distance: movement.l2_distance,
         l2_time: movement.l2_time,
         l2_movement_variation: movement.l2_movement_variation,
+
+        // L1 - Gender split weights (new)
         l1_reps: movement.l1_reps,
-        l1_weight_lbs: movement.l1_weight_lbs,
+        l1_weight_men_lbs: movement.l1_weight_men_lbs,
+        l1_weight_women_lbs: movement.l1_weight_women_lbs,
         l1_distance: movement.l1_distance,
         l1_time: movement.l1_time,
         l1_movement_variation: movement.l1_movement_variation,
+
         notes: movement.notes,
       }));
 

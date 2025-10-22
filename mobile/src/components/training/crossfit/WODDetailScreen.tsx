@@ -95,9 +95,11 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
   // Get rep scheme for movement (custom or WOD-level)
   const getRepScheme = (movement: any) => {
-    if (!movement.follows_wod_scheme && movement.custom_rep_scheme) {
+    // If movement has custom rep scheme override, use it
+    if (movement.custom_rep_scheme && movement.follows_wod_scheme === false) {
       return movement.custom_rep_scheme;
     }
+    // Otherwise use WOD-level rep scheme
     return wod?.rep_scheme || '';
   };
 
