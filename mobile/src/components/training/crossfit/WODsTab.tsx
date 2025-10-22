@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
-import { Clock, Zap, Plus } from 'lucide-react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODCategoryName, WODWithDetails, WODCategory } from '@/src/types/crossfit';
 import { fetchWODs, searchWODs, fetchWODCategories } from '@/src/lib/supabase/crossfit';
 import { WODDetailScreen } from './WODDetailScreen';
 import { AddWODWizard } from './AddWODWizard';
+import { SwipeableWODCard } from './SwipeableWODCard';
 
 interface WODsTabProps {
   searchQuery: string;
@@ -94,7 +96,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
   const categoryOptions: WODCategoryName[] = ['All', 'Daily WOD', 'Heroes', 'The Girls'];
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       {/* Category Filter Pills */}
       <View style={styles.categoryWrapper}>
         <ScrollView
@@ -143,36 +145,13 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
           </View>
         ) : (
           wods.map((wod) => (
-            <TouchableOpacity
+            <SwipeableWODCard
               key={wod.id}
-              style={styles.wodCard}
-              activeOpacity={0.7}
+              wod={wod}
               onPress={() => setSelectedWODId(wod.id)}
-            >
-              <View style={styles.wodHeader}>
-                <Text style={styles.wodName}>{wod.name}</Text>
-                <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(wod.category?.name || '') }]}>
-                  <Text style={styles.categoryBadgeText}>{wod.category?.name}</Text>
-                </View>
-              </View>
-              <View style={styles.wodMeta}>
-                <View style={styles.metaItem}>
-                  <Zap size={16} color={colors.primary} />
-                  <Text style={styles.metaText}>{wod.format?.name}</Text>
-                </View>
-                <View style={styles.metaItem}>
-                  <Clock size={16} color={colors.mutedForeground} />
-                  <Text style={styles.metaText}>
-                    {wod.time_cap_minutes ? `${wod.time_cap_minutes} min cap` : 'No time cap'}
-                  </Text>
-                </View>
-              </View>
-              {wod.description && (
-                <Text style={styles.wodDescription} numberOfLines={2}>
-                  {wod.description}
-                </Text>
-              )}
-            </TouchableOpacity>
+              onDelete={loadWODs}
+              getCategoryColor={getCategoryColor}
+            />
           ))
         )}
       </ScrollView>
@@ -216,7 +195,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
           />
         )}
       </Modal>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -287,53 +266,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.mutedForeground,
     textAlign: 'center',
-    lineHeight: 20,
-  },
-  wodCard: {
-    padding: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  wodHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  wodName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.foreground,
-  },
-  categoryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  categoryBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  wodMeta: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  metaText: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-  },
-  wodDescription: {
-    fontSize: 14,
-    color: colors.foreground,
     lineHeight: 20,
   },
   fab: {
