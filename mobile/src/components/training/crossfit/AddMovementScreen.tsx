@@ -87,7 +87,7 @@ export function AddMovementScreen({ onClose, onSave }: AddMovementScreenProps) {
     }
 
     if (!selectedCategoryId) {
-      Alert.alert('Validation Error', 'Please select a category');
+      Alert.alert('Validation Error', 'Please select a modality');
       return;
     }
 
@@ -211,9 +211,9 @@ export function AddMovementScreen({ onClose, onSave }: AddMovementScreenProps) {
             />
           </View>
 
-          {/* Category */}
+          {/* Modality */}
           <View style={styles.field}>
-            <Text style={styles.label}>Category *</Text>
+            <Text style={styles.label}>Modality *</Text>
             <View style={styles.pillsContainer}>
               {categories.map(category => {
                 const isSelected = selectedCategoryId === category.id;
