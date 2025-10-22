@@ -107,8 +107,12 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
     const repScheme = getRepScheme(movement);
     let mainText = '';
     let variationText = '';
+    let movementDisplayName = '';
 
     if (level === 'Rx') {
+      // Use alternative movement name if configured
+      movementDisplayName = movement.rx_alternative_exercise_name || '';
+
       // Build main text (rep scheme + weight/distance on one line)
       const parts: string[] = [];
 
@@ -134,6 +138,9 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
       mainText = parts.join(' ');
       variationText = movement.rx_movement_variation || '';
     } else if (level === 'L2') {
+      // Use alternative movement name if configured
+      movementDisplayName = movement.l2_alternative_exercise_name || '';
+
       // Build main text
       const parts: string[] = [];
 
@@ -164,6 +171,9 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
       variationText = movement.l2_movement_variation || '';
     } else {
       // L1
+      // Use alternative movement name if configured
+      movementDisplayName = movement.l1_alternative_exercise_name || '';
+
       const parts: string[] = [];
 
       // Distance takes precedence over reps for distance movements
@@ -193,7 +203,7 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
       variationText = movement.l1_movement_variation || '';
     }
 
-    return { mainText, variationText };
+    return { mainText, variationText, movementDisplayName };
   };
 
   return (
@@ -267,7 +277,10 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
                 <View style={styles.levelSection}>
                   <View style={styles.scalingRow}>
                     <Text style={styles.scalingLabel}>Rx:</Text>
-                    <Text style={styles.scalingValue}>{rxSummary.mainText}</Text>
+                    <Text style={styles.scalingValue}>
+                      {rxSummary.movementDisplayName && `${rxSummary.movementDisplayName} - `}
+                      {rxSummary.mainText}
+                    </Text>
                   </View>
                   {rxSummary.variationText && (
                     <View style={styles.variationRow}>
@@ -280,7 +293,10 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
                 <View style={styles.levelSection}>
                   <View style={styles.scalingRow}>
                     <Text style={styles.scalingLabel}>L2:</Text>
-                    <Text style={styles.scalingValue}>{l2Summary.mainText}</Text>
+                    <Text style={styles.scalingValue}>
+                      {l2Summary.movementDisplayName && `${l2Summary.movementDisplayName} - `}
+                      {l2Summary.mainText}
+                    </Text>
                   </View>
                   {l2Summary.variationText && (
                     <View style={styles.variationRow}>
@@ -293,7 +309,10 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
                 <View style={styles.levelSection}>
                   <View style={styles.scalingRow}>
                     <Text style={styles.scalingLabel}>L1:</Text>
-                    <Text style={styles.scalingValue}>{l1Summary.mainText}</Text>
+                    <Text style={styles.scalingValue}>
+                      {l1Summary.movementDisplayName && `${l1Summary.movementDisplayName} - `}
+                      {l1Summary.mainText}
+                    </Text>
                   </View>
                   {l1Summary.variationText && (
                     <View style={styles.variationRow}>

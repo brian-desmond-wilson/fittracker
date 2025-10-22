@@ -596,6 +596,8 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         rx_distance_unit: movement.rx_distance_unit,
         rx_time: movement.rx_time,
         rx_movement_variation: movement.rx_movement_variation,
+        rx_alternative_exercise_id: movement.rx_alternative_exercise_id,
+        rx_alternative_exercise_name: movement.rx_alternative_exercise_name,
 
         // L2 - Gender split weights (new)
         l2_reps: movement.l2_reps,
@@ -605,6 +607,8 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         l2_distance_unit: movement.l2_distance_unit,
         l2_time: movement.l2_time,
         l2_movement_variation: movement.l2_movement_variation,
+        l2_alternative_exercise_id: movement.l2_alternative_exercise_id,
+        l2_alternative_exercise_name: movement.l2_alternative_exercise_name,
 
         // L1 - Gender split weights (new)
         l1_reps: movement.l1_reps,
@@ -614,6 +618,8 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         l1_distance_unit: movement.l1_distance_unit,
         l1_time: movement.l1_time,
         l1_movement_variation: movement.l1_movement_variation,
+        l1_alternative_exercise_id: movement.l1_alternative_exercise_id,
+        l1_alternative_exercise_name: movement.l1_alternative_exercise_name,
 
         notes: movement.notes,
       }));

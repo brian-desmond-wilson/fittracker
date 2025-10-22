@@ -39,6 +39,8 @@ export interface WODMovementConfig {
   rx_distance_unit?: string;
   rx_time?: number;
   rx_movement_variation?: string;
+  rx_alternative_exercise_id?: string;
+  rx_alternative_exercise_name?: string;
 
   // L2 scaling - Gender split for weights
   l2_reps?: number | string; // Can be number (e.g., 15) or rep scheme (e.g., "15-12-9")
@@ -49,6 +51,8 @@ export interface WODMovementConfig {
   l2_distance_unit?: string;
   l2_time?: number;
   l2_movement_variation?: string;
+  l2_alternative_exercise_id?: string;
+  l2_alternative_exercise_name?: string;
 
   // L1 scaling - Gender split for weights
   l1_reps?: number | string; // Can be number (e.g., 15) or rep scheme (e.g., "15-12-9-6-3")
@@ -59,6 +63,8 @@ export interface WODMovementConfig {
   l1_distance_unit?: string;
   l1_time?: number;
   l1_movement_variation?: string;
+  l1_alternative_exercise_id?: string;
+  l1_alternative_exercise_name?: string;
 
   notes?: string;
 }

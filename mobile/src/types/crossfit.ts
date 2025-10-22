@@ -199,6 +199,8 @@ export interface WODMovement {
   rx_distance_unit: string | null;
   rx_time: number | null;
   rx_movement_variation: string | null;
+  rx_alternative_exercise_id: string | null;
+  rx_alternative_exercise_name: string | null;
 
   // L2 scaling - Gender split for weights
   l2_reps: number | null;
@@ -210,6 +212,8 @@ export interface WODMovement {
   l2_distance_unit: string | null;
   l2_time: number | null;
   l2_movement_variation: string | null;
+  l2_alternative_exercise_id: string | null;
+  l2_alternative_exercise_name: string | null;
 
   // L1 scaling - Gender split for weights
   l1_reps: number | null;
@@ -221,6 +225,8 @@ export interface WODMovement {
   l1_distance_unit: string | null;
   l1_time: number | null;
   l1_movement_variation: string | null;
+  l1_alternative_exercise_id: string | null;
+  l1_alternative_exercise_name: string | null;
 
   // Notes
   notes: string | null;
@@ -340,24 +346,36 @@ export interface CreateWODMovementInput {
   rx_weight_men_lbs?: number;
   rx_weight_women_lbs?: number;
   rx_distance?: number;
+  rx_distance_value?: number;
+  rx_distance_unit?: string;
   rx_time?: number;
   rx_movement_variation?: string;
+  rx_alternative_exercise_id?: string;
+  rx_alternative_exercise_name?: string;
 
   // L2 scaling - Gender split for weights
   l2_reps?: number;
   l2_weight_men_lbs?: number;
   l2_weight_women_lbs?: number;
   l2_distance?: number;
+  l2_distance_value?: number;
+  l2_distance_unit?: string;
   l2_time?: number;
   l2_movement_variation?: string;
+  l2_alternative_exercise_id?: string;
+  l2_alternative_exercise_name?: string;
 
   // L1 scaling - Gender split for weights
   l1_reps?: number;
   l1_weight_men_lbs?: number;
   l1_weight_women_lbs?: number;
   l1_distance?: number;
+  l1_distance_value?: number;
+  l1_distance_unit?: string;
   l1_time?: number;
   l1_movement_variation?: string;
+  l1_alternative_exercise_id?: string;
+  l1_alternative_exercise_name?: string;
 
   notes?: string;
 }

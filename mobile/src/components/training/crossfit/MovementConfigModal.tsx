@@ -13,6 +13,7 @@ import { X } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import type { ExerciseWithVariations } from '@/src/types/crossfit';
 import type { WODMovementConfig } from './AddWODWizard';
+import { MovementSearchModal } from './MovementSearchModal';
 
 interface MovementConfigModalProps {
   visible: boolean;
@@ -68,6 +69,26 @@ export function MovementConfigModal({
 
   const [notes, setNotes] = useState(existingConfig?.notes || '');
 
+  // Alternative movement state
+  const [rxUseAlternative, setRxUseAlternative] = useState(!!existingConfig?.rx_alternative_exercise_id);
+  const [rxAlternativeExercise, setRxAlternativeExercise] = useState<ExerciseWithVariations | null>(null);
+  const [rxAlternativeExerciseId, setRxAlternativeExerciseId] = useState(existingConfig?.rx_alternative_exercise_id || '');
+  const [rxAlternativeExerciseName, setRxAlternativeExerciseName] = useState(existingConfig?.rx_alternative_exercise_name || '');
+
+  const [l2UseAlternative, setL2UseAlternative] = useState(!!existingConfig?.l2_alternative_exercise_id);
+  const [l2AlternativeExercise, setL2AlternativeExercise] = useState<ExerciseWithVariations | null>(null);
+  const [l2AlternativeExerciseId, setL2AlternativeExerciseId] = useState(existingConfig?.l2_alternative_exercise_id || '');
+  const [l2AlternativeExerciseName, setL2AlternativeExerciseName] = useState(existingConfig?.l2_alternative_exercise_name || '');
+
+  const [l1UseAlternative, setL1UseAlternative] = useState(!!existingConfig?.l1_alternative_exercise_id);
+  const [l1AlternativeExercise, setL1AlternativeExercise] = useState<ExerciseWithVariations | null>(null);
+  const [l1AlternativeExerciseId, setL1AlternativeExerciseId] = useState(existingConfig?.l1_alternative_exercise_id || '');
+  const [l1AlternativeExerciseName, setL1AlternativeExerciseName] = useState(existingConfig?.l1_alternative_exercise_name || '');
+
+  // Movement search modal state
+  const [showMovementSearch, setShowMovementSearch] = useState(false);
+  const [searchTargetLevel, setSearchTargetLevel] = useState<ScalingLevel>('Rx');
+
   // Reset state when modal opens or when existingConfig changes
   useEffect(() => {
     if (visible) {
@@ -103,10 +124,101 @@ export function MovementConfigModal({
       setL1Variation(existingConfig?.l1_movement_variation || '');
 
       setNotes(existingConfig?.notes || '');
+
+      // Alternative movements
+      setRxUseAlternative(!!existingConfig?.rx_alternative_exercise_id);
+      setRxAlternativeExerciseId(existingConfig?.rx_alternative_exercise_id || '');
+      setRxAlternativeExerciseName(existingConfig?.rx_alternative_exercise_name || '');
+
+      setL2UseAlternative(!!existingConfig?.l2_alternative_exercise_id);
+      setL2AlternativeExerciseId(existingConfig?.l2_alternative_exercise_id || '');
+      setL2AlternativeExerciseName(existingConfig?.l2_alternative_exercise_name || '');
+
+      setL1UseAlternative(!!existingConfig?.l1_alternative_exercise_id);
+      setL1AlternativeExerciseId(existingConfig?.l1_alternative_exercise_id || '');
+      setL1AlternativeExerciseName(existingConfig?.l1_alternative_exercise_name || '');
     }
   }, [visible, existingConfig]);
 
   if (!movement) return null;
+
+  // Handle alternative movement selection
+  const handleSelectAlternativeMovement = (alternativeMovement: ExerciseWithVariations) => {
+    if (searchTargetLevel === 'Rx') {
+      setRxAlternativeExercise(alternativeMovement);
+      setRxAlternativeExerciseId(alternativeMovement.id);
+      setRxAlternativeExerciseName(alternativeMovement.full_name || alternativeMovement.name);
+      // Clear all Rx fields for fresh configuration
+      setRxReps('');
+      setRxWeightMen('');
+      setRxWeightWomen('');
+      setRxDistanceValue('');
+      setRxDistanceUnit('meters');
+      setRxTime('');
+      setRxVariation('');
+    } else if (searchTargetLevel === 'L2') {
+      setL2AlternativeExercise(alternativeMovement);
+      setL2AlternativeExerciseId(alternativeMovement.id);
+      setL2AlternativeExerciseName(alternativeMovement.full_name || alternativeMovement.name);
+      // Clear all L2 fields for fresh configuration
+      setL2Reps('');
+      setL2WeightMen('');
+      setL2WeightWomen('');
+      setL2DistanceValue('');
+      setL2DistanceUnit('meters');
+      setL2Time('');
+      setL2Variation('');
+    } else {
+      setL1AlternativeExercise(alternativeMovement);
+      setL1AlternativeExerciseId(alternativeMovement.id);
+      setL1AlternativeExerciseName(alternativeMovement.full_name || alternativeMovement.name);
+      // Clear all L1 fields for fresh configuration
+      setL1Reps('');
+      setL1WeightMen('');
+      setL1WeightWomen('');
+      setL1DistanceValue('');
+      setL1DistanceUnit('meters');
+      setL1Time('');
+      setL1Variation('');
+    }
+  };
+
+  // Handle toggling alternative movement
+  const handleToggleAlternative = (level: ScalingLevel, enabled: boolean) => {
+    if (level === 'Rx') {
+      setRxUseAlternative(enabled);
+      if (!enabled) {
+        // Clear alternative movement data
+        setRxAlternativeExercise(null);
+        setRxAlternativeExerciseId('');
+        setRxAlternativeExerciseName('');
+      } else {
+        // Open search modal
+        setSearchTargetLevel('Rx');
+        setShowMovementSearch(true);
+      }
+    } else if (level === 'L2') {
+      setL2UseAlternative(enabled);
+      if (!enabled) {
+        setL2AlternativeExercise(null);
+        setL2AlternativeExerciseId('');
+        setL2AlternativeExerciseName('');
+      } else {
+        setSearchTargetLevel('L2');
+        setShowMovementSearch(true);
+      }
+    } else {
+      setL1UseAlternative(enabled);
+      if (!enabled) {
+        setL1AlternativeExercise(null);
+        setL1AlternativeExerciseId('');
+        setL1AlternativeExerciseName('');
+      } else {
+        setSearchTargetLevel('L1');
+        setShowMovementSearch(true);
+      }
+    }
+  };
 
   const handleSave = () => {
     const isBodyweight = !movement?.requires_weight;
@@ -154,6 +266,8 @@ export function MovementConfigModal({
       rx_distance_unit: rxDistanceValue ? rxDistanceUnit : undefined,
       rx_time: rxTime ? parseInt(rxTime) : undefined,
       rx_movement_variation: rxVariation || undefined,
+      rx_alternative_exercise_id: rxUseAlternative ? rxAlternativeExerciseId : undefined,
+      rx_alternative_exercise_name: rxUseAlternative ? rxAlternativeExerciseName : undefined,
 
       // L2 - Gender split for weights
       l2_reps: l2Reps ? (l2Reps.includes('-') ? l2Reps : parseInt(l2Reps)) : undefined,
@@ -163,6 +277,8 @@ export function MovementConfigModal({
       l2_distance_unit: l2DistanceValue ? l2DistanceUnit : undefined,
       l2_time: l2Time ? parseInt(l2Time) : undefined,
       l2_movement_variation: l2Variation || undefined,
+      l2_alternative_exercise_id: l2UseAlternative ? l2AlternativeExerciseId : undefined,
+      l2_alternative_exercise_name: l2UseAlternative ? l2AlternativeExerciseName : undefined,
 
       // L1 - Gender split for weights
       l1_reps: l1Reps ? (l1Reps.includes('-') ? l1Reps : parseInt(l1Reps)) : undefined,
@@ -172,6 +288,8 @@ export function MovementConfigModal({
       l1_distance_unit: l1DistanceValue ? l1DistanceUnit : undefined,
       l1_time: l1Time ? parseInt(l1Time) : undefined,
       l1_movement_variation: l1Variation || undefined,
+      l1_alternative_exercise_id: l1UseAlternative ? l1AlternativeExerciseId : undefined,
+      l1_alternative_exercise_name: l1UseAlternative ? l1AlternativeExerciseName : undefined,
 
       notes: notes || undefined,
     };
@@ -184,8 +302,50 @@ export function MovementConfigModal({
     const isRx = level === 'Rx';
     const isL2 = level === 'L2';
     const isL1 = level === 'L1';
-    const isBodyweight = !movement?.requires_weight;
-    const isDistance = movement?.requires_distance;
+
+    // Determine if alternative is active for this level
+    const useAlternative = isRx ? rxUseAlternative : isL2 ? l2UseAlternative : l1UseAlternative;
+    const alternativeName = isRx ? rxAlternativeExerciseName : isL2 ? l2AlternativeExerciseName : l1AlternativeExerciseName;
+    const alternativeExercise = isRx ? rxAlternativeExercise : isL2 ? l2AlternativeExercise : l1AlternativeExercise;
+
+    // Use alternative movement's properties if active, otherwise use original movement
+    const activeMovement = useAlternative && alternativeExercise ? alternativeExercise : movement;
+    const isBodyweight = !activeMovement?.requires_weight;
+    const isDistance = activeMovement?.requires_distance;
+
+    // Render alternative movement toggle (shared across all types)
+    const alternativeToggle = (
+      <View style={styles.alternativeSection}>
+        <View style={styles.checkboxContainer}>
+          <TouchableOpacity
+            style={styles.checkbox}
+            onPress={() => handleToggleAlternative(level, !useAlternative)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkboxBox, useAlternative && styles.checkboxBoxChecked]}>
+              {useAlternative && <Text style={styles.checkboxCheck}>✓</Text>}
+            </View>
+            <Text style={styles.checkboxLabel}>Use alternative movement</Text>
+          </TouchableOpacity>
+        </View>
+        {useAlternative && alternativeName && (
+          <View style={styles.alternativeInfo}>
+            <Text style={styles.alternativeLabel}>Alternative:</Text>
+            <Text style={styles.alternativeName}>{alternativeName}</Text>
+            <TouchableOpacity
+              style={styles.changeButton}
+              onPress={() => {
+                setSearchTargetLevel(level);
+                setShowMovementSearch(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.changeButtonText}>Change</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
 
     // For distance movements, show distance-specific UI
     if (isDistance) {
@@ -198,6 +358,7 @@ export function MovementConfigModal({
 
       return (
         <View style={styles.scalingForm}>
+          {alternativeToggle}
           {/* Distance */}
           <View style={styles.field}>
             <Text style={styles.label}>Distance *</Text>
@@ -255,6 +416,7 @@ export function MovementConfigModal({
     if (isBodyweight && (isRx || isL2)) {
       return (
         <View style={styles.bodyweightMessage}>
+          {alternativeToggle}
           <View style={styles.infoBox}>
             <Text style={styles.infoIcon}>ℹ️</Text>
             <View style={styles.infoTextContainer}>
@@ -305,6 +467,7 @@ export function MovementConfigModal({
     if (isBodyweight && isL1) {
       return (
         <View style={styles.scalingForm}>
+          {alternativeToggle}
           {/* Reps (optional for L1 scaling) */}
           <View style={styles.field}>
             <Text style={styles.label}>Reps (Optional - if different from WOD)</Text>
@@ -347,8 +510,8 @@ export function MovementConfigModal({
     const weightWomen = isRx ? rxWeightWomen : isL2 ? l2WeightWomen : l1WeightWomen;
     const setWeightWomen = isRx ? setRxWeightWomen : isL2 ? setL2WeightWomen : setL1WeightWomen;
 
-    const distance = isRx ? rxDistance : isL2 ? l2Distance : l1Distance;
-    const setDistance = isRx ? setRxDistance : isL2 ? setL2Distance : setL1Distance;
+    const distanceValue = isRx ? rxDistanceValue : isL2 ? l2DistanceValue : l1DistanceValue;
+    const setDistanceValue = isRx ? setRxDistanceValue : isL2 ? setL2DistanceValue : setL1DistanceValue;
 
     const time = isRx ? rxTime : isL2 ? l2Time : l1Time;
     const setTime = isRx ? setRxTime : isL2 ? setL2Time : setL1Time;
@@ -358,6 +521,7 @@ export function MovementConfigModal({
 
     return (
       <View style={styles.scalingForm}>
+        {alternativeToggle}
         {/* Reps */}
         <View style={styles.field}>
           <Text style={styles.label}>Reps</Text>
@@ -402,15 +566,19 @@ export function MovementConfigModal({
 
         {/* Distance */}
         <View style={styles.field}>
-          <Text style={styles.label}>Distance (meters)</Text>
+          <Text style={styles.label}>Distance (meters - DEPRECATED)</Text>
           <TextInput
             style={styles.input}
             placeholder="e.g., 400"
             placeholderTextColor={colors.mutedForeground}
-            value={distance}
-            onChangeText={setDistance}
+            value={distanceValue}
+            onChangeText={setDistanceValue}
             keyboardType="decimal-pad"
+            editable={false}
           />
+          <Text style={styles.helperText}>
+            Note: This field is deprecated. Use distance configuration for distance movements.
+          </Text>
         </View>
 
         {/* Time */}
@@ -518,6 +686,13 @@ export function MovementConfigModal({
           </View>
         </View>
       </View>
+
+      {/* Movement Search Modal for Alternative Movements */}
+      <MovementSearchModal
+        visible={showMovementSearch}
+        onClose={() => setShowMovementSearch(false)}
+        onSelectMovement={handleSelectAlternativeMovement}
+      />
     </Modal>
   );
 }
@@ -760,6 +935,45 @@ const styles = StyleSheet.create({
   },
   unitButtonText: {
     fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  alternativeSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  alternativeInfo: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  alternativeLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+  },
+  alternativeName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+    flex: 1,
+  },
+  changeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+  },
+  changeButtonText: {
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
   },
