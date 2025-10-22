@@ -43,7 +43,8 @@ export function MovementConfigModal({
   const [rxReps, setRxReps] = useState(existingConfig?.rx_reps?.toString() || '');
   const [rxWeightMen, setRxWeightMen] = useState(existingConfig?.rx_weight_men_lbs?.toString() || '');
   const [rxWeightWomen, setRxWeightWomen] = useState(existingConfig?.rx_weight_women_lbs?.toString() || '');
-  const [rxDistance, setRxDistance] = useState(existingConfig?.rx_distance?.toString() || '');
+  const [rxDistanceValue, setRxDistanceValue] = useState(existingConfig?.rx_distance_value?.toString() || '');
+  const [rxDistanceUnit, setRxDistanceUnit] = useState(existingConfig?.rx_distance_unit || 'meters');
   const [rxTime, setRxTime] = useState(existingConfig?.rx_time?.toString() || '');
   const [rxVariation, setRxVariation] = useState(existingConfig?.rx_movement_variation || '');
 
@@ -51,7 +52,8 @@ export function MovementConfigModal({
   const [l2Reps, setL2Reps] = useState(existingConfig?.l2_reps?.toString() || '');
   const [l2WeightMen, setL2WeightMen] = useState(existingConfig?.l2_weight_men_lbs?.toString() || '');
   const [l2WeightWomen, setL2WeightWomen] = useState(existingConfig?.l2_weight_women_lbs?.toString() || '');
-  const [l2Distance, setL2Distance] = useState(existingConfig?.l2_distance?.toString() || '');
+  const [l2DistanceValue, setL2DistanceValue] = useState(existingConfig?.l2_distance_value?.toString() || '');
+  const [l2DistanceUnit, setL2DistanceUnit] = useState(existingConfig?.l2_distance_unit || 'meters');
   const [l2Time, setL2Time] = useState(existingConfig?.l2_time?.toString() || '');
   const [l2Variation, setL2Variation] = useState(existingConfig?.l2_movement_variation || '');
 
@@ -59,7 +61,8 @@ export function MovementConfigModal({
   const [l1Reps, setL1Reps] = useState(existingConfig?.l1_reps?.toString() || '');
   const [l1WeightMen, setL1WeightMen] = useState(existingConfig?.l1_weight_men_lbs?.toString() || '');
   const [l1WeightWomen, setL1WeightWomen] = useState(existingConfig?.l1_weight_women_lbs?.toString() || '');
-  const [l1Distance, setL1Distance] = useState(existingConfig?.l1_distance?.toString() || '');
+  const [l1DistanceValue, setL1DistanceValue] = useState(existingConfig?.l1_distance_value?.toString() || '');
+  const [l1DistanceUnit, setL1DistanceUnit] = useState(existingConfig?.l1_distance_unit || 'meters');
   const [l1Time, setL1Time] = useState(existingConfig?.l1_time?.toString() || '');
   const [l1Variation, setL1Variation] = useState(existingConfig?.l1_movement_variation || '');
 
@@ -76,7 +79,8 @@ export function MovementConfigModal({
       setRxReps(existingConfig?.rx_reps?.toString() || '');
       setRxWeightMen(existingConfig?.rx_weight_men_lbs?.toString() || '');
       setRxWeightWomen(existingConfig?.rx_weight_women_lbs?.toString() || '');
-      setRxDistance(existingConfig?.rx_distance?.toString() || '');
+      setRxDistanceValue(existingConfig?.rx_distance_value?.toString() || '');
+      setRxDistanceUnit(existingConfig?.rx_distance_unit || 'meters');
       setRxTime(existingConfig?.rx_time?.toString() || '');
       setRxVariation(existingConfig?.rx_movement_variation || '');
 
@@ -84,7 +88,8 @@ export function MovementConfigModal({
       setL2Reps(existingConfig?.l2_reps?.toString() || '');
       setL2WeightMen(existingConfig?.l2_weight_men_lbs?.toString() || '');
       setL2WeightWomen(existingConfig?.l2_weight_women_lbs?.toString() || '');
-      setL2Distance(existingConfig?.l2_distance?.toString() || '');
+      setL2DistanceValue(existingConfig?.l2_distance_value?.toString() || '');
+      setL2DistanceUnit(existingConfig?.l2_distance_unit || 'meters');
       setL2Time(existingConfig?.l2_time?.toString() || '');
       setL2Variation(existingConfig?.l2_movement_variation || '');
 
@@ -92,7 +97,8 @@ export function MovementConfigModal({
       setL1Reps(existingConfig?.l1_reps?.toString() || '');
       setL1WeightMen(existingConfig?.l1_weight_men_lbs?.toString() || '');
       setL1WeightWomen(existingConfig?.l1_weight_women_lbs?.toString() || '');
-      setL1Distance(existingConfig?.l1_distance?.toString() || '');
+      setL1DistanceValue(existingConfig?.l1_distance_value?.toString() || '');
+      setL1DistanceUnit(existingConfig?.l1_distance_unit || 'meters');
       setL1Time(existingConfig?.l1_time?.toString() || '');
       setL1Variation(existingConfig?.l1_movement_variation || '');
 
@@ -104,9 +110,16 @@ export function MovementConfigModal({
 
   const handleSave = () => {
     const isBodyweight = !movement?.requires_weight;
+    const isDistance = movement?.requires_distance;
 
     // Validate based on movement type
-    if (isBodyweight) {
+    if (isDistance) {
+      // For distance movements, require at least distance value for Rx
+      if (!rxDistanceValue) {
+        Alert.alert('Validation Error', 'Please enter a distance for Rx scaling');
+        return;
+      }
+    } else if (isBodyweight) {
       // For bodyweight movements, allow empty Rx if following WOD scheme
       if (!followsWodScheme && !customRepScheme?.trim()) {
         Alert.alert('Validation Error', 'Please enter a custom rep scheme or use WOD scheme');
@@ -114,7 +127,7 @@ export function MovementConfigModal({
       }
     } else {
       // For weighted movements, require at least one Rx field
-      if (!rxReps && !rxWeightMen && !rxWeightWomen && !rxDistance && !rxTime) {
+      if (!rxReps && !rxWeightMen && !rxWeightWomen && !rxTime) {
         Alert.alert('Validation Error', 'Please configure at least one field for Rx scaling');
         return;
       }
@@ -126,6 +139,7 @@ export function MovementConfigModal({
 
       // Equipment metadata (for edit modal)
       requires_weight: movement.requires_weight,
+      requires_distance: movement.requires_distance,
       equipment_types: movement.equipment_types,
 
       // Rep scheme override
@@ -136,7 +150,8 @@ export function MovementConfigModal({
       rx_reps: rxReps ? parseInt(rxReps) : undefined,
       rx_weight_men_lbs: rxWeightMen ? parseFloat(rxWeightMen) : undefined,
       rx_weight_women_lbs: rxWeightWomen ? parseFloat(rxWeightWomen) : undefined,
-      rx_distance: rxDistance ? parseFloat(rxDistance) : undefined,
+      rx_distance_value: rxDistanceValue ? parseFloat(rxDistanceValue) : undefined,
+      rx_distance_unit: rxDistanceValue ? rxDistanceUnit : undefined,
       rx_time: rxTime ? parseInt(rxTime) : undefined,
       rx_movement_variation: rxVariation || undefined,
 
@@ -144,7 +159,8 @@ export function MovementConfigModal({
       l2_reps: l2Reps ? (l2Reps.includes('-') ? l2Reps : parseInt(l2Reps)) : undefined,
       l2_weight_men_lbs: l2WeightMen ? parseFloat(l2WeightMen) : undefined,
       l2_weight_women_lbs: l2WeightWomen ? parseFloat(l2WeightWomen) : undefined,
-      l2_distance: l2Distance ? parseFloat(l2Distance) : undefined,
+      l2_distance_value: l2DistanceValue ? parseFloat(l2DistanceValue) : undefined,
+      l2_distance_unit: l2DistanceValue ? l2DistanceUnit : undefined,
       l2_time: l2Time ? parseInt(l2Time) : undefined,
       l2_movement_variation: l2Variation || undefined,
 
@@ -152,7 +168,8 @@ export function MovementConfigModal({
       l1_reps: l1Reps ? (l1Reps.includes('-') ? l1Reps : parseInt(l1Reps)) : undefined,
       l1_weight_men_lbs: l1WeightMen ? parseFloat(l1WeightMen) : undefined,
       l1_weight_women_lbs: l1WeightWomen ? parseFloat(l1WeightWomen) : undefined,
-      l1_distance: l1Distance ? parseFloat(l1Distance) : undefined,
+      l1_distance_value: l1DistanceValue ? parseFloat(l1DistanceValue) : undefined,
+      l1_distance_unit: l1DistanceValue ? l1DistanceUnit : undefined,
       l1_time: l1Time ? parseInt(l1Time) : undefined,
       l1_movement_variation: l1Variation || undefined,
 
@@ -168,6 +185,71 @@ export function MovementConfigModal({
     const isL2 = level === 'L2';
     const isL1 = level === 'L1';
     const isBodyweight = !movement?.requires_weight;
+    const isDistance = movement?.requires_distance;
+
+    // For distance movements, show distance-specific UI
+    if (isDistance) {
+      const distanceValue = isRx ? rxDistanceValue : isL2 ? l2DistanceValue : l1DistanceValue;
+      const setDistanceValue = isRx ? setRxDistanceValue : isL2 ? setL2DistanceValue : setL1DistanceValue;
+      const distanceUnit = isRx ? rxDistanceUnit : isL2 ? l2DistanceUnit : l1DistanceUnit;
+      const setDistanceUnit = isRx ? setRxDistanceUnit : isL2 ? setL2DistanceUnit : setL1DistanceUnit;
+      const variation = isRx ? rxVariation : isL2 ? l2Variation : l1Variation;
+      const setVariation = isRx ? setRxVariation : isL2 ? setL2Variation : setL1Variation;
+
+      return (
+        <View style={styles.scalingForm}>
+          {/* Distance */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Distance *</Text>
+            <View style={styles.distanceRow}>
+              <TextInput
+                style={[styles.input, styles.distanceInput]}
+                placeholder="e.g., 400"
+                placeholderTextColor={colors.mutedForeground}
+                value={distanceValue}
+                onChangeText={setDistanceValue}
+                keyboardType="decimal-pad"
+              />
+              <View style={styles.unitPickerContainer}>
+                <TouchableOpacity
+                  style={styles.unitButton}
+                  onPress={() => {
+                    // Cycle through units: meters -> feet -> miles -> kilometers -> meters
+                    const units = ['meters', 'feet', 'miles', 'kilometers'];
+                    const currentIndex = units.indexOf(distanceUnit);
+                    const nextIndex = (currentIndex + 1) % units.length;
+                    setDistanceUnit(units[nextIndex]);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.unitButtonText}>
+                    {distanceUnit === 'meters' ? 'm' :
+                     distanceUnit === 'feet' ? 'ft' :
+                     distanceUnit === 'miles' ? 'mi' : 'km'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Movement Variation (for alternative movements) */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Movement Variation (For Scaling)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., Reduced Pace, Walking, Modified"
+              placeholderTextColor={colors.mutedForeground}
+              value={variation}
+              onChangeText={setVariation}
+              autoCapitalize="words"
+            />
+            <Text style={styles.helperText}>
+              Specify alternative movement pattern or scaling options
+            </Text>
+          </View>
+        </View>
+      );
+    }
 
     // For bodyweight movements on Rx/L2 tabs, show simplified UI
     if (isBodyweight && (isRx || isL2)) {
@@ -656,5 +738,29 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: 4,
     lineHeight: 16,
+  },
+  distanceRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  distanceInput: {
+    flex: 1,
+  },
+  unitPickerContainer: {
+    width: 70,
+  },
+  unitButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unitButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

@@ -81,6 +81,7 @@ export interface Exercise {
 
   // Equipment metadata
   requires_weight: boolean;
+  requires_distance: boolean;
   equipment_types: string[] | null;
 
   // Categorization
@@ -193,7 +194,9 @@ export interface WODMovement {
   rx_weight_lbs: number | null; // DEPRECATED: Use gender-specific fields
   rx_weight_men_lbs: number | null;
   rx_weight_women_lbs: number | null;
-  rx_distance: number | null;
+  rx_distance: number | null; // DEPRECATED: Use rx_distance_value and rx_distance_unit
+  rx_distance_value: number | null;
+  rx_distance_unit: string | null;
   rx_time: number | null;
   rx_movement_variation: string | null;
 
@@ -202,7 +205,9 @@ export interface WODMovement {
   l2_weight_lbs: number | null; // DEPRECATED: Use gender-specific fields
   l2_weight_men_lbs: number | null;
   l2_weight_women_lbs: number | null;
-  l2_distance: number | null;
+  l2_distance: number | null; // DEPRECATED: Use l2_distance_value and l2_distance_unit
+  l2_distance_value: number | null;
+  l2_distance_unit: string | null;
   l2_time: number | null;
   l2_movement_variation: string | null;
 
@@ -211,7 +216,9 @@ export interface WODMovement {
   l1_weight_lbs: number | null; // DEPRECATED: Use gender-specific fields
   l1_weight_men_lbs: number | null;
   l1_weight_women_lbs: number | null;
-  l1_distance: number | null;
+  l1_distance: number | null; // DEPRECATED: Use l1_distance_value and l1_distance_unit
+  l1_distance_value: number | null;
+  l1_distance_unit: string | null;
   l1_time: number | null;
   l1_movement_variation: string | null;
 

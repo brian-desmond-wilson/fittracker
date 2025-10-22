@@ -592,7 +592,8 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         rx_reps: movement.rx_reps,
         rx_weight_men_lbs: movement.rx_weight_men_lbs,
         rx_weight_women_lbs: movement.rx_weight_women_lbs,
-        rx_distance: movement.rx_distance,
+        rx_distance_value: movement.rx_distance_value,
+        rx_distance_unit: movement.rx_distance_unit,
         rx_time: movement.rx_time,
         rx_movement_variation: movement.rx_movement_variation,
 
@@ -600,7 +601,8 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         l2_reps: movement.l2_reps,
         l2_weight_men_lbs: movement.l2_weight_men_lbs,
         l2_weight_women_lbs: movement.l2_weight_women_lbs,
-        l2_distance: movement.l2_distance,
+        l2_distance_value: movement.l2_distance_value,
+        l2_distance_unit: movement.l2_distance_unit,
         l2_time: movement.l2_time,
         l2_movement_variation: movement.l2_movement_variation,
 
@@ -608,7 +610,8 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
         l1_reps: movement.l1_reps,
         l1_weight_men_lbs: movement.l1_weight_men_lbs,
         l1_weight_women_lbs: movement.l1_weight_women_lbs,
-        l1_distance: movement.l1_distance,
+        l1_distance_value: movement.l1_distance_value,
+        l1_distance_unit: movement.l1_distance_unit,
         l1_time: movement.l1_time,
         l1_movement_variation: movement.l1_movement_variation,
 

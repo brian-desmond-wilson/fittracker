@@ -23,6 +23,7 @@ export interface WODMovementConfig {
 
   // Equipment metadata (needed for edit modal)
   requires_weight?: boolean;
+  requires_distance?: boolean;
   equipment_types?: string[];
 
   // Rep scheme override
@@ -33,7 +34,9 @@ export interface WODMovementConfig {
   rx_reps?: number;
   rx_weight_men_lbs?: number;
   rx_weight_women_lbs?: number;
-  rx_distance?: number;
+  rx_distance?: number; // DEPRECATED: Use rx_distance_value and rx_distance_unit
+  rx_distance_value?: number;
+  rx_distance_unit?: string;
   rx_time?: number;
   rx_movement_variation?: string;
 
@@ -41,7 +44,9 @@ export interface WODMovementConfig {
   l2_reps?: number | string; // Can be number (e.g., 15) or rep scheme (e.g., "15-12-9")
   l2_weight_men_lbs?: number;
   l2_weight_women_lbs?: number;
-  l2_distance?: number;
+  l2_distance?: number; // DEPRECATED: Use l2_distance_value and l2_distance_unit
+  l2_distance_value?: number;
+  l2_distance_unit?: string;
   l2_time?: number;
   l2_movement_variation?: string;
 
@@ -49,7 +54,9 @@ export interface WODMovementConfig {
   l1_reps?: number | string; // Can be number (e.g., 15) or rep scheme (e.g., "15-12-9-6-3")
   l1_weight_men_lbs?: number;
   l1_weight_women_lbs?: number;
-  l1_distance?: number;
+  l1_distance?: number; // DEPRECATED: Use l1_distance_value and l1_distance_unit
+  l1_distance_value?: number;
+  l1_distance_unit?: string;
   l1_time?: number;
   l1_movement_variation?: string;
 

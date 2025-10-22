@@ -109,9 +109,18 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
     let variationText = '';
 
     if (level === 'Rx') {
-      // Build main text (rep scheme + weight on one line)
+      // Build main text (rep scheme + weight/distance on one line)
       const parts: string[] = [];
-      if (repScheme) parts.push(repScheme);
+
+      // Distance takes precedence over reps for distance movements
+      if (movement.rx_distance_value) {
+        const unit = movement.rx_distance_unit === 'meters' ? 'm' :
+                     movement.rx_distance_unit === 'feet' ? 'ft' :
+                     movement.rx_distance_unit === 'miles' ? 'mi' : 'km';
+        parts.push(`Distance: ${movement.rx_distance_value}${unit}`);
+      } else if (repScheme) {
+        parts.push(repScheme);
+      }
 
       // Show weight if configured
       if (movement.rx_weight_men_lbs && movement.rx_weight_women_lbs) {
@@ -127,7 +136,14 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
     } else if (level === 'L2') {
       // Build main text
       const parts: string[] = [];
-      if (movement.l2_reps) {
+
+      // Distance takes precedence over reps for distance movements
+      if (movement.l2_distance_value) {
+        const unit = movement.l2_distance_unit === 'meters' ? 'm' :
+                     movement.l2_distance_unit === 'feet' ? 'ft' :
+                     movement.l2_distance_unit === 'miles' ? 'mi' : 'km';
+        parts.push(`Distance: ${movement.l2_distance_value}${unit}`);
+      } else if (movement.l2_reps) {
         // Check if it's a rep scheme pattern (contains dashes) or a number
         const isRepScheme = typeof movement.l2_reps === 'string' && movement.l2_reps.includes('-');
         parts.push(isRepScheme ? movement.l2_reps : `${movement.l2_reps} reps`);
@@ -149,7 +165,14 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
     } else {
       // L1
       const parts: string[] = [];
-      if (movement.l1_reps) {
+
+      // Distance takes precedence over reps for distance movements
+      if (movement.l1_distance_value) {
+        const unit = movement.l1_distance_unit === 'meters' ? 'm' :
+                     movement.l1_distance_unit === 'feet' ? 'ft' :
+                     movement.l1_distance_unit === 'miles' ? 'mi' : 'km';
+        parts.push(`Distance: ${movement.l1_distance_value}${unit}`);
+      } else if (movement.l1_reps) {
         // Check if it's a rep scheme pattern (contains dashes) or a number
         const isRepScheme = typeof movement.l1_reps === 'string' && movement.l1_reps.includes('-');
         parts.push(isRepScheme ? movement.l1_reps : `${movement.l1_reps} reps`);
