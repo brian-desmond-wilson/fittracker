@@ -453,7 +453,7 @@ export async function fetchWODs(categoryId?: string): Promise<WODWithDetails[]> 
       scaling_levels:wod_scaling_levels(*),
       movements:wod_movements(
         *,
-        exercise:exercises(*)
+        exercise:exercises!wod_movements_exercise_id_fkey(*)
       )
     `)
     .order('name');
@@ -485,7 +485,7 @@ export async function searchWODs(query: string): Promise<WODWithDetails[]> {
       scaling_levels:wod_scaling_levels(*),
       movements:wod_movements(
         *,
-        exercise:exercises(*)
+        exercise:exercises!wod_movements_exercise_id_fkey(*)
       )
     `)
     .ilike('name', `%${query}%`)
@@ -513,7 +513,7 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
       scaling_levels:wod_scaling_levels(*),
       movements:wod_movements(
         *,
-        exercise:exercises(*),
+        exercise:exercises!wod_movements_exercise_id_fkey(*),
         standards:movement_standards(*)
       )
     `)
@@ -763,7 +763,7 @@ export async function fetchClassById(classId: string): Promise<ClassWithDetails 
           category:wod_categories(*),
           movements:wod_movements(
             *,
-            exercise:exercises(*)
+            exercise:exercises!wod_movements_exercise_id_fkey(*)
           )
         )
       )
