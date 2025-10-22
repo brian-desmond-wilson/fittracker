@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import type { WODMovementConfig } from './AddWODWizard';
 interface MovementConfigModalProps {
   visible: boolean;
   movement: ExerciseWithVariations | null;
+  wodRepScheme?: string; // WOD-level rep scheme (e.g., "21-15-9")
   existingConfig?: WODMovementConfig;
   onClose: () => void;
   onSave: (config: Omit<WODMovementConfig, 'movement_order'>) => void;
@@ -27,65 +28,130 @@ type ScalingLevel = 'Rx' | 'L2' | 'L1';
 export function MovementConfigModal({
   visible,
   movement,
+  wodRepScheme,
   existingConfig,
   onClose,
   onSave
 }: MovementConfigModalProps) {
   const [activeLevel, setActiveLevel] = useState<ScalingLevel>('Rx');
 
-  // Rx scaling (required)
+  // Rep scheme override state
+  const [followsWodScheme, setFollowsWodScheme] = useState(existingConfig?.follows_wod_scheme ?? true);
+  const [customRepScheme, setCustomRepScheme] = useState(existingConfig?.custom_rep_scheme || '');
+
+  // Rx scaling - Gender split for weights
   const [rxReps, setRxReps] = useState(existingConfig?.rx_reps?.toString() || '');
-  const [rxWeight, setRxWeight] = useState(existingConfig?.rx_weight_lbs?.toString() || '');
+  const [rxWeightMen, setRxWeightMen] = useState(existingConfig?.rx_weight_men_lbs?.toString() || '');
+  const [rxWeightWomen, setRxWeightWomen] = useState(existingConfig?.rx_weight_women_lbs?.toString() || '');
   const [rxDistance, setRxDistance] = useState(existingConfig?.rx_distance?.toString() || '');
   const [rxTime, setRxTime] = useState(existingConfig?.rx_time?.toString() || '');
   const [rxVariation, setRxVariation] = useState(existingConfig?.rx_movement_variation || '');
 
-  // L2 scaling (optional)
+  // L2 scaling - Gender split for weights
   const [l2Reps, setL2Reps] = useState(existingConfig?.l2_reps?.toString() || '');
-  const [l2Weight, setL2Weight] = useState(existingConfig?.l2_weight_lbs?.toString() || '');
+  const [l2WeightMen, setL2WeightMen] = useState(existingConfig?.l2_weight_men_lbs?.toString() || '');
+  const [l2WeightWomen, setL2WeightWomen] = useState(existingConfig?.l2_weight_women_lbs?.toString() || '');
   const [l2Distance, setL2Distance] = useState(existingConfig?.l2_distance?.toString() || '');
   const [l2Time, setL2Time] = useState(existingConfig?.l2_time?.toString() || '');
   const [l2Variation, setL2Variation] = useState(existingConfig?.l2_movement_variation || '');
 
-  // L1 scaling (optional)
+  // L1 scaling - Gender split for weights
   const [l1Reps, setL1Reps] = useState(existingConfig?.l1_reps?.toString() || '');
-  const [l1Weight, setL1Weight] = useState(existingConfig?.l1_weight_lbs?.toString() || '');
+  const [l1WeightMen, setL1WeightMen] = useState(existingConfig?.l1_weight_men_lbs?.toString() || '');
+  const [l1WeightWomen, setL1WeightWomen] = useState(existingConfig?.l1_weight_women_lbs?.toString() || '');
   const [l1Distance, setL1Distance] = useState(existingConfig?.l1_distance?.toString() || '');
   const [l1Time, setL1Time] = useState(existingConfig?.l1_time?.toString() || '');
   const [l1Variation, setL1Variation] = useState(existingConfig?.l1_movement_variation || '');
 
   const [notes, setNotes] = useState(existingConfig?.notes || '');
 
+  // Reset state when modal opens or when existingConfig changes
+  useEffect(() => {
+    if (visible) {
+      setActiveLevel('Rx');
+      setFollowsWodScheme(existingConfig?.follows_wod_scheme ?? true);
+      setCustomRepScheme(existingConfig?.custom_rep_scheme || '');
+
+      // Rx
+      setRxReps(existingConfig?.rx_reps?.toString() || '');
+      setRxWeightMen(existingConfig?.rx_weight_men_lbs?.toString() || '');
+      setRxWeightWomen(existingConfig?.rx_weight_women_lbs?.toString() || '');
+      setRxDistance(existingConfig?.rx_distance?.toString() || '');
+      setRxTime(existingConfig?.rx_time?.toString() || '');
+      setRxVariation(existingConfig?.rx_movement_variation || '');
+
+      // L2
+      setL2Reps(existingConfig?.l2_reps?.toString() || '');
+      setL2WeightMen(existingConfig?.l2_weight_men_lbs?.toString() || '');
+      setL2WeightWomen(existingConfig?.l2_weight_women_lbs?.toString() || '');
+      setL2Distance(existingConfig?.l2_distance?.toString() || '');
+      setL2Time(existingConfig?.l2_time?.toString() || '');
+      setL2Variation(existingConfig?.l2_movement_variation || '');
+
+      // L1
+      setL1Reps(existingConfig?.l1_reps?.toString() || '');
+      setL1WeightMen(existingConfig?.l1_weight_men_lbs?.toString() || '');
+      setL1WeightWomen(existingConfig?.l1_weight_women_lbs?.toString() || '');
+      setL1Distance(existingConfig?.l1_distance?.toString() || '');
+      setL1Time(existingConfig?.l1_time?.toString() || '');
+      setL1Variation(existingConfig?.l1_movement_variation || '');
+
+      setNotes(existingConfig?.notes || '');
+    }
+  }, [visible, existingConfig]);
+
   if (!movement) return null;
 
   const handleSave = () => {
-    // Validate at least Rx has some configuration
-    if (!rxReps && !rxWeight && !rxDistance && !rxTime) {
-      Alert.alert('Validation Error', 'Please configure at least one field for Rx scaling');
-      return;
+    const isBodyweight = !movement?.requires_weight;
+
+    // Validate based on movement type
+    if (isBodyweight) {
+      // For bodyweight movements, allow empty Rx if following WOD scheme
+      if (!followsWodScheme && !customRepScheme?.trim()) {
+        Alert.alert('Validation Error', 'Please enter a custom rep scheme or use WOD scheme');
+        return;
+      }
+    } else {
+      // For weighted movements, require at least one Rx field
+      if (!rxReps && !rxWeightMen && !rxWeightWomen && !rxDistance && !rxTime) {
+        Alert.alert('Validation Error', 'Please configure at least one field for Rx scaling');
+        return;
+      }
     }
 
     const config: Omit<WODMovementConfig, 'movement_order'> = {
       exercise_id: movement.id,
       exercise_name: movement.full_name || movement.name,
 
-      // Rx
+      // Equipment metadata (for edit modal)
+      requires_weight: movement.requires_weight,
+      equipment_types: movement.equipment_types,
+
+      // Rep scheme override
+      follows_wod_scheme: followsWodScheme,
+      custom_rep_scheme: !followsWodScheme && customRepScheme ? customRepScheme : undefined,
+
+      // Rx - Gender split for weights
       rx_reps: rxReps ? parseInt(rxReps) : undefined,
-      rx_weight_lbs: rxWeight ? parseFloat(rxWeight) : undefined,
+      rx_weight_men_lbs: rxWeightMen ? parseFloat(rxWeightMen) : undefined,
+      rx_weight_women_lbs: rxWeightWomen ? parseFloat(rxWeightWomen) : undefined,
       rx_distance: rxDistance ? parseFloat(rxDistance) : undefined,
       rx_time: rxTime ? parseInt(rxTime) : undefined,
       rx_movement_variation: rxVariation || undefined,
 
-      // L2
-      l2_reps: l2Reps ? parseInt(l2Reps) : undefined,
-      l2_weight_lbs: l2Weight ? parseFloat(l2Weight) : undefined,
+      // L2 - Gender split for weights
+      l2_reps: l2Reps ? (l2Reps.includes('-') ? l2Reps : parseInt(l2Reps)) : undefined,
+      l2_weight_men_lbs: l2WeightMen ? parseFloat(l2WeightMen) : undefined,
+      l2_weight_women_lbs: l2WeightWomen ? parseFloat(l2WeightWomen) : undefined,
       l2_distance: l2Distance ? parseFloat(l2Distance) : undefined,
       l2_time: l2Time ? parseInt(l2Time) : undefined,
       l2_movement_variation: l2Variation || undefined,
 
-      // L1
-      l1_reps: l1Reps ? parseInt(l1Reps) : undefined,
-      l1_weight_lbs: l1Weight ? parseFloat(l1Weight) : undefined,
+      // L1 - Gender split for weights
+      l1_reps: l1Reps ? (l1Reps.includes('-') ? l1Reps : parseInt(l1Reps)) : undefined,
+      l1_weight_men_lbs: l1WeightMen ? parseFloat(l1WeightMen) : undefined,
+      l1_weight_women_lbs: l1WeightWomen ? parseFloat(l1WeightWomen) : undefined,
       l1_distance: l1Distance ? parseFloat(l1Distance) : undefined,
       l1_time: l1Time ? parseInt(l1Time) : undefined,
       l1_movement_variation: l1Variation || undefined,
@@ -101,12 +167,103 @@ export function MovementConfigModal({
     const isRx = level === 'Rx';
     const isL2 = level === 'L2';
     const isL1 = level === 'L1';
+    const isBodyweight = !movement?.requires_weight;
 
+    // For bodyweight movements on Rx/L2 tabs, show simplified UI
+    if (isBodyweight && (isRx || isL2)) {
+      return (
+        <View style={styles.bodyweightMessage}>
+          <View style={styles.infoBox}>
+            <Text style={styles.infoIcon}>ℹ️</Text>
+            <View style={styles.infoTextContainer}>
+              <Text style={styles.infoTitle}>No configuration needed</Text>
+              <Text style={styles.infoText}>
+                This is a bodyweight movement.
+              </Text>
+            </View>
+          </View>
+
+          {wodRepScheme && (
+            <View style={styles.schemeInfo}>
+              <Text style={styles.schemeLabel}>WOD Rep Scheme:</Text>
+              <Text style={styles.schemeValue}>{wodRepScheme}</Text>
+            </View>
+          )}
+
+          <View style={styles.checkboxContainer}>
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => setFollowsWodScheme(!followsWodScheme)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkboxBox, !followsWodScheme && styles.checkboxBoxChecked]}>
+                {!followsWodScheme && <Text style={styles.checkboxCheck}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>Override rep scheme</Text>
+            </TouchableOpacity>
+          </View>
+
+          {!followsWodScheme && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Custom Rep Scheme *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 10-10-10 or 15"
+                placeholderTextColor={colors.mutedForeground}
+                value={customRepScheme}
+                onChangeText={setCustomRepScheme}
+              />
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    // For L1 bodyweight, show only relevant fields
+    if (isBodyweight && isL1) {
+      return (
+        <View style={styles.scalingForm}>
+          {/* Reps (optional for L1 scaling) */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Reps (Optional - if different from WOD)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., 15 (reduced from 21)"
+              placeholderTextColor={colors.mutedForeground}
+              value={l1Reps}
+              onChangeText={setL1Reps}
+              keyboardType="number-pad"
+            />
+          </View>
+
+          {/* Movement Variation (for alternative movements) */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Movement Variation (For Scaling)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., Hanging Knee Raises, Banded, Knees-to-Elbows"
+              placeholderTextColor={colors.mutedForeground}
+              value={l1Variation}
+              onChangeText={setL1Variation}
+              autoCapitalize="words"
+            />
+            <Text style={styles.helperText}>
+              Specify alternative movement, assistance equipment, or modified ROM
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    // For weighted movements, show full form
     const reps = isRx ? rxReps : isL2 ? l2Reps : l1Reps;
     const setReps = isRx ? setRxReps : isL2 ? setL2Reps : setL1Reps;
 
-    const weight = isRx ? rxWeight : isL2 ? l2Weight : l1Weight;
-    const setWeight = isRx ? setRxWeight : isL2 ? setL2Weight : setL1Weight;
+    const weightMen = isRx ? rxWeightMen : isL2 ? l2WeightMen : l1WeightMen;
+    const setWeightMen = isRx ? setRxWeightMen : isL2 ? setL2WeightMen : setL1WeightMen;
+
+    const weightWomen = isRx ? rxWeightWomen : isL2 ? l2WeightWomen : l1WeightWomen;
+    const setWeightWomen = isRx ? setRxWeightWomen : isL2 ? setL2WeightWomen : setL1WeightWomen;
 
     const distance = isRx ? rxDistance : isL2 ? l2Distance : l1Distance;
     const setDistance = isRx ? setRxDistance : isL2 ? setL2Distance : setL1Distance;
@@ -132,17 +289,33 @@ export function MovementConfigModal({
           />
         </View>
 
-        {/* Weight */}
+        {/* Weight - Men/Women Split */}
         <View style={styles.field}>
           <Text style={styles.label}>Weight (lbs)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., 95"
-            placeholderTextColor={colors.mutedForeground}
-            value={weight}
-            onChangeText={setWeight}
-            keyboardType="decimal-pad"
-          />
+          <View style={styles.weightRow}>
+            <View style={styles.weightField}>
+              <Text style={styles.weightLabel}>Men</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 95"
+                placeholderTextColor={colors.mutedForeground}
+                value={weightMen}
+                onChangeText={setWeightMen}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={styles.weightField}>
+              <Text style={styles.weightLabel}>Women</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 65"
+                placeholderTextColor={colors.mutedForeground}
+                value={weightWomen}
+                onChangeText={setWeightWomen}
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
         </View>
 
         {/* Distance */}
@@ -359,6 +532,96 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 80,
   },
+  weightRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  weightField: {
+    flex: 1,
+  },
+  weightLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+    marginBottom: 6,
+  },
+  bodyweightMessage: {
+    padding: 20,
+    gap: 20,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 16,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  infoIcon: {
+    fontSize: 20,
+  },
+  infoTextContainer: {
+    flex: 1,
+  },
+  infoTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.foreground,
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    lineHeight: 20,
+  },
+  schemeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  schemeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  schemeValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  checkboxContainer: {
+    marginTop: 8,
+  },
+  checkbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxBoxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkboxCheck: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: colors.foreground,
+    flex: 1,
+  },
   footer: {
     flexDirection: 'row',
     gap: 12,
@@ -387,5 +650,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  helperText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    marginTop: 4,
+    lineHeight: 16,
   },
 });

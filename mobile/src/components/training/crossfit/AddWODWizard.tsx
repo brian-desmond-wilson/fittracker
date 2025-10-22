@@ -14,43 +14,58 @@ interface AddWODWizardProps {
   onSave: () => void;
 }
 
+export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom';
+
 export interface WODMovementConfig {
   exercise_id: string;
   exercise_name: string;
   movement_order: number;
 
-  // Rx scaling (required)
+  // Equipment metadata (needed for edit modal)
+  requires_weight?: boolean;
+  equipment_types?: string[];
+
+  // Rep scheme override
+  custom_rep_scheme?: string;
+  follows_wod_scheme: boolean;
+
+  // Rx scaling - Gender split for weights
   rx_reps?: number;
-  rx_weight_lbs?: number;
+  rx_weight_men_lbs?: number;
+  rx_weight_women_lbs?: number;
   rx_distance?: number;
   rx_time?: number;
   rx_movement_variation?: string;
 
-  // L2 scaling (optional)
-  l2_reps?: number;
-  l2_weight_lbs?: number;
+  // L2 scaling - Gender split for weights
+  l2_reps?: number | string; // Can be number (e.g., 15) or rep scheme (e.g., "15-12-9")
+  l2_weight_men_lbs?: number;
+  l2_weight_women_lbs?: number;
   l2_distance?: number;
   l2_time?: number;
   l2_movement_variation?: string;
 
-  // L1 scaling (optional)
-  l1_reps?: number;
-  l1_weight_lbs?: number;
+  // L1 scaling - Gender split for weights
+  l1_reps?: number | string; // Can be number (e.g., 15) or rep scheme (e.g., "15-12-9-6-3")
+  l1_weight_men_lbs?: number;
+  l1_weight_women_lbs?: number;
   l1_distance?: number;
   l1_time?: number;
   l1_movement_variation?: string;
 
-  // Special configs
-  round_pattern?: string; // "21-15-9"
-  emom_minute?: number;
   notes?: string;
 }
 
 export interface WODFormData {
   // Step 1: Basics
   name: string;
+  category_id: string;  // Moved before format
   format_id: string;
-  category_id: string;
+
+  // For Time specific fields
+  rep_scheme_type?: RepSchemeType;
+  rep_scheme?: string;  // e.g., "21-18-15-12-9-6-3" or "3"
+
   time_cap_minutes?: number;
   description?: string;
   notes?: string;
@@ -95,13 +110,42 @@ export function AddWODWizard({ onClose, onSave }: AddWODWizardProps) {
         Alert.alert('Validation Error', 'WOD name is required');
         return;
       }
+      if (!formData.category_id) {
+        Alert.alert('Validation Error', 'Please select a category');
+        return;
+      }
       if (!formData.format_id) {
         Alert.alert('Validation Error', 'Please select a format');
         return;
       }
-      if (!formData.category_id) {
-        Alert.alert('Validation Error', 'Please select a category');
-        return;
+
+      // Validate For Time specific fields
+      const selectedFormat = formats.find(f => f.id === formData.format_id);
+      if (selectedFormat?.name === 'For Time') {
+        if (!formData.rep_scheme_type) {
+          Alert.alert('Validation Error', 'Please select a rep scheme type for For Time WODs');
+          return;
+        }
+        if (!formData.rep_scheme?.trim()) {
+          Alert.alert('Validation Error', 'Please enter a rep scheme');
+          return;
+        }
+
+        // Validate rep scheme format based on type
+        if (formData.rep_scheme_type === 'descending' || formData.rep_scheme_type === 'ascending') {
+          // Should match pattern like "21-15-9" or "1-2-3-4-5"
+          const repSchemePattern = /^\d+(-\d+)*$/;
+          if (!repSchemePattern.test(formData.rep_scheme)) {
+            Alert.alert('Validation Error', 'Rep scheme must be numbers separated by dashes (e.g., "21-15-9")');
+            return;
+          }
+        } else if (formData.rep_scheme_type === 'fixed_rounds') {
+          // Should be a single number
+          if (!/^\d+$/.test(formData.rep_scheme)) {
+            Alert.alert('Validation Error', 'Please enter a valid number of rounds (e.g., "3")');
+            return;
+          }
+        }
       }
     }
 

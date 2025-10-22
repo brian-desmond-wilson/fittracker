@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { colors } from '@/src/lib/colors';
-import { WODFormData } from './AddWODWizard';
+import { WODFormData, RepSchemeType } from './AddWODWizard';
 import { fetchWODFormats, fetchWODCategories } from '@/src/lib/supabase/crossfit';
 import type { WODFormat, WODCategory } from '@/src/types/crossfit';
 
@@ -19,6 +19,15 @@ interface WODBasicsStepProps {
   onUpdate: (updates: Partial<WODFormData>) => void;
   onNext: () => void;
 }
+
+// Common rep schemes for quick selection
+const COMMON_REP_SCHEMES: Record<string, string> = {
+  '21-15-9': 'Descending (21-15-9)',
+  '21-18-15-12-9-6-3': 'Descending (21-18-15-12-9-6-3)',
+  '5': '5 Rounds',
+  '3': '3 Rounds',
+  '1-2-3-4-5': 'Ascending Ladder',
+};
 
 export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps) {
   const [formats, setFormats] = useState<WODFormat[]>([]);
@@ -55,6 +64,22 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
     );
   }
 
+  const selectedFormat = formats.find(f => f.id === formData.format_id);
+  const isForTime = selectedFormat?.name === 'For Time';
+
+  const handleFormatChange = (format_id: string) => {
+    const format = formats.find(f => f.id === format_id);
+    const updates: Partial<WODFormData> = { format_id };
+
+    // Clear For Time fields if switching away from For Time
+    if (format?.name !== 'For Time') {
+      updates.rep_scheme_type = undefined;
+      updates.rep_scheme = undefined;
+    }
+
+    onUpdate(updates);
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -75,29 +100,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
           />
         </View>
 
-        {/* Format */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Format *</Text>
-          <View style={styles.pillsContainer}>
-            {formats.map((format) => {
-              const isSelected = formData.format_id === format.id;
-              return (
-                <TouchableOpacity
-                  key={format.id}
-                  style={[styles.pill, isSelected && styles.pillSelected]}
-                  onPress={() => onUpdate({ format_id: format.id })}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                    {format.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Category */}
+        {/* Category - MOVED BEFORE FORMAT */}
         <View style={styles.field}>
           <Text style={styles.label}>Category *</Text>
           <View style={styles.pillsContainer}>
@@ -119,6 +122,122 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
           </View>
         </View>
 
+        {/* Format */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Format *</Text>
+          <View style={styles.pillsContainer}>
+            {formats.map((format) => {
+              const isSelected = formData.format_id === format.id;
+              return (
+                <TouchableOpacity
+                  key={format.id}
+                  style={[styles.pill, isSelected && styles.pillSelected]}
+                  onPress={() => handleFormatChange(format.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                    {format.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* FOR TIME SPECIFIC FIELDS */}
+        {isForTime && (
+          <>
+            {/* Rep Scheme Type */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Rep Scheme Type *</Text>
+              <View style={styles.pillsContainer}>
+                {[
+                  { value: 'descending' as RepSchemeType, label: 'Descending' },
+                  { value: 'fixed_rounds' as RepSchemeType, label: 'Fixed Rounds' },
+                  { value: 'chipper' as RepSchemeType, label: 'Chipper' },
+                  { value: 'ascending' as RepSchemeType, label: 'Ascending' },
+                  { value: 'distance' as RepSchemeType, label: 'Distance' },
+                  { value: 'custom' as RepSchemeType, label: 'Custom' },
+                ].map((type) => {
+                  const isSelected = formData.rep_scheme_type === type.value;
+                  return (
+                    <TouchableOpacity
+                      key={type.value}
+                      style={[styles.pill, isSelected && styles.pillSelected]}
+                      onPress={() => onUpdate({ rep_scheme_type: type.value })}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                        {type.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Rep Scheme Input - Conditional based on type */}
+            {formData.rep_scheme_type && (
+              <View style={styles.field}>
+                <Text style={styles.label}>
+                  {formData.rep_scheme_type === 'descending' && 'Rep Scheme (e.g., 21-15-9) *'}
+                  {formData.rep_scheme_type === 'fixed_rounds' && 'Number of Rounds (e.g., 3) *'}
+                  {formData.rep_scheme_type === 'ascending' && 'Rep Scheme (e.g., 1-2-3-4-5) *'}
+                  {formData.rep_scheme_type === 'distance' && 'Distance (e.g., 2000m Row) *'}
+                  {formData.rep_scheme_type === 'chipper' && 'Rep Scheme *'}
+                  {formData.rep_scheme_type === 'custom' && 'Custom Rep Scheme *'}
+                </Text>
+
+                {/* Show quick select buttons for common schemes */}
+                {(formData.rep_scheme_type === 'descending' || formData.rep_scheme_type === 'fixed_rounds' || formData.rep_scheme_type === 'ascending') && (
+                  <View style={styles.quickSelectContainer}>
+                    <Text style={styles.quickSelectLabel}>Quick select:</Text>
+                    <View style={styles.pillsContainer}>
+                      {Object.entries(COMMON_REP_SCHEMES).map(([value, label]) => {
+                        const isSelected = formData.rep_scheme === value;
+                        return (
+                          <TouchableOpacity
+                            key={value}
+                            style={[styles.quickPill, isSelected && styles.quickPillSelected]}
+                            onPress={() => onUpdate({ rep_scheme: value })}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.quickPillText, isSelected && styles.quickPillTextSelected]}>
+                              {label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                <TextInput
+                  style={styles.input}
+                  placeholder={
+                    formData.rep_scheme_type === 'descending' ? '21-15-9' :
+                    formData.rep_scheme_type === 'fixed_rounds' ? '3' :
+                    formData.rep_scheme_type === 'ascending' ? '1-2-3-4-5' :
+                    formData.rep_scheme_type === 'distance' ? '2000' :
+                    formData.rep_scheme_type === 'chipper' ? 'Single pass through movements' :
+                    'Custom scheme'
+                  }
+                  placeholderTextColor={colors.mutedForeground}
+                  value={formData.rep_scheme || ''}
+                  onChangeText={(text) => onUpdate({ rep_scheme: text })}
+                  keyboardType={formData.rep_scheme_type === 'fixed_rounds' || formData.rep_scheme_type === 'distance' ? 'number-pad' : 'default'}
+                />
+
+                {formData.rep_scheme_type === 'chipper' && (
+                  <Text style={styles.helperText}>
+                    For chippers, describe the scheme (e.g., "Single pass" or "50-40-30-20-10")
+                  </Text>
+                )}
+              </View>
+            )}
+          </>
+        )}
+
         {/* Time Cap */}
         <View style={styles.field}>
           <Text style={styles.label}>Time Cap (Optional)</Text>
@@ -136,21 +255,6 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
             />
             <Text style={styles.unitText}>minutes</Text>
           </View>
-        </View>
-
-        {/* Description */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Description (Optional)</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Brief description of the WOD..."
-            placeholderTextColor={colors.mutedForeground}
-            value={formData.description}
-            onChangeText={(text) => onUpdate({ description: text })}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
         </View>
 
         {/* Notes */}
@@ -259,6 +363,41 @@ const styles = StyleSheet.create({
   unitText: {
     fontSize: 16,
     color: colors.mutedForeground,
+  },
+  quickSelectContainer: {
+    marginBottom: 12,
+  },
+  quickSelectLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+    marginBottom: 6,
+  },
+  quickPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickPillSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  quickPillText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.foreground,
+  },
+  quickPillTextSelected: {
+    color: '#FFFFFF',
+  },
+  helperText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    marginTop: 6,
+    fontStyle: 'italic',
   },
   footer: {
     padding: 20,

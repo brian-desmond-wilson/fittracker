@@ -28,6 +28,8 @@ export type MovementCategoryName = 'Weightlifting' | 'Gymnastics' | 'Monostructu
 
 export type ScoringTypeName = 'Reps' | 'Rounds' | 'Weight' | 'Time' | 'Distance' | 'Calories' | 'Height' | 'None';
 
+export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom';
+
 // ============================================================================
 // DATABASE TABLE TYPES
 // ============================================================================
@@ -77,10 +79,14 @@ export interface Exercise {
   goal_type_id: string | null;
   movement_category_id: string | null;
 
+  // Equipment metadata
+  requires_weight: boolean;
+  equipment_types: string[] | null;
+
   // Categorization
   category: string | null;
   muscle_groups: string[] | null;
-  equipment: string[] | null;
+  equipment: string[] | null; // DEPRECATED: Use equipment_types
 
   // Media
   demo_video_url: string | null;
@@ -152,6 +158,10 @@ export interface WOD {
   category_id: string;
   time_cap_minutes: number | null;
 
+  // For Time specific fields
+  rep_scheme_type: RepSchemeType | null;
+  rep_scheme: string | null;
+
   // Score types (can have multiple)
   score_type_time: boolean;
   score_type_rounds: boolean;
@@ -178,21 +188,29 @@ export interface WODMovement {
   exercise_id: string;
   movement_order: number;
 
-  // Scaling options per movement
+  // Rx scaling - Gender split for weights
   rx_reps: number | null;
-  rx_weight_lbs: number | null;
+  rx_weight_lbs: number | null; // DEPRECATED: Use gender-specific fields
+  rx_weight_men_lbs: number | null;
+  rx_weight_women_lbs: number | null;
   rx_distance: number | null;
   rx_time: number | null;
   rx_movement_variation: string | null;
 
+  // L2 scaling - Gender split for weights
   l2_reps: number | null;
-  l2_weight_lbs: number | null;
+  l2_weight_lbs: number | null; // DEPRECATED: Use gender-specific fields
+  l2_weight_men_lbs: number | null;
+  l2_weight_women_lbs: number | null;
   l2_distance: number | null;
   l2_time: number | null;
   l2_movement_variation: string | null;
 
+  // L1 scaling - Gender split for weights
   l1_reps: number | null;
-  l1_weight_lbs: number | null;
+  l1_weight_lbs: number | null; // DEPRECATED: Use gender-specific fields
+  l1_weight_men_lbs: number | null;
+  l1_weight_women_lbs: number | null;
   l1_distance: number | null;
   l1_time: number | null;
   l1_movement_variation: string | null;
@@ -289,6 +307,11 @@ export interface CreateWODInput {
   description?: string;
   format_id: string;
   category_id: string;
+
+  // For Time specific fields
+  rep_scheme_type?: RepSchemeType;
+  rep_scheme?: string;
+
   time_cap_minutes?: number;
   score_type_time?: boolean;
   score_type_rounds?: boolean;
@@ -304,21 +327,31 @@ export interface CreateWODInput {
 export interface CreateWODMovementInput {
   exercise_id: string;
   movement_order: number;
+
+  // Rx scaling - Gender split for weights
   rx_reps?: number;
-  rx_weight_lbs?: number;
+  rx_weight_men_lbs?: number;
+  rx_weight_women_lbs?: number;
   rx_distance?: number;
   rx_time?: number;
   rx_movement_variation?: string;
+
+  // L2 scaling - Gender split for weights
   l2_reps?: number;
-  l2_weight_lbs?: number;
+  l2_weight_men_lbs?: number;
+  l2_weight_women_lbs?: number;
   l2_distance?: number;
   l2_time?: number;
   l2_movement_variation?: string;
+
+  // L1 scaling - Gender split for weights
   l1_reps?: number;
-  l1_weight_lbs?: number;
+  l1_weight_men_lbs?: number;
+  l1_weight_women_lbs?: number;
   l1_distance?: number;
   l1_time?: number;
   l1_movement_variation?: string;
+
   notes?: string;
 }
 

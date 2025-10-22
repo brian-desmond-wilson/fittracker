@@ -72,6 +72,9 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
       common_mistakes: null,
       is_official: false,
       created_by: null,
+      // Equipment metadata from saved config
+      requires_weight: movement.requires_weight ?? false,
+      equipment_types: movement.equipment_types ?? null,
     };
     setSelectedMovement(mockMovement);
     setEditingIndex(index);
@@ -101,13 +104,82 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
     onUpdate({ movements: renumbered });
   };
 
-  const getMovementSummary = (movement: WODMovementConfig) => {
-    const parts: string[] = [];
-    if (movement.rx_reps) parts.push(`${movement.rx_reps} reps`);
-    if (movement.rx_weight_lbs) parts.push(`@ ${movement.rx_weight_lbs}lbs`);
-    if (movement.rx_distance) parts.push(`${movement.rx_distance}m`);
-    if (movement.rx_time) parts.push(`${movement.rx_time}s`);
-    return parts.join(' ');
+  const getRepScheme = (movement: WODMovementConfig) => {
+    // Use custom rep scheme if specified, otherwise use WOD-level scheme
+    if (!movement.follows_wod_scheme && movement.custom_rep_scheme) {
+      return movement.custom_rep_scheme;
+    }
+    return formData.rep_scheme || '';
+  };
+
+  const getScalingSummary = (movement: WODMovementConfig, level: 'Rx' | 'L2' | 'L1') => {
+    const repScheme = getRepScheme(movement);
+    let mainText = '';
+    let variationText = '';
+
+    if (level === 'Rx') {
+      // Build main text (rep scheme + weight on one line)
+      const parts: string[] = [];
+      if (repScheme) parts.push(repScheme);
+
+      // Show weight if configured
+      if (movement.rx_weight_men_lbs && movement.rx_weight_women_lbs) {
+        parts.push(`@ ${movement.rx_weight_men_lbs}/${movement.rx_weight_women_lbs} lbs`);
+      } else if (movement.rx_weight_men_lbs) {
+        parts.push(`@ ${movement.rx_weight_men_lbs} lbs (M)`);
+      } else if (movement.rx_weight_women_lbs) {
+        parts.push(`@ ${movement.rx_weight_women_lbs} lbs (W)`);
+      }
+
+      mainText = parts.join(' ');
+      variationText = movement.rx_movement_variation || '';
+    } else if (level === 'L2') {
+      // Build main text
+      const parts: string[] = [];
+      if (movement.l2_reps) {
+        // Check if it's a rep scheme pattern (contains dashes) or a number
+        const isRepScheme = typeof movement.l2_reps === 'string' && movement.l2_reps.includes('-');
+        parts.push(isRepScheme ? movement.l2_reps : `${movement.l2_reps} reps`);
+      } else if (repScheme) {
+        parts.push(repScheme);
+      }
+
+      // Show weight if configured
+      if (movement.l2_weight_men_lbs && movement.l2_weight_women_lbs) {
+        parts.push(`@ ${movement.l2_weight_men_lbs}/${movement.l2_weight_women_lbs} lbs`);
+      } else if (movement.l2_weight_men_lbs) {
+        parts.push(`@ ${movement.l2_weight_men_lbs} lbs (M)`);
+      } else if (movement.l2_weight_women_lbs) {
+        parts.push(`@ ${movement.l2_weight_women_lbs} lbs (W)`);
+      }
+
+      mainText = parts.join(' ');
+      variationText = movement.l2_movement_variation || '';
+    } else {
+      // L1
+      const parts: string[] = [];
+      if (movement.l1_reps) {
+        // Check if it's a rep scheme pattern (contains dashes) or a number
+        const isRepScheme = typeof movement.l1_reps === 'string' && movement.l1_reps.includes('-');
+        parts.push(isRepScheme ? movement.l1_reps : `${movement.l1_reps} reps`);
+      } else if (repScheme) {
+        parts.push(repScheme);
+      }
+
+      // Show weight if configured
+      if (movement.l1_weight_men_lbs && movement.l1_weight_women_lbs) {
+        parts.push(`@ ${movement.l1_weight_men_lbs}/${movement.l1_weight_women_lbs} lbs`);
+      } else if (movement.l1_weight_men_lbs) {
+        parts.push(`@ ${movement.l1_weight_men_lbs} lbs (M)`);
+      } else if (movement.l1_weight_women_lbs) {
+        parts.push(`@ ${movement.l1_weight_women_lbs} lbs (W)`);
+      }
+
+      mainText = parts.join(' ');
+      variationText = movement.l1_movement_variation || '';
+    }
+
+    return { mainText, variationText };
   };
 
   return (
@@ -121,37 +193,85 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
             </Text>
           </View>
         ) : (
-          formData.movements.map((movement, index) => (
-            <View key={index} style={styles.movementCard}>
-              <View style={styles.movementHeader}>
-                <View style={styles.dragHandle}>
-                  <TouchableOpacity onPress={() => handleMoveUp(index)} disabled={index === 0}>
-                    <Text style={[styles.arrowButton, index === 0 && styles.arrowButtonDisabled]}>↑</Text>
-                  </TouchableOpacity>
-                  <GripVertical size={20} color={colors.mutedForeground} />
-                  <TouchableOpacity
-                    onPress={() => handleMoveDown(index)}
-                    disabled={index === formData.movements.length - 1}
-                  >
-                    <Text style={[styles.arrowButton, index === formData.movements.length - 1 && styles.arrowButtonDisabled]}>↓</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.movementInfo}>
-                  <Text style={styles.movementNumber}>#{index + 1}</Text>
-                  <Text style={styles.movementName}>{movement.exercise_name}</Text>
-                  <Text style={styles.movementSummary}>{getMovementSummary(movement)}</Text>
-                </View>
-                <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => handleEditMovement(index)} style={styles.actionButton}>
-                    <Edit2 size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeleteMovement(index)} style={styles.actionButton}>
-                    <Trash2 size={18} color="#EF4444" />
-                  </TouchableOpacity>
+          formData.movements.map((movement, index) => {
+            const rxSummary = getScalingSummary(movement, 'Rx');
+            const l2Summary = getScalingSummary(movement, 'L2');
+            const l1Summary = getScalingSummary(movement, 'L1');
+
+            return (
+              <View key={index} style={styles.movementCard}>
+                <View style={styles.movementHeader}>
+                  <View style={styles.dragHandle}>
+                    <TouchableOpacity onPress={() => handleMoveUp(index)} disabled={index === 0}>
+                      <Text style={[styles.arrowButton, index === 0 && styles.arrowButtonDisabled]}>↑</Text>
+                    </TouchableOpacity>
+                    <GripVertical size={20} color={colors.mutedForeground} />
+                    <TouchableOpacity
+                      onPress={() => handleMoveDown(index)}
+                      disabled={index === formData.movements.length - 1}
+                    >
+                      <Text style={[styles.arrowButton, index === formData.movements.length - 1 && styles.arrowButtonDisabled]}>↓</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.movementInfo}>
+                    <View style={styles.movementTitleRow}>
+                      <View style={styles.titleLeft}>
+                        <Text style={styles.movementNumber}>#{index + 1}</Text>
+                        <Text style={styles.movementName}>{movement.exercise_name}</Text>
+                      </View>
+                      <View style={styles.actions}>
+                        <TouchableOpacity onPress={() => handleEditMovement(index)} style={styles.actionButton}>
+                          <Edit2 size={18} color={colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDeleteMovement(index)} style={styles.actionButton}>
+                          <Trash2 size={18} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Rx Scaling */}
+                    <View style={styles.scalingSection}>
+                      <View style={styles.scalingRow}>
+                        <Text style={styles.scalingLabel}>Rx:</Text>
+                        <Text style={styles.scalingText}>{rxSummary.mainText}</Text>
+                      </View>
+                      {rxSummary.variationText && (
+                        <View style={styles.variationRow}>
+                          <Text style={styles.variationText}>{rxSummary.variationText}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* L2 Scaling - always show */}
+                    <View style={styles.scalingSection}>
+                      <View style={styles.scalingRow}>
+                        <Text style={styles.scalingLabel}>L2:</Text>
+                        <Text style={styles.scalingText}>{l2Summary.mainText}</Text>
+                      </View>
+                      {l2Summary.variationText && (
+                        <View style={styles.variationRow}>
+                          <Text style={styles.variationText}>{l2Summary.variationText}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* L1 Scaling - always show */}
+                    <View style={styles.scalingSection}>
+                      <View style={styles.scalingRow}>
+                        <Text style={styles.scalingLabel}>L1:</Text>
+                        <Text style={styles.scalingText}>{l1Summary.mainText}</Text>
+                      </View>
+                      {l1Summary.variationText && (
+                        <View style={styles.variationRow}>
+                          <Text style={styles.variationText}>{l1Summary.variationText}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))
+            );
+          })
         )}
 
         {/* Add Movement Button */}
@@ -188,6 +308,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
       <MovementConfigModal
         visible={configModalVisible}
         movement={selectedMovement}
+        wodRepScheme={formData.rep_scheme} // Pass WOD-level rep scheme
         existingConfig={editingIndex !== null ? formData.movements[editingIndex] : undefined}
         onClose={() => {
           setConfigModalVisible(false);
@@ -236,7 +357,7 @@ const styles = StyleSheet.create({
   },
   movementHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   dragHandle: {
@@ -254,26 +375,66 @@ const styles = StyleSheet.create({
   },
   movementInfo: {
     flex: 1,
+    gap: 8,
+  },
+  movementTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  titleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
   },
   movementNumber: {
     fontSize: 12,
     fontWeight: '600',
     color: colors.mutedForeground,
-    marginBottom: 2,
   },
   movementName: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.foreground,
-    marginBottom: 4,
+    flex: 1,
   },
-  movementSummary: {
-    fontSize: 14,
+  scalingSection: {
+    gap: 4,
+  },
+  scalingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  scalingLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+    minWidth: 28,
+  },
+  scalingText: {
+    fontSize: 13,
+    color: colors.foreground,
+    flex: 1,
+    lineHeight: 18,
+  },
+  variationRow: {
+    flexDirection: 'row',
+    paddingLeft: 36,
+  },
+  variationText: {
+    fontSize: 13,
     color: colors.mutedForeground,
+    fontStyle: 'italic',
+    flex: 1,
+    lineHeight: 18,
   },
   actions: {
     flexDirection: 'row',
     gap: 8,
+    alignSelf: 'flex-start',
   },
   actionButton: {
     padding: 8,
