@@ -93,35 +93,88 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
     return types;
   };
 
-  // Get movements for selected scaling level
+  // Get rep scheme for movement (custom or WOD-level)
+  const getRepScheme = (movement: any) => {
+    if (!movement.follows_wod_scheme && movement.custom_rep_scheme) {
+      return movement.custom_rep_scheme;
+    }
+    return wod?.rep_scheme || '';
+  };
+
+  // Get movements for selected scaling level with formatted details
   const getScaledMovements = () => {
     if (!wod || !wod.movements) return [];
 
     return wod.movements.map((movement) => {
-      let reps, weight, variation;
+      const repScheme = getRepScheme(movement);
+      let repsDisplay = '';
+      let weightDisplay = '';
+      let variation = '';
 
       switch (selectedScaling) {
         case "Rx":
-          reps = movement.rx_reps;
-          weight = movement.rx_weight_lbs;
-          variation = movement.rx_movement_variation;
+          // Reps: use rep scheme
+          if (repScheme) repsDisplay = repScheme;
+
+          // Weight: gender-split format
+          if (movement.rx_weight_men_lbs && movement.rx_weight_women_lbs) {
+            weightDisplay = `${movement.rx_weight_men_lbs}/${movement.rx_weight_women_lbs} lbs`;
+          } else if (movement.rx_weight_men_lbs) {
+            weightDisplay = `${movement.rx_weight_men_lbs} lbs (M)`;
+          } else if (movement.rx_weight_women_lbs) {
+            weightDisplay = `${movement.rx_weight_women_lbs} lbs (W)`;
+          }
+
+          variation = movement.rx_movement_variation || '';
           break;
+
         case "L2":
-          reps = movement.l2_reps;
-          weight = movement.l2_weight_lbs;
-          variation = movement.l2_movement_variation;
+          // Reps: custom or rep scheme
+          if (movement.l2_reps) {
+            const isRepScheme = typeof movement.l2_reps === 'string' && movement.l2_reps.includes('-');
+            repsDisplay = isRepScheme ? movement.l2_reps : `${movement.l2_reps} reps`;
+          } else if (repScheme) {
+            repsDisplay = repScheme;
+          }
+
+          // Weight: gender-split format
+          if (movement.l2_weight_men_lbs && movement.l2_weight_women_lbs) {
+            weightDisplay = `${movement.l2_weight_men_lbs}/${movement.l2_weight_women_lbs} lbs`;
+          } else if (movement.l2_weight_men_lbs) {
+            weightDisplay = `${movement.l2_weight_men_lbs} lbs (M)`;
+          } else if (movement.l2_weight_women_lbs) {
+            weightDisplay = `${movement.l2_weight_women_lbs} lbs (W)`;
+          }
+
+          variation = movement.l2_movement_variation || '';
           break;
+
         case "L1":
-          reps = movement.l1_reps;
-          weight = movement.l1_weight_lbs;
-          variation = movement.l1_movement_variation;
+          // Reps: custom or rep scheme
+          if (movement.l1_reps) {
+            const isRepScheme = typeof movement.l1_reps === 'string' && movement.l1_reps.includes('-');
+            repsDisplay = isRepScheme ? movement.l1_reps : `${movement.l1_reps} reps`;
+          } else if (repScheme) {
+            repsDisplay = repScheme;
+          }
+
+          // Weight: gender-split format
+          if (movement.l1_weight_men_lbs && movement.l1_weight_women_lbs) {
+            weightDisplay = `${movement.l1_weight_men_lbs}/${movement.l1_weight_women_lbs} lbs`;
+          } else if (movement.l1_weight_men_lbs) {
+            weightDisplay = `${movement.l1_weight_men_lbs} lbs (M)`;
+          } else if (movement.l1_weight_women_lbs) {
+            weightDisplay = `${movement.l1_weight_women_lbs} lbs (W)`;
+          }
+
+          variation = movement.l1_movement_variation || '';
           break;
       }
 
       return {
         ...movement,
-        reps,
-        weight,
+        repsDisplay,
+        weightDisplay,
         variation,
       };
     });
@@ -272,24 +325,27 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                   <Text style={styles.movementNumber}>{index + 1}.</Text>
                   <Text style={styles.movementName}>
                     {movement.exercise?.name}
-                    {movement.variation && ` (${movement.variation})`}
                   </Text>
                 </View>
 
-                <View style={styles.movementDetails}>
-                  {movement.reps !== null && movement.reps !== undefined && (
-                    <View style={styles.movementDetailItem}>
-                      <Text style={styles.movementDetailLabel}>Reps:</Text>
-                      <Text style={styles.movementDetailValue}>{movement.reps}</Text>
-                    </View>
-                  )}
-                  {movement.weight !== null && movement.weight !== undefined && (
-                    <View style={styles.movementDetailItem}>
-                      <Text style={styles.movementDetailLabel}>Weight:</Text>
-                      <Text style={styles.movementDetailValue}>{movement.weight} lbs</Text>
-                    </View>
-                  )}
-                </View>
+                {/* Movement Details */}
+                {(movement.repsDisplay || movement.weightDisplay) && (
+                  <View style={styles.movementDetailsRow}>
+                    {movement.repsDisplay && (
+                      <Text style={styles.movementDetailText}>{movement.repsDisplay}</Text>
+                    )}
+                    {movement.weightDisplay && (
+                      <Text style={styles.movementDetailText}>@ {movement.weightDisplay}</Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Movement Variation */}
+                {movement.variation && (
+                  <View style={styles.variationContainer}>
+                    <Text style={styles.variationText}>{movement.variation}</Text>
+                  </View>
+                )}
 
                 {movement.notes && (
                   <Text style={styles.movementNotes}>{movement.notes}</Text>
@@ -497,23 +553,26 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     flex: 1,
   },
-  movementDetails: {
+  movementDetailsRow: {
     flexDirection: "row",
-    gap: 16,
-    marginBottom: 8,
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 4,
   },
-  movementDetailItem: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  movementDetailLabel: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-  },
-  movementDetailValue: {
-    fontSize: 14,
+  movementDetailText: {
+    fontSize: 15,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  variationContainer: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  variationText: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    fontStyle: "italic",
   },
   movementNotes: {
     fontSize: 14,
