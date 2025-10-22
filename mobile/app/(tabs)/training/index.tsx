@@ -170,9 +170,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    width: "100%",
   },
   searchContainer: {
-    flex: 1,
+    flexShrink: 1,
+    flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.input,
@@ -180,6 +182,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 8,
+    minWidth: 0,
   },
   searchInput: {
     flex: 1,
@@ -189,6 +192,7 @@ const styles = StyleSheet.create({
   headerButtons: {
     flexDirection: "row",
     gap: 12,
+    flexShrink: 0,
   },
   iconButton: {
     width: 40,
