@@ -14,28 +14,34 @@ interface WODImageRequest {
 }
 
 interface GeminiImageResponse {
-  images?: Array<{
-    image: string; // base64 encoded image
-    mimeType?: string;
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        inline_data?: {
+          mime_type: string;
+          data: string; // base64 encoded image
+        };
+      }>;
+    };
   }>;
 }
 
-// Helper function to create placeholder SVG
-function createPlaceholderSvg(): string {
-  return `
-    <svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:rgb(10,132,255);stop-opacity:1" />
-          <stop offset="100%" style="stop-color:rgb(99,102,241);stop-opacity:1" />
-        </linearGradient>
-      </defs>
-      <rect width="1024" height="1024" fill="url(#grad)" />
-      <text x="50%" y="50%" text-anchor="middle" fill="white" font-size="48" font-family="Arial, sans-serif" font-weight="bold">
-        CrossFit WOD
-      </text>
-    </svg>
-  `;
+// Helper function to mark WOD image generation as failed
+async function markImageGenerationFailed(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  wodId: string,
+  userId: string
+): Promise<void> {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  await supabase
+    .from('wods')
+    .update({
+      image_generation_failed: true,
+    })
+    .eq('id', wodId)
+    .eq('user_id', userId);
 }
 
 // Helper function to upload image and update WOD
@@ -98,7 +104,11 @@ serve(async (req) => {
     // Get Gemini API key from environment
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
     if (!geminiApiKey) {
-      throw new Error('GEMINI_API_KEY not configured');
+      console.error('GEMINI_API_KEY not configured - skipping image generation');
+      return new Response(
+        JSON.stringify({ success: false, error: 'API key not configured' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Get Supabase credentials
@@ -121,9 +131,9 @@ serve(async (req) => {
     console.log(`Generating image for WOD ${wodId}...`);
     console.log('Prompt:', prompt);
 
-    //  Use Gemini's Imagen API for image generation
-    // API endpoint: https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages
-    const geminiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:generateImages';
+    // Use Gemini 2.5 Flash Image API for image generation
+    // Model: gemini-2.5-flash-image (aka Gemini 2.5 Flash Image)
+    const geminiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
     const geminiResponse = await fetch(`${geminiEndpoint}?key=${geminiApiKey}`, {
       method: 'POST',
@@ -131,11 +141,15 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        prompt: prompt,
-        number_of_images: 1,
-        aspect_ratio: '1:1',
-        safety_filter_level: 'block_some',
-        person_generation: 'allow_adult',
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          response_modalities: ['image'],
+          media_resolution: 'MEDIA_RESOLUTION_MEDIUM', // or 'MEDIA_RESOLUTION_HIGH'
+        }
       }),
     });
 
@@ -143,27 +157,40 @@ serve(async (req) => {
       const errorText = await geminiResponse.text();
       console.error('Gemini API error:', geminiResponse.status, errorText);
 
-      // Fallback to placeholder on error
-      console.log('Falling back to placeholder image due to API error');
-      const placeholderSvg = createPlaceholderSvg();
-      const imageBuffer = new TextEncoder().encode(placeholderSvg);
-
-      await uploadAndUpdateWOD(supabaseUrl, supabaseServiceKey, userId, wodId, imageBuffer, 'image/svg+xml');
+      // Mark generation as failed - no placeholder image
+      await markImageGenerationFailed(supabaseUrl, supabaseServiceKey, wodId, userId);
 
       return new Response(
-        JSON.stringify({ success: true, message: 'Placeholder image generated', usedFallback: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: false,
+          error: `Gemini API error: ${geminiResponse.status}`,
+          message: 'Image generation failed'
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const geminiData = await geminiResponse.json();
+    console.log('Gemini response:', JSON.stringify(geminiData, null, 2));
 
-    // Extract image data (base64 encoded)
-    if (!geminiData.images || geminiData.images.length === 0) {
+    // Extract image data from Gemini 2.5 Flash Image response
+    // Response format: { candidates: [{ content: { parts: [{ inline_data: { mime_type, data } }] } }] }
+    if (!geminiData.candidates || geminiData.candidates.length === 0) {
       throw new Error('No images generated by Gemini');
     }
 
-    const imageBase64 = geminiData.images[0].image;
+    const imagePart = geminiData.candidates[0]?.content?.parts?.find(
+      (part: any) => part.inline_data
+    );
+
+    if (!imagePart || !imagePart.inline_data) {
+      throw new Error('No inline image data in Gemini response');
+    }
+
+    const imageBase64 = imagePart.inline_data.data;
+    const mimeType = imagePart.inline_data.mime_type || 'image/png';
+
+    console.log('Image mime type:', mimeType);
     const imageBuffer = Uint8Array.from(atob(imageBase64), c => c.charCodeAt(0));
 
     // Upload to Supabase Storage and update WOD
@@ -173,7 +200,7 @@ serve(async (req) => {
       userId,
       wodId,
       imageBuffer,
-      'image/png'
+      mimeType
     );
 
     console.log(`Image generation complete for WOD ${wodId}`);
@@ -189,6 +216,19 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in generate-wod-image function:', error);
+
+    // Try to mark as failed if we have the necessary info
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const body = await req.clone().json();
+
+      if (supabaseUrl && supabaseServiceKey && body.wodId && body.userId) {
+        await markImageGenerationFailed(supabaseUrl, supabaseServiceKey, body.wodId, body.userId);
+      }
+    } catch (markError) {
+      console.error('Failed to mark image generation as failed:', markError);
+    }
 
     return new Response(
       JSON.stringify({
