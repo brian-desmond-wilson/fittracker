@@ -87,11 +87,10 @@ Once the API key is set, test the feature:
 - **WOD Detail**: Full image (220px height) should display at the top
 
 ### 4. Monitor Edge Function
-Check logs if images aren't generating:
+Check logs via the Supabase Dashboard:
 
-```bash
-supabase functions logs generate-wod-image
-```
+- Visit: https://supabase.com/dashboard/project/tffxvrjvkhpyxsagrjga/functions/generate-wod-image
+- Click on "Logs" tab to see real-time execution logs
 
 ---
 
@@ -100,9 +99,10 @@ supabase functions logs generate-wod-image
 ### Images Not Appearing
 
 **Check Edge Function Logs:**
-```bash
-supabase functions logs generate-wod-image --follow
-```
+
+Visit the Supabase Dashboard:
+- URL: https://supabase.com/dashboard/project/tffxvrjvkhpyxsagrjga/functions/generate-wod-image
+- Click "Logs" tab to view execution logs in real-time
 
 **Common Issues:**
 

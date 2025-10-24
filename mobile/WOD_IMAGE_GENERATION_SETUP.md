@@ -113,11 +113,10 @@ supabase secrets list
 
 ### Images Not Generating
 
-Check Edge Function logs:
+Check Edge Function logs via the Dashboard:
 
-```bash
-supabase functions logs generate-wod-image
-```
+- Visit: https://supabase.com/dashboard/project/tffxvrjvkhpyxsagrjga/functions/generate-wod-image
+- Click "Logs" tab to view execution logs
 
 Common issues:
 - **API key not set**: Verify with `supabase secrets list`
