@@ -863,17 +863,32 @@ async function generateWODImage(
 ): Promise<void> {
   try {
     // Import the prompt building function
-    const { buildWODImagePrompt, extractMovementData } = await import('../gemini');
+    const { buildWODImagePrompt } = await import('../gemini');
 
     // Get format name for better prompt
     const formats = await fetchWODFormats();
     const format = formats.find(f => f.id === wodInput.format_id);
 
+    // Fetch exercise names for the movements
+    const movementPromises = (wodInput.movements || []).map(async (movement) => {
+      const { data: exercise } = await supabase
+        .from('exercises')
+        .select('name')
+        .eq('id', movement.exercise_id)
+        .single();
+
+      return {
+        name: exercise?.name || 'Movement',
+      };
+    });
+
+    const movements = await Promise.all(movementPromises);
+
     // Build prompt from WOD data
     const prompt = buildWODImagePrompt({
       wodName: wodInput.name,
       formatName: format?.name || 'For Time',
-      movements: extractMovementData(wodInput.movements || []),
+      movements,
       timeCap: wodInput.time_cap_minutes,
       repScheme: wodInput.rep_scheme,
     });

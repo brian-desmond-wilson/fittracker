@@ -58,10 +58,10 @@ Requirements:
 - Dynamic composition showing movement and energy
 - Rich, saturated colors (focus on blues, oranges, and grays)
 - Professional fitness photography aesthetic
-- DO NOT include any text, numbers, labels, or words in the image
 - Focus on equipment and athletic action related to the movements
 - High contrast and dramatic lighting
 - Suitable for use as a workout card thumbnail
+- Can include CrossFit gym elements like whiteboards showing the WOD
 
 The image should inspire athletes to tackle this challenging workout.`;
 
