@@ -15,10 +15,12 @@ interface WODPreviewStepProps {
 
 export function WODPreviewStep({ formData, formatName, categoryName, onSave, onClose }: WODPreviewStepProps) {
   const [saving, setSaving] = useState(false);
+  const [savingMessage, setSavingMessage] = useState('Saving WOD...');
 
   const handleSave = async () => {
     try {
       setSaving(true);
+      setSavingMessage('Saving WOD...');
 
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -75,15 +77,26 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
       const result = await createWOD(user.id, wodInput);
 
       if (result) {
-        Alert.alert('Success', 'WOD created successfully!', [
-          {
-            text: 'OK',
-            onPress: () => {
-              onSave();
-              onClose();
-            },
-          },
-        ]);
+        // Update message to show image generation is happening
+        setSavingMessage('Generating AI image...');
+
+        // Give a brief moment to show the message, then close
+        // Image generation continues in background
+        setTimeout(() => {
+          Alert.alert(
+            'Success',
+            'WOD created successfully! An AI-generated image is being created in the background.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  onSave();
+                  onClose();
+                },
+              },
+            ]
+          );
+        }, 800);
       } else {
         Alert.alert('Error', 'Failed to create WOD. Please try again.');
       }
@@ -351,7 +364,10 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <View style={styles.savingContainer}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.savingText}>{savingMessage}</Text>
+            </View>
           ) : (
             <Text style={styles.saveButtonText}>Save WOD</Text>
           )}
@@ -498,6 +514,16 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 17,
     fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  savingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  savingText: {
+    fontSize: 15,
+    fontWeight: '500',
     color: '#FFFFFF',
   },
 });

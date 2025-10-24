@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -241,6 +242,17 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* WOD Image (if available) */}
+          {wod.image_url && (
+            <View style={styles.imageSection}>
+              <Image
+                source={{ uri: wod.image_url }}
+                style={styles.wodImage}
+                resizeMode="cover"
+              />
+            </View>
+          )}
+
           {/* Title Section */}
           <View style={styles.titleSection}>
             <Text style={styles.wodTitle}>{wod.name}</Text>
@@ -502,6 +514,25 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#EF4444",
     marginBottom: 20,
+  },
+
+  // WOD Image Section
+  imageSection: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  wodImage: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#1A1F2E',
   },
 
   // Title Section

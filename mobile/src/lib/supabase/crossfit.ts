@@ -838,10 +838,69 @@ export async function createWOD(userId: string, input: CreateWODInput): Promise<
       }
     }
 
+    // Trigger WOD image generation asynchronously (don't wait for it)
+    // This happens in the background so it doesn't block the save operation
+    generateWODImage(wod.id, input, userId).catch((err) => {
+      console.error('Background image generation failed:', err);
+      // Silent failure - image generation failed flag will be set in the function
+    });
+
     return wod;
   } catch (error) {
     console.error('Error in createWOD:', error);
     return null;
+  }
+}
+
+/**
+ * Generate a WOD image using Gemini API via Supabase Edge Function
+ * This runs asynchronously and doesn't block WOD creation
+ */
+async function generateWODImage(
+  wodId: string,
+  wodInput: CreateWODInput,
+  userId: string
+): Promise<void> {
+  try {
+    // Import the prompt building function
+    const { buildWODImagePrompt, extractMovementData } = await import('../gemini');
+
+    // Get format name for better prompt
+    const formats = await fetchWODFormats();
+    const format = formats.find(f => f.id === wodInput.format_id);
+
+    // Build prompt from WOD data
+    const prompt = buildWODImagePrompt({
+      wodName: wodInput.name,
+      formatName: format?.name || 'For Time',
+      movements: extractMovementData(wodInput.movements || []),
+      timeCap: wodInput.time_cap_minutes,
+      repScheme: wodInput.rep_scheme,
+    });
+
+    // Call Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke('generate-wod-image', {
+      body: {
+        wodId,
+        prompt,
+        userId,
+      },
+    });
+
+    if (error) {
+      console.error('Edge function error:', error);
+      // Update WOD to mark image generation as failed
+      await supabase
+        .from('wods')
+        .update({ image_generation_failed: true })
+        .eq('id', wodId);
+      throw error;
+    }
+
+    console.log('WOD image generated successfully:', data);
+  } catch (error) {
+    console.error('Failed to generate WOD image:', error);
+    throw error;
   }
 }
 

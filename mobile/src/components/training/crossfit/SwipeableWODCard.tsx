@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Zap, Trash2 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
@@ -150,13 +150,16 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
         activeOpacity={0.7}
         onPress={onPress}
       >
-        {/* Header: Title + Category Badge */}
-        <View style={styles.wodHeader}>
-          <Text style={styles.wodName}>{wod.name}</Text>
-          <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(wod.category?.name || '') }]}>
-            <Text style={styles.categoryBadgeText}>{wod.category?.name}</Text>
-          </View>
-        </View>
+        <View style={styles.wodCardContent}>
+          {/* Left: WOD Info */}
+          <View style={styles.wodInfo}>
+            {/* Header: Title + Category Badge */}
+            <View style={styles.wodHeader}>
+              <Text style={styles.wodName} numberOfLines={1}>{wod.name}</Text>
+              <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(wod.category?.name || '') }]}>
+                <Text style={styles.categoryBadgeText}>{wod.category?.name}</Text>
+              </View>
+            </View>
 
         {/* Line 2: Format + Time Domain */}
         <View style={styles.formatRow}>
@@ -171,9 +174,22 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
           </View>
         )}
 
-        {/* Line 4: Movement Summary */}
-        <View style={styles.movementsRow}>
-          <Text style={styles.movementsText}>{movementsLine}</Text>
+            {/* Line 4: Movement Summary */}
+            <View style={styles.movementsRow}>
+              <Text style={styles.movementsText}>{movementsLine}</Text>
+            </View>
+          </View>
+
+          {/* Right: Thumbnail Image */}
+          {wod.image_url && (
+            <View style={styles.thumbnailContainer}>
+              <Image
+                source={{ uri: wod.image_url }}
+                style={styles.thumbnail}
+                resizeMode="cover"
+              />
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -188,6 +204,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  wodCardContent: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  wodInfo: {
+    flex: 1,
+  },
   wodHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -199,6 +222,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.foreground,
     flex: 1,
+    marginRight: 8,
+  },
+  thumbnailContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#1A1F2E',
+  },
+  thumbnail: {
+    width: '100%',
+    height: '100%',
   },
   categoryBadge: {
     paddingHorizontal: 10,

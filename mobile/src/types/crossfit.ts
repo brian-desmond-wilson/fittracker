@@ -332,6 +332,11 @@ export interface WOD {
   score_type_distance: boolean;
   score_type_calories: boolean;
 
+  // AI-generated image
+  image_url: string | null;
+  image_generated_at: string | null;
+  image_generation_failed: boolean;
+
   // Notes
   notes: string | null;
 }
