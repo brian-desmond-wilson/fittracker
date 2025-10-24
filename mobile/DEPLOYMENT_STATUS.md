@@ -1,0 +1,204 @@
+# WOD Image Generation - Deployment Status
+
+## ✅ Completed Steps
+
+### 1. Database Migration - APPLIED ✅
+```bash
+✅ Applied: 20251024000000_add_wod_image_fields.sql
+```
+- Added `image_url`, `image_generated_at`, and `image_generation_failed` to `wods` table
+- Created index for retry logic
+
+### 2. Storage Bucket & RLS Policies - APPLIED ✅
+```bash
+✅ Applied: 20251024000001_create_wod_images_storage.sql
+```
+- Created `wod-images` storage bucket (public, 5MB limit)
+- Set up RLS policies:
+  - Users can upload to their own folder
+  - Anyone can view images
+  - Users can update/delete their own images
+
+### 3. Edge Function - DEPLOYED ✅
+```bash
+✅ Deployed: generate-wod-image
+```
+- Function URL: https://tffxvrjvkhpyxsagrjga.supabase.co/functions/v1/generate-wod-image
+- Dashboard: https://supabase.com/dashboard/project/tffxvrjvkhpyxsagrjga/functions
+
+### 4. Code Implementation - COMMITTED ✅
+All code changes have been committed to `feature/react-native` branch:
+- ✅ TypeScript types updated
+- ✅ Gemini helper functions created
+- ✅ Mobile app integration complete
+- ✅ UI components updated (cards, detail screen, preview)
+
+---
+
+## ⏳ Remaining Step (REQUIRES YOUR ACTION)
+
+### Set Gemini API Key
+
+You need to obtain a Gemini API key and set it as a secret:
+
+#### Step 1: Get API Key
+1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Click "Create API Key"
+3. Copy the API key (starts with `AIza...`)
+
+#### Step 2: Set Secret
+Run this command with your actual API key:
+
+```bash
+supabase secrets set GEMINI_API_KEY=your_actual_api_key_here
+```
+
+#### Verify Secret is Set
+```bash
+supabase secrets list
+```
+
+You should see `GEMINI_API_KEY` in the list.
+
+---
+
+## 🧪 Testing Instructions
+
+Once the API key is set, test the feature:
+
+### 1. Create a Test WOD
+1. Open the mobile app
+2. Go to Training → WODs tab
+3. Tap the "+" button
+4. Fill in WOD details:
+   - Name: "Test WOD 001"
+   - Category: "Daily WOD"
+   - Format: "For Time"
+   - Rep Scheme: "21-15-9"
+   - Add movements (e.g., Pull-ups, Push-ups, Air Squats)
+5. Tap "Save WOD"
+
+### 2. Observe UI Feedback
+- You should see: "Saving WOD..." → "Generating AI image..."
+- Success alert: "WOD created successfully! An AI-generated image is being created in the background."
+
+### 3. Check Image Generation
+- **WOD List**: Thumbnail (80x80) should appear on the right side of the card
+- **WOD Detail**: Full image (220px height) should display at the top
+
+### 4. Monitor Edge Function
+Check logs if images aren't generating:
+
+```bash
+supabase functions logs generate-wod-image
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Images Not Appearing
+
+**Check Edge Function Logs:**
+```bash
+supabase functions logs generate-wod-image --follow
+```
+
+**Common Issues:**
+
+1. **API Key Not Set**
+   ```bash
+   # Verify secret exists
+   supabase secrets list | grep GEMINI_API_KEY
+
+   # Set it if missing
+   supabase secrets set GEMINI_API_KEY=your_key_here
+   ```
+
+2. **Gemini API Quota/Billing**
+   - First 100 images/month are free
+   - Check quota: https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com
+   - Enable billing if needed
+
+3. **Storage Bucket Issues**
+   ```sql
+   -- Verify bucket exists
+   SELECT * FROM storage.buckets WHERE id = 'wod-images';
+
+   -- Check RLS policies
+   SELECT * FROM pg_policies WHERE tablename = 'objects' AND schemaname = 'storage';
+   ```
+
+### Placeholder Images Showing
+
+If you see blue gradient SVG placeholders:
+- This means the Gemini API call failed
+- Check Edge Function logs for the error
+- Verify API key is valid
+- Ensure Imagen API is enabled in Google Cloud Console
+
+### Database Update Failing
+
+If WOD creates but image_url doesn't update:
+```sql
+-- Check if WOD exists
+SELECT id, name, image_url, image_generation_failed FROM wods ORDER BY created_at DESC LIMIT 5;
+
+-- Check for failed generations
+SELECT id, name, image_generation_failed FROM wods WHERE image_generation_failed = true;
+```
+
+---
+
+## 📊 Current Status Summary
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Database Migration | ✅ Applied | Fields added to `wods` table |
+| Storage Bucket | ✅ Created | `wod-images` bucket with RLS policies |
+| Edge Function | ✅ Deployed | `generate-wod-image` live |
+| Code Implementation | ✅ Committed | All files updated |
+| **Gemini API Key** | ⏳ **PENDING** | **You need to set this** |
+
+---
+
+## 🚀 Next Action
+
+**YOU NEED TO DO:**
+
+1. Get Gemini API key from https://makersuite.google.com/app/apikey
+2. Run: `supabase secrets set GEMINI_API_KEY=your_key_here`
+3. Test by creating a WOD in the mobile app
+4. Monitor logs: `supabase functions logs generate-wod-image`
+
+---
+
+## 📝 API Key Instructions
+
+### Option 1: Google AI Studio (Recommended)
+1. Visit https://makersuite.google.com/app/apikey
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the key (starts with `AIza...`)
+
+### Option 2: Google Cloud Console
+1. Go to https://console.cloud.google.com/
+2. Enable the "Generative Language API"
+3. Create credentials → API Key
+4. Copy the key
+
+### Set the Secret
+```bash
+cd /Users/brianwilson/code/fittracker/mobile
+supabase secrets set GEMINI_API_KEY=AIzaSy...your_actual_key_here
+```
+
+### Verify
+```bash
+supabase secrets list
+# Should show GEMINI_API_KEY in the list
+```
+
+---
+
+**Everything is deployed and ready! Just need that API key. 🎉**
