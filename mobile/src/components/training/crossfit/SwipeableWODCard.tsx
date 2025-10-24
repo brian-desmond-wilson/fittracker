@@ -1,11 +1,12 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Clock, Zap, Trash2 } from 'lucide-react-native';
+import { Zap, Trash2 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODWithDetails } from '@/src/types/crossfit';
 import { deleteWOD } from '@/src/lib/supabase/crossfit';
 import { supabase } from '@/src/lib/supabase';
+import { getWODCardDisplay } from '@/src/lib/wodDisplayHelpers';
 
 interface SwipeableWODCardProps {
   wod: WODWithDetails;
@@ -16,6 +17,9 @@ interface SwipeableWODCardProps {
 
 export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: SwipeableWODCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
+
+  // Get formatted display data for the WOD card
+  const { formatLine, structureLine, movementsLine } = getWODCardDisplay(wod, 'Rx');
 
   const handleDelete = async () => {
     try {
@@ -146,29 +150,31 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
         activeOpacity={0.7}
         onPress={onPress}
       >
+        {/* Header: Title + Category Badge */}
         <View style={styles.wodHeader}>
           <Text style={styles.wodName}>{wod.name}</Text>
           <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(wod.category?.name || '') }]}>
             <Text style={styles.categoryBadgeText}>{wod.category?.name}</Text>
           </View>
         </View>
-        <View style={styles.wodMeta}>
-          <View style={styles.metaItem}>
-            <Zap size={16} color={colors.primary} />
-            <Text style={styles.metaText}>{wod.format?.name}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Clock size={16} color={colors.mutedForeground} />
-            <Text style={styles.metaText}>
-              {wod.time_cap_minutes ? `${wod.time_cap_minutes} min cap` : 'No time cap'}
-            </Text>
-          </View>
+
+        {/* Line 2: Format + Time Domain */}
+        <View style={styles.formatRow}>
+          <Zap size={16} color={colors.primary} />
+          <Text style={styles.formatText}>{formatLine}</Text>
         </View>
-        {wod.description && (
-          <Text style={styles.wodDescription} numberOfLines={2}>
-            {wod.description}
-          </Text>
+
+        {/* Line 3: Structure/Rep Scheme (conditional) */}
+        {structureLine && (
+          <View style={styles.structureRow}>
+            <Text style={styles.structureText}>{structureLine}</Text>
+          </View>
         )}
+
+        {/* Line 4: Movement Summary */}
+        <View style={styles.movementsRow}>
+          <Text style={styles.movementsText}>{movementsLine}</Text>
+        </View>
       </TouchableOpacity>
     </Swipeable>
   );
@@ -192,34 +198,45 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.foreground,
+    flex: 1,
   },
   categoryBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+    marginLeft: 8,
   },
   categoryBadgeText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  wodMeta: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 12,
-  },
-  metaItem: {
+  formatRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    marginBottom: 8,
   },
-  metaText: {
+  formatText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.foreground,
+  },
+  structureRow: {
+    paddingLeft: 22, // Align with text after icon in formatRow
+    marginBottom: 8,
+  },
+  structureText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  movementsRow: {
+    paddingLeft: 22, // Align with text after icon in formatRow
+  },
+  movementsText: {
     fontSize: 14,
     color: colors.mutedForeground,
-  },
-  wodDescription: {
-    fontSize: 14,
-    color: colors.foreground,
     lineHeight: 20,
   },
   deleteAction: {
