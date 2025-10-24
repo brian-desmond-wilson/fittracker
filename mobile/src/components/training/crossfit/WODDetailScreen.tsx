@@ -19,10 +19,22 @@ import {
   Ruler,
   MapPin,
   Flame,
+  Dumbbell,
+  Activity,
+  Package,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WODWithDetails, ScalingLevel } from "@/src/types/crossfit";
 import { fetchWODById } from "@/src/lib/supabase/crossfit";
+import { WODStructureVisualizer } from './WODStructureVisualizer';
+import { ScalingComparisonView } from './ScalingComparisonView';
+import {
+  getWODStats,
+  getCategoryDisplay,
+  getGoalTypeDisplay,
+  formatDistance,
+  formatWeight,
+} from '@/src/lib/wodDetailHelpers';
 
 interface WODDetailScreenProps {
   wodId: string;
@@ -34,6 +46,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
   const [wod, setWod] = useState<WODWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedScaling, setSelectedScaling] = useState<ScalingLevel>("Rx");
+  const [showComparison, setShowComparison] = useState(false);
 
   useEffect(() => {
     loadWOD();
@@ -133,8 +146,9 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
         case "L2":
           // Reps: custom or rep scheme
           if (movement.l2_reps) {
-            const isRepScheme = typeof movement.l2_reps === 'string' && movement.l2_reps.includes('-');
-            repsDisplay = isRepScheme ? movement.l2_reps : `${movement.l2_reps} reps`;
+            const repsValue = String(movement.l2_reps);
+            const isRepScheme = repsValue.includes('-');
+            repsDisplay = isRepScheme ? repsValue : `${movement.l2_reps} reps`;
           } else if (repScheme) {
             repsDisplay = repScheme;
           }
@@ -154,8 +168,9 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
         case "L1":
           // Reps: custom or rep scheme
           if (movement.l1_reps) {
-            const isRepScheme = typeof movement.l1_reps === 'string' && movement.l1_reps.includes('-');
-            repsDisplay = isRepScheme ? movement.l1_reps : `${movement.l1_reps} reps`;
+            const repsValue = String(movement.l1_reps);
+            const isRepScheme = repsValue.includes('-');
+            repsDisplay = isRepScheme ? repsValue : `${movement.l1_reps} reps`;
           } else if (repScheme) {
             repsDisplay = repScheme;
           }
@@ -210,6 +225,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
   const scaledMovements = getScaledMovements();
   const scoreTypes = getScoreTypes();
+  const wodStats = getWODStats(wod);
 
   return (
     <>
@@ -225,17 +241,9 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* WOD Title & Category */}
+          {/* Title Section */}
           <View style={styles.titleSection}>
-            <Text style={styles.wodName}>{wod.name}</Text>
-            <View
-              style={[
-                styles.categoryBadge,
-                { backgroundColor: getCategoryColor(wod.category?.name || "") },
-              ]}
-            >
-              <Text style={styles.categoryBadgeText}>{wod.category?.name}</Text>
-            </View>
+            <Text style={styles.wodTitle}>{wod.name}</Text>
           </View>
 
           {/* Description */}
@@ -243,131 +251,209 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
             <Text style={styles.description}>{wod.description}</Text>
           )}
 
-          {/* Format & Time Cap */}
-          <View style={styles.metaSection}>
-            <View style={styles.metaItem}>
-              <Zap size={20} color={colors.primary} />
-              <Text style={styles.metaLabel}>Format:</Text>
-              <Text style={styles.metaValue}>{wod.format?.name}</Text>
+          {/* Quick Stats Card */}
+          <View style={styles.quickStatsCard}>
+            <Text style={styles.quickStatsTitle}>Quick Stats</Text>
+
+            {/* Category and Format Row */}
+            <View style={styles.metaRow}>
+              <View style={styles.metaBadge}>
+                <Text style={styles.metaBadgeText}>{wod.category?.name}</Text>
+              </View>
+              <View style={styles.metaInfo}>
+                <Zap size={16} color={colors.primary} />
+                <Text style={styles.metaInfoText}>
+                  {wod.format?.name}
+                  {wod.time_cap_minutes && ` • ${wod.time_cap_minutes} min`}
+                </Text>
+              </View>
             </View>
-            <View style={styles.metaItem}>
-              <Timer size={20} color={colors.mutedForeground} />
-              <Text style={styles.metaLabel}>Time Cap:</Text>
-              <Text style={styles.metaValue}>
-                {wod.time_cap_minutes ? `${wod.time_cap_minutes} min` : "No cap"}
-              </Text>
+
+            {/* Stats Grid */}
+            <View style={styles.quickStatsGrid}>
+              <View style={styles.quickStatItem}>
+                <Dumbbell size={20} color={colors.primary} />
+                <Text style={styles.quickStatValue}>{wodStats.movementCount}</Text>
+                <Text style={styles.quickStatLabel}>Movements</Text>
+              </View>
+              <View style={styles.quickStatItem}>
+                <Activity size={20} color="#10B981" />
+                <Text style={styles.quickStatValue}>{wodStats.dominantCategory}</Text>
+                <Text style={styles.quickStatLabel}>Category</Text>
+              </View>
+              <View style={styles.quickStatItem}>
+                <Clock size={20} color="#F59E0B" />
+                <Text style={styles.quickStatValue}>{wodStats.estimatedDuration}</Text>
+                <Text style={styles.quickStatLabel}>Est. Time</Text>
+              </View>
             </View>
           </View>
 
-          {/* Score Types */}
-          {scoreTypes.length > 0 && (
-            <View style={styles.scoreTypesSection}>
-              <Text style={styles.sectionTitle}>Score Types</Text>
-              <View style={styles.scoreTypesList}>
-                {scoreTypes.map((type, index) => {
-                  const Icon = type.icon;
-                  return (
-                    <View key={index} style={styles.scoreTypeBadge}>
-                      <Icon size={16} color={type.color} />
-                      <Text style={[styles.scoreTypeText, { color: type.color }]}>
-                        {type.label}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
+          {/* WOD Structure Visualization */}
+          <WODStructureVisualizer wod={wod} />
 
           {/* Scaling Selector */}
           <View style={styles.scalingSection}>
-            <Text style={styles.sectionTitle}>Scaling Level</Text>
-            <View style={styles.scalingTabs}>
-              {(["Rx", "L2", "L1"] as ScalingLevel[]).map((level) => (
-                <TouchableOpacity
-                  key={level}
-                  style={[
-                    styles.scalingTab,
-                    selectedScaling === level && styles.scalingTabActive,
-                  ]}
-                  onPress={() => setSelectedScaling(level)}
-                >
-                  <Text
-                    style={[
-                      styles.scalingTabText,
-                      selectedScaling === level && styles.scalingTabTextActive,
-                    ]}
-                  >
-                    {level}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.scalingHeader}>
+              <Text style={styles.sectionTitle}>Scaling</Text>
+              <TouchableOpacity
+                style={styles.comparisonToggle}
+                onPress={() => setShowComparison(!showComparison)}
+              >
+                <Text style={styles.comparisonToggleText}>
+                  {showComparison ? 'Single View' : 'Compare'}
+                </Text>
+              </TouchableOpacity>
             </View>
 
-            {/* Scaling Description */}
-            {wod.scaling_levels && wod.scaling_levels.length > 0 && (
-              <View style={styles.scalingDescription}>
-                {wod.scaling_levels
-                  .filter((s) => s.level === selectedScaling)
-                  .map((s) => (
-                    <Text key={s.id} style={styles.scalingDescText}>
-                      {s.description}
-                    </Text>
+            {!showComparison && (
+              <>
+                <View style={styles.scalingTabs}>
+                  {(["Rx", "L2", "L1"] as ScalingLevel[]).map((level) => (
+                    <TouchableOpacity
+                      key={level}
+                      style={[
+                        styles.scalingTab,
+                        selectedScaling === level && styles.scalingTabActive,
+                      ]}
+                      onPress={() => setSelectedScaling(level)}
+                    >
+                      <Text
+                        style={[
+                          styles.scalingTabText,
+                          selectedScaling === level && styles.scalingTabTextActive,
+                        ]}
+                      >
+                        {level}
+                      </Text>
+                    </TouchableOpacity>
                   ))}
-              </View>
+                </View>
+
+                {/* Scaling Description */}
+                {wod.scaling_levels && wod.scaling_levels.length > 0 && (
+                  <View style={styles.scalingDescription}>
+                    {wod.scaling_levels
+                      .filter((s) => s.level_name === selectedScaling)
+                      .map((s) => (
+                        <Text key={s.id} style={styles.scalingDescText}>
+                          {s.description}
+                        </Text>
+                      ))}
+                  </View>
+                )}
+              </>
             )}
           </View>
 
-          {/* Movements List */}
+          {/* Movements List or Comparison View */}
           <View style={styles.movementsSection}>
-            <Text style={styles.sectionTitle}>Movements</Text>
-            {scaledMovements.map((movement, index) => (
-              <View key={movement.id} style={styles.movementCard}>
-                <View style={styles.movementHeader}>
-                  <Text style={styles.movementNumber}>{index + 1}.</Text>
-                  <Text style={styles.movementName}>
-                    {movement.exercise?.name}
-                  </Text>
-                </View>
+            {showComparison ? (
+              <>
+                <Text style={styles.sectionTitle}>Scaling Comparison</Text>
+                <ScalingComparisonView wod={wod} />
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionTitle}>Movements</Text>
+                {scaledMovements.map((movement, index) => {
+                  const exercise = movement.exercise;
+                  // Note: Exercise type doesn't have joined relations, using fallback
+                  const categoryDisplay = getCategoryDisplay(undefined);
+                  const goalTypeDisplay = getGoalTypeDisplay(undefined);
 
-                {/* Movement Details */}
-                {(movement.repsDisplay || movement.weightDisplay) && (
-                  <View style={styles.movementDetailsRow}>
-                    {movement.repsDisplay && (
-                      <Text style={styles.movementDetailText}>{movement.repsDisplay}</Text>
-                    )}
-                    {movement.weightDisplay && (
-                      <Text style={styles.movementDetailText}>@ {movement.weightDisplay}</Text>
-                    )}
-                  </View>
-                )}
+                  // Get distance info
+                  let distanceDisplay = null;
+                  const distanceValue = (movement as any)[`${selectedScaling.toLowerCase()}_distance_value`];
+                  const distanceUnit = (movement as any)[`${selectedScaling.toLowerCase()}_distance_unit`];
+                  if (distanceValue && distanceUnit) {
+                    distanceDisplay = formatDistance(distanceValue, distanceUnit);
+                  }
 
-                {/* Movement Variation */}
-                {movement.variation && (
-                  <View style={styles.variationContainer}>
-                    <Text style={styles.variationText}>{movement.variation}</Text>
-                  </View>
-                )}
-
-                {movement.notes && (
-                  <Text style={styles.movementNotes}>{movement.notes}</Text>
-                )}
-
-                {/* Movement Standards */}
-                {movement.standards && movement.standards.length > 0 && (
-                  <View style={styles.standardsContainer}>
-                    <Text style={styles.standardsLabel}>Standards:</Text>
-                    <View style={styles.standardsList}>
-                      {movement.standards.map((standard) => (
-                        <View key={standard.id} style={styles.standardBadge}>
-                          <Text style={styles.standardText}>{standard.standard_name}</Text>
+                  return (
+                    <View key={movement.id} style={styles.movementCard}>
+                      {/* Movement Header with Category */}
+                      <View style={styles.movementHeader}>
+                        <View style={styles.movementTitleRow}>
+                          <Text style={styles.movementNumber}>{index + 1}.</Text>
+                          <Text style={styles.movementName}>
+                            {movement.exercise?.name}
+                          </Text>
                         </View>
-                      ))}
+                        <View style={styles.movementBadges}>
+                          <View style={[styles.categoryBadgeSmall, { backgroundColor: categoryDisplay.color + '20' }]}>
+                            <Text style={styles.categoryEmojiSmall}>{categoryDisplay.icon}</Text>
+                          </View>
+                          <View style={[styles.goalTypeBadgeSmall, { backgroundColor: goalTypeDisplay.color + '20' }]}>
+                            <Text style={styles.goalTypeEmojiSmall}>{goalTypeDisplay.icon}</Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Movement Details */}
+                      {(movement.repsDisplay || movement.weightDisplay || distanceDisplay) && (
+                        <View style={styles.movementDetailsRow}>
+                          {movement.repsDisplay && (
+                            <View style={styles.detailChip}>
+                              <TrendingUp size={14} color={colors.primary} />
+                              <Text style={styles.movementDetailText}>{movement.repsDisplay}</Text>
+                            </View>
+                          )}
+                          {movement.weightDisplay && (
+                            <View style={styles.detailChip}>
+                              <Dumbbell size={14} color="#8B5CF6" />
+                              <Text style={styles.movementDetailText}>{movement.weightDisplay}</Text>
+                            </View>
+                          )}
+                          {distanceDisplay && (
+                            <View style={styles.distanceContainer}>
+                              <View style={styles.detailChip}>
+                                <MapPin size={14} color="#3B82F6" />
+                                <Text style={styles.movementDetailText}>{distanceDisplay.primary}</Text>
+                              </View>
+                              <Text style={styles.distanceSecondary}>
+                                {distanceDisplay.secondary}
+                              </Text>
+                              {distanceDisplay.context && (
+                                <Text style={styles.distanceContext}>
+                                  💡 {distanceDisplay.context}
+                                </Text>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      )}
+
+                      {/* Movement Variation */}
+                      {movement.variation && (
+                        <View style={styles.variationContainer}>
+                          <Text style={styles.variationText}>📝 {movement.variation}</Text>
+                        </View>
+                      )}
+
+                      {/* Movement Notes */}
+                      {movement.notes && (
+                        <Text style={styles.movementNotes}>ℹ️ {movement.notes}</Text>
+                      )}
+
+                      {/* Movement Standards */}
+                      {movement.standards && movement.standards.length > 0 && (
+                        <View style={styles.standardsContainer}>
+                          <Text style={styles.standardsLabel}>Standards:</Text>
+                          <View style={styles.standardsList}>
+                            {movement.standards.map((standard) => (
+                              <View key={standard.id} style={styles.standardBadge}>
+                                <Text style={styles.standardText}>{standard.standard_name}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      )}
                     </View>
-                  </View>
-                )}
-              </View>
-            ))}
+                  );
+                })}
+              </>
+            )}
           </View>
         </ScrollView>
       </View>
@@ -406,7 +492,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 16,
   },
   loadingText: {
     marginTop: 12,
@@ -418,80 +503,129 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     marginBottom: 20,
   },
+
+  // Title Section
   titleSection: {
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
-  wodName: {
-    fontSize: 32,
+  wodTitle: {
+    fontSize: 34,
     fontWeight: "bold",
     color: "#FFFFFF",
-    marginBottom: 8,
   },
-  categoryBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  categoryBadgeText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
+
+  // Description
   description: {
     fontSize: 16,
     color: colors.mutedForeground,
     lineHeight: 24,
-    marginBottom: 20,
+    marginBottom: 16,
+    marginHorizontal: 16,
   },
-  metaSection: {
-    marginBottom: 24,
-    gap: 12,
+
+  // Quick Stats Card
+  quickStatsCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 20,
+    backgroundColor: '#1A1F2E',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2D3748',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  metaItem: {
+  quickStatsTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    marginBottom: 16,
+  },
+  metaRow: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2D3748',
+  },
+  metaBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.primary + '40',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '60',
+  },
+  metaBadgeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  metaInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  metaInfoText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.foreground,
+  },
+  quickStatsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  quickStatItem: {
     alignItems: "center",
     gap: 8,
   },
-  metaLabel: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    fontWeight: "500",
-  },
-  metaValue: {
-    fontSize: 16,
+  quickStatValue: {
+    fontSize: 18,
+    fontWeight: "bold",
     color: "#FFFFFF",
-    fontWeight: "600",
   },
-  scoreTypesSection: {
-    marginBottom: 24,
+  quickStatLabel: {
+    fontSize: 13,
+    color: colors.mutedForeground,
   },
+
+  // Sections
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "bold",
     color: "#FFFFFF",
     marginBottom: 12,
   },
-  scoreTypesList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+
+  // Scaling Section
+  scalingSection: {
+    marginHorizontal: 16,
+    marginBottom: 24,
   },
-  scoreTypeBadge: {
+  scalingHeader: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    gap: 6,
+    marginBottom: 12,
+  },
+  comparisonToggle: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.primary + '20',
     borderRadius: 8,
   },
-  scoreTypeText: {
+  comparisonToggleText: {
     fontSize: 14,
     fontWeight: "600",
-  },
-  scalingSection: {
-    marginBottom: 24,
+    color: colors.primary,
   },
   scalingTabs: {
     flexDirection: "row",
@@ -502,14 +636,14 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     alignItems: "center",
-    backgroundColor: "#1F2937",
-    borderRadius: 8,
+    backgroundColor: "#1A1F2E",
+    borderRadius: 10,
     borderWidth: 2,
-    borderColor: "transparent",
+    borderColor: "#2D3748",
   },
   scalingTabActive: {
-    backgroundColor: "#0EA5E9",
-    borderColor: "#0EA5E9",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   scalingTabText: {
     fontSize: 16,
@@ -520,32 +654,50 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   scalingDescription: {
-    padding: 12,
-    backgroundColor: "#1F2937",
-    borderRadius: 8,
+    padding: 14,
+    backgroundColor: "#1A1F2E",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2D3748',
   },
   scalingDescText: {
     fontSize: 14,
     color: colors.mutedForeground,
     lineHeight: 20,
   },
+
+  // Movements Section
   movementsSection: {
-    marginBottom: 24,
+    marginHorizontal: 16,
+    marginBottom: 32,
   },
   movementCard: {
     marginBottom: 16,
-    padding: 16,
-    backgroundColor: "#1F2937",
-    borderRadius: 12,
+    padding: 20,
+    backgroundColor: "#1A1F2E",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2D3748',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
   movementHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
+  },
+  movementTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    flex: 1,
   },
   movementNumber: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "bold",
     color: colors.primary,
   },
@@ -555,32 +707,78 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     flex: 1,
   },
+  movementBadges: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  categoryBadgeSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  categoryEmojiSmall: {
+    fontSize: 16,
+  },
+  goalTypeBadgeSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  goalTypeEmojiSmall: {
+    fontSize: 16,
+  },
   movementDetailsRow: {
     flexDirection: "row",
-    alignItems: "center",
+    flexWrap: "wrap",
     gap: 8,
-    marginTop: 8,
-    marginBottom: 4,
+    marginTop: 12,
+  },
+  detailChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#2D3748',
+    borderRadius: 8,
   },
   movementDetailText: {
     fontSize: 15,
     fontWeight: "600",
     color: "#FFFFFF",
   },
+  distanceContainer: {
+    width: "100%",
+    gap: 4,
+  },
+  distanceSecondary: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    marginLeft: 38,
+  },
+  distanceContext: {
+    fontSize: 13,
+    color: '#F59E0B',
+    marginLeft: 38,
+    fontStyle: "italic",
+  },
   variationContainer: {
-    marginTop: 4,
-    marginBottom: 8,
+    marginTop: 12,
   },
   variationText: {
     fontSize: 14,
     color: colors.mutedForeground,
-    fontStyle: "italic",
+    lineHeight: 20,
   },
   movementNotes: {
     fontSize: 14,
     color: colors.mutedForeground,
-    fontStyle: "italic",
-    marginTop: 8,
+    marginTop: 12,
+    lineHeight: 20,
   },
   standardsContainer: {
     marginTop: 12,
@@ -598,9 +796,11 @@ const styles = StyleSheet.create({
   },
   standardBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: "#374151",
-    borderRadius: 6,
+    paddingVertical: 5,
+    backgroundColor: "#2D3748",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
   },
   standardText: {
     fontSize: 12,

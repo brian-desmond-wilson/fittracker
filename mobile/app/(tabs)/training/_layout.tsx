@@ -9,6 +9,7 @@ export default function TrainingLayout() {
     >
       <Stack.Screen name="index" />
       <Stack.Screen name="program/[id]" />
+      <Stack.Screen name="wod/[id]" />
     </Stack>
   );
 }

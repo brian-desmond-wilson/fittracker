@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODCategoryName, WODWithDetails, WODCategory } from '@/src/types/crossfit';
 import { fetchWODs, searchWODs, fetchWODCategories } from '@/src/lib/supabase/crossfit';
-import { WODDetailScreen } from './WODDetailScreen';
 import { AddWODWizard } from './AddWODWizard';
 import { SwipeableWODCard } from './SwipeableWODCard';
 
@@ -15,12 +15,12 @@ interface WODsTabProps {
 }
 
 export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<WODCategoryName>('All');
   const [wods, setWods] = useState<WODWithDetails[]>([]);
   const [categories, setCategories] = useState<WODCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [selectedWODId, setSelectedWODId] = useState<string | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
 
   useEffect(() => {
@@ -148,7 +148,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
             <SwipeableWODCard
               key={wod.id}
               wod={wod}
-              onPress={() => setSelectedWODId(wod.id)}
+              onPress={() => router.push(`/(tabs)/training/wod/${wod.id}`)}
               onDelete={loadWODs}
               getCategoryColor={getCategoryColor}
             />
@@ -179,21 +179,6 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
             loadWODs();
           }}
         />
-      </Modal>
-
-      {/* WOD Detail Modal */}
-      <Modal
-        visible={selectedWODId !== null}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setSelectedWODId(null)}
-      >
-        {selectedWODId && (
-          <WODDetailScreen
-            wodId={selectedWODId}
-            onClose={() => setSelectedWODId(null)}
-          />
-        )}
       </Modal>
     </GestureHandlerRootView>
   );
