@@ -89,6 +89,11 @@ export function MovementConfigModal({
   const [showMovementSearch, setShowMovementSearch] = useState(false);
   const [searchTargetLevel, setSearchTargetLevel] = useState<ScalingLevel>('Rx');
 
+  // Reps/Time measurement mode ('reps' or 'time') for each scaling level
+  const [rxMeasurementMode, setRxMeasurementMode] = useState<'reps' | 'time'>('reps');
+  const [l2MeasurementMode, setL2MeasurementMode] = useState<'reps' | 'time'>('reps');
+  const [l1MeasurementMode, setL1MeasurementMode] = useState<'reps' | 'time'>('reps');
+
   // Reset state when modal opens or when existingConfig changes
   useEffect(() => {
     if (visible) {
@@ -147,7 +152,7 @@ export function MovementConfigModal({
     if (searchTargetLevel === 'Rx') {
       setRxAlternativeExercise(alternativeMovement);
       setRxAlternativeExerciseId(alternativeMovement.id);
-      setRxAlternativeExerciseName(alternativeMovement.full_name || alternativeMovement.name);
+      setRxAlternativeExerciseName(alternativeMovement.name);
       // Clear all Rx fields for fresh configuration
       setRxReps('');
       setRxWeightMen('');
@@ -159,7 +164,7 @@ export function MovementConfigModal({
     } else if (searchTargetLevel === 'L2') {
       setL2AlternativeExercise(alternativeMovement);
       setL2AlternativeExerciseId(alternativeMovement.id);
-      setL2AlternativeExerciseName(alternativeMovement.full_name || alternativeMovement.name);
+      setL2AlternativeExerciseName(alternativeMovement.name);
       // Clear all L2 fields for fresh configuration
       setL2Reps('');
       setL2WeightMen('');
@@ -171,7 +176,7 @@ export function MovementConfigModal({
     } else {
       setL1AlternativeExercise(alternativeMovement);
       setL1AlternativeExerciseId(alternativeMovement.id);
-      setL1AlternativeExerciseName(alternativeMovement.full_name || alternativeMovement.name);
+      setL1AlternativeExerciseName(alternativeMovement.name);
       // Clear all L1 fields for fresh configuration
       setL1Reps('');
       setL1WeightMen('');
@@ -247,7 +252,7 @@ export function MovementConfigModal({
 
     const config: Omit<WODMovementConfig, 'movement_order'> = {
       exercise_id: movement.id,
-      exercise_name: movement.full_name || movement.name,
+      exercise_name: movement.name,
 
       // Equipment metadata (for edit modal)
       requires_weight: movement.requires_weight,
@@ -412,20 +417,96 @@ export function MovementConfigModal({
       );
     }
 
-    // For bodyweight movements on Rx/L2 tabs, show simplified UI
+    // For bodyweight movements on Rx/L2 tabs, check scoring types
     if (isBodyweight && (isRx || isL2)) {
+      const scoringTypes = activeMovement?.scoring_types || [];
+      const hasReps = scoringTypes.some(st => st.name === 'Reps');
+      const hasTime = scoringTypes.some(st => st.name === 'Time');
+      const canMeasure = hasReps || hasTime;
+
+      const measurementMode = isRx ? rxMeasurementMode : l2MeasurementMode;
+      const setMeasurementMode = isRx ? setRxMeasurementMode : setL2MeasurementMode;
+      const reps = isRx ? rxReps : l2Reps;
+      const setReps = isRx ? setRxReps : setL2Reps;
+      const time = isRx ? rxTime : l2Time;
+      const setTime = isRx ? setRxTime : setL2Time;
+
       return (
         <View style={styles.bodyweightMessage}>
           {alternativeToggle}
-          <View style={styles.infoBox}>
-            <Text style={styles.infoIcon}>ℹ️</Text>
-            <View style={styles.infoTextContainer}>
-              <Text style={styles.infoTitle}>No configuration needed</Text>
-              <Text style={styles.infoText}>
-                This is a bodyweight movement.
-              </Text>
+
+          {!canMeasure && (
+            <View style={styles.infoBox}>
+              <Text style={styles.infoIcon}>ℹ️</Text>
+              <View style={styles.infoTextContainer}>
+                <Text style={styles.infoTitle}>No configuration needed</Text>
+                <Text style={styles.infoText}>
+                  This is a bodyweight movement.
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
+
+          {canMeasure && (
+            <>
+              {/* Reps/Time Toggle (if both are available) */}
+              {hasReps && hasTime && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Measurement Type</Text>
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity
+                      style={[styles.toggleButton, measurementMode === 'reps' && styles.toggleButtonActive]}
+                      onPress={() => setMeasurementMode('reps')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.toggleButtonText, measurementMode === 'reps' && styles.toggleButtonTextActive]}>
+                        Reps
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.toggleButton, measurementMode === 'time' && styles.toggleButtonActive]}
+                      onPress={() => setMeasurementMode('time')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.toggleButtonText, measurementMode === 'time' && styles.toggleButtonTextActive]}>
+                        Time
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Reps Input */}
+              {((hasReps && !hasTime) || (hasReps && hasTime && measurementMode === 'reps')) && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Reps</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 10"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={reps}
+                    onChangeText={setReps}
+                    keyboardType="number-pad"
+                  />
+                </View>
+              )}
+
+              {/* Time Input (seconds) */}
+              {((hasTime && !hasReps) || (hasReps && hasTime && measurementMode === 'time')) && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Time (seconds)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 30"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={time}
+                    onChangeText={setTime}
+                    keyboardType="number-pad"
+                  />
+                </View>
+              )}
+            </>
+          )}
 
           {wodRepScheme && (
             <View style={styles.schemeInfo}>
@@ -463,23 +544,84 @@ export function MovementConfigModal({
       );
     }
 
-    // For L1 bodyweight, show only relevant fields
+    // For L1 bodyweight, use same scoring-type-aware logic as Rx/L2
     if (isBodyweight && isL1) {
+      const scoringTypes = activeMovement?.scoring_types || [];
+      const hasReps = scoringTypes.some(st => st.name === 'Reps');
+      const hasTime = scoringTypes.some(st => st.name === 'Time');
+      const canMeasure = hasReps || hasTime;
+
+      const measurementMode = l1MeasurementMode;
+      const setMeasurementMode = setL1MeasurementMode;
+      const reps = l1Reps;
+      const setReps = setL1Reps;
+      const time = l1Time;
+      const setTime = setL1Time;
+
       return (
         <View style={styles.scalingForm}>
           {alternativeToggle}
-          {/* Reps (optional for L1 scaling) */}
-          <View style={styles.field}>
-            <Text style={styles.label}>Reps (Optional - if different from WOD)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., 15 (reduced from 21)"
-              placeholderTextColor={colors.mutedForeground}
-              value={l1Reps}
-              onChangeText={setL1Reps}
-              keyboardType="number-pad"
-            />
-          </View>
+
+          {canMeasure && (
+            <>
+              {/* Reps/Time Toggle (if both are available) */}
+              {hasReps && hasTime && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Measurement Type</Text>
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity
+                      style={[styles.toggleButton, measurementMode === 'reps' && styles.toggleButtonActive]}
+                      onPress={() => setMeasurementMode('reps')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.toggleButtonText, measurementMode === 'reps' && styles.toggleButtonTextActive]}>
+                        Reps
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.toggleButton, measurementMode === 'time' && styles.toggleButtonActive]}
+                      onPress={() => setMeasurementMode('time')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.toggleButtonText, measurementMode === 'time' && styles.toggleButtonTextActive]}>
+                        Time
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Reps Input */}
+              {((hasReps && !hasTime) || (hasReps && hasTime && measurementMode === 'reps')) && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Reps (Optional - if different from WOD)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 15 (reduced from 21)"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={reps}
+                    onChangeText={setReps}
+                    keyboardType="number-pad"
+                  />
+                </View>
+              )}
+
+              {/* Time Input (seconds) */}
+              {((hasTime && !hasReps) || (hasReps && hasTime && measurementMode === 'time')) && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Time (seconds)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 30"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={time}
+                    onChangeText={setTime}
+                    keyboardType="number-pad"
+                  />
+                </View>
+              )}
+            </>
+          )}
 
           {/* Movement Variation (for alternative movements) */}
           <View style={styles.field}>
@@ -623,7 +765,7 @@ export function MovementConfigModal({
           <View style={styles.header}>
             <View>
               <Text style={styles.title}>Configure Movement</Text>
-              <Text style={styles.movementName}>{movement.full_name || movement.name}</Text>
+              <Text style={styles.movementName}>{movement.name}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <X size={24} color={colors.foreground} />
@@ -976,5 +1118,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  toggleButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.foreground,
+  },
+  toggleButtonTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

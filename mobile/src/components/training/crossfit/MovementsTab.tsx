@@ -182,7 +182,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
               <View style={styles.movementInfo}>
                 <View style={styles.movementNameRow}>
                   <Text style={styles.movementName}>
-                    {movement.full_name || movement.name}
+                    {movement.name}
                   </Text>
                   {movement.is_official ? (
                     <View style={styles.officialBadge}>

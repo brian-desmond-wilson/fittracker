@@ -3,6 +3,7 @@ import type {
   GoalType,
   Exercise,
   ExerciseWithVariations,
+  ExerciseWithDetails,
   VariationCategory,
   VariationOption,
   VariationOptionWithCategory,
@@ -23,6 +24,17 @@ import type {
   UpdateClassInput,
   MovementCategory,
   ScoringType,
+  MovementFamily,
+  PlaneOfMotion,
+  LoadPosition,
+  Stance,
+  RangeDepth,
+  MovementStyle,
+  Symmetry,
+  MuscleRegion,
+  ExerciseStandard,
+  MovementMeasurementProfile,
+  MovementScalingLink,
 } from '../../types/crossfit';
 
 // ============================================================================
@@ -94,6 +106,146 @@ export async function fetchVariationCategories(): Promise<VariationCategory[]> {
 
   if (error) {
     console.error('Error fetching variation categories:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+// ============================================================================
+// NEW REFERENCE TABLES (Movement Metadata)
+// ============================================================================
+
+/**
+ * Fetch all movement families (Squat, Hinge, Press, Pull, etc.)
+ */
+export async function fetchMovementFamilies() {
+  const { data, error } = await supabase
+    .from('movement_families')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching movement families:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all planes of motion (Sagittal, Frontal, Transverse, Multi)
+ */
+export async function fetchPlanesOfMotion() {
+  const { data, error } = await supabase
+    .from('planes_of_motion')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching planes of motion:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all load positions (BackRack, FrontRack, Overhead, etc.)
+ */
+export async function fetchLoadPositions() {
+  const { data, error } = await supabase
+    .from('load_positions')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching load positions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all stances (Standard, Wide/Sumo, Split, Single-Leg, etc.)
+ */
+export async function fetchStances() {
+  const { data, error } = await supabase
+    .from('stances')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching stances:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all range depths (Full, Parallel, ATG, etc.)
+ */
+export async function fetchRangeDepths() {
+  const { data, error } = await supabase
+    .from('range_depths')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching range depths:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all movement styles (Standard, Pause, Tempo, Strict, Kipping, etc.)
+ */
+export async function fetchMovementStyles() {
+  const { data, error } = await supabase
+    .from('movement_styles')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching movement styles:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all symmetries (Bilateral, Unilateral, Alternating, Offset)
+ */
+export async function fetchSymmetries() {
+  const { data, error } = await supabase
+    .from('symmetries')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching symmetries:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all muscle regions (Quads, Hamstrings, Chest, Back, etc.)
+ */
+export async function fetchMuscleRegions() {
+  const { data, error } = await supabase
+    .from('muscle_regions')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching muscle regions:', error);
     throw error;
   }
 
@@ -330,12 +482,26 @@ export async function fetchVariationOptions(): Promise<VariationOptionWithCatego
 /**
  * Create a new custom variation option
  * Returns the new variation option ID
+ * If the variation already exists, returns the existing ID instead of creating a duplicate
  */
 export async function createVariationOption(
   categoryId: string,
   name: string,
   description?: string
 ): Promise<string> {
+  // First check if this variation already exists
+  const { data: existing } = await supabase
+    .from('variation_options')
+    .select('id')
+    .eq('category_id', categoryId)
+    .eq('name', name)
+    .single();
+
+  // If it exists, return its ID
+  if (existing) {
+    return existing.id;
+  }
+
   // Get the max display_order for this category
   const { data: maxOrder } = await supabase
     .from('variation_options')
@@ -373,20 +539,41 @@ export async function createVariationOption(
 export async function createMovement(input: CreateMovementInput): Promise<string> {
   try {
     // 1. Insert the exercise
+    const exerciseData: any = {
+      name: input.name,
+      description: input.description,
+      slug: input.name.toLowerCase().replace(/\s+/g, '-'),
+      goal_type_id: input.goal_type_id,
+      movement_category_id: input.movement_category_id,
+
+      // Core movement metadata (only include if provided)
+      ...(input.movement_family_id && { movement_family_id: input.movement_family_id }),
+      ...(input.plane_of_motion_id && { plane_of_motion_id: input.plane_of_motion_id }),
+      ...(input.skill_level && { skill_level: input.skill_level }),
+      ...(input.short_name && { short_name: input.short_name }),
+      ...(input.aliases && input.aliases.length > 0 && { aliases: input.aliases }),
+
+      // Movement attributes (only include if provided)
+      ...(input.load_position_id && { load_position_id: input.load_position_id }),
+      ...(input.stance_id && { stance_id: input.stance_id }),
+      ...(input.range_depth_id && { range_depth_id: input.range_depth_id }),
+      ...(input.movement_style_id && { movement_style_id: input.movement_style_id }),
+      ...(input.symmetry_id && { symmetry_id: input.symmetry_id }),
+
+      // Media
+      ...(input.video_url && { video_url: input.video_url }),
+      ...(input.image_url && { image_url: input.image_url }),
+      ...(input.full_name && { full_name: input.full_name }),
+
+      // Ownership
+      is_movement: true,
+      is_official: false,
+      created_by: input.created_by,
+    };
+
     const { data: exercise, error: exerciseError } = await supabase
       .from('exercises')
-      .insert({
-        name: input.name,
-        description: input.description,
-        slug: input.name.toLowerCase().replace(/\s+/g, '-'),
-        goal_type_id: input.goal_type_id,
-        movement_category_id: input.movement_category_id,
-        video_url: input.video_url,
-        image_url: input.image_url,
-        is_movement: true,
-        is_official: false,
-        created_by: input.created_by,
-      })
+      .insert(exerciseData)
       .select('id')
       .single();
 
@@ -426,6 +613,24 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       if (scoringError) {
         console.error('Error inserting exercise scoring types:', scoringError);
         throw scoringError;
+      }
+    }
+
+    // 4. Insert muscle regions (if any)
+    if (input.muscle_region_ids && input.muscle_region_ids.length > 0) {
+      const muscleInserts = input.muscle_region_ids.map(regionId => ({
+        exercise_id: exercise.id,
+        muscle_region_id: regionId,
+        is_primary: input.primary_muscle_region_ids?.includes(regionId) || false,
+      }));
+
+      const { error: muscleError } = await supabase
+        .from('exercise_muscle_regions')
+        .insert(muscleInserts);
+
+      if (muscleError) {
+        console.error('Error inserting exercise muscle regions:', muscleError);
+        throw muscleError;
       }
     }
 
@@ -1004,5 +1209,254 @@ export async function reorderClassParts(
   } catch (error) {
     console.error('Error in reorderClassParts:', error);
     return false;
+  }
+}
+
+// ============================================================================
+// EXERCISE STANDARDS, MEASUREMENT PROFILES, AND SCALING LINKS
+// ============================================================================
+
+/**
+ * Fetch exercise standards for a specific exercise or variation
+ */
+export async function fetchExerciseStandards(
+  exerciseId?: string,
+  variationOptionId?: string
+): Promise<ExerciseStandard[]> {
+  let query = supabase
+    .from('exercise_standards')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (exerciseId) {
+    query = query.eq('exercise_id', exerciseId);
+  }
+
+  if (variationOptionId) {
+    query = query.eq('variation_option_id', variationOptionId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching exercise standards:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch measurement profiles for a specific exercise or variation
+ */
+export async function fetchMeasurementProfiles(
+  exerciseId?: string,
+  variationOptionId?: string
+): Promise<MovementMeasurementProfile[]> {
+  let query = supabase
+    .from('movement_measurement_profiles')
+    .select('*')
+    .order('measurement_type');
+
+  if (exerciseId) {
+    query = query.eq('exercise_id', exerciseId);
+  }
+
+  if (variationOptionId) {
+    query = query.eq('variation_option_id', variationOptionId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching measurement profiles:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch progressions for a specific exercise
+ * Returns movements that are harder/more advanced
+ */
+export async function fetchMovementProgressions(
+  exerciseId: string,
+  variationOptionId?: string
+): Promise<(MovementScalingLink & { to_exercise?: Exercise })[]> {
+  let query = supabase
+    .from('movement_scaling_links')
+    .select(`
+      *,
+      to_exercise:exercises!movement_scaling_links_to_exercise_id_fkey(*)
+    `)
+    .eq('from_exercise_id', exerciseId)
+    .eq('scaling_type', 'progression')
+    .order('display_order');
+
+  if (variationOptionId) {
+    query = query.eq('from_variation_option_id', variationOptionId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching movement progressions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch regressions for a specific exercise
+ * Returns movements that are easier/more accessible
+ */
+export async function fetchMovementRegressions(
+  exerciseId: string,
+  variationOptionId?: string
+): Promise<(MovementScalingLink & { to_exercise?: Exercise })[]> {
+  let query = supabase
+    .from('movement_scaling_links')
+    .select(`
+      *,
+      to_exercise:exercises!movement_scaling_links_to_exercise_id_fkey(*)
+    `)
+    .eq('from_exercise_id', exerciseId)
+    .eq('scaling_type', 'regression')
+    .order('display_order');
+
+  if (variationOptionId) {
+    query = query.eq('from_variation_option_id', variationOptionId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching movement regressions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch lateral alternatives for a specific exercise
+ * Returns movements at similar difficulty level
+ */
+export async function fetchMovementAlternatives(
+  exerciseId: string,
+  variationOptionId?: string
+): Promise<(MovementScalingLink & { to_exercise?: Exercise })[]> {
+  let query = supabase
+    .from('movement_scaling_links')
+    .select(`
+      *,
+      to_exercise:exercises!movement_scaling_links_to_exercise_id_fkey(*)
+    `)
+    .eq('from_exercise_id', exerciseId)
+    .eq('scaling_type', 'lateral')
+    .order('display_order');
+
+  if (variationOptionId) {
+    query = query.eq('from_variation_option_id', variationOptionId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching movement alternatives:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch muscle regions targeted by an exercise
+ */
+export async function fetchExerciseMuscleRegions(exerciseId: string) {
+  const { data, error } = await supabase
+    .from('exercise_muscle_regions')
+    .select(`
+      *,
+      muscle_region:muscle_regions(*)
+    `)
+    .eq('exercise_id', exerciseId)
+    .order('is_primary', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching exercise muscle regions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch an exercise with full details including all metadata
+ */
+export async function fetchExerciseWithDetails(exerciseId: string): Promise<ExerciseWithDetails | null> {
+  try {
+    // Fetch base exercise data
+    const { data: exercise, error: exerciseError } = await supabase
+      .from('exercises')
+      .select(`
+        *,
+        goal_type:goal_types(*),
+        movement_category:movement_categories(*),
+        movement_family:movement_families(*),
+        plane_of_motion:planes_of_motion(*),
+        variations:exercise_variations(
+          *,
+          variation_option:variation_options(
+            *,
+            category:variation_categories(*)
+          )
+        ),
+        scoring_types:exercise_scoring_types(
+          scoring_type:scoring_types(*)
+        )
+      `)
+      .eq('id', exerciseId)
+      .single();
+
+    if (exerciseError || !exercise) {
+      console.error('Error fetching exercise:', exerciseError);
+      return null;
+    }
+
+    // Fetch additional metadata in parallel
+    const [
+      muscleRegions,
+      measurementProfiles,
+      standards,
+      progressions,
+      regressions,
+    ] = await Promise.all([
+      fetchExerciseMuscleRegions(exerciseId),
+      fetchMeasurementProfiles(exerciseId),
+      fetchExerciseStandards(exerciseId),
+      fetchMovementProgressions(exerciseId),
+      fetchMovementRegressions(exerciseId),
+    ]);
+
+    // Flatten scoring_types structure
+    const flattenedScoringTypes = exercise.scoring_types?.map(
+      (est: any) => est.scoring_type
+    ).filter(Boolean) || [];
+
+    return {
+      ...exercise,
+      scoring_types: flattenedScoringTypes,
+      muscle_regions: muscleRegions,
+      measurement_profiles: measurementProfiles,
+      standards,
+      progressions,
+      regressions,
+    } as ExerciseWithDetails;
+  } catch (error) {
+    console.error('Error in fetchExerciseWithDetails:', error);
+    return null;
   }
 }

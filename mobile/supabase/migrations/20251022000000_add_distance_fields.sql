@@ -77,13 +77,32 @@ WHERE name LIKE '%Walk%' OR name LIKE '%Farmer%' OR name LIKE '%Carry%';
 -- 4. Add check constraints for valid distance units
 -- ============================================================================
 
-ALTER TABLE wod_movements
-  ADD CONSTRAINT check_rx_distance_unit
-    CHECK (rx_distance_unit IS NULL OR rx_distance_unit IN ('meters', 'feet', 'miles', 'kilometers')),
-  ADD CONSTRAINT check_l2_distance_unit
-    CHECK (l2_distance_unit IS NULL OR l2_distance_unit IN ('meters', 'feet', 'miles', 'kilometers')),
-  ADD CONSTRAINT check_l1_distance_unit
-    CHECK (l1_distance_unit IS NULL OR l1_distance_unit IN ('meters', 'feet', 'miles', 'kilometers'));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'check_rx_distance_unit'
+  ) THEN
+    ALTER TABLE wod_movements
+      ADD CONSTRAINT check_rx_distance_unit
+        CHECK (rx_distance_unit IS NULL OR rx_distance_unit IN ('meters', 'feet', 'miles', 'kilometers'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'check_l2_distance_unit'
+  ) THEN
+    ALTER TABLE wod_movements
+      ADD CONSTRAINT check_l2_distance_unit
+        CHECK (l2_distance_unit IS NULL OR l2_distance_unit IN ('meters', 'feet', 'miles', 'kilometers'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'check_l1_distance_unit'
+  ) THEN
+    ALTER TABLE wod_movements
+      ADD CONSTRAINT check_l1_distance_unit
+        CHECK (l1_distance_unit IS NULL OR l1_distance_unit IN ('meters', 'feet', 'miles', 'kilometers'));
+  END IF;
+END $$;
 
 -- ============================================================================
 -- 5. Add index for distance movement queries

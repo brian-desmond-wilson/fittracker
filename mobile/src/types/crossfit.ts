@@ -30,6 +30,12 @@ export type ScoringTypeName = 'Reps' | 'Rounds' | 'Weight' | 'Time' | 'Distance'
 
 export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom';
 
+export type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
+
+export type MeasurementType = 'REPS' | 'TIME' | 'DISTANCE' | 'LOAD' | 'CALORIES' | 'QUALITY' | 'HEIGHT';
+
+export type ScalingType = 'progression' | 'regression' | 'lateral';
+
 // ============================================================================
 // DATABASE TABLE TYPES
 // ============================================================================
@@ -65,6 +71,142 @@ export interface ExerciseScoringType {
   created_at: string;
 }
 
+// ============================================================================
+// NEW REFERENCE TABLES (from migrations)
+// ============================================================================
+
+export interface MovementFamily {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface PlaneOfMotion {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface LoadPosition {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface Stance {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface RangeDepth {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface MovementStyle {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface Symmetry {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface MuscleRegion {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface ExerciseMuscleRegion {
+  id: string;
+  exercise_id: string;
+  muscle_region_id: string;
+  is_primary: boolean;
+  created_at: string;
+}
+
+export interface MovementMeasurementProfile {
+  id: string;
+  exercise_id: string | null;
+  variation_option_id: string | null;
+  measurement_type: MeasurementType;
+  unit_primary: string;
+  unit_secondary: string | null;
+  min_value: number | null;
+  max_value: number | null;
+  precision: number;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface ExerciseStandard {
+  id: string;
+  exercise_id: string | null;
+  variation_option_id: string | null;
+
+  // Range of Motion Standards
+  rom_description: string | null;
+  rom_start_position: string | null;
+  rom_end_position: string | null;
+  rom_key_checkpoints: string[] | null;
+
+  // Setup and Execution
+  setup_cues: string[] | null;
+  execution_cues: string[] | null;
+  breathing_pattern: string | null;
+
+  // Standards and Faults
+  common_faults: string[] | null;
+  no_rep_conditions: string[] | null;
+  judging_notes: string | null;
+
+  // Competition Standards
+  competition_standard: string | null;
+  is_official_standard: boolean;
+
+  // Metadata
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface MovementScalingLink {
+  id: string;
+  from_exercise_id: string;
+  from_variation_option_id: string | null;
+  to_exercise_id: string;
+  to_variation_option_id: string | null;
+  scaling_type: ScalingType;
+  difficulty_delta: number | null;
+  description: string | null;
+  prerequisites: string[] | null;
+  display_order: number | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 export interface Exercise {
   id: string;
   created_at: string;
@@ -79,6 +221,13 @@ export interface Exercise {
   goal_type_id: string | null;
   movement_category_id: string | null;
 
+  // NEW: Movement metadata (from Migration 2)
+  movement_family_id: string | null;
+  plane_of_motion_id: string | null;
+  skill_level: SkillLevel | null;
+  short_name: string | null;
+  aliases: string[] | null;
+
   // Equipment metadata
   requires_weight: boolean;
   requires_distance: boolean;
@@ -86,7 +235,7 @@ export interface Exercise {
 
   // Categorization
   category: string | null;
-  muscle_groups: string[] | null;
+  muscle_groups: string[] | null; // DEPRECATED: Use exercise_muscle_regions junction table
   equipment: string[] | null; // DEPRECATED: Use equipment_types
 
   // Media
@@ -120,6 +269,18 @@ export interface VariationOption {
   description: string | null;
   display_order: number;
   created_at: string;
+
+  // NEW: Movement metadata overrides (from Migration 7)
+  movement_family_id: string | null;
+  plane_of_motion_id: string | null;
+  load_position_id: string | null;
+  stance_id: string | null;
+  range_depth_id: string | null;
+  movement_style_id: string | null;
+  symmetry_id: string | null;
+  skill_level: SkillLevel | null;
+  short_name: string | null;
+  aliases: string[] | null;
 }
 
 export interface ExerciseVariation {
@@ -291,6 +452,42 @@ export interface ExerciseWithVariations extends Exercise {
   scoring_types?: ScoringType[];
 }
 
+// Extended Exercise type with all new metadata relations
+export interface ExerciseWithDetails extends Exercise {
+  // Existing relations
+  variations?: (ExerciseVariation & {
+    variation_option?: VariationOption & {
+      category?: VariationCategory;
+    };
+  })[];
+  goal_type?: GoalType;
+  movement_category?: MovementCategory;
+  scoring_types?: ScoringType[];
+
+  // NEW: Movement metadata relations
+  movement_family?: MovementFamily;
+  plane_of_motion?: PlaneOfMotion;
+
+  // NEW: Muscle targeting (normalized)
+  muscle_regions?: (ExerciseMuscleRegion & {
+    muscle_region?: MuscleRegion;
+  })[];
+
+  // NEW: Measurement profiles
+  measurement_profiles?: MovementMeasurementProfile[];
+
+  // NEW: Standards
+  standards?: ExerciseStandard[];
+
+  // NEW: Progressions and regressions
+  progressions?: (MovementScalingLink & {
+    to_exercise?: Exercise;
+  })[];
+  regressions?: (MovementScalingLink & {
+    to_exercise?: Exercise;
+  })[];
+}
+
 export interface WODMovementWithDetails extends WODMovement {
   exercise?: Exercise;
   standards?: MovementStandard[];
@@ -417,13 +614,35 @@ export interface CreateMovementInput {
   description?: string;
   goal_type_id: string;
   movement_category_id: string;
+
+  // NEW: Core movement metadata
+  movement_family_id?: string;
+  plane_of_motion_id?: string;
+  skill_level?: SkillLevel;
+  short_name?: string;
+  aliases?: string[];
+
+  // NEW: Movement attributes
+  load_position_id?: string;
+  stance_id?: string;
+  range_depth_id?: string;
+  movement_style_id?: string;
+  symmetry_id?: string;
+
+  // Media
   video_url?: string;
   image_url?: string;
+
+  // Ownership
   is_movement: true;
   is_official: false;
   created_by: string;
+
+  // Relations
   variation_option_ids?: string[];
   scoring_type_ids?: string[];
+  muscle_region_ids?: string[];
+  primary_muscle_region_ids?: string[];
 }
 
 export interface VariationOptionWithCategory extends VariationOption {
