@@ -132,13 +132,14 @@ serve(async (req) => {
     console.log('Prompt:', prompt);
 
     // Use Gemini 2.5 Flash Image API for image generation
-    // Model: gemini-2.5-flash-image (aka Gemini 2.5 Flash Image)
+    // Model: gemini-2.5-flash-image (aka Nano Banana)
     const geminiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
-    const geminiResponse = await fetch(`${geminiEndpoint}?key=${geminiApiKey}`, {
+    const geminiResponse = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': geminiApiKey,
       },
       body: JSON.stringify({
         contents: [{
@@ -147,8 +148,10 @@ serve(async (req) => {
           }]
         }],
         generationConfig: {
-          response_modalities: ['image'],
-          media_resolution: 'MEDIA_RESOLUTION_MEDIUM', // or 'MEDIA_RESOLUTION_HIGH'
+          response_modalities: ['IMAGE'],
+          image_config: {
+            aspect_ratio: '1:1',  // Square image for WOD cards
+          }
         }
       }),
     });
