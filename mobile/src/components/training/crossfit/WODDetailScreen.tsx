@@ -310,7 +310,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <ChevronLeft size={24} color="#FFFFFF" />
-            <Text style={styles.backText}>Back</Text>
+            <Text style={styles.backText}>WODs</Text>
           </TouchableOpacity>
         </View>
 
@@ -437,7 +437,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                 </Text>
                 {wod.rep_scheme_type && (
                   <Text style={styles.statText} numberOfLines={1}>
-                    {wod.rep_scheme_type}
+                    {wod.rep_scheme_type.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                   </Text>
                 )}
               </View>
@@ -953,10 +953,10 @@ const styles = StyleSheet.create({
 
   // Sections
   sectionTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    marginBottom: 12,
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.foreground,
+    marginBottom: 16,
   },
 
   // Scaling Section
