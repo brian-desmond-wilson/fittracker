@@ -26,6 +26,7 @@ import {
   Dumbbell,
   Activity,
   Package,
+  Users,
   Sparkles,
   MoreVertical,
 } from "lucide-react-native";
@@ -388,21 +389,49 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
           {/* Integrated Stats Row */}
           <View style={styles.integratedStatsRow}>
-            <View style={styles.statItem}>
-              <Dumbbell size={18} color={colors.primary} />
-              <Text style={styles.statText}>{wodStats.movementCount} Movements</Text>
+            {/* Movement Names */}
+            <View style={styles.statColumn}>
+              <Package size={24} color={colors.primary} />
+              <View style={styles.statTextContainer}>
+                {(wod.movements || []).slice(0, 2).map((movement, index) => (
+                  <Text key={index} style={styles.statText} numberOfLines={1}>
+                    {movement.exercise?.name || 'Movement'}
+                  </Text>
+                ))}
+                {(wod.movements || []).length > 2 && (
+                  <Text style={styles.statText}>+{(wod.movements || []).length - 2} more</Text>
+                )}
+              </View>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Activity size={18} color="#10B981" />
-              <Text style={styles.statText}>{aggregateMovementCategories(wod.movements || [])}</Text>
+
+            {/* Movement Categories */}
+            <View style={styles.statColumn}>
+              <Users size={24} color="#10B981" />
+              <View style={styles.statTextContainer}>
+                {(() => {
+                  const categories = new Set<string>();
+                  (wod.movements || []).forEach(movement => {
+                    const category = (movement.exercise as any)?.movement_category?.name;
+                    if (category) categories.add(category);
+                  });
+                  const categoryArray = Array.from(categories).slice(0, 2);
+                  return categoryArray.map((cat, index) => (
+                    <Text key={index} style={styles.statText} numberOfLines={1}>
+                      {cat}
+                    </Text>
+                  ));
+                })()}
+              </View>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Clock size={18} color="#F59E0B" />
-              <Text style={styles.statText}>
-                {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
-              </Text>
+
+            {/* Time Cap */}
+            <View style={styles.statColumn}>
+              <Clock size={24} color="#F59E0B" />
+              <View style={styles.statTextContainer}>
+                <Text style={styles.statText}>
+                  {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -711,7 +740,7 @@ const styles = StyleSheet.create({
   heroSection: {
     position: 'relative',
     width: '100%',
-    height: 300,
+    height: 220,
     backgroundColor: '#1A1F2E',
   },
   heroImage: {
@@ -808,29 +837,28 @@ const styles = StyleSheet.create({
   // Integrated Stats Row
   integratedStatsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    justifyContent: 'space-around',
+    paddingVertical: 20,
     paddingHorizontal: 16,
-    paddingVertical: 16,
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#1A2332',
+    borderTopWidth: 1,
+    borderTopColor: '#2D3748',
   },
-  statItem: {
-    flexDirection: 'row',
+  statColumn: {
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     flex: 1,
   },
+  statTextContainer: {
+    alignItems: 'center',
+    gap: 2,
+  },
   statText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.foreground,
     fontWeight: '500',
-    flexShrink: 1,
+    textAlign: 'center',
   },
   statDivider: {
     width: 1,
