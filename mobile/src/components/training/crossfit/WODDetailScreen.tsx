@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   ChevronLeft,
   Clock,
@@ -25,6 +27,7 @@ import {
   Activity,
   Package,
   Sparkles,
+  MoreVertical,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WODWithDetails, ScalingLevel } from "@/src/types/crossfit";
@@ -38,6 +41,10 @@ import {
   getGoalTypeDisplay,
   formatDistance,
   formatWeight,
+  aggregateMovementCategories,
+  formatMuscleGroups,
+  getMovementPlaceholderIcon,
+  formatTimeCap,
 } from '@/src/lib/wodDetailHelpers';
 
 interface WODDetailScreenProps {
@@ -52,6 +59,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
   const [selectedScaling, setSelectedScaling] = useState<ScalingLevel>("Rx");
   const [showComparison, setShowComparison] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [showImageMenu, setShowImageMenu] = useState(false);
 
   useEffect(() => {
     loadWOD();
@@ -307,14 +315,50 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* WOD Image or Generate Button */}
+          {/* Hero Image with Overlay or Generate Button */}
           {wod.image_url ? (
-            <View style={styles.imageSection}>
+            <View style={styles.heroSection}>
               <Image
                 source={{ uri: wod.image_url }}
-                style={styles.wodImage}
+                style={styles.heroImage}
                 resizeMode="cover"
               />
+              {/* Gradient Overlay */}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.85)']}
+                start={{ x: 0, y: 0.6 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.heroGradient}
+              >
+                {/* Overlaid Content */}
+                <View style={styles.heroOverlayContent}>
+                  <Text style={styles.heroTitle}>{wod.name}</Text>
+                  <View style={styles.heroMetaRow}>
+                    <View style={styles.heroCategoryBadge}>
+                      <Text style={styles.heroCategoryText}>{wod.category?.name}</Text>
+                    </View>
+                    <View style={styles.heroFormatRow}>
+                      {(wod.rep_scheme_type === 'fixed_rounds' || wod.format?.name === 'Rounds For Time') ? (
+                        <Timer size={16} color="#FFFFFF" />
+                      ) : (
+                        <Zap size={16} color="#FFFFFF" />
+                      )}
+                      <Text style={styles.heroFormatText}>
+                        {wod.format?.name}
+                        {wod.time_cap_minutes && ` • ${wod.time_cap_minutes} min cap`}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </LinearGradient>
+              {/* Three-dot menu button */}
+              <TouchableOpacity
+                style={styles.imageMenuButton}
+                onPress={() => setShowImageMenu(true)}
+                activeOpacity={0.7}
+              >
+                <MoreVertical size={20} color="#FFFFFF" />
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.generateImageSection}>
@@ -335,56 +379,39 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                   </>
                 )}
               </TouchableOpacity>
+              {/* Title below generate button */}
+              <View style={styles.titleSection}>
+                <Text style={styles.wodTitle}>{wod.name}</Text>
+              </View>
             </View>
           )}
 
-          {/* Title Section */}
-          <View style={styles.titleSection}>
-            <Text style={styles.wodTitle}>{wod.name}</Text>
+          {/* Integrated Stats Row */}
+          <View style={styles.integratedStatsRow}>
+            <View style={styles.statItem}>
+              <Dumbbell size={18} color={colors.primary} />
+              <Text style={styles.statText}>{wodStats.movementCount} Movements</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Activity size={18} color="#10B981" />
+              <Text style={styles.statText}>{aggregateMovementCategories(wod.movements || [])}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Clock size={18} color="#F59E0B" />
+              <Text style={styles.statText}>
+                {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
+              </Text>
+            </View>
           </View>
 
           {/* Description */}
           {wod.description && (
-            <Text style={styles.description}>{wod.description}</Text>
+            <View style={styles.descriptionSection}>
+              <Text style={styles.description}>{wod.description}</Text>
+            </View>
           )}
-
-          {/* Quick Stats Card */}
-          <View style={styles.quickStatsCard}>
-            <Text style={styles.quickStatsTitle}>Quick Stats</Text>
-
-            {/* Category and Format Row */}
-            <View style={styles.metaRow}>
-              <View style={styles.metaBadge}>
-                <Text style={styles.metaBadgeText}>{wod.category?.name}</Text>
-              </View>
-              <View style={styles.metaInfo}>
-                <Zap size={16} color={colors.primary} />
-                <Text style={styles.metaInfoText}>
-                  {wod.format?.name}
-                  {wod.time_cap_minutes && ` • ${wod.time_cap_minutes} min`}
-                </Text>
-              </View>
-            </View>
-
-            {/* Stats Grid */}
-            <View style={styles.quickStatsGrid}>
-              <View style={styles.quickStatItem}>
-                <Dumbbell size={20} color={colors.primary} />
-                <Text style={styles.quickStatValue}>{wodStats.movementCount}</Text>
-                <Text style={styles.quickStatLabel}>Movements</Text>
-              </View>
-              <View style={styles.quickStatItem}>
-                <Activity size={20} color="#10B981" />
-                <Text style={styles.quickStatValue}>{wodStats.dominantCategory}</Text>
-                <Text style={styles.quickStatLabel}>Category</Text>
-              </View>
-              <View style={styles.quickStatItem}>
-                <Clock size={20} color="#F59E0B" />
-                <Text style={styles.quickStatValue}>{wodStats.estimatedDuration}</Text>
-                <Text style={styles.quickStatLabel}>Est. Time</Text>
-              </View>
-            </View>
-          </View>
 
           {/* WOD Structure Visualization */}
           <WODStructureVisualizer wod={wod} />
@@ -454,10 +481,20 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
               <>
                 <Text style={styles.sectionTitle}>Movements</Text>
                 {scaledMovements.map((movement, index) => {
-                  const exercise = movement.exercise;
-                  // Note: Exercise type doesn't have joined relations, using fallback
-                  const categoryDisplay = getCategoryDisplay(undefined);
-                  const goalTypeDisplay = getGoalTypeDisplay(undefined);
+                  const exercise = movement.exercise as any;
+
+                  // Get category and goal type
+                  const categoryName = exercise?.movement_category?.name;
+                  const goalTypeName = exercise?.goal_type?.name;
+
+                  // Get image or placeholder
+                  const imageUrl = exercise?.thumbnail_url || exercise?.image_url;
+                  const placeholderIcon = getMovementPlaceholderIcon(categoryName);
+
+                  // Get muscle groups
+                  const muscleGroups = exercise?.muscle_regions
+                    ? formatMuscleGroups(exercise.muscle_regions)
+                    : '';
 
                   // Get distance info
                   let distanceDisplay = null;
@@ -469,57 +506,97 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
                   return (
                     <View key={movement.id} style={styles.movementCard}>
-                      {/* Movement Header with Category */}
-                      <View style={styles.movementHeader}>
-                        <View style={styles.movementTitleRow}>
-                          <Text style={styles.movementNumber}>{index + 1}.</Text>
-                          <Text style={styles.movementName}>
-                            {movement.exercise?.name}
-                          </Text>
+                      {/* Movement Image and Content Container */}
+                      <View style={styles.movementCardContent}>
+                        {/* Movement Image */}
+                        <View style={styles.movementImageContainer}>
+                          {imageUrl ? (
+                            <Image
+                              source={{ uri: imageUrl }}
+                              style={styles.movementImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.movementPlaceholder}>
+                              <Text style={styles.movementPlaceholderIcon}>{placeholderIcon}</Text>
+                            </View>
+                          )}
                         </View>
-                        <View style={styles.movementBadges}>
-                          <View style={[styles.categoryBadgeSmall, { backgroundColor: categoryDisplay.color + '20' }]}>
-                            <Text style={styles.categoryEmojiSmall}>{categoryDisplay.icon}</Text>
-                          </View>
-                          <View style={[styles.goalTypeBadgeSmall, { backgroundColor: goalTypeDisplay.color + '20' }]}>
-                            <Text style={styles.goalTypeEmojiSmall}>{goalTypeDisplay.icon}</Text>
-                          </View>
-                        </View>
-                      </View>
 
-                      {/* Movement Details */}
-                      {(movement.repsDisplay || movement.weightDisplay || distanceDisplay) && (
-                        <View style={styles.movementDetailsRow}>
+                        {/* Movement Info */}
+                        <View style={styles.movementInfo}>
+                          {/* Movement Header */}
+                          <View style={styles.movementHeader}>
+                            <Text style={styles.movementNumber}>{index + 1}.</Text>
+                            <Text style={styles.movementName}>
+                              {movement.exercise?.name}
+                            </Text>
+                            {categoryName && (
+                              <View style={styles.movementCategoryBadge}>
+                                <Text style={styles.movementCategoryText}>{categoryName}</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {/* Rep Scheme (if present) */}
                           {movement.repsDisplay && (
-                            <View style={styles.detailChip}>
+                            <View style={styles.movementRepScheme}>
                               <TrendingUp size={14} color={colors.primary} />
-                              <Text style={styles.movementDetailText}>{movement.repsDisplay}</Text>
+                              <Text style={styles.movementRepText}>{movement.repsDisplay}</Text>
                             </View>
                           )}
-                          {movement.weightDisplay && (
-                            <View style={styles.detailChip}>
-                              <Dumbbell size={14} color="#8B5CF6" />
-                              <Text style={styles.movementDetailText}>{movement.weightDisplay}</Text>
-                            </View>
+
+                          {/* Description (if available) */}
+                          {exercise?.description && (
+                            <Text style={styles.movementDescription} numberOfLines={2}>
+                              {exercise.description}
+                            </Text>
                           )}
-                          {distanceDisplay && (
-                            <View style={styles.distanceContainer}>
+
+                          {/* Movement Metadata Row */}
+                          <View style={styles.movementMetadataRow}>
+                            {/* Category */}
+                            {categoryName && (
+                              <View style={styles.movementMetaItem}>
+                                <Activity size={14} color="#10B981" />
+                                <Text style={styles.movementMetaText}>{categoryName}</Text>
+                              </View>
+                            )}
+
+                            {/* Muscle Groups */}
+                            {muscleGroups && (
+                              <View style={styles.movementMetaItem}>
+                                <Flame size={14} color="#F59E0B" />
+                                <Text style={styles.movementMetaText}>{muscleGroups}</Text>
+                              </View>
+                            )}
+
+                            {/* Skill Level */}
+                            {exercise?.skill_level && (
+                              <View style={styles.movementMetaItem}>
+                                <Target size={14} color="#8B5CF6" />
+                                <Text style={styles.movementMetaText}>{exercise.skill_level}</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          {/* Weight and Distance Specs */}
+                          <View style={styles.movementDetailsRow}>
+                            {movement.weightDisplay && (
+                              <View style={styles.detailChip}>
+                                <Dumbbell size={14} color="#8B5CF6" />
+                                <Text style={styles.movementDetailText}>{movement.weightDisplay}</Text>
+                              </View>
+                            )}
+                            {distanceDisplay && (
                               <View style={styles.detailChip}>
                                 <MapPin size={14} color="#3B82F6" />
                                 <Text style={styles.movementDetailText}>{distanceDisplay.primary}</Text>
                               </View>
-                              <Text style={styles.distanceSecondary}>
-                                {distanceDisplay.secondary}
-                              </Text>
-                              {distanceDisplay.context && (
-                                <Text style={styles.distanceContext}>
-                                  💡 {distanceDisplay.context}
-                                </Text>
-                              )}
-                            </View>
-                          )}
+                            )}
+                          </View>
                         </View>
-                      )}
+                      </View>
 
                       {/* Movement Variation */}
                       {movement.variation && (
@@ -554,6 +631,34 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
           </View>
         </ScrollView>
       </View>
+
+      {/* Image Menu Modal */}
+      <Modal
+        visible={showImageMenu}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowImageMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setShowImageMenu(false)}
+        >
+          <View style={styles.menuContainer}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setShowImageMenu(false);
+                handleGenerateImage();
+              }}
+              disabled={generatingImage}
+            >
+              <Sparkles size={20} color={colors.primary} />
+              <Text style={styles.menuItemText}>Regenerate Image</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </>
   );
 }
@@ -602,23 +707,66 @@ const styles = StyleSheet.create({
   },
 
   // WOD Image Section
-  imageSection: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 12,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  wodImage: {
+  // Hero Image Section with Overlay
+  heroSection: {
+    position: 'relative',
     width: '100%',
-    height: 220,
+    height: 300,
     backgroundColor: '#1A1F2E',
   },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '100%',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  heroOverlayContent: {
+    gap: 12,
+  },
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  heroMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroCategoryBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+  },
+  heroCategoryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  heroFormatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heroFormatText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    opacity: 0.9,
+  },
+
+  // Generate Image Section (when no image)
   generateImageSection: {
     marginHorizontal: 16,
     marginTop: 16,
@@ -645,7 +793,7 @@ const styles = StyleSheet.create({
     color: colors.background,
   },
 
-  // Title Section
+  // Title Section (only for WODs without images)
   titleSection: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -657,16 +805,52 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
+  // Integrated Stats Row
+  integratedStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  statText: {
+    fontSize: 14,
+    color: colors.foreground,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  statDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: colors.border,
+    marginHorizontal: 8,
+  },
+
   // Description
+  descriptionSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
   description: {
     fontSize: 16,
     color: colors.mutedForeground,
     lineHeight: 24,
-    marginBottom: 16,
-    marginHorizontal: 16,
   },
 
-  // Quick Stats Card
+  // Quick Stats Card (kept for backward compatibility, but no longer used)
   quickStatsCard: {
     marginHorizontal: 16,
     marginBottom: 16,
@@ -814,39 +998,102 @@ const styles = StyleSheet.create({
   },
   movementCard: {
     marginBottom: 16,
-    padding: 20,
-    backgroundColor: "#1A1F2E",
+    backgroundColor: colors.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2D3748',
+    borderColor: colors.border,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 3,
   },
+  movementCardContent: {
+    flexDirection: 'row',
+  },
+  movementImageContainer: {
+    width: 100,
+    height: 120,
+    backgroundColor: '#1A1F2E',
+  },
+  movementImage: {
+    width: '100%',
+    height: '100%',
+  },
+  movementPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2D3748',
+  },
+  movementPlaceholderIcon: {
+    fontSize: 40,
+  },
+  movementInfo: {
+    flex: 1,
+    padding: 16,
+  },
   movementHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  movementTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 8,
-    flex: 1,
+    marginBottom: 8,
   },
   movementNumber: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "bold",
     color: colors.primary,
   },
   movementName: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: colors.foreground,
     flex: 1,
+  },
+  movementCategoryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: colors.primary + '30',
+    borderRadius: 8,
+  },
+  movementCategoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  movementRepScheme: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  movementRepText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  movementDescription: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  movementMetadataRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 8,
+  },
+  movementMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  movementMetaText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
   },
   movementBadges: {
     flexDirection: "row",
@@ -947,5 +1194,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.primary,
     fontWeight: "500",
+  },
+
+  // Image Menu
+  imageMenuButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  menuContainer: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 4,
+    minWidth: 180,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: colors.foreground,
+    fontWeight: '500',
   },
 });

@@ -204,18 +204,18 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
 
 const styles = StyleSheet.create({
   wodCard: {
-    padding: 16,
     backgroundColor: colors.card,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
   },
   wodCardContent: {
     flexDirection: 'row',
-    gap: 12,
   },
   wodInfo: {
     flex: 1,
+    padding: 16,
   },
   wodHeader: {
     flexDirection: 'row',
@@ -231,10 +231,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   thumbnailContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    overflow: 'hidden',
+    width: 100,
+    height: 120,
     backgroundColor: '#1A1F2E',
   },
   thumbnail: {

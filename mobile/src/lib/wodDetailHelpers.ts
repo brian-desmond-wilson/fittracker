@@ -399,3 +399,129 @@ export function formatWeight(menLbs?: number | null | undefined, womenLbs?: numb
 
   return null;
 }
+
+// ============================================================================
+// MOVEMENT CATEGORY & MUSCLE GROUP AGGREGATION
+// ============================================================================
+
+/**
+ * Aggregate movement categories from all movements in a WOD
+ * Returns a formatted string like "Gymnastics & Strength" or "Weightlifting, Gymnastics & Cardio"
+ */
+export function aggregateMovementCategories(movements: WODMovementWithDetails[]): string {
+  if (!movements || movements.length === 0) {
+    return 'Mixed';
+  }
+
+  // Extract unique categories
+  const categories = new Set<string>();
+  movements.forEach(movement => {
+    const category = (movement.exercise as any)?.movement_category?.name;
+    if (category) {
+      categories.add(category);
+    }
+  });
+
+  const categoryArray = Array.from(categories);
+
+  if (categoryArray.length === 0) {
+    return 'Mixed';
+  }
+
+  if (categoryArray.length === 1) {
+    return categoryArray[0];
+  }
+
+  if (categoryArray.length === 2) {
+    return categoryArray.join(' & ');
+  }
+
+  // 3 or more: "Category1, Category2 & Category3"
+  const last = categoryArray.pop();
+  return `${categoryArray.join(', ')} & ${last}`;
+}
+
+/**
+ * Format muscle groups from exercise muscle regions
+ * Returns primary muscles as a formatted string
+ */
+export function formatMuscleGroups(muscleRegions: any[]): string {
+  if (!muscleRegions || muscleRegions.length === 0) {
+    return '';
+  }
+
+  // Filter to primary muscles only
+  const primaryMuscles = muscleRegions
+    .filter(mr => mr.is_primary)
+    .map(mr => mr.muscle_region?.name)
+    .filter(Boolean);
+
+  if (primaryMuscles.length === 0) {
+    // Fall back to all muscles if no primary
+    const allMuscles = muscleRegions
+      .map(mr => mr.muscle_region?.name)
+      .filter(Boolean);
+    return allMuscles.slice(0, 3).join(', ');
+  }
+
+  return primaryMuscles.slice(0, 3).join(', ');
+}
+
+/**
+ * Get placeholder image/icon for a movement based on category
+ * Returns an emoji that can be used as placeholder
+ */
+export function getMovementPlaceholderIcon(categoryName?: MovementCategoryName | null): string {
+  if (!categoryName) {
+    return '⚡';
+  }
+
+  switch (categoryName) {
+    case 'Gymnastics':
+      return '🤸';
+    case 'Weightlifting':
+      return '🏋️';
+    case 'Monostructural':
+      return '🏃';
+    case 'Recovery':
+      return '🧘';
+    default:
+      return '⚡';
+  }
+}
+
+/**
+ * Format time cap display for integrated stats row
+ * Avoids redundancy with header format info
+ */
+export function formatTimeCap(
+  timeCap: number | null,
+  formatName: string,
+  repScheme?: string | null
+): string {
+  // For AMRAP, show the duration
+  if (formatName === 'AMRAP' && timeCap) {
+    return `${timeCap} min AMRAP`;
+  }
+
+  // For time capped WODs, show the cap
+  if (timeCap) {
+    return `${timeCap} min cap`;
+  }
+
+  // For uncapped WODs, estimate based on rep scheme
+  // This is a simple heuristic - could be enhanced
+  if (repScheme) {
+    // For descending rep schemes like "21-15-9", estimate higher
+    if (repScheme.includes('-')) {
+      return '15-25 min';
+    }
+  }
+
+  // Default estimate for For Time WODs
+  if (formatName === 'For Time' || formatName === 'Rounds For Time') {
+    return '10-20 min';
+  }
+
+  return 'Varies';
+}

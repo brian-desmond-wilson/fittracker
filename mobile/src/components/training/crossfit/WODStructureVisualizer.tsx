@@ -30,24 +30,21 @@ export function WODStructureVisualizer({ wod }: WODStructureVisualizerProps) {
       <View style={styles.container}>
         <Text style={styles.title}>Rep Scheme</Text>
 
-        {/* Rep number display */}
+        {/* Rep number display with dashes */}
         <View style={styles.repSchemeContainer}>
           <View style={styles.repNumbersRow}>
             {values.map((value, index) => (
-              <View key={index} style={[styles.repNumberBox, { flex: flexValue }]}>
-                <Text style={[styles.repNumber, { fontSize }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {value}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Connection line with dots */}
-          <View style={styles.connectionLine}>
-            {values.map((_, index) => (
               <React.Fragment key={index}>
-                <View style={styles.dot} />
-                {index < values.length - 1 && <View style={styles.line} />}
+                <View style={[styles.repNumberBox, { flex: flexValue }]}>
+                  <Text style={[styles.repNumber, { fontSize }]} numberOfLines={1} adjustsFontSizeToFit>
+                    {value}
+                  </Text>
+                </View>
+                {index < values.length - 1 && (
+                  <View style={styles.dashContainer}>
+                    <Text style={styles.dash}>—</Text>
+                  </View>
+                )}
               </React.Fragment>
             ))}
           </View>
@@ -182,8 +179,8 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#FFFFFF',
     marginBottom: 16,
   },
@@ -201,22 +198,30 @@ const styles = StyleSheet.create({
   repNumbersRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 8,
-    marginBottom: 12,
+    alignItems: 'center',
   },
   repNumberBox: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: colors.primary,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 4,
   },
   repNumber: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  dashContainer: {
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dash: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.mutedForeground,
   },
   connectionLine: {
     flexDirection: 'row',
