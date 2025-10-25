@@ -862,6 +862,8 @@ async function generateWODImage(
   userId: string
 ): Promise<void> {
   try {
+    console.log('generateWODImage - wodInput.movements:', JSON.stringify(wodInput.movements, null, 2));
+
     // Import the prompt building function
     const { buildWODImagePrompt } = await import('../gemini');
 
@@ -871,11 +873,15 @@ async function generateWODImage(
 
     // Fetch exercise names for the movements
     const movementPromises = (wodInput.movements || []).map(async (movement) => {
-      const { data: exercise } = await supabase
+      const { data: exercise, error } = await supabase
         .from('exercises')
         .select('name')
         .eq('id', movement.exercise_id)
         .single();
+
+      if (error) {
+        console.error(`Failed to fetch exercise name for ID ${movement.exercise_id}:`, error);
+      }
 
       return {
         name: exercise?.name || 'Movement',
@@ -883,6 +889,7 @@ async function generateWODImage(
     });
 
     const movements = await Promise.all(movementPromises);
+    console.log('Fetched movement names:', movements.map(m => m.name).join(', '));
 
     // Build prompt from WOD data
     const prompt = buildWODImagePrompt({
