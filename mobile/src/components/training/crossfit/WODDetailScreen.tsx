@@ -746,10 +746,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
     backgroundColor: '#1A1F2E',
+    overflow: 'hidden',
   },
   heroImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
     width: '100%',
-    height: '100%',
+    height: 300,
   },
   heroGradient: {
     position: 'absolute',
