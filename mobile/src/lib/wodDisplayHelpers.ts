@@ -41,7 +41,27 @@ function buildFormatLine(wod: WODWithDetails): string {
   const format = wod.format?.name || 'For Time';
   const timeCap = wod.time_cap_minutes;
 
-  // Determine if we need to prepend scoring type info
+  // Special handling for "Rounds For Time" format
+  if (format === 'Rounds For Time') {
+    // Extract round count from rep_scheme if available
+    const roundMatch = wod.rep_scheme?.match(/^(\d+)/);
+    if (roundMatch) {
+      const roundCount = roundMatch[1];
+      let line = `${roundCount} Rounds For Time`;
+      if (timeCap) {
+        line += ` • ${timeCap} min`;
+      }
+      return line;
+    }
+    // If no round count found, just show format
+    let line = format;
+    if (timeCap) {
+      line += ` • ${timeCap} min`;
+    }
+    return line;
+  }
+
+  // Determine if we need to prepend scoring type info for "For Time"
   let prefix = '';
 
   if (format === 'For Time' && wod.rep_scheme_type) {
@@ -49,9 +69,11 @@ function buildFormatLine(wod: WODWithDetails): string {
       prefix = 'Reps ';
     } else if (wod.rep_scheme_type === 'fixed_rounds') {
       // Extract round count from rep_scheme if available
-      const roundMatch = wod.rep_scheme?.match(/^(\d+)\s*rounds?/i);
+      // Try various formats: "5 rounds", "5", just a number
+      const roundMatch = wod.rep_scheme?.match(/^(\d+)/);
       if (roundMatch) {
-        prefix = `${roundMatch[1]} Rounds `;
+        const roundCount = roundMatch[1];
+        prefix = `${roundCount} Rounds `;
       } else {
         prefix = 'Rounds ';
       }

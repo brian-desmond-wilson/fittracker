@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Zap, Trash2 } from 'lucide-react-native';
+import { Zap, Trash2, RotateCcw } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODWithDetails } from '@/src/types/crossfit';
 import { deleteWOD } from '@/src/lib/supabase/crossfit';
@@ -151,7 +151,18 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
         onPress={onPress}
       >
         <View style={styles.wodCardContent}>
-          {/* Left: WOD Info */}
+          {/* Left: Thumbnail Image */}
+          {wod.image_url && (
+            <View style={styles.thumbnailContainer}>
+              <Image
+                source={{ uri: wod.image_url }}
+                style={styles.thumbnail}
+                resizeMode="cover"
+              />
+            </View>
+          )}
+
+          {/* Right: WOD Info */}
           <View style={styles.wodInfo}>
             {/* Header: Title + Category Badge */}
             <View style={styles.wodHeader}>
@@ -163,7 +174,11 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
 
         {/* Line 2: Format + Time Domain */}
         <View style={styles.formatRow}>
-          <Zap size={16} color={colors.primary} />
+          {(wod.rep_scheme_type === 'fixed_rounds' || wod.format?.name === 'Rounds For Time') ? (
+            <RotateCcw size={16} color={colors.primary} />
+          ) : (
+            <Zap size={16} color={colors.primary} />
+          )}
           <Text style={styles.formatText}>{formatLine}</Text>
         </View>
 
@@ -179,17 +194,6 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
               <Text style={styles.movementsText}>{movementsLine}</Text>
             </View>
           </View>
-
-          {/* Right: Thumbnail Image */}
-          {wod.image_url && (
-            <View style={styles.thumbnailContainer}>
-              <Image
-                source={{ uri: wod.image_url }}
-                style={styles.thumbnail}
-                resizeMode="cover"
-              />
-            </View>
-          )}
         </View>
       </TouchableOpacity>
     </Swipeable>
