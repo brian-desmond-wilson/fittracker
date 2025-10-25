@@ -53,6 +53,10 @@ Workout Details:
 
 Visual Style: ${style}
 
+Athletes in Image:
+- Primary athlete: Athletic Black man in his 30s, muscular build, performing the movements
+- If secondary athlete present: White male
+
 Requirements:
 - Athletic and motivational atmosphere
 - Dynamic composition showing movement and energy
