@@ -463,68 +463,46 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
           {/* Scaling Selector */}
           <View style={styles.scalingSection}>
-            <View style={styles.scalingHeader}>
-              <Text style={styles.sectionTitle}>Scaling</Text>
-              <TouchableOpacity
-                style={styles.comparisonToggle}
-                onPress={() => setShowComparison(!showComparison)}
-              >
-                <Text style={styles.comparisonToggleText}>
-                  {showComparison ? 'Single View' : 'Compare'}
-                </Text>
-              </TouchableOpacity>
+            <View style={styles.scalingTabs}>
+              {(["Rx", "L2", "L1"] as ScalingLevel[]).map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.scalingTab,
+                    selectedScaling === level && styles.scalingTabActive,
+                  ]}
+                  onPress={() => setSelectedScaling(level)}
+                >
+                  <Text
+                    style={[
+                      styles.scalingTabText,
+                      selectedScaling === level && styles.scalingTabTextActive,
+                    ]}
+                  >
+                    {level}
+                  </Text>
+                  {selectedScaling === level && <View style={styles.scalingTabIndicator} />}
+                </TouchableOpacity>
+              ))}
             </View>
 
-            {!showComparison && (
-              <>
-                <View style={styles.scalingTabs}>
-                  {(["Rx", "L2", "L1"] as ScalingLevel[]).map((level) => (
-                    <TouchableOpacity
-                      key={level}
-                      style={[
-                        styles.scalingTab,
-                        selectedScaling === level && styles.scalingTabActive,
-                      ]}
-                      onPress={() => setSelectedScaling(level)}
-                    >
-                      <Text
-                        style={[
-                          styles.scalingTabText,
-                          selectedScaling === level && styles.scalingTabTextActive,
-                        ]}
-                      >
-                        {level}
-                      </Text>
-                    </TouchableOpacity>
+            {/* Scaling Description */}
+            {wod.scaling_levels && wod.scaling_levels.length > 0 && (
+              <View style={styles.scalingDescription}>
+                {wod.scaling_levels
+                  .filter((s) => s.level_name === selectedScaling)
+                  .map((s) => (
+                    <Text key={s.id} style={styles.scalingDescText}>
+                      {s.description}
+                    </Text>
                   ))}
-                </View>
-
-                {/* Scaling Description */}
-                {wod.scaling_levels && wod.scaling_levels.length > 0 && (
-                  <View style={styles.scalingDescription}>
-                    {wod.scaling_levels
-                      .filter((s) => s.level_name === selectedScaling)
-                      .map((s) => (
-                        <Text key={s.id} style={styles.scalingDescText}>
-                          {s.description}
-                        </Text>
-                      ))}
-                  </View>
-                )}
-              </>
+              </View>
             )}
           </View>
 
-          {/* Movements List or Comparison View */}
+          {/* Movements List */}
           <View style={styles.movementsSection}>
-            {showComparison ? (
-              <>
-                <Text style={styles.sectionTitle}>Scaling Comparison</Text>
-                <ScalingComparisonView wod={wod} />
-              </>
-            ) : (
-              <>
-                <Text style={styles.sectionTitle}>Movements</Text>
+            <Text style={styles.sectionTitle}>Movements</Text>
                 {scaledMovements.map((movement, index) => {
                   const exercise = movement.exercise as any;
 
@@ -671,8 +649,6 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                     </View>
                   );
                 })}
-              </>
-            )}
           </View>
         </ScrollView>
       </View>
@@ -985,53 +961,44 @@ const styles = StyleSheet.create({
 
   // Scaling Section
   scalingSection: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
-  scalingHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  comparisonToggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: colors.primary + '20',
-    borderRadius: 8,
-  },
-  comparisonToggleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.primary,
+    marginBottom: 0,
   },
   scalingTabs: {
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: 16,
   },
   scalingTab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
-    backgroundColor: "#1A1F2E",
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#2D3748",
+    position: "relative",
   },
   scalingTabActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    // Active styling handled by indicator
   },
   scalingTabText: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "500",
     color: colors.mutedForeground,
   },
   scalingTabTextActive: {
-    color: "#FFFFFF",
+    color: colors.primary,
+    fontWeight: "600",
+  },
+  scalingTabIndicator: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.primary,
   },
   scalingDescription: {
+    marginHorizontal: 16,
+    marginBottom: 16,
     padding: 14,
     backgroundColor: "#1A1F2E",
     borderRadius: 10,
