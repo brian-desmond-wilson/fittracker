@@ -29,12 +29,12 @@ import {
   Group,
   Sparkles,
   MoreVertical,
+  Repeat2,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WODWithDetails, ScalingLevel } from "@/src/types/crossfit";
 import { fetchWODById } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
-import { WODStructureVisualizer } from './WODStructureVisualizer';
 import { ScalingComparisonView } from './ScalingComparisonView';
 import {
   getWODStats,
@@ -410,7 +410,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
             {/* Movement Categories */}
             <View style={styles.statColumn}>
-              <Group size={18} color="#10B981" strokeWidth={2} />
+              <Group size={18} color={colors.primary} strokeWidth={2} />
               <View style={styles.statTextContainer}>
                 {(() => {
                   const categories = new Set<string>();
@@ -428,11 +428,26 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
               </View>
             </View>
 
+            {/* Rep Scheme */}
+            <View style={styles.statColumn}>
+              <Repeat2 size={18} color={colors.primary} strokeWidth={2} />
+              <View style={styles.statTextContainer}>
+                <Text style={styles.statText} numberOfLines={1}>
+                  {wod.rep_scheme || 'N/A'}
+                </Text>
+                {wod.rep_scheme_type && (
+                  <Text style={styles.statText} numberOfLines={1}>
+                    {wod.rep_scheme_type}
+                  </Text>
+                )}
+              </View>
+            </View>
+
             {/* Time Cap */}
             <View style={styles.statColumn}>
-              <Clock size={18} color="#F59E0B" strokeWidth={2} />
+              <Clock size={18} color={colors.primary} strokeWidth={2} />
               <View style={styles.statTextContainer}>
-                <Text style={styles.statText}>
+                <Text style={styles.statText} numberOfLines={1}>
                   {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
                 </Text>
               </View>
@@ -445,9 +460,6 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
               <Text style={styles.description}>{wod.description}</Text>
             </View>
           )}
-
-          {/* WOD Structure Visualization */}
-          <WODStructureVisualizer wod={wod} />
 
           {/* Scaling Selector */}
           <View style={styles.scalingSection}>
@@ -848,7 +860,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-around',
     paddingVertical: 16,
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
     backgroundColor: '#1A2332',
     borderTopWidth: 1,
     borderTopColor: '#2D3748',
