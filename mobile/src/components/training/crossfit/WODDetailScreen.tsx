@@ -8,6 +8,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Image,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -23,10 +24,12 @@ import {
   Dumbbell,
   Activity,
   Package,
+  Sparkles,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WODWithDetails, ScalingLevel } from "@/src/types/crossfit";
 import { fetchWODById } from "@/src/lib/supabase/crossfit";
+import { supabase } from "@/src/lib/supabase";
 import { WODStructureVisualizer } from './WODStructureVisualizer';
 import { ScalingComparisonView } from './ScalingComparisonView';
 import {
@@ -48,6 +51,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
   const [loading, setLoading] = useState(true);
   const [selectedScaling, setSelectedScaling] = useState<ScalingLevel>("Rx");
   const [showComparison, setShowComparison] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
 
   useEffect(() => {
     loadWOD();
@@ -62,6 +66,67 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
       console.error("Error loading WOD:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!wod) return;
+
+    try {
+      setGeneratingImage(true);
+
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        Alert.alert('Error', 'You must be logged in to generate an image');
+        return;
+      }
+
+      // Build prompt using the same logic as createWOD
+      const { buildWODImagePrompt } = await import('@/src/lib/gemini');
+
+      // Fetch exercise names for movements
+      const movementPromises = (wod.movements || []).map(async (movement) => {
+        return {
+          name: movement.exercise?.name || 'Movement',
+        };
+      });
+
+      const movements = await Promise.all(movementPromises);
+
+      const prompt = buildWODImagePrompt({
+        wodName: wod.name,
+        formatName: wod.format?.name || 'For Time',
+        movements,
+        timeCap: wod.time_cap_minutes,
+        repScheme: wod.rep_scheme,
+      });
+
+      // Call Edge Function
+      const { data, error } = await supabase.functions.invoke('generate-wod-image', {
+        body: {
+          wodId: wod.id,
+          prompt,
+          userId: user.id,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Show success and reload WOD to get new image
+      Alert.alert(
+        'Success',
+        'AI image generated successfully!',
+        [{ text: 'OK', onPress: () => loadWOD() }]
+      );
+
+    } catch (error) {
+      console.error('Error generating image:', error);
+      Alert.alert('Error', 'Failed to generate image. Please try again.');
+    } finally {
+      setGeneratingImage(false);
     }
   };
 
@@ -242,14 +307,34 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* WOD Image (if available) */}
-          {wod.image_url && (
+          {/* WOD Image or Generate Button */}
+          {wod.image_url ? (
             <View style={styles.imageSection}>
               <Image
                 source={{ uri: wod.image_url }}
                 style={styles.wodImage}
                 resizeMode="cover"
               />
+            </View>
+          ) : (
+            <View style={styles.generateImageSection}>
+              <TouchableOpacity
+                style={styles.generateImageButton}
+                onPress={handleGenerateImage}
+                disabled={generatingImage}
+              >
+                {generatingImage ? (
+                  <>
+                    <ActivityIndicator size="small" color={colors.background} />
+                    <Text style={styles.generateImageText}>Generating AI Image...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={20} color={colors.background} />
+                    <Text style={styles.generateImageText}>Generate AI Image</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           )}
 
@@ -533,6 +618,31 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
     backgroundColor: '#1A1F2E',
+  },
+  generateImageSection: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  generateImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  generateImageText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
   },
 
   // Title Section

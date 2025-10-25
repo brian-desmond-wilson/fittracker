@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
@@ -18,6 +18,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
 
   const categories: MovementCategory[] = ['All', 'Oly lifts', 'Gymnastics', 'Cardio'];
@@ -61,6 +62,12 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
     } finally {
       setSearching(false);
     }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadMovements();
+    setRefreshing(false);
   };
 
   // Filter movements by category
@@ -154,7 +161,18 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
       </View>
 
       {/* Movements List */}
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />

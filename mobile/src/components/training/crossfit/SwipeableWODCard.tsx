@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Zap, Trash2, History } from 'lucide-react-native';
+import { Zap, Trash2, History, Timer } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { WODWithDetails } from '@/src/types/crossfit';
 import { deleteWOD } from '@/src/lib/supabase/crossfit';
@@ -176,6 +176,8 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
         <View style={styles.formatRow}>
           {(wod.rep_scheme_type === 'fixed_rounds' || wod.format?.name === 'Rounds For Time') ? (
             <History size={16} color={colors.primary} />
+          ) : (wod.rep_scheme_type === 'descending' || wod.rep_scheme_type === 'ascending') ? (
+            <Timer size={16} color={colors.primary} />
           ) : (
             <Zap size={16} color={colors.primary} />
           )}

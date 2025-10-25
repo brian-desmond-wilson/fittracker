@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
@@ -21,6 +21,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
   const [categories, setCategories] = useState<WODCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
 
   useEffect(() => {
@@ -80,6 +81,12 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
   const getCategoryColor = (categoryName: string) => {
     switch (categoryName) {
       case 'The Girls':
@@ -128,7 +135,18 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
       </View>
 
       {/* WODs List */}
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />

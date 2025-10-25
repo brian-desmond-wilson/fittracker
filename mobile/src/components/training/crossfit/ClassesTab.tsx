@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, RefreshControl } from 'react-native';
 import { Calendar, Plus, Clock } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ClassWithDetails } from '@/src/types/crossfit';
@@ -16,6 +16,7 @@ export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabPr
   const [classes, setClasses] = useState<ClassWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,6 +74,12 @@ export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabPr
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadClasses();
+    setRefreshing(false);
+  };
+
   const handleCreateClass = () => {
     Alert.alert('Create Class', 'Class creation feature coming soon!');
   };
@@ -109,7 +116,18 @@ export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabPr
   return (
     <View style={styles.container}>
       {/* Classes List */}
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
