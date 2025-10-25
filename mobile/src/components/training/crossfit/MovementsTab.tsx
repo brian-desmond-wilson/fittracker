@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
@@ -14,6 +15,7 @@ interface MovementsTabProps {
 }
 
 export default function MovementsTab({ searchQuery, onSearchChange }: MovementsTabProps) {
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<MovementCategory>('All');
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +195,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
               key={movement.id}
               style={styles.movementItem}
               activeOpacity={0.7}
+              onPress={() => router.push(`/(tabs)/training/movement/${movement.id}`)}
             >
               <View style={styles.movementIcon}>
                 <Text style={styles.movementIconText}>{getMovementIcon(movement)}</Text>
