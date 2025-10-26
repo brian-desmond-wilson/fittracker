@@ -7,10 +7,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  Image,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ChevronLeft, Sparkles } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
@@ -21,10 +24,30 @@ export default function MovementDetailPage() {
   const insets = useSafeAreaInsets();
   const [movement, setMovement] = useState<ExerciseWithVariations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     loadMovement();
+    checkAdminStatus();
   }, [id]);
+
+  const checkAdminStatus = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single();
+
+      setIsAdmin(profile?.is_admin || false);
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+    }
+  };
 
   const loadMovement = async () => {
     try {
@@ -46,6 +69,69 @@ export default function MovementDetailPage() {
       console.error('Error loading movement:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!movement) return;
+
+    try {
+      setGenerating(true);
+
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        Alert.alert('Error', 'You must be logged in to generate an image');
+        return;
+      }
+
+      // Only allow custom movements by creator or official movements by admins
+      const canGenerate = isAdmin || (!movement.is_official && movement.user_id === user.id);
+      if (!canGenerate) {
+        Alert.alert(
+          'Permission Denied',
+          movement.is_official
+            ? 'Only administrators can generate images for official movements.'
+            : 'You can only generate images for movements you created.'
+        );
+        return;
+      }
+
+      // Build equipment list
+      const equipmentList = movement.equipment_types && movement.equipment_types.length > 0
+        ? movement.equipment_types.join(', ')
+        : 'bodyweight';
+
+      // Create prompt
+      const prompt = `A high-quality, professional photo of a CrossFit athlete performing ${movement.name} in a modern CrossFit gym. ${movement.movement_category?.name || ''} movement. Equipment: ${equipmentList}. Dramatic lighting, motivational atmosphere, athletic focus. Photorealistic, high detail.`;
+
+      console.log('Generating movement image with prompt:', prompt);
+
+      // Call Edge Function
+      const { data, error } = await supabase.functions.invoke('generate-movement-image', {
+        body: {
+          movementId: movement.id,
+          prompt,
+          userId: user.id,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Show success and reload movement to get new image
+      Alert.alert(
+        'Success',
+        'AI image generated successfully!',
+        [{ text: 'OK', onPress: () => loadMovement() }]
+      );
+
+    } catch (error) {
+      console.error('Error generating image:', error);
+      Alert.alert('Error', 'Failed to generate image. Please try again.');
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -89,6 +175,43 @@ export default function MovementDetailPage() {
 
       {/* Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Hero Image with Overlay or Generate Button */}
+        {movement.image_url ? (
+          <View style={styles.heroSection}>
+            <Image
+              source={{ uri: movement.image_url }}
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+            {/* Gradient Overlay */}
+            <LinearGradient
+              colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.8)']}
+              style={styles.heroGradient}
+            />
+          </View>
+        ) : (
+          <View style={styles.heroPlaceholder}>
+            <TouchableOpacity
+              style={styles.generateButton}
+              onPress={handleGenerateImage}
+              disabled={generating}
+              activeOpacity={0.7}
+            >
+              {generating ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.generateButtonText}>Generating...</Text>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} color="#FFFFFF" />
+                  <Text style={styles.generateButtonText}>Generate Image</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Movement Name */}
         <View style={styles.titleSection}>
           <Text style={styles.movementName}>{movement.name}</Text>
@@ -213,6 +336,52 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+
+  // Hero Image Section
+  heroSection: {
+    position: 'relative',
+    width: '100%',
+    height: 220,
+    backgroundColor: '#1A1F2E',
+    overflow: 'hidden',
+  },
+  heroImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: 300,
+  },
+  heroGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  heroPlaceholder: {
+    height: 220,
+    backgroundColor: '#1A1F2E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  generateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+  },
+  generateButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
   titleSection: {
     padding: 16,
     borderBottomWidth: 1,
