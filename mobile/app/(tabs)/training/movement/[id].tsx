@@ -188,6 +188,19 @@ export default function MovementDetailPage() {
               colors={['rgba(0,0,0,0.6)', 'transparent', 'rgba(0,0,0,0.8)']}
               style={styles.heroGradient}
             />
+            {/* Movement Name & Badge Overlay */}
+            <View style={styles.heroOverlay}>
+              <Text style={styles.heroMovementName}>{movement.name}</Text>
+              {movement.is_official ? (
+                <View style={styles.heroOfficialBadge}>
+                  <Text style={styles.heroOfficialBadgeText}>OFFICIAL</Text>
+                </View>
+              ) : (
+                <View style={styles.heroCustomBadge}>
+                  <Text style={styles.heroCustomBadgeText}>CUSTOM</Text>
+                </View>
+              )}
+            </View>
           </View>
         ) : (
           <View style={styles.heroPlaceholder}>
@@ -211,20 +224,6 @@ export default function MovementDetailPage() {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Movement Name */}
-        <View style={styles.titleSection}>
-          <Text style={styles.movementName}>{movement.name}</Text>
-          {movement.is_official ? (
-            <View style={styles.officialBadge}>
-              <Text style={styles.officialBadgeText}>OFFICIAL</Text>
-            </View>
-          ) : (
-            <View style={styles.customBadge}>
-              <Text style={styles.customBadgeText}>CUSTOM</Text>
-            </View>
-          )}
-        </View>
 
         {/* Category & Goal Type */}
         <View style={styles.metaSection}>
@@ -380,6 +379,49 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  heroOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 20,
+    paddingBottom: 16,
+  },
+  heroMovementName: {
+    fontSize: 34,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  heroOfficialBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.primary,
+    borderRadius: 6,
+  },
+  heroOfficialBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  heroCustomBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#6B7280',
+    borderRadius: 6,
+  },
+  heroCustomBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
 
   titleSection: {
