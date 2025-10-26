@@ -147,6 +147,21 @@ export interface ExerciseMuscleRegion {
   created_at: string;
 }
 
+export interface Equipment {
+  id: string;
+  name: string;
+  category: string;
+  display_order: number;
+  created_at: string;
+}
+
+export interface ExerciseEquipment {
+  id: string;
+  exercise_id: string;
+  equipment_id: string;
+  created_at: string;
+}
+
 export interface MovementMeasurementProfile {
   id: string;
   exercise_id: string | null;

@@ -48,7 +48,7 @@ export async function fetchGoalTypes(): Promise<GoalType[]> {
   const { data, error } = await supabase
     .from('goal_types')
     .select('*')
-    .order('name');
+    .order('display_order');
 
   if (error) {
     console.error('Error fetching goal types:', error);
@@ -212,6 +212,23 @@ export async function fetchMovementStyles() {
 
   if (error) {
     console.error('Error fetching movement styles:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all equipment
+ */
+export async function fetchEquipment() {
+  const { data, error } = await supabase
+    .from('equipment')
+    .select('*')
+    .order('category, name');
+
+  if (error) {
+    console.error('Error fetching equipment:', error);
     throw error;
   }
 

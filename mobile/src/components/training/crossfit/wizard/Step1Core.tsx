@@ -18,8 +18,8 @@ interface Step1CoreProps {
 const MODALITY_TO_FAMILIES: Record<string, string[]> = {
   Gymnastics: ['Pull', 'Push/Press', 'Core', 'Inversion', 'Plyometric', 'Climb', 'Support/Hold', 'Ring/Bar', 'Mobility/Control'],
   Weightlifting: ['Squat', 'Hinge', 'Press', 'Pull', 'Carry', 'Throw', 'Lunge', 'Olympic'],
-  Monostructural: ['Run', 'Row', 'Bike', 'Ski', 'Rope', 'Swim'],
-  Recovery: ['Mobility'],
+  Monostructural: ['Run', 'Row', 'Bike', 'Ski', 'Rope', 'Swim', 'Carry'],
+  Recovery: ['Mobility', 'Stretching', 'Foam Rolling', 'Breath Work', 'Activation', 'Balance/Stability'],
 };
 
 export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
@@ -213,7 +213,9 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
           Goal Type <Text style={styles.required}>*</Text>
         </Text>
         <Text style={styles.helperText}>
-          Primary training goal for this movement
+          {formData.goal_type_id
+            ? goalTypes.find(g => g.id === formData.goal_type_id)?.description || 'Primary training goal for this movement'
+            : 'Primary training goal for this movement'}
         </Text>
         <View style={styles.pillsContainer}>
           {goalTypes.map(goalType => {

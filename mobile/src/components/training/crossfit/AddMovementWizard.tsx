@@ -28,6 +28,7 @@ export interface MovementFormData {
   scoring_type_ids: string[];
 
   // Step 3: Movement Attributes (optional)
+  equipment_ids: string[];
   load_position_id: string | null;
   stance_id: string | null;
   plane_of_motion_id: string | null;
@@ -71,6 +72,7 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
     muscle_region_ids: [],
     primary_muscle_region_ids: [],
     scoring_type_ids: [],
+    equipment_ids: [],
     load_position_id: null,
     stance_id: null,
     plane_of_motion_id: null,

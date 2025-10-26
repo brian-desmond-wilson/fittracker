@@ -103,17 +103,24 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
         <Text style={styles.helperText}>
           Technical difficulty required to perform this movement
         </Text>
-        <View style={styles.pillsContainer}>
-          {SKILL_LEVELS.map(level => {
+        <View style={styles.segmentedControl}>
+          {SKILL_LEVELS.map((level, index) => {
             const isSelected = formData.skill_level === level;
+            const isFirst = index === 0;
+            const isLast = index === SKILL_LEVELS.length - 1;
             return (
               <TouchableOpacity
                 key={level}
-                style={[styles.pill, isSelected && styles.pillSelected]}
+                style={[
+                  styles.segment,
+                  isFirst && styles.segmentFirst,
+                  isLast && styles.segmentLast,
+                  isSelected && styles.segmentSelected
+                ]}
                 onPress={() => updateFormData({ skill_level: isSelected ? null : level })}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                <Text style={[styles.segmentText, isSelected && styles.segmentTextSelected]}>
                   {level}
                 </Text>
               </TouchableOpacity>
@@ -128,8 +135,128 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
         <Text style={styles.helperText}>
           Tap to select as primary • Long press to toggle to secondary
         </Text>
+
+        {/* Upper Body Section - display_order 1-8 */}
+        <Text style={styles.sectionHeader}>Upper Body</Text>
         <View style={styles.pillsContainer}>
-          {muscleRegions.map(region => {
+          {muscleRegions.filter(r => r.display_order >= 1 && r.display_order <= 8).map(region => {
+            const isSelected = formData.muscle_region_ids.includes(region.id);
+            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
+
+            return (
+              <TouchableOpacity
+                key={region.id}
+                style={[
+                  styles.musclePill,
+                  isSelected && styles.musclePillSelected,
+                  isPrimary && styles.musclePillPrimary,
+                ]}
+                onPress={() => toggleMuscleRegion(region.id)}
+                onLongPress={() => {
+                  if (isSelected) {
+                    togglePrimaryMuscle(region.id);
+                  }
+                }}
+                activeOpacity={0.7}
+                delayLongPress={300}
+              >
+                <Text
+                  style={[
+                    styles.musclePillText,
+                    isSelected && styles.musclePillTextSelected,
+                    isPrimary && styles.musclePillTextPrimary,
+                  ]}
+                >
+                  {region.name}
+                </Text>
+                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Core / Midline Section - display_order 9-11 */}
+        <Text style={styles.sectionHeader}>Core / Midline</Text>
+        <View style={styles.pillsContainer}>
+          {muscleRegions.filter(r => r.display_order >= 9 && r.display_order <= 11).map(region => {
+            const isSelected = formData.muscle_region_ids.includes(region.id);
+            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
+
+            return (
+              <TouchableOpacity
+                key={region.id}
+                style={[
+                  styles.musclePill,
+                  isSelected && styles.musclePillSelected,
+                  isPrimary && styles.musclePillPrimary,
+                ]}
+                onPress={() => toggleMuscleRegion(region.id)}
+                onLongPress={() => {
+                  if (isSelected) {
+                    togglePrimaryMuscle(region.id);
+                  }
+                }}
+                activeOpacity={0.7}
+                delayLongPress={300}
+              >
+                <Text
+                  style={[
+                    styles.musclePillText,
+                    isSelected && styles.musclePillTextSelected,
+                    isPrimary && styles.musclePillTextPrimary,
+                  ]}
+                >
+                  {region.name}
+                </Text>
+                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Lower Body Section - display_order 12-18 */}
+        <Text style={styles.sectionHeader}>Lower Body</Text>
+        <View style={styles.pillsContainer}>
+          {muscleRegions.filter(r => r.display_order >= 12 && r.display_order <= 18).map(region => {
+            const isSelected = formData.muscle_region_ids.includes(region.id);
+            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
+
+            return (
+              <TouchableOpacity
+                key={region.id}
+                style={[
+                  styles.musclePill,
+                  isSelected && styles.musclePillSelected,
+                  isPrimary && styles.musclePillPrimary,
+                ]}
+                onPress={() => toggleMuscleRegion(region.id)}
+                onLongPress={() => {
+                  if (isSelected) {
+                    togglePrimaryMuscle(region.id);
+                  }
+                }}
+                activeOpacity={0.7}
+                delayLongPress={300}
+              >
+                <Text
+                  style={[
+                    styles.musclePillText,
+                    isSelected && styles.musclePillTextSelected,
+                    isPrimary && styles.musclePillTextPrimary,
+                  ]}
+                >
+                  {region.name}
+                </Text>
+                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Whole Body Section - display_order 19+ */}
+        <Text style={styles.sectionHeader}>Whole Body</Text>
+        <View style={styles.pillsContainer}>
+          {muscleRegions.filter(r => r.display_order >= 19).map(region => {
             const isSelected = formData.muscle_region_ids.includes(region.id);
             const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
 
@@ -176,7 +303,12 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
       <View style={styles.field}>
         <Text style={styles.label}>Scoring Types</Text>
         <Text style={styles.helperText}>
-          How this movement can be measured (select all that apply)
+          {formData.scoring_type_ids.length > 0
+            ? scoringTypes
+                .filter(t => formData.scoring_type_ids.includes(t.id))
+                .map(t => t.description)
+                .join(' • ')
+            : 'How this movement can be measured (select all that apply)'}
         </Text>
         <View style={styles.pillsContainer}>
           {scoringTypes.map(type => {
@@ -226,6 +358,48 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 14,
     color: colors.mutedForeground,
+  },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+    marginTop: 16,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.muted,
+    borderRadius: 10,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  segmentFirst: {
+    // Optional: specific styling for first segment
+  },
+  segmentLast: {
+    // Optional: specific styling for last segment
+  },
+  segmentSelected: {
+    backgroundColor: colors.primary,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+  },
+  segmentTextSelected: {
+    color: '#FFFFFF',
   },
   pillsContainer: {
     flexDirection: 'row',

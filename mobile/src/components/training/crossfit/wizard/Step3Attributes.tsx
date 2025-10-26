@@ -9,6 +9,7 @@ import {
   fetchMovementStyles,
   fetchSymmetries,
   fetchRangeDepths,
+  fetchEquipment,
 } from '@/src/lib/supabase/crossfit';
 import type {
   LoadPosition,
@@ -17,6 +18,7 @@ import type {
   MovementStyle,
   Symmetry,
   RangeDepth,
+  Equipment,
 } from '@/src/types/crossfit';
 
 interface Step3AttributesProps {
@@ -25,6 +27,7 @@ interface Step3AttributesProps {
 }
 
 export function Step3Attributes({ formData, updateFormData }: Step3AttributesProps) {
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [loadPositions, setLoadPositions] = useState<LoadPosition[]>([]);
   const [stances, setStances] = useState<Stance[]>([]);
   const [planes, setPlanes] = useState<PlaneOfMotion[]>([]);
@@ -41,6 +44,7 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
     try {
       setLoading(true);
       const [
+        equipmentData,
         loadPosData,
         stancesData,
         planesData,
@@ -48,6 +52,7 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
         symmetriesData,
         depthsData,
       ] = await Promise.all([
+        fetchEquipment(),
         fetchLoadPositions(),
         fetchStances(),
         fetchPlanesOfMotion(),
@@ -56,6 +61,7 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
         fetchRangeDepths(),
       ]);
 
+      setEquipment(equipmentData);
       setLoadPositions(loadPosData);
       setStances(stancesData);
       setPlanes(planesData);
@@ -69,6 +75,19 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
     }
   };
 
+  const toggleEquipment = (equipmentId: string) => {
+    const isSelected = formData.equipment_ids.includes(equipmentId);
+    if (isSelected) {
+      updateFormData({
+        equipment_ids: formData.equipment_ids.filter(id => id !== equipmentId),
+      });
+    } else {
+      updateFormData({
+        equipment_ids: [...formData.equipment_ids, equipmentId],
+      });
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -78,14 +97,70 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
     );
   }
 
+  // Group equipment by category
+  const equipmentByCategory = equipment.reduce((acc, item) => {
+    if (!acc[item.category]) {
+      acc[item.category] = [];
+    }
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, Equipment[]>);
+
+  // Define category order
+  const categoryOrder = [
+    'Free Weights',
+    'Implements',
+    'Machines',
+    'Bodyweight / Apparatus',
+    'Supports / Surfaces',
+    'Recovery Tools',
+  ];
+
   return (
     <View style={styles.container}>
-      {/* Info */}
-      <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          These attributes help classify the specific characteristics of the movement.
-          All fields are optional.
+      {/* Equipment */}
+      <View style={styles.field}>
+        <Text style={styles.label}>Equipment</Text>
+        <Text style={styles.helperText}>
+          {formData.equipment_ids.length > 0
+            ? formData.equipment_ids.length === 1
+              ? equipment.find(e => e.id === formData.equipment_ids[0])?.name || '1 item selected'
+              : formData.equipment_ids.length === 2
+              ? equipment
+                  .filter(e => formData.equipment_ids.includes(e.id))
+                  .map(e => e.name)
+                  .join(', ')
+              : `${formData.equipment_ids.length} items selected`
+            : 'Select all equipment used for this movement'}
         </Text>
+
+        {categoryOrder.map(category => {
+          const items = equipmentByCategory[category] || [];
+          if (items.length === 0) return null;
+
+          return (
+            <View key={category}>
+              <Text style={styles.sectionHeader}>{category}</Text>
+              <View style={styles.pillsContainer}>
+                {items.map(item => {
+                  const isSelected = formData.equipment_ids.includes(item.id);
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.pill, isSelected && styles.pillSelected]}
+                      onPress={() => toggleEquipment(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })}
       </View>
 
       {/* Load Position */}
@@ -291,6 +366,15 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 14,
     color: '#94A3B8', // Lighter gray for better visibility
+  },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+    marginTop: 16,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   pillsContainer: {
     flexDirection: 'row',
