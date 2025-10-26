@@ -495,6 +495,9 @@ export interface ExerciseWithDetails extends Exercise {
 
 export interface WODMovementWithDetails extends WODMovement {
   exercise?: Exercise;
+  rx_alternative_exercise?: Exercise;
+  l2_alternative_exercise?: Exercise;
+  l1_alternative_exercise?: Exercise;
   standards?: MovementStandard[];
 }
 

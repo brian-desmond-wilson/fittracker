@@ -727,6 +727,33 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
             muscle_region:muscle_regions(name)
           )
         ),
+        rx_alternative_exercise:exercises!wod_movements_rx_alternative_exercise_id_fkey(
+          *,
+          movement_category:movement_categories(*),
+          goal_type:goal_types(*),
+          muscle_regions:exercise_muscle_regions(
+            is_primary,
+            muscle_region:muscle_regions(name)
+          )
+        ),
+        l2_alternative_exercise:exercises!wod_movements_l2_alternative_exercise_id_fkey(
+          *,
+          movement_category:movement_categories(*),
+          goal_type:goal_types(*),
+          muscle_regions:exercise_muscle_regions(
+            is_primary,
+            muscle_region:muscle_regions(name)
+          )
+        ),
+        l1_alternative_exercise:exercises!wod_movements_l1_alternative_exercise_id_fkey(
+          *,
+          movement_category:movement_categories(*),
+          goal_type:goal_types(*),
+          muscle_regions:exercise_muscle_regions(
+            is_primary,
+            muscle_region:muscle_regions(name)
+          )
+        ),
         standards:movement_standards(*)
       )
     `)

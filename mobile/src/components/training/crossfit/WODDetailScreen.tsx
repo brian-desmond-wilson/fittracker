@@ -517,7 +517,25 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
           <View style={styles.movementsSection}>
             <Text style={styles.sectionTitle}>Movements</Text>
                 {scaledMovements.map((movement, index) => {
-                  const exercise = movement.exercise as any;
+                  // Determine which exercise to display based on scaling level
+                  let exercise: any;
+                  let isAlternative = false;
+                  switch (selectedScaling) {
+                    case 'Rx':
+                      isAlternative = !!movement.rx_alternative_exercise;
+                      exercise = movement.rx_alternative_exercise || movement.exercise;
+                      break;
+                    case 'L2':
+                      isAlternative = !!movement.l2_alternative_exercise;
+                      exercise = movement.l2_alternative_exercise || movement.exercise;
+                      break;
+                    case 'L1':
+                      isAlternative = !!movement.l1_alternative_exercise;
+                      exercise = movement.l1_alternative_exercise || movement.exercise;
+                      break;
+                    default:
+                      exercise = movement.exercise;
+                  }
 
                   // Get category and goal type
                   const categoryName = exercise?.movement_category?.name;
@@ -544,6 +562,9 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                     distanceDisplay = formatDistance(distanceValue, distanceUnit);
                   }
 
+                  // Colors for alternative movements
+                  const alternativeColor = '#F59E0B';
+
                   return (
                     <View key={movement.id} style={styles.movementCard}>
                       {/* Movement Image and Content Container */}
@@ -561,39 +582,42 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                               <Text style={styles.movementPlaceholderIcon}>{placeholderIcon}</Text>
                             </View>
                           )}
+                          {/* Vertical Category Badge on Left Edge */}
+                          {categoryName && (
+                            <View style={[
+                              styles.verticalCategoryBadge,
+                              isAlternative && { backgroundColor: `${alternativeColor}E6` }
+                            ]}>
+                              <Text style={styles.verticalCategoryText}>{categoryName.toUpperCase()}</Text>
+                            </View>
+                          )}
                         </View>
 
                         {/* Movement Info */}
                         <View style={styles.movementInfo}>
                           {/* Movement Header */}
                           <View style={styles.movementHeader}>
-                            <Text style={styles.movementNumber}>{index + 1}.</Text>
-                            <Text style={styles.movementName}>
-                              {movement.exercise?.name}
+                            <Text style={[
+                              styles.movementNumber,
+                              isAlternative && { color: alternativeColor }
+                            ]}>{index + 1}.</Text>
+                            <Text style={styles.movementName} numberOfLines={1}>
+                              {exercise?.name}
                             </Text>
-                            {categoryName && (
-                              <View style={styles.movementCategoryBadge}>
-                                <Text style={styles.movementCategoryText}>{categoryName}</Text>
-                              </View>
-                            )}
                           </View>
 
                           {/* Rep Scheme with Weight (if present) */}
                           {movement.repsDisplay && (
                             <View style={styles.movementRepScheme}>
-                              <TrendingUp size={14} color={colors.primary} />
-                              <Text style={styles.movementRepText}>
+                              <TrendingUp size={14} color={isAlternative ? alternativeColor : colors.primary} />
+                              <Text style={[
+                                styles.movementRepText,
+                                isAlternative && { color: alternativeColor }
+                              ]}>
                                 {movement.repsDisplay}
                                 {movement.weightDisplay && ` @ ${movement.weightDisplay}`}
                               </Text>
                             </View>
-                          )}
-
-                          {/* Description (if available) */}
-                          {exercise?.description && (
-                            <Text style={styles.movementDescription} numberOfLines={2}>
-                              {exercise.description}
-                            </Text>
                           )}
 
                           {/* Movement Metadata Row */}
@@ -1042,6 +1066,26 @@ const styles = StyleSheet.create({
     width: 100,
     height: 120,
     backgroundColor: '#1A1F2E',
+    position: 'relative',
+  },
+  verticalCategoryBadge: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 24,
+    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verticalCategoryText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+    transform: [{ rotate: '-90deg' }],
+    width: 120,
+    textAlign: 'center',
   },
   movementImage: {
     width: '100%',
@@ -1059,7 +1103,9 @@ const styles = StyleSheet.create({
   },
   movementInfo: {
     flex: 1,
-    padding: 16,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
   movementHeader: {
     flexDirection: "row",
@@ -1073,7 +1119,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   movementName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
     color: colors.foreground,
     flex: 1,

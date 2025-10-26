@@ -16,8 +16,8 @@ interface Step1CoreProps {
 
 // Modality to Movement Family filtering mapping
 const MODALITY_TO_FAMILIES: Record<string, string[]> = {
-  Gymnastics: ['Pull', 'Press', 'Core', 'Inversion', 'Jump', 'Rope', 'Climb'],
-  Weightlifting: ['Squat', 'Hinge', 'Press', 'Pull', 'Carry', 'Throw', 'Lunge'],
+  Gymnastics: ['Pull', 'Push/Press', 'Core', 'Inversion', 'Plyometric', 'Climb', 'Support/Hold', 'Ring/Bar', 'Mobility/Control'],
+  Weightlifting: ['Squat', 'Hinge', 'Press', 'Pull', 'Carry', 'Throw', 'Lunge', 'Olympic'],
   Monostructural: ['Run', 'Row', 'Bike', 'Ski', 'Rope', 'Swim'],
   Recovery: ['Mobility'],
 };
@@ -109,15 +109,34 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
           Modality <Text style={styles.required}>*</Text>
         </Text>
         <Text style={styles.helperText}>
-          Select the primary modality for this movement
+          {formData.modality_id
+            ? categories.find(c => c.id === formData.modality_id)?.description || 'Select the primary modality for this movement'
+            : 'Select the primary modality for this movement'}
         </Text>
-        <View style={styles.pillsContainer}>
-          {categories.map(category => {
+        <View style={styles.segmentedControl}>
+          {categories.map((category, index) => {
             const isSelected = formData.modality_id === category.id;
+            const isFirst = index === 0;
+            const isLast = index === categories.length - 1;
+
+            // Short labels for better fit
+            const labelMap: Record<string, string> = {
+              'Weightlifting': 'Lifting',
+              'Gymnastics': 'Gym',
+              'Monostructural': 'Cardio',
+              'Recovery': 'Recovery'
+            };
+            const displayLabel = labelMap[category.name] || category.name;
+
             return (
               <TouchableOpacity
                 key={category.id}
-                style={[styles.pill, isSelected && styles.pillSelected]}
+                style={[
+                  styles.segment,
+                  isFirst && styles.segmentFirst,
+                  isLast && styles.segmentLast,
+                  isSelected && styles.segmentSelected
+                ]}
                 onPress={() => {
                   updateFormData({ modality_id: category.id });
                   // Reset family selection when modality changes
@@ -132,8 +151,8 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                  {category.name}
+                <Text style={[styles.segmentText, isSelected && styles.segmentTextSelected]}>
+                  {displayLabel}
                 </Text>
               </TouchableOpacity>
             );
@@ -147,7 +166,9 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
           Movement Family <Text style={styles.required}>*</Text>
         </Text>
         <Text style={styles.helperText}>
-          {hasFilteredFamilies
+          {formData.movement_family_id
+            ? allFamilies.find(f => f.id === formData.movement_family_id)?.description || 'Select the functional movement pattern'
+            : hasFilteredFamilies
             ? `Showing families for ${categories.find(c => c.id === formData.modality_id)?.name}`
             : 'Select the functional movement pattern'}
         </Text>
@@ -255,6 +276,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.foreground,
     backgroundColor: colors.input,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.muted,
+    borderRadius: 10,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  segmentFirst: {
+    // Optional: specific styling for first segment
+  },
+  segmentLast: {
+    // Optional: specific styling for last segment
+  },
+  segmentSelected: {
+    backgroundColor: colors.primary,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+  },
+  segmentTextSelected: {
+    color: '#FFFFFF',
   },
   pillsContainer: {
     flexDirection: 'row',
