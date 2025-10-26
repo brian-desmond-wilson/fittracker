@@ -76,7 +76,11 @@ export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabPr
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadClasses();
+    if (searchQuery.trim()) {
+      await handleSearch();
+    } else {
+      await loadClasses();
+    }
     setRefreshing(false);
   };
 

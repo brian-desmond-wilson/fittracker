@@ -561,11 +561,14 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                             )}
                           </View>
 
-                          {/* Rep Scheme (if present) */}
+                          {/* Rep Scheme with Weight (if present) */}
                           {movement.repsDisplay && (
                             <View style={styles.movementRepScheme}>
                               <TrendingUp size={14} color={colors.primary} />
-                              <Text style={styles.movementRepText}>{movement.repsDisplay}</Text>
+                              <Text style={styles.movementRepText}>
+                                {movement.repsDisplay}
+                                {movement.weightDisplay && ` @ ${movement.weightDisplay}`}
+                              </Text>
                             </View>
                           )}
 
@@ -578,14 +581,6 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
                           {/* Movement Metadata Row */}
                           <View style={styles.movementMetadataRow}>
-                            {/* Category */}
-                            {categoryName && (
-                              <View style={styles.movementMetaItem}>
-                                <Activity size={14} color="#10B981" />
-                                <Text style={styles.movementMetaText}>{categoryName}</Text>
-                              </View>
-                            )}
-
                             {/* Muscle Groups */}
                             {muscleGroups && (
                               <View style={styles.movementMetaItem}>
@@ -603,21 +598,15 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                             )}
                           </View>
 
-                          {/* Weight and Distance Specs */}
-                          <View style={styles.movementDetailsRow}>
-                            {movement.weightDisplay && (
-                              <View style={styles.detailChip}>
-                                <Dumbbell size={14} color="#8B5CF6" />
-                                <Text style={styles.movementDetailText}>{movement.weightDisplay}</Text>
-                              </View>
-                            )}
-                            {distanceDisplay && (
+                          {/* Distance Specs (if present) */}
+                          {distanceDisplay && (
+                            <View style={styles.movementDetailsRow}>
                               <View style={styles.detailChip}>
                                 <MapPin size={14} color="#3B82F6" />
                                 <Text style={styles.movementDetailText}>{distanceDisplay.primary}</Text>
                               </View>
-                            )}
-                          </View>
+                            </View>
+                          )}
                         </View>
                       </View>
 
@@ -1101,10 +1090,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   movementMetadataRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 8,
+    flexDirection: 'column',
+    gap: 6,
+    marginBottom: 0,
   },
   movementMetaItem: {
     flexDirection: 'row',

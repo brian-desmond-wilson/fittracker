@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Dumbbell, Search } from "lucide-react-native";
+import { Dumbbell, Search, X } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
@@ -105,6 +105,11 @@ export default function Training() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")} activeOpacity={0.7}>
+              <X size={20} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
         </View>
         <View style={styles.headerButtons}>
           <TouchableOpacity onPress={handleCrossFitPress} activeOpacity={0.7} style={styles.iconButton}>

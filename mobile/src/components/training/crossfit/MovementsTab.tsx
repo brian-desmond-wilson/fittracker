@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
@@ -68,7 +68,11 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadMovements();
+    if (searchQuery.trim()) {
+      await handleSearch();
+    } else {
+      await loadMovements();
+    }
     setRefreshing(false);
   };
 
@@ -197,9 +201,22 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
               activeOpacity={0.7}
               onPress={() => router.push(`/(tabs)/training/movement/${movement.id}`)}
             >
-              <View style={styles.movementIcon}>
-                <Text style={styles.movementIconText}>{getMovementIcon(movement)}</Text>
-              </View>
+              {/* Left: Thumbnail Image or Icon */}
+              {movement.image_url ? (
+                <View style={styles.thumbnailContainer}>
+                  <Image
+                    source={{ uri: movement.image_url }}
+                    style={styles.thumbnail}
+                    resizeMode="cover"
+                  />
+                </View>
+              ) : (
+                <View style={styles.movementIcon}>
+                  <Text style={styles.movementIconText}>{getMovementIcon(movement)}</Text>
+                </View>
+              )}
+
+              {/* Right: Movement Info */}
               <View style={styles.movementInfo}>
                 <View style={styles.movementNameRow}>
                   <Text style={styles.movementName}>
@@ -323,27 +340,34 @@ const styles = StyleSheet.create({
   },
   movementItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
     backgroundColor: colors.card,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 12,
+    overflow: 'hidden',
+  },
+  thumbnailContainer: {
+    width: 100,
+    height: 120,
+    backgroundColor: '#1A1F2E',
+  },
+  thumbnail: {
+    width: '100%',
+    height: '100%',
   },
   movementIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 100,
+    height: 120,
     backgroundColor: colors.muted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   movementIconText: {
-    fontSize: 24,
+    fontSize: 32,
   },
   movementInfo: {
     flex: 1,
+    padding: 16,
   },
   movementNameRow: {
     flexDirection: 'row',

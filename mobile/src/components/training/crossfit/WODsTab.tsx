@@ -83,7 +83,11 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    if (searchQuery.trim()) {
+      await handleSearch();
+    } else {
+      await loadData();
+    }
     setRefreshing(false);
   };
 
