@@ -263,6 +263,19 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
           break;
       }
 
+      // Special handling for distance movements in "For Time" WODs
+      const distanceValue = (movement as any)[`${selectedScaling.toLowerCase()}_distance_value`];
+      const distanceUnit = (movement as any)[`${selectedScaling.toLowerCase()}_distance_unit`];
+      const isForTime = wod?.format?.name?.toLowerCase().includes('for time') ||
+                        wod?.format?.name?.toLowerCase().includes('rounds for time');
+
+      if (distanceValue && distanceUnit && isForTime) {
+        // Format: "400m / round @ 5 RFT"
+        const formattedDistance = formatDistance(distanceValue, distanceUnit);
+        const rounds = repScheme?.match(/^\d+/)?.[0] || wod?.rep_scheme?.match(/^\d+/)?.[0] || '5';
+        repsDisplay = `${formattedDistance.primary} / round @ ${rounds} RFT`;
+      }
+
       return {
         ...movement,
         repsDisplay,
@@ -523,7 +536,11 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                   let distanceDisplay = null;
                   const distanceValue = (movement as any)[`${selectedScaling.toLowerCase()}_distance_value`];
                   const distanceUnit = (movement as any)[`${selectedScaling.toLowerCase()}_distance_unit`];
-                  if (distanceValue && distanceUnit) {
+                  const isForTime = wod?.format?.name?.toLowerCase().includes('for time') ||
+                                    wod?.format?.name?.toLowerCase().includes('rounds for time');
+
+                  // Only show distance chip if NOT a "For Time" WOD (since it's in repsDisplay for those)
+                  if (distanceValue && distanceUnit && !isForTime) {
                     distanceDisplay = formatDistance(distanceValue, distanceUnit);
                   }
 

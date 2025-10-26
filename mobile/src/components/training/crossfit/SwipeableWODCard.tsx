@@ -232,12 +232,13 @@ const styles = StyleSheet.create({
   },
   thumbnailContainer: {
     width: 100,
-    height: 120,
+    height: 140,
     backgroundColor: '#1A1F2E',
   },
   thumbnail: {
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
   categoryBadge: {
     paddingHorizontal: 10,

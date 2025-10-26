@@ -13,7 +13,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Sparkles } from 'lucide-react-native';
+import { ChevronLeft, Sparkles, MoreVertical } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
@@ -72,6 +72,25 @@ export default function MovementDetailPage() {
     }
   };
 
+  const handleMenuPress = () => {
+    if (!movement) return;
+
+    Alert.alert(
+      'Movement Options',
+      'Choose an action',
+      [
+        {
+          text: 'Regenerate Image',
+          onPress: handleGenerateImage,
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+
   const handleGenerateImage = async () => {
     if (!movement) return;
 
@@ -117,7 +136,15 @@ export default function MovementDetailPage() {
       });
 
       if (error) {
+        console.error('Edge function error:', error);
         throw error;
+      }
+
+      // Check if the response indicates failure
+      if (data && !data.success) {
+        const errorMsg = data.error || data.message || 'Image generation failed';
+        Alert.alert('Error', errorMsg);
+        return;
       }
 
       // Show success and reload movement to get new image
@@ -127,9 +154,10 @@ export default function MovementDetailPage() {
         [{ text: 'OK', onPress: () => loadMovement() }]
       );
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating image:', error);
-      Alert.alert('Error', 'Failed to generate image. Please try again.');
+      const errorMessage = error?.message || 'Failed to generate image. Please try again.';
+      Alert.alert('Error', errorMessage);
     } finally {
       setGenerating(false);
     }
@@ -167,11 +195,14 @@ export default function MovementDetailPage() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ChevronLeft size={24} color="#FFFFFF" />
-          <Text style={styles.backText}>Movements</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <ChevronLeft size={24} color="#FFFFFF" />
+            <Text style={styles.backText}>Movements</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleMenuPress} style={styles.menuButton}>
+            <MoreVertical size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
       {/* Content */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -313,6 +344,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -326,6 +360,9 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 17,
     color: '#FFFFFF',
+  },
+  menuButton: {
+    padding: 4,
   },
   backButtonText: {
     fontSize: 16,

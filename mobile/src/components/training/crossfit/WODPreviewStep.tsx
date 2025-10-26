@@ -46,29 +46,38 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
           exercise_id: m.exercise_id,
           movement_order: index,
 
-          // Rx - Gender split weights
+          // Rx - Gender split weights and distance
           rx_reps: m.rx_reps,
           rx_weight_men_lbs: m.rx_weight_men_lbs,
           rx_weight_women_lbs: m.rx_weight_women_lbs,
-          rx_distance: m.rx_distance,
+          rx_distance_value: m.rx_distance_value,
+          rx_distance_unit: m.rx_distance_unit,
           rx_time: m.rx_time,
           rx_movement_variation: m.rx_movement_variation,
+          rx_alternative_exercise_id: m.rx_alternative_exercise_id,
+          rx_alternative_exercise_name: m.rx_alternative_exercise_name,
 
-          // L2 - Gender split weights
+          // L2 - Gender split weights and distance
           l2_reps: m.l2_reps,
           l2_weight_men_lbs: m.l2_weight_men_lbs,
           l2_weight_women_lbs: m.l2_weight_women_lbs,
-          l2_distance: m.l2_distance,
+          l2_distance_value: m.l2_distance_value,
+          l2_distance_unit: m.l2_distance_unit,
           l2_time: m.l2_time,
           l2_movement_variation: m.l2_movement_variation,
+          l2_alternative_exercise_id: m.l2_alternative_exercise_id,
+          l2_alternative_exercise_name: m.l2_alternative_exercise_name,
 
-          // L1 - Gender split weights
+          // L1 - Gender split weights and distance
           l1_reps: m.l1_reps,
           l1_weight_men_lbs: m.l1_weight_men_lbs,
           l1_weight_women_lbs: m.l1_weight_women_lbs,
-          l1_distance: m.l1_distance,
+          l1_distance_value: m.l1_distance_value,
+          l1_distance_unit: m.l1_distance_unit,
           l1_time: m.l1_time,
           l1_movement_variation: m.l1_movement_variation,
+          l1_alternative_exercise_id: m.l1_alternative_exercise_id,
+          l1_alternative_exercise_name: m.l1_alternative_exercise_name,
 
           notes: m.notes,
         })),
