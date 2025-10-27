@@ -43,7 +43,7 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
     } else {
       loadMovements();
     }
-  }, [searchQuery]);
+  }, [searchQuery, selectedCategory]);
 
   const loadMovements = async () => {
     try {
