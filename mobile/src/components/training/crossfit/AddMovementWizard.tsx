@@ -14,6 +14,9 @@ import { Step3Attributes } from './wizard/Step3Attributes';
 
 export interface MovementFormData {
   // Step 1: Core Identity (required)
+  is_core: boolean;
+  parent_exercise_id: string | null;
+  parent_movement_name: string; // For UI display
   name: string;
   modality_id: string | null;
   movement_family_id: string | null;
@@ -30,7 +33,7 @@ export interface MovementFormData {
   load_position_id: string | null;
   stance_id: string | null;
   plane_of_motion_id: string | null;
-  movement_style_id: string | null;
+  movement_style_ids: string[]; // Multiple styles
   symmetry_id: string | null;
   range_depth_id: string | null;
 
@@ -60,6 +63,9 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<MovementFormData>({
+    is_core: true,
+    parent_exercise_id: null,
+    parent_movement_name: '',
     name: '',
     modality_id: null,
     movement_family_id: null,
@@ -72,7 +78,7 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
     load_position_id: null,
     stance_id: null,
     plane_of_motion_id: null,
-    movement_style_id: null,
+    movement_style_ids: [],
     symmetry_id: null,
     range_depth_id: null,
     short_name: '',
@@ -89,8 +95,11 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
 
   const canProceed = () => {
     if (currentStep === 1) {
-      // Step 1 validation: require name only
-      return formData.name.trim() !== '';
+      // Step 1 validation: require name
+      // If variation, also require parent_exercise_id
+      if (!formData.name.trim()) return false;
+      if (!formData.is_core && !formData.parent_exercise_id) return false;
+      return true;
     }
     if (currentStep === 2) {
       // Step 2 validation: require modality, family, goal type
@@ -138,6 +147,10 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
         goal_type_id: formData.goal_type_id!,
         movement_category_id: formData.modality_id!,
 
+        // Movement Hierarchy
+        is_core: formData.is_core,
+        parent_exercise_id: formData.parent_exercise_id || undefined,
+
         // Core metadata
         movement_family_id: formData.movement_family_id,
         plane_of_motion_id: formData.plane_of_motion_id,
@@ -149,7 +162,7 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
         load_position_id: formData.load_position_id,
         stance_id: formData.stance_id,
         range_depth_id: formData.range_depth_id,
-        movement_style_id: formData.movement_style_id,
+        movement_style_ids: formData.movement_style_ids.length > 0 ? formData.movement_style_ids : undefined,
         symmetry_id: formData.symmetry_id,
 
         // Media

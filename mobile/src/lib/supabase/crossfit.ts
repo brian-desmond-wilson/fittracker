@@ -4,6 +4,7 @@ import type {
   Exercise,
   ExerciseWithVariations,
   ExerciseWithDetails,
+  ExerciseWithTier,
   VariationCategory,
   VariationOption,
   VariationOptionWithCategory,
@@ -550,18 +551,158 @@ export async function createVariationOption(
 }
 
 /**
+ * Compute the tier/depth of a movement in the hierarchy
+ * Returns 0 for core movements, 1-4 for variation tiers
+ */
+export async function computeMovementTier(exerciseId: string): Promise<number> {
+  const { data, error } = await supabase
+    .rpc('get_movement_tier', { exercise_id_param: exerciseId });
+
+  if (error) {
+    console.error('Error computing movement tier:', error);
+    return 0; // Default to core if error
+  }
+
+  return data || 0;
+}
+
+/**
+ * Search movements by name/alias and include computed tier
+ */
+export async function searchMovementsWithTier(query: string): Promise<ExerciseWithTier[]> {
+  try {
+    // Fetch all movements matching the search query
+    const { data: movements, error } = await supabase
+      .from('exercises')
+      .select(`
+        *,
+        goal_type:goal_types(*),
+        movement_category:movement_categories(*),
+        parent:exercises!parent_exercise_id(id, name, short_name)
+      `)
+      .or(`name.ilike.%${query}%,aliases.cs.{${query}}`)
+      .order('is_core', { ascending: false }) // Core movements first
+      .order('name');
+
+    if (error) {
+      console.error('Error searching movements:', error);
+      throw error;
+    }
+
+    if (!movements) return [];
+
+    // Compute tier for each movement
+    const movementsWithTier: ExerciseWithTier[] = await Promise.all(
+      movements.map(async (movement) => {
+        const tier = await computeMovementTier(movement.id);
+        return {
+          ...movement,
+          tier,
+          parent_movement: movement.parent || null,
+        };
+      })
+    );
+
+    // Sort by tier (core first, then tier 1, tier 2, etc.)
+    return movementsWithTier.sort((a, b) => a.tier - b.tier);
+  } catch (error) {
+    console.error('Error in searchMovementsWithTier:', error);
+    throw error;
+  }
+}
+
+/**
+ * Fetch a single movement with all its attributes for inheritance
+ */
+export async function fetchMovementWithAttributes(exerciseId: string): Promise<Exercise> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select(`
+      *,
+      goal_type:goal_types(*),
+      movement_category:movement_categories(*),
+      movement_family:movement_families(*),
+      plane_of_motion:planes_of_motion(*),
+      muscle_regions:exercise_muscle_regions(
+        muscle_region_id,
+        is_primary,
+        muscle_region:muscle_regions(*)
+      ),
+      scoring_types:exercise_scoring_types(
+        scoring_type_id,
+        scoring_type:scoring_types(*)
+      )
+    `)
+    .eq('id', exerciseId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching movement with attributes:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Generate a unique slug for a movement name
+ * If the base slug exists, appends a number (e.g., squat-2, squat-3)
+ */
+async function generateUniqueSlug(name: string): Promise<string> {
+  const baseSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // Check if base slug exists
+  const { data: existing } = await supabase
+    .from('exercises')
+    .select('slug')
+    .eq('slug', baseSlug)
+    .single();
+
+  // If no conflict, use base slug
+  if (!existing) {
+    return baseSlug;
+  }
+
+  // If conflict, find the next available number
+  let counter = 2;
+  while (counter < 100) { // Safety limit
+    const numberedSlug = `${baseSlug}-${counter}`;
+    const { data: existingNumbered } = await supabase
+      .from('exercises')
+      .select('slug')
+      .eq('slug', numberedSlug)
+      .single();
+
+    if (!existingNumbered) {
+      return numberedSlug;
+    }
+    counter++;
+  }
+
+  // Fallback: append timestamp
+  return `${baseSlug}-${Date.now()}`;
+}
+
+/**
  * Create a new movement
  * Returns the created exercise ID
  */
 export async function createMovement(input: CreateMovementInput): Promise<string> {
   try {
+    // Generate unique slug
+    const slug = await generateUniqueSlug(input.name);
+
     // 1. Insert the exercise
     const exerciseData: any = {
       name: input.name,
       description: input.description,
-      slug: input.name.toLowerCase().replace(/\s+/g, '-'),
+      slug,
       goal_type_id: input.goal_type_id,
       movement_category_id: input.movement_category_id,
+
+      // Movement Hierarchy
+      is_core: input.is_core || false,
+      ...(input.parent_exercise_id && { parent_exercise_id: input.parent_exercise_id }),
 
       // Core movement metadata (only include if provided)
       ...(input.movement_family_id && { movement_family_id: input.movement_family_id }),
@@ -648,6 +789,23 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       if (muscleError) {
         console.error('Error inserting exercise muscle regions:', muscleError);
         throw muscleError;
+      }
+    }
+
+    // 5. Insert movement styles (if any)
+    if (input.movement_style_ids && input.movement_style_ids.length > 0) {
+      const styleInserts = input.movement_style_ids.map(styleId => ({
+        exercise_id: exercise.id,
+        movement_style_id: styleId,
+      }));
+
+      const { error: styleError } = await supabase
+        .from('exercise_movement_styles')
+        .insert(styleInserts);
+
+      if (styleError) {
+        console.error('Error inserting exercise movement styles:', styleError);
+        throw styleError;
       }
     }
 

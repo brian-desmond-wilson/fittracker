@@ -88,6 +88,19 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
     }
   };
 
+  const toggleMovementStyle = (styleId: string) => {
+    const isSelected = formData.movement_style_ids.includes(styleId);
+    if (isSelected) {
+      updateFormData({
+        movement_style_ids: formData.movement_style_ids.filter(id => id !== styleId),
+      });
+    } else {
+      updateFormData({
+        movement_style_ids: [...formData.movement_style_ids, styleId],
+      });
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -273,8 +286,15 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Movement Style</Text>
         <Text style={styles.helperText}>
-          {formData.movement_style_id
-            ? movementStyles.find(s => s.id === formData.movement_style_id)?.description || 'Tempo and execution variation (Strict, Kipping, Pause, etc.)'
+          {formData.movement_style_ids.length > 0
+            ? formData.movement_style_ids.length === 1
+              ? movementStyles.find(s => s.id === formData.movement_style_ids[0])?.name || '1 item selected'
+              : formData.movement_style_ids.length === 2
+              ? movementStyles
+                  .filter(s => formData.movement_style_ids.includes(s.id))
+                  .map(s => s.name)
+                  .join(', ')
+              : `${formData.movement_style_ids.length} items selected`
             : 'Tempo and execution variation (Strict, Kipping, Pause, etc.)'}
         </Text>
 
@@ -287,14 +307,12 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
               <Text style={styles.sectionHeader}>{category}</Text>
               <View style={styles.pillsContainer}>
                 {categoryStyles.map(style => {
-                  const isSelected = formData.movement_style_id === style.id;
+                  const isSelected = formData.movement_style_ids.includes(style.id);
                   return (
                     <TouchableOpacity
                       key={style.id}
                       style={[styles.pill, isSelected && styles.pillSelected]}
-                      onPress={() =>
-                        updateFormData({ movement_style_id: isSelected ? null : style.id })
-                      }
+                      onPress={() => toggleMovementStyle(style.id)}
                       activeOpacity={0.7}
                     >
                       <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>

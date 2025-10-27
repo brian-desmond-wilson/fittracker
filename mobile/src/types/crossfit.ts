@@ -293,11 +293,16 @@ export interface VariationOption {
   load_position_id: string | null;
   stance_id: string | null;
   range_depth_id: string | null;
-  movement_style_id: string | null;
+  movement_style_id: string | null; // Legacy single style (deprecated)
+  movement_style_ids: string[] | null; // Multiple styles
   symmetry_id: string | null;
   skill_level: SkillLevel | null;
   short_name: string | null;
   aliases: string[] | null;
+
+  // Movement Hierarchy (Migration 16)
+  is_core: boolean;
+  parent_exercise_id: string | null;
 }
 
 export interface ExerciseVariation {
@@ -305,6 +310,12 @@ export interface ExerciseVariation {
   exercise_id: string;
   variation_option_id: string;
   created_at: string;
+}
+
+// Exercise with computed tier (not stored in DB, computed via get_movement_tier function)
+export interface ExerciseWithTier extends Exercise {
+  tier: number; // 0 = core, 1-4 = variation tiers
+  parent_movement?: Exercise | null; // Optional parent data for display
 }
 
 export interface WODFormat {
@@ -651,7 +662,8 @@ export interface CreateMovementInput {
   load_position_id?: string;
   stance_id?: string;
   range_depth_id?: string;
-  movement_style_id?: string;
+  movement_style_id?: string; // Legacy single style (deprecated)
+  movement_style_ids?: string[]; // Multiple styles
   symmetry_id?: string;
 
   // Media
@@ -668,6 +680,10 @@ export interface CreateMovementInput {
   scoring_type_ids?: string[];
   muscle_region_ids?: string[];
   primary_muscle_region_ids?: string[];
+
+  // Movement Hierarchy
+  is_core?: boolean;
+  parent_exercise_id?: string;
 }
 
 export interface VariationOptionWithCategory extends VariationOption {

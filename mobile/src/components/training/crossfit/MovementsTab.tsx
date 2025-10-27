@@ -4,8 +4,13 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
+import { fetchMovements, searchMovements, computeMovementTier } from '@/src/lib/supabase/crossfit';
 import { AddMovementWizard } from './AddMovementWizard';
+
+// Movement with computed tier for display
+interface MovementWithTier extends ExerciseWithVariations {
+  tier?: number;
+}
 
 type MovementCategory = 'All' | 'Oly lifts' | 'Gymnastics' | 'Cardio';
 
@@ -18,7 +23,7 @@ interface MovementsTabProps {
 export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdate }: MovementsTabProps) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<MovementCategory>('All');
-  const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
+  const [movements, setMovements] = useState<MovementWithTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,8 +47,18 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
     try {
       setLoading(true);
       const data = await fetchMovements();
-      setMovements(data);
-      onCountUpdate(data.length);
+
+      // Compute tier for each movement
+      const movementsWithTiers = await Promise.all(
+        data.map(async (movement) => {
+          const tier = await computeMovementTier(movement.id);
+          console.log(`Movement: ${movement.name}, is_core: ${movement.is_core}, parent_id: ${movement.parent_exercise_id}, tier: ${tier}`);
+          return { ...movement, tier };
+        })
+      );
+
+      setMovements(movementsWithTiers);
+      onCountUpdate(movementsWithTiers.length);
     } catch (error) {
       console.error('Error loading movements:', error);
     } finally {
@@ -60,8 +75,17 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
     try {
       setSearching(true);
       const results = await searchMovements(searchQuery.trim());
-      setMovements(results);
-      onCountUpdate(results.length);
+
+      // Compute tier for each movement
+      const resultsWithTiers = await Promise.all(
+        results.map(async (movement) => {
+          const tier = await computeMovementTier(movement.id);
+          return { ...movement, tier };
+        })
+      );
+
+      setMovements(resultsWithTiers);
+      onCountUpdate(resultsWithTiers.length);
     } catch (error) {
       console.error('Error searching movements:', error);
     } finally {
@@ -225,15 +249,15 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
                   <Text style={styles.movementName}>
                     {movement.name}
                   </Text>
-                  {movement.is_official ? (
-                    <View style={styles.officialBadge}>
-                      <Text style={styles.officialBadgeText}>Official</Text>
+                  {movement.is_core ? (
+                    <View style={styles.coreBadge}>
+                      <Text style={styles.coreBadgeText}>Core</Text>
                     </View>
-                  ) : (
-                    <View style={styles.customBadge}>
-                      <Text style={styles.customBadgeText}>Custom</Text>
+                  ) : movement.tier !== undefined && movement.tier > 0 ? (
+                    <View style={styles.tierBadge}>
+                      <Text style={styles.tierBadgeText}>Tier {movement.tier}</Text>
                     </View>
-                  )}
+                  ) : null}
                 </View>
                 <Text style={styles.movementCategory}>
                   {movement.movement_category?.name || movement.goal_type?.name || 'General'}
@@ -388,7 +412,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.mutedForeground,
   },
-  officialBadge: {
+  coreBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -396,14 +420,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(34, 197, 94, 0.3)',
   },
-  officialBadgeText: {
+  coreBadgeText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#22C55E',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  customBadge: {
+  tierBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -411,7 +435,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.3)',
   },
-  customBadgeText: {
+  tierBadgeText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#3B82F6',

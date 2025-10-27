@@ -8,6 +8,7 @@ import {
   fetchMovementCategories,
   fetchMovementFamilies,
   fetchGoalTypes,
+  fetchMovementWithAttributes,
 } from '@/src/lib/supabase/crossfit';
 import type {
   MuscleRegion,
@@ -16,6 +17,7 @@ import type {
   MovementCategory,
   MovementFamily,
   GoalType,
+  Exercise,
 } from '@/src/types/crossfit';
 
 interface Step2ClassificationProps {
@@ -24,6 +26,9 @@ interface Step2ClassificationProps {
 }
 
 const SKILL_LEVELS: SkillLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
+
+// Fields that can be overridden even when inherited
+type OverridableField = 'skill_level' | 'scoring_type_ids';
 
 // Modality to Movement Family filtering mapping
 const MODALITY_TO_FAMILIES: Record<string, string[]> = {
@@ -42,9 +47,83 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
   const [loading, setLoading] = useState(true);
   const [showAllFamilies, setShowAllFamilies] = useState(false);
 
+  // Attribute inheritance state
+  const [parentMovement, setParentMovement] = useState<Exercise | null>(null);
+  const [inheritedFields, setInheritedFields] = useState<Set<string>>(new Set());
+  const [overriddenFields, setOverriddenFields] = useState<Set<OverridableField>>(new Set());
+
   useEffect(() => {
     loadReferenceData();
   }, []);
+
+  // Load parent movement attributes when parent_exercise_id is set
+  useEffect(() => {
+    if (formData.parent_exercise_id && !formData.is_core) {
+      loadParentAttributes();
+    } else {
+      setParentMovement(null);
+      setInheritedFields(new Set());
+    }
+  }, [formData.parent_exercise_id, formData.is_core]);
+
+  const loadParentAttributes = async () => {
+    try {
+      const parent = await fetchMovementWithAttributes(formData.parent_exercise_id!);
+      setParentMovement(parent);
+
+      // Auto-inherit attributes from parent
+      const fieldsToInherit = new Set<string>();
+
+      // Always inherit (locked fields)
+      if (parent.movement_family_id) {
+        updateFormData({ movement_family_id: parent.movement_family_id });
+        fieldsToInherit.add('movement_family_id');
+      }
+      if (parent.movement_category_id) {
+        updateFormData({ modality_id: parent.movement_category_id });
+        fieldsToInherit.add('modality_id');
+      }
+      if (parent.goal_type_id) {
+        updateFormData({ goal_type_id: parent.goal_type_id });
+        fieldsToInherit.add('goal_type_id');
+      }
+      if (parent.plane_of_motion_id) {
+        updateFormData({ plane_of_motion_id: parent.plane_of_motion_id });
+        fieldsToInherit.add('plane_of_motion_id');
+      }
+
+      // Extract muscle regions from parent's exercise_muscle_regions array
+      if (parent.muscle_regions && Array.isArray(parent.muscle_regions)) {
+        const muscleRegionIds = parent.muscle_regions.map((mr: any) => mr.muscle_region_id);
+        const primaryMuscleRegionIds = parent.muscle_regions
+          .filter((mr: any) => mr.is_primary)
+          .map((mr: any) => mr.muscle_region_id);
+
+        updateFormData({
+          muscle_region_ids: muscleRegionIds,
+          primary_muscle_region_ids: primaryMuscleRegionIds,
+        });
+        fieldsToInherit.add('muscle_region_ids');
+      }
+
+      // Overridable fields (pre-fill but allow override)
+      if (parent.skill_level && !overriddenFields.has('skill_level')) {
+        updateFormData({ skill_level: parent.skill_level });
+        fieldsToInherit.add('skill_level');
+      }
+
+      // Extract scoring types from parent's exercise_scoring_types array
+      if (parent.scoring_types && Array.isArray(parent.scoring_types) && !overriddenFields.has('scoring_type_ids')) {
+        const scoringTypeIds = parent.scoring_types.map((st: any) => st.scoring_type_id);
+        updateFormData({ scoring_type_ids: scoringTypeIds });
+        fieldsToInherit.add('scoring_type_ids');
+      }
+
+      setInheritedFields(fieldsToInherit);
+    } catch (error) {
+      console.error('Error loading parent attributes:', error);
+    }
+  };
 
   const loadReferenceData = async () => {
     try {
@@ -115,6 +194,60 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
         scoring_type_ids: [...formData.scoring_type_ids, typeId],
       });
     }
+  };
+
+  // Helper functions for inheritance
+  const isFieldInherited = (fieldName: string): boolean => {
+    return inheritedFields.has(fieldName) && !overriddenFields.has(fieldName as OverridableField);
+  };
+
+  const isFieldOverridden = (fieldName: OverridableField): boolean => {
+    return overriddenFields.has(fieldName);
+  };
+
+  const handleOverride = (fieldName: OverridableField) => {
+    setOverriddenFields(prev => new Set(prev).add(fieldName));
+    setInheritedFields(prev => {
+      const next = new Set(prev);
+      next.delete(fieldName);
+      return next;
+    });
+  };
+
+  const renderInheritanceBadge = (fieldName: string) => {
+    if (!formData.parent_movement_name) return null;
+
+    if (isFieldOverridden(fieldName as OverridableField)) {
+      return (
+        <View style={styles.inheritanceBadge}>
+          <Text style={styles.inheritanceText}>Overridden</Text>
+        </View>
+      );
+    }
+
+    if (isFieldInherited(fieldName)) {
+      return (
+        <View style={styles.inheritanceBadge}>
+          <Text style={styles.inheritanceText}>Inherited from {formData.parent_movement_name}</Text>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
+  const renderOverrideButton = (fieldName: OverridableField) => {
+    if (!isFieldInherited(fieldName)) return null;
+
+    return (
+      <TouchableOpacity
+        style={styles.overrideButton}
+        onPress={() => handleOverride(fieldName)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.overrideButtonText}>Override</Text>
+      </TouchableOpacity>
+    );
   };
 
   // Get filtered families based on selected modality
@@ -287,7 +420,11 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
 
       {/* Skill Level */}
       <View style={styles.field}>
-        <Text style={styles.label}>Skill Level</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Skill Level</Text>
+          {renderOverrideButton('skill_level')}
+        </View>
+        {renderInheritanceBadge('skill_level')}
         <Text style={styles.helperText}>
           Technical difficulty required to perform this movement
         </Text>
@@ -493,7 +630,11 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
 
       {/* Scoring Types */}
       <View style={styles.field}>
-        <Text style={styles.label}>Scoring Types</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>Scoring Types</Text>
+          {renderOverrideButton('scoring_type_ids')}
+        </View>
+        {renderInheritanceBadge('scoring_type_ids')}
         <Text style={styles.helperText}>
           {formData.scoring_type_ids.length > 0
             ? scoringTypes
@@ -624,6 +765,36 @@ const styles = StyleSheet.create({
     color: colors.foreground,
   },
   pillTextSelected: {
+    color: '#FFFFFF',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inheritanceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignSelf: 'flex-start',
+  },
+  inheritanceText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    fontStyle: 'italic',
+  },
+  overrideButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  overrideButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#FFFFFF',
   },
   musclePill: {
