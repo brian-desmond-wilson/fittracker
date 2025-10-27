@@ -24,11 +24,15 @@ export function Step5Variations({ formData, updateFormData }: Step5VariationsPro
         </Text>
       </View>
 
+      <View style={styles.separator} />
+
       {/* Variation Selector */}
       <VariationSelector
         selectedVariationIds={formData.variation_option_ids}
         onSelectionChange={ids => updateFormData({ variation_option_ids: ids })}
       />
+
+      <View style={styles.separator} />
 
       {/* Usage Note */}
       <View style={styles.noteBox}>
@@ -45,6 +49,11 @@ export function Step5Variations({ formData, updateFormData }: Step5VariationsPro
 const styles = StyleSheet.create({
   container: {
     gap: 24,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
   infoBox: {
     backgroundColor: colors.muted,

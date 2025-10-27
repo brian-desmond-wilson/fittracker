@@ -103,6 +103,8 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
         />
       </View>
 
+      <View style={styles.separator} />
+
       {/* Modality */}
       <View style={styles.field}>
         <Text style={styles.label}>
@@ -160,6 +162,8 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
         </View>
       </View>
 
+      <View style={styles.separator} />
+
       {/* Movement Family */}
       <View style={styles.field}>
         <Text style={styles.label}>
@@ -207,6 +211,8 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
         )}
       </View>
 
+      <View style={styles.separator} />
+
       {/* Goal Type */}
       <View style={styles.field}>
         <Text style={styles.label}>
@@ -253,6 +259,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: colors.mutedForeground,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
   field: {
     gap: 8,

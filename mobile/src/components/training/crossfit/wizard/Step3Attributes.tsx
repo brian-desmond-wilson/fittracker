@@ -163,38 +163,57 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
         })}
       </View>
 
+      <View style={styles.separator} />
+
       {/* Load Position */}
       <View style={styles.field}>
         <Text style={styles.label}>Load Position</Text>
         <Text style={styles.helperText}>
-          How external weight is held or positioned
+          {formData.load_position_id
+            ? loadPositions.find(p => p.id === formData.load_position_id)?.description || 'How external weight is held or positioned'
+            : 'How external weight is held or positioned'}
         </Text>
-        <View style={styles.pillsContainer}>
-          {loadPositions.map(position => {
-            const isSelected = formData.load_position_id === position.id;
-            return (
-              <TouchableOpacity
-                key={position.id}
-                style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() =>
-                  updateFormData({ load_position_id: isSelected ? null : position.id })
-                }
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                  {position.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+
+        {['Barbell', 'Dumbbell / KB', 'Unloaded', 'Odd Object'].map(category => {
+          const categoryPositions = loadPositions.filter(p => p.category === category);
+          if (categoryPositions.length === 0) return null;
+
+          return (
+            <View key={category}>
+              <Text style={styles.sectionHeader}>{category}</Text>
+              <View style={styles.pillsContainer}>
+                {categoryPositions.map(position => {
+                  const isSelected = formData.load_position_id === position.id;
+                  return (
+                    <TouchableOpacity
+                      key={position.id}
+                      style={[styles.pill, isSelected && styles.pillSelected]}
+                      onPress={() =>
+                        updateFormData({ load_position_id: isSelected ? null : position.id })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                        {position.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })}
       </View>
+
+      <View style={styles.separator} />
 
       {/* Stance */}
       <View style={styles.field}>
         <Text style={styles.label}>Stance</Text>
         <Text style={styles.helperText}>
-          Foot and leg positioning during movement
+          {formData.stance_id
+            ? stances.find(s => s.id === formData.stance_id)?.description || 'Foot and leg positioning during movement'
+            : 'Foot and leg positioning during movement'}
         </Text>
         <View style={styles.pillsContainer}>
           {stances.map(stance => {
@@ -217,11 +236,15 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
         </View>
       </View>
 
+      <View style={styles.separator} />
+
       {/* Range Depth */}
       <View style={styles.field}>
         <Text style={styles.label}>Range Depth</Text>
         <Text style={styles.helperText}>
-          Depth or range of motion specification
+          {formData.range_depth_id
+            ? depths.find(d => d.id === formData.range_depth_id)?.description || 'Depth or range of motion specification'
+            : 'Depth or range of motion specification'}
         </Text>
         <View style={styles.pillsContainer}>
           {depths.map(depth => {
@@ -243,6 +266,8 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
           })}
         </View>
       </View>
+
+      <View style={styles.separator} />
 
       {/* Movement Style */}
       <View style={styles.field}>
@@ -271,6 +296,8 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
         </View>
       </View>
 
+      <View style={styles.separator} />
+
       {/* Symmetry */}
       <View style={styles.field}>
         <Text style={styles.label}>Symmetry</Text>
@@ -297,6 +324,8 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
           })}
         </View>
       </View>
+
+      <View style={styles.separator} />
 
       {/* Plane of Motion */}
       <View style={styles.field}>
@@ -354,6 +383,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.foreground, // Changed from mutedForeground for better visibility
     lineHeight: 20,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
   field: {
     gap: 8,

@@ -94,6 +94,7 @@ export interface PlaneOfMotion {
 export interface LoadPosition {
   id: string;
   name: string;
+  category: string;
   description: string | null;
   display_order: number;
   created_at: string;

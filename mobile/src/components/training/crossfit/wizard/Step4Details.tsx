@@ -50,6 +50,8 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
         />
       </View>
 
+      <View style={styles.separator} />
+
       {/* Aliases */}
       <View style={styles.field}>
         <Text style={styles.label}>Aliases</Text>
@@ -84,6 +86,8 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
         )}
       </View>
 
+      <View style={styles.separator} />
+
       {/* Description */}
       <View style={styles.field}>
         <Text style={styles.label}>Description</Text>
@@ -102,6 +106,8 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
         />
       </View>
 
+      <View style={styles.separator} />
+
       {/* Video URL */}
       <View style={styles.field}>
         <Text style={styles.label}>Video URL</Text>
@@ -118,6 +124,8 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
           keyboardType="url"
         />
       </View>
+
+      <View style={styles.separator} />
 
       {/* Image URL */}
       <View style={styles.field}>
@@ -142,6 +150,11 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
 const styles = StyleSheet.create({
   container: {
     gap: 24,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
   infoBox: {
     backgroundColor: colors.muted,

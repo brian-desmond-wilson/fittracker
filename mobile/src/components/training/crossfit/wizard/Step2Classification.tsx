@@ -129,6 +129,8 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
         </View>
       </View>
 
+      <View style={styles.separator} />
+
       {/* Muscle Regions */}
       <View style={styles.field}>
         <Text style={styles.label}>Muscle Regions</Text>
@@ -299,6 +301,8 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
         )}
       </View>
 
+      <View style={styles.separator} />
+
       {/* Scoring Types */}
       <View style={styles.field}>
         <Text style={styles.label}>Scoring Types</Text>
@@ -335,6 +339,11 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
 const styles = StyleSheet.create({
   container: {
     gap: 24,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
   },
   loadingContainer: {
     flex: 1,
