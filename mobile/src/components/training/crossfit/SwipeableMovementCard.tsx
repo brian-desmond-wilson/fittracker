@@ -65,6 +65,47 @@ export function SwipeableMovementCard({
         return;
       }
 
+      // Check if movement is used in any WODs
+      const { data: wodMovements, error: wodCheckError } = await supabase
+        .from('wod_movements')
+        .select('id, wod_id, wods(name)')
+        .eq('exercise_id', movement.id)
+        .limit(5);
+
+      if (wodCheckError) {
+        console.error('Error checking WOD usage:', wodCheckError);
+        Alert.alert('Error', 'Failed to verify movement usage.');
+        swipeableRef.current?.close();
+        return;
+      }
+
+      // If movement is used in WODs, show warning
+      if (wodMovements && wodMovements.length > 0) {
+        const wodCount = wodMovements.length;
+        const wodNames = wodMovements
+          .slice(0, 3)
+          .map((wm: any) => wm.wods?.name)
+          .filter(Boolean)
+          .join(', ');
+
+        const moreText = wodCount > 3 ? ` and ${wodCount - 3} more` : '';
+
+        Alert.alert(
+          'Cannot Delete Movement',
+          `This movement is used in ${wodCount} WOD${wodCount > 1 ? 's' : ''} (${wodNames}${moreText}). Please remove it from all WODs before deleting.`,
+          [
+            {
+              text: 'OK',
+              style: 'cancel',
+              onPress: () => {
+                swipeableRef.current?.close();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       // Show confirmation dialog
       Alert.alert(
         'Delete Movement',
