@@ -327,7 +327,10 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.segmentText, isSelected && styles.segmentTextSelected]}>
+                <Text
+                  style={[styles.segmentText, isSelected && styles.segmentTextSelected]}
+                  numberOfLines={1}
+                >
                   {displayLabel}
                 </Text>
               </TouchableOpacity>
@@ -720,10 +723,11 @@ const styles = StyleSheet.create({
   segment: {
     flex: 1,
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
+    minWidth: 0,
   },
   segmentFirst: {
     // Optional: specific styling for first segment
@@ -738,6 +742,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.mutedForeground,
+    textAlign: 'center',
   },
   segmentTextSelected: {
     color: '#FFFFFF',

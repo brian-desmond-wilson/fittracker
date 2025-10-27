@@ -21,10 +21,6 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadClasses();
-  }, []);
-
-  useEffect(() => {
     if (searchQuery.trim()) {
       handleSearch();
     } else {

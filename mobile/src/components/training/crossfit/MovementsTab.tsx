@@ -33,18 +33,6 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
 
   const categories: MovementCategory[] = ['All', 'Oly lifts', 'Gymnastics', 'Cardio'];
 
-  useEffect(() => {
-    loadMovements();
-  }, []);
-
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      handleSearch();
-    } else {
-      loadMovements();
-    }
-  }, [searchQuery, selectedCategory]);
-
   const loadMovements = async () => {
     try {
       setLoading(true);
@@ -54,7 +42,6 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       const movementsWithTiers = await Promise.all(
         data.map(async (movement) => {
           const tier = await computeMovementTier(movement.id);
-          console.log(`Movement: ${movement.name}, is_core: ${movement.is_core}, parent_id: ${movement.parent_exercise_id}, tier: ${tier}`);
           return { ...movement, tier };
         })
       );
@@ -94,6 +81,14 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       setSearching(false);
     }
   };
+
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      handleSearch();
+    } else {
+      loadMovements();
+    }
+  }, [searchQuery, selectedCategory]);
 
   const refreshMovements = async () => {
     if (searchQuery.trim()) {
