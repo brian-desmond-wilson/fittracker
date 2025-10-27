@@ -119,6 +119,7 @@ export interface RangeDepth {
 export interface MovementStyle {
   id: string;
   name: string;
+  category: string;
   description: string | null;
   display_order: number;
   created_at: string;

@@ -7,12 +7,10 @@ import { supabase } from '@/src/lib/supabase';
 import { createMovement } from '@/src/lib/supabase/crossfit';
 import type { CreateMovementInput } from '@/src/types/crossfit';
 
-// Step components (will create these next)
+// Step components
 import { Step1Core } from './wizard/Step1Core';
 import { Step2Classification } from './wizard/Step2Classification';
 import { Step3Attributes } from './wizard/Step3Attributes';
-import { Step4Details } from './wizard/Step4Details';
-import { Step5Variations } from './wizard/Step5Variations';
 
 export interface MovementFormData {
   // Step 1: Core Identity (required)
@@ -36,7 +34,7 @@ export interface MovementFormData {
   symmetry_id: string | null;
   range_depth_id: string | null;
 
-  // Step 4: Details & Media (optional)
+  // Step 4: Details & Variations
   short_name: string;
   aliases: string[];
   description: string;
@@ -53,11 +51,9 @@ interface AddMovementWizardProps {
 }
 
 const STEPS = [
-  { number: 1, title: 'Core Identity', required: true },
-  { number: 2, title: 'Classification', required: false },
+  { number: 1, title: 'Details', required: true },
+  { number: 2, title: 'Classification', required: true },
   { number: 3, title: 'Attributes', required: false },
-  { number: 4, title: 'Details & Media', required: false },
-  { number: 5, title: 'Variations', required: false },
 ];
 
 export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
@@ -93,15 +89,18 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
 
   const canProceed = () => {
     if (currentStep === 1) {
-      // Step 1 validation: require name, modality, family, goal type
+      // Step 1 validation: require name only
+      return formData.name.trim() !== '';
+    }
+    if (currentStep === 2) {
+      // Step 2 validation: require modality, family, goal type
       return (
-        formData.name.trim() !== '' &&
         formData.modality_id !== null &&
         formData.movement_family_id !== null &&
         formData.goal_type_id !== null
       );
     }
-    // All other steps are optional
+    // Step 3 is optional
     return true;
   };
 
@@ -194,10 +193,6 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
         return <Step2Classification formData={formData} updateFormData={updateFormData} />;
       case 3:
         return <Step3Attributes formData={formData} updateFormData={updateFormData} />;
-      case 4:
-        return <Step4Details formData={formData} updateFormData={updateFormData} />;
-      case 5:
-        return <Step5Variations formData={formData} updateFormData={updateFormData} />;
       default:
         return null;
     }
@@ -237,7 +232,7 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
           </View>
           <Text style={styles.stepTitle}>
             Step {currentStep} of {STEPS.length}: {currentStepInfo.title}
-            {!currentStepInfo.required && <Text style={styles.optionalBadge}> (Optional)</Text>}
+            {!currentStepInfo.required && <Text style={styles.optionalBadge}></Text>}
           </Text>
         </View>
 

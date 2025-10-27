@@ -10,9 +10,10 @@ import { supabase } from '@/src/lib/supabase';
 interface ClassesTabProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onCountUpdate: (count: number) => void;
 }
 
-export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabProps) {
+export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate }: ClassesTabProps) {
   const [classes, setClasses] = useState<ClassWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -38,11 +39,13 @@ export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabPr
 
       if (!user) {
         setClasses([]);
+        onCountUpdate(0);
         return;
       }
 
       const data = await fetchClasses(user.id);
       setClasses(data);
+      onCountUpdate(data.length);
     } catch (error) {
       console.error('Error loading classes:', error);
     } finally {
@@ -62,11 +65,13 @@ export default function ClassesTab({ searchQuery, onSearchChange }: ClassesTabPr
 
       if (!user) {
         setClasses([]);
+        onCountUpdate(0);
         return;
       }
 
       const results = await searchClasses(user.id, searchQuery.trim());
       setClasses(results);
+      onCountUpdate(results.length);
     } catch (error) {
       console.error('Error searching classes:', error);
     } finally {

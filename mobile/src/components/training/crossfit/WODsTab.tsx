@@ -12,9 +12,10 @@ import { SwipeableWODCard } from './SwipeableWODCard';
 interface WODsTabProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onCountUpdate: (count: number) => void;
 }
 
-export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
+export default function WODsTab({ searchQuery, onSearchChange, onCountUpdate }: WODsTabProps) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<WODCategoryName>('All');
   const [wods, setWods] = useState<WODWithDetails[]>([]);
@@ -59,6 +60,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
 
       const data = await fetchWODs(categoryId);
       setWods(data);
+      onCountUpdate(data.length);
     } catch (error) {
       console.error('Error loading WODs:', error);
     }
@@ -74,6 +76,7 @@ export default function WODsTab({ searchQuery, onSearchChange }: WODsTabProps) {
       setSearching(true);
       const results = await searchWODs(searchQuery.trim());
       setWods(results);
+      onCountUpdate(results.length);
     } catch (error) {
       console.error('Error searching WODs:', error);
     } finally {

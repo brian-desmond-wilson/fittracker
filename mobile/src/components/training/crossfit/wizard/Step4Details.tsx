@@ -26,14 +26,6 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
 
   return (
     <View style={styles.container}>
-      {/* Info */}
-      <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          Add additional details to help users find and understand this movement.
-          All fields are optional.
-        </Text>
-      </View>
-
       {/* Short Name */}
       <View style={styles.field}>
         <Text style={styles.label}>Short Name</Text>
@@ -125,24 +117,6 @@ export function Step4Details({ formData, updateFormData }: Step4DetailsProps) {
         />
       </View>
 
-      <View style={styles.separator} />
-
-      {/* Image URL */}
-      <View style={styles.field}>
-        <Text style={styles.label}>Image URL</Text>
-        <Text style={styles.helperText}>
-          Link to thumbnail or demonstration image
-        </Text>
-        <TextInput
-          style={styles.input}
-          placeholder="https://..."
-          placeholderTextColor={colors.mutedForeground}
-          value={formData.image_url}
-          onChangeText={text => updateFormData({ image_url: text })}
-          autoCapitalize="none"
-          keyboardType="url"
-        />
-      </View>
     </View>
   );
 }

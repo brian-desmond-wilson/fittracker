@@ -273,27 +273,40 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Movement Style</Text>
         <Text style={styles.helperText}>
-          Tempo and execution variation (Strict, Kipping, Pause, etc.)
+          {formData.movement_style_id
+            ? movementStyles.find(s => s.id === formData.movement_style_id)?.description || 'Tempo and execution variation (Strict, Kipping, Pause, etc.)'
+            : 'Tempo and execution variation (Strict, Kipping, Pause, etc.)'}
         </Text>
-        <View style={styles.pillsContainer}>
-          {movementStyles.map(style => {
-            const isSelected = formData.movement_style_id === style.id;
-            return (
-              <TouchableOpacity
-                key={style.id}
-                style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() =>
-                  updateFormData({ movement_style_id: isSelected ? null : style.id })
-                }
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                  {style.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+
+        {['Execution Control', 'Dynamic Power', 'Assistance / Load Variant'].map(category => {
+          const categoryStyles = movementStyles.filter(s => s.category === category);
+          if (categoryStyles.length === 0) return null;
+
+          return (
+            <View key={category}>
+              <Text style={styles.sectionHeader}>{category}</Text>
+              <View style={styles.pillsContainer}>
+                {categoryStyles.map(style => {
+                  const isSelected = formData.movement_style_id === style.id;
+                  return (
+                    <TouchableOpacity
+                      key={style.id}
+                      style={[styles.pill, isSelected && styles.pillSelected]}
+                      onPress={() =>
+                        updateFormData({ movement_style_id: isSelected ? null : style.id })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                        {style.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })}
       </View>
 
       <View style={styles.separator} />
@@ -302,7 +315,9 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Symmetry</Text>
         <Text style={styles.helperText}>
-          Bilateral vs unilateral loading pattern
+          {formData.symmetry_id
+            ? symmetries.find(sym => sym.id === formData.symmetry_id)?.description || 'Bilateral vs unilateral loading pattern'
+            : 'Bilateral vs unilateral loading pattern'}
         </Text>
         <View style={styles.pillsContainer}>
           {symmetries.map(symmetry => {
@@ -331,7 +346,9 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Plane of Motion</Text>
         <Text style={styles.helperText}>
-          Primary anatomical plane of movement
+          {formData.plane_of_motion_id
+            ? planes.find(p => p.id === formData.plane_of_motion_id)?.description || 'Primary anatomical plane of movement'
+            : 'Primary anatomical plane of movement'}
         </Text>
         <View style={styles.pillsContainer}>
           {planes.map(plane => {

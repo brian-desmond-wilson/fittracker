@@ -5,16 +5,17 @@ import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
-import { AddMovementScreen } from './AddMovementScreen';
+import { AddMovementWizard } from './AddMovementWizard';
 
 type MovementCategory = 'All' | 'Oly lifts' | 'Gymnastics' | 'Cardio';
 
 interface MovementsTabProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onCountUpdate: (count: number) => void;
 }
 
-export default function MovementsTab({ searchQuery, onSearchChange }: MovementsTabProps) {
+export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdate }: MovementsTabProps) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<MovementCategory>('All');
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
@@ -42,6 +43,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
       setLoading(true);
       const data = await fetchMovements();
       setMovements(data);
+      onCountUpdate(data.length);
     } catch (error) {
       console.error('Error loading movements:', error);
     } finally {
@@ -59,6 +61,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
       setSearching(true);
       const results = await searchMovements(searchQuery.trim());
       setMovements(results);
+      onCountUpdate(results.length);
     } catch (error) {
       console.error('Error searching movements:', error);
     } finally {
@@ -257,7 +260,7 @@ export default function MovementsTab({ searchQuery, onSearchChange }: MovementsT
         presentationStyle="fullScreen"
         onRequestClose={() => setAddModalVisible(false)}
       >
-        <AddMovementScreen
+        <AddMovementWizard
           onClose={() => setAddModalVisible(false)}
           onSave={() => {
             setAddModalVisible(false);

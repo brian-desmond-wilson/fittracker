@@ -20,6 +20,11 @@ export default function Training() {
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Track counts for each CrossFit tab
+  const [classesCount, setClassesCount] = useState(0);
+  const [wodsCount, setWodsCount] = useState(0);
+  const [movementsCount, setMovementsCount] = useState(0);
+
   const crossfitTabs: { key: CrossFitTab; label: string }[] = [
     { key: "classes", label: "Classes" },
     { key: "wods", label: "WODs" },
@@ -44,11 +49,11 @@ export default function Training() {
     if (workoutMode === "crossfit") {
       switch (crossfitTab) {
         case "classes":
-          return <ClassesTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
+          return <ClassesTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setClassesCount} />;
         case "wods":
-          return <WODsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
+          return <WODsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setWodsCount} />;
         case "movements":
-          return <MovementsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
+          return <MovementsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setMovementsCount} />;
         default:
           return null;
       }
@@ -128,18 +133,28 @@ export default function Training() {
       {/* Tab Bar */}
       <View style={styles.tabBar}>
         {workoutMode === "crossfit" ? (
-          crossfitTabs.map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tab, crossfitTab === tab.key && styles.tabActive]}
-              onPress={() => setCrossfitTab(tab.key)}
-            >
-              <Text style={[styles.tabText, crossfitTab === tab.key && styles.tabTextActive]}>
-                {tab.label}
-              </Text>
-              {crossfitTab === tab.key && <View style={styles.tabIndicator} />}
-            </TouchableOpacity>
-          ))
+          crossfitTabs.map((tab) => {
+            const count = tab.key === "classes" ? classesCount : tab.key === "wods" ? wodsCount : movementsCount;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tab, crossfitTab === tab.key && styles.tabActive]}
+                onPress={() => setCrossfitTab(tab.key)}
+              >
+                <View style={styles.tabContent}>
+                  <Text style={[styles.tabText, crossfitTab === tab.key && styles.tabTextActive]}>
+                    {tab.label}
+                  </Text>
+                  <View style={[styles.countChip, crossfitTab === tab.key && styles.countChipActive]}>
+                    <Text style={[styles.countText, crossfitTab === tab.key && styles.countTextActive]}>
+                      {count}
+                    </Text>
+                  </View>
+                </View>
+                {crossfitTab === tab.key && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            );
+          })
         ) : (
           strengthTabs.map((tab) => (
             <TouchableOpacity
@@ -225,6 +240,11 @@ const styles = StyleSheet.create({
   tabActive: {
     // Active tab styling handled by indicator
   },
+  tabContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   tabText: {
     fontSize: 16,
     fontWeight: "500",
@@ -233,6 +253,26 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: colors.primary,
     fontWeight: "600",
+  },
+  countChip: {
+    backgroundColor: colors.muted,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  countChipActive: {
+    backgroundColor: `${colors.primary}20`,
+  },
+  countText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+  },
+  countTextActive: {
+    color: colors.primary,
   },
   tabIndicator: {
     position: "absolute",

@@ -2,8 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { colors } from '@/src/lib/colors';
 import type { MovementFormData } from '../AddMovementWizard';
-import { fetchMuscleRegions, fetchScoringTypes } from '@/src/lib/supabase/crossfit';
-import type { MuscleRegion, ScoringType, SkillLevel } from '@/src/types/crossfit';
+import {
+  fetchMuscleRegions,
+  fetchScoringTypes,
+  fetchMovementCategories,
+  fetchMovementFamilies,
+  fetchGoalTypes,
+} from '@/src/lib/supabase/crossfit';
+import type {
+  MuscleRegion,
+  ScoringType,
+  SkillLevel,
+  MovementCategory,
+  MovementFamily,
+  GoalType,
+} from '@/src/types/crossfit';
 
 interface Step2ClassificationProps {
   formData: MovementFormData;
@@ -12,10 +25,22 @@ interface Step2ClassificationProps {
 
 const SKILL_LEVELS: SkillLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
 
+// Modality to Movement Family filtering mapping
+const MODALITY_TO_FAMILIES: Record<string, string[]> = {
+  Gymnastics: ['Pull', 'Push/Press', 'Core', 'Inversion', 'Plyometric', 'Climb', 'Support/Hold', 'Ring/Bar', 'Mobility/Control'],
+  Weightlifting: ['Squat', 'Hinge', 'Press', 'Pull', 'Carry', 'Throw', 'Lunge', 'Olympic'],
+  Monostructural: ['Run', 'Row', 'Bike', 'Ski', 'Rope', 'Swim', 'Carry'],
+  Recovery: ['Mobility', 'Stretching', 'Foam Rolling', 'Breath Work', 'Activation', 'Balance/Stability'],
+};
+
 export function Step2Classification({ formData, updateFormData }: Step2ClassificationProps) {
   const [muscleRegions, setMuscleRegions] = useState<MuscleRegion[]>([]);
   const [scoringTypes, setScoringTypes] = useState<ScoringType[]>([]);
+  const [categories, setCategories] = useState<MovementCategory[]>([]);
+  const [allFamilies, setAllFamilies] = useState<MovementFamily[]>([]);
+  const [goalTypes, setGoalTypes] = useState<GoalType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAllFamilies, setShowAllFamilies] = useState(false);
 
   useEffect(() => {
     loadReferenceData();
@@ -24,13 +49,19 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
   const loadReferenceData = async () => {
     try {
       setLoading(true);
-      const [regionsData, scoringData] = await Promise.all([
+      const [regionsData, scoringData, categoriesData, familiesData, goalTypesData] = await Promise.all([
         fetchMuscleRegions(),
         fetchScoringTypes(),
+        fetchMovementCategories(),
+        fetchMovementFamilies(),
+        fetchGoalTypes(),
       ]);
 
       setMuscleRegions(regionsData);
       setScoringTypes(scoringData);
+      setCategories(categoriesData);
+      setAllFamilies(familiesData);
+      setGoalTypes(goalTypesData);
     } catch (error) {
       console.error('Error loading reference data:', error);
     } finally {
@@ -86,6 +117,24 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     }
   };
 
+  // Get filtered families based on selected modality
+  const getFilteredFamilies = (): MovementFamily[] => {
+    if (showAllFamilies || !formData.modality_id) {
+      return allFamilies;
+    }
+
+    const selectedModality = categories.find(c => c.id === formData.modality_id);
+    if (!selectedModality) {
+      return allFamilies;
+    }
+
+    const allowedFamilyNames = MODALITY_TO_FAMILIES[selectedModality.name] || [];
+    return allFamilies.filter(f => allowedFamilyNames.includes(f.name));
+  };
+
+  const filteredFamilies = getFilteredFamilies();
+  const hasFilteredFamilies = formData.modality_id && !showAllFamilies;
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -97,6 +146,145 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
 
   return (
     <View style={styles.container}>
+      {/* Modality */}
+      <View style={styles.field}>
+        <Text style={styles.label}>
+          Modality <Text style={styles.required}>*</Text>
+        </Text>
+        <Text style={styles.helperText}>
+          {formData.modality_id
+            ? categories.find(c => c.id === formData.modality_id)?.description || 'Select the primary modality for this movement'
+            : 'Select the primary modality for this movement'}
+        </Text>
+        <View style={styles.segmentedControl}>
+          {categories.map((category, index) => {
+            const isSelected = formData.modality_id === category.id;
+            const isFirst = index === 0;
+            const isLast = index === categories.length - 1;
+
+            // Short labels for better fit
+            const labelMap: Record<string, string> = {
+              'Weightlifting': 'Lifting',
+              'Gymnastics': 'Gym',
+              'Monostructural': 'Cardio',
+              'Recovery': 'Recovery'
+            };
+            const displayLabel = labelMap[category.name] || category.name;
+
+            return (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.segment,
+                  isFirst && styles.segmentFirst,
+                  isLast && styles.segmentLast,
+                  isSelected && styles.segmentSelected
+                ]}
+                onPress={() => {
+                  updateFormData({ modality_id: category.id });
+                  // Reset family selection when modality changes
+                  if (formData.movement_family_id) {
+                    const selectedFamily = allFamilies.find(f => f.id === formData.movement_family_id);
+                    const newAllowedFamilies = MODALITY_TO_FAMILIES[category.name] || [];
+                    if (selectedFamily && !newAllowedFamilies.includes(selectedFamily.name)) {
+                      updateFormData({ movement_family_id: null });
+                    }
+                  }
+                  setShowAllFamilies(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.segmentText, isSelected && styles.segmentTextSelected]}>
+                  {displayLabel}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.separator} />
+
+      {/* Movement Family */}
+      <View style={styles.field}>
+        <Text style={styles.label}>
+          Movement Family <Text style={styles.required}>*</Text>
+        </Text>
+        <Text style={styles.helperText}>
+          {formData.movement_family_id
+            ? allFamilies.find(f => f.id === formData.movement_family_id)?.description || 'Select the functional movement pattern'
+            : hasFilteredFamilies
+            ? `Showing families for ${categories.find(c => c.id === formData.modality_id)?.name}`
+            : 'Select the functional movement pattern'}
+        </Text>
+        <View style={styles.pillsContainer}>
+          {filteredFamilies.map(family => {
+            const isSelected = formData.movement_family_id === family.id;
+            return (
+              <TouchableOpacity
+                key={family.id}
+                style={[styles.pill, isSelected && styles.pillSelected]}
+                onPress={() => updateFormData({ movement_family_id: family.id })}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                  {family.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {hasFilteredFamilies && (
+          <TouchableOpacity
+            onPress={() => setShowAllFamilies(true)}
+            style={styles.showAllButton}
+          >
+            <Text style={styles.showAllText}>Show All Families</Text>
+          </TouchableOpacity>
+        )}
+        {showAllFamilies && formData.modality_id && (
+          <TouchableOpacity
+            onPress={() => setShowAllFamilies(false)}
+            style={styles.showAllButton}
+          >
+            <Text style={styles.showAllText}>Show Filtered Families</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.separator} />
+
+      {/* Goal Type */}
+      <View style={styles.field}>
+        <Text style={styles.label}>
+          Goal Type <Text style={styles.required}>*</Text>
+        </Text>
+        <Text style={styles.helperText}>
+          {formData.goal_type_id
+            ? goalTypes.find(g => g.id === formData.goal_type_id)?.description || 'Primary training goal for this movement'
+            : 'Primary training goal for this movement'}
+        </Text>
+        <View style={styles.pillsContainer}>
+          {goalTypes.map(goalType => {
+            const isSelected = formData.goal_type_id === goalType.id;
+            return (
+              <TouchableOpacity
+                key={goalType.id}
+                style={[styles.pill, isSelected && styles.pillSelected]}
+                onPress={() => updateFormData({ goal_type_id: goalType.id })}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                  {goalType.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.separator} />
+
       {/* Skill Level */}
       <View style={styles.field}>
         <Text style={styles.label}>Skill Level</Text>
@@ -364,6 +552,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.foreground,
   },
+  required: {
+    color: colors.destructive,
+  },
   helperText: {
     fontSize: 14,
     color: colors.mutedForeground,
@@ -476,5 +667,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.mutedForeground,
     fontStyle: 'italic',
+  },
+  showAllButton: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  showAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary,
+    textDecorationLine: 'underline',
   },
 });

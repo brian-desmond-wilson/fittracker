@@ -1,83 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { X } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import type { MovementFormData } from '../AddMovementWizard';
-import {
-  fetchMovementCategories,
-  fetchMovementFamilies,
-  fetchGoalTypes,
-} from '@/src/lib/supabase/crossfit';
-import type { MovementCategory, MovementFamily, GoalType } from '@/src/types/crossfit';
 
 interface Step1CoreProps {
   formData: MovementFormData;
   updateFormData: (updates: Partial<MovementFormData>) => void;
 }
 
-// Modality to Movement Family filtering mapping
-const MODALITY_TO_FAMILIES: Record<string, string[]> = {
-  Gymnastics: ['Pull', 'Push/Press', 'Core', 'Inversion', 'Plyometric', 'Climb', 'Support/Hold', 'Ring/Bar', 'Mobility/Control'],
-  Weightlifting: ['Squat', 'Hinge', 'Press', 'Pull', 'Carry', 'Throw', 'Lunge', 'Olympic'],
-  Monostructural: ['Run', 'Row', 'Bike', 'Ski', 'Rope', 'Swim', 'Carry'],
-  Recovery: ['Mobility', 'Stretching', 'Foam Rolling', 'Breath Work', 'Activation', 'Balance/Stability'],
-};
-
 export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
-  const [categories, setCategories] = useState<MovementCategory[]>([]);
-  const [allFamilies, setAllFamilies] = useState<MovementFamily[]>([]);
-  const [goalTypes, setGoalTypes] = useState<GoalType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAllFamilies, setShowAllFamilies] = useState(false);
-
-  useEffect(() => {
-    loadReferenceData();
-  }, []);
-
-  const loadReferenceData = async () => {
-    try {
-      setLoading(true);
-      const [categoriesData, familiesData, goalTypesData] = await Promise.all([
-        fetchMovementCategories(),
-        fetchMovementFamilies(),
-        fetchGoalTypes(),
-      ]);
-
-      setCategories(categoriesData);
-      setAllFamilies(familiesData);
-      setGoalTypes(goalTypesData);
-    } catch (error) {
-      console.error('Error loading reference data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Get filtered families based on selected modality
-  const getFilteredFamilies = (): MovementFamily[] => {
-    if (showAllFamilies || !formData.modality_id) {
-      return allFamilies;
-    }
-
-    const selectedModality = categories.find(c => c.id === formData.modality_id);
-    if (!selectedModality) {
-      return allFamilies;
-    }
-
-    const allowedFamilyNames = MODALITY_TO_FAMILIES[selectedModality.name] || [];
-    return allFamilies.filter(f => allowedFamilyNames.includes(f.name));
-  };
-
-  const filteredFamilies = getFilteredFamilies();
-  const hasFilteredFamilies = formData.modality_id && !showAllFamilies;
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
+  const [aliasInput, setAliasInput] = useState('');
 
   return (
     <View style={styles.container}>
@@ -92,11 +25,13 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
           placeholderTextColor={colors.mutedForeground}
           value={formData.name}
           onChangeText={text => {
-            updateFormData({ name: text });
-            // Auto-populate short_name if it's empty
-            if (!formData.short_name) {
-              updateFormData({ short_name: text });
-            }
+            // Generate abbreviation from first letter of each word
+            const abbreviation = text
+              .split(' ')
+              .map(word => word.charAt(0))
+              .join('')
+              .toUpperCase();
+            updateFormData({ name: text, short_name: abbreviation });
           }}
           autoCapitalize="words"
           autoFocus
@@ -105,141 +40,113 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
 
       <View style={styles.separator} />
 
-      {/* Modality */}
+      {/* Short Name */}
       <View style={styles.field}>
-        <Text style={styles.label}>
-          Modality <Text style={styles.required}>*</Text>
-        </Text>
+        <Text style={styles.label}>Short Name</Text>
         <Text style={styles.helperText}>
-          {formData.modality_id
-            ? categories.find(c => c.id === formData.modality_id)?.description || 'Select the primary modality for this movement'
-            : 'Select the primary modality for this movement'}
+          Abbreviated name for UI display (auto-populated from Movement Name)
         </Text>
-        <View style={styles.segmentedControl}>
-          {categories.map((category, index) => {
-            const isSelected = formData.modality_id === category.id;
-            const isFirst = index === 0;
-            const isLast = index === categories.length - 1;
-
-            // Short labels for better fit
-            const labelMap: Record<string, string> = {
-              'Weightlifting': 'Lifting',
-              'Gymnastics': 'Gym',
-              'Monostructural': 'Cardio',
-              'Recovery': 'Recovery'
-            };
-            const displayLabel = labelMap[category.name] || category.name;
-
-            return (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.segment,
-                  isFirst && styles.segmentFirst,
-                  isLast && styles.segmentLast,
-                  isSelected && styles.segmentSelected
-                ]}
-                onPress={() => {
-                  updateFormData({ modality_id: category.id });
-                  // Reset family selection when modality changes
-                  if (formData.movement_family_id) {
-                    const selectedFamily = allFamilies.find(f => f.id === formData.movement_family_id);
-                    const newAllowedFamilies = MODALITY_TO_FAMILIES[category.name] || [];
-                    if (selectedFamily && !newAllowedFamilies.includes(selectedFamily.name)) {
-                      updateFormData({ movement_family_id: null });
-                    }
-                  }
-                  setShowAllFamilies(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.segmentText, isSelected && styles.segmentTextSelected]}>
-                  {displayLabel}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g., C2B, T2B, HSPU"
+          placeholderTextColor={colors.mutedForeground}
+          value={formData.short_name}
+          onChangeText={text => updateFormData({ short_name: text })}
+          autoCapitalize="words"
+        />
       </View>
 
       <View style={styles.separator} />
 
-      {/* Movement Family */}
+      {/* Aliases */}
       <View style={styles.field}>
-        <Text style={styles.label}>
-          Movement Family <Text style={styles.required}>*</Text>
-        </Text>
+        <Text style={styles.label}>Aliases</Text>
         <Text style={styles.helperText}>
-          {formData.movement_family_id
-            ? allFamilies.find(f => f.id === formData.movement_family_id)?.description || 'Select the functional movement pattern'
-            : hasFilteredFamilies
-            ? `Showing families for ${categories.find(c => c.id === formData.modality_id)?.name}`
-            : 'Select the functional movement pattern'}
+          Alternative names for search (e.g., "C2B" for "Chest-to-Bar Pull-up")
         </Text>
-        <View style={styles.pillsContainer}>
-          {filteredFamilies.map(family => {
-            const isSelected = formData.movement_family_id === family.id;
-            return (
-              <TouchableOpacity
-                key={family.id}
-                style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() => updateFormData({ movement_family_id: family.id })}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                  {family.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={styles.aliasInputContainer}>
+          <TextInput
+            style={styles.aliasInput}
+            placeholder="Type an alias and press Add"
+            placeholderTextColor={colors.mutedForeground}
+            value={aliasInput}
+            onChangeText={setAliasInput}
+            onSubmitEditing={() => {
+              const trimmed = aliasInput.trim();
+              if (trimmed && !formData.aliases.includes(trimmed)) {
+                updateFormData({ aliases: [...formData.aliases, trimmed] });
+                setAliasInput('');
+              }
+            }}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            onPress={() => {
+              const trimmed = aliasInput.trim();
+              if (trimmed && !formData.aliases.includes(trimmed)) {
+                updateFormData({ aliases: [...formData.aliases, trimmed] });
+                setAliasInput('');
+              }
+            }}
+            style={styles.addButton}
+          >
+            <Text style={styles.addButtonText}>Add</Text>
+          </TouchableOpacity>
         </View>
-        {hasFilteredFamilies && (
-          <TouchableOpacity
-            onPress={() => setShowAllFamilies(true)}
-            style={styles.showAllButton}
-          >
-            <Text style={styles.showAllText}>Show All Families</Text>
-          </TouchableOpacity>
-        )}
-        {showAllFamilies && formData.modality_id && (
-          <TouchableOpacity
-            onPress={() => setShowAllFamilies(false)}
-            style={styles.showAllButton}
-          >
-            <Text style={styles.showAllText}>Show Filtered Families</Text>
-          </TouchableOpacity>
+        {formData.aliases.length > 0 && (
+          <View style={styles.tagsContainer}>
+            {formData.aliases.map(alias => (
+              <View key={alias} style={styles.tag}>
+                <Text style={styles.tagText}>{alias}</Text>
+                <TouchableOpacity
+                  onPress={() => updateFormData({ aliases: formData.aliases.filter(a => a !== alias) })}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <X size={14} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
         )}
       </View>
 
       <View style={styles.separator} />
 
-      {/* Goal Type */}
+      {/* Description */}
       <View style={styles.field}>
-        <Text style={styles.label}>
-          Goal Type <Text style={styles.required}>*</Text>
-        </Text>
+        <Text style={styles.label}>Description</Text>
         <Text style={styles.helperText}>
-          {formData.goal_type_id
-            ? goalTypes.find(g => g.id === formData.goal_type_id)?.description || 'Primary training goal for this movement'
-            : 'Primary training goal for this movement'}
+          Movement description, coaching cues, or standards
         </Text>
-        <View style={styles.pillsContainer}>
-          {goalTypes.map(goalType => {
-            const isSelected = formData.goal_type_id === goalType.id;
-            return (
-              <TouchableOpacity
-                key={goalType.id}
-                style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() => updateFormData({ goal_type_id: goalType.id })}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                  {goalType.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Add notes, coaching cues, or movement standards..."
+          placeholderTextColor={colors.mutedForeground}
+          value={formData.description}
+          onChangeText={text => updateFormData({ description: text })}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+      </View>
+
+      <View style={styles.separator} />
+
+      {/* Video URL */}
+      <View style={styles.field}>
+        <Text style={styles.label}>Video URL</Text>
+        <Text style={styles.helperText}>
+          Link to demonstration video (YouTube, Vimeo, etc.)
+        </Text>
+        <TextInput
+          style={styles.input}
+          placeholder="https://youtube.com/..."
+          placeholderTextColor={colors.mutedForeground}
+          value={formData.video_url}
+          onChangeText={text => updateFormData({ video_url: text })}
+          autoCapitalize="none"
+          keyboardType="url"
+        />
       </View>
     </View>
   );
@@ -248,17 +155,6 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
 const styles = StyleSheet.create({
   container: {
     gap: 24,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: colors.mutedForeground,
   },
   separator: {
     height: 1,
@@ -290,72 +186,54 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     backgroundColor: colors.input,
   },
-  segmentedControl: {
+  textArea: {
+    minHeight: 100,
+  },
+  aliasInputContainer: {
     flexDirection: 'row',
-    backgroundColor: colors.muted,
-    borderRadius: 10,
-    padding: 2,
+    gap: 8,
+  },
+  aliasInput: {
+    flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.foreground,
+    backgroundColor: colors.input,
   },
-  segmentFirst: {
-    // Optional: specific styling for first segment
-  },
-  segmentLast: {
-    // Optional: specific styling for last segment
-  },
-  segmentSelected: {
+  addButton: {
     backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
   },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.mutedForeground,
-  },
-  segmentTextSelected: {
+  addButtonText: {
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  pillsContainer: {
+  tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  pill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.muted,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  pillText: {
+  tagText: {
     fontSize: 14,
-    fontWeight: '500',
     color: colors.foreground,
-  },
-  pillTextSelected: {
-    color: '#FFFFFF',
-  },
-  showAllButton: {
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  showAllText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.primary,
-    textDecorationLine: 'underline',
   },
 });
