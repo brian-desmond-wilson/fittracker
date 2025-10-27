@@ -9,6 +9,7 @@ import {
   StatusBar,
   Image,
   Alert,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +18,7 @@ import { ChevronLeft, Sparkles, MoreVertical } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
+import { computeMovementTier } from '@/src/lib/supabase/crossfit';
 
 export default function MovementDetailPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -26,6 +28,7 @@ export default function MovementDetailPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [tier, setTier] = useState<number>(0);
 
   useEffect(() => {
     loadMovement();
@@ -58,13 +61,21 @@ export default function MovementDetailPage() {
           *,
           movement_category:movement_categories(id, name),
           goal_type:goal_types(id, name),
-          variations:exercise_variations(*)
+          variations:exercise_variations(*),
+          muscle_regions:exercise_muscle_regions(
+            is_primary,
+            muscle_region:muscle_regions(id, name)
+          )
         `)
         .eq('id', id)
         .single();
 
       if (error) throw error;
-      setMovement(data as ExerciseWithVariations);
+      setMovement(data as any);
+
+      // Compute tier for the movement
+      const movementTier = await computeMovementTier(id);
+      setTier(movementTier);
     } catch (error) {
       console.error('Error loading movement:', error);
     } finally {
@@ -105,7 +116,7 @@ export default function MovementDetailPage() {
       }
 
       // Only allow custom movements by creator or official movements by admins
-      const canGenerate = isAdmin || (!movement.is_official && movement.user_id === user.id);
+      const canGenerate = isAdmin || (!movement.is_official && movement.created_by === user.id);
       if (!canGenerate) {
         Alert.alert(
           'Permission Denied',
@@ -222,15 +233,15 @@ export default function MovementDetailPage() {
             {/* Movement Name & Badge Overlay */}
             <View style={styles.heroOverlay}>
               <Text style={styles.heroMovementName}>{movement.name}</Text>
-              {movement.is_official ? (
-                <View style={styles.heroOfficialBadge}>
-                  <Text style={styles.heroOfficialBadgeText}>OFFICIAL</Text>
+              {tier === 0 ? (
+                <View style={styles.heroCoreBadge}>
+                  <Text style={styles.heroCoreBadgeText}>CORE</Text>
                 </View>
-              ) : (
-                <View style={styles.heroCustomBadge}>
-                  <Text style={styles.heroCustomBadgeText}>CUSTOM</Text>
+              ) : tier > 0 ? (
+                <View style={styles.heroTierBadge}>
+                  <Text style={styles.heroTierBadgeText}>TIER {tier}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
           </View>
         ) : (
@@ -256,7 +267,7 @@ export default function MovementDetailPage() {
           </View>
         )}
 
-        {/* Category & Goal Type */}
+        {/* Category, Goal Type & Skill Level */}
         <View style={styles.metaSection}>
           {movement.movement_category?.name && (
             <View style={styles.metaItem}>
@@ -270,23 +281,35 @@ export default function MovementDetailPage() {
               <Text style={styles.metaValue}>{movement.goal_type.name}</Text>
             </View>
           )}
+          {movement.skill_level && (
+            <View style={styles.metaItem}>
+              <Text style={styles.metaLabel}>Skill Level</Text>
+              <Text style={styles.metaValue}>{movement.skill_level}</Text>
+            </View>
+          )}
         </View>
 
-        {/* Description Placeholder */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.placeholderText}>
-            Detailed description and instructions for {movement.name} will be displayed here.
-          </Text>
-        </View>
+        {/* Description */}
+        {movement.description && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Description</Text>
+            <Text style={styles.descriptionText}>{movement.description}</Text>
+          </View>
+        )}
 
-        {/* Equipment Placeholder */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Equipment Required</Text>
-          <Text style={styles.placeholderText}>
-            Equipment information will be displayed here.
-          </Text>
-        </View>
+        {/* Equipment Required */}
+        {movement.equipment_types && movement.equipment_types.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Equipment Required</Text>
+            <View style={styles.equipmentContainer}>
+              {movement.equipment_types.map((equipment, index) => (
+                <View key={index} style={styles.equipmentChip}>
+                  <Text style={styles.equipmentText}>{equipment}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Variations Placeholder */}
         {movement.variations && movement.variations.length > 0 && (
@@ -294,30 +317,66 @@ export default function MovementDetailPage() {
             <Text style={styles.sectionTitle}>Variations</Text>
             {movement.variations.map((variation) => (
               <View key={variation.id} style={styles.variationItem}>
-                <Text style={styles.variationName}>{variation.name}</Text>
+                <Text style={styles.variationName}>
+                  {variation.variation_option?.name || 'Unknown Variation'}
+                </Text>
                 <Text style={styles.variationDescription}>
-                  {variation.description || 'No description available'}
+                  {variation.variation_option?.description || 'No description available'}
                 </Text>
               </View>
             ))}
           </View>
         )}
 
-        {/* Muscle Groups Placeholder */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Primary Muscles</Text>
-          <Text style={styles.placeholderText}>
-            Primary and secondary muscle groups will be displayed here.
-          </Text>
-        </View>
-
-        {/* Video/Media Placeholder */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Demo Video</Text>
-          <View style={styles.mediaPlaceholder}>
-            <Text style={styles.mediaPlaceholderText}>Video demo coming soon</Text>
+        {/* Primary Muscles */}
+        {movement.muscle_regions && movement.muscle_regions.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Primary Muscles</Text>
+            <View style={styles.muscleContainer}>
+              {movement.muscle_regions
+                .filter((mr: any) => mr.is_primary)
+                .map((mr: any, index: number) => (
+                  <View key={index} style={styles.musclePrimaryChip}>
+                    <Text style={styles.musclePrimaryText}>{mr.muscle_region?.name}</Text>
+                  </View>
+                ))}
+            </View>
+            {movement.muscle_regions.some((mr: any) => !mr.is_primary) && (
+              <>
+                <Text style={[styles.sectionTitle, { fontSize: 16, marginTop: 16, marginBottom: 8 }]}>
+                  Secondary Muscles
+                </Text>
+                <View style={styles.muscleContainer}>
+                  {movement.muscle_regions
+                    .filter((mr: any) => !mr.is_primary)
+                    .map((mr: any, index: number) => (
+                      <View key={index} style={styles.muscleSecondaryChip}>
+                        <Text style={styles.muscleSecondaryText}>{mr.muscle_region?.name}</Text>
+                      </View>
+                    ))}
+                </View>
+              </>
+            )}
           </View>
-        </View>
+        )}
+
+        {/* Demo Video */}
+        {(movement.demo_video_url || movement.video_url) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Demo Video</Text>
+            <TouchableOpacity
+              style={styles.videoLinkButton}
+              onPress={() => {
+                const videoUrl = movement.demo_video_url || movement.video_url;
+                if (videoUrl) {
+                  Linking.openURL(videoUrl);
+                }
+              }}
+            >
+              <Text style={styles.videoLinkText}>Watch Video</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
       </View>
     </>
@@ -434,27 +493,27 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
-  heroOfficialBadge: {
+  heroCoreBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: '#10B981',
     borderRadius: 6,
   },
-  heroOfficialBadgeText: {
+  heroCoreBadgeText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  heroCustomBadge: {
+  heroTierBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#6B7280',
+    backgroundColor: '#3B82F6',
     borderRadius: 6,
   },
-  heroCustomBadgeText: {
+  heroTierBadgeText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#FFFFFF',
@@ -505,7 +564,7 @@ const styles = StyleSheet.create({
   metaSection: {
     flexDirection: 'row',
     padding: 16,
-    gap: 24,
+    gap: 16,
     backgroundColor: '#1A1F2E',
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -542,6 +601,72 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: colors.mutedForeground,
     fontStyle: 'italic',
+  },
+  descriptionText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.foreground,
+  },
+  equipmentContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  equipmentChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1A1F2E',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  equipmentText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.foreground,
+  },
+  muscleContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  musclePrimaryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.primary + '20',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  musclePrimaryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  muscleSecondaryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1A1F2E',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  muscleSecondaryText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+  },
+  videoLinkButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  videoLinkText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   variationItem: {
     marginBottom: 16,

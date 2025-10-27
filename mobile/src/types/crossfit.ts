@@ -483,6 +483,9 @@ export interface ExerciseWithVariations extends Exercise {
   goal_type?: GoalType;
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
+  muscle_regions?: (ExerciseMuscleRegion & {
+    muscle_region?: MuscleRegion;
+  })[];
 }
 
 // Extended Exercise type with all new metadata relations

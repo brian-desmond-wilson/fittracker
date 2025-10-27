@@ -249,15 +249,47 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
                   <Text style={styles.movementName}>
                     {movement.name}
                   </Text>
-                  {movement.is_core ? (
-                    <View style={styles.coreBadge}>
-                      <Text style={styles.coreBadgeText}>Core</Text>
+                  <View style={styles.badgeColumn}>
+                    {movement.is_core ? (
+                      <View style={styles.coreBadge}>
+                        <Text style={styles.coreBadgeText}>Core</Text>
+                      </View>
+                    ) : movement.tier !== undefined && movement.tier > 0 ? (
+                      <View style={styles.tierBadge}>
+                        <Text style={styles.tierBadgeText}>Tier {movement.tier}</Text>
+                      </View>
+                    ) : null}
+                    {/* Skill Level Pill */}
+                    <View style={styles.skillPill}>
+                      <View style={[
+                        styles.skillSegment,
+                        styles.skillSegmentLeft,
+                        movement.skill_level === 'Beginner'
+                          ? styles.skillSegmentFilledBeginner
+                          : movement.skill_level === 'Intermediate'
+                          ? styles.skillSegmentFilledIntermediate
+                          : movement.skill_level === 'Advanced'
+                          ? styles.skillSegmentFilledAdvanced
+                          : styles.skillSegmentEmpty
+                      ]} />
+                      <View style={[
+                        styles.skillSegment,
+                        styles.skillSegmentMiddle,
+                        movement.skill_level === 'Intermediate'
+                          ? styles.skillSegmentFilledIntermediate
+                          : movement.skill_level === 'Advanced'
+                          ? styles.skillSegmentFilledAdvanced
+                          : styles.skillSegmentEmpty
+                      ]} />
+                      <View style={[
+                        styles.skillSegment,
+                        styles.skillSegmentRight,
+                        movement.skill_level === 'Advanced'
+                          ? styles.skillSegmentFilledAdvanced
+                          : styles.skillSegmentEmpty
+                      ]} />
                     </View>
-                  ) : movement.tier !== undefined && movement.tier > 0 ? (
-                    <View style={styles.tierBadge}>
-                      <Text style={styles.tierBadgeText}>Tier {movement.tier}</Text>
-                    </View>
-                  ) : null}
+                  </View>
                 </View>
                 <Text style={styles.movementCategory}>
                   {movement.movement_category?.name || movement.goal_type?.name || 'General'}
@@ -441,6 +473,44 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  badgeColumn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+  },
+  skillPill: {
+    flexDirection: 'row',
+    height: 8,
+    width: 40,
+    gap: 2,
+  },
+  skillSegment: {
+    flex: 1,
+    height: '100%',
+  },
+  skillSegmentLeft: {
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
+  },
+  skillSegmentMiddle: {
+    // No border radius for middle segment
+  },
+  skillSegmentRight: {
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+  },
+  skillSegmentEmpty: {
+    backgroundColor: '#374151',
+  },
+  skillSegmentFilledBeginner: {
+    backgroundColor: '#22C55E',
+  },
+  skillSegmentFilledIntermediate: {
+    backgroundColor: '#F59E0B',
+  },
+  skillSegmentFilledAdvanced: {
+    backgroundColor: '#EF4444',
   },
   fab: {
     position: 'absolute',
