@@ -269,6 +269,10 @@ export interface Exercise {
   // Ownership (hybrid approach)
   is_official: boolean;
   created_by: string | null;
+
+  // Movement Hierarchy (Migration 16)
+  is_core: boolean;
+  parent_exercise_id: string | null;
 }
 
 export interface VariationCategory {

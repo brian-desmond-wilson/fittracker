@@ -102,7 +102,7 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
               const success = await deleteWOD(wod.id);
 
               if (success) {
-                onDelete();
+                await onDelete();
               } else {
                 Alert.alert('Error', 'Failed to delete WOD. Please try again.');
                 swipeableRef.current?.close();

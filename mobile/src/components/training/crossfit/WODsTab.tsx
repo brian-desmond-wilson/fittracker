@@ -84,6 +84,14 @@ export default function WODsTab({ searchQuery, onSearchChange, onCountUpdate }: 
     }
   };
 
+  const refreshWODs = async () => {
+    if (searchQuery.trim()) {
+      await handleSearch();
+    } else {
+      await loadWODs();
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     if (searchQuery.trim()) {
@@ -174,7 +182,7 @@ export default function WODsTab({ searchQuery, onSearchChange, onCountUpdate }: 
               key={wod.id}
               wod={wod}
               onPress={() => router.push(`/(tabs)/training/wod/${wod.id}`)}
-              onDelete={loadWODs}
+              onDelete={refreshWODs}
               getCategoryColor={getCategoryColor}
             />
           ))

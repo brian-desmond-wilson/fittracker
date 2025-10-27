@@ -233,7 +233,7 @@ export default function MovementDetailPage() {
             {/* Movement Name & Badge Overlay */}
             <View style={styles.heroOverlay}>
               <Text style={styles.heroMovementName}>{movement.name}</Text>
-              {tier === 0 ? (
+              {movement.is_core === true ? (
                 <View style={styles.heroCoreBadge}>
                   <Text style={styles.heroCoreBadgeText}>CORE</Text>
                 </View>
