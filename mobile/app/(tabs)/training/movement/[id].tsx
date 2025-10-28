@@ -29,11 +29,21 @@ export default function MovementDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tier, setTier] = useState<number>(0);
+  const [hierarchyData, setHierarchyData] = useState<{
+    parent: ExerciseWithVariations | null;
+    siblings: ExerciseWithVariations[];
+  }>({ parent: null, siblings: [] });
 
   useEffect(() => {
     loadMovement();
     checkAdminStatus();
   }, [id]);
+
+  useEffect(() => {
+    if (movement && !movement.is_core && movement.parent_exercise_id) {
+      loadHierarchy();
+    }
+  }, [movement]);
 
   const checkAdminStatus = async () => {
     try {
@@ -80,6 +90,38 @@ export default function MovementDetailPage() {
       console.error('Error loading movement:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadHierarchy = async () => {
+    if (!movement || !movement.parent_exercise_id) return;
+
+    try {
+      // Fetch parent movement
+      const { data: parentData, error: parentError } = await supabase
+        .from('exercises')
+        .select('id, name, is_core, parent_exercise_id')
+        .eq('id', movement.parent_exercise_id)
+        .single();
+
+      if (parentError) throw parentError;
+
+      // Fetch sibling movements (same parent, same tier level)
+      const { data: siblingsData, error: siblingsError } = await supabase
+        .from('exercises')
+        .select('id, name, is_core, parent_exercise_id')
+        .eq('parent_exercise_id', movement.parent_exercise_id)
+        .neq('id', id) // Exclude current movement
+        .order('name');
+
+      if (siblingsError) throw siblingsError;
+
+      setHierarchyData({
+        parent: parentData as any,
+        siblings: (siblingsData || []) as any[],
+      });
+    } catch (error) {
+      console.error('Error loading hierarchy:', error);
     }
   };
 
@@ -357,6 +399,72 @@ export default function MovementDetailPage() {
                 </View>
               </>
             )}
+          </View>
+        )}
+
+        {/* Movement Hierarchy */}
+        {!movement.is_core && hierarchyData.parent && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Movement Hierarchy</Text>
+
+            {/* Parent (Core) Movement */}
+            <View style={styles.hierarchyContainer}>
+              <TouchableOpacity
+                style={styles.hierarchyParent}
+                onPress={() => router.push(`/(tabs)/training/movement/${hierarchyData.parent!.id}`)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.hierarchyConnector}>
+                  <View style={styles.connectorDot} />
+                </View>
+                <View style={styles.hierarchyItemContent}>
+                  <View style={styles.coreHierarchyBadge}>
+                    <Text style={styles.coreHierarchyBadgeText}>CORE</Text>
+                  </View>
+                  <Text style={styles.hierarchyItemName}>{hierarchyData.parent.name}</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Current Movement (Highlighted) */}
+              <View style={styles.hierarchyCurrentWrapper}>
+                <View style={styles.hierarchyConnectorLine} />
+                <View style={[styles.hierarchyItem, styles.hierarchyCurrentItem]}>
+                  <View style={styles.hierarchyConnector}>
+                    <View style={[styles.connectorDot, styles.connectorDotCurrent]} />
+                  </View>
+                  <View style={styles.hierarchyItemContent}>
+                    <View style={styles.tierHierarchyBadge}>
+                      <Text style={styles.tierHierarchyBadgeText}>TIER {tier}</Text>
+                    </View>
+                    <Text style={[styles.hierarchyItemName, styles.hierarchyCurrentText]}>
+                      {movement.name}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Sibling Movements */}
+              {hierarchyData.siblings.map((sibling, index) => (
+                <View key={sibling.id} style={styles.hierarchySiblingWrapper}>
+                  <View style={styles.hierarchyConnectorLine} />
+                  <TouchableOpacity
+                    style={styles.hierarchyItem}
+                    onPress={() => router.push(`/(tabs)/training/movement/${sibling.id}`)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.hierarchyConnector}>
+                      <View style={styles.connectorDot} />
+                    </View>
+                    <View style={styles.hierarchyItemContent}>
+                      <View style={styles.tierHierarchyBadge}>
+                        <Text style={styles.tierHierarchyBadgeText}>TIER {tier}</Text>
+                      </View>
+                      <Text style={styles.hierarchyItemName}>{sibling.name}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
           </View>
         )}
 
@@ -686,6 +794,108 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.mutedForeground,
+  },
+  // Movement Hierarchy Styles
+  hierarchyContainer: {
+    gap: 0,
+  },
+  hierarchyParent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingLeft: 0,
+  },
+  hierarchyCurrentWrapper: {
+    position: 'relative',
+  },
+  hierarchySiblingWrapper: {
+    position: 'relative',
+  },
+  hierarchyConnectorLine: {
+    position: 'absolute',
+    left: 23, // Align with parent connector dot center
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: colors.border,
+  },
+  hierarchyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingLeft: 48, // Indent more to clear the line and dot
+  },
+  hierarchyCurrentItem: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    marginVertical: 4,
+    borderRadius: 8,
+    paddingLeft: 45, // Compensate for border width (48 - 3 = 45)
+  },
+  hierarchyConnector: {
+    width: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+    borderWidth: 2,
+    borderColor: colors.background,
+    marginLeft: -48, // Center dot over vertical line (23 - 4 to account for dot width/2)
+  },
+  connectorDotCurrent: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  hierarchyItemContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  hierarchyItemName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.foreground,
+  },
+  hierarchyCurrentText: {
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  coreHierarchyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  coreHierarchyBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#22C55E',
+    letterSpacing: 0.5,
+  },
+  tierHierarchyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  tierHierarchyBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#3B82F6',
+    letterSpacing: 0.5,
   },
   mediaPlaceholder: {
     height: 200,

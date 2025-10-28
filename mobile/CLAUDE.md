@@ -286,7 +286,31 @@ The Training tab uses this pattern:
 
 ---
 
+---
+
+## Git Commit Policy
+
+**CRITICAL: Only commit when explicitly asked by the user.**
+
+- **DO NOT** automatically commit after making changes
+- **DO NOT** proactively suggest committing
+- **WAIT** for the user to tell you when to commit
+- The user will explicitly say "commit" or "commit these changes" when ready
+
+This allows the user to:
+- Test changes before committing
+- Make additional tweaks
+- Review all changes together
+- Control commit timing and messages
+
+---
+
 ## Version History
+
+- **2025-10-27**: Added git commit policy
+  - User controls all commits
+  - No automatic or proactive commits
+  - Wait for explicit user instruction
 
 - **2025-10-17**: Added nested stack navigation pattern
   - Documented nested stack navigation within tabs
