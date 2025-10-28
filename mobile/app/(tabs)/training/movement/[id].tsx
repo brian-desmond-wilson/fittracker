@@ -14,7 +14,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Sparkles, MoreVertical } from 'lucide-react-native';
+import { ChevronLeft, Sparkles, MoreVertical, Dumbbell, Weight, Circle } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
@@ -125,6 +125,30 @@ export default function MovementDetailPage() {
     }
   };
 
+  // Helper function to get equipment icon
+  const getEquipmentIcon = (equipmentName: string) => {
+    const name = equipmentName.toLowerCase();
+
+    // Map equipment names to icons
+    if (name.includes('barbell') || name.includes('bar')) {
+      return Weight;
+    } else if (name.includes('dumbbell') || name.includes('db')) {
+      return Dumbbell;
+    } else if (name.includes('kettlebell') || name.includes('kb')) {
+      return Weight;
+    } else if (name.includes('plate') || name.includes('bumper')) {
+      return Circle;
+    } else if (name.includes('pull-up') || name.includes('pullup')) {
+      return Circle; // Can be changed to a better icon if available
+    } else if (name.includes('box') || name.includes('bench')) {
+      return Circle;
+    } else if (name.includes('rope') || name.includes('ring')) {
+      return Circle;
+    } else {
+      return Circle; // Default icon
+    }
+  };
+
   const handleMenuPress = () => {
     if (!movement) return;
 
@@ -174,8 +198,13 @@ export default function MovementDetailPage() {
         ? movement.equipment_types.join(', ')
         : 'bodyweight';
 
-      // Create prompt
-      const prompt = `A high-quality, professional photo of a CrossFit athlete performing ${movement.name} in a modern CrossFit gym. ${movement.movement_category?.name || ''} movement. Equipment: ${equipmentList}. Dramatic lighting, motivational atmosphere, athletic focus. Photorealistic, high detail.`;
+      // Build aliases context
+      const aliasesContext = movement.aliases && movement.aliases.length > 0
+        ? ` Also known as: ${movement.aliases.join(', ')}.`
+        : '';
+
+      // Create prompt with equipment and aliases
+      const prompt = `A high-quality, professional photo of a CrossFit athlete performing ${movement.name} in a modern CrossFit gym. ${movement.movement_category?.name || ''} movement.${aliasesContext} Equipment: ${equipmentList}. Dramatic lighting, motivational atmosphere, athletic focus. Photorealistic, high detail.`;
 
       console.log('Generating movement image with prompt:', prompt);
 
@@ -399,6 +428,27 @@ export default function MovementDetailPage() {
                 </View>
               </>
             )}
+          </View>
+        )}
+
+        {/* Equipment */}
+        {movement.equipment_types && movement.equipment_types.length > 0 && !movement.equipment_types.includes('bodyweight') && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Equipment</Text>
+            <View style={styles.equipmentContainer}>
+              {movement.equipment_types.map((equipment, index) => {
+                if (equipment.toLowerCase() === 'bodyweight') return null;
+                const EquipmentIcon = getEquipmentIcon(equipment);
+                return (
+                  <View key={index} style={styles.equipmentItem}>
+                    <View style={styles.equipmentIconContainer}>
+                      <EquipmentIcon size={32} color={colors.primary} strokeWidth={1.5} />
+                    </View>
+                    <Text style={styles.equipmentLabel}>{equipment}</Text>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -718,20 +768,28 @@ const styles = StyleSheet.create({
   equipmentContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 16,
   },
-  equipmentChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#1A1F2E',
-    borderRadius: 8,
+  equipmentItem: {
+    alignItems: 'center',
+    width: 80,
+  },
+  equipmentIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary + '30',
   },
-  equipmentText: {
-    fontSize: 14,
+  equipmentLabel: {
+    fontSize: 12,
     fontWeight: '500',
     color: colors.foreground,
+    textAlign: 'center',
   },
   muscleContainer: {
     flexDirection: 'row',

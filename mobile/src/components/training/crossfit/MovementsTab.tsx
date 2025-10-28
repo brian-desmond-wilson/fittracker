@@ -14,7 +14,7 @@ interface MovementWithTier extends ExerciseWithVariations {
   tier?: number;
 }
 
-type MovementCategory = 'All' | 'Oly lifts' | 'Gymnastics' | 'Cardio';
+type MovementCategory = 'All' | 'Lifting' | 'Gymnastics' | 'Cardio' | 'Core';
 
 interface MovementsTabProps {
   searchQuery: string;
@@ -31,7 +31,7 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
   const [refreshing, setRefreshing] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
 
-  const categories: MovementCategory[] = ['All', 'Oly lifts', 'Gymnastics', 'Cardio'];
+  const categories: MovementCategory[] = ['All', 'Lifting', 'Gymnastics', 'Cardio', 'Core'];
 
   const loadMovements = async () => {
     try {
@@ -115,11 +115,15 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       const goalTypeName = movement.goal_type?.name.toLowerCase() || '';
 
       switch (selectedCategory) {
-        case 'Oly lifts':
-          // Olympic lifts: Snatch, Clean, Jerk
-          return movementName.includes('snatch') ||
+        case 'Lifting':
+          // Lifting movements: Olympic lifts, squats, deadlifts, presses
+          return goalTypeName === 'strength' ||
+                 movementName.includes('snatch') ||
                  movementName.includes('clean') ||
-                 movementName.includes('jerk');
+                 movementName.includes('jerk') ||
+                 movementName.includes('squat') ||
+                 movementName.includes('deadlift') ||
+                 movementName.includes('press');
         case 'Gymnastics':
           // Gymnastics: Skill-based movements
           return goalTypeName === 'skill' ||
@@ -135,6 +139,9 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
                  movementName.includes('run') ||
                  movementName.includes('bike') ||
                  movementName.includes('ski');
+        case 'Core':
+          // Core movements: Foundational movements with is_core = true
+          return movement.is_core === true;
         default:
           return true;
       }
