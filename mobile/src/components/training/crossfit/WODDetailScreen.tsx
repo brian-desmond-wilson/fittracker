@@ -1142,15 +1142,15 @@ const styles = StyleSheet.create({
   },
   movementInfo: {
     flex: 1,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 6,
   },
   movementHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   movementNumber: {
     fontSize: 18,
@@ -1178,7 +1178,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   movementRepText: {
     fontSize: 14,
@@ -1193,7 +1193,7 @@ const styles = StyleSheet.create({
   },
   movementMetadataRow: {
     flexDirection: 'column',
-    gap: 6,
+    gap: 4,
     marginBottom: 0,
   },
   movementMetaItem: {
@@ -1233,7 +1233,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 12,
+    marginTop: 6,
   },
   detailChip: {
     flexDirection: "row",
