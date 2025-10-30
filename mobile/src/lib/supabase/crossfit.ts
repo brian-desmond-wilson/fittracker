@@ -692,6 +692,24 @@ export async function createMovement(input: CreateMovementInput): Promise<string
     // Generate unique slug
     const slug = await generateUniqueSlug(input.name);
 
+    // Determine requires_weight based on equipment
+    // Weighted equipment: Barbell, Dumbbell, Kettlebell, Med Ball, Plate, Sandbag
+    const weightedEquipment = ['Barbell', 'Dumbbell', 'Kettlebell', 'Med Ball', 'Plate', 'Sandbag'];
+    const requiresWeight = input.equipment_types?.some(eq =>
+      weightedEquipment.some(weighted => eq.toLowerCase().includes(weighted.toLowerCase()))
+    ) || false;
+
+    // Determine requires_distance based on scoring types
+    let requiresDistance = false;
+    if (input.scoring_type_ids && input.scoring_type_ids.length > 0) {
+      // Fetch scoring types to check if "Distance" is included
+      const scoringTypes = await fetchScoringTypes();
+      const distanceScoringType = scoringTypes.find(st => st.name === 'Distance');
+      if (distanceScoringType) {
+        requiresDistance = input.scoring_type_ids.includes(distanceScoringType.id);
+      }
+    }
+
     // 1. Insert the exercise
     const exerciseData: any = {
       name: input.name,
@@ -718,10 +736,14 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       ...(input.movement_style_id && { movement_style_id: input.movement_style_id }),
       ...(input.symmetry_id && { symmetry_id: input.symmetry_id }),
 
+      // Equipment
+      ...(input.equipment_types && input.equipment_types.length > 0 && { equipment_types: input.equipment_types }),
+      requires_weight: requiresWeight,
+      requires_distance: requiresDistance,
+
       // Media
       ...(input.video_url && { video_url: input.video_url }),
       ...(input.image_url && { image_url: input.image_url }),
-      ...(input.full_name && { full_name: input.full_name }),
 
       // Ownership
       is_movement: true,

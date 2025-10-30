@@ -368,20 +368,6 @@ export default function MovementDetailPage() {
           </View>
         )}
 
-        {/* Equipment Required */}
-        {movement.equipment_types && movement.equipment_types.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Equipment Required</Text>
-            <View style={styles.equipmentContainer}>
-              {movement.equipment_types.map((equipment, index) => (
-                <View key={index} style={styles.equipmentChip}>
-                  <Text style={styles.equipmentText}>{equipment}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
         {/* Variations Placeholder */}
         {movement.variations && movement.variations.length > 0 && (
           <View style={styles.section}>
@@ -471,7 +457,9 @@ export default function MovementDetailPage() {
                   <View style={styles.coreHierarchyBadge}>
                     <Text style={styles.coreHierarchyBadgeText}>CORE</Text>
                   </View>
-                  <Text style={styles.hierarchyItemName}>{hierarchyData.parent.name}</Text>
+                  <Text style={styles.hierarchyItemName} numberOfLines={1} ellipsizeMode="tail">
+                    {hierarchyData.parent.name}
+                  </Text>
                 </View>
               </TouchableOpacity>
 
@@ -486,7 +474,11 @@ export default function MovementDetailPage() {
                     <View style={styles.tierHierarchyBadge}>
                       <Text style={styles.tierHierarchyBadgeText}>TIER {tier}</Text>
                     </View>
-                    <Text style={[styles.hierarchyItemName, styles.hierarchyCurrentText]}>
+                    <Text
+                      style={[styles.hierarchyItemName, styles.hierarchyCurrentText]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       {movement.name}
                     </Text>
                   </View>
@@ -509,7 +501,9 @@ export default function MovementDetailPage() {
                       <View style={styles.tierHierarchyBadge}>
                         <Text style={styles.tierHierarchyBadgeText}>TIER {tier}</Text>
                       </View>
-                      <Text style={styles.hierarchyItemName}>{sibling.name}</Text>
+                      <Text style={styles.hierarchyItemName} numberOfLines={1} ellipsizeMode="tail">
+                        {sibling.name}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -519,15 +513,14 @@ export default function MovementDetailPage() {
         )}
 
         {/* Demo Video */}
-        {(movement.demo_video_url || movement.video_url) && (
+        {movement.video_url && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Demo Video</Text>
             <TouchableOpacity
               style={styles.videoLinkButton}
               onPress={() => {
-                const videoUrl = movement.demo_video_url || movement.video_url;
-                if (videoUrl) {
-                  Linking.openURL(videoUrl);
+                if (movement.video_url) {
+                  Linking.openURL(movement.video_url);
                 }
               }}
             >
@@ -919,6 +912,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   hierarchyItemName: {
+    flex: 1,
     fontSize: 16,
     fontWeight: '500',
     color: colors.foreground,

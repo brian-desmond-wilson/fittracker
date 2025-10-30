@@ -144,6 +144,9 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
                      movement.rx_distance_unit === 'feet' ? 'ft' :
                      movement.rx_distance_unit === 'miles' ? 'mi' : 'km';
         parts.push(`Distance: ${movement.rx_distance_value}${unit}`);
+      } else if (movement.rx_reps) {
+        // rx_reps is always a number, so just format it
+        parts.push(`${movement.rx_reps} reps`);
       } else if (repScheme) {
         parts.push(repScheme);
       }

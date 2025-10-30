@@ -132,6 +132,9 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
                      movement.rx_distance_unit === 'feet' ? 'ft' :
                      movement.rx_distance_unit === 'miles' ? 'mi' : 'km';
         parts.push(`Distance: ${movement.rx_distance_value}${unit}`);
+      } else if (movement.rx_reps) {
+        // rx_reps is always a number, so just format it
+        parts.push(`${movement.rx_reps} reps`);
       } else if (repScheme) {
         parts.push(repScheme);
       }
@@ -310,6 +313,13 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
                         </View>
                       )}
                     </View>
+
+                    {/* Notes */}
+                    {movement.notes && (
+                      <View style={styles.notesSection}>
+                        <Text style={styles.notesText}>{movement.notes}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </View>
@@ -473,6 +483,18 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     flex: 1,
     lineHeight: 18,
+  },
+  notesSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  notesText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    lineHeight: 18,
+    fontStyle: 'italic',
   },
   actions: {
     flexDirection: 'row',

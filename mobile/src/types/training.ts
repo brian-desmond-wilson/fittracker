@@ -67,11 +67,10 @@ export interface Exercise {
   category: ExerciseCategory;
   muscle_groups: string[];
   equipment: string[];
-  demo_video_url: string | null;
-  thumbnail_url: string | null;
-  setup_instructions: string | null;
-  execution_cues: string[] | null;
-  common_mistakes: string[] | null;
+  // Deprecated fields removed in migration 20251028000001
+  // demo_video_url, thumbnail_url, setup_instructions, execution_cues, common_mistakes
+  video_url: string | null;
+  image_url: string | null;
 }
 
 export interface ProgramWorkout {

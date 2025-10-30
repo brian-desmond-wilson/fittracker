@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
-import { createMovement } from '@/src/lib/supabase/crossfit';
-import type { CreateMovementInput } from '@/src/types/crossfit';
+import { createMovement, fetchEquipment } from '@/src/lib/supabase/crossfit';
+import type { CreateMovementInput, Equipment } from '@/src/types/crossfit';
 
 // Step components
 import { Step1Core } from './wizard/Step1Core';
@@ -62,6 +62,7 @@ const STEPS = [
 export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(1);
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [formData, setFormData] = useState<MovementFormData>({
     is_core: true,
     parent_exercise_id: null,
@@ -88,6 +89,20 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
     image_url: '',
     variation_option_ids: [],
   });
+
+  // Load equipment reference data on mount
+  useEffect(() => {
+    loadEquipment();
+  }, []);
+
+  const loadEquipment = async () => {
+    try {
+      const data = await fetchEquipment();
+      setEquipment(data);
+    } catch (error) {
+      console.error('Error loading equipment:', error);
+    }
+  };
 
   const updateFormData = (updates: Partial<MovementFormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
@@ -140,6 +155,33 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
         return;
       }
 
+      // CRITICAL FIX: Ensure equipment is loaded before mapping
+      // Fetch fresh equipment data if needed
+      let equipmentData = equipment;
+      if (formData.equipment_ids.length > 0 && equipment.length === 0) {
+        console.log('Equipment not loaded, fetching now...');
+        equipmentData = await fetchEquipment();
+      }
+
+      // Map equipment_ids to equipment names
+      const equipmentTypes = formData.equipment_ids.length > 0
+        ? formData.equipment_ids
+            .map(id => {
+              const found = equipmentData.find(eq => eq.id === id);
+              if (!found) {
+                console.warn(`Equipment with ID ${id} not found in equipment list`);
+              }
+              return found?.name;
+            })
+            .filter((name): name is string => name !== undefined)
+        : undefined;
+
+      // Debug logging
+      if (formData.equipment_ids.length > 0) {
+        console.log('Equipment IDs:', formData.equipment_ids);
+        console.log('Mapped Equipment Types:', equipmentTypes);
+      }
+
       // Map form data to API input
       const input: CreateMovementInput = {
         name: formData.name,
@@ -164,6 +206,9 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
         range_depth_id: formData.range_depth_id,
         movement_style_ids: formData.movement_style_ids.length > 0 ? formData.movement_style_ids : undefined,
         symmetry_id: formData.symmetry_id,
+
+        // Equipment
+        equipment_types: equipmentTypes,
 
         // Media
         video_url: formData.video_url || undefined,

@@ -397,39 +397,23 @@ export function MovementConfigModal({
               </View>
             </View>
           </View>
-
-          {/* Movement Variation (for alternative movements) */}
-          <View style={styles.field}>
-            <Text style={styles.label}>Movement Variation (For Scaling)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Reduced Pace, Walking, Modified"
-              placeholderTextColor={colors.mutedForeground}
-              value={variation}
-              onChangeText={setVariation}
-              autoCapitalize="words"
-            />
-            <Text style={styles.helperText}>
-              Specify alternative movement pattern or scaling options
-            </Text>
-          </View>
         </View>
       );
     }
 
-    // For bodyweight movements on Rx/L2 tabs, check scoring types
-    if (isBodyweight && (isRx || isL2)) {
+    // For bodyweight movements (ALL LEVELS - Rx, L2, L1), check scoring types
+    if (isBodyweight) {
       const scoringTypes = activeMovement?.scoring_types || [];
       const hasReps = scoringTypes.some(st => st.name === 'Reps');
       const hasTime = scoringTypes.some(st => st.name === 'Time');
       const canMeasure = hasReps || hasTime;
 
-      const measurementMode = isRx ? rxMeasurementMode : l2MeasurementMode;
-      const setMeasurementMode = isRx ? setRxMeasurementMode : setL2MeasurementMode;
-      const reps = isRx ? rxReps : l2Reps;
-      const setReps = isRx ? setRxReps : setL2Reps;
-      const time = isRx ? rxTime : l2Time;
-      const setTime = isRx ? setRxTime : setL2Time;
+      const measurementMode = isRx ? rxMeasurementMode : isL2 ? l2MeasurementMode : l1MeasurementMode;
+      const setMeasurementMode = isRx ? setRxMeasurementMode : isL2 ? setL2MeasurementMode : setL1MeasurementMode;
+      const reps = isRx ? rxReps : isL2 ? l2Reps : l1Reps;
+      const setReps = isRx ? setRxReps : isL2 ? setL2Reps : setL1Reps;
+      const time = isRx ? rxTime : isL2 ? l2Time : l1Time;
+      const setTime = isRx ? setRxTime : isL2 ? setL2Time : setL1Time;
 
       return (
         <View style={styles.bodyweightMessage}>
@@ -544,104 +528,6 @@ export function MovementConfigModal({
       );
     }
 
-    // For L1 bodyweight, use same scoring-type-aware logic as Rx/L2
-    if (isBodyweight && isL1) {
-      const scoringTypes = activeMovement?.scoring_types || [];
-      const hasReps = scoringTypes.some(st => st.name === 'Reps');
-      const hasTime = scoringTypes.some(st => st.name === 'Time');
-      const canMeasure = hasReps || hasTime;
-
-      const measurementMode = l1MeasurementMode;
-      const setMeasurementMode = setL1MeasurementMode;
-      const reps = l1Reps;
-      const setReps = setL1Reps;
-      const time = l1Time;
-      const setTime = setL1Time;
-
-      return (
-        <View style={styles.scalingForm}>
-          {alternativeToggle}
-
-          {canMeasure && (
-            <>
-              {/* Reps/Time Toggle (if both are available) */}
-              {hasReps && hasTime && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Measurement Type</Text>
-                  <View style={styles.toggleContainer}>
-                    <TouchableOpacity
-                      style={[styles.toggleButton, measurementMode === 'reps' && styles.toggleButtonActive]}
-                      onPress={() => setMeasurementMode('reps')}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.toggleButtonText, measurementMode === 'reps' && styles.toggleButtonTextActive]}>
-                        Reps
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.toggleButton, measurementMode === 'time' && styles.toggleButtonActive]}
-                      onPress={() => setMeasurementMode('time')}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.toggleButtonText, measurementMode === 'time' && styles.toggleButtonTextActive]}>
-                        Time
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {/* Reps Input */}
-              {((hasReps && !hasTime) || (hasReps && hasTime && measurementMode === 'reps')) && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Reps (Optional - if different from WOD)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., 15 (reduced from 21)"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={reps}
-                    onChangeText={setReps}
-                    keyboardType="number-pad"
-                  />
-                </View>
-              )}
-
-              {/* Time Input (seconds) */}
-              {((hasTime && !hasReps) || (hasReps && hasTime && measurementMode === 'time')) && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Time (seconds)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., 30"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={time}
-                    onChangeText={setTime}
-                    keyboardType="number-pad"
-                  />
-                </View>
-              )}
-            </>
-          )}
-
-          {/* Movement Variation (for alternative movements) */}
-          <View style={styles.field}>
-            <Text style={styles.label}>Movement Variation (For Scaling)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Hanging Knee Raises, Banded, Knees-to-Elbows"
-              placeholderTextColor={colors.mutedForeground}
-              value={l1Variation}
-              onChangeText={setL1Variation}
-              autoCapitalize="words"
-            />
-            <Text style={styles.helperText}>
-              Specify alternative movement, assistance equipment, or modified ROM
-            </Text>
-          </View>
-        </View>
-      );
-    }
-
     // For weighted movements, show full form
     const reps = isRx ? rxReps : isL2 ? l2Reps : l1Reps;
     const setReps = isRx ? setRxReps : isL2 ? setL2Reps : setL1Reps;
@@ -735,19 +621,6 @@ export function MovementConfigModal({
             keyboardType="number-pad"
           />
         </View>
-
-        {/* Movement Variation */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Movement Variation (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Kipping, Strict, Banded"
-            placeholderTextColor={colors.mutedForeground}
-            value={variation}
-            onChangeText={setVariation}
-            autoCapitalize="words"
-          />
-        </View>
       </View>
     );
   };
@@ -793,21 +666,19 @@ export function MovementConfigModal({
               {renderScalingForm(activeLevel)}
 
               {/* Notes (shared across all levels) */}
-              {activeLevel === 'Rx' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Notes (Optional)</Text>
-                  <TextInput
-                    style={[styles.input, styles.textArea]}
-                    placeholder="Movement standards, coaching notes..."
-                    placeholderTextColor={colors.mutedForeground}
-                    value={notes}
-                    onChangeText={setNotes}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                  />
-                </View>
-              )}
+              <View style={styles.field}>
+                <Text style={styles.label}>Notes (Optional)</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Movement standards, coaching notes..."
+                  placeholderTextColor={colors.mutedForeground}
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                />
+              </View>
             </View>
           </ScrollView>
 

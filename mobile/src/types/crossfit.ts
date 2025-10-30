@@ -229,9 +229,9 @@ export interface Exercise {
   created_at: string;
   updated_at: string;
   name: string;
-  full_name: string | null;
   slug: string;
   description: string | null;
+  // full_name removed in migration 20251028000002 - computed dynamically from name + variations
 
   // CrossFit-specific
   is_movement: boolean;
@@ -250,21 +250,21 @@ export interface Exercise {
   requires_distance: boolean;
   equipment_types: string[] | null;
 
-  // Categorization
-  category: string | null;
-  muscle_groups: string[] | null; // DEPRECATED: Use exercise_muscle_regions junction table
-  equipment: string[] | null; // DEPRECATED: Use equipment_types
+  // DEPRECATED fields removed in migration 20251028000000
+  // category: replaced by movement_category_id
+  // muscle_groups: replaced by exercise_muscle_regions junction table
+  // equipment: replaced by equipment_types and exercise_equipment junction table
 
   // Media
-  demo_video_url: string | null;
-  thumbnail_url: string | null;
   video_url: string | null;
   image_url: string | null;
 
-  // Instructions
-  setup_instructions: string | null;
-  execution_cues: string[] | null;
-  common_mistakes: string[] | null;
+  // DEPRECATED fields removed in migration 20251028000001
+  // demo_video_url: replaced by video_url
+  // thumbnail_url: replaced by image_url
+  // setup_instructions: replaced by exercise_standards table
+  // execution_cues: replaced by exercise_standards table
+  // common_mistakes: replaced by exercise_standards table
 
   // Ownership (hybrid approach)
   is_official: boolean;
@@ -676,6 +676,9 @@ export interface CreateMovementInput {
   // Media
   video_url?: string;
   image_url?: string;
+
+  // Equipment
+  equipment_types?: string[];
 
   // Ownership
   is_movement: true;

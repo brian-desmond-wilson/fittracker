@@ -30,6 +30,7 @@ import {
   Sparkles,
   MoreVertical,
   Repeat2,
+  MessageSquare,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WODWithDetails, ScalingLevel } from "@/src/types/crossfit";
@@ -61,6 +62,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
   const [showComparison, setShowComparison] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
   const [showImageMenu, setShowImageMenu] = useState(false);
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadWOD();
@@ -191,6 +193,19 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
     return wod?.rep_scheme || '';
   };
 
+  // Toggle notes expansion
+  const toggleNotes = (movementId: string) => {
+    setExpandedNotes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(movementId)) {
+        newSet.delete(movementId);
+      } else {
+        newSet.add(movementId);
+      }
+      return newSet;
+    });
+  };
+
   // Get movements for selected scaling level with formatted details
   const getScaledMovements = () => {
     if (!wod || !wod.movements) return [];
@@ -203,8 +218,12 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
 
       switch (selectedScaling) {
         case "Rx":
-          // Reps: use rep scheme
-          if (repScheme) repsDisplay = repScheme;
+          // Reps: custom or rep scheme
+          if (movement.rx_reps) {
+            repsDisplay = `${movement.rx_reps} reps`;
+          } else if (repScheme) {
+            repsDisplay = repScheme;
+          }
 
           // Weight: gender-split format
           if (movement.rx_weight_men_lbs && movement.rx_weight_women_lbs) {
@@ -403,68 +422,73 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
           {/* Integrated Stats Row */}
           <View style={styles.integratedStatsRow}>
             {/* Movement Names */}
-            <View style={styles.statColumn}>
-              <Image
-                source={require('@/assets/kettlebell.png')}
-                style={styles.kettlebellIcon}
-                resizeMode="contain"
-              />
-              <View style={styles.statTextContainer}>
-                {(wod.movements || []).slice(0, 2).map((movement, index) => (
-                  <Text key={index} style={styles.statText} numberOfLines={1}>
-                    {movement.exercise?.name || 'Movement'}
-                  </Text>
-                ))}
-                {(wod.movements || []).length > 2 && (
-                  <Text style={styles.statText}>+{(wod.movements || []).length - 2} more</Text>
-                )}
+            {(wod.movements && wod.movements.length > 0) && (
+              <View style={styles.statColumn}>
+                <Image
+                  source={require('@/assets/kettlebell.png')}
+                  style={styles.kettlebellIcon}
+                  resizeMode="contain"
+                />
+                <View style={styles.statTextContainer}>
+                  {(wod.movements || []).map((movement, index) => (
+                    <Text key={index} style={styles.statText} numberOfLines={1}>
+                      {movement.exercise?.short_name || movement.exercise?.name || 'Movement'}
+                    </Text>
+                  ))}
+                </View>
               </View>
-            </View>
+            )}
 
             {/* Movement Categories */}
-            <View style={styles.statColumn}>
-              <Group size={18} color={colors.primary} strokeWidth={2} />
-              <View style={styles.statTextContainer}>
-                {(() => {
-                  const categories = new Set<string>();
-                  (wod.movements || []).forEach(movement => {
-                    const category = (movement.exercise as any)?.movement_category?.name;
-                    if (category) categories.add(category);
-                  });
-                  const categoryArray = Array.from(categories).slice(0, 2);
-                  return categoryArray.map((cat, index) => (
-                    <Text key={index} style={styles.statText} numberOfLines={1}>
-                      {cat}
-                    </Text>
-                  ));
-                })()}
-              </View>
-            </View>
+            {(() => {
+              const categories = new Set<string>();
+              (wod.movements || []).forEach(movement => {
+                const category = (movement.exercise as any)?.movement_category?.name;
+                if (category) categories.add(category);
+              });
+              const categoryArray = Array.from(categories).slice(0, 2);
+              return categoryArray.length > 0 && (
+                <View style={styles.statColumn}>
+                  <Group size={18} color={colors.primary} strokeWidth={2} />
+                  <View style={styles.statTextContainer}>
+                    {categoryArray.map((cat, index) => (
+                      <Text key={index} style={styles.statText} numberOfLines={1}>
+                        {cat}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              );
+            })()}
 
             {/* Rep Scheme */}
-            <View style={styles.statColumn}>
-              <Repeat2 size={18} color={colors.primary} strokeWidth={2} />
-              <View style={styles.statTextContainer}>
-                <Text style={styles.statText} numberOfLines={1}>
-                  {wod.rep_scheme || 'N/A'}
-                </Text>
-                {wod.rep_scheme_type && (
+            {wod.rep_scheme && (
+              <View style={styles.statColumn}>
+                <Repeat2 size={18} color={colors.primary} strokeWidth={2} />
+                <View style={styles.statTextContainer}>
                   <Text style={styles.statText} numberOfLines={1}>
-                    {wod.rep_scheme_type.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    {wod.rep_scheme}
                   </Text>
-                )}
+                  {wod.rep_scheme_type && (
+                    <Text style={styles.statText} numberOfLines={1}>
+                      {wod.rep_scheme_type.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </Text>
+                  )}
+                </View>
               </View>
-            </View>
+            )}
 
             {/* Time Cap */}
-            <View style={styles.statColumn}>
-              <Clock size={18} color={colors.primary} strokeWidth={2} />
-              <View style={styles.statTextContainer}>
-                <Text style={styles.statText} numberOfLines={1}>
-                  {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
-                </Text>
+            {wod.time_cap_minutes && (
+              <View style={styles.statColumn}>
+                <Clock size={18} color={colors.primary} strokeWidth={2} />
+                <View style={styles.statTextContainer}>
+                  <Text style={styles.statText} numberOfLines={1}>
+                    {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
           </View>
 
           {/* Description */}
@@ -542,7 +566,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                   const goalTypeName = exercise?.goal_type?.name;
 
                   // Get image or placeholder
-                  const imageUrl = exercise?.thumbnail_url || exercise?.image_url;
+                  const imageUrl = exercise?.image_url;
                   const placeholderIcon = getMovementPlaceholderIcon(categoryName);
 
                   // Get muscle groups
@@ -604,6 +628,19 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                             <Text style={styles.movementName} numberOfLines={1}>
                               {exercise?.name}
                             </Text>
+                            {movement.notes && (
+                              <TouchableOpacity
+                                onPress={() => toggleNotes(movement.id)}
+                                style={styles.notesIconButton}
+                                activeOpacity={0.7}
+                              >
+                                <MessageSquare
+                                  size={18}
+                                  color={expandedNotes.has(movement.id) ? colors.primary : colors.mutedForeground}
+                                  fill={expandedNotes.has(movement.id) ? colors.primary : 'transparent'}
+                                />
+                              </TouchableOpacity>
+                            )}
                           </View>
 
                           {/* Rep Scheme with Weight (if present) */}
@@ -648,6 +685,13 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                               </View>
                             </View>
                           )}
+
+                          {/* Expandable Notes */}
+                          {movement.notes && expandedNotes.has(movement.id) && (
+                            <View style={styles.notesExpandedContainer}>
+                              <Text style={styles.notesExpandedText}>{movement.notes}</Text>
+                            </View>
+                          )}
                         </View>
                       </View>
 
@@ -656,11 +700,6 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                         <View style={styles.variationContainer}>
                           <Text style={styles.variationText}>📝 {movement.variation}</Text>
                         </View>
-                      )}
-
-                      {/* Movement Notes */}
-                      {movement.notes && (
-                        <Text style={styles.movementNotes}>ℹ️ {movement.notes}</Text>
                       )}
 
                       {/* Movement Standards */}
@@ -1237,6 +1276,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.mutedForeground,
     marginTop: 12,
+    lineHeight: 20,
+  },
+  notesIconButton: {
+    padding: 4,
+    marginLeft: 4,
+  },
+  notesExpandedContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  notesExpandedText: {
+    fontSize: 13,
+    color: colors.foreground,
     lineHeight: 20,
   },
   standardsContainer: {
