@@ -19,7 +19,7 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
   const swipeableRef = useRef<Swipeable>(null);
 
   // Get formatted display data for the WOD card
-  const { formatLine, structureLine, movementsLine } = getWODCardDisplay(wod, 'Rx');
+  const { formatLine, structureLine, movementsLine, movementsList } = getWODCardDisplay(wod, 'Rx');
 
   const handleDelete = async () => {
     try {
@@ -193,7 +193,9 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
 
             {/* Line 4: Movement Summary */}
             <View style={styles.movementsRow}>
-              <Text style={styles.movementsText}>{movementsLine}</Text>
+              {movementsList.map((movement, index) => (
+                <Text key={index} style={styles.movementsText}>{movement}</Text>
+              ))}
             </View>
           </View>
         </View>
@@ -275,9 +277,9 @@ const styles = StyleSheet.create({
     paddingLeft: 22, // Align with text after icon in formatRow
   },
   movementsText: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.mutedForeground,
-    lineHeight: 20,
+    lineHeight: 16,
   },
   deleteAction: {
     justifyContent: 'center',

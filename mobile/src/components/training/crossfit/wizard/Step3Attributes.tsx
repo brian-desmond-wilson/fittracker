@@ -182,9 +182,7 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Load Position</Text>
         <Text style={styles.helperText}>
-          {formData.load_position_id
-            ? loadPositions.find(p => p.id === formData.load_position_id)?.description || 'How external weight is held or positioned'
-            : 'How external weight is held or positioned'}
+          How external weight is held or positioned
         </Text>
 
         {['Barbell', 'Dumbbell / KB', 'Unloaded', 'Odd Object'].map(category => {
@@ -196,14 +194,17 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
               <Text style={styles.sectionHeader}>{category}</Text>
               <View style={styles.pillsContainer}>
                 {categoryPositions.map(position => {
-                  const isSelected = formData.load_position_id === position.id;
+                  const isSelected = formData.load_position_ids.includes(position.id);
                   return (
                     <TouchableOpacity
                       key={position.id}
                       style={[styles.pill, isSelected && styles.pillSelected]}
-                      onPress={() =>
-                        updateFormData({ load_position_id: isSelected ? null : position.id })
-                      }
+                      onPress={() => {
+                        const newLoadPositionIds = isSelected
+                          ? formData.load_position_ids.filter(id => id !== position.id)
+                          : [...formData.load_position_ids, position.id];
+                        updateFormData({ load_position_ids: newLoadPositionIds });
+                      }}
                       activeOpacity={0.7}
                     >
                       <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
@@ -224,20 +225,30 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Stance</Text>
         <Text style={styles.helperText}>
-          {formData.stance_id
-            ? stances.find(s => s.id === formData.stance_id)?.description || 'Foot and leg positioning during movement'
+          {formData.stance_ids.length > 0
+            ? formData.stance_ids.length === 1
+              ? stances.find(s => s.id === formData.stance_ids[0])?.name || '1 item selected'
+              : formData.stance_ids.length === 2
+              ? stances
+                  .filter(s => formData.stance_ids.includes(s.id))
+                  .map(s => s.name)
+                  .join(', ')
+              : `${formData.stance_ids.length} items selected`
             : 'Foot and leg positioning during movement'}
         </Text>
         <View style={styles.pillsContainer}>
           {stances.map(stance => {
-            const isSelected = formData.stance_id === stance.id;
+            const isSelected = formData.stance_ids.includes(stance.id);
             return (
               <TouchableOpacity
                 key={stance.id}
                 style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() =>
-                  updateFormData({ stance_id: isSelected ? null : stance.id })
-                }
+                onPress={() => {
+                  const newStanceIds = isSelected
+                    ? formData.stance_ids.filter(id => id !== stance.id)
+                    : [...formData.stance_ids, stance.id];
+                  updateFormData({ stance_ids: newStanceIds });
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
@@ -364,20 +375,30 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       <View style={styles.field}>
         <Text style={styles.label}>Plane of Motion</Text>
         <Text style={styles.helperText}>
-          {formData.plane_of_motion_id
-            ? planes.find(p => p.id === formData.plane_of_motion_id)?.description || 'Primary anatomical plane of movement'
+          {formData.plane_of_motion_ids.length > 0
+            ? formData.plane_of_motion_ids.length === 1
+              ? planes.find(p => p.id === formData.plane_of_motion_ids[0])?.name || '1 item selected'
+              : formData.plane_of_motion_ids.length === 2
+              ? planes
+                  .filter(p => formData.plane_of_motion_ids.includes(p.id))
+                  .map(p => p.name)
+                  .join(', ')
+              : `${formData.plane_of_motion_ids.length} items selected`
             : 'Primary anatomical plane of movement'}
         </Text>
         <View style={styles.pillsContainer}>
           {planes.map(plane => {
-            const isSelected = formData.plane_of_motion_id === plane.id;
+            const isSelected = formData.plane_of_motion_ids.includes(plane.id);
             return (
               <TouchableOpacity
                 key={plane.id}
                 style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() =>
-                  updateFormData({ plane_of_motion_id: isSelected ? null : plane.id })
-                }
+                onPress={() => {
+                  const newPlaneIds = isSelected
+                    ? formData.plane_of_motion_ids.filter(id => id !== plane.id)
+                    : [...formData.plane_of_motion_ids, plane.id];
+                  updateFormData({ plane_of_motion_ids: newPlaneIds });
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>

@@ -484,7 +484,8 @@ export interface ExerciseWithVariations extends Exercise {
       category?: VariationCategory;
     };
   })[];
-  goal_type?: GoalType;
+  goal_type?: GoalType; // Legacy single goal type (kept for backward compatibility)
+  goal_types?: GoalType[]; // NEW: Multiple goal types
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
   muscle_regions?: (ExerciseMuscleRegion & {
@@ -500,7 +501,8 @@ export interface ExerciseWithDetails extends Exercise {
       category?: VariationCategory;
     };
   })[];
-  goal_type?: GoalType;
+  goal_type?: GoalType; // Legacy single goal type (kept for backward compatibility)
+  goal_types?: GoalType[]; // NEW: Multiple goal types
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
 
@@ -655,19 +657,23 @@ export interface CreateMovementInput {
   name: string;
   full_name?: string;
   description?: string;
-  goal_type_id: string;
+  goal_type_id?: string; // Legacy single goal type (optional for backward compatibility)
+  goal_type_ids?: string[]; // NEW: Multiple goal types
   movement_category_id: string;
 
   // NEW: Core movement metadata
   movement_family_id?: string;
-  plane_of_motion_id?: string;
+  plane_of_motion_id?: string; // Legacy single plane (optional for backward compatibility)
+  plane_of_motion_ids?: string[]; // NEW: Multiple planes of motion
   skill_level?: SkillLevel;
   short_name?: string;
   aliases?: string[];
 
   // NEW: Movement attributes
-  load_position_id?: string;
-  stance_id?: string;
+  load_position_id?: string; // Legacy single load position (optional for backward compatibility)
+  load_position_ids?: string[]; // NEW: Multiple load positions
+  stance_id?: string; // Legacy single stance (optional for backward compatibility)
+  stance_ids?: string[]; // NEW: Multiple stances
   range_depth_id?: string;
   movement_style_id?: string; // Legacy single style (deprecated)
   movement_style_ids?: string[]; // Multiple styles

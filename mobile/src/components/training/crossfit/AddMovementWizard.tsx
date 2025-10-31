@@ -20,7 +20,7 @@ export interface MovementFormData {
   name: string;
   modality_id: string | null;
   movement_family_id: string | null;
-  goal_type_id: string | null;
+  goal_type_ids: string[]; // Changed to array for multi-select
 
   // Step 2: Classification (optional)
   skill_level: 'Beginner' | 'Intermediate' | 'Advanced' | null;
@@ -30,9 +30,9 @@ export interface MovementFormData {
 
   // Step 3: Movement Attributes (optional)
   equipment_ids: string[];
-  load_position_id: string | null;
-  stance_id: string | null;
-  plane_of_motion_id: string | null;
+  load_position_ids: string[]; // Changed to array for multi-select
+  stance_ids: string[]; // Changed to array for multi-select
+  plane_of_motion_ids: string[]; // Changed to array for multi-select
   movement_style_ids: string[]; // Multiple styles
   symmetry_id: string | null;
   range_depth_id: string | null;
@@ -70,15 +70,15 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
     name: '',
     modality_id: null,
     movement_family_id: null,
-    goal_type_id: null,
+    goal_type_ids: [],
     skill_level: null,
     muscle_region_ids: [],
     primary_muscle_region_ids: [],
     scoring_type_ids: [],
     equipment_ids: [],
-    load_position_id: null,
-    stance_id: null,
-    plane_of_motion_id: null,
+    load_position_ids: [],
+    stance_ids: [],
+    plane_of_motion_ids: [],
     movement_style_ids: [],
     symmetry_id: null,
     range_depth_id: null,
@@ -117,11 +117,11 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
       return true;
     }
     if (currentStep === 2) {
-      // Step 2 validation: require modality, family, goal type
+      // Step 2 validation: require modality, family, at least one goal type
       return (
         formData.modality_id !== null &&
         formData.movement_family_id !== null &&
-        formData.goal_type_id !== null
+        formData.goal_type_ids.length > 0
       );
     }
     // Step 3 is optional
@@ -186,7 +186,7 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
       const input: CreateMovementInput = {
         name: formData.name,
         description: formData.description,
-        goal_type_id: formData.goal_type_id!,
+        goal_type_ids: formData.goal_type_ids,
         movement_category_id: formData.modality_id!,
 
         // Movement Hierarchy
@@ -195,14 +195,14 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
 
         // Core metadata
         movement_family_id: formData.movement_family_id,
-        plane_of_motion_id: formData.plane_of_motion_id,
+        plane_of_motion_ids: formData.plane_of_motion_ids.length > 0 ? formData.plane_of_motion_ids : undefined,
         skill_level: formData.skill_level,
         short_name: formData.short_name || formData.name,
         aliases: formData.aliases.length > 0 ? formData.aliases : undefined,
 
         // Attributes
-        load_position_id: formData.load_position_id,
-        stance_id: formData.stance_id,
+        load_position_ids: formData.load_position_ids.length > 0 ? formData.load_position_ids : undefined,
+        stance_ids: formData.stance_ids.length > 0 ? formData.stance_ids : undefined,
         range_depth_id: formData.range_depth_id,
         movement_style_ids: formData.movement_style_ids.length > 0 ? formData.movement_style_ids : undefined,
         symmetry_id: formData.symmetry_id,

@@ -84,12 +84,12 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
         fieldsToInherit.add('modality_id');
       }
       if (parent.goal_type_id) {
-        updateFormData({ goal_type_id: parent.goal_type_id });
-        fieldsToInherit.add('goal_type_id');
+        updateFormData({ goal_type_ids: [parent.goal_type_id] });
+        fieldsToInherit.add('goal_type_ids');
       }
       if (parent.plane_of_motion_id) {
-        updateFormData({ plane_of_motion_id: parent.plane_of_motion_id });
-        fieldsToInherit.add('plane_of_motion_id');
+        updateFormData({ plane_of_motion_ids: [parent.plane_of_motion_id] });
+        fieldsToInherit.add('plane_of_motion_ids');
       }
 
       // Extract muscle regions from parent's exercise_muscle_regions array
@@ -396,18 +396,21 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
           Goal Type <Text style={styles.required}>*</Text>
         </Text>
         <Text style={styles.helperText}>
-          {formData.goal_type_id
-            ? goalTypes.find(g => g.id === formData.goal_type_id)?.description || 'Primary training goal for this movement'
-            : 'Primary training goal for this movement'}
+          Primary training goal for this movement
         </Text>
         <View style={styles.pillsContainer}>
           {goalTypes.map(goalType => {
-            const isSelected = formData.goal_type_id === goalType.id;
+            const isSelected = formData.goal_type_ids.includes(goalType.id);
             return (
               <TouchableOpacity
                 key={goalType.id}
                 style={[styles.pill, isSelected && styles.pillSelected]}
-                onPress={() => updateFormData({ goal_type_id: goalType.id })}
+                onPress={() => {
+                  const newGoalTypeIds = isSelected
+                    ? formData.goal_type_ids.filter(id => id !== goalType.id)
+                    : [...formData.goal_type_ids, goalType.id];
+                  updateFormData({ goal_type_ids: newGoalTypeIds });
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>

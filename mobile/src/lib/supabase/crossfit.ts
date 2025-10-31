@@ -715,7 +715,7 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       name: input.name,
       description: input.description,
       slug,
-      goal_type_id: input.goal_type_id,
+      goal_type_id: input.goal_type_id || (input.goal_type_ids && input.goal_type_ids.length > 0 ? input.goal_type_ids[0] : null), // Legacy: use first goal type
       movement_category_id: input.movement_category_id,
 
       // Movement Hierarchy
@@ -724,14 +724,17 @@ export async function createMovement(input: CreateMovementInput): Promise<string
 
       // Core movement metadata (only include if provided)
       ...(input.movement_family_id && { movement_family_id: input.movement_family_id }),
-      ...(input.plane_of_motion_id && { plane_of_motion_id: input.plane_of_motion_id }),
+      ...(input.plane_of_motion_id && { plane_of_motion_id: input.plane_of_motion_id }), // Legacy
+      ...((!input.plane_of_motion_id && input.plane_of_motion_ids && input.plane_of_motion_ids.length > 0) && { plane_of_motion_id: input.plane_of_motion_ids[0] }), // Set first as legacy value
       ...(input.skill_level && { skill_level: input.skill_level }),
       ...(input.short_name && { short_name: input.short_name }),
       ...(input.aliases && input.aliases.length > 0 && { aliases: input.aliases }),
 
       // Movement attributes (only include if provided)
-      ...(input.load_position_id && { load_position_id: input.load_position_id }),
-      ...(input.stance_id && { stance_id: input.stance_id }),
+      ...(input.load_position_id && { load_position_id: input.load_position_id }), // Legacy
+      ...((!input.load_position_id && input.load_position_ids && input.load_position_ids.length > 0) && { load_position_id: input.load_position_ids[0] }), // Set first as legacy value
+      ...(input.stance_id && { stance_id: input.stance_id }), // Legacy
+      ...((!input.stance_id && input.stance_ids && input.stance_ids.length > 0) && { stance_id: input.stance_ids[0] }), // Set first as legacy value
       ...(input.range_depth_id && { range_depth_id: input.range_depth_id }),
       ...(input.movement_style_id && { movement_style_id: input.movement_style_id }),
       ...(input.symmetry_id && { symmetry_id: input.symmetry_id }),
@@ -762,7 +765,75 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       throw exerciseError;
     }
 
-    // 2. Insert variation options (if any)
+    // 2. Insert goal types (if any)
+    if (input.goal_type_ids && input.goal_type_ids.length > 0) {
+      const goalTypeInserts = input.goal_type_ids.map(goalTypeId => ({
+        exercise_id: exercise.id,
+        goal_type_id: goalTypeId,
+      }));
+
+      const { error: goalTypeError } = await supabase
+        .from('exercise_goal_types')
+        .insert(goalTypeInserts);
+
+      if (goalTypeError) {
+        console.error('Error inserting exercise goal types:', goalTypeError);
+        throw goalTypeError;
+      }
+    }
+
+    // 3. Insert planes of motion (if any)
+    if (input.plane_of_motion_ids && input.plane_of_motion_ids.length > 0) {
+      const planeInserts = input.plane_of_motion_ids.map(planeId => ({
+        exercise_id: exercise.id,
+        plane_of_motion_id: planeId,
+      }));
+
+      const { error: planeError } = await supabase
+        .from('exercise_planes_of_motion')
+        .insert(planeInserts);
+
+      if (planeError) {
+        console.error('Error inserting exercise planes of motion:', planeError);
+        throw planeError;
+      }
+    }
+
+    // 4. Insert load positions (if any)
+    if (input.load_position_ids && input.load_position_ids.length > 0) {
+      const loadPositionInserts = input.load_position_ids.map(loadPositionId => ({
+        exercise_id: exercise.id,
+        load_position_id: loadPositionId,
+      }));
+
+      const { error: loadPositionError } = await supabase
+        .from('exercise_load_positions')
+        .insert(loadPositionInserts);
+
+      if (loadPositionError) {
+        console.error('Error inserting exercise load positions:', loadPositionError);
+        throw loadPositionError;
+      }
+    }
+
+    // 5. Insert stances (if any)
+    if (input.stance_ids && input.stance_ids.length > 0) {
+      const stanceInserts = input.stance_ids.map(stanceId => ({
+        exercise_id: exercise.id,
+        stance_id: stanceId,
+      }));
+
+      const { error: stanceError } = await supabase
+        .from('exercise_stances')
+        .insert(stanceInserts);
+
+      if (stanceError) {
+        console.error('Error inserting exercise stances:', stanceError);
+        throw stanceError;
+      }
+    }
+
+    // 6. Insert variation options (if any)
     if (input.variation_option_ids && input.variation_option_ids.length > 0) {
       const variationInserts = input.variation_option_ids.map(optionId => ({
         exercise_id: exercise.id,
@@ -779,7 +850,7 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       }
     }
 
-    // 3. Insert scoring types (if any)
+    // 7. Insert scoring types (if any)
     if (input.scoring_type_ids && input.scoring_type_ids.length > 0) {
       const scoringInserts = input.scoring_type_ids.map(scoringTypeId => ({
         exercise_id: exercise.id,
@@ -796,7 +867,7 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       }
     }
 
-    // 4. Insert muscle regions (if any)
+    // 8. Insert muscle regions (if any)
     if (input.muscle_region_ids && input.muscle_region_ids.length > 0) {
       const muscleInserts = input.muscle_region_ids.map(regionId => ({
         exercise_id: exercise.id,
@@ -814,7 +885,7 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       }
     }
 
-    // 5. Insert movement styles (if any)
+    // 7. Insert movement styles (if any)
     if (input.movement_style_ids && input.movement_style_ids.length > 0) {
       const styleInserts = input.movement_style_ids.map(styleId => ({
         exercise_id: exercise.id,

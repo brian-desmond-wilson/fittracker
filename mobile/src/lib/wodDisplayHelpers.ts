@@ -9,6 +9,7 @@ interface WODCardDisplay {
   formatLine: string;
   structureLine: string | null;
   movementsLine: string;
+  movementsList: string[];
 }
 
 /**
@@ -21,11 +22,13 @@ export function getWODCardDisplay(
   const formatLine = buildFormatLine(wod);
   const structureLine = buildStructureLine(wod);
   const movementsLine = buildMovementsLine(wod, scalingLevel);
+  const movementsList = buildMovementsList(wod, scalingLevel);
 
   return {
     formatLine,
     structureLine,
     movementsLine,
+    movementsList,
   };
 }
 
@@ -170,6 +173,27 @@ function buildMovementsLine(
   }
 
   return result;
+}
+
+/**
+ * Build movements list as an array (for rendering each on its own line)
+ */
+function buildMovementsList(
+  wod: WODWithDetails,
+  scalingLevel: ScalingLevel
+): string[] {
+  const movements = wod.movements || [];
+
+  if (movements.length === 0) {
+    return ['No movements configured'];
+  }
+
+  // Map all movements to their display strings
+  const movementStrings = movements.map(movement =>
+    formatMovementForCard(movement, scalingLevel, wod.rep_scheme_type)
+  );
+
+  return movementStrings;
 }
 
 /**
