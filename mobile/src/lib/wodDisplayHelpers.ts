@@ -128,6 +128,18 @@ function buildStructureLine(wod: WODWithDetails): string | null {
       }
       return null;
 
+    // For Load rep schemes
+    case '1rm':
+    case '3rm':
+    case '5rm':
+    case '10rm':
+    case '5x5':
+    case '3x3':
+    case 'descending_volume':
+    case 'complex':
+      // Show the rep scheme for For Load workouts
+      return repScheme;
+
     case 'fixed_rounds':
     case 'distance':
     default:
