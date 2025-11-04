@@ -236,6 +236,7 @@ export function AddWODWizard({ onClose, onSave }: AddWODWizardProps) {
               formData={formData}
               onUpdate={updateFormData}
               onNext={handleNext}
+              wodFormatName={formats.find(f => f.id === formData.format_id)?.name}
             />
           )}
           {currentStep === 3 && (

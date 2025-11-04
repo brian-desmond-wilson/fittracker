@@ -11,9 +11,10 @@ interface WODMovementsStepProps {
   formData: WODFormData;
   onUpdate: (updates: Partial<WODFormData>) => void;
   onNext: () => void;
+  wodFormatName?: string; // Pass the WOD format name to determine field visibility
 }
 
-export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsStepProps) {
+export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: WODMovementsStepProps) {
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [configModalVisible, setConfigModalVisible] = useState(false);
   const [selectedMovement, setSelectedMovement] = useState<ExerciseWithVariations | null>(null);
@@ -362,6 +363,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext }: WODMovementsSte
         visible={configModalVisible}
         movement={selectedMovement}
         wodRepScheme={formData.rep_scheme} // Pass WOD-level rep scheme
+        wodFormatName={wodFormatName} // Pass WOD format name
         existingConfig={editingIndex !== null ? formData.movements[editingIndex] : undefined}
         onClose={() => {
           setConfigModalVisible(false);

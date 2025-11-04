@@ -19,6 +19,7 @@ interface MovementConfigModalProps {
   visible: boolean;
   movement: ExerciseWithVariations | null;
   wodRepScheme?: string; // WOD-level rep scheme (e.g., "21-15-9")
+  wodFormatName?: string; // WOD format name (e.g., "For Load")
   existingConfig?: WODMovementConfig;
   onClose: () => void;
   onSave: (config: Omit<WODMovementConfig, 'movement_order'>) => void;
@@ -30,6 +31,7 @@ export function MovementConfigModal({
   visible,
   movement,
   wodRepScheme,
+  wodFormatName,
   existingConfig,
   onClose,
   onSave
@@ -318,6 +320,9 @@ export function MovementConfigModal({
     const isBodyweight = !activeMovement?.requires_weight;
     const isDistance = activeMovement?.requires_distance;
 
+    // Check if this is a "For Load" WOD
+    const isForLoad = wodFormatName === 'For Load';
+
     // Render alternative movement toggle (shared across all types)
     const alternativeToggle = (
       <View style={styles.alternativeSection}>
@@ -351,6 +356,16 @@ export function MovementConfigModal({
         )}
       </View>
     );
+
+    // For "For Load" WODs, only show alternative toggle and notes
+    if (isForLoad) {
+      return (
+        <View style={styles.scalingForm}>
+          {alternativeToggle}
+          {/* Notes field will be shown outside the scaling tabs */}
+        </View>
+      );
+    }
 
     // For distance movements, show distance-specific UI
     if (isDistance) {
