@@ -16,7 +16,7 @@ export type GoalTypeName =
 
 export type ScalingLevel = 'Rx' | 'L2' | 'L1';
 
-export type WODFormatName = 'AMRAP' | 'EMOM' | 'For Time' | 'Chipper' | 'Tabata';
+export type WODFormatName = 'AMRAP' | 'EMOM' | 'For Time' | 'Chipper' | 'Tabata' | 'For Load';
 
 export type WODCategoryName = 'All' | 'Daily WOD' | 'Heroes' | 'The Girls';
 
@@ -28,7 +28,7 @@ export type MovementCategoryName = 'Weightlifting' | 'Gymnastics' | 'Monostructu
 
 export type ScoringTypeName = 'Reps' | 'Rounds' | 'Weight' | 'Time' | 'Distance' | 'Calories' | 'Height' | 'None';
 
-export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom';
+export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom' | '1rm' | '3rm' | '5rm' | '10rm' | '5x5' | '3x3' | 'descending_volume' | 'complex';
 
 export type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 

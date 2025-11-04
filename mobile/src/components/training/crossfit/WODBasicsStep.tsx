@@ -20,13 +20,26 @@ interface WODBasicsStepProps {
   onNext: () => void;
 }
 
-// Common rep schemes for quick selection
+// Common rep schemes for quick selection - For Time
 const COMMON_REP_SCHEMES: Record<string, string> = {
   '21-15-9': 'Descending (21-15-9)',
   '21-18-15-12-9-6-3': 'Descending (21-18-15-12-9-6-3)',
   '5': '5 Rounds',
   '3': '3 Rounds',
   '1-2-3-4-5': 'Ascending Ladder',
+};
+
+// Common rep schemes for For Load
+const FOR_LOAD_REP_SCHEMES: Record<string, string> = {
+  '1RM': 'Find 1RM',
+  '3RM': 'Find 3RM',
+  '5RM': 'Find 5RM',
+  '10RM': 'Find 10RM',
+  '5x5': '5x5 (5 sets of 5)',
+  '3x3': '3x3 (3 sets of 3)',
+  '5-5-3-3-1-1': 'Descending Volume (5-5-3-3-1-1)',
+  '10-8-6-4-2': 'Descending Volume (10-8-6-4-2)',
+  '1+2+1': 'Complex (1 Clean + 2 FS + 1 Jerk)',
 };
 
 export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps) {
@@ -66,15 +79,21 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
 
   const selectedFormat = formats.find(f => f.id === formData.format_id);
   const isForTime = selectedFormat?.name === 'For Time';
+  const isForLoad = selectedFormat?.name === 'For Load';
 
   const handleFormatChange = (format_id: string) => {
     const format = formats.find(f => f.id === format_id);
     const updates: Partial<WODFormData> = { format_id };
 
-    // Clear For Time fields if switching away from For Time
-    if (format?.name !== 'For Time') {
+    // Clear rep scheme fields if switching away from For Time or For Load
+    if (format?.name !== 'For Time' && format?.name !== 'For Load') {
       updates.rep_scheme_type = undefined;
       updates.rep_scheme = undefined;
+    }
+
+    // Auto-select "Score by Load" for "For Load" format
+    if (format?.name === 'For Load') {
+      updates.score_type_load = true;
     }
 
     onUpdate(updates);
@@ -233,6 +252,129 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
                     For chippers, describe the scheme (e.g., "Single pass" or "50-40-30-20-10")
                   </Text>
                 )}
+              </View>
+            )}
+          </>
+        )}
+
+        {/* FOR LOAD SPECIFIC FIELDS */}
+        {isForLoad && (
+          <>
+            {/* Rep Scheme Type */}
+            <View style={styles.field}>
+              <Text style={styles.label}>Rep Scheme Type *</Text>
+              <View style={styles.pillsContainer}>
+                {[
+                  { value: '1rm' as RepSchemeType, label: '1RM' },
+                  { value: '3rm' as RepSchemeType, label: '3RM' },
+                  { value: '5rm' as RepSchemeType, label: '5RM' },
+                  { value: '10rm' as RepSchemeType, label: '10RM' },
+                  { value: '5x5' as RepSchemeType, label: '5x5' },
+                  { value: '3x3' as RepSchemeType, label: '3x3' },
+                  { value: 'descending_volume' as RepSchemeType, label: 'Descending Volume' },
+                  { value: 'complex' as RepSchemeType, label: 'Complex' },
+                  { value: 'custom' as RepSchemeType, label: 'Custom' },
+                ].map((type) => {
+                  const isSelected = formData.rep_scheme_type === type.value;
+                  return (
+                    <TouchableOpacity
+                      key={type.value}
+                      style={[styles.pill, isSelected && styles.pillSelected]}
+                      onPress={() => onUpdate({ rep_scheme_type: type.value })}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                        {type.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Rep Scheme Input - Conditional based on type */}
+            {formData.rep_scheme_type && (
+              <View style={styles.field}>
+                <Text style={styles.label}>
+                  {formData.rep_scheme_type === '1rm' && 'Movement/Description *'}
+                  {formData.rep_scheme_type === '3rm' && 'Movement/Description *'}
+                  {formData.rep_scheme_type === '5rm' && 'Movement/Description *'}
+                  {formData.rep_scheme_type === '10rm' && 'Movement/Description *'}
+                  {formData.rep_scheme_type === '5x5' && 'Movement/Description *'}
+                  {formData.rep_scheme_type === '3x3' && 'Movement/Description *'}
+                  {formData.rep_scheme_type === 'descending_volume' && 'Rep Scheme (e.g., 5-5-3-3-1-1) *'}
+                  {formData.rep_scheme_type === 'complex' && 'Complex Description (e.g., 1 Clean + 2 FS + 1 Jerk) *'}
+                  {formData.rep_scheme_type === 'custom' && 'Custom Rep Scheme *'}
+                </Text>
+
+                {/* Show quick select buttons for common For Load schemes */}
+                <View style={styles.quickSelectContainer}>
+                  <Text style={styles.quickSelectLabel}>Quick select:</Text>
+                  <View style={styles.pillsContainer}>
+                    {Object.entries(FOR_LOAD_REP_SCHEMES).map(([value, label]) => {
+                      const isSelected = formData.rep_scheme === value;
+                      return (
+                        <TouchableOpacity
+                          key={value}
+                          style={[styles.quickPill, isSelected && styles.quickPillSelected]}
+                          onPress={() => {
+                            // Set both rep_scheme and infer rep_scheme_type from value
+                            const typeMap: Record<string, RepSchemeType> = {
+                              '1RM': '1rm',
+                              '3RM': '3rm',
+                              '5RM': '5rm',
+                              '10RM': '10rm',
+                              '5x5': '5x5',
+                              '3x3': '3x3',
+                              '5-5-3-3-1-1': 'descending_volume',
+                              '10-8-6-4-2': 'descending_volume',
+                              '1+2+1': 'complex',
+                            };
+                            onUpdate({
+                              rep_scheme: value,
+                              rep_scheme_type: typeMap[value] || formData.rep_scheme_type
+                            });
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.quickPillText, isSelected && styles.quickPillTextSelected]}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <TextInput
+                  style={styles.input}
+                  placeholder={
+                    formData.rep_scheme_type === '1rm' ? 'e.g., Back Squat' :
+                    formData.rep_scheme_type === '3rm' ? 'e.g., Front Squat' :
+                    formData.rep_scheme_type === '5rm' ? 'e.g., Deadlift' :
+                    formData.rep_scheme_type === '10rm' ? 'e.g., Back Squat' :
+                    formData.rep_scheme_type === '5x5' ? 'e.g., Back Squat @ 80%' :
+                    formData.rep_scheme_type === '3x3' ? 'e.g., Power Clean' :
+                    formData.rep_scheme_type === 'descending_volume' ? '5-5-3-3-1-1' :
+                    formData.rep_scheme_type === 'complex' ? '1 Clean + 2 Front Squats + 1 Jerk' :
+                    'Custom scheme'
+                  }
+                  placeholderTextColor={colors.mutedForeground}
+                  value={formData.rep_scheme || ''}
+                  onChangeText={(text) => onUpdate({ rep_scheme: text })}
+                />
+
+                <Text style={styles.helperText}>
+                  {formData.rep_scheme_type === '1rm' && 'Find your 1-rep max for the specified movement'}
+                  {formData.rep_scheme_type === '3rm' && 'Find your 3-rep max for the specified movement'}
+                  {formData.rep_scheme_type === '5rm' && 'Find your 5-rep max for the specified movement'}
+                  {formData.rep_scheme_type === '10rm' && 'Find your 10-rep max for the specified movement'}
+                  {formData.rep_scheme_type === '5x5' && 'Perform 5 sets of 5 reps, building to a heavy load'}
+                  {formData.rep_scheme_type === '3x3' && 'Perform 3 sets of 3 reps, building to a heavy load'}
+                  {formData.rep_scheme_type === 'descending_volume' && 'Reps descend while load increases each set'}
+                  {formData.rep_scheme_type === 'complex' && 'Multiple movements performed as one unbroken set'}
+                  {formData.rep_scheme_type === 'custom' && 'Describe your custom For Load rep scheme'}
+                </Text>
               </View>
             )}
           </>

@@ -250,7 +250,8 @@ function formatMovementForCard(
 
   // Add distance suffix
   if (distanceValue && distanceUnit) {
-    display += ` ${distanceValue}${distanceUnit}`;
+    const abbreviatedUnit = abbreviateDistanceUnit(String(distanceUnit));
+    display += ` ${distanceValue} ${abbreviatedUnit}`;
   }
 
   return display;
@@ -294,6 +295,31 @@ function getMovementDisplayName(
 
   // Fallback: truncate with ellipsis
   return fullName.substring(0, 12) + '...';
+}
+
+/**
+ * Abbreviate distance units for compact display
+ */
+function abbreviateDistanceUnit(unit: string): string {
+  const unitLower = unit.toLowerCase();
+
+  // Common distance unit abbreviations
+  const abbreviations: Record<string, string> = {
+    'feet': 'ft',
+    'foot': 'ft',
+    'meters': 'm',
+    'meter': 'm',
+    'miles': 'mi',
+    'mile': 'mi',
+    'kilometers': 'km',
+    'kilometer': 'km',
+    'yards': 'yd',
+    'yard': 'yd',
+    'inches': 'in',
+    'inch': 'in',
+  };
+
+  return abbreviations[unitLower] || unit;
 }
 
 /**
