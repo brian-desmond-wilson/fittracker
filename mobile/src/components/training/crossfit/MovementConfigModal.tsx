@@ -232,23 +232,28 @@ export function MovementConfigModal({
     const isDistance = movement?.requires_distance;
 
     // Validate based on movement type
-    if (isDistance) {
-      // For distance movements, require at least distance value for Rx
-      if (!rxDistanceValue) {
-        Alert.alert('Validation Error', 'Please enter a distance for Rx scaling');
-        return;
-      }
-    } else if (isBodyweight) {
-      // For bodyweight movements, allow empty Rx if following WOD scheme
-      if (!followsWodScheme && !customRepScheme?.trim()) {
-        Alert.alert('Validation Error', 'Please enter a custom rep scheme or use WOD scheme');
-        return;
-      }
-    } else {
-      // For weighted movements, require at least one Rx field
-      if (!rxReps && !rxWeightMen && !rxWeightWomen && !rxTime) {
-        Alert.alert('Validation Error', 'Please configure at least one field for Rx scaling');
-        return;
+    // Skip validation for "For Load" WODs - they don't need reps/weight/distance/time
+    const isForLoad = wodFormatName === 'For Load';
+
+    if (!isForLoad) {
+      if (isDistance) {
+        // For distance movements, require at least distance value for Rx
+        if (!rxDistanceValue) {
+          Alert.alert('Validation Error', 'Please enter a distance for Rx scaling');
+          return;
+        }
+      } else if (isBodyweight) {
+        // For bodyweight movements, allow empty Rx if following WOD scheme
+        if (!followsWodScheme && !customRepScheme?.trim()) {
+          Alert.alert('Validation Error', 'Please enter a custom rep scheme or use WOD scheme');
+          return;
+        }
+      } else {
+        // For weighted movements, require at least one Rx field
+        if (!rxReps && !rxWeightMen && !rxWeightWomen && !rxTime) {
+          Alert.alert('Validation Error', 'Please configure at least one field for Rx scaling');
+          return;
+        }
       }
     }
 
