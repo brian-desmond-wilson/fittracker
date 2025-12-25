@@ -18,6 +18,7 @@ export interface ProgramTemplate {
 
   // Program Info
   title: string;
+  subtitle: string | null;
   slug: string;
   description: string;
   creator_name: string;
@@ -277,4 +278,20 @@ export interface UpdateWorkoutInstanceInput {
   notes?: string;
   energy_level?: number;
   overall_difficulty?: number;
+}
+
+export interface CreateProgramTemplateInput {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  duration_weeks: number;
+  days_per_week: number;
+  minutes_per_session: number;
+  cover_image_url?: string;
+  // Optional fields with defaults set by API
+  primary_goal?: PrimaryGoal;
+  difficulty_level?: DifficultyLevel;
+  tags?: string[];
+  prerequisites?: string[];
+  equipment_required?: string[];
 }

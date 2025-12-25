@@ -8,6 +8,7 @@ import type {
   WorkoutInstance,
   WorkoutInstanceWithRelations,
   CreateProgramInstanceInput,
+  CreateProgramTemplateInput,
   CreateWorkoutInstanceInput,
   CreateSetInstanceInput,
   UpdateWorkoutInstanceInput,
@@ -101,6 +102,159 @@ export async function fetchProgramBySlug(slug: string): Promise<ProgramTemplateW
   }
 
   return data;
+}
+
+/**
+ * Generate a unique slug for a program title
+ * If the base slug exists, appends a number (e.g., my-program-2)
+ */
+async function generateUniqueProgramSlug(title: string): Promise<string> {
+  const baseSlug = title
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .substring(0, 50); // Limit length
+
+  // Check if base slug exists
+  const { data: existing } = await supabase
+    .from('program_templates')
+    .select('slug')
+    .eq('slug', baseSlug)
+    .maybeSingle();
+
+  // If no conflict, use base slug
+  if (!existing) {
+    return baseSlug;
+  }
+
+  // If conflict, find the next available number
+  let counter = 2;
+  while (counter < 100) {
+    const testSlug = `${baseSlug}-${counter}`;
+    const { data: testExisting } = await supabase
+      .from('program_templates')
+      .select('slug')
+      .eq('slug', testSlug)
+      .maybeSingle();
+
+    if (!testExisting) {
+      return testSlug;
+    }
+    counter++;
+  }
+
+  // Fallback: use timestamp
+  return `${baseSlug}-${Date.now()}`;
+}
+
+/**
+ * Create a new program template
+ * Called when user creates a new program via the Add Program modal
+ */
+export async function createProgramTemplate(
+  input: CreateProgramTemplateInput,
+  userId: string,
+  creatorName: string
+): Promise<ProgramTemplate | null> {
+  try {
+    // Generate unique slug from title
+    const slug = await generateUniqueProgramSlug(input.title);
+
+    const { data, error } = await supabase
+      .from('program_templates')
+      .insert({
+        title: input.title,
+        subtitle: input.subtitle || null,
+        slug,
+        description: input.description || '',
+        creator_id: userId,
+        creator_name: creatorName,
+        duration_weeks: input.duration_weeks,
+        days_per_week: input.days_per_week,
+        minutes_per_session: input.minutes_per_session,
+        cover_image_url: input.cover_image_url || null,
+        // Default values for required fields
+        primary_goal: input.primary_goal || 'Hybrid',
+        difficulty_level: input.difficulty_level || 'Intermediate',
+        training_style: null,
+        video_preview_url: null,
+        is_published: true, // Immediately published per requirements
+        is_featured: false,
+        tags: input.tags || [],
+        prerequisites: input.prerequisites || [],
+        equipment_required: input.equipment_required || [],
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating program template:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in createProgramTemplate:', error);
+    return null;
+  }
+}
+
+/**
+ * Upload program cover image to Supabase Storage
+ * Returns the public URL of the uploaded image
+ */
+export async function uploadProgramCoverImage(
+  imageUri: string,
+  userId: string
+): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      console.error('No session available for upload');
+      return null;
+    }
+
+    // Create unique filename
+    const fileExt = imageUri.split('.').pop()?.split('?')[0] || 'jpg';
+    const timestamp = Date.now();
+    const fileName = `${userId}/${timestamp}_cover.${fileExt}`;
+
+    // Use FormData for React Native compatibility
+    const formData = new FormData();
+    formData.append('file', {
+      uri: imageUri,
+      type: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+      name: `cover.${fileExt}`,
+    } as any);
+
+    // Upload using fetch with FormData (React Native pattern)
+    const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/program-covers/${fileName}`;
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: formData,
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      console.error('Upload failed:', uploadResponse.status, errorText);
+      return null;
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('program-covers')
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  } catch (error) {
+    console.error('Program cover upload failed:', error);
+    return null;
+  }
 }
 
 // ============================================================================

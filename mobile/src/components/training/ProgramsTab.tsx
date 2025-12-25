@@ -7,8 +7,12 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Modal,
+  RefreshControl,
 } from "react-native";
-import { TrendingUp, BarChart3, Clock, User } from "lucide-react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { TrendingUp, BarChart3, Clock, User, Plus } from "lucide-react-native";
+import { AddProgramModal } from "./AddProgramModal";
 import { colors } from "@/src/lib/colors";
 import { useRouter } from "expo-router";
 import { fetchPublishedPrograms, fetchUserProgramInstances } from "@/src/lib/supabase/training";
@@ -105,15 +109,25 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
   const router = useRouter();
   const [programs, setPrograms] = useState<ProgramDisplayData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
 
   useEffect(() => {
     loadPrograms();
   }, []);
 
-  async function loadPrograms() {
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadPrograms(true);
+    setRefreshing(false);
+  };
+
+  async function loadPrograms(isRefresh = false) {
     try {
-      setLoading(true);
+      if (!isRefresh) {
+        setLoading(true);
+      }
       setError(null);
 
       // Get current user
@@ -193,12 +207,20 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
   }
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       {/* Programs List */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* My Programs Section */}
         {myPrograms.length > 0 && (
@@ -238,9 +260,43 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
           </View>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 80 }} />
       </ScrollView>
-    </View>
+
+      {/* Sticky Refresh Indicator */}
+      {refreshing && (
+        <View style={styles.refreshingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.refreshingText}>Refreshing...</Text>
+        </View>
+      )}
+
+      {/* FAB - Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setAddModalVisible(true)}
+        activeOpacity={0.8}
+      >
+        <Plus size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* Add Program Modal */}
+      <Modal
+        visible={addModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setAddModalVisible(false)}
+      >
+        <AddProgramModal
+          onClose={() => setAddModalVisible(false)}
+          onSave={(programId) => {
+            setAddModalVisible(false);
+            loadPrograms();
+            router.push(`/(tabs)/training/program/${programId}`);
+          }}
+        />
+      </Modal>
+    </GestureHandlerRootView>
   );
 }
 
@@ -256,6 +312,21 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
+    fontSize: 16,
+    color: colors.mutedForeground,
+  },
+  refreshingContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    paddingVertical: 20,
+    backgroundColor: colors.background,
+    zIndex: 10,
+  },
+  refreshingText: {
+    marginTop: 12,
     fontSize: 16,
     color: colors.mutedForeground,
   },
@@ -397,5 +468,21 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     textAlign: "center",
     paddingHorizontal: 40,
+  },
+  fab: {
+    position: "absolute",
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
