@@ -11,6 +11,28 @@ export type WorkoutType = 'Strength' | 'Hypertrophy' | 'Power' | 'Endurance' | '
 export type ExerciseCategory = 'Compound' | 'Isolation' | 'Accessory' | 'Cardio';
 export type MediaType = 'video' | 'pdf' | 'document' | 'image';
 
+// Workout Section Types (for grouping exercises within a workout)
+export type WorkoutSection = 'Warmup' | 'Prehab' | 'Strength' | 'Accessory' | 'Isometric' | 'Cooldown';
+export type LoadType = 'rpe' | 'percentage_1rm' | 'weight' | 'notes' | 'none';
+
+export const WORKOUT_SECTIONS: WorkoutSection[] = [
+  'Warmup',
+  'Prehab',
+  'Strength',
+  'Accessory',
+  'Isometric',
+  'Cooldown',
+];
+
+export const SECTION_DISPLAY_NAMES: Record<WorkoutSection, string> = {
+  'Warmup': 'Warm-up',
+  'Prehab': 'Prehab',
+  'Strength': 'Strength',
+  'Accessory': 'Accessory',
+  'Isometric': 'Isometric',
+  'Cooldown': 'Cool-down',
+};
+
 export interface ProgramTemplate {
   id: string;
   created_at: string;
@@ -95,12 +117,29 @@ export interface ProgramWorkoutExercise {
   program_workout_id: string;
   exercise_id: string;
   exercise_order: number;
-  target_sets: number;
+
+  // Section grouping
+  section: WorkoutSection | null;
+
+  // Set/Rep Scheme
+  target_sets: number | null;
   target_reps_min: number | null;
   target_reps_max: number | null;
+  target_time_seconds: number | null;
+  is_per_side: boolean;
+
+  // Load Configuration
+  load_type: LoadType | null;
   target_rpe_min: number | null;
   target_rpe_max: number | null;
+  load_percentage_1rm: number | null;
+  load_weight_lbs: number | null;
+  load_notes: string | null;
+
+  // Metadata
   rest_seconds: number | null;
+  estimated_duration_minutes: number | null;
+  video_url: string | null;
   exercise_notes: string | null;
   tempo: string | null;
 }
@@ -294,4 +333,84 @@ export interface CreateProgramTemplateInput {
   tags?: string[];
   prerequisites?: string[];
   equipment_required?: string[];
+}
+
+// ============================================================================
+// WORKOUT WIZARD FORM TYPES
+// ============================================================================
+
+/**
+ * Configuration for a single exercise within a workout (used in wizard forms)
+ */
+export interface WorkoutExerciseConfig {
+  // Core identification
+  exercise_id: string;
+  exercise_name: string;
+  section: WorkoutSection;
+  exercise_order: number;
+
+  // Sets/Reps Configuration
+  target_sets?: number;
+  target_reps?: number;
+  target_time_seconds?: number;
+  is_per_side: boolean;
+
+  // Load Configuration
+  load_type: LoadType;
+  load_rpe?: number;
+  load_percentage_1rm?: number;
+  load_weight_lbs?: number;
+  load_notes?: string;
+
+  // Metadata
+  rest_seconds?: number;
+  estimated_duration_minutes?: number;
+  video_url?: string;
+  exercise_notes?: string;
+  tempo?: string;
+}
+
+/**
+ * Form data for the Add Workout wizard
+ */
+export interface WorkoutFormData {
+  // Step 1: Basics
+  name: string;
+  day_number: number;
+  workout_type: WorkoutType;
+  estimated_duration_minutes?: number;
+  warmup_instructions?: string;
+  cooldown_instructions?: string;
+  notes?: string;
+
+  // Step 2: Exercises
+  exercises: WorkoutExerciseConfig[];
+}
+
+/**
+ * Input for creating a new program workout with exercises
+ */
+export interface CreateProgramWorkoutInput {
+  program_id: string;
+  week_number: number;
+  day_number: number;
+  name: string;
+  workout_type: WorkoutType;
+  estimated_duration_minutes?: number;
+  warmup_instructions?: string;
+  cooldown_instructions?: string;
+  notes?: string;
+  exercises: Omit<WorkoutExerciseConfig, 'exercise_name'>[];
+}
+
+/**
+ * Exercises grouped by section (used in UI display)
+ */
+export interface ExercisesBySection {
+  Warmup: WorkoutExerciseConfig[];
+  Prehab: WorkoutExerciseConfig[];
+  Strength: WorkoutExerciseConfig[];
+  Accessory: WorkoutExerciseConfig[];
+  Isometric: WorkoutExerciseConfig[];
+  Cooldown: WorkoutExerciseConfig[];
 }

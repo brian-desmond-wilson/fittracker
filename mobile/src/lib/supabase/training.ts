@@ -2,13 +2,16 @@ import { supabase } from '../supabase';
 import type {
   ProgramTemplate,
   ProgramTemplateWithRelations,
+  ProgramWorkout,
   ProgramWorkoutWithRelations,
   ProgramInstance,
   ProgramInstanceWithRelations,
   WorkoutInstance,
   WorkoutInstanceWithRelations,
+  Exercise,
   CreateProgramInstanceInput,
   CreateProgramTemplateInput,
+  CreateProgramWorkoutInput,
   CreateWorkoutInstanceInput,
   CreateSetInstanceInput,
   UpdateWorkoutInstanceInput,
@@ -681,4 +684,150 @@ export function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// ============================================================================
+// PROGRAM WORKOUTS (Workout Templates - Add Workout Wizard)
+// ============================================================================
+
+/**
+ * Fetch all exercises (non-movements) for workout wizard
+ * Only returns exercises where is_movement = false (training exercises, not CrossFit movements)
+ */
+export async function fetchExercises(): Promise<Exercise[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('is_movement', false)
+    .order('name');
+
+  if (error) {
+    console.error('Error fetching exercises:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Search exercises by name (non-movements only)
+ */
+export async function searchExercises(query: string): Promise<Exercise[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('*')
+    .eq('is_movement', false)
+    .ilike('name', `%${query}%`)
+    .order('name')
+    .limit(30);
+
+  if (error) {
+    console.error('Error searching exercises:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Create a program workout with exercises
+ * Called from the Add Workout wizard to save a new workout template
+ */
+export async function createProgramWorkout(
+  input: CreateProgramWorkoutInput
+): Promise<ProgramWorkout | null> {
+  try {
+    // Step 1: Create the workout record
+    const { data: workout, error: workoutError } = await supabase
+      .from('program_workouts')
+      .insert({
+        program_id: input.program_id,
+        week_number: input.week_number,
+        day_number: input.day_number,
+        name: input.name,
+        workout_type: input.workout_type,
+        estimated_duration_minutes: input.estimated_duration_minutes,
+        warmup_instructions: input.warmup_instructions,
+        cooldown_instructions: input.cooldown_instructions,
+        notes: input.notes,
+      })
+      .select()
+      .single();
+
+    if (workoutError || !workout) {
+      console.error('Error creating workout:', workoutError);
+      return null;
+    }
+
+    // Step 2: Create exercise records if any
+    if (input.exercises.length > 0) {
+      const exerciseRecords = input.exercises.map((ex, index) => ({
+        program_workout_id: workout.id,
+        exercise_id: ex.exercise_id,
+        section: ex.section,
+        exercise_order: index + 1,
+        target_sets: ex.target_sets || null,
+        target_reps_min: ex.target_reps || null,
+        target_reps_max: ex.target_reps || null,
+        target_time_seconds: ex.target_time_seconds || null,
+        is_per_side: ex.is_per_side,
+        load_type: ex.load_type,
+        target_rpe_min: ex.load_rpe || null,
+        target_rpe_max: ex.load_rpe || null,
+        load_percentage_1rm: ex.load_percentage_1rm || null,
+        load_weight_lbs: ex.load_weight_lbs || null,
+        load_notes: ex.load_notes || null,
+        rest_seconds: ex.rest_seconds || null,
+        estimated_duration_minutes: ex.estimated_duration_minutes || null,
+        video_url: ex.video_url || null,
+        exercise_notes: ex.exercise_notes || null,
+        tempo: ex.tempo || null,
+      }));
+
+      const { error: exerciseError } = await supabase
+        .from('program_workout_exercises')
+        .insert(exerciseRecords);
+
+      if (exerciseError) {
+        console.error('Error creating exercises:', exerciseError);
+        // Rollback: delete the workout if exercise creation fails
+        await supabase.from('program_workouts').delete().eq('id', workout.id);
+        return null;
+      }
+    }
+
+    return workout;
+  } catch (error) {
+    console.error('Error in createProgramWorkout:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch workouts for a specific week of a program
+ * Used in ScheduleTab to display workouts for the selected week
+ */
+export async function fetchWorkoutsForWeek(
+  programId: string,
+  weekNumber: number
+): Promise<ProgramWorkoutWithRelations[]> {
+  const { data, error } = await supabase
+    .from('program_workouts')
+    .select(`
+      *,
+      exercises:program_workout_exercises(
+        *,
+        exercise:exercises(*)
+      )
+    `)
+    .eq('program_id', programId)
+    .eq('week_number', weekNumber)
+    .order('day_number');
+
+  if (error) {
+    console.error('Error fetching workouts for week:', error);
+    throw error;
+  }
+
+  return data || [];
 }

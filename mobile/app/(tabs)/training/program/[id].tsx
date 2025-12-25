@@ -84,7 +84,7 @@ export default function ProgramDetail() {
       case "overview":
         return <OverviewTab program={program} />;
       case "schedule":
-        return <ScheduleTab programId={programId} durationWeeks={program.duration_weeks} />;
+        return <ScheduleTab programId={programId} durationWeeks={program.duration_weeks} daysPerWeek={program.days_per_week} />;
       case "media":
         return <MediaTab programId={programId} />;
       case "history":
