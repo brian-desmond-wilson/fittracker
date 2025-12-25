@@ -1,28 +1,31 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { Dumbbell, Calendar } from "lucide-react-native";
+import { Dumbbell, Calendar, Plus } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 
 interface ScheduleTabProps {
   programId: string;
+  durationWeeks: number;
 }
 
-// Mock workout data
-const MOCK_WORKOUTS = [
-  { id: "1", day: 1, name: "Leg Strength", type: "Strength" },
-  { id: "2", day: 2, name: "Push Hypertrophy", type: "Hypertrophy" },
-  { id: "3", day: 3, name: "Pull Strength", type: "Strength" },
-  { id: "4", day: 4, name: "Leg Hypertrophy", type: "Hypertrophy" },
-  { id: "5", day: 5, name: "Push Strength", type: "Strength" },
-  { id: "6", day: 6, name: "Pull Hypertrophy", type: "Hypertrophy" },
-  { id: "7", day: 7, name: "Rest Day", type: "Rest" },
-  { id: "8", day: 8, name: "Full Body Power", type: "Power" },
-];
+interface Workout {
+  id: string;
+  day: number;
+  name: string;
+  type: string;
+}
 
-export default function ScheduleTab({ programId }: ScheduleTabProps) {
+// TODO: Fetch workouts from database based on programId and selectedWeek
+// For now, workouts will be empty until we implement workout creation
+
+export default function ScheduleTab({ programId, durationWeeks }: ScheduleTabProps) {
   const [selectedWeek, setSelectedWeek] = useState(1);
+  const [workouts, setWorkouts] = useState<Workout[]>([]);
 
-  const weeks = Array.from({ length: 14 }, (_, i) => i + 1);
+  const weeks = Array.from({ length: durationWeeks }, (_, i) => i + 1);
+
+  // TODO: Fetch workouts for selected week from database
+  // useEffect(() => { fetchWorkoutsForWeek(programId, selectedWeek) }, [programId, selectedWeek]);
 
   const getWorkoutTypeColor = (type: string) => {
     switch (type) {
@@ -75,30 +78,43 @@ export default function ScheduleTab({ programId }: ScheduleTabProps) {
           <Text style={styles.weekTitle}>Week {selectedWeek} Schedule</Text>
         </View>
 
-        {MOCK_WORKOUTS.map((workout) => (
-          <TouchableOpacity key={workout.id} style={styles.workoutCard} activeOpacity={0.7}>
-            <View style={styles.dayBadge}>
-              <Text style={styles.dayText}>Day {workout.day}</Text>
-            </View>
+        {workouts.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateTitle}>No workouts scheduled</Text>
+            <Text style={styles.emptyStateText}>
+              Add workouts to this week to get started!
+            </Text>
+            <TouchableOpacity style={styles.addButton} activeOpacity={0.8}>
+              <Plus size={20} color={colors.primaryForeground} />
+              <Text style={styles.addButtonText}>Add Workout</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          workouts.map((workout) => (
+            <TouchableOpacity key={workout.id} style={styles.workoutCard} activeOpacity={0.7}>
+              <View style={styles.dayBadge}>
+                <Text style={styles.dayText}>Day {workout.day}</Text>
+              </View>
 
-            <View style={styles.workoutInfo}>
-              <View style={styles.workoutHeader}>
-                <Dumbbell size={18} color={getWorkoutTypeColor(workout.type)} />
-                <Text style={styles.workoutName}>{workout.name}</Text>
+              <View style={styles.workoutInfo}>
+                <View style={styles.workoutHeader}>
+                  <Dumbbell size={18} color={getWorkoutTypeColor(workout.type)} />
+                  <Text style={styles.workoutName}>{workout.name}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    { backgroundColor: `${getWorkoutTypeColor(workout.type)}20` },
+                  ]}
+                >
+                  <Text style={[styles.typeText, { color: getWorkoutTypeColor(workout.type) }]}>
+                    {workout.type}
+                  </Text>
+                </View>
               </View>
-              <View
-                style={[
-                  styles.typeBadge,
-                  { backgroundColor: `${getWorkoutTypeColor(workout.type)}20` },
-                ]}
-              >
-                <Text style={[styles.typeText, { color: getWorkoutTypeColor(workout.type) }]}>
-                  {workout.type}
-                </Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+            </TouchableOpacity>
+          ))
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -205,5 +221,36 @@ const styles = StyleSheet.create({
   typeText: {
     fontSize: 12,
     fontWeight: "600",
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.foreground,
+    marginBottom: 8,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primaryForeground,
   },
 });
