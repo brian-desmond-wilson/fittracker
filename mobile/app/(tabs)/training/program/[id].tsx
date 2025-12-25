@@ -9,13 +9,16 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, Calendar, Clock, BarChart3, TrendingUp, User } from "lucide-react-native";
+import { ChevronLeft, Calendar, Clock, BarChart3, TrendingUp, User, Pencil } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { supabase } from "@/src/lib/supabase";
 import { fetchProgramById } from "@/src/lib/supabase/training";
 import type { ProgramTemplateWithRelations } from "@/src/types/training";
+import { EditProgramModal } from "@/src/components/training/EditProgramModal";
 import OverviewTab from "@/src/components/training/program-detail/OverviewTab";
 import ScheduleTab from "@/src/components/training/program-detail/ScheduleTab";
 import MediaTab from "@/src/components/training/program-detail/MediaTab";
@@ -32,12 +35,20 @@ export default function ProgramDetail() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const programId = params.id as string;
 
   useEffect(() => {
     loadProgram();
+    loadCurrentUser();
   }, [programId]);
+
+  async function loadCurrentUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    setCurrentUserId(user?.id || null);
+  }
 
   async function loadProgram() {
     try {
@@ -128,6 +139,14 @@ export default function ProgramDetail() {
             <ChevronLeft size={24} color={colors.foreground} />
             <Text style={styles.headerText}>Training</Text>
           </TouchableOpacity>
+          {currentUserId === program.creator_id && (
+            <TouchableOpacity
+              onPress={() => setEditModalVisible(true)}
+              style={styles.editButton}
+            >
+              <Pencil size={20} color={colors.foreground} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Scrollable Content */}
@@ -204,6 +223,25 @@ export default function ProgramDetail() {
           {/* Tab Content */}
           {renderTabContent()}
         </ScrollView>
+
+        {/* Edit Program Modal */}
+        {program && (
+          <Modal
+            visible={editModalVisible}
+            animationType="slide"
+            presentationStyle="fullScreen"
+            onRequestClose={() => setEditModalVisible(false)}
+          >
+            <EditProgramModal
+              program={program}
+              onClose={() => setEditModalVisible(false)}
+              onSave={() => {
+                setEditModalVisible(false);
+                loadProgram();
+              }}
+            />
+          </Modal>
+        )}
       </View>
     </>
   );
@@ -215,6 +253,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -230,6 +271,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: colors.foreground,
     fontWeight: "500",
+  },
+  editButton: {
+    padding: 8,
   },
   scrollView: {
     flex: 1,

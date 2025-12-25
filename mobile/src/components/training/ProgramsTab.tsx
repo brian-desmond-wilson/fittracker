@@ -9,13 +9,14 @@ import {
   ActivityIndicator,
   Modal,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { TrendingUp, BarChart3, Clock, User, Plus } from "lucide-react-native";
 import { AddProgramModal } from "./AddProgramModal";
 import { colors } from "@/src/lib/colors";
 import { useRouter } from "expo-router";
-import { fetchPublishedPrograms, fetchUserProgramInstances } from "@/src/lib/supabase/training";
+import { fetchPublishedPrograms, fetchUserProgramInstances, deleteProgramTemplate } from "@/src/lib/supabase/training";
 import { supabase } from "@/src/lib/supabase";
 import type { ProgramTemplateWithRelations, ProgramInstanceWithRelations } from "@/src/types/training";
 
@@ -23,6 +24,7 @@ interface ProgramDisplayData {
   id: string;
   title: string;
   creator: string;
+  creatorId: string | null;
   durationWeeks: number;
   daysPerWeek: number;
   minutesPerSession: number;
@@ -35,9 +37,10 @@ interface ProgramDisplayData {
 interface ProgramCardProps {
   program: ProgramDisplayData;
   onPress: () => void;
+  onLongPress?: () => void;
 }
 
-function ProgramCard({ program, onPress }: ProgramCardProps) {
+function ProgramCard({ program, onPress, onLongPress }: ProgramCardProps) {
   const getDifficultyColor = (level: string) => {
     switch (level) {
       case "Beginner":
@@ -52,7 +55,13 @@ function ProgramCard({ program, onPress }: ProgramCardProps) {
   };
 
   return (
-    <TouchableOpacity style={styles.programCard} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.programCard}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={500}
+      activeOpacity={0.7}
+    >
       {/* Cover Image */}
       <View style={styles.imageContainer}>
         <Image source={{ uri: program.coverImageUrl }} style={styles.coverImage} />
@@ -112,6 +121,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPrograms();
@@ -132,6 +142,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
 
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUserId(user?.id || null);
 
       // Fetch all published programs
       const publishedPrograms = await fetchPublishedPrograms();
@@ -154,6 +165,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
         id: program.id,
         title: program.title,
         creator: program.creator_name,
+        creatorId: program.creator_id,
         durationWeeks: program.duration_weeks,
         daysPerWeek: program.days_per_week,
         minutesPerSession: program.minutes_per_session,
@@ -182,6 +194,33 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
 
   const myPrograms = filteredPrograms.filter((p) => p.isActive);
   const discoverPrograms = filteredPrograms.filter((p) => !p.isActive);
+
+  const handleLongPress = (program: ProgramDisplayData) => {
+    // Only show delete option if user is the creator
+    if (!currentUserId || program.creatorId !== currentUserId) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete Program',
+      `Are you sure you want to delete "${program.title}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await deleteProgramTemplate(program.id, currentUserId);
+            if (success) {
+              loadPrograms(true);
+            } else {
+              Alert.alert('Error', 'Failed to delete program');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Show loading state
   if (loading) {
@@ -231,6 +270,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
                 key={program.id}
                 program={program}
                 onPress={() => router.push(`/(tabs)/training/program/${program.id}`)}
+                onLongPress={() => handleLongPress(program)}
               />
             ))}
           </View>
@@ -245,6 +285,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
                 key={program.id}
                 program={program}
                 onPress={() => router.push(`/(tabs)/training/program/${program.id}`)}
+                onLongPress={() => handleLongPress(program)}
               />
             ))}
           </View>

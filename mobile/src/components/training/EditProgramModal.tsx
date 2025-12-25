@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -19,15 +19,16 @@ import { ChevronLeft, Camera, X, ChevronDown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
-import { createProgramTemplate, uploadProgramCoverImage } from '@/src/lib/supabase/training';
-import type { CreateProgramTemplateInput, DifficultyLevel, PrimaryGoal } from '@/src/types/training';
+import { updateProgramTemplate, uploadProgramCoverImage } from '@/src/lib/supabase/training';
+import type { ProgramTemplateWithRelations, DifficultyLevel, PrimaryGoal } from '@/src/types/training';
 
 const DIFFICULTY_LEVELS: DifficultyLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
 const PRIMARY_GOALS: PrimaryGoal[] = ['Strength', 'Hypertrophy', 'Power', 'Endurance', 'Hybrid'];
 
-interface AddProgramModalProps {
+interface EditProgramModalProps {
+  program: ProgramTemplateWithRelations;
   onClose: () => void;
-  onSave: (programId: string) => void;
+  onSave: () => void;
 }
 
 interface FormData {
@@ -35,6 +36,7 @@ interface FormData {
   subtitle: string;
   description: string;
   coverImageUri: string | null;
+  existingCoverUrl: string | null;
   durationWeeks: string;
   daysPerWeek: string;
   minutesPerSession: string;
@@ -43,36 +45,22 @@ interface FormData {
   author: string;
 }
 
-export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
+export function EditProgramModal({ program, onClose, onSave }: EditProgramModalProps) {
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<FormData>({
-    title: '',
-    subtitle: '',
-    description: '',
+    title: program.title,
+    subtitle: program.subtitle || '',
+    description: program.description || '',
     coverImageUri: null,
-    durationWeeks: '8',
-    daysPerWeek: '4',
-    minutesPerSession: '60',
-    difficultyLevel: 'Intermediate',
-    primaryGoal: 'Hybrid',
-    author: '',
+    existingCoverUrl: program.cover_image_url,
+    durationWeeks: program.duration_weeks.toString(),
+    daysPerWeek: program.days_per_week.toString(),
+    minutesPerSession: program.minutes_per_session.toString(),
+    difficultyLevel: program.difficulty_level as DifficultyLevel,
+    primaryGoal: program.primary_goal as PrimaryGoal,
+    author: program.creator_name,
   });
-
-  // Load user's name on mount
-  useEffect(() => {
-    const loadUserName = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const userName = user.user_metadata?.full_name ||
-                         user.user_metadata?.name ||
-                         user.email?.split('@')[0] ||
-                         '';
-        setFormData(prev => ({ ...prev, author: userName }));
-      }
-    };
-    loadUserName();
-  }, []);
 
   const updateField = (field: keyof FormData, value: string | null) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -174,7 +162,6 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
         }
       );
     } else {
-      // Android fallback
       Alert.alert('Select Image', 'Choose an option', [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -249,63 +236,71 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
-        Alert.alert('Error', 'You must be logged in to create a program');
+        Alert.alert('Error', 'You must be logged in to edit a program');
         return;
       }
 
-      // Upload cover image if provided
-      let coverImageUrl: string | null = null;
+      // Upload new cover image if provided
+      let coverImageUrl: string | undefined = undefined;
       if (formData.coverImageUri) {
-        coverImageUrl = await uploadProgramCoverImage(formData.coverImageUri, user.id);
-        if (!coverImageUrl) {
-          Alert.alert('Warning', 'Failed to upload cover image. Program will be created without it.');
+        const uploadedUrl = await uploadProgramCoverImage(formData.coverImageUri, user.id);
+        if (uploadedUrl) {
+          coverImageUrl = uploadedUrl;
+        } else {
+          Alert.alert('Warning', 'Failed to upload new cover image. Keeping existing image.');
         }
       }
 
-      // Create program
-      const input: CreateProgramTemplateInput = {
+      // Build updates object
+      const updates: Record<string, any> = {
         title: formData.title.trim(),
-        subtitle: formData.subtitle.trim() || undefined,
-        description: formData.description.trim() || undefined,
+        subtitle: formData.subtitle.trim() || null,
+        description: formData.description.trim() || null,
         duration_weeks: parseInt(formData.durationWeeks, 10),
         days_per_week: parseInt(formData.daysPerWeek, 10),
         minutes_per_session: parseInt(formData.minutesPerSession, 10),
-        cover_image_url: coverImageUrl || undefined,
         difficulty_level: formData.difficultyLevel,
         primary_goal: formData.primaryGoal,
+        creator_name: formData.author.trim(),
       };
 
-      const program = await createProgramTemplate(input, user.id, formData.author.trim());
+      // Only include cover_image_url if we uploaded a new one
+      if (coverImageUrl) {
+        updates.cover_image_url = coverImageUrl;
+      }
 
-      if (program) {
-        Alert.alert(
-          'Success',
-          'Program created successfully! You can now add workouts and exercises.',
-          [
-            {
-              text: 'OK',
-              onPress: () => onSave(program.id),
-            },
-          ]
-        );
+      const updatedProgram = await updateProgramTemplate(program.id, updates, user.id);
+
+      if (updatedProgram) {
+        onSave();
       } else {
-        Alert.alert('Error', 'Failed to create program. Please try again.');
+        Alert.alert('Error', 'Failed to update program. Please try again.');
       }
     } catch (error) {
-      console.error('Error creating program:', error);
+      console.error('Error updating program:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleClose = () => {
-    const hasChanges = formData.title.trim() ||
-                       formData.subtitle.trim() ||
-                       formData.description.trim() ||
-                       formData.coverImageUri;
+  const hasChanges = () => {
+    return (
+      formData.title !== program.title ||
+      formData.subtitle !== (program.subtitle || '') ||
+      formData.description !== (program.description || '') ||
+      formData.coverImageUri !== null ||
+      formData.durationWeeks !== program.duration_weeks.toString() ||
+      formData.daysPerWeek !== program.days_per_week.toString() ||
+      formData.minutesPerSession !== program.minutes_per_session.toString() ||
+      formData.difficultyLevel !== program.difficulty_level ||
+      formData.primaryGoal !== program.primary_goal ||
+      formData.author !== program.creator_name
+    );
+  };
 
-    if (hasChanges) {
+  const handleClose = () => {
+    if (hasChanges()) {
       Alert.alert(
         'Discard Changes?',
         'You have unsaved changes. Are you sure you want to discard them?',
@@ -318,6 +313,9 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
       onClose();
     }
   };
+
+  // Get the image to display (new image takes priority over existing)
+  const displayImageUri = formData.coverImageUri || formData.existingCoverUrl;
 
   return (
     <>
@@ -332,7 +330,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Program</Text>
+          <Text style={styles.headerTitle}>Edit Program</Text>
           <View style={styles.headerRight} />
         </View>
 
@@ -350,15 +348,18 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
               onPress={pickImage}
               activeOpacity={0.7}
             >
-              {formData.coverImageUri ? (
+              {displayImageUri ? (
                 <View style={styles.selectedImageContainer}>
                   <Image
-                    source={{ uri: formData.coverImageUri }}
+                    source={{ uri: displayImageUri }}
                     style={styles.selectedImage}
                   />
                   <TouchableOpacity
                     style={styles.removeImageButton}
-                    onPress={() => updateField('coverImageUri', null)}
+                    onPress={() => {
+                      updateField('coverImageUri', null);
+                      updateField('existingCoverUrl', null);
+                    }}
                   >
                     <X size={16} color="#FFFFFF" />
                   </TouchableOpacity>
@@ -497,13 +498,6 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
               />
             </View>
           </View>
-
-          {/* Info Note */}
-          <View style={styles.infoNote}>
-            <Text style={styles.infoNoteText}>
-              You can add workouts, exercises, goals, and tags after creating the program.
-            </Text>
-          </View>
         </ScrollView>
 
         {/* Footer with Save Button */}
@@ -517,10 +511,10 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
             {saving ? (
               <View style={styles.savingContainer}>
                 <ActivityIndicator color="#FFFFFF" size="small" />
-                <Text style={styles.savingText}>Creating Program...</Text>
+                <Text style={styles.savingText}>Saving Changes...</Text>
               </View>
             ) : (
-              <Text style={styles.saveButtonText}>Create Program</Text>
+              <Text style={styles.saveButtonText}>Save Changes</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -651,18 +645,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
     color: colors.mutedForeground,
-  },
-  infoNote: {
-    backgroundColor: colors.secondary,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-  },
-  infoNoteText: {
-    fontSize: 13,
-    color: colors.mutedForeground,
-    lineHeight: 18,
-    textAlign: 'center',
   },
   footer: {
     padding: 20,

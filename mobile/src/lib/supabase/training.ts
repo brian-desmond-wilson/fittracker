@@ -200,6 +200,108 @@ export async function createProgramTemplate(
 }
 
 /**
+ * Delete a program template
+ * Only the creator can delete their own programs
+ */
+export async function deleteProgramTemplate(programId: string, userId: string): Promise<boolean> {
+  try {
+    // First verify the user is the creator
+    const { data: program, error: fetchError } = await supabase
+      .from('program_templates')
+      .select('creator_id')
+      .eq('id', programId)
+      .single();
+
+    if (fetchError || !program) {
+      console.error('Error fetching program:', fetchError);
+      return false;
+    }
+
+    if (program.creator_id !== userId) {
+      console.error('User is not the creator of this program');
+      return false;
+    }
+
+    // Delete the program
+    const { error: deleteError } = await supabase
+      .from('program_templates')
+      .delete()
+      .eq('id', programId);
+
+    if (deleteError) {
+      console.error('Error deleting program:', deleteError);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error in deleteProgramTemplate:', error);
+    return false;
+  }
+}
+
+/**
+ * Update an existing program template
+ * Only the creator can update their own programs
+ */
+export async function updateProgramTemplate(
+  programId: string,
+  updates: {
+    title?: string;
+    subtitle?: string;
+    description?: string;
+    duration_weeks?: number;
+    days_per_week?: number;
+    minutes_per_session?: number;
+    cover_image_url?: string;
+    difficulty_level?: string;
+    primary_goal?: string;
+    creator_name?: string;
+  },
+  userId: string
+): Promise<ProgramTemplate | null> {
+  try {
+    // First verify the user is the creator
+    const { data: program, error: fetchError } = await supabase
+      .from('program_templates')
+      .select('creator_id')
+      .eq('id', programId)
+      .single();
+
+    if (fetchError || !program) {
+      console.error('Error fetching program:', fetchError);
+      return null;
+    }
+
+    if (program.creator_id !== userId) {
+      console.error('User is not the creator of this program');
+      return null;
+    }
+
+    // Update the program
+    const { data, error: updateError } = await supabase
+      .from('program_templates')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', programId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Error updating program:', updateError);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in updateProgramTemplate:', error);
+    return null;
+  }
+}
+
+/**
  * Upload program cover image to Supabase Storage
  * Returns the public URL of the uploaded image
  */
