@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Modal,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/src/lib/supabase";
 import { Flame, Timer, Droplet, Menu, User } from "lucide-react-native";
 import GoingToBedButton from "@/src/components/sleep/GoingToBedButton";
@@ -29,10 +31,20 @@ export default function Home() {
   const [morningRoutineWizardVisible, setMorningRoutineWizardVisible] = useState(false);
   const [routineBannerKey, setRoutineBannerKey] = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [todayCalories, setTodayCalories] = useState(0);
+  const [calorieGoal, setCalorieGoal] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadUserData();
   }, []);
+
+  // Refresh calories when the Home screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadTodayCalories();
+    }, [])
+  );
 
   async function loadUserData() {
     try {
@@ -41,7 +53,7 @@ export default function Home() {
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("full_name")
+          .select("full_name, target_calories")
           .eq("id", user.id)
           .single();
 
@@ -49,6 +61,10 @@ export default function Home() {
           setUserName(profile.full_name);
         } else {
           setUserName("User");
+        }
+
+        if (profile?.target_calories) {
+          setCalorieGoal(profile.target_calories);
         }
       }
     } catch (error) {
@@ -58,6 +74,48 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  async function loadTodayCalories() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Use local date, not UTC
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+      const { data: meals, error } = await supabase
+        .from("meal_logs")
+        .select("calories")
+        .eq("user_id", user.id)
+        .eq("date", today);
+
+      if (error) throw error;
+
+      const totalCalories = (meals || []).reduce(
+        (sum, meal) => sum + (meal.calories || 0),
+        0
+      );
+      setTodayCalories(totalCalories);
+    } catch (error) {
+      console.error("Error loading today's calories:", error);
+    }
+  }
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadUserData(),
+        loadTodayCalories(),
+      ]);
+      // Refresh child components
+      setRefreshKey((prev) => prev + 1);
+      setRoutineBannerKey((prev) => prev + 1);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const handleWakeUp = (sleepSessionId: string) => {
     setCurrentSleepSessionId(sleepSessionId);
@@ -105,6 +163,14 @@ export default function Home() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#22C55E"
+            colors={["#22C55E"]}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -160,8 +226,10 @@ export default function Home() {
                 <Flame size={20} color="#F97316" strokeWidth={2} />
               </View>
             </View>
-            <Text style={styles.cardValue}>0</Text>
-            <Text style={styles.cardSubtext}>No goal set</Text>
+            <Text style={styles.cardValue}>{todayCalories.toLocaleString()}</Text>
+            <Text style={styles.cardSubtext}>
+              {calorieGoal ? `of ${calorieGoal.toLocaleString()} goal` : "No goal set"}
+            </Text>
           </View>
 
           {/* Water Intake Card */}

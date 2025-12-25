@@ -29,6 +29,14 @@ const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
   { value: "dessert", label: "Dessert", color: "#EC4899" },
 ];
 
+// Helper to get local date in YYYY-MM-DD format (not UTC)
+const getLocalDateString = (date: Date = new Date()): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 export function MealsScreen({ onClose }: MealsScreenProps) {
   const insets = useSafeAreaInsets();
   const [meals, setMeals] = useState<MealLog[]>([]);
@@ -46,7 +54,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [fats, setFats] = useState("");
   const [sugars, setSugars] = useState("");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalDateString();
 
   useEffect(() => {
     fetchMeals();
@@ -117,7 +125,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       const mealData = {
         user_id: user.id,
-        date: selectedDate.toISOString().split("T")[0],
+        date: getLocalDateString(selectedDate),
         meal_type: mealType,
         name: mealName.trim(),
         calories: calories ? parseInt(calories) : null,
@@ -173,8 +181,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     yesterday.setDate(yesterday.getDate() - 1);
 
     const dateOnly = dateStr.split("T")[0];
-    const todayOnly = today.toISOString().split("T")[0];
-    const yesterdayOnly = yesterday.toISOString().split("T")[0];
+    const todayOnly = getLocalDateString(today);
+    const yesterdayOnly = getLocalDateString(yesterday);
 
     if (dateOnly === todayOnly) {
       return "Today";
