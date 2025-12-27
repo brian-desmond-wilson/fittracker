@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
-import { createExercise, fetchEquipment } from '@/src/lib/supabase/crossfit';
+import { fetchEquipment } from '@/src/lib/supabase/crossfit';
 import type { CreateMovementInput, Equipment } from '@/src/types/crossfit';
 
 // Step components (reused from Movement wizard)
@@ -64,8 +64,8 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [formData, setFormData] = useState<MovementFormData>({
-    // Exercises are always non-core (is_core: false)
-    is_core: false,
+    // Default to Core (user can switch to Variation)
+    is_core: true,
     parent_exercise_id: null,
     parent_movement_name: '',
     name: '',
@@ -127,6 +127,17 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
     return true;
   };
 
+  // Check if all required data is present for saving
+  const canSave = () => {
+    // Step 1 required: name
+    if (!formData.name.trim()) return false;
+    // Step 2 required: modality, family, goal type
+    if (formData.modality_id === null) return false;
+    if (formData.movement_family_id === null) return false;
+    if (formData.goal_type_ids.length === 0) return false;
+    return true;
+  };
+
   const handleNext = () => {
     if (currentStep < STEPS.length) {
       setCurrentStep(currentStep + 1);
@@ -154,32 +165,18 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
         return;
       }
 
-      // CRITICAL FIX: Ensure equipment is loaded before mapping
-      // Fetch fresh equipment data if needed
+      // Ensure equipment is loaded before mapping
       let equipmentData = equipment;
       if (formData.equipment_ids.length > 0 && equipment.length === 0) {
-        console.log('Equipment not loaded, fetching now...');
         equipmentData = await fetchEquipment();
       }
 
       // Map equipment_ids to equipment names
       const equipmentTypes = formData.equipment_ids.length > 0
         ? formData.equipment_ids
-            .map(id => {
-              const found = equipmentData.find(eq => eq.id === id);
-              if (!found) {
-                console.warn(`Equipment with ID ${id} not found in equipment list`);
-              }
-              return found?.name;
-            })
+            .map(id => equipmentData.find(eq => eq.id === id)?.name)
             .filter((name): name is string => name !== undefined)
         : undefined;
-
-      // Debug logging
-      if (formData.equipment_ids.length > 0) {
-        console.log('Equipment IDs:', formData.equipment_ids);
-        console.log('Mapped Equipment Types:', equipmentTypes);
-      }
 
       // Map form data to API input
       const input: CreateMovementInput = {
@@ -188,8 +185,8 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
         goal_type_ids: formData.goal_type_ids,
         movement_category_id: formData.modality_id!,
 
-        // Exercise Hierarchy - always non-core for exercises
-        is_core: false,
+        // Exercise Hierarchy - respects user selection (Core or Variation)
+        is_core: formData.is_core,
         parent_exercise_id: formData.parent_exercise_id || undefined,
 
         // Core metadata
@@ -213,7 +210,7 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
         video_url: formData.video_url || undefined,
         image_url: formData.image_url || undefined,
 
-        // Ownership - createExercise will set is_movement: false
+        // Ownership
         is_movement: false,
         is_official: false,
         created_by: user.id,
@@ -225,7 +222,73 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
         primary_muscle_region_ids: formData.primary_muscle_region_ids.length > 0 ? formData.primary_muscle_region_ids : undefined,
       };
 
-      await createExercise(input);
+      // Direct insert to bypass crossfit.ts bundler caching issue
+      const slug = input.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+      const exerciseData: any = {
+        name: input.name,
+        description: input.description,
+        slug,
+        goal_type_id: input.goal_type_ids?.[0] || null,
+        movement_category_id: input.movement_category_id,
+        is_core: input.is_core || false,
+        is_movement: false,
+        is_official: false,
+        created_by: user.id,
+      };
+
+      // Add optional fields only if provided
+      if (input.parent_exercise_id) exerciseData.parent_exercise_id = input.parent_exercise_id;
+      if (input.movement_family_id) exerciseData.movement_family_id = input.movement_family_id;
+      if (input.plane_of_motion_ids?.[0]) exerciseData.plane_of_motion_id = input.plane_of_motion_ids[0];
+      if (input.skill_level) exerciseData.skill_level = input.skill_level;
+      if (input.short_name) exerciseData.short_name = input.short_name;
+      if (input.aliases?.length) exerciseData.aliases = input.aliases;
+      if (input.load_position_ids?.[0]) exerciseData.load_position_id = input.load_position_ids[0];
+      if (input.stance_ids?.[0]) exerciseData.stance_id = input.stance_ids[0];
+      if (input.range_depth_id) exerciseData.range_depth_id = input.range_depth_id;
+      if (input.symmetry_id) exerciseData.symmetry_id = input.symmetry_id;
+      if (input.equipment_types?.length) exerciseData.equipment_types = input.equipment_types;
+      if (input.video_url) exerciseData.video_url = input.video_url;
+      if (input.image_url) exerciseData.image_url = input.image_url;
+
+      const { data: exercise, error: exerciseError } = await supabase
+        .from('exercises')
+        .insert(exerciseData)
+        .select('id')
+        .single();
+
+      if (exerciseError) {
+        console.error('Error creating exercise:', exerciseError);
+        throw exerciseError;
+      }
+
+      // Insert goal types if any
+      if (input.goal_type_ids && input.goal_type_ids.length > 0) {
+        const goalTypeInserts = input.goal_type_ids.map(goalTypeId => ({
+          exercise_id: exercise.id,
+          goal_type_id: goalTypeId,
+        }));
+        await supabase.from('exercise_goal_types').insert(goalTypeInserts);
+      }
+
+      // Insert planes of motion if any
+      if (input.plane_of_motion_ids && input.plane_of_motion_ids.length > 0) {
+        const planeInserts = input.plane_of_motion_ids.map(planeId => ({
+          exercise_id: exercise.id,
+          plane_of_motion_id: planeId,
+        }));
+        await supabase.from('exercise_planes_of_motion').insert(planeInserts);
+      }
+
+      // Insert scoring types if any
+      if (input.scoring_type_ids && input.scoring_type_ids.length > 0) {
+        const scoringInserts = input.scoring_type_ids.map(scoringId => ({
+          exercise_id: exercise.id,
+          scoring_type_id: scoringId,
+        }));
+        await supabase.from('exercise_scoring_types').insert(scoringInserts);
+      }
 
       Alert.alert('Success', 'Exercise created successfully!', [
         {
@@ -245,8 +308,7 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        // Hide the Movement Type toggle for exercises (always non-core)
-        return <Step1Core formData={formData} updateFormData={updateFormData} hideMovementTypeToggle={true} />;
+        return <Step1Core formData={formData} updateFormData={updateFormData} entityType="exercise" />;
       case 2:
         return <Step2Classification formData={formData} updateFormData={updateFormData} />;
       case 3:
@@ -322,8 +384,8 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
             {isLastStep ? (
               <TouchableOpacity
                 onPress={handleSave}
-                style={[styles.primaryButton, !canProceed() && styles.primaryButtonDisabled]}
-                disabled={!canProceed()}
+                style={[styles.primaryButton, !canSave() && styles.primaryButtonDisabled]}
+                disabled={!canSave()}
               >
                 <Text style={styles.primaryButtonText}>Save Exercise</Text>
               </TouchableOpacity>

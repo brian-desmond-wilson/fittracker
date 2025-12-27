@@ -1100,11 +1100,13 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       ...(input.video_url && { video_url: input.video_url }),
       ...(input.image_url && { image_url: input.image_url }),
 
-      // Ownership
-      is_movement: true,
+      // Ownership - respect input.is_movement if provided, default to true
+      is_movement: input.is_movement !== undefined ? input.is_movement : true,
       is_official: false,
       created_by: input.created_by,
     };
+
+    console.log('DEBUG createMovement - About to insert:', JSON.stringify(exerciseData, null, 2));
 
     const { data: exercise, error: exerciseError } = await supabase
       .from('exercises')

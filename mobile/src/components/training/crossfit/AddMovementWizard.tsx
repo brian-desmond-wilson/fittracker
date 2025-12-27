@@ -128,6 +128,18 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
     return true;
   };
 
+  // Check if all required data is present for saving
+  const canSave = () => {
+    // Step 1 required: name, and parent if variation
+    if (!formData.name.trim()) return false;
+    if (!formData.is_core && !formData.parent_exercise_id) return false;
+    // Step 2 required: modality, family, goal type
+    if (formData.modality_id === null) return false;
+    if (formData.movement_family_id === null) return false;
+    if (formData.goal_type_ids.length === 0) return false;
+    return true;
+  };
+
   const handleNext = () => {
     if (currentStep < STEPS.length) {
       setCurrentStep(currentStep + 1);
@@ -322,8 +334,8 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
             {isLastStep ? (
               <TouchableOpacity
                 onPress={handleSave}
-                style={[styles.primaryButton, !canProceed() && styles.primaryButtonDisabled]}
-                disabled={!canProceed()}
+                style={[styles.primaryButton, !canSave() && styles.primaryButtonDisabled]}
+                disabled={!canSave()}
               >
                 <Text style={styles.primaryButtonText}>Save Movement</Text>
               </TouchableOpacity>

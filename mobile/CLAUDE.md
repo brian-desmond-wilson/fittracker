@@ -6,6 +6,7 @@ This document contains important patterns, conventions, and lessons learned duri
 - [Safe Area Handling](#safe-area-handling)
 - [Modal Navigation Pattern](#modal-navigation-pattern)
 - [Nested Stack Navigation in Tabs](#nested-stack-navigation-in-tabs)
+- [Supabase Database Troubleshooting](#supabase-database-troubleshooting)
 
 ---
 
@@ -286,6 +287,78 @@ The Training tab uses this pattern:
 
 ---
 
+## Supabase Database Troubleshooting
+
+### When Persistence Issues Occur
+
+**ALWAYS check these in order when data isn't being saved to Supabase:**
+
+1. **Review RLS (Row Level Security) Policies**
+   - Check if the table has RLS enabled
+   - Verify INSERT/UPDATE/DELETE policies allow the operation
+   - The error "relation does not exist" can be misleading - it often indicates RLS blocking access, not a missing table
+
+2. **Check Database Triggers and Functions**
+   - Triggers with `SET search_path TO ''` (empty) can cause "relation does not exist" errors
+   - Always use `SET search_path TO 'public'` or prefix table names with `public.`
+   - Example fix:
+     ```sql
+     CREATE OR REPLACE FUNCTION "public"."my_function"()
+         LANGUAGE "plpgsql"
+         SET "search_path" TO 'public'  -- NOT empty ''
+         AS $$
+     BEGIN
+       SELECT * FROM public.my_table;  -- Use public. prefix
+     END;
+     $$;
+     ```
+
+3. **Debug with Test Queries**
+   - Before INSERT, try a SELECT to verify table access
+   - Log the data being inserted to verify it's correct
+
+### Using Supabase CLI
+
+**ALWAYS use the Supabase CLI for database operations. Do NOT ask the user to manually run SQL in the dashboard.**
+
+**List migrations:**
+```bash
+npx supabase migration list
+```
+
+**Push migrations:**
+```bash
+npx supabase db push --yes
+```
+
+**Mark migrations as applied (when they were run manually before):**
+```bash
+npx supabase migration repair <version> --status applied
+```
+
+**Mark migrations as reverted:**
+```bash
+npx supabase migration repair <version> --status reverted
+```
+
+**Dump schema or check policies:**
+```bash
+npx supabase db dump --schema public 2>&1 | grep -i "policy"
+```
+
+**Check triggers on a table:**
+```bash
+npx supabase db dump --schema public 2>&1 | grep -i "trigger" | grep -i "tablename"
+```
+
+### Common Issues
+
+| Error | Likely Cause | Solution |
+|-------|--------------|----------|
+| "relation X does not exist" | RLS policy blocking access OR trigger function with empty search_path | Check RLS policies and trigger functions |
+| INSERT fails but SELECT works | RLS INSERT policy missing or incorrect | Add/fix INSERT policy |
+| "permission denied" | Missing RLS policy for operation | Add appropriate policy |
+
 ---
 
 ## Git Commit Policy
@@ -306,6 +379,12 @@ This allows the user to:
 ---
 
 ## Version History
+
+- **2025-12-27**: Added Supabase database troubleshooting guide
+  - Always review RLS policies when persistence issues occur
+  - Always use Supabase CLI for database operations (never ask user to run SQL manually)
+  - Documented common errors and solutions
+  - Added CLI command reference
 
 - **2025-10-27**: Added git commit policy
   - User controls all commits

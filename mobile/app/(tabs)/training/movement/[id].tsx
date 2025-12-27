@@ -317,6 +317,17 @@ export default function MovementDetailPage() {
           </View>
         ) : (
           <View style={styles.heroPlaceholder}>
+            {/* Movement Name & Badge (shown when no image) */}
+            <Text style={styles.heroMovementNameNoImage}>{movement.name}</Text>
+            {movement.is_core === true ? (
+              <View style={[styles.heroCoreBadge, { marginBottom: 20 }]}>
+                <Text style={styles.heroCoreBadgeText}>CORE</Text>
+              </View>
+            ) : tier > 0 ? (
+              <View style={[styles.heroTierBadge, { marginBottom: 20 }]}>
+                <Text style={styles.heroTierBadgeText}>TIER {tier}</Text>
+              </View>
+            ) : <View style={{ marginBottom: 20 }} />}
             <TouchableOpacity
               style={styles.generateButton}
               onPress={handleGenerateImage}
@@ -643,6 +654,13 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+  },
+  heroMovementNameNoImage: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   heroCoreBadge: {
     alignSelf: 'flex-start',

@@ -9,9 +9,21 @@ interface ParentMovementSearchProps {
   onSelect: (movement: ExerciseWithTier) => void;
   selectedMovement: ExerciseWithTier | null;
   onClear: () => void;
+  labelText?: string; // "Core Movement" or "Core Exercise"
+  helperText?: string;
+  placeholder?: string;
+  emptyText?: string;
 }
 
-export function ParentMovementSearch({ onSelect, selectedMovement, onClear }: ParentMovementSearchProps) {
+export function ParentMovementSearch({
+  onSelect,
+  selectedMovement,
+  onClear,
+  labelText = 'Core Movement',
+  helperText = 'Search for the parent/core movement this variation is based on',
+  placeholder = 'Search for a movement...',
+  emptyText = 'No movements found',
+}: ParentMovementSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ExerciseWithTier[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,10 +87,10 @@ export function ParentMovementSearch({ onSelect, selectedMovement, onClear }: Pa
   return (
     <View style={styles.container}>
       <Text style={styles.label}>
-        Core Movement <Text style={styles.required}>*</Text>
+        {labelText} <Text style={styles.required}>*</Text>
       </Text>
-      <Text style={styles.helperText}>
-        Search for the parent/core movement this variation is based on
+      <Text style={styles.helperTextStyle}>
+        {helperText}
       </Text>
 
       {selectedMovement ? (
@@ -116,7 +128,7 @@ export function ParentMovementSearch({ onSelect, selectedMovement, onClear }: Pa
             <Search size={20} color={colors.mutedForeground} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search for a movement..."
+              placeholder={placeholder}
               placeholderTextColor={colors.mutedForeground}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -161,7 +173,7 @@ export function ParentMovementSearch({ onSelect, selectedMovement, onClear }: Pa
 
           {showDropdown && searchResults.length === 0 && !loading && (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No movements found</Text>
+              <Text style={styles.emptyTextStyle}>{emptyText}</Text>
             </View>
           )}
         </>
@@ -182,7 +194,7 @@ const styles = StyleSheet.create({
   required: {
     color: colors.destructive,
   },
-  helperText: {
+  helperTextStyle: {
     fontSize: 14,
     color: colors.mutedForeground,
   },
@@ -269,7 +281,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: colors.card,
   },
-  emptyText: {
+  emptyTextStyle: {
     fontSize: 14,
     color: colors.mutedForeground,
   },
