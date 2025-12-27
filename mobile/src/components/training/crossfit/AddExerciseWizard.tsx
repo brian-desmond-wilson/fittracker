@@ -165,9 +165,10 @@ export function AddExerciseWizard({ onClose, onSave }: AddExerciseWizardProps) {
         return;
       }
 
-      // Ensure equipment is loaded before mapping
+      // Always fetch fresh equipment data to ensure we have the latest
+      // (Step3Attributes may have newer data than our mount-time load)
       let equipmentData = equipment;
-      if (formData.equipment_ids.length > 0 && equipment.length === 0) {
+      if (formData.equipment_ids.length > 0) {
         equipmentData = await fetchEquipment();
       }
 

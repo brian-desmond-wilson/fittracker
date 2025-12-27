@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { X, Search } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
-import { fetchExercises, searchExercises } from '@/src/lib/supabase/training';
+import { fetchAllExercises, searchAllExercises } from '@/src/lib/supabase/crossfit';
 import type { Exercise } from '@/src/types/training';
 
 interface ExerciseSearchModalProps {
@@ -44,7 +44,7 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchExercises();
+      const data = await fetchAllExercises();
       setExercises(data);
     } catch (err: any) {
       console.error('Error loading exercises:', err);
@@ -63,7 +63,7 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
     try {
       setLoading(true);
       setError(null);
-      const results = await searchExercises(searchQuery.trim());
+      const results = await searchAllExercises(searchQuery.trim());
       setExercises(results);
     } catch (err: any) {
       console.error('Error searching exercises:', err);
@@ -151,22 +151,20 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
                   onPress={() => handleSelectExercise(exercise)}
                   activeOpacity={0.7}
                 >
+                  <View style={[styles.categoryBadge, { backgroundColor: `${getCategoryColor(exercise.category)}20` }]}>
+                    <Text style={[styles.categoryText, { color: getCategoryColor(exercise.category) }]}>
+                      {exercise.category}
+                    </Text>
+                  </View>
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>
                       {exercise.name}
                     </Text>
-                    <View style={styles.exerciseMeta}>
-                      <View style={[styles.categoryBadge, { backgroundColor: `${getCategoryColor(exercise.category)}20` }]}>
-                        <Text style={[styles.categoryText, { color: getCategoryColor(exercise.category) }]}>
-                          {exercise.category}
-                        </Text>
-                      </View>
-                      {exercise.muscle_groups && exercise.muscle_groups.length > 0 && (
-                        <Text style={styles.muscleGroups}>
-                          {exercise.muscle_groups.slice(0, 2).join(', ')}
-                        </Text>
-                      )}
-                    </View>
+                    {exercise.muscle_groups && exercise.muscle_groups.length > 0 && (
+                      <Text style={styles.muscleGroups}>
+                        {exercise.muscle_groups.slice(0, 2).join(', ')}
+                      </Text>
+                    )}
                   </View>
                 </TouchableOpacity>
               ))
@@ -248,7 +246,7 @@ const styles = StyleSheet.create({
   exerciseItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -260,12 +258,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.foreground,
-    marginBottom: 6,
-  },
-  exerciseMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
   },
   categoryBadge: {
     paddingHorizontal: 8,
@@ -279,5 +271,6 @@ const styles = StyleSheet.create({
   muscleGroups: {
     fontSize: 13,
     color: colors.mutedForeground,
+    marginTop: 2,
   },
 });

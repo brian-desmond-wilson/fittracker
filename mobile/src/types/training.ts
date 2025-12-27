@@ -33,6 +33,15 @@ export const SECTION_DISPLAY_NAMES: Record<WorkoutSection, string> = {
   'Cooldown': 'Cool-down',
 };
 
+export const SECTION_DESCRIPTIONS: Record<WorkoutSection, string> = {
+  'Warmup': 'Light cardio and dynamic stretches to prepare the body',
+  'Prehab': 'Activation and mobility work to prevent injury',
+  'Strength': 'Primary compound movements and heavy lifts',
+  'Accessory': 'Supplemental exercises to support main lifts',
+  'Isometric': 'Static holds and stability work',
+  'Cooldown': 'Stretching and recovery to promote flexibility',
+};
+
 export interface ProgramTemplate {
   id: string;
   created_at: string;

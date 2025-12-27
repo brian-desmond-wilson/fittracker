@@ -92,7 +92,7 @@ export default function MorningRoutineBanner({ onPress, refreshKey = 0 }: Mornin
         <View style={styles.right}>
           <View style={styles.progressCircle}>
             <Text style={styles.progressText}>
-              {Math.round((progress.completedTasks / progress.totalTasks) * 100)}%
+              {progress.totalTasks > 0 ? Math.round((progress.completedTasks / progress.totalTasks) * 100) : 0}%
             </Text>
           </View>
           <ChevronRight size={20} color="#9CA3AF" strokeWidth={2} />
@@ -105,7 +105,7 @@ export default function MorningRoutineBanner({ onPress, refreshKey = 0 }: Mornin
           style={[
             styles.progressBarFill,
             {
-              width: `${(progress.completedTasks / progress.totalTasks) * 100}%`,
+              width: `${progress.totalTasks > 0 ? (progress.completedTasks / progress.totalTasks) * 100 : 0}%`,
               backgroundColor: bannerColor,
             },
           ]}

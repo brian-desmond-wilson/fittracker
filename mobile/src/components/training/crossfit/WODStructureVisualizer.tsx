@@ -19,7 +19,7 @@ export function WODStructureVisualizer({ wod }: WODStructureVisualizerProps) {
     const { values, type } = repSchemeVisual;
 
     // Calculate dynamic width and font size based on number of values
-    const boxCount = values.length;
+    const boxCount = values.length || 1; // Avoid division by zero
     const flexValue = 1 / boxCount;
 
     // Scale font size based on number of boxes

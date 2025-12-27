@@ -336,17 +336,23 @@ export default function ExerciseDetailPage() {
           </View>
         ) : (
           <View style={styles.heroPlaceholder}>
-            {/* Exercise Name & Badge (shown when no image) */}
-            <Text style={styles.heroExerciseNameNoImage}>{exercise.name}</Text>
+            {/* Badge in top-right corner */}
             {exercise.is_core === true ? (
-              <View style={[styles.heroCoreBadge, { marginBottom: 20 }]}>
-                <Text style={styles.heroCoreBadgeText}>CORE</Text>
+              <View style={styles.heroBadgeTopRight}>
+                <View style={styles.heroCoreBadge}>
+                  <Text style={styles.heroCoreBadgeText}>CORE</Text>
+                </View>
               </View>
             ) : tier > 0 ? (
-              <View style={[styles.heroTierBadge, { marginBottom: 20 }]}>
-                <Text style={styles.heroTierBadgeText}>TIER {tier}</Text>
+              <View style={styles.heroBadgeTopRight}>
+                <View style={styles.heroTierBadge}>
+                  <Text style={styles.heroTierBadgeText}>TIER {tier}</Text>
+                </View>
               </View>
-            ) : <View style={{ marginBottom: 20 }} />}
+            ) : null}
+            {/* Exercise Name (centered) */}
+            <Text style={styles.heroExerciseNameNoImage}>{exercise.name}</Text>
+            <View style={{ height: 20 }} />
             <TouchableOpacity
               style={styles.generateButton}
               onPress={handleGenerateImage}
@@ -651,6 +657,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    position: 'relative',
+  },
+  heroBadgeTopRight: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
   },
   generateButton: {
     flexDirection: 'row',

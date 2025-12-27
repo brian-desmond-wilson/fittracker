@@ -11,7 +11,7 @@ import { colors } from '@/src/lib/colors';
 import { ExerciseSearchModal } from './ExerciseSearchModal';
 import { ExerciseConfigModal } from './ExerciseConfigModal';
 import type { WorkoutFormData, WorkoutExerciseConfig, WorkoutSection, Exercise } from '@/src/types/training';
-import { WORKOUT_SECTIONS, SECTION_DISPLAY_NAMES } from '@/src/types/training';
+import { WORKOUT_SECTIONS, SECTION_DISPLAY_NAMES, SECTION_DESCRIPTIONS } from '@/src/types/training';
 
 interface WorkoutExercisesStepProps {
   formData: WorkoutFormData;
@@ -159,10 +159,13 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
           <View key={section} style={styles.sectionContainer}>
             {/* Section Header */}
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{SECTION_DISPLAY_NAMES[section]}</Text>
-              <View style={styles.sectionBadge}>
-                <Text style={styles.sectionBadgeText}>{getSectionCount(section)}</Text>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>{SECTION_DISPLAY_NAMES[section]}</Text>
+                <View style={styles.sectionBadge}>
+                  <Text style={styles.sectionBadgeText}>{getSectionCount(section)}</Text>
+                </View>
               </View>
+              <Text style={styles.sectionDescription}>{SECTION_DESCRIPTIONS[section]}</Text>
             </View>
 
             {/* Exercises in Section */}
@@ -291,10 +294,12 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionHeader: {
+    marginBottom: 12,
+  },
+  sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 16,
@@ -311,6 +316,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.mutedForeground,
+  },
+  sectionDescription: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginTop: 4,
   },
   exerciseCard: {
     flexDirection: 'row',

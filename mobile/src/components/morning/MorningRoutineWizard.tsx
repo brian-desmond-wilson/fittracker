@@ -239,7 +239,7 @@ export default function MorningRoutineWizard({
                 style={[
                   styles.progressBarFill,
                   {
-                    width: `${(progress.completedTasks / progress.totalTasks) * 100}%`,
+                    width: `${progress.totalTasks > 0 ? (progress.completedTasks / progress.totalTasks) * 100 : 0}%`,
                     backgroundColor: progress.isOnTrack ? '#22C55E' : '#F59E0B',
                   },
                 ]}

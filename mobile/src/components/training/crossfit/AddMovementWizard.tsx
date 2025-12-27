@@ -167,32 +167,19 @@ export function AddMovementWizard({ onClose, onSave }: AddMovementWizardProps) {
         return;
       }
 
-      // CRITICAL FIX: Ensure equipment is loaded before mapping
-      // Fetch fresh equipment data if needed
+      // Always fetch fresh equipment data to ensure we have the latest
+      // (Step3Attributes may have newer data than our mount-time load)
       let equipmentData = equipment;
-      if (formData.equipment_ids.length > 0 && equipment.length === 0) {
-        console.log('Equipment not loaded, fetching now...');
+      if (formData.equipment_ids.length > 0) {
         equipmentData = await fetchEquipment();
       }
 
       // Map equipment_ids to equipment names
       const equipmentTypes = formData.equipment_ids.length > 0
         ? formData.equipment_ids
-            .map(id => {
-              const found = equipmentData.find(eq => eq.id === id);
-              if (!found) {
-                console.warn(`Equipment with ID ${id} not found in equipment list`);
-              }
-              return found?.name;
-            })
+            .map(id => equipmentData.find(eq => eq.id === id)?.name)
             .filter((name): name is string => name !== undefined)
         : undefined;
-
-      // Debug logging
-      if (formData.equipment_ids.length > 0) {
-        console.log('Equipment IDs:', formData.equipment_ids);
-        console.log('Mapped Equipment Types:', equipmentTypes);
-      }
 
       // Map form data to API input
       const input: CreateMovementInput = {
