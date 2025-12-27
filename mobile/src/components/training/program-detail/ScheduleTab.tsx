@@ -8,6 +8,7 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { Dumbbell, Calendar, Plus, Clock } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { fetchWorkoutsForWeek } from "@/src/lib/supabase/training";
@@ -21,6 +22,7 @@ interface ScheduleTabProps {
 }
 
 export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: ScheduleTabProps) {
+  const router = useRouter();
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [workouts, setWorkouts] = useState<ProgramWorkoutWithRelations[]>([]);
   const [loading, setLoading] = useState(false);
@@ -138,7 +140,12 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
         ) : (
           <>
             {workouts.map((workout) => (
-              <TouchableOpacity key={workout.id} style={styles.workoutCard} activeOpacity={0.7}>
+              <TouchableOpacity
+                key={workout.id}
+                style={styles.workoutCard}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/(tabs)/training/workout/${workout.id}`)}
+              >
                 <View style={styles.dayBadge}>
                   <Text style={styles.dayText}>Day {workout.day_number}</Text>
                 </View>
