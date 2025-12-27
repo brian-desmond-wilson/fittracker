@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Dumbbell, Search, X } from "lucide-react-native";
@@ -9,6 +9,9 @@ import ExercisesTab from "@/src/components/training/ExercisesTab";
 import ClassesTab from "@/src/components/training/crossfit/ClassesTab";
 import WODsTab from "@/src/components/training/crossfit/WODsTab";
 import MovementsTab from "@/src/components/training/crossfit/MovementsTab";
+import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
+import { fetchAllExercises, fetchMovements, fetchWODs, fetchClasses } from "@/src/lib/supabase/crossfit";
+import { supabase } from "@/src/lib/supabase";
 
 type WorkoutMode = "crossfit" | "strength";
 type CrossFitTab = "classes" | "wods" | "movements";
@@ -24,6 +27,53 @@ export default function Training() {
   const [classesCount, setClassesCount] = useState(0);
   const [wodsCount, setWodsCount] = useState(0);
   const [movementsCount, setMovementsCount] = useState(0);
+
+  // Track counts for Strength tabs
+  const [programsCount, setProgramsCount] = useState(0);
+  const [workoutsCount, setWorkoutsCount] = useState(0);
+  const [exercisesCount, setExercisesCount] = useState(0);
+
+  // Fetch crossfit tab counts when entering crossfit mode
+  useEffect(() => {
+    if (workoutMode === "crossfit") {
+      // Fetch classes count (requires user id)
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          fetchClasses(user.id).then(classes => {
+            setClassesCount(classes.length);
+          }).catch(console.error);
+        }
+      }).catch(console.error);
+
+      // Fetch WODs count
+      fetchWODs().then(wods => {
+        setWodsCount(wods.length);
+      }).catch(console.error);
+
+      // Fetch movements count
+      fetchMovements().then(movements => {
+        setMovementsCount(movements.length);
+      }).catch(console.error);
+    }
+  }, [workoutMode]);
+
+  // Fetch strength tab counts when entering strength mode
+  useEffect(() => {
+    if (workoutMode === "strength") {
+      // Fetch programs count
+      fetchPublishedPrograms().then(programs => {
+        setProgramsCount(programs.length);
+      }).catch(console.error);
+
+      // Fetch exercises count
+      fetchAllExercises().then(exercises => {
+        setExercisesCount(exercises.length);
+      }).catch(console.error);
+
+      // Workouts is a placeholder, always 0
+      setWorkoutsCount(0);
+    }
+  }, [workoutMode]);
 
   const crossfitTabs: { key: CrossFitTab; label: string }[] = [
     { key: "classes", label: "Classes" },
@@ -60,11 +110,11 @@ export default function Training() {
     } else {
       switch (strengthTab) {
         case "programs":
-          return <ProgramsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} />;
+          return <ProgramsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setProgramsCount} />;
         case "workouts":
-          return <WorkoutsTab />;
+          return <WorkoutsTab onCountUpdate={setWorkoutsCount} />;
         case "exercises":
-          return <ExercisesTab />;
+          return <ExercisesTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setExercisesCount} />;
         default:
           return null;
       }
@@ -156,18 +206,28 @@ export default function Training() {
             );
           })
         ) : (
-          strengthTabs.map((tab) => (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tab, strengthTab === tab.key && styles.tabActive]}
-              onPress={() => setStrengthTab(tab.key)}
-            >
-              <Text style={[styles.tabText, strengthTab === tab.key && styles.tabTextActive]}>
-                {tab.label}
-              </Text>
-              {strengthTab === tab.key && <View style={styles.tabIndicator} />}
-            </TouchableOpacity>
-          ))
+          strengthTabs.map((tab) => {
+            const count = tab.key === "programs" ? programsCount : tab.key === "workouts" ? workoutsCount : exercisesCount;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tab, strengthTab === tab.key && styles.tabActive]}
+                onPress={() => setStrengthTab(tab.key)}
+              >
+                <View style={styles.tabContent}>
+                  <Text style={[styles.tabText, strengthTab === tab.key && styles.tabTextActive]}>
+                    {tab.label}
+                  </Text>
+                  <View style={[styles.countChip, strengthTab === tab.key && styles.countChipActive]}>
+                    <Text style={[styles.countText, strengthTab === tab.key && styles.countTextActive]}>
+                      {count}
+                    </Text>
+                  </View>
+                </View>
+                {strengthTab === tab.key && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            );
+          })
         )}
       </View>
 

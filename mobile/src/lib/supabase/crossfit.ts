@@ -391,6 +391,354 @@ export async function searchMovements(query: string): Promise<ExerciseWithVariat
   return movements;
 }
 
+// ============================================================================
+// All Exercises (for Exercises Tab - includes both movements and non-movements)
+// ============================================================================
+
+/**
+ * Fetch ALL exercises regardless of is_movement value
+ * Used by Exercises tab to show the complete exercise library
+ */
+export async function fetchAllExercises(goalTypeId?: string): Promise<ExerciseWithVariations[]> {
+  let query = supabase
+    .from('exercises')
+    .select(`
+      *,
+      goal_type:goal_types(*),
+      movement_category:movement_categories(*),
+      variations:exercise_variations(
+        *,
+        variation_option:variation_options(
+          *,
+          category:variation_categories(*)
+        )
+      ),
+      scoring_types:exercise_scoring_types(
+        scoring_type:scoring_types(*)
+      )
+    `)
+    // No is_movement filter - show ALL exercises
+    .order('name');
+
+  if (goalTypeId) {
+    query = query.eq('goal_type_id', goalTypeId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching all exercises:', error);
+    throw error;
+  }
+
+  // Build full_name for each exercise (e.g., "Front Squat + Pause + Barbell")
+  const exercises = (data || []).map((exercise) => {
+    const variationNames = exercise.variations
+      ?.map((v) => v.variation_option?.name)
+      .filter(Boolean) || [];
+
+    const full_name = variationNames.length > 0
+      ? `${exercise.name} + ${variationNames.join(' + ')}`
+      : exercise.name;
+
+    // Flatten scoring_types
+    const scoringTypes = exercise.scoring_types
+      ?.map((st: any) => st.scoring_type)
+      .filter(Boolean) || [];
+
+    return {
+      ...exercise,
+      full_name,
+      scoring_types: scoringTypes,
+    };
+  });
+
+  return exercises;
+}
+
+/**
+ * Search ALL exercises by name (regardless of is_movement value)
+ * Used by Exercises tab search functionality
+ */
+export async function searchAllExercises(query: string): Promise<ExerciseWithVariations[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select(`
+      *,
+      goal_type:goal_types(*),
+      movement_category:movement_categories(*),
+      variations:exercise_variations(
+        *,
+        variation_option:variation_options(
+          *,
+          category:variation_categories(*)
+        )
+      ),
+      scoring_types:exercise_scoring_types(
+        scoring_type:scoring_types(*)
+      )
+    `)
+    // No is_movement filter - search ALL exercises
+    .ilike('name', `%${query}%`)
+    .order('name')
+    .limit(50);
+
+  if (error) {
+    console.error('Error searching all exercises:', error);
+    throw error;
+  }
+
+  // Build full_name for search results
+  const exercises = (data || []).map((exercise) => {
+    const variationNames = exercise.variations
+      ?.map((v) => v.variation_option?.name)
+      .filter(Boolean) || [];
+
+    const full_name = variationNames.length > 0
+      ? `${exercise.name} + ${variationNames.join(' + ')}`
+      : exercise.name;
+
+    // Flatten scoring_types
+    const scoringTypes = exercise.scoring_types
+      ?.map((st: any) => st.scoring_type)
+      .filter(Boolean) || [];
+
+    return {
+      ...exercise,
+      full_name,
+      scoring_types: scoringTypes,
+    };
+  });
+
+  return exercises;
+}
+
+/**
+ * Create a new exercise (non-movement)
+ * Sets is_movement: false to distinguish from CrossFit movements
+ */
+export async function createExercise(input: CreateMovementInput): Promise<string> {
+  try {
+    // Generate unique slug
+    const slug = await generateUniqueSlug(input.name);
+
+    // Determine requires_weight based on equipment
+    // Weighted equipment: Barbell, Dumbbell, Kettlebell, Med Ball, Plate, Sandbag
+    const weightedEquipment = ['Barbell', 'Dumbbell', 'Kettlebell', 'Med Ball', 'Plate', 'Sandbag'];
+    const requiresWeight = input.equipment_types?.some(eq =>
+      weightedEquipment.some(weighted => eq.toLowerCase().includes(weighted.toLowerCase()))
+    ) || false;
+
+    // Determine requires_distance based on scoring types
+    let requiresDistance = false;
+    if (input.scoring_type_ids && input.scoring_type_ids.length > 0) {
+      // Fetch scoring types to check if "Distance" is included
+      const scoringTypes = await fetchScoringTypes();
+      const distanceScoringType = scoringTypes.find(st => st.name === 'Distance');
+      if (distanceScoringType) {
+        requiresDistance = input.scoring_type_ids.includes(distanceScoringType.id);
+      }
+    }
+
+    // 1. Insert the exercise
+    const exerciseData: any = {
+      name: input.name,
+      description: input.description,
+      slug,
+      goal_type_id: input.goal_type_id || (input.goal_type_ids && input.goal_type_ids.length > 0 ? input.goal_type_ids[0] : null), // Legacy: use first goal type
+      movement_category_id: input.movement_category_id,
+
+      // Movement Hierarchy
+      is_core: input.is_core || false,
+      ...(input.parent_exercise_id && { parent_exercise_id: input.parent_exercise_id }),
+
+      // Core movement metadata (only include if provided)
+      ...(input.movement_family_id && { movement_family_id: input.movement_family_id }),
+      ...(input.plane_of_motion_id && { plane_of_motion_id: input.plane_of_motion_id }), // Legacy
+      ...((!input.plane_of_motion_id && input.plane_of_motion_ids && input.plane_of_motion_ids.length > 0) && { plane_of_motion_id: input.plane_of_motion_ids[0] }), // Set first as legacy value
+      ...(input.skill_level && { skill_level: input.skill_level }),
+      ...(input.short_name && { short_name: input.short_name }),
+      ...(input.aliases && input.aliases.length > 0 && { aliases: input.aliases }),
+
+      // Movement attributes (only include if provided)
+      ...(input.load_position_id && { load_position_id: input.load_position_id }), // Legacy
+      ...((!input.load_position_id && input.load_position_ids && input.load_position_ids.length > 0) && { load_position_id: input.load_position_ids[0] }), // Set first as legacy value
+      ...(input.stance_id && { stance_id: input.stance_id }), // Legacy
+      ...((!input.stance_id && input.stance_ids && input.stance_ids.length > 0) && { stance_id: input.stance_ids[0] }), // Set first as legacy value
+      ...(input.range_depth_id && { range_depth_id: input.range_depth_id }),
+      ...(input.movement_style_id && { movement_style_id: input.movement_style_id }),
+      ...(input.symmetry_id && { symmetry_id: input.symmetry_id }),
+
+      // Equipment
+      ...(input.equipment_types && input.equipment_types.length > 0 && { equipment_types: input.equipment_types }),
+      requires_weight: requiresWeight,
+      requires_distance: requiresDistance,
+
+      // Media
+      ...(input.video_url && { video_url: input.video_url }),
+      ...(input.image_url && { image_url: input.image_url }),
+
+      // Ownership - KEY DIFFERENCE: is_movement is false for exercises
+      is_movement: false,
+      is_official: false,
+      created_by: input.created_by,
+    };
+
+    const { data: exercise, error: exerciseError } = await supabase
+      .from('exercises')
+      .insert(exerciseData)
+      .select('id')
+      .single();
+
+    if (exerciseError) {
+      console.error('Error creating exercise:', exerciseError);
+      throw exerciseError;
+    }
+
+    // 2. Insert goal types (if any)
+    if (input.goal_type_ids && input.goal_type_ids.length > 0) {
+      const goalTypeInserts = input.goal_type_ids.map(goalTypeId => ({
+        exercise_id: exercise.id,
+        goal_type_id: goalTypeId,
+      }));
+
+      const { error: goalTypeError } = await supabase
+        .from('exercise_goal_types')
+        .insert(goalTypeInserts);
+
+      if (goalTypeError) {
+        console.error('Error inserting exercise goal types:', goalTypeError);
+        throw goalTypeError;
+      }
+    }
+
+    // 3. Insert planes of motion (if any)
+    if (input.plane_of_motion_ids && input.plane_of_motion_ids.length > 0) {
+      const planeInserts = input.plane_of_motion_ids.map(planeId => ({
+        exercise_id: exercise.id,
+        plane_of_motion_id: planeId,
+      }));
+
+      const { error: planeError } = await supabase
+        .from('exercise_planes_of_motion')
+        .insert(planeInserts);
+
+      if (planeError) {
+        console.error('Error inserting exercise planes of motion:', planeError);
+        throw planeError;
+      }
+    }
+
+    // 4. Insert load positions (if any)
+    if (input.load_position_ids && input.load_position_ids.length > 0) {
+      const loadPositionInserts = input.load_position_ids.map(loadPositionId => ({
+        exercise_id: exercise.id,
+        load_position_id: loadPositionId,
+      }));
+
+      const { error: loadPositionError } = await supabase
+        .from('exercise_load_positions')
+        .insert(loadPositionInserts);
+
+      if (loadPositionError) {
+        console.error('Error inserting exercise load positions:', loadPositionError);
+        throw loadPositionError;
+      }
+    }
+
+    // 5. Insert stances (if any)
+    if (input.stance_ids && input.stance_ids.length > 0) {
+      const stanceInserts = input.stance_ids.map(stanceId => ({
+        exercise_id: exercise.id,
+        stance_id: stanceId,
+      }));
+
+      const { error: stanceError } = await supabase
+        .from('exercise_stances')
+        .insert(stanceInserts);
+
+      if (stanceError) {
+        console.error('Error inserting exercise stances:', stanceError);
+        throw stanceError;
+      }
+    }
+
+    // 6. Insert variation options (if any)
+    if (input.variation_option_ids && input.variation_option_ids.length > 0) {
+      const variationInserts = input.variation_option_ids.map(optionId => ({
+        exercise_id: exercise.id,
+        variation_option_id: optionId,
+      }));
+
+      const { error: variationError } = await supabase
+        .from('exercise_variations')
+        .insert(variationInserts);
+
+      if (variationError) {
+        console.error('Error inserting exercise variations:', variationError);
+        throw variationError;
+      }
+    }
+
+    // 7. Insert scoring types (if any)
+    if (input.scoring_type_ids && input.scoring_type_ids.length > 0) {
+      const scoringInserts = input.scoring_type_ids.map(scoringTypeId => ({
+        exercise_id: exercise.id,
+        scoring_type_id: scoringTypeId,
+      }));
+
+      const { error: scoringError } = await supabase
+        .from('exercise_scoring_types')
+        .insert(scoringInserts);
+
+      if (scoringError) {
+        console.error('Error inserting exercise scoring types:', scoringError);
+        throw scoringError;
+      }
+    }
+
+    // 8. Insert muscle regions (if any)
+    if (input.muscle_region_ids && input.muscle_region_ids.length > 0) {
+      const muscleInserts = input.muscle_region_ids.map(regionId => ({
+        exercise_id: exercise.id,
+        muscle_region_id: regionId,
+        is_primary: input.primary_muscle_region_ids?.includes(regionId) || false,
+      }));
+
+      const { error: muscleError } = await supabase
+        .from('exercise_muscle_regions')
+        .insert(muscleInserts);
+
+      if (muscleError) {
+        console.error('Error inserting exercise muscle regions:', muscleError);
+        throw muscleError;
+      }
+    }
+
+    // 9. Insert movement styles (if any)
+    if (input.movement_style_ids && input.movement_style_ids.length > 0) {
+      const styleInserts = input.movement_style_ids.map(styleId => ({
+        exercise_id: exercise.id,
+        movement_style_id: styleId,
+      }));
+
+      const { error: styleError } = await supabase
+        .from('exercise_movement_styles')
+        .insert(styleInserts);
+
+      if (styleError) {
+        console.error('Error inserting exercise movement styles:', styleError);
+        throw styleError;
+      }
+    }
+
+    return exercise.id;
+  } catch (error) {
+    console.error('Error in createExercise:', error);
+    throw error;
+  }
+}
+
 /**
  * Fetch a single movement by ID with all variations
  */
@@ -553,17 +901,21 @@ export async function createVariationOption(
 /**
  * Compute the tier/depth of a movement in the hierarchy
  * Returns 0 for core movements, 1-4 for variation tiers
+ * NOTE: RPC function 'get_movement_tier' not yet created in Supabase
  */
 export async function computeMovementTier(exerciseId: string): Promise<number> {
-  const { data, error } = await supabase
-    .rpc('get_movement_tier', { exercise_id_param: exerciseId });
+  // TODO: Uncomment when get_movement_tier RPC function is created in Supabase
+  // const { data, error } = await supabase
+  //   .rpc('get_movement_tier', { exercise_id_param: exerciseId });
+  //
+  // if (error) {
+  //   console.error('Error computing movement tier:', error);
+  //   return 0;
+  // }
+  //
+  // return data || 0;
 
-  if (error) {
-    console.error('Error computing movement tier:', error);
-    return 0; // Default to core if error
-  }
-
-  return data || 0;
+  return 0; // Default to core until RPC is created
 }
 
 /**

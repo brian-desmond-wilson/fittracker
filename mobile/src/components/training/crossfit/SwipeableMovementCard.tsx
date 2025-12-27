@@ -15,13 +15,15 @@ interface SwipeableMovementCardProps {
   onPress: () => void;
   onDelete: () => void;
   getMovementIcon: (movement: ExerciseWithVariations) => string;
+  detailRoute?: 'movement' | 'exercise'; // Default: 'movement'
 }
 
 export function SwipeableMovementCard({
   movement,
   onPress,
   onDelete,
-  getMovementIcon
+  getMovementIcon,
+  detailRoute = 'movement'
 }: SwipeableMovementCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
 

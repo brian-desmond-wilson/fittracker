@@ -9,9 +9,10 @@ import { ParentMovementSearch } from '../ParentMovementSearch';
 interface Step1CoreProps {
   formData: MovementFormData;
   updateFormData: (updates: Partial<MovementFormData>) => void;
+  hideMovementTypeToggle?: boolean; // Hide Core/Variation toggle for exercises
 }
 
-export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
+export function Step1Core({ formData, updateFormData, hideMovementTypeToggle = false }: Step1CoreProps) {
   const [aliasInput, setAliasInput] = useState('');
   const [selectedParent, setSelectedParent] = useState<ExerciseWithTier | null>(null);
 
@@ -34,38 +35,42 @@ export function Step1Core({ formData, updateFormData }: Step1CoreProps) {
 
   return (
     <View style={styles.container}>
-      {/* Movement Type Segmented Control */}
-      <View style={styles.field}>
-        <Text style={styles.label}>Movement Type</Text>
-        <Text style={styles.helperText}>
-          Core movements are base/fundamental movements. Variations are derived from core movements.
-        </Text>
-        <View style={styles.segmentedControl}>
-          <TouchableOpacity
-            style={[styles.segment, formData.is_core && styles.segmentActive]}
-            onPress={() => {
-              updateFormData({ is_core: true, parent_exercise_id: null, parent_movement_name: '' });
-              setSelectedParent(null);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.segmentText, formData.is_core && styles.segmentTextActive]}>
-              Core
+      {/* Movement Type Segmented Control - hidden for exercises */}
+      {!hideMovementTypeToggle && (
+        <>
+          <View style={styles.field}>
+            <Text style={styles.label}>Movement Type</Text>
+            <Text style={styles.helperText}>
+              Core movements are base/fundamental movements. Variations are derived from core movements.
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.segment, !formData.is_core && styles.segmentActive]}
-            onPress={() => updateFormData({ is_core: false })}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.segmentText, !formData.is_core && styles.segmentTextActive]}>
-              Variation
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+            <View style={styles.segmentedControl}>
+              <TouchableOpacity
+                style={[styles.segment, formData.is_core && styles.segmentActive]}
+                onPress={() => {
+                  updateFormData({ is_core: true, parent_exercise_id: null, parent_movement_name: '' });
+                  setSelectedParent(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.segmentText, formData.is_core && styles.segmentTextActive]}>
+                  Core
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.segment, !formData.is_core && styles.segmentActive]}
+                onPress={() => updateFormData({ is_core: false })}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.segmentText, !formData.is_core && styles.segmentTextActive]}>
+                  Variation
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-      <View style={styles.separator} />
+          <View style={styles.separator} />
+        </>
+      )}
 
       {/* Parent Movement Search (only for variations) */}
       {!formData.is_core && (

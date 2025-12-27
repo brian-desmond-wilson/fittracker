@@ -1,9 +1,17 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Calendar } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 
-export default function WorkoutsTab() {
+interface WorkoutsTabProps {
+  onCountUpdate?: (count: number) => void;
+}
+
+export default function WorkoutsTab({ onCountUpdate }: WorkoutsTabProps) {
+  useEffect(() => {
+    onCountUpdate?.(0);
+  }, []);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.comingSoonCard}>

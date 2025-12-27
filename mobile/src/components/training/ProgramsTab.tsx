@@ -112,9 +112,10 @@ function ProgramCard({ program, onPress, onLongPress }: ProgramCardProps) {
 interface ProgramsTabProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onCountUpdate?: (count: number) => void;
 }
 
-export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTabProps) {
+export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate }: ProgramsTabProps) {
   const router = useRouter();
   const [programs, setPrograms] = useState<ProgramDisplayData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,6 +177,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange }: ProgramsTab
       }));
 
       setPrograms(mappedPrograms);
+      onCountUpdate?.(mappedPrograms.length);
     } catch (err) {
       console.error('Error loading programs:', err);
       setError('Failed to load programs. Please try again.');
