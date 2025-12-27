@@ -30,9 +30,9 @@ export default function ExerciseDetailPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [tier, setTier] = useState<number>(0);
   const [hierarchyData, setHierarchyData] = useState<{
-    parent: ExerciseWithVariations | null;
+    ancestors: Array<{ id: string; name: string; is_core: boolean; tier: number }>;
     siblings: ExerciseWithVariations[];
-  }>({ parent: null, siblings: [] });
+  }>({ ancestors: [], siblings: [] });
 
   useEffect(() => {
     loadExercise();
@@ -97,14 +97,33 @@ export default function ExerciseDetailPage() {
     if (!exercise || !exercise.parent_exercise_id) return;
 
     try {
-      // Fetch parent exercise
-      const { data: parentData, error: parentError } = await supabase
-        .from('exercises')
-        .select('id, name, is_core, parent_exercise_id')
-        .eq('id', exercise.parent_exercise_id)
-        .single();
+      // Traverse up the chain to find all ancestors (from immediate parent to root)
+      const ancestors: Array<{ id: string; name: string; is_core: boolean; tier: number }> = [];
+      let currentParentId: string | null = exercise.parent_exercise_id;
 
-      if (parentError) throw parentError;
+      while (currentParentId) {
+        const { data: parentData, error: parentError } = await supabase
+          .from('exercises')
+          .select('id, name, is_core, parent_exercise_id')
+          .eq('id', currentParentId)
+          .single();
+
+        if (parentError) throw parentError;
+        if (!parentData) break;
+
+        // Compute tier for this ancestor
+        const ancestorTier = await computeMovementTier(parentData.id);
+
+        ancestors.unshift({
+          id: parentData.id,
+          name: parentData.name,
+          is_core: parentData.is_core,
+          tier: ancestorTier,
+        });
+
+        // Move up the chain
+        currentParentId = parentData.is_core ? null : parentData.parent_exercise_id;
+      }
 
       // Fetch sibling exercises (same parent, same tier level)
       const { data: siblingsData, error: siblingsError } = await supabase
@@ -117,7 +136,7 @@ export default function ExerciseDetailPage() {
       if (siblingsError) throw siblingsError;
 
       setHierarchyData({
-        parent: parentData as any,
+        ancestors,
         siblings: (siblingsData || []) as any[],
       });
     } catch (error) {
@@ -354,19 +373,19 @@ export default function ExerciseDetailPage() {
           {exercise.movement_category?.name && (
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Category</Text>
-              <Text style={styles.metaValue}>{exercise.movement_category.name}</Text>
+              <Text style={styles.metaValue} numberOfLines={1}>{exercise.movement_category.name}</Text>
             </View>
           )}
           {exercise.goal_type?.name && (
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Goal Type</Text>
-              <Text style={styles.metaValue}>{exercise.goal_type.name}</Text>
+              <Text style={styles.metaValue} numberOfLines={1}>{exercise.goal_type.name}</Text>
             </View>
           )}
           {exercise.skill_level && (
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Skill Level</Text>
-              <Text style={styles.metaValue}>{exercise.skill_level}</Text>
+              <Text style={styles.metaValue} numberOfLines={1}>{exercise.skill_level}</Text>
             </View>
           )}
         </View>
@@ -450,29 +469,40 @@ export default function ExerciseDetailPage() {
         )}
 
         {/* Exercise Hierarchy */}
-        {!exercise.is_core && hierarchyData.parent && (
+        {!exercise.is_core && hierarchyData.ancestors.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Exercise Hierarchy</Text>
 
-            {/* Parent (Core) Exercise */}
             <View style={styles.hierarchyContainer}>
-              <TouchableOpacity
-                style={styles.hierarchyParent}
-                onPress={() => router.push(`/(tabs)/training/exercise/${hierarchyData.parent!.id}`)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.hierarchyConnector}>
-                  <View style={styles.connectorDot} />
+              {/* Render all ancestors (core first, then tier 1, tier 2, etc.) */}
+              {hierarchyData.ancestors.map((ancestor, index) => (
+                <View key={ancestor.id} style={index > 0 ? styles.hierarchyAncestorWrapper : undefined}>
+                  {index > 0 && <View style={styles.hierarchyConnectorLine} />}
+                  <TouchableOpacity
+                    style={index === 0 ? styles.hierarchyParent : styles.hierarchyItem}
+                    onPress={() => router.push(`/(tabs)/training/exercise/${ancestor.id}`)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.hierarchyConnector}>
+                      <View style={styles.connectorDot} />
+                    </View>
+                    <View style={styles.hierarchyItemContent}>
+                      {ancestor.is_core ? (
+                        <View style={styles.coreHierarchyBadge}>
+                          <Text style={styles.coreHierarchyBadgeText}>CORE</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.tierHierarchyBadge}>
+                          <Text style={styles.tierHierarchyBadgeText}>TIER {ancestor.tier}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.hierarchyItemName} numberOfLines={1} ellipsizeMode="tail">
+                        {ancestor.name}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.hierarchyItemContent}>
-                  <View style={styles.coreHierarchyBadge}>
-                    <Text style={styles.coreHierarchyBadgeText}>CORE</Text>
-                  </View>
-                  <Text style={styles.hierarchyItemName} numberOfLines={1} ellipsizeMode="tail">
-                    {hierarchyData.parent.name}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              ))}
 
               {/* Current Exercise (Highlighted) */}
               <View style={styles.hierarchyCurrentWrapper}>
@@ -827,6 +857,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   hierarchySiblingWrapper: {
+    position: 'relative',
+  },
+  hierarchyAncestorWrapper: {
     position: 'relative',
   },
   hierarchyConnectorLine: {

@@ -901,21 +901,17 @@ export async function createVariationOption(
 /**
  * Compute the tier/depth of a movement in the hierarchy
  * Returns 0 for core movements, 1-4 for variation tiers
- * NOTE: RPC function 'get_movement_tier' not yet created in Supabase
  */
 export async function computeMovementTier(exerciseId: string): Promise<number> {
-  // TODO: Uncomment when get_movement_tier RPC function is created in Supabase
-  // const { data, error } = await supabase
-  //   .rpc('get_movement_tier', { exercise_id_param: exerciseId });
-  //
-  // if (error) {
-  //   console.error('Error computing movement tier:', error);
-  //   return 0;
-  // }
-  //
-  // return data || 0;
+  const { data, error } = await supabase
+    .rpc('get_movement_tier', { exercise_id_param: exerciseId });
 
-  return 0; // Default to core until RPC is created
+  if (error) {
+    console.error('Error computing movement tier:', error);
+    return 0;
+  }
+
+  return data || 0;
 }
 
 /**
@@ -1105,8 +1101,6 @@ export async function createMovement(input: CreateMovementInput): Promise<string
       is_official: false,
       created_by: input.created_by,
     };
-
-    console.log('DEBUG createMovement - About to insert:', JSON.stringify(exerciseData, null, 2));
 
     const { data: exercise, error: exerciseError } = await supabase
       .from('exercises')
