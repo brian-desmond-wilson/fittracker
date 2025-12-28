@@ -804,6 +804,113 @@ export async function createProgramWorkout(
 }
 
 /**
+ * Update an existing program workout with exercises
+ * Called from the Edit Workout wizard to update an existing workout template
+ */
+export async function updateProgramWorkout(
+  workoutId: string,
+  input: Omit<CreateProgramWorkoutInput, 'program_id' | 'week_number'>
+): Promise<ProgramWorkout | null> {
+  try {
+    // Step 1: Update the workout record
+    const { data: workout, error: workoutError } = await supabase
+      .from('program_workouts')
+      .update({
+        day_number: input.day_number,
+        name: input.name,
+        workout_type: input.workout_type,
+        estimated_duration_minutes: input.estimated_duration_minutes || null,
+        warmup_instructions: input.warmup_instructions || null,
+        cooldown_instructions: input.cooldown_instructions || null,
+        notes: input.notes || null,
+      })
+      .eq('id', workoutId)
+      .select()
+      .single();
+
+    if (workoutError || !workout) {
+      console.error('Error updating workout:', workoutError);
+      return null;
+    }
+
+    // Step 2: Delete existing exercises and re-create them
+    // This is simpler than trying to diff and update individual exercises
+    const { error: deleteError } = await supabase
+      .from('program_workout_exercises')
+      .delete()
+      .eq('program_workout_id', workoutId);
+
+    if (deleteError) {
+      console.error('Error deleting existing exercises:', deleteError);
+      return null;
+    }
+
+    // Step 3: Create new exercise records
+    if (input.exercises.length > 0) {
+      const exerciseRecords = input.exercises.map((ex, index) => ({
+        program_workout_id: workoutId,
+        exercise_id: ex.exercise_id,
+        section: ex.section,
+        exercise_order: index + 1,
+        target_sets: ex.target_sets || null,
+        target_reps_min: ex.target_reps || null,
+        target_reps_max: ex.target_reps || null,
+        target_time_seconds: ex.target_time_seconds || null,
+        is_per_side: ex.is_per_side,
+        load_type: ex.load_type,
+        target_rpe_min: ex.load_rpe || null,
+        target_rpe_max: ex.load_rpe || null,
+        load_percentage_1rm: ex.load_percentage_1rm || null,
+        load_weight_lbs: ex.load_weight_lbs || null,
+        load_notes: ex.load_notes || null,
+        rest_seconds: ex.rest_seconds || null,
+        estimated_duration_minutes: ex.estimated_duration_minutes || null,
+        video_url: ex.video_url || null,
+        exercise_notes: ex.exercise_notes || null,
+        tempo: ex.tempo || null,
+      }));
+
+      const { error: exerciseError } = await supabase
+        .from('program_workout_exercises')
+        .insert(exerciseRecords);
+
+      if (exerciseError) {
+        console.error('Error creating exercises:', exerciseError);
+        return null;
+      }
+    }
+
+    return workout;
+  } catch (error) {
+    console.error('Error in updateProgramWorkout:', error);
+    return null;
+  }
+}
+
+/**
+ * Delete a program workout and all its exercises
+ * Exercises are deleted automatically via CASCADE
+ */
+export async function deleteProgramWorkout(workoutId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('program_workouts')
+      .delete()
+      .eq('id', workoutId);
+
+    if (error) {
+      console.error('Error deleting workout:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error in deleteProgramWorkout:', error);
+    return false;
+  }
+}
+
+/**
  * Fetch workouts for a specific week of a program
  * Used in ScheduleTab to display workouts for the selected week
  */

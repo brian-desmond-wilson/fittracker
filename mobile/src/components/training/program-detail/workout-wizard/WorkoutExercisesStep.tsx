@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
 } from 'react-native';
-import { Plus, Trash2, ChevronUp, ChevronDown, Edit2 } from 'lucide-react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import { Plus, Trash2, Edit2 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseSearchModal } from './ExerciseSearchModal';
 import { ExerciseConfigModal } from './ExerciseConfigModal';
@@ -25,6 +27,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
   const [editingExerciseIndex, setEditingExerciseIndex] = useState<number | null>(null);
   const [targetSection, setTargetSection] = useState<WorkoutSection>('Strength');
+  const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
 
   // Group exercises by section
   const exercisesBySection: Record<WorkoutSection, WorkoutExerciseConfig[]> = {
@@ -104,21 +107,50 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
     onUpdate({ exercises: newExercises });
   };
 
-  const handleMoveExercise = (index: number, direction: 'up' | 'down') => {
-    const newExercises = [...formData.exercises];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+  const closeSwipeable = (index: number) => {
+    const swipeable = swipeableRefs.current.get(index);
+    if (swipeable) {
+      swipeable.close();
+    }
+  };
 
-    if (targetIndex < 0 || targetIndex >= newExercises.length) return;
-
-    // Swap
-    [newExercises[index], newExercises[targetIndex]] = [newExercises[targetIndex], newExercises[index]];
-
-    // Re-order
-    newExercises.forEach((ex, i) => {
-      ex.exercise_order = i + 1;
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+    globalIndex: number
+  ) => {
+    const translateX = dragX.interpolate({
+      inputRange: [-120, 0],
+      outputRange: [0, 120],
+      extrapolate: 'clamp',
     });
 
-    onUpdate({ exercises: newExercises });
+    return (
+      <Animated.View
+        style={[styles.swipeActionsContainer, { transform: [{ translateX }] }]}
+      >
+        <TouchableOpacity
+          style={styles.swipeActionEdit}
+          onPress={() => {
+            closeSwipeable(globalIndex);
+            handleEditExercise(globalIndex);
+          }}
+        >
+          <Edit2 size={20} color="#FFFFFF" />
+          <Text style={styles.swipeActionText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.swipeActionDelete}
+          onPress={() => {
+            closeSwipeable(globalIndex);
+            handleDeleteExercise(globalIndex);
+          }}
+        >
+          <Trash2 size={20} color="#FFFFFF" />
+          <Text style={styles.swipeActionText}>Delete</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
   };
 
   const getLoadSummary = (ex: WorkoutExerciseConfig) => {
@@ -177,54 +209,40 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
               const repsSummary = getRepsSummary(ex);
 
               return (
-                <View key={`${ex.exercise_id}-${globalIndex}`} style={styles.exerciseCard}>
-                  <View style={styles.exerciseContent}>
-                    <View style={styles.exerciseOrderBadge}>
-                      <Text style={styles.exerciseOrderText}>{ex.exercise_order}</Text>
-                    </View>
-                    <View style={styles.exerciseInfo}>
-                      <Text style={styles.exerciseName}>{ex.exercise_name}</Text>
-                      <View style={styles.exerciseMeta}>
-                        {repsSummary ? (
-                          <Text style={styles.exerciseReps}>{repsSummary}</Text>
-                        ) : null}
-                        {loadSummary ? (
-                          <Text style={styles.exerciseLoad}>{loadSummary}</Text>
-                        ) : null}
+                <Swipeable
+                  key={`${ex.exercise_id}-${globalIndex}`}
+                  ref={(ref) => {
+                    if (ref) {
+                      swipeableRefs.current.set(globalIndex, ref);
+                    } else {
+                      swipeableRefs.current.delete(globalIndex);
+                    }
+                  }}
+                  renderRightActions={(progress, dragX) =>
+                    renderRightActions(progress, dragX, globalIndex)
+                  }
+                  rightThreshold={40}
+                  overshootRight={false}
+                >
+                  <View style={styles.exerciseCard}>
+                    <View style={styles.exerciseContent}>
+                      <View style={styles.exerciseOrderBadge}>
+                        <Text style={styles.exerciseOrderText}>{ex.exercise_order}</Text>
+                      </View>
+                      <View style={styles.exerciseInfo}>
+                        <Text style={styles.exerciseName}>{ex.exercise_name}</Text>
+                        <View style={styles.exerciseMeta}>
+                          {repsSummary ? (
+                            <Text style={styles.exerciseReps}>{repsSummary}</Text>
+                          ) : null}
+                          {loadSummary ? (
+                            <Text style={styles.exerciseLoad}>{loadSummary}</Text>
+                          ) : null}
+                        </View>
                       </View>
                     </View>
                   </View>
-
-                  {/* Actions */}
-                  <View style={styles.exerciseActions}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleMoveExercise(globalIndex, 'up')}
-                      disabled={globalIndex === 0}
-                    >
-                      <ChevronUp size={18} color={globalIndex === 0 ? colors.muted : colors.mutedForeground} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleMoveExercise(globalIndex, 'down')}
-                      disabled={globalIndex === formData.exercises.length - 1}
-                    >
-                      <ChevronDown size={18} color={globalIndex === formData.exercises.length - 1 ? colors.muted : colors.mutedForeground} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleEditExercise(globalIndex)}
-                    >
-                      <Edit2 size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleDeleteExercise(globalIndex)}
-                    >
-                      <Trash2 size={16} color="#EF4444" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                </Swipeable>
               );
             })}
 
@@ -374,13 +392,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedForeground,
   },
-  exerciseActions: {
+  swipeActionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginBottom: 8,
   },
-  actionButton: {
-    padding: 6,
+  swipeActionEdit: {
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 60,
+    height: '100%',
+    paddingVertical: 12,
+  },
+  swipeActionDelete: {
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 60,
+    height: '100%',
+    paddingVertical: 12,
+  },
+  swipeActionText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginTop: 4,
   },
   addExerciseButton: {
     flexDirection: 'row',

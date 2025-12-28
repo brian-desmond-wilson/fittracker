@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,9 +21,13 @@ import {
   Timer,
   FileText,
   Play,
+  Pencil,
+  Trash2,
 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
+import { deleteProgramWorkout } from '@/src/lib/supabase/training';
+import { AddWorkoutWizard } from '@/src/components/training/program-detail/workout-wizard/AddWorkoutWizard';
 import type {
   ProgramWorkoutWithRelations,
   ProgramWorkoutExercise,
@@ -49,6 +55,8 @@ export default function WorkoutDetailPage() {
     new Set(WORKOUT_SECTIONS)
   );
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showEditWizard, setShowEditWizard] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadWorkout();
@@ -218,6 +226,36 @@ export default function WorkoutDetailPage() {
 
   const hasInstructions = workout?.warmup_instructions || workout?.cooldown_instructions || workout?.notes;
 
+  const handleEditSave = () => {
+    setShowEditWizard(false);
+    loadWorkout(); // Refresh the workout data
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Workout',
+      `Are you sure you want to delete "${workout?.name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!workout?.id) return;
+            setDeleting(true);
+            const success = await deleteProgramWorkout(workout.id);
+            setDeleting(false);
+            if (success) {
+              router.back();
+            } else {
+              Alert.alert('Error', 'Failed to delete workout. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -260,6 +298,21 @@ export default function WorkoutDetailPage() {
           <ChevronLeft size={24} color={colors.foreground} />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => setShowEditWizard(true)}
+            style={styles.headerButton}
+          >
+            <Pencil size={20} color={colors.foreground} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleDelete}
+            style={styles.headerButton}
+            disabled={deleting}
+          >
+            <Trash2 size={20} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -448,6 +501,23 @@ export default function WorkoutDetailPage() {
           <Text style={styles.startButtonText}>Start Workout</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Edit Workout Modal */}
+      <Modal
+        visible={showEditWizard}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowEditWizard(false)}
+      >
+        <AddWorkoutWizard
+          programId={workout.program_id}
+          weekNumber={workout.week_number}
+          daysPerWeek={7}
+          onClose={() => setShowEditWizard(false)}
+          onSave={handleEditSave}
+          existingWorkout={workout}
+        />
+      </Modal>
     </View>
   );
 }
@@ -488,6 +558,14 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 17,
     color: colors.foreground,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerButton: {
+    padding: 8,
   },
   scrollView: {
     flex: 1,

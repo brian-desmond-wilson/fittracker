@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Dumbbell, Clock, Calendar } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
-import { createProgramWorkout } from '@/src/lib/supabase/training';
+import { createProgramWorkout, updateProgramWorkout } from '@/src/lib/supabase/training';
 import type { WorkoutFormData, WorkoutExerciseConfig, WorkoutSection, CreateProgramWorkoutInput } from '@/src/types/training';
 import { WORKOUT_SECTIONS, SECTION_DISPLAY_NAMES } from '@/src/types/training';
 
@@ -20,6 +20,10 @@ interface WorkoutPreviewStepProps {
   weekNumber: number;
   onSave: () => void;
   onClose: () => void;
+  /** If true, wizard is in edit mode */
+  isEditMode?: boolean;
+  /** Workout ID for edit mode */
+  workoutId?: string;
 }
 
 export function WorkoutPreviewStep({
@@ -27,7 +31,9 @@ export function WorkoutPreviewStep({
   programId,
   weekNumber,
   onSave,
-  onClose
+  onClose,
+  isEditMode = false,
+  workoutId,
 }: WorkoutPreviewStepProps) {
   const [saving, setSaving] = useState(false);
 
@@ -97,43 +103,61 @@ export function WorkoutPreviewStep({
     try {
       setSaving(true);
 
-      const input: CreateProgramWorkoutInput = {
-        program_id: programId,
-        week_number: weekNumber,
-        day_number: formData.day_number,
-        name: formData.name,
-        workout_type: formData.workout_type,
-        estimated_duration_minutes: formData.estimated_duration_minutes,
-        warmup_instructions: formData.warmup_instructions,
-        cooldown_instructions: formData.cooldown_instructions,
-        notes: formData.notes,
-        exercises: formData.exercises.map((ex) => ({
-          exercise_id: ex.exercise_id,
-          section: ex.section,
-          exercise_order: ex.exercise_order,
-          target_sets: ex.target_sets,
-          target_reps: ex.target_reps,
-          target_time_seconds: ex.target_time_seconds,
-          is_per_side: ex.is_per_side,
-          load_type: ex.load_type,
-          load_rpe: ex.load_rpe,
-          load_percentage_1rm: ex.load_percentage_1rm,
-          load_weight_lbs: ex.load_weight_lbs,
-          load_notes: ex.load_notes,
-          rest_seconds: ex.rest_seconds,
-          estimated_duration_minutes: ex.estimated_duration_minutes,
-          video_url: ex.video_url,
-          exercise_notes: ex.exercise_notes,
-          tempo: ex.tempo,
-        })),
-      };
+      const exerciseData = formData.exercises.map((ex) => ({
+        exercise_id: ex.exercise_id,
+        section: ex.section,
+        exercise_order: ex.exercise_order,
+        target_sets: ex.target_sets,
+        target_reps: ex.target_reps,
+        target_time_seconds: ex.target_time_seconds,
+        is_per_side: ex.is_per_side,
+        load_type: ex.load_type,
+        load_rpe: ex.load_rpe,
+        load_percentage_1rm: ex.load_percentage_1rm,
+        load_weight_lbs: ex.load_weight_lbs,
+        load_notes: ex.load_notes,
+        rest_seconds: ex.rest_seconds,
+        estimated_duration_minutes: ex.estimated_duration_minutes,
+        video_url: ex.video_url,
+        exercise_notes: ex.exercise_notes,
+        tempo: ex.tempo,
+      }));
 
-      const result = await createProgramWorkout(input);
+      let result;
+
+      if (isEditMode && workoutId) {
+        // Update existing workout
+        result = await updateProgramWorkout(workoutId, {
+          day_number: formData.day_number,
+          name: formData.name,
+          workout_type: formData.workout_type,
+          estimated_duration_minutes: formData.estimated_duration_minutes,
+          warmup_instructions: formData.warmup_instructions,
+          cooldown_instructions: formData.cooldown_instructions,
+          notes: formData.notes,
+          exercises: exerciseData,
+        });
+      } else {
+        // Create new workout
+        const input: CreateProgramWorkoutInput = {
+          program_id: programId,
+          week_number: weekNumber,
+          day_number: formData.day_number,
+          name: formData.name,
+          workout_type: formData.workout_type,
+          estimated_duration_minutes: formData.estimated_duration_minutes,
+          warmup_instructions: formData.warmup_instructions,
+          cooldown_instructions: formData.cooldown_instructions,
+          notes: formData.notes,
+          exercises: exerciseData,
+        };
+        result = await createProgramWorkout(input);
+      }
 
       if (result) {
         onSave();
       } else {
-        Alert.alert('Error', 'Failed to save workout. Please try again.');
+        Alert.alert('Error', `Failed to ${isEditMode ? 'update' : 'save'} workout. Please try again.`);
       }
     } catch (error) {
       console.error('Error saving workout:', error);
@@ -260,7 +284,9 @@ export function WorkoutPreviewStep({
           {saving ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.saveButtonText}>Save Workout</Text>
+            <Text style={styles.saveButtonText}>
+              {isEditMode ? 'Save Changes' : 'Save Workout'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>

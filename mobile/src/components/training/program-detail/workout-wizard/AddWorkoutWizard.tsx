@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
@@ -6,7 +6,14 @@ import { colors } from '@/src/lib/colors';
 import { WorkoutBasicsStep } from './WorkoutBasicsStep';
 import { WorkoutExercisesStep } from './WorkoutExercisesStep';
 import { WorkoutPreviewStep } from './WorkoutPreviewStep';
-import type { WorkoutFormData, WorkoutType, WorkoutExerciseConfig } from '@/src/types/training';
+import type {
+  WorkoutFormData,
+  WorkoutType,
+  WorkoutExerciseConfig,
+  ProgramWorkoutWithRelations,
+  WorkoutSection,
+  LoadType,
+} from '@/src/types/training';
 
 interface AddWorkoutWizardProps {
   programId: string;
@@ -14,6 +21,8 @@ interface AddWorkoutWizardProps {
   daysPerWeek: number;
   onClose: () => void;
   onSave: () => void;
+  /** If provided, wizard operates in edit mode */
+  existingWorkout?: ProgramWorkoutWithRelations;
 }
 
 export function AddWorkoutWizard({
@@ -21,16 +30,59 @@ export function AddWorkoutWizard({
   weekNumber,
   daysPerWeek,
   onClose,
-  onSave
+  onSave,
+  existingWorkout,
 }: AddWorkoutWizardProps) {
   const insets = useSafeAreaInsets();
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<WorkoutFormData>({
-    name: '',
-    day_number: 1,
-    workout_type: 'Strength' as WorkoutType,
-    exercises: [],
-  });
+  const isEditMode = !!existingWorkout;
+
+  // Convert existing workout to form data format
+  const getInitialFormData = (): WorkoutFormData => {
+    if (!existingWorkout) {
+      return {
+        name: '',
+        day_number: 1,
+        workout_type: 'Strength' as WorkoutType,
+        exercises: [],
+      };
+    }
+
+    // Map exercises from database format to form format
+    const exercises: WorkoutExerciseConfig[] = (existingWorkout.exercises || []).map((ex) => ({
+      exercise_id: ex.exercise_id,
+      exercise_name: ex.exercise?.name || 'Unknown Exercise',
+      section: (ex.section as WorkoutSection) || 'Strength',
+      exercise_order: ex.exercise_order,
+      target_sets: ex.target_sets || undefined,
+      target_reps: ex.target_reps_min || undefined,
+      target_time_seconds: ex.target_time_seconds || undefined,
+      is_per_side: ex.is_per_side,
+      load_type: (ex.load_type as LoadType) || 'none',
+      load_rpe: ex.target_rpe_min || undefined,
+      load_percentage_1rm: ex.load_percentage_1rm || undefined,
+      load_weight_lbs: ex.load_weight_lbs || undefined,
+      load_notes: ex.load_notes || undefined,
+      rest_seconds: ex.rest_seconds || undefined,
+      estimated_duration_minutes: ex.estimated_duration_minutes || undefined,
+      video_url: ex.video_url || undefined,
+      exercise_notes: ex.exercise_notes || undefined,
+      tempo: ex.tempo || undefined,
+    }));
+
+    return {
+      name: existingWorkout.name,
+      day_number: existingWorkout.day_number,
+      workout_type: existingWorkout.workout_type as WorkoutType,
+      estimated_duration_minutes: existingWorkout.estimated_duration_minutes || undefined,
+      warmup_instructions: existingWorkout.warmup_instructions || undefined,
+      cooldown_instructions: existingWorkout.cooldown_instructions || undefined,
+      notes: existingWorkout.notes || undefined,
+      exercises,
+    };
+  };
+
+  const [formData, setFormData] = useState<WorkoutFormData>(getInitialFormData);
 
   const handleNext = () => {
     // Validate current step before proceeding
@@ -82,8 +134,8 @@ export function AddWorkoutWizard({
 
   const getStepTitle = () => {
     switch (currentStep) {
-      case 1: return 'Workout Basics';
-      case 2: return 'Add Exercises';
+      case 1: return isEditMode ? 'Edit Basics' : 'Workout Basics';
+      case 2: return isEditMode ? 'Edit Exercises' : 'Add Exercises';
       case 3: return 'Review';
       default: return '';
     }
@@ -129,6 +181,8 @@ export function AddWorkoutWizard({
               weekNumber={weekNumber}
               onSave={onSave}
               onClose={onClose}
+              isEditMode={isEditMode}
+              workoutId={existingWorkout?.id}
             />
           )}
         </View>
