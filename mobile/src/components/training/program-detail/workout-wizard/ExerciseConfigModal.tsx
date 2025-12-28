@@ -20,6 +20,8 @@ interface ExerciseConfigModalProps {
   existingConfig?: WorkoutExerciseConfig;
   onClose: () => void;
   onSave: (config: Omit<WorkoutExerciseConfig, 'exercise_order'>) => void;
+  /** If true, skip prescription fields (used when adding to existing OR group) */
+  skipPrescription?: boolean;
 }
 
 const LOAD_TYPES: { value: LoadType; label: string }[] = [
@@ -35,7 +37,8 @@ export function ExerciseConfigModal({
   exercise,
   existingConfig,
   onClose,
-  onSave
+  onSave,
+  skipPrescription = false,
 }: ExerciseConfigModalProps) {
   // Section
   const [section, setSection] = useState<WorkoutSection>(existingConfig?.section || 'Strength');
@@ -86,6 +89,20 @@ export function ExerciseConfigModal({
   if (!exercise) return null;
 
   const handleSave = () => {
+    // When skipPrescription is true, just save with minimal config
+    if (skipPrescription) {
+      const config: Omit<WorkoutExerciseConfig, 'exercise_order'> = {
+        exercise_id: exercise.id,
+        exercise_name: exercise.name,
+        section,
+        is_per_side: false,
+        load_type: 'none',
+      };
+      onSave(config);
+      onClose();
+      return;
+    }
+
     // Validation - require at least sets or time
     if (measurementMode === 'reps') {
       if (!targetSets && !targetReps) {
@@ -140,7 +157,9 @@ export function ExerciseConfigModal({
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.title}>Configure Exercise</Text>
+              <Text style={styles.title}>
+                {skipPrescription ? 'Add Alternative' : 'Configure Exercise'}
+              </Text>
               <Text style={styles.exerciseName}>{exercise.name}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -151,242 +170,258 @@ export function ExerciseConfigModal({
           {/* Form */}
           <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
             <View style={styles.formContent}>
-              {/* Section */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Section *</Text>
-                <View style={styles.pillsContainer}>
-                  {WORKOUT_SECTIONS.map((s) => {
-                    const isSelected = section === s;
-                    return (
+              {/* Skip prescription info banner */}
+              {skipPrescription && (
+                <View style={styles.infoBanner}>
+                  <Text style={styles.infoBannerText}>
+                    This exercise will inherit the prescription (sets, reps, load) from the existing group.
+                  </Text>
+                </View>
+              )}
+
+              {/* Section - only show if not skipping (section is inherited) */}
+              {!skipPrescription && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Section *</Text>
+                  <View style={styles.pillsContainer}>
+                    {WORKOUT_SECTIONS.map((s) => {
+                      const isSelected = section === s;
+                      return (
+                        <TouchableOpacity
+                          key={s}
+                          style={[styles.pill, isSelected && styles.pillSelected]}
+                          onPress={() => setSection(s)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                            {SECTION_DISPLAY_NAMES[s]}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* Prescription fields - hidden when skipping */}
+              {!skipPrescription && (
+                <>
+                  {/* Measurement Type Toggle */}
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Measurement Type</Text>
+                    <View style={styles.toggleContainer}>
                       <TouchableOpacity
-                        key={s}
-                        style={[styles.pill, isSelected && styles.pillSelected]}
-                        onPress={() => setSection(s)}
+                        style={[styles.toggleButton, measurementMode === 'reps' && styles.toggleButtonActive]}
+                        onPress={() => setMeasurementMode('reps')}
                         activeOpacity={0.7}
                       >
-                        <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                          {SECTION_DISPLAY_NAMES[s]}
+                        <Text style={[styles.toggleButtonText, measurementMode === 'reps' && styles.toggleButtonTextActive]}>
+                          Reps
                         </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Measurement Type Toggle */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Measurement Type</Text>
-                <View style={styles.toggleContainer}>
-                  <TouchableOpacity
-                    style={[styles.toggleButton, measurementMode === 'reps' && styles.toggleButtonActive]}
-                    onPress={() => setMeasurementMode('reps')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.toggleButtonText, measurementMode === 'reps' && styles.toggleButtonTextActive]}>
-                      Reps
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleButton, measurementMode === 'time' && styles.toggleButtonActive]}
-                    onPress={() => setMeasurementMode('time')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.toggleButtonText, measurementMode === 'time' && styles.toggleButtonTextActive]}>
-                      Time
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Sets/Reps or Time */}
-              {measurementMode === 'reps' ? (
-                <View style={styles.rowFields}>
-                  <View style={styles.halfField}>
-                    <Text style={styles.label}>Sets</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g., 3"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={targetSets}
-                      onChangeText={setTargetSets}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                  <View style={styles.halfField}>
-                    <Text style={styles.label}>Reps</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g., 10"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={targetReps}
-                      onChangeText={setTargetReps}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.rowFields}>
-                  <View style={styles.halfField}>
-                    <Text style={styles.label}>Sets</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g., 3"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={targetSets}
-                      onChangeText={setTargetSets}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                  <View style={styles.halfField}>
-                    <Text style={styles.label}>Time (seconds)</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g., 30"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={targetTime}
-                      onChangeText={setTargetTime}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-              )}
-
-              {/* Per Side Checkbox */}
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                onPress={() => setIsPerSide(!isPerSide)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.checkbox, isPerSide && styles.checkboxChecked]}>
-                  {isPerSide && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.checkboxLabel}>Per side (unilateral exercise)</Text>
-              </TouchableOpacity>
-
-              {/* Load Type */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Load Type</Text>
-                <View style={styles.pillsContainer}>
-                  {LOAD_TYPES.map((lt) => {
-                    const isSelected = loadType === lt.value;
-                    return (
                       <TouchableOpacity
-                        key={lt.value}
-                        style={[styles.pill, isSelected && styles.pillSelected]}
-                        onPress={() => setLoadType(lt.value)}
+                        style={[styles.toggleButton, measurementMode === 'time' && styles.toggleButtonActive]}
+                        onPress={() => setMeasurementMode('time')}
                         activeOpacity={0.7}
                       >
-                        <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                          {lt.label}
+                        <Text style={[styles.toggleButtonText, measurementMode === 'time' && styles.toggleButtonTextActive]}>
+                          Time
                         </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Conditional Load Input */}
-              {loadType === 'rpe' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Target RPE (1-10)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., 7"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={loadRpe}
-                    onChangeText={setLoadRpe}
-                    keyboardType="decimal-pad"
-                  />
-                </View>
-              )}
-
-              {loadType === 'percentage_1rm' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>% of 1RM</Text>
-                  <View style={styles.row}>
-                    <TextInput
-                      style={[styles.input, styles.flex1]}
-                      placeholder="e.g., 75"
-                      placeholderTextColor={colors.mutedForeground}
-                      value={loadPercentage}
-                      onChangeText={setLoadPercentage}
-                      keyboardType="number-pad"
-                    />
-                    <Text style={styles.unitText}>%</Text>
+                    </View>
                   </View>
-                </View>
+
+                  {/* Sets/Reps or Time */}
+                  {measurementMode === 'reps' ? (
+                    <View style={styles.rowFields}>
+                      <View style={styles.halfField}>
+                        <Text style={styles.label}>Sets</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="e.g., 3"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={targetSets}
+                          onChangeText={setTargetSets}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                      <View style={styles.halfField}>
+                        <Text style={styles.label}>Reps</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="e.g., 10"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={targetReps}
+                          onChangeText={setTargetReps}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.rowFields}>
+                      <View style={styles.halfField}>
+                        <Text style={styles.label}>Sets</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="e.g., 3"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={targetSets}
+                          onChangeText={setTargetSets}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                      <View style={styles.halfField}>
+                        <Text style={styles.label}>Time (seconds)</Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="e.g., 30"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={targetTime}
+                          onChangeText={setTargetTime}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Per Side Checkbox */}
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    onPress={() => setIsPerSide(!isPerSide)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, isPerSide && styles.checkboxChecked]}>
+                      {isPerSide && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Per side (unilateral exercise)</Text>
+                  </TouchableOpacity>
+
+                  {/* Load Type */}
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Load Type</Text>
+                    <View style={styles.pillsContainer}>
+                      {LOAD_TYPES.map((lt) => {
+                        const isSelected = loadType === lt.value;
+                        return (
+                          <TouchableOpacity
+                            key={lt.value}
+                            style={[styles.pill, isSelected && styles.pillSelected]}
+                            onPress={() => setLoadType(lt.value)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                              {lt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Conditional Load Input */}
+                  {loadType === 'rpe' && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Target RPE (1-10)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="e.g., 7"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={loadRpe}
+                        onChangeText={setLoadRpe}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  )}
+
+                  {loadType === 'percentage_1rm' && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>% of 1RM</Text>
+                      <View style={styles.row}>
+                        <TextInput
+                          style={[styles.input, styles.flex1]}
+                          placeholder="e.g., 75"
+                          placeholderTextColor={colors.mutedForeground}
+                          value={loadPercentage}
+                          onChangeText={setLoadPercentage}
+                          keyboardType="number-pad"
+                        />
+                        <Text style={styles.unitText}>%</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {loadType === 'weight' && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Weight (lbs)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="e.g., 135"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={loadWeight}
+                        onChangeText={setLoadWeight}
+                        keyboardType="number-pad"
+                      />
+                    </View>
+                  )}
+
+                  {loadType === 'notes' && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Load Notes</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="e.g., Light band, bodyweight, moderate"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={loadNotes}
+                        onChangeText={setLoadNotes}
+                      />
+                    </View>
+                  )}
+
+                  {/* Rest Time */}
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Rest Between Sets (Optional)</Text>
+                    <View style={styles.row}>
+                      <TextInput
+                        style={[styles.input, styles.flex1]}
+                        placeholder="e.g., 90"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={restSeconds}
+                        onChangeText={setRestSeconds}
+                        keyboardType="number-pad"
+                      />
+                      <Text style={styles.unitText}>seconds</Text>
+                    </View>
+                  </View>
+
+                  {/* Tempo */}
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Tempo (Optional)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g., 3-1-2-0"
+                      placeholderTextColor={colors.mutedForeground}
+                      value={tempo}
+                      onChangeText={setTempo}
+                    />
+                    <Text style={styles.helperText}>Format: eccentric-pause-concentric-pause</Text>
+                  </View>
+
+                  {/* Notes */}
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Notes (Optional)</Text>
+                    <TextInput
+                      style={[styles.input, styles.textArea]}
+                      placeholder="Coaching cues, form notes..."
+                      placeholderTextColor={colors.mutedForeground}
+                      value={exerciseNotes}
+                      onChangeText={setExerciseNotes}
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                    />
+                  </View>
+                </>
               )}
-
-              {loadType === 'weight' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Weight (lbs)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., 135"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={loadWeight}
-                    onChangeText={setLoadWeight}
-                    keyboardType="number-pad"
-                  />
-                </View>
-              )}
-
-              {loadType === 'notes' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Load Notes</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., Light band, bodyweight, moderate"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={loadNotes}
-                    onChangeText={setLoadNotes}
-                  />
-                </View>
-              )}
-
-              {/* Rest Time */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Rest Between Sets (Optional)</Text>
-                <View style={styles.row}>
-                  <TextInput
-                    style={[styles.input, styles.flex1]}
-                    placeholder="e.g., 90"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={restSeconds}
-                    onChangeText={setRestSeconds}
-                    keyboardType="number-pad"
-                  />
-                  <Text style={styles.unitText}>seconds</Text>
-                </View>
-              </View>
-
-              {/* Tempo */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Tempo (Optional)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., 3-1-2-0"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={tempo}
-                  onChangeText={setTempo}
-                />
-                <Text style={styles.helperText}>Format: eccentric-pause-concentric-pause</Text>
-              </View>
-
-              {/* Notes */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Notes (Optional)</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder="Coaching cues, form notes..."
-                  placeholderTextColor={colors.mutedForeground}
-                  value={exerciseNotes}
-                  onChangeText={setExerciseNotes}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-              </View>
             </View>
           </ScrollView>
 
@@ -403,7 +438,7 @@ export function ExerciseConfigModal({
               onPress={handleSave}
             >
               <Text style={styles.saveButtonText}>
-                {existingConfig ? 'Update' : 'Add to Workout'}
+                {skipPrescription ? 'Add Alternative' : existingConfig ? 'Update' : 'Add to Workout'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -455,6 +490,19 @@ const styles = StyleSheet.create({
   },
   formContent: {
     padding: 20,
+  },
+  infoBanner: {
+    backgroundColor: `${colors.primary}15`,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+  },
+  infoBannerText: {
+    fontSize: 13,
+    color: colors.primary,
+    lineHeight: 18,
   },
   field: {
     marginBottom: 20,

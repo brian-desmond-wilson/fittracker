@@ -765,7 +765,12 @@ export async function createProgramWorkout(
         program_workout_id: workout.id,
         exercise_id: ex.exercise_id,
         section: ex.section,
-        exercise_order: index + 1,
+        exercise_order: ex.exercise_order || index + 1,
+        // Exercise group fields
+        group_id: ex.group_id || null,
+        group_type: ex.group_type || null,
+        group_item_order: ex.group_item_order ?? 0,
+        // Prescription fields
         target_sets: ex.target_sets || null,
         target_reps_min: ex.target_reps || null,
         target_reps_max: ex.target_reps || null,
@@ -851,7 +856,12 @@ export async function updateProgramWorkout(
         program_workout_id: workoutId,
         exercise_id: ex.exercise_id,
         section: ex.section,
-        exercise_order: index + 1,
+        exercise_order: ex.exercise_order || index + 1,
+        // Exercise group fields
+        group_id: ex.group_id || null,
+        group_type: ex.group_type || null,
+        group_item_order: ex.group_item_order ?? 0,
+        // Prescription fields
         target_sets: ex.target_sets || null,
         target_reps_min: ex.target_reps || null,
         target_reps_max: ex.target_reps || null,

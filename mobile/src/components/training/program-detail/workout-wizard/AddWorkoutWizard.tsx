@@ -13,6 +13,7 @@ import type {
   ProgramWorkoutWithRelations,
   WorkoutSection,
   LoadType,
+  ExerciseGroupType,
 } from '@/src/types/training';
 
 interface AddWorkoutWizardProps {
@@ -54,6 +55,11 @@ export function AddWorkoutWizard({
       exercise_name: ex.exercise?.name || 'Unknown Exercise',
       section: (ex.section as WorkoutSection) || 'Strength',
       exercise_order: ex.exercise_order,
+      // Exercise group fields
+      group_id: ex.group_id || undefined,
+      group_type: (ex.group_type as ExerciseGroupType) || undefined,
+      group_item_order: ex.group_item_order ?? 0,
+      // Prescription fields
       target_sets: ex.target_sets || undefined,
       target_reps: ex.target_reps_min || undefined,
       target_time_seconds: ex.target_time_seconds || undefined,

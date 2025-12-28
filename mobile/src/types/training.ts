@@ -15,6 +15,9 @@ export type MediaType = 'video' | 'pdf' | 'document' | 'image';
 export type WorkoutSection = 'Warmup' | 'Prehab' | 'Strength' | 'Accessory' | 'Isometric' | 'Cooldown';
 export type LoadType = 'rpe' | 'percentage_1rm' | 'weight' | 'notes' | 'none';
 
+// Exercise Group Types (for OR groups, supersets, circuits, etc.)
+export type ExerciseGroupType = 'or' | 'superset' | 'circuit' | 'emom';
+
 export const WORKOUT_SECTIONS: WorkoutSection[] = [
   'Warmup',
   'Prehab',
@@ -129,6 +132,11 @@ export interface ProgramWorkoutExercise {
 
   // Section grouping
   section: WorkoutSection | null;
+
+  // Exercise group (OR, superset, circuit, etc.)
+  group_id: string | null;
+  group_type: ExerciseGroupType | null;
+  group_item_order: number;
 
   // Set/Rep Scheme
   target_sets: number | null;
@@ -358,6 +366,11 @@ export interface WorkoutExerciseConfig {
   section: WorkoutSection;
   exercise_order: number;
 
+  // Exercise group (OR, superset, circuit, etc.)
+  group_id?: string;
+  group_type?: ExerciseGroupType;
+  group_item_order?: number;
+
   // Sets/Reps Configuration
   target_sets?: number;
   target_reps?: number;
@@ -423,3 +436,30 @@ export interface ExercisesBySection {
   Isometric: WorkoutExerciseConfig[];
   Cooldown: WorkoutExerciseConfig[];
 }
+
+/**
+ * A group of exercises (OR group, superset, circuit, etc.)
+ * All exercises in a group share the same prescription
+ */
+export interface ExerciseGroup {
+  group_id: string;
+  group_type: ExerciseGroupType;
+  section: WorkoutSection;
+  exercise_order: number;
+  exercises: WorkoutExerciseConfig[];
+}
+
+/**
+ * Type guard to check if an exercise is part of a group
+ */
+export function isGroupedExercise(exercise: WorkoutExerciseConfig): boolean {
+  return !!exercise.group_id && !!exercise.group_type;
+}
+
+/**
+ * Display item in the workout exercises list
+ * Can be either a single exercise or a group of exercises
+ */
+export type ExerciseListItem =
+  | { type: 'single'; exercise: WorkoutExerciseConfig }
+  | { type: 'group'; group: ExerciseGroup };

@@ -23,6 +23,7 @@ import {
   Play,
   Pencil,
   Trash2,
+  Layers,
 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
@@ -33,12 +34,25 @@ import type {
   ProgramWorkoutExercise,
   Exercise,
   WorkoutSection,
+  ExerciseGroupType,
 } from '@/src/types/training';
 import {
   WORKOUT_SECTIONS,
   SECTION_DISPLAY_NAMES,
   SECTION_DESCRIPTIONS,
 } from '@/src/types/training';
+
+// Group structure for display
+interface ExerciseDisplayGroup {
+  group_id: string;
+  group_type: ExerciseGroupType;
+  exercises: WorkoutExerciseWithDetails[];
+}
+
+// Display item: either a single exercise or a group
+type ExerciseDisplayItem =
+  | { type: 'single'; exercise: WorkoutExerciseWithDetails }
+  | { type: 'group'; group: ExerciseDisplayGroup };
 
 // Extended type for exercises with joined exercise data
 type WorkoutExerciseWithDetails = ProgramWorkoutExercise & {
@@ -136,10 +150,29 @@ export default function WorkoutDetailPage() {
     });
   };
 
-  const groupExercisesBySection = () => {
-    if (!workout?.exercises) return {};
+  const groupExercisesBySection = (): Record<WorkoutSection, ExerciseDisplayItem[]> => {
+    if (!workout?.exercises) {
+      return {
+        Warmup: [],
+        Prehab: [],
+        Strength: [],
+        Accessory: [],
+        Isometric: [],
+        Cooldown: [],
+      };
+    }
 
-    const grouped: Record<WorkoutSection, WorkoutExerciseWithDetails[]> = {
+    const result: Record<WorkoutSection, ExerciseDisplayItem[]> = {
+      Warmup: [],
+      Prehab: [],
+      Strength: [],
+      Accessory: [],
+      Isometric: [],
+      Cooldown: [],
+    };
+
+    // First, organize exercises by section
+    const exercisesBySection: Record<WorkoutSection, WorkoutExerciseWithDetails[]> = {
       Warmup: [],
       Prehab: [],
       Strength: [],
@@ -150,17 +183,46 @@ export default function WorkoutDetailPage() {
 
     workout.exercises.forEach((ex) => {
       const section = (ex.section as WorkoutSection) || 'Strength';
-      if (grouped[section]) {
-        grouped[section].push(ex as WorkoutExerciseWithDetails);
+      if (exercisesBySection[section]) {
+        exercisesBySection[section].push(ex as WorkoutExerciseWithDetails);
       }
     });
 
-    // Sort by exercise_order within each section
-    Object.keys(grouped).forEach((section) => {
-      grouped[section as WorkoutSection].sort((a, b) => a.exercise_order - b.exercise_order);
+    // Process each section to create display items
+    WORKOUT_SECTIONS.forEach((section) => {
+      const sectionExercises = exercisesBySection[section];
+      const processedGroupIds = new Set<string>();
+
+      // Sort by exercise_order
+      const sorted = [...sectionExercises].sort((a, b) => a.exercise_order - b.exercise_order);
+
+      for (const ex of sorted) {
+        if (ex.group_id) {
+          // This is part of a group
+          if (!processedGroupIds.has(ex.group_id)) {
+            processedGroupIds.add(ex.group_id);
+            // Find all exercises in this group
+            const groupExercises = sorted
+              .filter((e) => e.group_id === ex.group_id)
+              .sort((a, b) => (a.group_item_order ?? 0) - (b.group_item_order ?? 0));
+
+            result[section].push({
+              type: 'group',
+              group: {
+                group_id: ex.group_id,
+                group_type: (ex.group_type as ExerciseGroupType) || 'or',
+                exercises: groupExercises,
+              },
+            });
+          }
+        } else {
+          // Standalone exercise
+          result[section].push({ type: 'single', exercise: ex });
+        }
+      }
     });
 
-    return grouped;
+    return result;
   };
 
   const getLoadSummary = (ex: WorkoutExerciseWithDetails) => {
@@ -397,8 +459,8 @@ export default function WorkoutDetailPage() {
 
         {/* Exercise Sections */}
         {WORKOUT_SECTIONS.map((section) => {
-          const exercises = groupedExercises[section];
-          if (!exercises || exercises.length === 0) return null;
+          const displayItems = groupedExercises[section];
+          if (!displayItems || displayItems.length === 0) return null;
 
           const isExpanded = expandedSections.has(section);
           const sectionColor = getSectionColor(section);
@@ -417,7 +479,7 @@ export default function WorkoutDetailPage() {
                   <View>
                     <Text style={styles.sectionTitle}>{SECTION_DISPLAY_NAMES[section]}</Text>
                     <Text style={styles.sectionDescription}>
-                      {exercises.length} exercise{exercises.length !== 1 ? 's' : ''}
+                      {displayItems.length} item{displayItems.length !== 1 ? 's' : ''}
                     </Text>
                   </View>
                 </View>
@@ -430,7 +492,84 @@ export default function WorkoutDetailPage() {
 
               {isExpanded && (
                 <View style={styles.exercisesList}>
-                  {exercises.map((ex, index) => {
+                  {displayItems.map((item, index) => {
+                    if (item.type === 'group') {
+                      // Render OR group
+                      const firstEx = item.group.exercises[0];
+                      const repsSummary = getRepsSummary(firstEx);
+                      const loadSummary = getLoadSummary(firstEx);
+
+                      return (
+                        <View
+                          key={item.group.group_id}
+                          style={[
+                            styles.groupCard,
+                            index === displayItems.length - 1 && styles.exerciseCardLast,
+                          ]}
+                        >
+                          <View style={styles.groupHeader}>
+                            <View style={[styles.exerciseOrder, { backgroundColor: sectionColor }]}>
+                              <Text style={styles.exerciseOrderText}>{index + 1}</Text>
+                            </View>
+                            <View style={styles.groupBadge}>
+                              <Layers size={12} color={colors.primary} />
+                              <Text style={styles.groupBadgeText}>PICK ONE</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.groupExercisesList}>
+                            {item.group.exercises.map((ex, exIndex) => (
+                              <TouchableOpacity
+                                key={ex.id}
+                                style={styles.groupExerciseItem}
+                                onPress={() => {
+                                  if (ex.exercise_id) {
+                                    router.push(`/(tabs)/training/exercise/${ex.exercise_id}`);
+                                  }
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                {exIndex > 0 && (
+                                  <View style={styles.orDivider}>
+                                    <View style={styles.orLine} />
+                                    <Text style={styles.orText}>or</Text>
+                                    <View style={styles.orLine} />
+                                  </View>
+                                )}
+                                <Text style={styles.groupExerciseName}>
+                                  {ex.exercise?.name || 'Unknown Exercise'}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+
+                          <View style={styles.groupPrescription}>
+                            <View style={styles.exerciseDetails}>
+                              {repsSummary ? (
+                                <Text style={styles.exerciseReps}>{repsSummary}</Text>
+                              ) : null}
+                              {loadSummary ? (
+                                <Text style={styles.exerciseLoad}>{loadSummary}</Text>
+                              ) : null}
+                              {firstEx.rest_seconds ? (
+                                <Text style={styles.exerciseRest}>{firstEx.rest_seconds}s rest</Text>
+                              ) : null}
+                            </View>
+                            {firstEx.tempo && (
+                              <Text style={styles.exerciseTempo}>Tempo: {firstEx.tempo}</Text>
+                            )}
+                            {firstEx.exercise_notes && (
+                              <Text style={styles.exerciseNotes} numberOfLines={2}>
+                                {firstEx.exercise_notes}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    // Render single exercise
+                    const ex = item.exercise;
                     const repsSummary = getRepsSummary(ex);
                     const loadSummary = getLoadSummary(ex);
 
@@ -439,7 +578,7 @@ export default function WorkoutDetailPage() {
                         key={ex.id}
                         style={[
                           styles.exerciseCard,
-                          index === exercises.length - 1 && styles.exerciseCardLast,
+                          index === displayItems.length - 1 && styles.exerciseCardLast,
                         ]}
                         onPress={() => {
                           if (ex.exercise_id) {
@@ -449,7 +588,7 @@ export default function WorkoutDetailPage() {
                         activeOpacity={0.7}
                       >
                         <View style={[styles.exerciseOrder, { backgroundColor: sectionColor }]}>
-                          <Text style={styles.exerciseOrderText}>{ex.exercise_order}</Text>
+                          <Text style={styles.exerciseOrderText}>{index + 1}</Text>
                         </View>
 
                         <View style={styles.exerciseContent}>
@@ -776,6 +915,68 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  // Group styles
+  groupCard: {
+    backgroundColor: colors.secondary,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  groupBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: `${colors.primary}20`,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  groupBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  groupExercisesList: {
+    marginLeft: 38,
+    marginBottom: 8,
+  },
+  groupExerciseItem: {
+    paddingVertical: 2,
+  },
+  groupExerciseName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 6,
+    gap: 8,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+    maxWidth: 40,
+  },
+  orText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+    textTransform: 'lowercase',
+  },
+  groupPrescription: {
+    marginLeft: 38,
   },
   footer: {
     position: 'absolute',

@@ -8,12 +8,33 @@ import {
   Animated,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Plus, Trash2, Edit2 } from 'lucide-react-native';
+import { Plus, Trash2, Edit2, X, Layers } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseSearchModal } from './ExerciseSearchModal';
 import { ExerciseConfigModal } from './ExerciseConfigModal';
-import type { WorkoutFormData, WorkoutExerciseConfig, WorkoutSection, Exercise } from '@/src/types/training';
+import type {
+  WorkoutFormData,
+  WorkoutExerciseConfig,
+  WorkoutSection,
+  Exercise,
+  ExerciseGroup,
+} from '@/src/types/training';
 import { WORKOUT_SECTIONS, SECTION_DISPLAY_NAMES, SECTION_DESCRIPTIONS } from '@/src/types/training';
+
+// Generate a UUID v4 for group_id (database expects UUID type)
+const generateGroupId = (): string => {
+  // Simple UUID v4 generator
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+// Display item for the exercise list (either single or group)
+type ExerciseDisplayItem =
+  | { type: 'single'; exercise: WorkoutExerciseConfig; globalIndex: number }
+  | { type: 'group'; group: ExerciseGroup; exerciseIndices: number[] };
 
 interface WorkoutExercisesStepProps {
   formData: WorkoutFormData;
@@ -27,32 +48,97 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
   const [editingExerciseIndex, setEditingExerciseIndex] = useState<number | null>(null);
   const [targetSection, setTargetSection] = useState<WorkoutSection>('Strength');
+  // For adding alternatives to existing groups or converting to group
+  const [addingAlternativeToGroupId, setAddingAlternativeToGroupId] = useState<string | null>(null);
+  const [convertingToGroupIndex, setConvertingToGroupIndex] = useState<number | null>(null);
   const swipeableRefs = useRef<Map<number, Swipeable>>(new Map());
 
-  // Group exercises by section
-  const exercisesBySection: Record<WorkoutSection, WorkoutExerciseConfig[]> = {
-    Warmup: [],
-    Prehab: [],
-    Strength: [],
-    Accessory: [],
-    Isometric: [],
-    Cooldown: [],
-  };
+  // Group exercises by section and then by group_id for display
+  const getDisplayItemsForSection = (section: WorkoutSection): ExerciseDisplayItem[] => {
+    const sectionExercises = formData.exercises
+      .map((ex, index) => ({ ex, globalIndex: index }))
+      .filter(({ ex }) => ex.section === section);
 
-  formData.exercises.forEach((ex) => {
-    if (ex.section && exercisesBySection[ex.section]) {
-      exercisesBySection[ex.section].push(ex);
+    const displayItems: ExerciseDisplayItem[] = [];
+    const processedGroupIds = new Set<string>();
+
+    // Sort by exercise_order
+    sectionExercises.sort((a, b) => a.ex.exercise_order - b.ex.exercise_order);
+
+    for (const { ex, globalIndex } of sectionExercises) {
+      if (ex.group_id && ex.group_type) {
+        // This is part of a group
+        if (processedGroupIds.has(ex.group_id)) {
+          continue; // Already processed this group
+        }
+        processedGroupIds.add(ex.group_id);
+
+        // Find all exercises in this group
+        const groupExercises = sectionExercises
+          .filter(({ ex: e }) => e.group_id === ex.group_id)
+          .sort((a, b) => (a.ex.group_item_order ?? 0) - (b.ex.group_item_order ?? 0));
+
+        const group: ExerciseGroup = {
+          group_id: ex.group_id,
+          group_type: ex.group_type,
+          section: ex.section,
+          exercise_order: ex.exercise_order,
+          exercises: groupExercises.map(({ ex: e }) => e),
+        };
+
+        displayItems.push({
+          type: 'group',
+          group,
+          exerciseIndices: groupExercises.map(({ globalIndex: gi }) => gi),
+        });
+      } else {
+        // Standalone exercise
+        displayItems.push({
+          type: 'single',
+          exercise: ex,
+          globalIndex,
+        });
+      }
     }
-  });
+
+    // Sort by exercise_order
+    displayItems.sort((a, b) => {
+      const orderA = a.type === 'single' ? a.exercise.exercise_order : a.group.exercise_order;
+      const orderB = b.type === 'single' ? b.exercise.exercise_order : b.group.exercise_order;
+      return orderA - orderB;
+    });
+
+    return displayItems;
+  };
 
   const handleAddExercise = (section: WorkoutSection) => {
     setTargetSection(section);
     setEditingExerciseIndex(null);
+    setAddingAlternativeToGroupId(null);
+    setConvertingToGroupIndex(null);
+    setShowSearchModal(true);
+  };
+
+  const handleAddAlternative = (groupId: string, section: WorkoutSection) => {
+    setTargetSection(section);
+    setEditingExerciseIndex(null);
+    setAddingAlternativeToGroupId(groupId);
+    setConvertingToGroupIndex(null);
+    setShowSearchModal(true);
+  };
+
+  const handleConvertToGroup = (globalIndex: number) => {
+    const exercise = formData.exercises[globalIndex];
+    setTargetSection(exercise.section);
+    setEditingExerciseIndex(null);
+    setAddingAlternativeToGroupId(null);
+    setConvertingToGroupIndex(globalIndex);
     setShowSearchModal(true);
   };
 
   const handleSelectExercise = (exercise: Exercise) => {
     setSelectedExercise(exercise);
+    setShowSearchModal(false);
     setShowConfigModal(true);
   };
 
@@ -60,22 +146,120 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
     const newExercises = [...formData.exercises];
 
     if (editingExerciseIndex !== null) {
-      // Update existing
-      newExercises[editingExerciseIndex] = {
-        ...config,
-        exercise_order: editingExerciseIndex + 1,
+      // Update existing exercise
+      const existingEx = newExercises[editingExerciseIndex];
+
+      // If editing a grouped exercise, update prescription for all in group
+      if (existingEx.group_id) {
+        newExercises.forEach((ex, i) => {
+          if (ex.group_id === existingEx.group_id) {
+            newExercises[i] = {
+              ...ex,
+              target_sets: config.target_sets,
+              target_reps: config.target_reps,
+              target_time_seconds: config.target_time_seconds,
+              is_per_side: config.is_per_side,
+              load_type: config.load_type,
+              load_rpe: config.load_rpe,
+              load_percentage_1rm: config.load_percentage_1rm,
+              load_weight_lbs: config.load_weight_lbs,
+              load_notes: config.load_notes,
+              rest_seconds: config.rest_seconds,
+              tempo: config.tempo,
+              // Keep individual fields
+              exercise_id: ex.exercise_id,
+              exercise_name: ex.exercise_name,
+              section: ex.section,
+              exercise_order: ex.exercise_order,
+              group_id: ex.group_id,
+              group_type: ex.group_type,
+              group_item_order: ex.group_item_order,
+            };
+          }
+        });
+      } else {
+        newExercises[editingExerciseIndex] = {
+          ...config,
+          exercise_order: existingEx.exercise_order,
+        };
+      }
+    } else if (convertingToGroupIndex !== null) {
+      // Converting standalone exercise to a group by adding alternative
+      const existingEx = newExercises[convertingToGroupIndex];
+      const newGroupId = generateGroupId();
+
+      // Update existing exercise to be part of new group
+      newExercises[convertingToGroupIndex] = {
+        ...existingEx,
+        group_id: newGroupId,
+        group_type: 'or',
+        group_item_order: 0,
       };
+
+      // Add new exercise to group with same prescription (exercise_order will be set below)
+      newExercises.push({
+        ...config,
+        exercise_order: newExercises.length + 1, // Temporary, will be re-ordered
+        group_id: newGroupId,
+        group_type: 'or',
+        group_item_order: 1,
+        // Copy prescription from existing exercise
+        target_sets: existingEx.target_sets,
+        target_reps: existingEx.target_reps,
+        target_time_seconds: existingEx.target_time_seconds,
+        is_per_side: existingEx.is_per_side,
+        load_type: existingEx.load_type,
+        load_rpe: existingEx.load_rpe,
+        load_percentage_1rm: existingEx.load_percentage_1rm,
+        load_weight_lbs: existingEx.load_weight_lbs,
+        load_notes: existingEx.load_notes,
+        rest_seconds: existingEx.rest_seconds,
+        tempo: existingEx.tempo,
+      });
+    } else if (addingAlternativeToGroupId) {
+      // Adding to existing group
+      const groupExercises = newExercises.filter(ex => ex.group_id === addingAlternativeToGroupId);
+      const firstInGroup = groupExercises[0];
+      const maxItemOrder = Math.max(...groupExercises.map(ex => ex.group_item_order ?? 0));
+
+      newExercises.push({
+        ...config,
+        exercise_order: newExercises.length + 1, // Temporary, will be re-ordered
+        group_id: addingAlternativeToGroupId,
+        group_type: 'or',
+        group_item_order: maxItemOrder + 1,
+        // Copy prescription from group
+        target_sets: firstInGroup.target_sets,
+        target_reps: firstInGroup.target_reps,
+        target_time_seconds: firstInGroup.target_time_seconds,
+        is_per_side: firstInGroup.is_per_side,
+        load_type: firstInGroup.load_type,
+        load_rpe: firstInGroup.load_rpe,
+        load_percentage_1rm: firstInGroup.load_percentage_1rm,
+        load_weight_lbs: firstInGroup.load_weight_lbs,
+        load_notes: firstInGroup.load_notes,
+        rest_seconds: firstInGroup.rest_seconds,
+        tempo: firstInGroup.tempo,
+      });
     } else {
-      // Add new with order based on position
+      // Add new standalone exercise
       newExercises.push({
         ...config,
         exercise_order: newExercises.length + 1,
       });
     }
 
+    // Re-order ALL exercises to ensure unique exercise_order values
+    // Grouping is determined by group_id, not exercise_order
+    newExercises.forEach((ex, i) => {
+      ex.exercise_order = i + 1;
+    });
+
     onUpdate({ exercises: newExercises });
     setEditingExerciseIndex(null);
     setSelectedExercise(null);
+    setAddingAlternativeToGroupId(null);
+    setConvertingToGroupIndex(null);
   };
 
   const handleEditExercise = (index: number) => {
@@ -84,7 +268,6 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
     setSelectedExercise({
       id: exercise.exercise_id,
       name: exercise.exercise_name,
-      // Include minimal exercise data needed
       slug: '',
       category: 'Compound',
       muscle_groups: [],
@@ -99,7 +282,35 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
   };
 
   const handleDeleteExercise = (index: number) => {
-    const newExercises = formData.exercises.filter((_, i) => i !== index);
+    const exerciseToDelete = formData.exercises[index];
+    let newExercises = formData.exercises.filter((_, i) => i !== index);
+
+    // If deleted exercise was in a group, check if group now has only 1 exercise
+    if (exerciseToDelete.group_id) {
+      const remainingInGroup = newExercises.filter(ex => ex.group_id === exerciseToDelete.group_id);
+      if (remainingInGroup.length === 1) {
+        // Convert back to standalone
+        const idx = newExercises.findIndex(ex => ex.group_id === exerciseToDelete.group_id);
+        if (idx !== -1) {
+          newExercises[idx] = {
+            ...newExercises[idx],
+            group_id: undefined,
+            group_type: undefined,
+            group_item_order: undefined,
+          };
+        }
+      }
+    }
+
+    // Re-order
+    newExercises.forEach((ex, i) => {
+      ex.exercise_order = i + 1;
+    });
+    onUpdate({ exercises: newExercises });
+  };
+
+  const handleDeleteGroup = (groupId: string) => {
+    const newExercises = formData.exercises.filter(ex => ex.group_id !== groupId);
     // Re-order
     newExercises.forEach((ex, i) => {
       ex.exercise_order = i + 1;
@@ -114,14 +325,14 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
     }
   };
 
-  const renderRightActions = (
+  const renderRightActionsForSingle = (
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>,
     globalIndex: number
   ) => {
     const translateX = dragX.interpolate({
-      inputRange: [-120, 0],
-      outputRange: [0, 120],
+      inputRange: [-180, 0],
+      outputRange: [0, 180],
       extrapolate: 'clamp',
     });
 
@@ -130,13 +341,23 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
         style={[styles.swipeActionsContainer, { transform: [{ translateX }] }]}
       >
         <TouchableOpacity
+          style={styles.swipeActionAlt}
+          onPress={() => {
+            closeSwipeable(globalIndex);
+            handleConvertToGroup(globalIndex);
+          }}
+        >
+          <Layers size={18} color="#FFFFFF" />
+          <Text style={styles.swipeActionText}>+ Alt</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={styles.swipeActionEdit}
           onPress={() => {
             closeSwipeable(globalIndex);
             handleEditExercise(globalIndex);
           }}
         >
-          <Edit2 size={20} color="#FFFFFF" />
+          <Edit2 size={18} color="#FFFFFF" />
           <Text style={styles.swipeActionText}>Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -146,7 +367,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
             handleDeleteExercise(globalIndex);
           }}
         >
-          <Trash2 size={20} color="#FFFFFF" />
+          <Trash2 size={18} color="#FFFFFF" />
           <Text style={styles.swipeActionText}>Delete</Text>
         </TouchableOpacity>
       </Animated.View>
@@ -177,7 +398,138 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
   };
 
   const getSectionCount = (section: WorkoutSection) => {
-    return exercisesBySection[section].length;
+    const items = getDisplayItemsForSection(section);
+    return items.reduce((count, item) => {
+      return count + (item.type === 'single' ? 1 : item.group.exercises.length);
+    }, 0);
+  };
+
+  const renderSingleExercise = (item: ExerciseDisplayItem & { type: 'single' }) => {
+    const { exercise: ex, globalIndex } = item;
+    const loadSummary = getLoadSummary(ex);
+    const repsSummary = getRepsSummary(ex);
+
+    return (
+      <Swipeable
+        key={`single-${ex.exercise_id}-${globalIndex}`}
+        ref={(ref) => {
+          if (ref) {
+            swipeableRefs.current.set(globalIndex, ref);
+          } else {
+            swipeableRefs.current.delete(globalIndex);
+          }
+        }}
+        renderRightActions={(progress, dragX) =>
+          renderRightActionsForSingle(progress, dragX, globalIndex)
+        }
+        rightThreshold={40}
+        overshootRight={false}
+      >
+        <View style={styles.exerciseCard}>
+          <View style={styles.exerciseContent}>
+            <View style={styles.exerciseOrderBadge}>
+              <Text style={styles.exerciseOrderText}>{ex.exercise_order}</Text>
+            </View>
+            <View style={styles.exerciseInfo}>
+              <Text style={styles.exerciseName}>{ex.exercise_name}</Text>
+              <View style={styles.exerciseMeta}>
+                {repsSummary ? (
+                  <Text style={styles.exerciseReps}>{repsSummary}</Text>
+                ) : null}
+                {loadSummary ? (
+                  <Text style={styles.exerciseLoad}>{loadSummary}</Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        </View>
+      </Swipeable>
+    );
+  };
+
+  const renderGroupExercise = (item: ExerciseDisplayItem & { type: 'group' }) => {
+    const { group, exerciseIndices } = item;
+    const firstEx = group.exercises[0];
+    const loadSummary = getLoadSummary(firstEx);
+    const repsSummary = getRepsSummary(firstEx);
+
+    return (
+      <View key={`group-${group.group_id}`} style={styles.groupCard}>
+        {/* Group Header */}
+        <View style={styles.groupHeader}>
+          <View style={styles.groupHeaderLeft}>
+            <View style={styles.groupOrderBadge}>
+              <Text style={styles.groupOrderText}>{firstEx.exercise_order}</Text>
+            </View>
+            <View style={styles.groupBadge}>
+              <Layers size={12} color={colors.primary} />
+              <Text style={styles.groupBadgeText}>PICK ONE</Text>
+            </View>
+          </View>
+          <View style={styles.groupHeaderRight}>
+            {repsSummary ? (
+              <Text style={styles.groupPrescription}>{repsSummary}</Text>
+            ) : null}
+            {loadSummary ? (
+              <Text style={styles.groupLoad}>{loadSummary}</Text>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Group Exercises */}
+        <View style={styles.groupExercises}>
+          {group.exercises.map((ex, idx) => {
+            const globalIdx = exerciseIndices[idx];
+            return (
+              <View key={`${ex.exercise_id}-${idx}`}>
+                <View style={styles.groupExerciseRow}>
+                  <Text style={styles.groupExerciseName}>{ex.exercise_name}</Text>
+                  <TouchableOpacity
+                    style={styles.groupExerciseRemove}
+                    onPress={() => handleDeleteExercise(globalIdx)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <X size={16} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                </View>
+                {idx < group.exercises.length - 1 && (
+                  <View style={styles.orDivider}>
+                    <View style={styles.orLine} />
+                    <Text style={styles.orText}>or</Text>
+                    <View style={styles.orLine} />
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Group Actions */}
+        <View style={styles.groupActions}>
+          <TouchableOpacity
+            style={styles.groupActionButton}
+            onPress={() => handleAddAlternative(group.group_id, group.section)}
+          >
+            <Plus size={14} color={colors.primary} />
+            <Text style={styles.groupActionText}>Add Alternative</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.groupActionButton}
+            onPress={() => handleEditExercise(exerciseIndices[0])}
+          >
+            <Edit2 size={14} color={colors.primary} />
+            <Text style={styles.groupActionText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.groupActionButton, styles.groupDeleteButton]}
+            onPress={() => handleDeleteGroup(group.group_id)}
+          >
+            <Trash2 size={14} color="#EF4444" />
+            <Text style={[styles.groupActionText, styles.groupDeleteText]}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   };
 
   return (
@@ -187,76 +539,43 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        {WORKOUT_SECTIONS.map((section) => (
-          <View key={section} style={styles.sectionContainer}>
-            {/* Section Header */}
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>{SECTION_DISPLAY_NAMES[section]}</Text>
-                <View style={styles.sectionBadge}>
-                  <Text style={styles.sectionBadgeText}>{getSectionCount(section)}</Text>
-                </View>
-              </View>
-              <Text style={styles.sectionDescription}>{SECTION_DESCRIPTIONS[section]}</Text>
-            </View>
+        {WORKOUT_SECTIONS.map((section) => {
+          const displayItems = getDisplayItemsForSection(section);
 
-            {/* Exercises in Section */}
-            {exercisesBySection[section].map((ex) => {
-              const globalIndex = formData.exercises.findIndex(
-                (e) => e.exercise_id === ex.exercise_id && e.section === ex.section
-              );
-              const loadSummary = getLoadSummary(ex);
-              const repsSummary = getRepsSummary(ex);
-
-              return (
-                <Swipeable
-                  key={`${ex.exercise_id}-${globalIndex}`}
-                  ref={(ref) => {
-                    if (ref) {
-                      swipeableRefs.current.set(globalIndex, ref);
-                    } else {
-                      swipeableRefs.current.delete(globalIndex);
-                    }
-                  }}
-                  renderRightActions={(progress, dragX) =>
-                    renderRightActions(progress, dragX, globalIndex)
-                  }
-                  rightThreshold={40}
-                  overshootRight={false}
-                >
-                  <View style={styles.exerciseCard}>
-                    <View style={styles.exerciseContent}>
-                      <View style={styles.exerciseOrderBadge}>
-                        <Text style={styles.exerciseOrderText}>{ex.exercise_order}</Text>
-                      </View>
-                      <View style={styles.exerciseInfo}>
-                        <Text style={styles.exerciseName}>{ex.exercise_name}</Text>
-                        <View style={styles.exerciseMeta}>
-                          {repsSummary ? (
-                            <Text style={styles.exerciseReps}>{repsSummary}</Text>
-                          ) : null}
-                          {loadSummary ? (
-                            <Text style={styles.exerciseLoad}>{loadSummary}</Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    </View>
+          return (
+            <View key={section} style={styles.sectionContainer}>
+              {/* Section Header */}
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>{SECTION_DISPLAY_NAMES[section]}</Text>
+                  <View style={styles.sectionBadge}>
+                    <Text style={styles.sectionBadgeText}>{getSectionCount(section)}</Text>
                   </View>
-                </Swipeable>
-              );
-            })}
+                </View>
+                <Text style={styles.sectionDescription}>{SECTION_DESCRIPTIONS[section]}</Text>
+              </View>
 
-            {/* Add Exercise Button */}
-            <TouchableOpacity
-              style={styles.addExerciseButton}
-              onPress={() => handleAddExercise(section)}
-              activeOpacity={0.7}
-            >
-              <Plus size={18} color={colors.primary} />
-              <Text style={styles.addExerciseText}>Add Exercise</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
+              {/* Exercises/Groups in Section */}
+              {displayItems.map((item) => {
+                if (item.type === 'single') {
+                  return renderSingleExercise(item);
+                } else {
+                  return renderGroupExercise(item);
+                }
+              })}
+
+              {/* Add Exercise Button */}
+              <TouchableOpacity
+                style={styles.addExerciseButton}
+                onPress={() => handleAddExercise(section)}
+                activeOpacity={0.7}
+              >
+                <Plus size={18} color={colors.primary} />
+                <Text style={styles.addExerciseText}>Add Exercise</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -271,7 +590,11 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
       {/* Search Modal */}
       <ExerciseSearchModal
         visible={showSearchModal}
-        onClose={() => setShowSearchModal(false)}
+        onClose={() => {
+          setShowSearchModal(false);
+          setAddingAlternativeToGroupId(null);
+          setConvertingToGroupIndex(null);
+        }}
         onSelectExercise={handleSelectExercise}
       />
 
@@ -284,15 +607,20 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
           setShowConfigModal(false);
           setSelectedExercise(null);
           setEditingExerciseIndex(null);
+          setAddingAlternativeToGroupId(null);
+          setConvertingToGroupIndex(null);
         }}
         onSave={(config) => {
-          // Ensure section is set if coming from add button
-          if (editingExerciseIndex === null) {
-            handleSaveExerciseConfig({ ...config, section: targetSection });
-          } else {
+          // Always use targetSection for new exercises (including alternatives)
+          // When editing, the config already has the correct section from existingConfig
+          if (editingExerciseIndex !== null) {
             handleSaveExerciseConfig(config);
+          } else {
+            handleSaveExerciseConfig({ ...config, section: targetSection });
           }
         }}
+        // Skip prescription if adding to existing group (inherits from group)
+        skipPrescription={!!addingAlternativeToGroupId || convertingToGroupIndex !== null}
       />
     </View>
   );
@@ -340,6 +668,7 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: 4,
   },
+  // Single Exercise Card
   exerciseCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -392,16 +721,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedForeground,
   },
+  // Swipe Actions
   swipeActionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
   },
+  swipeActionAlt: {
+    backgroundColor: '#8B5CF6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 55,
+    height: '100%',
+    paddingVertical: 12,
+  },
   swipeActionEdit: {
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 60,
+    width: 55,
     height: '100%',
     paddingVertical: 12,
   },
@@ -409,16 +747,144 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 60,
+    width: 55,
     height: '100%',
     paddingVertical: 12,
   },
   swipeActionText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: '#FFFFFF',
     marginTop: 4,
   },
+  // Group Card
+  groupCard: {
+    backgroundColor: colors.secondary,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    overflow: 'hidden',
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: `${colors.primary}15`,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  groupHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  groupOrderBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  groupOrderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  groupBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: `${colors.primary}20`,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  groupBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  groupHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  groupPrescription: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  groupLoad: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+  },
+  // Group Exercises List
+  groupExercises: {
+    padding: 12,
+  },
+  groupExerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  groupExerciseName: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.foreground,
+    flex: 1,
+  },
+  groupExerciseRemove: {
+    padding: 4,
+  },
+  orDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  orText: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    paddingHorizontal: 12,
+    fontStyle: 'italic',
+  },
+  // Group Actions
+  groupActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  groupActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  groupDeleteButton: {
+    borderRightWidth: 0,
+  },
+  groupActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  groupDeleteText: {
+    color: '#EF4444',
+  },
+  // Add Exercise Button
   addExerciseButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -435,6 +901,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary,
   },
+  // Footer
   footer: {
     padding: 20,
     borderTopWidth: 1,

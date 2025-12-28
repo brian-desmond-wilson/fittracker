@@ -76,7 +76,8 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
   const handleSelectExercise = (exercise: Exercise) => {
     onSelectExercise(exercise);
     setSearchQuery('');
-    onClose();
+    // Don't call onClose() here - the parent handles closing the modal
+    // and calling onClose would reset convertingToGroupIndex/addingAlternativeToGroupId
   };
 
   const getCategoryColor = (category: string) => {
