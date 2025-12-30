@@ -114,7 +114,37 @@ export interface MealLog {
   sugars: number | null; // grams
   uses_inventory: boolean;
   inventory_items: InventoryUsage[] | null;
+  saved_food_id: string | null; // Link to saved_foods table
+  servings: number; // Serving multiplier (e.g., 0.5, 1.0, 2.0)
   logged_at: string;
+}
+
+// Saved Foods (Personal Food Library) - for quick meal logging
+export interface SavedFood {
+  id: string;
+  user_id: string;
+  name: string;
+  brand: string | null;
+  barcode: string | null;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fats: number | null;
+  sugars: number | null;
+  serving_size: string | null;
+  image_primary_url: string | null;
+  image_front_url: string | null;
+  image_back_url: string | null;
+  is_favorite: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Recent food item with usage frequency
+export interface RecentFoodItem {
+  savedFood: SavedFood;
+  logCount: number;
+  lastLoggedAt: string;
 }
 
 // Water Intake Types

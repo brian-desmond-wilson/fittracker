@@ -8,6 +8,10 @@ export const colors = {
   background: "#0A0F1E",
   foreground: "#F9FAFB",
 
+  // Card
+  card: "#1E293B",
+  cardForeground: "#F9FAFB",
+
   // Secondary
   secondary: "#1E293B",
   secondaryForeground: "#F9FAFB",

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,13 +9,31 @@ import {
   StatusBar,
   Alert,
   Platform,
+  PanResponder,
+  Animated,
+  RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Plus, Utensils, Trash2, Calendar } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Utensils, Trash2, Calendar, Plus } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
-import { MealLog, MealType } from "@/src/types/track";
+import { MealLog, MealType, SavedFood, RecentFoodItem } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { getProductByBarcode, ProductData } from "@/src/services/openFoodFactsApi";
+import {
+  getSavedFoodByBarcode,
+  createSavedFood,
+  getRecentFoods,
+  getFavorites,
+  toggleFavorite,
+} from "@/src/services/savedFoodsService";
+import { BarcodeScannerModal } from "./BarcodeScannerModal";
+import { FoodPreviewModal } from "./FoodPreviewModal";
+import { QuickActionBar } from "./meals/QuickActionBar";
+import { RecentFoodsRow } from "./meals/RecentFoodsRow";
+import { RecentFoodChips } from "./meals/RecentFoodChips";
+import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -39,9 +57,16 @@ const getLocalDateString = (date: Date = new Date()): string => {
 
 export function MealsScreen({ onClose }: MealsScreenProps) {
   const insets = useSafeAreaInsets();
-  const [meals, setMeals] = useState<MealLog[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // Date navigation state
+  const [viewingDate, setViewingDate] = useState(new Date());
+  const [mealsCache, setMealsCache] = useState<Map<string, MealLog[]>>(new Map());
+  const [loadingDay, setLoadingDay] = useState(true);
+
+  // Swipe animation
+  const translateX = useRef(new Animated.Value(0)).current;
+  const SWIPE_THRESHOLD = 50;
 
   // Form fields
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -54,15 +79,101 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [fats, setFats] = useState("");
   const [sugars, setSugars] = useState("");
 
-  const today = getLocalDateString();
+  // Barcode scanner state
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [showFoodPreview, setShowFoodPreview] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [previewFood, setPreviewFood] = useState<SavedFood | ProductData | null>(null);
+  const [previewSource, setPreviewSource] = useState<"api" | "saved">("saved");
+  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
 
-  useEffect(() => {
-    fetchMeals();
-  }, []);
+  // Recent foods & favorites state
+  const [recentFoods, setRecentFoods] = useState<RecentFoodItem[]>([]);
+  const [favorites, setFavorites] = useState<SavedFood[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchMeals = async () => {
+  // Get the string for viewing date
+  const viewingDateStr = getLocalDateString(viewingDate);
+  const todayStr = getLocalDateString(new Date());
+
+  // Date navigation helper functions
+  const goToPreviousDay = () => {
+    const prevDate = new Date(viewingDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    setViewingDate(prevDate);
+  };
+
+  const goToNextDay = () => {
+    if (!canGoForward()) return;
+    const nextDate = new Date(viewingDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+    setViewingDate(nextDate);
+  };
+
+  const goToToday = () => {
+    setViewingDate(new Date());
+  };
+
+  const isViewingToday = () => {
+    return viewingDateStr === todayStr;
+  };
+
+  const canGoForward = () => {
+    const nextDate = new Date(viewingDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+    return getLocalDateString(nextDate) <= todayStr;
+  };
+
+  // Format date for display
+  const formatViewingDate = (): string => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = getLocalDateString(yesterday);
+
+    if (viewingDateStr === todayStr) {
+      return "Today";
+    } else if (viewingDateStr === yesterdayStr) {
+      return "Yesterday";
+    } else {
+      return viewingDate.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+  };
+
+  // Get nutrition label based on viewing date
+  const getNutritionLabel = (): string => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = getLocalDateString(yesterday);
+
+    if (viewingDateStr === todayStr) {
+      return "Today's Nutrition";
+    } else if (viewingDateStr === yesterdayStr) {
+      return "Yesterday's Nutrition";
+    } else {
+      return `${viewingDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}'s Nutrition`;
+    }
+  };
+
+  // Fetch meals for a specific date
+  const fetchMealsForDate = async (date: Date) => {
+    const dateStr = getLocalDateString(date);
+
+    // Check cache first
+    if (mealsCache.has(dateStr)) {
+      setLoadingDay(false);
+      return;
+    }
+
     try {
-      setLoading(true);
+      setLoadingDay(true);
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -72,32 +183,414 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         return;
       }
 
-      // Fetch meals from last 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const startDate = thirtyDaysAgo.toISOString().split("T")[0];
-
       const { data, error } = await supabase
         .from("meal_logs")
         .select("*")
         .eq("user_id", user.id)
-        .gte("date", startDate)
-        .order("date", { ascending: false })
-        .order("logged_at", { ascending: false });
+        .eq("date", dateStr)
+        .order("logged_at", { ascending: true });
 
       if (error) throw error;
 
-      setMeals(data || []);
+      setMealsCache((prev) => new Map(prev).set(dateStr, data || []));
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
     } finally {
-      setLoading(false);
+      setLoadingDay(false);
     }
   };
 
+  // Fetch when viewingDate changes
+  useEffect(() => {
+    fetchMealsForDate(viewingDate);
+  }, [viewingDate]);
+
+  // Fetch recent foods and favorites on mount
+  const fetchRecentAndFavorites = useCallback(async () => {
+    try {
+      setLoadingRecent(true);
+      const [recentData, favoritesData] = await Promise.all([
+        getRecentFoods(5),
+        getFavorites(),
+      ]);
+      setRecentFoods(recentData);
+      setFavorites(favoritesData);
+    } catch (error) {
+      console.error("Error fetching recent/favorites:", error);
+    } finally {
+      setLoadingRecent(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecentAndFavorites();
+  }, [fetchRecentAndFavorites]);
+
+  // Handle pull-to-refresh
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    // Clear cache for current date to force refetch
+    setMealsCache((prev) => {
+      const newCache = new Map(prev);
+      newCache.delete(viewingDateStr);
+      return newCache;
+    });
+    await Promise.all([
+      fetchMealsForDate(viewingDate),
+      fetchRecentAndFavorites(),
+    ]);
+    setRefreshing(false);
+  }, [viewingDate, viewingDateStr, fetchRecentAndFavorites]);
+
+  // Handle barcode scanned
+  const handleBarcodeScanned = async (barcode: string) => {
+    setShowBarcodeScanner(false);
+    setBarcodeLoading(true);
+
+    try {
+      // Step 1: Check local saved_foods first (instant)
+      const savedFood = await getSavedFoodByBarcode(barcode);
+      if (savedFood) {
+        setPreviewFood(savedFood);
+        setPreviewSource("saved");
+        setScannedBarcode(barcode);
+        setShowFoodPreview(true);
+        setBarcodeLoading(false);
+        return;
+      }
+
+      // Step 2: Check Open Food Facts API
+      const productData = await getProductByBarcode(barcode);
+      if (productData) {
+        setPreviewFood(productData);
+        setPreviewSource("api");
+        setScannedBarcode(barcode);
+        setShowFoodPreview(true);
+        setBarcodeLoading(false);
+        return;
+      }
+
+      // Step 3: Not found - open manual entry
+      setScannedBarcode(barcode);
+      setShowManualEntry(true);
+    } catch (error) {
+      console.error("Error looking up barcode:", error);
+      Alert.alert("Error", "Failed to look up barcode");
+    } finally {
+      setBarcodeLoading(false);
+    }
+  };
+
+  // Handle log meal from preview
+  const handleLogMealFromPreview = async (
+    food: SavedFood | ProductData,
+    mealTypeSelected: MealType,
+    servings: number
+  ) => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+
+      // Normalize food data
+      const name = food.name;
+      const foodCalories = food.calories;
+      const foodProtein = food.protein;
+      const foodCarbs = food.carbs;
+      const foodFats = food.fats;
+      const foodSugars = "sugars" in food ? food.sugars : null;
+
+      // If from API, save to library first
+      let savedFoodId: string | null = null;
+      if (previewSource === "api" && scannedBarcode) {
+        const apiFood = food as ProductData;
+        const newSavedFood = await createSavedFood({
+          name: apiFood.name,
+          brand: apiFood.brand,
+          barcode: scannedBarcode,
+          calories: apiFood.calories,
+          protein: apiFood.protein,
+          carbs: apiFood.carbs,
+          fats: apiFood.fats,
+          sugars: apiFood.sugars,
+          serving_size: apiFood.servingSize,
+          image_primary_url: apiFood.imagePrimaryUrl,
+          image_front_url: apiFood.imageFrontUrl,
+          image_back_url: apiFood.imageBackUrl,
+          is_favorite: false,
+        });
+        savedFoodId = newSavedFood.id;
+      } else if ("id" in food) {
+        savedFoodId = food.id;
+      }
+
+      // Calculate scaled nutrition
+      const scaledCalories = foodCalories
+        ? Math.round(foodCalories * servings)
+        : null;
+      const scaledProtein = foodProtein
+        ? Math.round(foodProtein * servings * 10) / 10
+        : null;
+      const scaledCarbs = foodCarbs
+        ? Math.round(foodCarbs * servings * 10) / 10
+        : null;
+      const scaledFats = foodFats
+        ? Math.round(foodFats * servings * 10) / 10
+        : null;
+      const scaledSugars = foodSugars
+        ? Math.round(foodSugars * servings * 10) / 10
+        : null;
+
+      // Log the meal
+      const { error } = await supabase.from("meal_logs").insert({
+        user_id: user.id,
+        date: viewingDateStr,
+        meal_type: mealTypeSelected,
+        name: name,
+        calories: scaledCalories,
+        protein: scaledProtein,
+        carbs: scaledCarbs,
+        fats: scaledFats,
+        sugars: scaledSugars,
+        saved_food_id: savedFoodId,
+        servings: servings,
+        uses_inventory: false,
+        inventory_items: null,
+        logged_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      // Clear state
+      setShowFoodPreview(false);
+      setPreviewFood(null);
+      setScannedBarcode(null);
+
+      // Invalidate cache and refetch
+      setMealsCache((prev) => {
+        const newCache = new Map(prev);
+        newCache.delete(viewingDateStr);
+        return newCache;
+      });
+      await fetchMealsForDate(viewingDate);
+
+      // Refresh recent foods
+      fetchRecentAndFavorites();
+
+      Alert.alert("Success", "Meal logged successfully");
+    } catch (error: any) {
+      console.error("Error logging meal:", error);
+      Alert.alert("Error", "Failed to log meal");
+    }
+  };
+
+  // Handle save to library from preview
+  const handleSaveToLibrary = async (food: ProductData) => {
+    if (!scannedBarcode) return;
+
+    try {
+      await createSavedFood({
+        name: food.name,
+        brand: food.brand,
+        barcode: scannedBarcode,
+        calories: food.calories,
+        protein: food.protein,
+        carbs: food.carbs,
+        fats: food.fats,
+        sugars: food.sugars,
+        serving_size: food.servingSize,
+        image_primary_url: food.imagePrimaryUrl,
+        image_front_url: food.imageFrontUrl,
+        image_back_url: food.imageBackUrl,
+        is_favorite: false,
+      });
+
+      Alert.alert("Success", "Food saved to your library");
+      fetchRecentAndFavorites();
+    } catch (error: any) {
+      console.error("Error saving to library:", error);
+      Alert.alert("Error", "Failed to save to library");
+    }
+  };
+
+  // Handle toggle favorite
+  const handleToggleFavorite = async (food: SavedFood) => {
+    try {
+      await toggleFavorite(food.id);
+      fetchRecentAndFavorites();
+    } catch (error: any) {
+      console.error("Error toggling favorite:", error);
+    }
+  };
+
+  // Handle manual food entry save and log
+  const handleManualSaveAndLog = async (
+    foodData: {
+      name: string;
+      brand: string | null;
+      barcode: string | null;
+      calories: number | null;
+      protein: number | null;
+      carbs: number | null;
+      fats: number | null;
+      sugars: number | null;
+      serving_size: string | null;
+    },
+    mealTypeSelected: MealType,
+    saveToLibrary: boolean
+  ) => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+
+      let savedFoodId: string | null = null;
+
+      // Save to library if requested
+      if (saveToLibrary) {
+        const newSavedFood = await createSavedFood({
+          name: foodData.name,
+          brand: foodData.brand,
+          barcode: foodData.barcode,
+          calories: foodData.calories,
+          protein: foodData.protein,
+          carbs: foodData.carbs,
+          fats: foodData.fats,
+          sugars: foodData.sugars,
+          serving_size: foodData.serving_size,
+          image_primary_url: null,
+          image_front_url: null,
+          image_back_url: null,
+          is_favorite: false,
+        });
+        savedFoodId = newSavedFood.id;
+      }
+
+      // Log the meal
+      const { error } = await supabase.from("meal_logs").insert({
+        user_id: user.id,
+        date: viewingDateStr,
+        meal_type: mealTypeSelected,
+        name: foodData.name,
+        calories: foodData.calories,
+        protein: foodData.protein,
+        carbs: foodData.carbs,
+        fats: foodData.fats,
+        sugars: foodData.sugars,
+        saved_food_id: savedFoodId,
+        servings: 1,
+        uses_inventory: false,
+        inventory_items: null,
+        logged_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      // Clear state
+      setShowManualEntry(false);
+      setScannedBarcode(null);
+
+      // Invalidate cache and refetch
+      setMealsCache((prev) => {
+        const newCache = new Map(prev);
+        newCache.delete(viewingDateStr);
+        return newCache;
+      });
+      await fetchMealsForDate(viewingDate);
+
+      // Refresh recent foods if saved
+      if (saveToLibrary) {
+        fetchRecentAndFavorites();
+      }
+
+      Alert.alert("Success", "Meal logged successfully");
+    } catch (error: any) {
+      console.error("Error logging manual meal:", error);
+      Alert.alert("Error", "Failed to log meal");
+    }
+  };
+
+  // Handle recent food selection
+  const handleRecentFoodPress = (food: SavedFood) => {
+    setPreviewFood(food);
+    setPreviewSource("saved");
+    setScannedBarcode(food.barcode);
+    setShowFoodPreview(true);
+  };
+
+  // Handle recent food chip selection (auto-fill form)
+  const handleRecentChipPress = (food: SavedFood) => {
+    setMealName(food.name);
+    setCalories(food.calories?.toString() || "");
+    setProtein(food.protein?.toString() || "");
+    setCarbs(food.carbs?.toString() || "");
+    setFats(food.fats?.toString() || "");
+    setSugars(food.sugars?.toString() || "");
+  };
+
+  // Swipe gesture handler
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          // Only respond to horizontal swipes
+          return (
+            Math.abs(gestureState.dx) > 10 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy)
+          );
+        },
+        onPanResponderGrant: () => {
+          translateX.setOffset(0);
+          translateX.setValue(0);
+        },
+        onPanResponderMove: (_, gestureState) => {
+          // Limit swipe distance for visual feedback
+          const clampedDx = Math.max(-100, Math.min(100, gestureState.dx));
+          translateX.setValue(clampedDx);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          translateX.flattenOffset();
+
+          if (gestureState.dx > SWIPE_THRESHOLD) {
+            // Swiped right - go to previous day
+            Animated.spring(translateX, {
+              toValue: 0,
+              useNativeDriver: true,
+            }).start();
+            goToPreviousDay();
+          } else if (gestureState.dx < -SWIPE_THRESHOLD && canGoForward()) {
+            // Swiped left - go to next day
+            Animated.spring(translateX, {
+              toValue: 0,
+              useNativeDriver: true,
+            }).start();
+            goToNextDay();
+          } else {
+            // Snap back
+            Animated.spring(translateX, {
+              toValue: 0,
+              useNativeDriver: true,
+            }).start();
+          }
+        },
+      }),
+    [viewingDate]
+  );
+
   const resetForm = () => {
-    setSelectedDate(new Date());
+    setSelectedDate(viewingDate);
     setMealType("breakfast");
     setMealName("");
     setCalories("");
@@ -105,6 +598,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setCarbs("");
     setFats("");
     setSugars("");
+  };
+
+  // Open form with viewing date as default
+  const handleOpenAddForm = () => {
+    setSelectedDate(viewingDate);
+    setShowAddForm(true);
   };
 
   const handleAddMeal = async () => {
@@ -142,9 +641,22 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       if (error) throw error;
 
+      // Invalidate cache for the date the meal was added to
+      const mealDate = getLocalDateString(selectedDate);
+      setMealsCache((prev) => {
+        const newCache = new Map(prev);
+        newCache.delete(mealDate);
+        return newCache;
+      });
+
       resetForm();
       setShowAddForm(false);
-      await fetchMeals();
+
+      // Refetch if the meal was added for the viewing date
+      if (mealDate === viewingDateStr) {
+        await fetchMealsForDate(viewingDate);
+      }
+
       Alert.alert("Success", "Meal logged successfully");
     } catch (error: any) {
       console.error("Error adding meal:", error);
@@ -164,7 +676,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
             if (error) throw error;
 
-            await fetchMeals();
+            // Invalidate cache for current viewing date and refetch
+            setMealsCache((prev) => {
+              const newCache = new Map(prev);
+              newCache.delete(viewingDateStr);
+              return newCache;
+            });
+            await fetchMealsForDate(viewingDate);
           } catch (error: any) {
             console.error("Error deleting meal:", error);
             Alert.alert("Error", "Failed to delete meal");
@@ -172,25 +690,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         },
       },
     ]);
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const dateOnly = dateStr.split("T")[0];
-    const todayOnly = getLocalDateString(today);
-    const yesterdayOnly = getLocalDateString(yesterday);
-
-    if (dateOnly === todayOnly) {
-      return "Today";
-    } else if (dateOnly === yesterdayOnly) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    }
   };
 
   const formatTime = (timestamp: string) => {
@@ -206,9 +705,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     return MEAL_TYPES.find((t) => t.value === type)?.label || type;
   };
 
-  // Calculate today's totals
-  const todayMeals = meals.filter((meal) => meal.date === today);
-  const todayTotals = todayMeals.reduce(
+  // Get meals for current viewing date from cache
+  const dayMeals = mealsCache.get(viewingDateStr) || [];
+
+  // Calculate totals for viewing date
+  const dayTotals = dayMeals.reduce(
     (acc, meal) => ({
       calories: acc.calories + (meal.calories || 0),
       protein: acc.protein + (meal.protein || 0),
@@ -218,16 +719,26 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     { calories: 0, protein: 0, carbs: 0, fats: 0 }
   );
 
-  // Group meals by date
-  const groupedMeals: Record<string, MealLog[]> = {};
-  meals.forEach((meal) => {
-    if (!groupedMeals[meal.date]) {
-      groupedMeals[meal.date] = [];
-    }
-    groupedMeals[meal.date].push(meal);
-  });
+  // Group meals by meal type
+  const MEAL_TYPE_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
 
-  const sortedDates = Object.keys(groupedMeals).sort((a, b) => b.localeCompare(a));
+  const getMealsGroupedByType = (): Record<MealType, MealLog[]> => {
+    const grouped: Record<MealType, MealLog[]> = {
+      breakfast: [],
+      lunch: [],
+      dinner: [],
+      snack: [],
+      dessert: [],
+    };
+
+    dayMeals.forEach((meal) => {
+      grouped[meal.meal_type].push(meal);
+    });
+
+    return grouped;
+  };
+
+  const groupedMealsByType = getMealsGroupedByType();
 
   return (
     <>
@@ -241,49 +752,116 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Fixed Refresh Indicator */}
+        {refreshing && (
+          <View style={styles.refreshIndicator}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        )}
+
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="transparent"
+              colors={["transparent"]}
+            />
+          }
+        >
           {/* Title */}
           <View style={styles.titleContainer}>
             <Utensils size={32} color="#F97316" strokeWidth={2} />
             <Text style={styles.pageTitle}>Meals & Snacks</Text>
           </View>
 
-          {/* Today's Summary */}
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Today's Nutrition</Text>
-            <View style={styles.summaryGrid}>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryValue}>{todayTotals.calories}</Text>
-                <Text style={styles.summaryItemLabel}>Calories</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryValue}>{todayTotals.protein.toFixed(1)}g</Text>
-                <Text style={styles.summaryItemLabel}>Protein</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryValue}>{todayTotals.carbs.toFixed(1)}g</Text>
-                <Text style={styles.summaryItemLabel}>Carbs</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryValue}>{todayTotals.fats.toFixed(1)}g</Text>
-                <Text style={styles.summaryItemLabel}>Fats</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Add Button */}
-          {!showAddForm && (
-            <View style={styles.addButtonContainer}>
+          {/* Date Navigation - with swipe gesture */}
+          <Animated.View
+            style={{ transform: [{ translateX }] }}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.dateNavigation}>
               <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => setShowAddForm(true)}
+                onPress={goToPreviousDay}
+                style={styles.navArrow}
                 activeOpacity={0.7}
               >
-                <Plus size={20} color="#FFFFFF" />
-                <Text style={styles.addButtonText}>Log Meal</Text>
+                <ChevronLeft size={28} color={colors.foreground} />
+              </TouchableOpacity>
+
+              <Text style={styles.dateText}>{formatViewingDate()}</Text>
+
+              <TouchableOpacity
+                onPress={goToNextDay}
+                style={[styles.navArrow, !canGoForward() && styles.navArrowDisabled]}
+                activeOpacity={0.7}
+                disabled={!canGoForward()}
+              >
+                <ChevronRight
+                  size={28}
+                  color={canGoForward() ? colors.foreground : colors.mutedForeground}
+                />
               </TouchableOpacity>
             </View>
-          )}
+          </Animated.View>
+
+            {/* Jump to Today Button */}
+            {!isViewingToday() && (
+              <TouchableOpacity
+                style={styles.jumpToTodayButton}
+                onPress={goToToday}
+                activeOpacity={0.7}
+              >
+                <Calendar size={16} color="#FFFFFF" />
+                <Text style={styles.jumpToTodayText}>Jump to Today</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Nutrition Summary */}
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>{getNutritionLabel()}</Text>
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryValue}>{dayTotals.calories}</Text>
+                  <Text style={styles.summaryItemLabel}>Calories</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryValue}>{dayTotals.protein.toFixed(1)}g</Text>
+                  <Text style={styles.summaryItemLabel}>Protein</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryValue}>{dayTotals.carbs.toFixed(1)}g</Text>
+                  <Text style={styles.summaryItemLabel}>Carbs</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryValue}>{dayTotals.fats.toFixed(1)}g</Text>
+                  <Text style={styles.summaryItemLabel}>Fats</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Quick Action Bar - Barcode, Search, Add */}
+            {!showAddForm && (
+              <QuickActionBar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onBarcodePress={() => setShowBarcodeScanner(true)}
+                onAddPress={handleOpenAddForm}
+              />
+            )}
+
+            {/* Recent Foods Row */}
+            {!showAddForm && (
+              <RecentFoodsRow
+                recentFoods={recentFoods}
+                favorites={favorites}
+                onFoodPress={handleRecentFoodPress}
+                onFoodLongPress={handleToggleFavorite}
+                loading={loadingRecent}
+              />
+            )}
 
           {/* Add Form */}
           {showAddForm && (
@@ -352,6 +930,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   ))}
                 </View>
               </View>
+
+              {/* Recent Food Chips for quick fill */}
+              <RecentFoodChips
+                recentFoods={recentFoods}
+                favorites={favorites}
+                onChipPress={handleRecentChipPress}
+              />
 
               {/* Meal Name */}
               <View style={styles.field}>
@@ -455,85 +1040,110 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             </View>
           )}
 
-          {/* Meal History */}
-          <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>History</Text>
-            {loading ? (
-              <Text style={styles.loadingText}>Loading...</Text>
-            ) : sortedDates.length === 0 ? (
-              <Text style={styles.emptyText}>No meals logged yet. Start tracking today!</Text>
-            ) : (
-              sortedDates.map((date) => {
-                const dayMeals = groupedMeals[date];
-                const dayTotals = dayMeals.reduce(
-                  (acc, meal) => ({
-                    calories: acc.calories + (meal.calories || 0),
-                    protein: acc.protein + (meal.protein || 0),
-                    carbs: acc.carbs + (meal.carbs || 0),
-                    fats: acc.fats + (meal.fats || 0),
-                  }),
-                  { calories: 0, protein: 0, carbs: 0, fats: 0 }
-                );
+            {/* Meals Section - Grouped by Type */}
+            <View style={styles.mealsSection}>
+              {loadingDay ? (
+                <Text style={styles.loadingText}>Loading...</Text>
+              ) : dayMeals.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Utensils size={48} color={colors.mutedForeground} />
+                  <Text style={styles.emptyStateText}>No meals logged yet</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Scan a barcode or tap + to add one
+                  </Text>
+                </View>
+              ) : (
+                MEAL_TYPE_ORDER.map((mealType) => {
+                  const mealsOfType = groupedMealsByType[mealType];
+                  if (mealsOfType.length === 0) return null;
 
-                return (
-                  <View key={date} style={styles.dayGroup}>
-                    <View style={styles.dayHeader}>
-                      <Text style={styles.dayDate}>{formatDate(date)}</Text>
-                      <Text style={styles.dayTotal}>{dayTotals.calories} cal</Text>
-                    </View>
-                    {dayMeals.map((meal) => (
-                      <View key={meal.id} style={styles.mealCard}>
-                        <View style={styles.mealCardHeader}>
-                          <View style={styles.mealInfo}>
-                            <View
-                              style={[
-                                styles.mealTypeBadge,
-                                { backgroundColor: getMealTypeColor(meal.meal_type) },
-                              ]}
-                            >
-                              <Text style={styles.mealTypeBadgeText}>
-                                {getMealTypeLabel(meal.meal_type)}
-                              </Text>
-                            </View>
-                            <Text style={styles.mealTime}>{formatTime(meal.logged_at)}</Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => handleDeleteMeal(meal.id)}
-                            style={styles.deleteButton}
-                            activeOpacity={0.7}
-                          >
-                            <Trash2 size={18} color={colors.mutedForeground} />
-                          </TouchableOpacity>
+                  return (
+                    <View key={mealType} style={styles.mealTypeSection}>
+                      <View style={styles.mealTypeSectionHeader}>
+                        <View
+                          style={[
+                            styles.mealTypeBadge,
+                            { backgroundColor: getMealTypeColor(mealType) },
+                          ]}
+                        >
+                          <Text style={styles.mealTypeBadgeText}>
+                            {getMealTypeLabel(mealType)}
+                          </Text>
                         </View>
-                        <Text style={styles.mealName}>{meal.name}</Text>
-                        {(meal.calories || meal.protein || meal.carbs || meal.fats) && (
-                          <View style={styles.mealNutrition}>
-                            {meal.calories && (
-                              <Text style={styles.nutritionText}>{meal.calories} cal</Text>
-                            )}
-                            {meal.protein && (
-                              <Text style={styles.nutritionText}>P: {meal.protein}g</Text>
-                            )}
-                            {meal.carbs && (
-                              <Text style={styles.nutritionText}>C: {meal.carbs}g</Text>
-                            )}
-                            {meal.fats && (
-                              <Text style={styles.nutritionText}>F: {meal.fats}g</Text>
-                            )}
-                          </View>
-                        )}
                       </View>
-                    ))}
-                  </View>
-                );
-              })
-            )}
-          </View>
+                      {mealsOfType.map((meal) => (
+                        <View key={meal.id} style={styles.mealCard}>
+                          <View style={styles.mealCardHeader}>
+                            <Text style={styles.mealTime}>{formatTime(meal.logged_at)}</Text>
+                            <TouchableOpacity
+                              onPress={() => handleDeleteMeal(meal.id)}
+                              style={styles.deleteButton}
+                              activeOpacity={0.7}
+                            >
+                              <Trash2 size={18} color={colors.mutedForeground} />
+                            </TouchableOpacity>
+                          </View>
+                          <Text style={styles.mealName}>{meal.name}</Text>
+                          {(meal.calories || meal.protein || meal.carbs || meal.fats) && (
+                            <View style={styles.mealNutrition}>
+                              {meal.calories && (
+                                <Text style={styles.nutritionText}>{meal.calories} cal</Text>
+                              )}
+                              {meal.protein && (
+                                <Text style={styles.nutritionText}>P: {meal.protein}g</Text>
+                              )}
+                              {meal.carbs && (
+                                <Text style={styles.nutritionText}>C: {meal.carbs}g</Text>
+                              )}
+                              {meal.fats && (
+                                <Text style={styles.nutritionText}>F: {meal.fats}g</Text>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })
+              )}
+            </View>
 
-          {/* Bottom Spacing */}
-          <View style={{ height: 40 }} />
-        </ScrollView>
+            {/* Bottom Spacing */}
+            <View style={{ height: 40 }} />
+          </ScrollView>
       </View>
+
+      {/* Barcode Scanner Modal */}
+      <BarcodeScannerModal
+        visible={showBarcodeScanner}
+        onClose={() => setShowBarcodeScanner(false)}
+        onBarcodeScanned={handleBarcodeScanned}
+      />
+
+      {/* Food Preview Modal */}
+      <FoodPreviewModal
+        visible={showFoodPreview}
+        food={previewFood}
+        source={previewSource}
+        onClose={() => {
+          setShowFoodPreview(false);
+          setPreviewFood(null);
+          setScannedBarcode(null);
+        }}
+        onLogMeal={handleLogMealFromPreview}
+        onSaveToLibrary={previewSource === "api" ? handleSaveToLibrary : undefined}
+      />
+
+      {/* Manual Food Entry Modal */}
+      <ManualFoodEntryModal
+        visible={showManualEntry}
+        barcode={scannedBarcode}
+        onClose={() => {
+          setShowManualEntry(false);
+          setScannedBarcode(null);
+        }}
+        onSaveAndLog={handleManualSaveAndLog}
+      />
     </>
   );
 }
@@ -549,6 +1159,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  refreshIndicator: {
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -560,6 +1175,42 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  dateNavigation: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  navArrow: {
+    padding: 8,
+  },
+  navArrowDisabled: {
+    opacity: 0.3,
+  },
+  dateText: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  jumpToTodayButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  jumpToTodayText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   titleContainer: {
     flexDirection: "row",
@@ -741,7 +1392,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#FFFFFF",
   },
-  historySection: {
+  mealsSection: {
     paddingHorizontal: 20,
   },
   loadingText: {
@@ -750,30 +1401,29 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: 24,
   },
-  emptyText: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    textAlign: "center",
-    paddingVertical: 24,
-  },
-  dayGroup: {
-    marginBottom: 24,
-  },
-  dayHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  emptyState: {
     alignItems: "center",
+    paddingVertical: 48,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+    marginTop: 16,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    marginTop: 8,
+  },
+  mealTypeSection: {
+    marginBottom: 20,
+  },
+  mealTypeSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     marginBottom: 12,
-  },
-  dayDate: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  dayTotal: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#F97316",
   },
   mealCard: {
     backgroundColor: colors.card,
