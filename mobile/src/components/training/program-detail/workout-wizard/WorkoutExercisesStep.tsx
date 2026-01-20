@@ -165,6 +165,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
               load_weight_lbs: config.load_weight_lbs,
               load_notes: config.load_notes,
               rest_seconds: config.rest_seconds,
+              estimated_duration_minutes: config.estimated_duration_minutes,
               tempo: config.tempo,
               // Keep individual fields
               exercise_id: ex.exercise_id,
@@ -214,6 +215,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
         load_weight_lbs: existingEx.load_weight_lbs,
         load_notes: existingEx.load_notes,
         rest_seconds: existingEx.rest_seconds,
+        estimated_duration_minutes: existingEx.estimated_duration_minutes,
         tempo: existingEx.tempo,
       });
     } else if (addingAlternativeToGroupId) {
@@ -239,6 +241,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
         load_weight_lbs: firstInGroup.load_weight_lbs,
         load_notes: firstInGroup.load_notes,
         rest_seconds: firstInGroup.rest_seconds,
+        estimated_duration_minutes: firstInGroup.estimated_duration_minutes,
         tempo: firstInGroup.tempo,
       });
     } else {
@@ -442,6 +445,9 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
               </View>
             </View>
           </View>
+          {ex.estimated_duration_minutes ? (
+            <Text style={styles.exerciseDuration}>{ex.estimated_duration_minutes} min</Text>
+          ) : null}
         </View>
       </Swipeable>
     );
@@ -472,6 +478,9 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
             ) : null}
             {loadSummary ? (
               <Text style={styles.groupLoad}>{loadSummary}</Text>
+            ) : null}
+            {firstEx.estimated_duration_minutes ? (
+              <Text style={styles.groupDuration}>{firstEx.estimated_duration_minutes} min</Text>
             ) : null}
           </View>
         </View>
@@ -721,6 +730,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedForeground,
   },
+  exerciseDuration: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+    marginLeft: 8,
+  },
   // Swipe Actions
   swipeActionsContainer: {
     flexDirection: 'row',
@@ -820,6 +835,11 @@ const styles = StyleSheet.create({
   },
   groupLoad: {
     fontSize: 13,
+    color: colors.mutedForeground,
+  },
+  groupDuration: {
+    fontSize: 13,
+    fontWeight: '500',
     color: colors.mutedForeground,
   },
   // Group Exercises List

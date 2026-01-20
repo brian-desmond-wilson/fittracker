@@ -61,6 +61,7 @@ export function ExerciseConfigModal({
 
   // Metadata
   const [restSeconds, setRestSeconds] = useState(existingConfig?.rest_seconds?.toString() || '');
+  const [estimatedDuration, setEstimatedDuration] = useState(existingConfig?.estimated_duration_minutes?.toString() || '');
   const [tempo, setTempo] = useState(existingConfig?.tempo || '');
   const [videoUrl, setVideoUrl] = useState(existingConfig?.video_url || '');
   const [exerciseNotes, setExerciseNotes] = useState(existingConfig?.exercise_notes || '');
@@ -80,6 +81,7 @@ export function ExerciseConfigModal({
       setLoadWeight(existingConfig?.load_weight_lbs?.toString() || '');
       setLoadNotes(existingConfig?.load_notes || '');
       setRestSeconds(existingConfig?.rest_seconds?.toString() || '');
+      setEstimatedDuration(existingConfig?.estimated_duration_minutes?.toString() || '');
       setTempo(existingConfig?.tempo || '');
       setVideoUrl(existingConfig?.video_url || '');
       setExerciseNotes(existingConfig?.exercise_notes || '');
@@ -136,6 +138,7 @@ export function ExerciseConfigModal({
 
       // Metadata
       rest_seconds: restSeconds ? parseInt(restSeconds) : undefined,
+      estimated_duration_minutes: estimatedDuration ? parseInt(estimatedDuration) : undefined,
       tempo: tempo || undefined,
       video_url: videoUrl || undefined,
       exercise_notes: exerciseNotes || undefined,
@@ -390,6 +393,22 @@ export function ExerciseConfigModal({
                         keyboardType="number-pad"
                       />
                       <Text style={styles.unitText}>seconds</Text>
+                    </View>
+                  </View>
+
+                  {/* Estimated Duration */}
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Estimated Duration (Optional)</Text>
+                    <View style={styles.row}>
+                      <TextInput
+                        style={[styles.input, styles.flex1]}
+                        placeholder="e.g., 10"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={estimatedDuration}
+                        onChangeText={setEstimatedDuration}
+                        keyboardType="number-pad"
+                      />
+                      <Text style={styles.unitText}>minutes</Text>
                     </View>
                   </View>
 
