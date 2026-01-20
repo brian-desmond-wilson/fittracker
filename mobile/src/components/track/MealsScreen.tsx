@@ -1132,6 +1132,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         }}
         onLogMeal={handleLogMealFromPreview}
         onSaveToLibrary={previewSource === "api" ? handleSaveToLibrary : undefined}
+        onToggleFavorite={previewSource === "saved" ? async (food) => {
+          await handleToggleFavorite(food);
+          // Update the preview food to reflect the change
+          setPreviewFood({ ...food, is_favorite: !food.is_favorite });
+        } : undefined}
       />
 
       {/* Manual Food Entry Modal */}
