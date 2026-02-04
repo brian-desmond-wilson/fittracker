@@ -306,6 +306,7 @@ export interface CreateProgramInstanceInput {
 }
 
 export interface CreateWorkoutInstanceInput {
+  user_id: string;
   program_instance_id: string;
   program_workout_id: string;
   scheduled_date: string;
