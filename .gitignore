@@ -50,3 +50,12 @@ mobile/*.mobileprovision
 mobile/*.orig.*
 mobile/web-build/
 mobile/.env
+
+# OpenClaw agent files (should not be in repo)
+IDENTITY.md
+SOUL.md
+AGENTS.md
+BOOTSTRAP.md
+HEARTBEAT.md
+MEMORY.md
+memory/
