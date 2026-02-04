@@ -35,3 +35,27 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Expo / React Native
+mobile/node_modules/
+mobile/.expo/
+mobile/.expo-shared/
+mobile/dist/
+mobile/npm-debug.*
+mobile/*.jks
+mobile/*.p8
+mobile/*.p12
+mobile/*.key
+mobile/*.mobileprovision
+mobile/*.orig.*
+mobile/web-build/
+mobile/.env
+
+# OpenClaw agent files (should not be in repo)
+IDENTITY.md
+SOUL.md
+AGENTS.md
+BOOTSTRAP.md
+HEARTBEAT.md
+MEMORY.md
+memory/

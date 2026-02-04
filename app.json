@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "879924a9-ea87-406c-9fab-63e1cfa00420"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.bwil0007.fittracker",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
