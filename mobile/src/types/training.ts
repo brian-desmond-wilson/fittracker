@@ -464,3 +464,44 @@ export function isGroupedExercise(exercise: WorkoutExerciseConfig): boolean {
 export type ExerciseListItem =
   | { type: 'single'; exercise: WorkoutExerciseConfig }
   | { type: 'group'; group: ExerciseGroup };
+
+// ============================================================
+// Today's Workout Types
+// ============================================================
+
+export type CompletionStatus = 'completed' | 'partial';
+export type WorkoutStatus = 'new' | 'continue' | 'paused';
+
+export interface ExerciseInfo {
+  id: string;
+  name: string;
+  targetSets: number;
+  completedSets: number;
+  isComplete: boolean;
+}
+
+export interface TodaysWorkoutResult {
+  workoutTemplate: {
+    id: string;
+    name: string;
+    day_number: number;
+  };
+  programInstance: {
+    id: string;
+    name: string;
+  };
+  cycleNumber: number;
+  status: WorkoutStatus;
+  exercises: ExerciseInfo[];
+  remainingExerciseCount: number;
+  existingWorkoutInstanceId?: string;
+  startedAt?: string; // ISO timestamp when workout was started
+  sessionDurationSeconds?: number; // Duration of paused session in seconds
+}
+
+export interface NoActiveProgram {
+  error: 'no_active_program';
+  message: string;
+}
+
+export type TodaysWorkoutResponse = TodaysWorkoutResult | NoActiveProgram;

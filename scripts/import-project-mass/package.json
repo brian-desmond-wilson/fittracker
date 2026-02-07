@@ -1,0 +1,17 @@
+{
+  "name": "import-project-mass",
+  "version": "1.0.0",
+  "description": "Import Project Mass workout data from Google Sheets into Supabase",
+  "type": "module",
+  "scripts": {
+    "import": "tsx src/index.ts",
+    "dry-run": "tsx src/index.ts --dry-run --verbose",
+    "import:verbose": "tsx src/index.ts --verbose"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "csv-parse": "^5.5.0",
+    "dotenv": "^16.3.0",
+    "tsx": "^4.7.0"
+  }
+}

@@ -20,6 +20,7 @@ import SleepQualityModal from "@/src/components/sleep/SleepQualityModal";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
 import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard";
 import DrawerMenu from "@/src/components/drawer/DrawerMenu";
+import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
 
 export default function Home() {
   const router = useRouter();
@@ -105,9 +106,11 @@ export default function Home() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
+      // Minimum delay so spinner is visible
       await Promise.all([
         loadUserData(),
         loadTodayCalories(),
+        new Promise(resolve => setTimeout(resolve, 500)),
       ]);
       // Refresh child components
       setRefreshKey((prev) => prev + 1);
@@ -189,6 +192,10 @@ export default function Home() {
         <WakeUpButton key={`wake-${refreshKey}`} onWakeUp={handleWakeUp} />
         <GoingToBedButton />
 
+        {/* Today's Workout Section */}
+        <Text style={styles.sectionTitle}>Today's Workout</Text>
+        <TodaysWorkoutCard key={`workout-${refreshKey}`} />
+
         {/* Today's Summary Section */}
         <Text style={styles.sectionTitle}>Today's Summary</Text>
 
@@ -258,6 +265,14 @@ export default function Home() {
         </View>
       </ScrollView>
 
+      {/* Sticky Refresh Indicator */}
+      {refreshing && (
+        <View style={styles.refreshingContainer}>
+          <ActivityIndicator size="large" color="#22C55E" />
+          <Text style={styles.refreshingText}>Refreshing...</Text>
+        </View>
+      )}
+
       {/* Sleep Quality Modal */}
       <SleepQualityModal
         visible={sleepQualityModalVisible}
@@ -295,6 +310,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#0A0F1E",
+  },
+  refreshingContainer: {
+    position: "absolute",
+    top: 100,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    paddingVertical: 20,
+    backgroundColor: "#0A0F1E",
+    zIndex: 10,
+  },
+  refreshingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#9CA3AF",
   },
   topBar: {
     flexDirection: "row",
