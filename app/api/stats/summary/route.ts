@@ -69,9 +69,9 @@ export async function GET(request: Request) {
       .select(`
         id,
         status,
-        current_cycle,
-        started_at,
-        program_templates (
+        current_week,
+        start_date,
+        program_templates:program_id (
           title,
           duration_weeks,
           days_per_week
@@ -82,8 +82,8 @@ export async function GET(request: Request) {
       .single();
 
     // Adjust date range for program period
-    if (period === "program" && programInstance?.started_at) {
-      startDate = new Date(programInstance.started_at);
+    if (period === "program" && programInstance?.start_date) {
+      startDate = new Date(programInstance.start_date);
     }
 
     // Get completed workouts in period
@@ -193,7 +193,7 @@ export async function GET(request: Request) {
       programInfo = {
         name: template?.title || "Unknown",
         status: programInstance.status,
-        cycle: programInstance.current_cycle,
+        cycle: programInstance.current_week || 1,
         currentDay,
         totalDays,
         percentComplete: Math.round((currentDay / totalDays) * 100) / 100,

@@ -52,8 +52,11 @@ export async function GET(request: Request) {
       .select(`
         id,
         status,
-        current_cycle,
-        program_templates (
+        current_day,
+        current_week,
+        workouts_completed,
+        total_workouts,
+        program_templates:program_id (
           id,
           title,
           duration_weeks,
@@ -154,7 +157,7 @@ export async function GET(request: Request) {
         workoutInstanceId: inProgressWorkout.id,
         day: inProgressWorkout.day_number,
         name: workoutName,
-        cycle: programInstance.current_cycle,
+        cycle: programInstance.current_week || 1,
         week: inProgressWorkout.week_number,
         startedAt: inProgressWorkout.started_at,
         completedExercises,
@@ -226,10 +229,10 @@ export async function GET(request: Request) {
       program: {
         id: programInstance.id,
         name: programTemplate?.title || "Unknown Program",
-        cycle: programInstance.current_cycle,
+        cycle: programInstance.current_week || 1,
         status: programInstance.status,
         totalDays,
-        currentDay: (completedWorkouts || 0) + 1,
+        currentDay: programInstance.current_day || (programInstance.workouts_completed || 0) + 1,
       },
     };
 
