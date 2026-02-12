@@ -55,8 +55,9 @@ export async function GET(request: Request) {
         current_cycle,
         program_templates (
           id,
-          name,
-          total_days
+          title,
+          duration_weeks,
+          days_per_week
         )
       `)
       .eq("user_id", userId)
@@ -79,9 +80,11 @@ export async function GET(request: Request) {
 
     const programTemplate = programInstance.program_templates as unknown as {
       id: string;
-      name: string;
-      total_days: number;
+      title: string;
+      duration_weeks: number;
+      days_per_week: number;
     };
+    const totalDays = (programTemplate?.duration_weeks || 0) * (programTemplate?.days_per_week || 0);
 
     // Get in-progress workout
     const { data: inProgressWorkout, error: inProgressError } = await supabase
@@ -222,10 +225,10 @@ export async function GET(request: Request) {
       lastCompleted,
       program: {
         id: programInstance.id,
-        name: programTemplate?.name || "Unknown Program",
+        name: programTemplate?.title || "Unknown Program",
         cycle: programInstance.current_cycle,
         status: programInstance.status,
-        totalDays: programTemplate?.total_days || 0,
+        totalDays,
         currentDay: (completedWorkouts || 0) + 1,
       },
     };

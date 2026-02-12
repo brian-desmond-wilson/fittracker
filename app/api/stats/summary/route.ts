@@ -72,8 +72,9 @@ export async function GET(request: Request) {
         current_cycle,
         started_at,
         program_templates (
-          name,
-          total_days
+          title,
+          duration_weeks,
+          days_per_week
         )
       `)
       .eq("user_id", userId)
@@ -175,8 +176,9 @@ export async function GET(request: Request) {
     let programInfo: StatsSummaryResponse["program"] = null;
     if (programInstance) {
       const template = programInstance.program_templates as unknown as {
-        name: string;
-        total_days: number;
+        title: string;
+        duration_weeks: number;
+        days_per_week: number;
       };
 
       const { count: programCompleted } = await supabase
@@ -186,10 +188,10 @@ export async function GET(request: Request) {
         .eq("status", "completed");
 
       const currentDay = (programCompleted || 0) + 1;
-      const totalDays = template?.total_days || 1;
+      const totalDays = (template?.duration_weeks || 0) * (template?.days_per_week || 0) || 1;
 
       programInfo = {
-        name: template?.name || "Unknown",
+        name: template?.title || "Unknown",
         status: programInstance.status,
         cycle: programInstance.current_cycle,
         currentDay,
