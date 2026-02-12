@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface StatsSummaryResponse {
   period: string;
@@ -30,7 +30,7 @@ interface StatsSummaryResponse {
 
 export async function GET(request: Request) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
     const { searchParams } = new URL(request.url);
 
     const period = searchParams.get("period") || "week";
@@ -76,7 +76,7 @@ export async function GET(request: Request) {
           total_days
         )
       `)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("status", "active")
       .single();
 
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
     const { data: completedWorkouts, count: completedCount } = await supabase
       .from("workout_instances")
       .select("id, completed_at", { count: "exact" })
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("status", "completed")
       .gte("completed_at", startDateStr)
       .lte("completed_at", endDateStr);
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     const { count: scheduledCount } = await supabase
       .from("workout_instances")
       .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .gte("scheduled_date", startDateStr)
       .lte("scheduled_date", endDateStr);
 
@@ -128,7 +128,7 @@ export async function GET(request: Request) {
     const { data: allCompletedWorkouts } = await supabase
       .from("workout_instances")
       .select("completed_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("status", "completed")
       .order("completed_at", { ascending: false });
 
@@ -220,7 +220,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch stats summary:", error);

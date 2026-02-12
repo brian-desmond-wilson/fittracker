@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface ExerciseInfo {
   name: string;
@@ -42,9 +42,9 @@ interface WorkoutStatusResponse {
   program: ProgramInfo | null;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
 
     // Get active program instance
     const { data: programInstance, error: programError } = await supabase
@@ -59,7 +59,7 @@ export async function GET() {
           total_days
         )
       `)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("status", "active")
       .single();
 
@@ -232,7 +232,7 @@ export async function GET() {
 
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch workout status:", error);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface MealItem {
   name: string;
@@ -52,9 +52,9 @@ const DEFAULT_TARGETS = {
   fat: 80,
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
 
     const today = new Date().toISOString().split("T")[0];
 
@@ -62,7 +62,7 @@ export async function GET() {
     const { data: profile } = await supabase
       .from("profiles")
       .select("nutrition_targets")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
 
     const targets = profile?.nutrition_targets || DEFAULT_TARGETS;
@@ -71,7 +71,7 @@ export async function GET() {
     const { data: mealLogs, error } = await supabase
       .from("meal_logs")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("date", today)
       .order("logged_at", { ascending: true });
 
@@ -149,7 +149,7 @@ export async function GET() {
 
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch today's nutrition:", error);

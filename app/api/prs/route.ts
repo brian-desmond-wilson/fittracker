@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface PRRecord {
   value: number;
@@ -41,7 +41,7 @@ function calculate1RM(weight: number, reps: number): number {
 
 export async function GET(request: Request) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
     const { searchParams } = new URL(request.url);
 
     const exerciseFilter = searchParams.get("exercise");
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
         exercises (id, name),
         workout_instances (scheduled_date)
       `)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("status", "completed");
 
     const { data: exerciseInstances, error } = await exerciseQuery;
@@ -265,7 +265,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch PRs:", error);

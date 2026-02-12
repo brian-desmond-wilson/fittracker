@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface SetDetail {
   setNumber: number;
@@ -51,7 +51,7 @@ export async function GET(
   { params }: { params: Promise<{ name: string }> }
 ) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
     const { searchParams } = new URL(request.url);
     const { name: exerciseName } = await params;
 
@@ -100,7 +100,7 @@ export async function GET(
           program_workouts (name)
         )
       `)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("exercise_id", exercise.id)
       .eq("status", "completed")
       .order("performed_date", { ascending: false, nullsFirst: false })
@@ -236,7 +236,7 @@ export async function GET(
 
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch exercise history:", error);

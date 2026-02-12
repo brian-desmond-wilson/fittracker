@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface DailyBreakdown {
   date: string;
@@ -43,7 +43,7 @@ const DEFAULT_TARGETS = {
 
 export async function GET(request: Request) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
     const { searchParams } = new URL(request.url);
 
     const days = parseInt(searchParams.get("days") || "7", 10);
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("nutrition_targets")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
 
     const targets = profile?.nutrition_targets || DEFAULT_TARGETS;
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     const { data: dailySummaries, error } = await supabase
       .from("daily_nutrition_summary")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .gte("date", startDateStr)
       .lte("date", endDateStr)
       .order("date", { ascending: true });
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
       const { data: mealLogs } = await supabase
         .from("meal_logs")
         .select("date, calories, protein, carbs, fats")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .gte("date", startDateStr)
         .lte("date", endDateStr)
         .order("date", { ascending: true });
@@ -109,7 +109,7 @@ export async function GET(request: Request) {
 
     return buildResponse(dailyBreakdown, days, startDateStr, endDateStr, targets);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch nutrition summary:", error);

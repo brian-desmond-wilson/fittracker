@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, AdminAuthError } from "@/lib/supabase/admin";
+import { requireMurphyAuth, MurphyAuthError } from "@/lib/supabase/murphy-auth";
 
 interface WeightEntry {
   date: string;
@@ -30,7 +30,7 @@ interface WeightProgressResponse {
 
 export async function GET(request: Request) {
   try {
-    const { supabase, user } = await requireAdmin();
+    const { supabase, userId } = await requireMurphyAuth(request);
     const { searchParams } = new URL(request.url);
 
     const days = parseInt(searchParams.get("days") || "30", 10);
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     const { data: weightLogs, error } = await supabase
       .from("weight_logs")
       .select("date, weight_lbs")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .gte("date", startDateStr)
       .order("date", { ascending: false });
 
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
     const { data: earliestWeight } = await supabase
       .from("weight_logs")
       .select("date, weight_lbs")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("date", { ascending: true })
       .limit(1)
       .single();
@@ -87,7 +87,7 @@ export async function GET(request: Request) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("weight_goal")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
 
     // Calculate stats
@@ -154,7 +154,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
-    if (error instanceof AdminAuthError) {
+    if (error instanceof MurphyAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     console.error("Failed to fetch weight progress:", error);
