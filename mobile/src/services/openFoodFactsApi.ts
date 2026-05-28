@@ -54,6 +54,8 @@ export interface ProductData {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  sodium_mg: number | null;
+  fiber_g: number | null;
   imagePrimaryUrl: string | null;
   imageFrontUrl: string | null;
   imageBackUrl: string | null;
@@ -114,6 +116,15 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
   const carbs = nutriments.carbohydrates_serving || nutriments.carbohydrates_100g || null;
   const fats = nutriments.fat_serving || nutriments.fat_100g || null;
   const sugars = nutriments.sugars_serving || nutriments.sugars_100g || null;
+  const fiber = nutriments.fiber_serving || nutriments.fiber_100g || null;
+  // Open Food Facts reports sodium in grams; convert to mg. Fall back to
+  // salt (g) * 393 if sodium isn't reported (salt ≈ sodium * 2.5).
+  const sodiumG = nutriments.sodium_serving || nutriments.sodium_100g || null;
+  const saltG = nutriments.salt_serving || nutriments.salt_100g || null;
+  const sodiumMg =
+    sodiumG != null ? sodiumG * 1000 :
+    saltG != null ? saltG * 393 :
+    null;
 
   // Extract images
   const imagePrimaryUrl = product.image_url || product.image_front_url || null;
@@ -130,6 +141,8 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
     carbs: carbs ? Math.round(carbs * 10) / 10 : null,
     fats: fats ? Math.round(fats * 10) / 10 : null,
     sugars: sugars ? Math.round(sugars * 10) / 10 : null,
+    sodium_mg: sodiumMg != null ? Math.round(sodiumMg) : null,
+    fiber_g: fiber != null ? Math.round(fiber * 10) / 10 : null,
     imagePrimaryUrl,
     imageFrontUrl,
     imageBackUrl,

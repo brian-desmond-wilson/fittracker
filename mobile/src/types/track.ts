@@ -112,9 +112,12 @@ export interface MealLog {
   carbs: number | null; // grams
   fats: number | null; // grams
   sugars: number | null; // grams
+  sodium_mg: number | null; // milligrams
+  fiber_g: number | null; // grams
   uses_inventory: boolean;
   inventory_items: InventoryUsage[] | null;
   saved_food_id: string | null; // Link to saved_foods table
+  meal_template_id: string | null; // Link to meal_templates table
   servings: number; // Serving multiplier (e.g., 0.5, 1.0, 2.0)
   logged_at: string;
 }
@@ -131,6 +134,8 @@ export interface SavedFood {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  sodium_mg: number | null;
+  fiber_g: number | null;
   serving_size: string | null;
   image_primary_url: string | null;
   image_front_url: string | null;
@@ -138,6 +143,40 @@ export interface SavedFood {
   is_favorite: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// Multi-food meal template (named recipe / preset)
+export interface MealTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  default_meal_type: MealType | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MealTemplateItem {
+  id: string;
+  template_id: string;
+  saved_food_id: string;
+  servings: number;
+  display_order: number;
+  created_at: string;
+}
+
+// Template + its items + computed totals for the UI
+export interface MealTemplateWithItems extends MealTemplate {
+  items: Array<MealTemplateItem & { savedFood: SavedFood }>;
+  totals: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    sugars: number;
+    sodium_mg: number;
+    fiber_g: number;
+  };
 }
 
 // Recent food item with usage frequency

@@ -24,6 +24,12 @@ interface GoalsScreenProps {
     height_cm: string;
     target_weight_kg: string;
     target_calories: string;
+    target_protein_g: string;
+    target_carbs_g: string;
+    target_sodium_mg: string;
+    target_fats_g: string;
+    target_sugars_g: string;
+    target_fiber_g: string;
     target_water_oz: string;
     water_window_start: string;  // "HH:MM"
     water_window_end: string;    // "HH:MM"
@@ -107,6 +113,14 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
         ? 0
         : Math.max(0, Math.round(parseFloat(formData.water_workout_bonus_oz) || 0));
 
+      // Helper to convert macro-field strings to nullable integers.
+      const intOrNull = (s: string): number | null => {
+        const t = s.trim();
+        if (t === '') return null;
+        const n = parseInt(t);
+        return isNaN(n) || n <= 0 ? null : n;
+      };
+
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -117,6 +131,12 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           target_calories: formData.target_calories
             ? parseInt(formData.target_calories)
             : null,
+          target_protein_g: intOrNull(formData.target_protein_g),
+          target_carbs_g: intOrNull(formData.target_carbs_g),
+          target_sodium_mg: intOrNull(formData.target_sodium_mg),
+          target_fats_g: intOrNull(formData.target_fats_g),
+          target_sugars_g: intOrNull(formData.target_sugars_g),
+          target_fiber_g: intOrNull(formData.target_fiber_g),
           ...(waterOz !== null && { target_water_oz: waterOz }),
           water_window_start: formData.water_window_start,
           water_window_end: formData.water_window_end,
@@ -206,6 +226,100 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 value={formData.target_calories}
                 onChangeText={(text) =>
                   setFormData({ ...formData, target_calories: text })
+                }
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+            </View>
+
+            {/* Primary macros (your priority: protein) */}
+            <View style={styles.formField}>
+              <Text style={styles.label}>Daily Protein Goal (g)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="150"
+                placeholderTextColor="#6B7280"
+                value={formData.target_protein_g}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, target_protein_g: text })
+                }
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+            </View>
+
+            {/* Secondary macros */}
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Carbs (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="225"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_carbs_g}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_carbs_g: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Sodium (mg)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="2300"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_sodium_mg}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_sodium_mg: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+            </View>
+
+            {/* Tertiary macros */}
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Fats (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="65"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_fats_g}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_fats_g: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Sugars (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="50"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_sugars_g}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_sugars_g: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+            </View>
+            <View style={styles.formField}>
+              <Text style={styles.label}>Fiber (g)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="30"
+                placeholderTextColor="#6B7280"
+                value={formData.target_fiber_g}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, target_fiber_g: text })
                 }
                 keyboardType="number-pad"
                 editable={!saving}

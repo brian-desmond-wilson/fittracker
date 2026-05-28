@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/src/lib/supabase";
 import { Flame, Timer, Menu, User } from "lucide-react-native";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
@@ -18,6 +17,7 @@ import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard"
 import DrawerMenu from "@/src/components/drawer/DrawerMenu";
 import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
 import { WaterIntakeHomeCard } from "@/src/components/WaterIntakeHomeCard";
+import { MealsHomeCard } from "@/src/components/MealsHomeCard";
 
 export default function Home() {
   const router = useRouter();
@@ -27,20 +27,11 @@ export default function Home() {
   const [morningRoutineWizardVisible, setMorningRoutineWizardVisible] = useState(false);
   const [routineBannerKey, setRoutineBannerKey] = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [todayCalories, setTodayCalories] = useState(0);
-  const [calorieGoal, setCalorieGoal] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadUserData();
   }, []);
-
-  // Refresh calories when the Home screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      loadTodayCalories();
-    }, [])
-  );
 
   async function loadUserData() {
     try {
@@ -49,7 +40,7 @@ export default function Home() {
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("full_name, target_calories")
+          .select("full_name")
           .eq("id", user.id)
           .single();
 
@@ -57,10 +48,6 @@ export default function Home() {
           setUserName(profile.full_name);
         } else {
           setUserName("User");
-        }
-
-        if (profile?.target_calories) {
-          setCalorieGoal(profile.target_calories);
         }
       }
     } catch (error) {
@@ -71,43 +58,16 @@ export default function Home() {
     }
   }
 
-  async function loadTodayCalories() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Use local date, not UTC
-      const now = new Date();
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-      const { data: meals, error } = await supabase
-        .from("meal_logs")
-        .select("calories")
-        .eq("user_id", user.id)
-        .eq("date", today);
-
-      if (error) throw error;
-
-      const totalCalories = (meals || []).reduce(
-        (sum, meal) => sum + (meal.calories || 0),
-        0
-      );
-      setTodayCalories(totalCalories);
-    } catch (error) {
-      console.error("Error loading today's calories:", error);
-    }
-  }
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       // Minimum delay so spinner is visible
       await Promise.all([
         loadUserData(),
-        loadTodayCalories(),
         new Promise(resolve => setTimeout(resolve, 500)),
       ]);
-      // Refresh child components
+      // Refresh child components (Meals + Water cards re-fetch on focus
+      // but they also watch refreshKey)
       setRefreshKey((prev) => prev + 1);
       setRoutineBannerKey((prev) => prev + 1);
     } finally {
@@ -204,19 +164,8 @@ export default function Home() {
             <Text style={styles.cardSubtext}>Minutes active</Text>
           </View>
 
-          {/* Calories Eaten Card */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Calories Eaten</Text>
-              <View style={styles.iconContainer}>
-                <Flame size={20} color="#F97316" strokeWidth={2} />
-              </View>
-            </View>
-            <Text style={styles.cardValue}>{todayCalories.toLocaleString()}</Text>
-            <Text style={styles.cardSubtext}>
-              {calorieGoal ? `of ${calorieGoal.toLocaleString()} goal` : "No goal set"}
-            </Text>
-          </View>
+          {/* Meals Card */}
+          <MealsHomeCard refreshKey={refreshKey} />
 
           {/* Water Intake Card */}
           <WaterIntakeHomeCard refreshKey={refreshKey} />

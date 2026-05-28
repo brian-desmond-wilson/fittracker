@@ -26,6 +26,7 @@ import {
   createSavedFood,
   getRecentFoods,
   getFavorites,
+  getSavedFoods,
   toggleFavorite,
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -34,6 +35,10 @@ import { QuickActionBar } from "./meals/QuickActionBar";
 import { RecentFoodsRow } from "./meals/RecentFoodsRow";
 import { RecentFoodChips } from "./meals/RecentFoodChips";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
+import { MealsNutritionCard } from "./MealsNutritionCard";
+import { MacroGoals, sumNutrition } from "@/src/lib/mealMacros";
+import { MealLogEditorModal } from "./MealLogEditorModal";
+import { MealTemplatesModal } from "./MealTemplatesModal";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -78,6 +83,27 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [carbs, setCarbs] = useState("");
   const [fats, setFats] = useState("");
   const [sugars, setSugars] = useState("");
+  const [sodiumMg, setSodiumMg] = useState("");
+  const [fiberG, setFiberG] = useState("");
+
+  // Macro goals from profile
+  const [goals, setGoals] = useState<MacroGoals>({
+    calories: null,
+    protein: null,
+    carbs: null,
+    sodium_mg: null,
+    fats: null,
+    sugars: null,
+    fiber_g: null,
+  });
+
+  // Edit-meal modal
+  const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Templates modal + savedFoods cache
+  const [templatesVisible, setTemplatesVisible] = useState(false);
+  const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
 
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -227,6 +253,50 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchRecentAndFavorites();
   }, [fetchRecentAndFavorites]);
 
+  // Fetch all saved foods once (for the template picker)
+  const fetchAllSavedFoods = useCallback(async () => {
+    try {
+      const all = await getSavedFoods();
+      setAllSavedFoods(all);
+    } catch (error) {
+      console.error("Error fetching saved foods:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAllSavedFoods();
+  }, [fetchAllSavedFoods]);
+
+  // Fetch macro goals on mount.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from("profiles")
+          .select(
+            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g"
+          )
+          .eq("id", user.id)
+          .single();
+        if (data) {
+          setGoals({
+            calories: data.target_calories ?? null,
+            protein: data.target_protein_g ?? null,
+            carbs: data.target_carbs_g ?? null,
+            sodium_mg: data.target_sodium_mg ?? null,
+            fats: data.target_fats_g ?? null,
+            sugars: data.target_sugars_g ?? null,
+            fiber_g: data.target_fiber_g ?? null,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching macro goals:", error);
+      }
+    })();
+  }, []);
+
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -306,6 +376,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       const foodFats = food.fats;
       const foodSugars = "sugars" in food ? food.sugars : null;
 
+      // Resolve extended fields (only present on ProductData and the new SavedFood shape)
+      const foodSodium =
+        "sodium_mg" in food ? (food as any).sodium_mg : null;
+      const foodFiber =
+        "fiber_g" in food ? (food as any).fiber_g : null;
+
       // If from API, save to library first
       let savedFoodId: string | null = null;
       if (previewSource === "api" && scannedBarcode) {
@@ -319,6 +395,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: apiFood.carbs,
           fats: apiFood.fats,
           sugars: apiFood.sugars,
+          sodium_mg: apiFood.sodium_mg,
+          fiber_g: apiFood.fiber_g,
           serving_size: apiFood.servingSize,
           image_primary_url: apiFood.imagePrimaryUrl,
           image_front_url: apiFood.imageFrontUrl,
@@ -346,6 +424,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       const scaledSugars = foodSugars
         ? Math.round(foodSugars * servings * 10) / 10
         : null;
+      const scaledSodium =
+        foodSodium != null ? Math.round(foodSodium * servings) : null;
+      const scaledFiber =
+        foodFiber != null
+          ? Math.round(foodFiber * servings * 10) / 10
+          : null;
 
       // Log the meal
       const { error } = await supabase.from("meal_logs").insert({
@@ -358,6 +442,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: scaledCarbs,
         fats: scaledFats,
         sugars: scaledSugars,
+        sodium_mg: scaledSodium,
+        fiber_g: scaledFiber,
         saved_food_id: savedFoodId,
         servings: servings,
         uses_inventory: false,
@@ -404,6 +490,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: food.carbs,
         fats: food.fats,
         sugars: food.sugars,
+        sodium_mg: food.sodium_mg,
+        fiber_g: food.fiber_g,
         serving_size: food.servingSize,
         image_primary_url: food.imagePrimaryUrl,
         image_front_url: food.imageFrontUrl,
@@ -440,6 +528,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       carbs: number | null;
       fats: number | null;
       sugars: number | null;
+      sodium_mg?: number | null;
+      fiber_g?: number | null;
       serving_size: string | null;
     },
     mealTypeSelected: MealType,
@@ -468,6 +558,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: foodData.carbs,
           fats: foodData.fats,
           sugars: foodData.sugars,
+          sodium_mg: foodData.sodium_mg ?? null,
+          fiber_g: foodData.fiber_g ?? null,
           serving_size: foodData.serving_size,
           image_primary_url: null,
           image_front_url: null,
@@ -488,6 +580,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: foodData.carbs,
         fats: foodData.fats,
         sugars: foodData.sugars,
+        sodium_mg: foodData.sodium_mg ?? null,
+        fiber_g: foodData.fiber_g ?? null,
         saved_food_id: savedFoodId,
         servings: 1,
         uses_inventory: false,
@@ -598,6 +692,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setCarbs("");
     setFats("");
     setSugars("");
+    setSodiumMg("");
+    setFiberG("");
   };
 
   // Open form with viewing date as default
@@ -632,6 +728,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: carbs ? parseFloat(carbs) : null,
         fats: fats ? parseFloat(fats) : null,
         sugars: sugars ? parseFloat(sugars) : null,
+        sodium_mg: sodiumMg ? parseFloat(sodiumMg) : null,
+        fiber_g: fiberG ? parseFloat(fiberG) : null,
         uses_inventory: false,
         inventory_items: null,
         logged_at: new Date().toISOString(),
@@ -661,6 +759,41 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     } catch (error: any) {
       console.error("Error adding meal:", error);
       Alert.alert("Error", "Failed to log meal");
+    }
+  };
+
+  const handleSaveMealEdit = async (updates: {
+    name: string;
+    meal_type: MealType;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+  }) => {
+    if (!editingMeal) return;
+    try {
+      setSavingEdit(true);
+      const { error } = await supabase
+        .from("meal_logs")
+        .update(updates)
+        .eq("id", editingMeal.id);
+      if (error) throw error;
+      const date = editingMeal.date;
+      setEditingMeal(null);
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(date);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate);
+    } catch (error) {
+      console.error("Error editing meal:", error);
+      Alert.alert("Error", "Failed to save changes");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -708,16 +841,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Get meals for current viewing date from cache
   const dayMeals = mealsCache.get(viewingDateStr) || [];
 
-  // Calculate totals for viewing date
-  const dayTotals = dayMeals.reduce(
-    (acc, meal) => ({
-      calories: acc.calories + (meal.calories || 0),
-      protein: acc.protein + (meal.protein || 0),
-      carbs: acc.carbs + (meal.carbs || 0),
-      fats: acc.fats + (meal.fats || 0),
-    }),
-    { calories: 0, protein: 0, carbs: 0, fats: 0 }
-  );
+  // Calculate totals for viewing date (includes sodium + fiber).
+  // Totals are always over ALL meals (not filtered), so the day's true
+  // intake is shown regardless of search query.
+  const dayTotals = useMemo(() => sumNutrition(dayMeals), [dayMeals]);
+
+  // Search-filtered subset of dayMeals (used for the list rendering only).
+  const filteredDayMeals = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q === "") return dayMeals;
+    return dayMeals.filter((m) => m.name.toLowerCase().includes(q));
+  }, [dayMeals, searchQuery]);
 
   // Group meals by meal type
   const MEAL_TYPE_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
@@ -731,7 +865,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       dessert: [],
     };
 
-    dayMeals.forEach((meal) => {
+    filteredDayMeals.forEach((meal) => {
       grouped[meal.meal_type].push(meal);
     });
 
@@ -819,28 +953,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </TouchableOpacity>
             )}
 
-            {/* Nutrition Summary */}
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>{getNutritionLabel()}</Text>
-              <View style={styles.summaryGrid}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.calories}</Text>
-                  <Text style={styles.summaryItemLabel}>Calories</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.protein.toFixed(1)}g</Text>
-                  <Text style={styles.summaryItemLabel}>Protein</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.carbs.toFixed(1)}g</Text>
-                  <Text style={styles.summaryItemLabel}>Carbs</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.fats.toFixed(1)}g</Text>
-                  <Text style={styles.summaryItemLabel}>Fats</Text>
-                </View>
-              </View>
-            </View>
+            {/* Nutrition Summary (rings + bars + compact tier C) */}
+            <MealsNutritionCard
+              label={getNutritionLabel()}
+              totals={dayTotals}
+              goals={goals}
+            />
 
             {/* Quick Action Bar - Barcode, Search, Add */}
             {!showAddForm && (
@@ -861,6 +979,18 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 onFoodLongPress={handleToggleFavorite}
                 loading={loadingRecent}
               />
+            )}
+
+            {/* My Meals (templates) entry point */}
+            {!showAddForm && (
+              <TouchableOpacity
+                onPress={() => setTemplatesVisible(true)}
+                style={styles.templatesButton}
+                activeOpacity={0.7}
+              >
+                <Utensils size={16} color="#3B82F6" />
+                <Text style={styles.templatesButtonText}>My Meals — log a saved template</Text>
+              </TouchableOpacity>
             )}
 
           {/* Add Form */}
@@ -1005,15 +1135,40 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 </View>
               </View>
 
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Sugars (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0"
+                    placeholderTextColor={colors.mutedForeground}
+                    keyboardType="decimal-pad"
+                    value={sugars}
+                    onChangeText={setSugars}
+                  />
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Sodium (mg)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0"
+                    placeholderTextColor={colors.mutedForeground}
+                    keyboardType="decimal-pad"
+                    value={sodiumMg}
+                    onChangeText={setSodiumMg}
+                  />
+                </View>
+              </View>
+
               <View style={styles.field}>
-                <Text style={styles.inputLabel}>Sugars (g)</Text>
+                <Text style={styles.inputLabel}>Fiber (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType="decimal-pad"
-                  value={sugars}
-                  onChangeText={setSugars}
+                  value={fiberG}
+                  onChangeText={setFiberG}
                 />
               </View>
 
@@ -1072,7 +1227,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                         </View>
                       </View>
                       {mealsOfType.map((meal) => (
-                        <View key={meal.id} style={styles.mealCard}>
+                        <TouchableOpacity
+                          key={meal.id}
+                          style={styles.mealCard}
+                          onPress={() => setEditingMeal(meal)}
+                          activeOpacity={0.7}
+                        >
                           <View style={styles.mealCardHeader}>
                             <Text style={styles.mealTime}>{formatTime(meal.logged_at)}</Text>
                             <TouchableOpacity
@@ -1100,7 +1260,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                               )}
                             </View>
                           )}
-                        </View>
+                        </TouchableOpacity>
                       ))}
                     </View>
                   );
@@ -1148,6 +1308,32 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           setScannedBarcode(null);
         }}
         onSaveAndLog={handleManualSaveAndLog}
+      />
+
+      {/* Edit Meal Modal */}
+      <MealLogEditorModal
+        visible={editingMeal !== null}
+        meal={editingMeal}
+        saving={savingEdit}
+        onClose={() => setEditingMeal(null)}
+        onSave={handleSaveMealEdit}
+      />
+
+      {/* Templates Modal */}
+      <MealTemplatesModal
+        visible={templatesVisible}
+        savedFoods={allSavedFoods}
+        todayDate={viewingDateStr}
+        onClose={() => setTemplatesVisible(false)}
+        onLogged={async () => {
+          setMealsCache((prev) => {
+            const next = new Map(prev);
+            next.delete(viewingDateStr);
+            return next;
+          });
+          await fetchMealsForDate(viewingDate);
+          await fetchRecentAndFavorites();
+        }}
       />
     </>
   );
@@ -1462,6 +1648,26 @@ const styles = StyleSheet.create({
   mealTime: {
     fontSize: 12,
     color: colors.mutedForeground,
+  },
+  templatesButton: {
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    backgroundColor: "#1F2937",
+  },
+  templatesButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#3B82F6",
   },
   deleteButton: {
     padding: 4,
