@@ -7,10 +7,9 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
+  Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system/legacy";
 import { ChevronLeft, Droplets, Share2 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WaterLog } from "@/src/types/track";
@@ -539,7 +538,9 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     }
   };
 
-  // CSV export
+  // CSV export — uses React Native's built-in Share so it works in the
+  // existing dev client. Recipient apps receive the CSV as text (paste
+  // into Files / Mail / Notes / etc).
   const handleExportCsv = async () => {
     try {
       setExporting(true);
@@ -557,19 +558,9 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
         })
         .join("\n");
       const csv = header + rows + "\n";
-      const filename = `water-logs-${getLocalDate()}.csv`;
-      const uri = `${FileSystem.cacheDirectory}${filename}`;
-      await FileSystem.writeAsStringAsync(uri, csv, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-      if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert("Sharing unavailable", `File saved at ${uri}`);
-        return;
-      }
-      await Sharing.shareAsync(uri, {
-        mimeType: "text/csv",
-        dialogTitle: "Export Water Logs",
-        UTI: "public.comma-separated-values-text",
+      await Share.share({
+        message: csv,
+        title: `Water Logs ${getLocalDate()}`,
       });
     } catch (error) {
       console.error("CSV export failed:", error);
