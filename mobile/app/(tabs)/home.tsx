@@ -12,11 +12,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/src/lib/supabase";
-import { Flame, Timer, Droplet, Menu, User } from "lucide-react-native";
+import { Flame, Timer, Menu, User } from "lucide-react-native";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
 import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard";
 import DrawerMenu from "@/src/components/drawer/DrawerMenu";
 import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
+import { WaterIntakeHomeCard } from "@/src/components/WaterIntakeHomeCard";
 
 export default function Home() {
   const router = useRouter();
@@ -218,16 +219,7 @@ export default function Home() {
           </View>
 
           {/* Water Intake Card */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Water Intake</Text>
-              <View style={[styles.iconContainer, styles.iconBlue]}>
-                <Droplet size={20} color="#3B82F6" strokeWidth={2} />
-              </View>
-            </View>
-            <Text style={styles.cardValue}>0.0L</Text>
-            <Text style={styles.cardSubtext}>Stay hydrated</Text>
-          </View>
+          <WaterIntakeHomeCard refreshKey={refreshKey} />
         </View>
 
         {/* Recent Workouts Section */}
