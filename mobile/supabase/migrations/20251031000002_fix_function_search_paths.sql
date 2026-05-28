@@ -3,7 +3,6 @@
 -- Setting search_path = '' requires fully qualified names, which is the most secure option
 
 -- Update trigger functions
-ALTER FUNCTION public.update_sleep_sessions_updated_at() SET search_path = '';
 ALTER FUNCTION public.update_morning_routine_templates_updated_at() SET search_path = '';
 ALTER FUNCTION public.update_morning_routine_tasks_updated_at() SET search_path = '';
 ALTER FUNCTION public.update_morning_routine_completions_updated_at() SET search_path = '';
