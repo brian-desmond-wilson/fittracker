@@ -39,6 +39,14 @@ import { MealsNutritionCard } from "./MealsNutritionCard";
 import { MacroGoals, sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal } from "./MealLogEditorModal";
 import { MealTemplatesModal } from "./MealTemplatesModal";
+import { MealsInsightsCard } from "./MealsInsightsCard";
+import {
+  buildDailyTotalsByDate,
+  computeMacroStreak,
+  computeMacroBestStreak,
+  computeMealsRollingStats,
+  buildMealsSeries,
+} from "@/src/lib/mealStats";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -104,6 +112,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Templates modal + savedFoods cache
   const [templatesVisible, setTemplatesVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
+
+  // Historical meals (last 365 days) for insights/streaks/chart
+  const [historicalLogs, setHistoricalLogs] = useState<MealLog[]>([]);
 
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -266,6 +277,33 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   useEffect(() => {
     fetchAllSavedFoods();
   }, [fetchAllSavedFoods]);
+
+  // Fetch last 365 days of meals for insights (streaks/chart). Refetches
+  // when the local meals cache for the viewing date is invalidated.
+  const fetchHistoricalLogs = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 365);
+      const cutoffStr = getLocalDateString(cutoff);
+      const { data, error } = await supabase
+        .from("meal_logs")
+        .select(
+          "id, user_id, date, meal_type, name, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, logged_at, saved_food_id, meal_template_id, servings, uses_inventory, inventory_items"
+        )
+        .eq("user_id", user.id)
+        .gte("date", cutoffStr);
+      if (error) throw error;
+      setHistoricalLogs((data ?? []) as MealLog[]);
+    } catch (error) {
+      console.error("Error fetching historical meals:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHistoricalLogs();
+  }, [fetchHistoricalLogs, mealsCache]);
 
   // Fetch macro goals on mount.
   useEffect(() => {
@@ -853,6 +891,36 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     return dayMeals.filter((m) => m.name.toLowerCase().includes(q));
   }, [dayMeals, searchQuery]);
 
+  // Insights data — derived from the 365-day historical fetch.
+  const totalsByDate = useMemo(
+    () => buildDailyTotalsByDate(historicalLogs),
+    [historicalLogs]
+  );
+  const calorieStreak = useMemo(
+    () => computeMacroStreak(totalsByDate, goals, "calories"),
+    [totalsByDate, goals]
+  );
+  const calorieBestStreak = useMemo(
+    () => computeMacroBestStreak(totalsByDate, goals, "calories"),
+    [totalsByDate, goals]
+  );
+  const proteinStreak = useMemo(
+    () => computeMacroStreak(totalsByDate, goals, "protein"),
+    [totalsByDate, goals]
+  );
+  const proteinBestStreak = useMemo(
+    () => computeMacroBestStreak(totalsByDate, goals, "protein"),
+    [totalsByDate, goals]
+  );
+  const rolling = useMemo(
+    () => computeMealsRollingStats(totalsByDate, goals),
+    [totalsByDate, goals]
+  );
+  const series14 = useMemo(
+    () => buildMealsSeries(totalsByDate, 14, goals),
+    [totalsByDate, goals]
+  );
+
   // Group meals by meal type
   const MEAL_TYPE_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
 
@@ -958,6 +1026,19 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               label={getNutritionLabel()}
               totals={dayTotals}
               goals={goals}
+            />
+
+            {/* Insights (streaks + 14-day charts) */}
+            <MealsInsightsCard
+              calorieStreak={calorieStreak}
+              calorieBestStreak={calorieBestStreak}
+              proteinStreak={proteinStreak}
+              proteinBestStreak={proteinBestStreak}
+              avgCalsPerDay={rolling.avgCalsPerDay}
+              daysHit={rolling.daysHit}
+              daysInWindow={rolling.daysInWindow}
+              series14={series14}
+              calorieGoal={goals.calories ?? 0}
             />
 
             {/* Quick Action Bar - Barcode, Search, Add */}

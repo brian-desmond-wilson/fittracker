@@ -9,6 +9,7 @@ import {
 } from "@/src/lib/mealMacros";
 import { MacroRing } from "./MacroRing";
 import { MacroBar } from "./MacroBar";
+import { MacroPercentageBar } from "./MacroPercentageBar";
 
 interface MealsNutritionCardProps {
   label: string;
@@ -40,6 +41,9 @@ export function MealsNutritionCard({
           goal={goals.protein}
         />
       </View>
+
+      {/* Macro % split (calories from P/C/F) */}
+      <MacroPercentageBar totals={totals} />
 
       {/* Tier B: carbs + sodium as bars */}
       <View style={styles.barsBlock}>
