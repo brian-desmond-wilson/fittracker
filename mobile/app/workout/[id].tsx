@@ -1540,7 +1540,7 @@ export default function WorkoutSessionPage() {
           .from('workout_instances')
           .update({
             status: 'in_progress',
-            completion_status: completedCount === exerciseStates.length ? 'full' : 'partial',
+            completion_status: completedCount === exerciseStates.length ? 'completed' : 'partial',
             duration_seconds: elapsedSeconds,
           })
           .eq('id', workoutInstanceId);
@@ -1598,7 +1598,7 @@ export default function WorkoutSessionPage() {
           .from('workout_instances')
           .update({
             status: 'completed',
-            completion_status: allComplete ? 'full' : 'partial',
+            completion_status: allComplete ? 'completed' : 'partial',
             completed_at: new Date().toISOString(),
             duration_seconds: totalDuration,
           })
