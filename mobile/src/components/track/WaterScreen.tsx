@@ -734,6 +734,51 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             </TouchableOpacity>
           </View>
 
+          {/* Quick Add row (lifted out of Log section so it's above the fold) */}
+          <View style={styles.quickAddCard}>
+            <View style={styles.quickAddHeader}>
+              <Text style={styles.quickAddLabel}>Quick Add</Text>
+              <TouchableOpacity
+                onPress={openQuickAddEditor}
+                style={styles.quickAddGear}
+                activeOpacity={0.7}
+              >
+                <Sliders size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.quickAddButtons}>
+              {quickAddAmounts.map((amount, i) => {
+                const name = quickAddNames[i];
+                const type = quickAddTypes[i] || "water";
+                const primaryText = name ? name : formatAmount(amount, displayUnit);
+                const subText = name ? formatAmount(amount, displayUnit) : null;
+                return (
+                  <TouchableOpacity
+                    key={`${amount}-${i}`}
+                    style={[
+                      styles.quickAddButton,
+                      type !== "water" && {
+                        borderColor: beverageColor(type),
+                        borderLeftWidth: 3,
+                      },
+                    ]}
+                    onPress={() => logWater(amount, type)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.quickAddButtonText} numberOfLines={1}>
+                      {primaryText}
+                    </Text>
+                    {subText && (
+                      <Text style={styles.quickAddButtonSubText} numberOfLines={1}>
+                        {subText}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
           {/* Day strip */}
           <View style={styles.stripCard}>
             <View style={styles.stripHeader}>
@@ -825,9 +870,9 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             <WaterBarChart series={chartSeries} goalOz={goalOz} />
           </View>
 
-          {/* Add Water Section */}
+          {/* Custom Log Section (manual amount + beverage type) */}
           <View style={styles.addSection}>
-            <Text style={styles.sectionTitle}>Log Drink</Text>
+            <Text style={styles.sectionTitle}>Log a Custom Amount</Text>
             <View style={styles.beverageChipsRow}>
               {BEVERAGE_TYPES.map((t) => {
                 const active = addType === t;
@@ -875,54 +920,6 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                 <Plus size={20} color="#FFFFFF" />
                 <Text style={styles.addButtonText}>Add</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Quick Add Buttons */}
-            <View style={styles.quickAddContainer}>
-              <View style={styles.quickAddHeader}>
-                <Text style={styles.quickAddLabel}>Quick Add:</Text>
-                <TouchableOpacity
-                  onPress={openQuickAddEditor}
-                  style={styles.quickAddGear}
-                  activeOpacity={0.7}
-                >
-                  <Sliders size={16} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.quickAddButtons}>
-                {quickAddAmounts.map((amount, i) => {
-                  const name = quickAddNames[i];
-                  const type = quickAddTypes[i] || "water";
-                  const primaryText = name ? name : formatAmount(amount, displayUnit);
-                  const subText = name ? formatAmount(amount, displayUnit) : null;
-                  return (
-                    <TouchableOpacity
-                      key={`${amount}-${i}`}
-                      style={[
-                        styles.quickAddButton,
-                        type !== "water" && {
-                          borderColor: beverageColor(type),
-                          borderLeftWidth: 3,
-                        },
-                      ]}
-                      onPress={() => logWater(amount, type)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={styles.quickAddButtonText}
-                        numberOfLines={1}
-                      >
-                        {primaryText}
-                      </Text>
-                      {subText && (
-                        <Text style={styles.quickAddButtonSubText} numberOfLines={1}>
-                          {subText}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
             </View>
           </View>
 
@@ -1586,6 +1583,15 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  quickAddCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   quickAddContainer: {
     marginTop: 8,
