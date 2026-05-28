@@ -13,7 +13,9 @@ export default function WODDetail() {
   return (
     <WODDetailScreen
       wodId={id}
-      onClose={() => router.back()}
+      // Always land on Training index — router.back() would walk linear
+      // history if entered from outside the Training tab.
+      onClose={() => router.replace("/(tabs)/training")}
     />
   );
 }

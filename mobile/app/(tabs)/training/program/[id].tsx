@@ -113,7 +113,7 @@ export default function ProgramDetail() {
       <>
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.errorBackButton}>
+          <TouchableOpacity onPress={() => router.replace("/(tabs)/training")} style={styles.errorBackButton}>
             <ChevronLeft size={24} color={colors.foreground} />
             <Text style={styles.errorBackText}>Back</Text>
           </TouchableOpacity>
@@ -135,7 +135,7 @@ export default function ProgramDetail() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Fixed Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+          <TouchableOpacity onPress={() => router.replace("/(tabs)/training")} style={styles.headerButton}>
             <ChevronLeft size={24} color={colors.foreground} />
             <Text style={styles.headerText}>Training</Text>
           </TouchableOpacity>

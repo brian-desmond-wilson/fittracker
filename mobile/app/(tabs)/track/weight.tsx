@@ -4,5 +4,7 @@ import { WeightScreen } from "@/src/components/track/WeightScreen";
 export default function WeightPage() {
   const router = useRouter();
 
-  return <WeightScreen onClose={() => router.back()} />;
+  // Always land on Track index — router.back() would walk linear
+  // history if entered from outside the Track tab.
+  return <WeightScreen onClose={() => router.replace("/(tabs)/track")} />;
 }

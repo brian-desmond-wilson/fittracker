@@ -4,5 +4,7 @@ import { MeasurementsScreen } from "@/src/components/track/MeasurementsScreen";
 export default function MeasurementsPage() {
   const router = useRouter();
 
-  return <MeasurementsScreen onClose={() => router.back()} />;
+  // Always land on Track index — router.back() would walk linear
+  // history if entered from outside the Track tab.
+  return <MeasurementsScreen onClose={() => router.replace("/(tabs)/track")} />;
 }

@@ -65,7 +65,9 @@ export default function AddFoodItemPage() {
   };
 
   const handleClose = () => {
-    router.back();
+    // Always land on the inventory list — router.back() would walk
+    // linear history if entered from outside the food-inventory stack.
+    router.replace("/(tabs)/track/food-inventory");
   };
 
   return (
