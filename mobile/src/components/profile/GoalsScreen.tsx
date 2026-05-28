@@ -31,35 +31,42 @@ type WaterUnit = 'oz' | 'L';
 
 const OZ_PER_LITER = 33.814;
 
-function ozToDisplay(oz: string, unit: WaterUnit): string {
-  if (!oz) return '';
-  if (unit === 'oz') return oz;
-  const liters = parseFloat(oz) / OZ_PER_LITER;
-  return isNaN(liters) ? '' : liters.toFixed(2);
-}
-
-function displayToOz(value: string, unit: WaterUnit): string {
-  if (!value) return '';
-  if (unit === 'oz') return value;
-  const oz = parseFloat(value) * OZ_PER_LITER;
-  return isNaN(oz) ? '' : Math.round(oz).toString();
-}
-
 export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScreenProps) {
   const insets = useSafeAreaInsets();
   const [formData, setFormData] = useState(initialData);
   const [waterUnit, setWaterUnit] = useState<WaterUnit>('oz');
+  const [waterInput, setWaterInput] = useState(initialData.target_water_oz);
   const [saving, setSaving] = useState(false);
+
+  const handleWaterUnitChange = (next: WaterUnit) => {
+    if (next === waterUnit) return;
+    const parsed = parseFloat(waterInput);
+    if (!isNaN(parsed)) {
+      if (next === 'L') {
+        setWaterInput((parsed / OZ_PER_LITER).toFixed(2));
+      } else {
+        setWaterInput(Math.round(parsed * OZ_PER_LITER).toString());
+      }
+    }
+    setWaterUnit(next);
+  };
 
   const handleSave = async () => {
     try {
       setSaving(true);
 
-      const waterOz = formData.target_water_oz ? parseInt(formData.target_water_oz) : null;
-      if (waterOz !== null && (isNaN(waterOz) || waterOz <= 0)) {
-        console.error('Invalid water goal');
-        setSaving(false);
-        return;
+      let waterOz: number | null = null;
+      if (waterInput.trim() !== '') {
+        const parsed = parseFloat(waterInput);
+        if (isNaN(parsed) || parsed <= 0) {
+          console.error('Invalid water goal');
+          setSaving(false);
+          return;
+        }
+        waterOz =
+          waterUnit === 'oz'
+            ? Math.round(parsed)
+            : Math.round(parsed * OZ_PER_LITER);
       }
 
       const { error } = await supabase
@@ -173,7 +180,7 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                         styles.unitButton,
                         waterUnit === unit && styles.unitButtonActive,
                       ]}
-                      onPress={() => setWaterUnit(unit)}
+                      onPress={() => handleWaterUnitChange(unit)}
                       disabled={saving}
                     >
                       <Text
@@ -192,13 +199,8 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 style={styles.input}
                 placeholder={waterUnit === 'oz' ? '64' : '2'}
                 placeholderTextColor="#6B7280"
-                value={ozToDisplay(formData.target_water_oz, waterUnit)}
-                onChangeText={(text) =>
-                  setFormData({
-                    ...formData,
-                    target_water_oz: displayToOz(text, waterUnit),
-                  })
-                }
+                value={waterInput}
+                onChangeText={setWaterInput}
                 keyboardType="decimal-pad"
                 editable={!saving}
               />
