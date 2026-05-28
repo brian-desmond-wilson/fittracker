@@ -62,6 +62,27 @@ function dateFromHhmm(hhmm: string): Date {
 type WaterUnit = 'oz' | 'L';
 
 const OZ_PER_LITER = 33.814;
+const CM_PER_INCH = 2.54;
+const LBS_PER_KG = 2.20462;
+
+function cmToFtIn(cm: number): { ft: number; inches: number } {
+  const totalIn = cm / CM_PER_INCH;
+  const ft = Math.floor(totalIn / 12);
+  const inches = totalIn - ft * 12;
+  return { ft, inches };
+}
+
+function ftInToCm(ft: number, inches: number): number {
+  return (ft * 12 + inches) * CM_PER_INCH;
+}
+
+function kgToLbs(kg: number): number {
+  return kg * LBS_PER_KG;
+}
+
+function lbsToKg(lbs: number): number {
+  return lbs / LBS_PER_KG;
+}
 
 export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScreenProps) {
   const insets = useSafeAreaInsets();
@@ -70,6 +91,24 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
   const [waterInput, setWaterInput] = useState(initialData.target_water_oz);
   const [saving, setSaving] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<null | 'start' | 'end'>(null);
+
+  // Height + weight in imperial (DB stays in cm / kg)
+  const initialHeight = (() => {
+    const cm = parseFloat(initialData.height_cm);
+    if (!isNaN(cm) && cm > 0) {
+      const { ft, inches } = cmToFtIn(cm);
+      return { ft: ft.toString(), inches: Math.round(inches).toString() };
+    }
+    return { ft: '', inches: '' };
+  })();
+  const initialWeightLbs = (() => {
+    const kg = parseFloat(initialData.target_weight_kg);
+    if (!isNaN(kg) && kg > 0) return Math.round(kgToLbs(kg)).toString();
+    return '';
+  })();
+  const [heightFt, setHeightFt] = useState(initialHeight.ft);
+  const [heightIn, setHeightIn] = useState(initialHeight.inches);
+  const [weightLbs, setWeightLbs] = useState(initialWeightLbs);
 
   const handleWaterUnitChange = (next: WaterUnit) => {
     if (next === waterUnit) return;
@@ -121,13 +160,27 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
         return isNaN(n) || n <= 0 ? null : n;
       };
 
+      // Convert imperial inputs back to metric for storage.
+      let heightCm: number | null = null;
+      const ftN = parseFloat(heightFt);
+      const inN = parseFloat(heightIn);
+      if (!isNaN(ftN) && ftN >= 0) {
+        const inches = isNaN(inN) ? 0 : inN;
+        const cm = ftInToCm(ftN, inches);
+        heightCm = cm > 0 ? Math.round(cm * 10) / 10 : null;
+      }
+
+      let weightKg: number | null = null;
+      const lbsN = parseFloat(weightLbs);
+      if (!isNaN(lbsN) && lbsN > 0) {
+        weightKg = Math.round(lbsToKg(lbsN) * 10) / 10;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
-          height_cm: formData.height_cm ? parseFloat(formData.height_cm) : null,
-          target_weight_kg: formData.target_weight_kg
-            ? parseFloat(formData.target_weight_kg)
-            : null,
+          height_cm: heightCm,
+          target_weight_kg: weightKg,
           target_calories: formData.target_calories
             ? parseInt(formData.target_calories)
             : null,
@@ -187,34 +240,42 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.label}>Height (cm)</Text>
+                <Text style={styles.label}>Height (ft)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="175"
+                  placeholder="5"
                   placeholderTextColor="#6B7280"
-                  value={formData.height_cm}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, height_cm: text })
-                  }
-                  keyboardType="decimal-pad"
+                  value={heightFt}
+                  onChangeText={setHeightFt}
+                  keyboardType="number-pad"
                   editable={!saving}
                 />
               </View>
-
               <View style={styles.halfField}>
-                <Text style={styles.label}>Target Weight (kg)</Text>
+                <Text style={styles.label}>Height (in)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="70"
+                  placeholder="9"
                   placeholderTextColor="#6B7280"
-                  value={formData.target_weight_kg}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, target_weight_kg: text })
-                  }
+                  value={heightIn}
+                  onChangeText={setHeightIn}
                   keyboardType="decimal-pad"
                   editable={!saving}
                 />
               </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.label}>Target Weight (lbs)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="155"
+                placeholderTextColor="#6B7280"
+                value={weightLbs}
+                onChangeText={setWeightLbs}
+                keyboardType="decimal-pad"
+                editable={!saving}
+              />
             </View>
 
             <View style={styles.formField}>
