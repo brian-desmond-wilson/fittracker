@@ -200,11 +200,14 @@ export async function searchSavedFoods(query: string): Promise<SavedFood[]> {
     throw new Error("User not authenticated");
   }
 
+  // Match against both name and brand so a query like "Boost" hits
+  // either "Boost Drink" (in name) or a food with brand "Boost".
+  const escaped = query.replace(/[%_]/g, "\\$&");
   const { data, error } = await supabase
     .from("saved_foods")
     .select("*")
     .eq("user_id", user.id)
-    .ilike("name", `%${query}%`)
+    .or(`name.ilike.%${escaped}%,brand.ilike.%${escaped}%`)
     .order("name", { ascending: true })
     .limit(20);
 

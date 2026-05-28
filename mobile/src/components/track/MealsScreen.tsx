@@ -27,6 +27,7 @@ import {
   getRecentFoods,
   getFavorites,
   getSavedFoods,
+  searchSavedFoods,
   toggleFavorite,
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -115,6 +116,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   // Historical meals (last 365 days) for insights/streaks/chart
   const [historicalLogs, setHistoricalLogs] = useState<MealLog[]>([]);
+
+  // Saved-foods search results (debounced from searchQuery)
+  const [searchResults, setSearchResults] = useState<SavedFood[]>([]);
+  const [searching, setSearching] = useState(false);
 
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -304,6 +309,37 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   useEffect(() => {
     fetchHistoricalLogs();
   }, [fetchHistoricalLogs, mealsCache]);
+
+  // Debounced search across saved_foods (matches name OR brand).
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        const hits = await searchSavedFoods(q);
+        setSearchResults(hits);
+      } catch (error) {
+        console.error("Search error:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  const handleSearchResultPress = (food: SavedFood) => {
+    setPreviewFood(food);
+    setPreviewSource("saved");
+    setScannedBarcode(food.barcode);
+    setShowFoodPreview(true);
+    setSearchQuery("");
+  };
 
   // Fetch macro goals on mount.
   useEffect(() => {
@@ -1051,6 +1087,41 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               />
             )}
 
+            {/* Search Results — from your saved foods library */}
+            {!showAddForm && searchQuery.trim().length >= 2 && (
+              <View style={styles.searchResults}>
+                <Text style={styles.searchResultsHeader}>
+                  {searching
+                    ? "Searching…"
+                    : searchResults.length === 0
+                      ? `No saved foods match "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
+                      : `Saved foods matching "${searchQuery.trim()}"`}
+                </Text>
+                {searchResults.slice(0, 8).map((f) => (
+                  <TouchableOpacity
+                    key={f.id}
+                    onPress={() => handleSearchResultPress(f)}
+                    style={styles.searchResultRow}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.searchResultName} numberOfLines={1}>
+                        {f.name}
+                      </Text>
+                      {f.brand && (
+                        <Text style={styles.searchResultBrand} numberOfLines={1}>
+                          {f.brand}
+                        </Text>
+                      )}
+                    </View>
+                    {f.calories != null && (
+                      <Text style={styles.searchResultCals}>{f.calories} cal</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             {/* Recent Foods Row */}
             {!showAddForm && (
               <RecentFoodsRow
@@ -1729,6 +1800,47 @@ const styles = StyleSheet.create({
   mealTime: {
     fontSize: 12,
     color: colors.mutedForeground,
+  },
+  searchResults: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchResultsHeader: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  searchResultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  searchResultName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  searchResultBrand: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 1,
+  },
+  searchResultCals: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginLeft: 8,
   },
   templatesButton: {
     marginHorizontal: 20,
