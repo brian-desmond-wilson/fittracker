@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,15 +9,52 @@ import {
   StatusBar,
   Alert,
   Modal,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Plus, Droplets, Trash2, Pencil } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Droplets,
+  Trash2,
+  Pencil,
+  Calendar as CalendarIcon,
+  Sliders,
+} from "lucide-react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
 import { WaterLog } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { WaterProgressRing } from "./WaterProgressRing";
 
 const OZ_PER_LITER = 33.814;
-type WaterUnit = 'oz' | 'L';
+type WaterUnit = "oz" | "L";
+
+const DEFAULT_QUICK_ADD: number[] = [8, 12, 16, 20];
+
+function getLocalDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function startOfWeek(d: Date): Date {
+  const result = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  result.setDate(result.getDate() - result.getDay()); // Sunday = 0
+  return result;
+}
+
+function addDays(d: Date, days: number): Date {
+  const result = new Date(d);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+const DAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 
 interface WaterScreenProps {
   onClose: () => void;
@@ -28,37 +65,187 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   const [logs, setLogs] = useState<WaterLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [addAmount, setAddAmount] = useState("");
-  const [todayTotal, setTodayTotal] = useState(0);
+
+  // Goal
   const [goalOz, setGoalOz] = useState(64);
   const [goalModalVisible, setGoalModalVisible] = useState(false);
   const [goalDraft, setGoalDraft] = useState("");
   const [goalUnit, setGoalUnit] = useState<WaterUnit>("oz");
   const [savingGoal, setSavingGoal] = useState(false);
 
-  const today = new Date().toISOString().split("T")[0];
+  // Quick-add config
+  const [quickAddAmounts, setQuickAddAmounts] = useState<number[]>(DEFAULT_QUICK_ADD);
+  const [quickAddEditVisible, setQuickAddEditVisible] = useState(false);
+  const [quickAddDrafts, setQuickAddDrafts] = useState<string[]>([]);
+  const [savingQuickAdd, setSavingQuickAdd] = useState(false);
+
+  // Date navigation
+  const todayString = getLocalDate();
+  const [selectedDate, setSelectedDate] = useState<string>(todayString);
+  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
 
   useEffect(() => {
     fetchWaterLogs();
-    fetchGoal();
+    fetchSettings();
   }, []);
 
-  const fetchGoal = async () => {
+  const fetchSettings = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase
         .from("profiles")
-        .select("target_water_oz")
+        .select("target_water_oz, quick_add_oz")
         .eq("id", user.id)
         .single();
-      if (data?.target_water_oz) {
-        setGoalOz(data.target_water_oz);
+      if (data?.target_water_oz) setGoalOz(data.target_water_oz);
+      if (Array.isArray(data?.quick_add_oz) && data.quick_add_oz.length > 0) {
+        setQuickAddAmounts(data.quick_add_oz);
       }
     } catch (error) {
-      console.error("Error fetching water goal:", error);
+      console.error("Error fetching water settings:", error);
     }
   };
 
+  const fetchWaterLogs = async ({ silent = false }: { silent?: boolean } = {}) => {
+    try {
+      if (!silent) setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to track water");
+        return;
+      }
+
+      // Fetch logs from the last 365 days so historical week navigation works
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 365);
+      const startDate = getLocalDate(cutoff);
+
+      const { data, error } = await supabase
+        .from("water_logs")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("date", startDate)
+        .order("date", { ascending: false })
+        .order("logged_at", { ascending: false });
+
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (error: any) {
+      console.error("Error fetching water logs:", error);
+      Alert.alert("Error", "Failed to load water logs");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  // Derived: per-date totals (used for ring + day strip color)
+  const totalsByDate = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const log of logs) {
+      totals[log.date] = (totals[log.date] || 0) + parseFloat(log.amount_oz.toString());
+    }
+    return totals;
+  }, [logs]);
+
+  const selectedDateLogs = useMemo(
+    () => logs.filter((l) => l.date === selectedDate),
+    [logs, selectedDate]
+  );
+  const selectedDateTotal = totalsByDate[selectedDate] || 0;
+
+  const weekDates = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(weekStart, i);
+      return { date: d, key: getLocalDate(d) };
+    });
+  }, [weekStart]);
+
+  const isViewingToday = selectedDate === todayString;
+
+  // Handlers
+  const logWater = async (amount: number): Promise<boolean> => {
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid amount of water in ounces");
+      return false;
+    }
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log water");
+        return false;
+      }
+      const { error } = await supabase.from("water_logs").insert([
+        {
+          user_id: user.id,
+          date: selectedDate,
+          amount_oz: amount,
+          logged_at: new Date().toISOString(),
+        },
+      ]);
+      if (error) throw error;
+      await fetchWaterLogs({ silent: true });
+      return true;
+    } catch (error: any) {
+      console.error("Error adding water log:", error);
+      Alert.alert("Error", "Failed to add water log");
+      return false;
+    }
+  };
+
+  const handleAddFromInput = async () => {
+    const ok = await logWater(parseFloat(addAmount));
+    if (ok) setAddAmount("");
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    Alert.alert("Delete Log", "Are you sure you want to delete this water log?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { error } = await supabase.from("water_logs").delete().eq("id", logId);
+            if (error) throw error;
+            await fetchWaterLogs({ silent: true });
+          } catch (error: any) {
+            console.error("Error deleting water log:", error);
+            Alert.alert("Error", "Failed to delete water log");
+          }
+        },
+      },
+    ]);
+  };
+
+  // Date navigation
+  const goToToday = () => {
+    setSelectedDate(todayString);
+    setWeekStart(startOfWeek(new Date()));
+  };
+
+  const navigateWeek = (delta: number) => {
+    const newStart = addDays(weekStart, delta * 7);
+    setWeekStart(newStart);
+  };
+
+  const handleSelectDate = (dateKey: string) => {
+    setSelectedDate(dateKey);
+  };
+
+  const handleDatePickerChange = (event: any, picked?: Date) => {
+    if (event.type === "dismissed" || !picked) {
+      setDatePickerVisible(false);
+      return;
+    }
+    const dateKey = getLocalDate(picked);
+    setSelectedDate(dateKey);
+    setWeekStart(startOfWeek(picked));
+    if (Platform.OS !== "ios") setDatePickerVisible(false);
+  };
+
+  // Goal modal
   const openGoalEditor = () => {
     setGoalDraft(goalOz.toString());
     setGoalUnit("oz");
@@ -107,137 +294,89 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     }
   };
 
-  const fetchWaterLogs = async () => {
-    try {
-      setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        Alert.alert("Error", "You must be logged in to track water");
-        return;
-      }
-
-      // Fetch logs from last 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const startDate = thirtyDaysAgo.toISOString().split("T")[0];
-
-      const { data, error } = await supabase
-        .from("water_logs")
-        .select("*")
-        .eq("user_id", user.id)
-        .gte("date", startDate)
-        .order("date", { ascending: false })
-        .order("logged_at", { ascending: false });
-
-      if (error) throw error;
-
-      setLogs(data || []);
-
-      // Calculate today's total
-      const todayLogs = (data || []).filter((log) => log.date === today);
-      const total = todayLogs.reduce((sum, log) => sum + parseFloat(log.amount_oz.toString()), 0);
-      setTodayTotal(total);
-    } catch (error: any) {
-      console.error("Error fetching water logs:", error);
-      Alert.alert("Error", "Failed to load water logs");
-    } finally {
-      setLoading(false);
-    }
+  // Quick-add edit modal
+  const openQuickAddEditor = () => {
+    setQuickAddDrafts(quickAddAmounts.map((n) => n.toString()));
+    setQuickAddEditVisible(true);
   };
 
-  const handleAddWater = async () => {
-    const amount = parseFloat(addAmount);
+  const updateQuickAddDraft = (i: number, value: string) => {
+    setQuickAddDrafts((prev) => prev.map((v, idx) => (idx === i ? value : v)));
+  };
 
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount of water in ounces");
+  const handleSaveQuickAdd = async () => {
+    const parsed = quickAddDrafts.map((d) => parseFloat(d));
+    if (parsed.some((n) => isNaN(n) || n <= 0)) {
+      Alert.alert("Invalid Amounts", "Each quick-add must be a positive number");
       return;
     }
-
+    const rounded = parsed.map((n) => Math.round(n));
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      setSavingQuickAdd(true);
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        Alert.alert("Error", "You must be logged in to log water");
+        Alert.alert("Error", "You must be logged in");
         return;
       }
-
-      const { error } = await supabase.from("water_logs").insert([
-        {
-          user_id: user.id,
-          date: today,
-          amount_oz: amount,
-          logged_at: new Date().toISOString(),
-        },
-      ]);
-
+      const { error } = await supabase
+        .from("profiles")
+        .update({ quick_add_oz: rounded })
+        .eq("id", user.id);
       if (error) throw error;
-
-      setAddAmount("");
-      await fetchWaterLogs();
-      Alert.alert("Success", `Added ${amount} oz of water`);
-    } catch (error: any) {
-      console.error("Error adding water log:", error);
-      Alert.alert("Error", "Failed to add water log");
+      setQuickAddAmounts(rounded);
+      setQuickAddEditVisible(false);
+    } catch (error) {
+      console.error("Error saving quick-add amounts:", error);
+      Alert.alert("Error", "Failed to save quick-add amounts");
+    } finally {
+      setSavingQuickAdd(false);
     }
   };
 
-  const handleDeleteLog = async (logId: string) => {
-    Alert.alert("Delete Log", "Are you sure you want to delete this water log?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const { error } = await supabase.from("water_logs").delete().eq("id", logId);
-
-            if (error) throw error;
-
-            await fetchWaterLogs();
-          } catch (error: any) {
-            console.error("Error deleting water log:", error);
-            Alert.alert("Error", "Failed to delete water log");
-          }
-        },
-      },
-    ]);
+  // Display
+  const formatSelectedDateLabel = (): string => {
+    if (isViewingToday) return "Today";
+    const d = parseLocalDate(selectedDate);
+    const yesterday = addDays(new Date(), -1);
+    if (selectedDate === getLocalDate(yesterday)) return "Yesterday";
+    return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  const formatWeekRangeLabel = (): string => {
+    const end = addDays(weekStart, 6);
+    const startStr = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const endStr = end.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return `${startStr} – ${endStr}`;
+  };
 
-    if (dateStr === today.toISOString().split("T")[0]) {
-      return "Today";
-    } else if (dateStr === yesterday.toISOString().split("T")[0]) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    }
+  const dotColorFor = (dateKey: string): string => {
+    const total = totalsByDate[dateKey] || 0;
+    if (total === 0) return "transparent";
+    if (total >= goalOz) return "#22C55E";
+    if (total >= goalOz * 0.5) return "#3B82F6";
+    return "rgba(59, 130, 246, 0.4)";
+  };
+
+  // History: group selectedDate logs (only this date's history shows up top, history below is unchanged)
+  const groupedLogs: Record<string, WaterLog[]> = {};
+  logs.forEach((log) => {
+    if (!groupedLogs[log.date]) groupedLogs[log.date] = [];
+    groupedLogs[log.date].push(log);
+  });
+  const sortedDates = Object.keys(groupedLogs).sort((a, b) => b.localeCompare(a));
+
+  const formatHistoryDate = (dateStr: string) => {
+    const date = parseLocalDate(dateStr);
+    const yesterday = addDays(new Date(), -1);
+    if (dateStr === todayString) return "Today";
+    if (dateStr === getLocalDate(yesterday)) return "Yesterday";
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
   };
-
-  // Group logs by date
-  const groupedLogs: Record<string, WaterLog[]> = {};
-  logs.forEach((log) => {
-    if (!groupedLogs[log.date]) {
-      groupedLogs[log.date] = [];
-    }
-    groupedLogs[log.date].push(log);
-  });
-
-  const sortedDates = Object.keys(groupedLogs).sort((a, b) => b.localeCompare(a));
 
   return (
     <>
@@ -258,18 +397,86 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             <Text style={styles.pageTitle}>Water Intake</Text>
           </View>
 
-          {/* Today's Total */}
-          <View style={styles.todayCard}>
-            <Text style={styles.todayLabel}>Today's Total</Text>
-            <Text style={styles.todayAmount}>{todayTotal.toFixed(1)} oz</Text>
+          {/* Ring card */}
+          <View style={styles.ringCard}>
+            <WaterProgressRing current={selectedDateTotal} goal={goalOz} />
+            <View style={styles.loggingToRow}>
+              <Text style={styles.loggingToText}>
+                Logging to: <Text style={styles.loggingToValue}>{formatSelectedDateLabel()}</Text>
+              </Text>
+              {!isViewingToday && (
+                <TouchableOpacity onPress={goToToday} activeOpacity={0.7}>
+                  <Text style={styles.todayLink}>Today</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <TouchableOpacity
               onPress={openGoalEditor}
               style={styles.goalRow}
               activeOpacity={0.7}
             >
-              <Text style={styles.todaySubtext}>Goal: {goalOz} oz</Text>
+              <Text style={styles.goalText}>Goal: {goalOz} oz</Text>
               <Pencil size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
+          </View>
+
+          {/* Day strip */}
+          <View style={styles.stripCard}>
+            <View style={styles.stripHeader}>
+              <TouchableOpacity
+                onPress={() => navigateWeek(-1)}
+                style={styles.stripNavButton}
+                activeOpacity={0.7}
+              >
+                <ChevronLeft size={20} color={colors.foreground} />
+              </TouchableOpacity>
+              <Text style={styles.stripHeaderText}>{formatWeekRangeLabel()}</Text>
+              <TouchableOpacity
+                onPress={() => navigateWeek(1)}
+                style={styles.stripNavButton}
+                activeOpacity={0.7}
+              >
+                <ChevronRight size={20} color={colors.foreground} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setDatePickerVisible(true)}
+                style={styles.stripNavButton}
+                activeOpacity={0.7}
+              >
+                <CalendarIcon size={18} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.stripRow}>
+              {weekDates.map(({ date, key }, i) => {
+                const isSelected = key === selectedDate;
+                const isToday = key === todayString;
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    onPress={() => handleSelectDate(key)}
+                    style={[
+                      styles.dayCell,
+                      isSelected && styles.dayCellSelected,
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.dayInitial}>{DAY_INITIALS[i]}</Text>
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        isToday && styles.dayNumberToday,
+                        isSelected && styles.dayNumberSelected,
+                      ]}
+                    >
+                      {date.getDate()}
+                    </Text>
+                    <View
+                      style={[styles.dayDot, { backgroundColor: dotColorFor(key) }]}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
           {/* Add Water Section */}
@@ -288,7 +495,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
               </View>
               <TouchableOpacity
                 style={styles.addButton}
-                onPress={handleAddWater}
+                onPress={handleAddFromInput}
                 activeOpacity={0.7}
               >
                 <Plus size={20} color="#FFFFFF" />
@@ -298,16 +505,22 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
             {/* Quick Add Buttons */}
             <View style={styles.quickAddContainer}>
-              <Text style={styles.quickAddLabel}>Quick Add:</Text>
+              <View style={styles.quickAddHeader}>
+                <Text style={styles.quickAddLabel}>Quick Add:</Text>
+                <TouchableOpacity
+                  onPress={openQuickAddEditor}
+                  style={styles.quickAddGear}
+                  activeOpacity={0.7}
+                >
+                  <Sliders size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
               <View style={styles.quickAddButtons}>
-                {[8, 12, 16, 20].map((amount) => (
+                {quickAddAmounts.map((amount, i) => (
                   <TouchableOpacity
-                    key={amount}
+                    key={`${amount}-${i}`}
                     style={styles.quickAddButton}
-                    onPress={() => {
-                      setAddAmount(amount.toString());
-                      handleAddWater();
-                    }}
+                    onPress={() => logWater(amount)}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.quickAddButtonText}>{amount} oz</Text>
@@ -331,11 +544,10 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                   (sum, log) => sum + parseFloat(log.amount_oz.toString()),
                   0
                 );
-
                 return (
                   <View key={date} style={styles.dayGroup}>
                     <View style={styles.dayHeader}>
-                      <Text style={styles.dayDate}>{formatDate(date)}</Text>
+                      <Text style={styles.dayDate}>{formatHistoryDate(date)}</Text>
                       <Text style={styles.dayTotal}>{dayTotal.toFixed(1)} oz</Text>
                     </View>
                     {dayLogs.map((log) => (
@@ -360,7 +572,6 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             )}
           </View>
 
-          {/* Bottom Spacing */}
           <View style={{ height: 40 }} />
         </ScrollView>
 
@@ -374,9 +585,8 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Daily Water Goal</Text>
-
               <View style={styles.modalUnitToggle}>
-                {(['oz', 'L'] as WaterUnit[]).map((unit) => (
+                {(["oz", "L"] as WaterUnit[]).map((unit) => (
                   <TouchableOpacity
                     key={unit}
                     style={[
@@ -397,18 +607,16 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                   </TouchableOpacity>
                 ))}
               </View>
-
               <TextInput
                 style={styles.modalInput}
                 value={goalDraft}
                 onChangeText={setGoalDraft}
                 keyboardType="decimal-pad"
-                placeholder={goalUnit === 'oz' ? '64' : '2'}
+                placeholder={goalUnit === "oz" ? "64" : "2"}
                 placeholderTextColor={colors.mutedForeground}
                 autoFocus
                 editable={!savingGoal}
               />
-
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.modalButtonSecondary]}
@@ -423,13 +631,98 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                   disabled={savingGoal}
                 >
                   <Text style={styles.modalButtonPrimaryText}>
-                    {savingGoal ? 'Saving…' : 'Save'}
+                    {savingGoal ? "Saving…" : "Save"}
                   </Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </Modal>
+
+        {/* Quick-add Edit Modal */}
+        <Modal
+          visible={quickAddEditVisible}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setQuickAddEditVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Customize Quick-Add</Text>
+              <Text style={styles.modalSubtitle}>Each amount is in ounces.</Text>
+              {quickAddDrafts.map((draft, i) => (
+                <View key={i} style={styles.quickAddDraftRow}>
+                  <Text style={styles.quickAddDraftLabel}>Button {i + 1}</Text>
+                  <TextInput
+                    style={styles.quickAddDraftInput}
+                    value={draft}
+                    onChangeText={(t) => updateQuickAddDraft(i, t)}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.mutedForeground}
+                    editable={!savingQuickAdd}
+                  />
+                </View>
+              ))}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSecondary]}
+                  onPress={() => setQuickAddEditVisible(false)}
+                  disabled={savingQuickAdd}
+                >
+                  <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={handleSaveQuickAdd}
+                  disabled={savingQuickAdd}
+                >
+                  <Text style={styles.modalButtonPrimaryText}>
+                    {savingQuickAdd ? "Saving…" : "Save"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Calendar date picker */}
+        {Platform.OS === "ios" ? (
+          <Modal
+            visible={datePickerVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setDatePickerVisible(false)}
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={styles.datePickerCard}>
+                <DateTimePicker
+                  value={parseLocalDate(selectedDate)}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={handleDatePickerChange}
+                  textColor="#FFFFFF"
+                />
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={() => setDatePickerVisible(false)}
+                >
+                  <Text style={styles.modalButtonPrimaryText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          datePickerVisible && (
+            <DateTimePicker
+              value={parseLocalDate(selectedDate)}
+              mode="date"
+              display="default"
+              maximumDate={new Date()}
+              onChange={handleDatePickerChange}
+            />
+          )
+        )}
       </View>
     </>
   );
@@ -471,9 +764,11 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: colors.foreground,
   },
-  todayCard: {
+
+  // Ring card
+  ringCard: {
     marginHorizontal: 20,
-    marginBottom: 24,
+    marginBottom: 16,
     padding: 20,
     backgroundColor: "rgba(59, 130, 246, 0.1)",
     borderRadius: 12,
@@ -481,26 +776,101 @@ const styles = StyleSheet.create({
     borderColor: "rgba(59, 130, 246, 0.3)",
     alignItems: "center",
   },
-  todayLabel: {
+  loggingToRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 16,
+  },
+  loggingToText: {
     fontSize: 14,
     color: colors.mutedForeground,
-    marginBottom: 8,
   },
-  todayAmount: {
-    fontSize: 42,
-    fontWeight: "bold",
+  loggingToValue: {
+    color: colors.foreground,
+    fontWeight: "600",
+  },
+  todayLink: {
+    fontSize: 14,
     color: "#3B82F6",
-    marginBottom: 4,
-  },
-  todaySubtext: {
-    fontSize: 14,
-    color: colors.mutedForeground,
+    fontWeight: "600",
   },
   goalRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    marginTop: 8,
   },
+  goalText: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+  },
+
+  // Day strip
+  stripCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 12,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  stripHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 10,
+  },
+  stripHeaderText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.foreground,
+    textAlign: "center",
+  },
+  stripNavButton: {
+    padding: 6,
+  },
+  stripRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  dayCell: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginHorizontal: 1,
+  },
+  dayCellSelected: {
+    backgroundColor: "rgba(59, 130, 246, 0.18)",
+  },
+  dayInitial: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginBottom: 4,
+  },
+  dayNumber: {
+    fontSize: 15,
+    color: colors.foreground,
+    fontWeight: "500",
+  },
+  dayNumberToday: {
+    color: "#3B82F6",
+    fontWeight: "700",
+  },
+  dayNumberSelected: {
+    fontWeight: "700",
+  },
+  dayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 6,
+  },
+
+  // Modal
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
@@ -521,6 +891,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.foreground,
     marginBottom: 16,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginTop: -8,
+    marginBottom: 12,
   },
   modalUnitToggle: {
     flexDirection: "row",
@@ -586,6 +962,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+
+  // Date picker
+  datePickerCard: {
+    width: "100%",
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 12,
+  },
+
+  // Quick-add edit modal
+  quickAddDraftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  quickAddDraftLabel: {
+    width: 80,
+    fontSize: 14,
+    color: colors.mutedForeground,
+  },
+  quickAddDraftInput: {
+    flex: 1,
+    backgroundColor: "#1F2937",
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: "#FFFFFF",
+  },
+
+  // Add section
   addSection: {
     paddingHorizontal: 20,
     marginBottom: 24,
@@ -632,10 +1045,18 @@ const styles = StyleSheet.create({
   quickAddContainer: {
     marginTop: 8,
   },
+  quickAddHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
   quickAddLabel: {
     fontSize: 14,
     color: colors.mutedForeground,
-    marginBottom: 8,
+  },
+  quickAddGear: {
+    padding: 4,
   },
   quickAddButtons: {
     flexDirection: "row",
@@ -655,6 +1076,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.foreground,
   },
+
+  // History
   historySection: {
     paddingHorizontal: 20,
   },
