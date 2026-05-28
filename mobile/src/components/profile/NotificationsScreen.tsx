@@ -13,11 +13,14 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
-import { ChevronLeft, Plus, Trash2 } from "lucide-react-native";
+import { ChevronLeft, Plus, Trash2, BellRing } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { supabase } from "@/src/lib/supabase";
-import { syncWaterReminders } from "@/src/services/waterReminderService";
+import {
+  syncWaterReminders,
+  sendTestWaterReminder,
+} from "@/src/services/waterReminderService";
 
 interface NotificationsScreenProps {
   onClose: () => void;
@@ -180,6 +183,27 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
     persist(enabled, Array.from(new Set(next)));
   };
 
+  const handleTestReminder = async () => {
+    const result = await sendTestWaterReminder();
+    if (result.ok) {
+      Alert.alert(
+        "Test sent",
+        "A test reminder should appear in about a second. If you don't see it, check your system notification settings."
+      );
+    } else if (result.permissionDenied) {
+      Alert.alert(
+        "Notifications Disabled",
+        "Enable notifications for FitTracker in Settings to receive water reminders.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
+    } else {
+      Alert.alert("Error", "Failed to send test reminder");
+    }
+  };
+
   return (
     <>
       <StatusBar barStyle="light-content" />
@@ -247,6 +271,14 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
                       <Text style={styles.addTimeText}>Add Reminder Time</Text>
                     </TouchableOpacity>
                   )}
+                  <TouchableOpacity
+                    onPress={handleTestReminder}
+                    style={styles.testButton}
+                    activeOpacity={0.7}
+                  >
+                    <BellRing size={16} color="#3B82F6" />
+                    <Text style={styles.testButtonText}>Send Test Reminder</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
@@ -404,6 +436,23 @@ const styles = StyleSheet.create({
   addTimeText: {
     color: "#22C55E",
     fontSize: 15,
+    fontWeight: "600",
+  },
+  testButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderRadius: 8,
+    backgroundColor: "#1F2937",
+  },
+  testButtonText: {
+    color: "#3B82F6",
+    fontSize: 14,
     fontWeight: "600",
   },
   modalBackdrop: {

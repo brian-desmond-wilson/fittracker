@@ -48,6 +48,38 @@ async function scheduleOne(hhmm: string): Promise<string | null> {
 }
 
 /**
+ * Fire a one-off "water reminder" ~1 second from now to validate that
+ * notifications render correctly on this device. Returns false if the
+ * permission prompt was denied.
+ */
+export async function sendTestWaterReminder(): Promise<{
+  ok: boolean;
+  permissionDenied?: boolean;
+}> {
+  const granted = await requestPermissions();
+  if (!granted) return { ok: false, permissionDenied: true };
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Hydration check (test) 💧",
+        body: "If you can see this, scheduled reminders should work too.",
+        data: { type: WATER_REMINDER_TYPE, test: true },
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 1,
+        repeats: false,
+      },
+    });
+    return { ok: true };
+  } catch (error) {
+    console.error("Failed to schedule test reminder:", error);
+    return { ok: false };
+  }
+}
+
+/**
  * Cancel any existing water reminders, then schedule a new set if enabled.
  * Requests permission before scheduling — returns false if denied.
  */

@@ -41,6 +41,7 @@ import { WaterUndoSnackbar } from "./WaterUndoSnackbar";
 import { WaterGoalEditorModal } from "./WaterGoalEditorModal";
 import { WaterQuickAddEditorModal } from "./WaterQuickAddEditorModal";
 import { WaterCalendarModal } from "./WaterCalendarModal";
+import { WaterLogEditorModal } from "./WaterLogEditorModal";
 
 const DEFAULT_QUICK_ADD: number[] = [8, 12, 16, 20];
 const DEFAULT_QUICK_ADD_NAMES: string[] = ["", "", "", ""];
@@ -115,6 +116,12 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
   // CSV export
   const [exporting, setExporting] = useState(false);
+
+  // Edit-log modal
+  const [editingLog, setEditingLog] = useState<WaterLog | null>(null);
+  const [editAmountDraft, setEditAmountDraft] = useState("");
+  const [editTypeDraft, setEditTypeDraft] = useState<BeverageType>("water");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Date navigation
   const todayString = getLocalDate();
@@ -366,6 +373,48 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     if (ok) {
       setAddAmount("");
       setAddType("water");
+    }
+  };
+
+  // Edit a log
+  const openLogEditor = (log: WaterLog) => {
+    // Display amount in the user's preferred unit; convert back to oz on save.
+    const ozValue = Number(log.amount_oz);
+    if (displayUnit === "L") {
+      setEditAmountDraft((ozValue / OZ_PER_LITER).toFixed(2));
+    } else {
+      setEditAmountDraft(ozValue.toString());
+    }
+    setEditTypeDraft((log.beverage_type || "water") as BeverageType);
+    setEditingLog(log);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingLog) return;
+    const parsed = parseFloat(editAmountDraft);
+    if (isNaN(parsed) || parsed <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid positive amount");
+      return;
+    }
+    const newOz =
+      displayUnit === "L" ? parsed * OZ_PER_LITER : parsed;
+    try {
+      setSavingEdit(true);
+      const { error } = await supabase
+        .from("water_logs")
+        .update({
+          amount_oz: newOz,
+          beverage_type: editTypeDraft,
+        })
+        .eq("id", editingLog.id);
+      if (error) throw error;
+      setEditingLog(null);
+      await fetchWaterLogs({ silent: true });
+    } catch (error) {
+      console.error("Error editing log:", error);
+      Alert.alert("Error", "Failed to save changes");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -658,6 +707,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             formatHistoryDate={formatHistoryDate}
             formatTime={formatTime}
             onDelete={handleDeleteLog}
+            onEdit={openLogEditor}
           />
 
           <View style={{ height: 40 }} />
@@ -704,6 +754,18 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           initialDate={parseLocalDate(selectedDate)}
           onChange={handleDatePickerChange}
           onClose={() => setDatePickerVisible(false)}
+        />
+
+        <WaterLogEditorModal
+          visible={editingLog !== null}
+          draftAmount={editAmountDraft}
+          draftType={editTypeDraft}
+          displayUnit={displayUnit}
+          saving={savingEdit}
+          onChangeAmount={setEditAmountDraft}
+          onChangeType={setEditTypeDraft}
+          onClose={() => setEditingLog(null)}
+          onSave={handleSaveEdit}
         />
       </View>
     </>
