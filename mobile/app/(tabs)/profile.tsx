@@ -46,6 +46,7 @@ export default function Profile() {
     height_cm: "",
     target_weight_kg: "",
     target_calories: "",
+    target_water_oz: "",
   });
 
   useEffect(() => {
@@ -83,6 +84,7 @@ export default function Profile() {
           height_cm: profile.height_cm?.toString() || "",
           target_weight_kg: profile.target_weight_kg?.toString() || "",
           target_calories: profile.target_calories?.toString() || "",
+          target_water_oz: profile.target_water_oz?.toString() || "",
         });
       }
     } catch (error) {

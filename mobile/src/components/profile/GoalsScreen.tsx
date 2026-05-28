@@ -21,19 +21,46 @@ interface GoalsScreenProps {
     height_cm: string;
     target_weight_kg: string;
     target_calories: string;
+    target_water_oz: string;
   };
   onClose: () => void;
   onSave: () => void;
 }
 
+type WaterUnit = 'oz' | 'L';
+
+const OZ_PER_LITER = 33.814;
+
+function ozToDisplay(oz: string, unit: WaterUnit): string {
+  if (!oz) return '';
+  if (unit === 'oz') return oz;
+  const liters = parseFloat(oz) / OZ_PER_LITER;
+  return isNaN(liters) ? '' : liters.toFixed(2);
+}
+
+function displayToOz(value: string, unit: WaterUnit): string {
+  if (!value) return '';
+  if (unit === 'oz') return value;
+  const oz = parseFloat(value) * OZ_PER_LITER;
+  return isNaN(oz) ? '' : Math.round(oz).toString();
+}
+
 export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScreenProps) {
   const insets = useSafeAreaInsets();
   const [formData, setFormData] = useState(initialData);
+  const [waterUnit, setWaterUnit] = useState<WaterUnit>('oz');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     try {
       setSaving(true);
+
+      const waterOz = formData.target_water_oz ? parseInt(formData.target_water_oz) : null;
+      if (waterOz !== null && (isNaN(waterOz) || waterOz <= 0)) {
+        console.error('Invalid water goal');
+        setSaving(false);
+        return;
+      }
 
       const { error } = await supabase
         .from('profiles')
@@ -45,6 +72,7 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           target_calories: formData.target_calories
             ? parseInt(formData.target_calories)
             : null,
+          ...(waterOz !== null && { target_water_oz: waterOz }),
         })
         .eq('id', userId);
 
@@ -133,6 +161,48 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 editable={!saving}
               />
             </View>
+
+            <View style={styles.formField}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Daily Water Goal</Text>
+                <View style={styles.unitToggle}>
+                  {(['oz', 'L'] as WaterUnit[]).map((unit) => (
+                    <TouchableOpacity
+                      key={unit}
+                      style={[
+                        styles.unitButton,
+                        waterUnit === unit && styles.unitButtonActive,
+                      ]}
+                      onPress={() => setWaterUnit(unit)}
+                      disabled={saving}
+                    >
+                      <Text
+                        style={[
+                          styles.unitButtonText,
+                          waterUnit === unit && styles.unitButtonTextActive,
+                        ]}
+                      >
+                        {unit}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder={waterUnit === 'oz' ? '64' : '2'}
+                placeholderTextColor="#6B7280"
+                value={ozToDisplay(formData.target_water_oz, waterUnit)}
+                onChangeText={(text) =>
+                  setFormData({
+                    ...formData,
+                    target_water_oz: displayToOz(text, waterUnit),
+                  })
+                }
+                keyboardType="decimal-pad"
+                editable={!saving}
+              />
+            </View>
           </View>
 
           <TouchableOpacity
@@ -218,6 +288,35 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#D1D5DB',
     marginBottom: 8,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#1F2937',
+    borderRadius: 6,
+    padding: 2,
+    gap: 2,
+  },
+  unitButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  unitButtonActive: {
+    backgroundColor: '#3B82F6',
+  },
+  unitButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  unitButtonTextActive: {
+    color: '#FFFFFF',
   },
   input: {
     backgroundColor: '#1F2937',

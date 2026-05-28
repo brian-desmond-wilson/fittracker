@@ -8,12 +8,16 @@ import {
   TextInput,
   StatusBar,
   Alert,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Plus, Droplets, Trash2 } from "lucide-react-native";
+import { ChevronLeft, Plus, Droplets, Trash2, Pencil } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { WaterLog } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+
+const OZ_PER_LITER = 33.814;
+type WaterUnit = 'oz' | 'L';
 
 interface WaterScreenProps {
   onClose: () => void;
@@ -25,12 +29,83 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   const [loading, setLoading] = useState(true);
   const [addAmount, setAddAmount] = useState("");
   const [todayTotal, setTodayTotal] = useState(0);
+  const [goalOz, setGoalOz] = useState(64);
+  const [goalModalVisible, setGoalModalVisible] = useState(false);
+  const [goalDraft, setGoalDraft] = useState("");
+  const [goalUnit, setGoalUnit] = useState<WaterUnit>("oz");
+  const [savingGoal, setSavingGoal] = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
     fetchWaterLogs();
+    fetchGoal();
   }, []);
+
+  const fetchGoal = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("target_water_oz")
+        .eq("id", user.id)
+        .single();
+      if (data?.target_water_oz) {
+        setGoalOz(data.target_water_oz);
+      }
+    } catch (error) {
+      console.error("Error fetching water goal:", error);
+    }
+  };
+
+  const openGoalEditor = () => {
+    setGoalDraft(goalOz.toString());
+    setGoalUnit("oz");
+    setGoalModalVisible(true);
+  };
+
+  const handleGoalUnitChange = (next: WaterUnit) => {
+    if (next === goalUnit) return;
+    const parsed = parseFloat(goalDraft);
+    if (!isNaN(parsed)) {
+      if (next === "L") {
+        setGoalDraft((parsed / OZ_PER_LITER).toFixed(2));
+      } else {
+        setGoalDraft(Math.round(parsed * OZ_PER_LITER).toString());
+      }
+    }
+    setGoalUnit(next);
+  };
+
+  const handleSaveGoal = async () => {
+    const parsed = parseFloat(goalDraft);
+    if (isNaN(parsed) || parsed <= 0) {
+      Alert.alert("Invalid Goal", "Please enter a positive number");
+      return;
+    }
+    const newGoalOz = goalUnit === "oz" ? Math.round(parsed) : Math.round(parsed * OZ_PER_LITER);
+    try {
+      setSavingGoal(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in");
+        return;
+      }
+      const { error } = await supabase
+        .from("profiles")
+        .update({ target_water_oz: newGoalOz })
+        .eq("id", user.id);
+      if (error) throw error;
+      setGoalOz(newGoalOz);
+      setGoalModalVisible(false);
+    } catch (error) {
+      console.error("Error saving water goal:", error);
+      Alert.alert("Error", "Failed to save goal");
+    } finally {
+      setSavingGoal(false);
+    }
+  };
 
   const fetchWaterLogs = async () => {
     try {
@@ -187,7 +262,14 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           <View style={styles.todayCard}>
             <Text style={styles.todayLabel}>Today's Total</Text>
             <Text style={styles.todayAmount}>{todayTotal.toFixed(1)} oz</Text>
-            <Text style={styles.todaySubtext}>Goal: 64 oz</Text>
+            <TouchableOpacity
+              onPress={openGoalEditor}
+              style={styles.goalRow}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.todaySubtext}>Goal: {goalOz} oz</Text>
+              <Pencil size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
           </View>
 
           {/* Add Water Section */}
@@ -281,6 +363,73 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           {/* Bottom Spacing */}
           <View style={{ height: 40 }} />
         </ScrollView>
+
+        {/* Goal Editor Modal */}
+        <Modal
+          visible={goalModalVisible}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setGoalModalVisible(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Daily Water Goal</Text>
+
+              <View style={styles.modalUnitToggle}>
+                {(['oz', 'L'] as WaterUnit[]).map((unit) => (
+                  <TouchableOpacity
+                    key={unit}
+                    style={[
+                      styles.modalUnitButton,
+                      goalUnit === unit && styles.modalUnitButtonActive,
+                    ]}
+                    onPress={() => handleGoalUnitChange(unit)}
+                    disabled={savingGoal}
+                  >
+                    <Text
+                      style={[
+                        styles.modalUnitButtonText,
+                        goalUnit === unit && styles.modalUnitButtonTextActive,
+                      ]}
+                    >
+                      {unit}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput
+                style={styles.modalInput}
+                value={goalDraft}
+                onChangeText={setGoalDraft}
+                keyboardType="decimal-pad"
+                placeholder={goalUnit === 'oz' ? '64' : '2'}
+                placeholderTextColor={colors.mutedForeground}
+                autoFocus
+                editable={!savingGoal}
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSecondary]}
+                  onPress={() => setGoalModalVisible(false)}
+                  disabled={savingGoal}
+                >
+                  <Text style={styles.modalButtonSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={handleSaveGoal}
+                  disabled={savingGoal}
+                >
+                  <Text style={styles.modalButtonPrimaryText}>
+                    {savingGoal ? 'Saving…' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -346,6 +495,96 @@ const styles = StyleSheet.create({
   todaySubtext: {
     fontSize: 14,
     color: colors.mutedForeground,
+  },
+  goalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "100%",
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.foreground,
+    marginBottom: 16,
+  },
+  modalUnitToggle: {
+    flexDirection: "row",
+    backgroundColor: "#1F2937",
+    borderRadius: 8,
+    padding: 3,
+    gap: 3,
+    marginBottom: 12,
+    alignSelf: "flex-start",
+  },
+  modalUnitButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  modalUnitButtonActive: {
+    backgroundColor: "#3B82F6",
+  },
+  modalUnitButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#9CA3AF",
+  },
+  modalUnitButtonTextActive: {
+    color: "#FFFFFF",
+  },
+  modalInput: {
+    backgroundColor: "#1F2937",
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    color: "#FFFFFF",
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  modalButtonPrimary: {
+    backgroundColor: "#3B82F6",
+  },
+  modalButtonSecondary: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalButtonPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  modalButtonSecondaryText: {
+    color: colors.foreground,
+    fontSize: 16,
+    fontWeight: "600",
   },
   addSection: {
     paddingHorizontal: 20,
