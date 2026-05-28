@@ -10,7 +10,6 @@ import {
   Ruler,
   Camera,
   Dumbbell,
-  Moon,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
 import { colors } from "@/src/lib/colors";
@@ -80,14 +79,6 @@ export default function Track() {
       backgroundColor: "rgba(239, 68, 68, 0.15)",
       section: "activity",
     },
-    {
-      id: "sleep",
-      title: "Sleep",
-      icon: "Moon",
-      iconColor: "#6366F1",
-      backgroundColor: "rgba(99, 102, 241, 0.15)",
-      section: "activity",
-    },
   ];
 
   const iconMap: Record<string, any> = {
@@ -98,7 +89,6 @@ export default function Track() {
     Ruler,
     Camera,
     Dumbbell,
-    Moon,
   };
 
   const handleCardPress = (categoryId: TrackingCategory) => {

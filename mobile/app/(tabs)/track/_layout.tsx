@@ -19,7 +19,6 @@ export default function TrackLayout() {
       <Stack.Screen name="measurements" />
       <Stack.Screen name="photos" />
       <Stack.Screen name="workouts" />
-      <Stack.Screen name="sleep" />
     </Stack>
   );
 }

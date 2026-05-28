@@ -6,7 +6,6 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
-  Modal,
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -14,9 +13,6 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/src/lib/supabase";
 import { Flame, Timer, Droplet, Menu, User } from "lucide-react-native";
-import GoingToBedButton from "@/src/components/sleep/GoingToBedButton";
-import WakeUpButton from "@/src/components/sleep/WakeUpButton";
-import SleepQualityModal from "@/src/components/sleep/SleepQualityModal";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
 import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard";
 import DrawerMenu from "@/src/components/drawer/DrawerMenu";
@@ -26,8 +22,6 @@ export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
-  const [sleepQualityModalVisible, setSleepQualityModalVisible] = useState(false);
-  const [currentSleepSessionId, setCurrentSleepSessionId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [morningRoutineWizardVisible, setMorningRoutineWizardVisible] = useState(false);
   const [routineBannerKey, setRoutineBannerKey] = useState(0);
@@ -120,18 +114,6 @@ export default function Home() {
     }
   }, []);
 
-  const handleWakeUp = (sleepSessionId: string) => {
-    setCurrentSleepSessionId(sleepSessionId);
-    setSleepQualityModalVisible(true);
-  };
-
-  const handleSleepQualityComplete = () => {
-    // Refresh the wake up button to check if it should still be visible
-    setRefreshKey((prev) => prev + 1);
-    // Open morning routine wizard after sleep quality is rated
-    setMorningRoutineWizardVisible(true);
-  };
-
   const handleRoutineComplete = () => {
     // Refresh banner to hide it after routine is completed
     setRoutineBannerKey((prev) => prev + 1);
@@ -187,10 +169,6 @@ export default function Home() {
           onPress={() => setMorningRoutineWizardVisible(true)}
           refreshKey={routineBannerKey}
         />
-
-        {/* Sleep Tracking Buttons */}
-        <WakeUpButton key={`wake-${refreshKey}`} onWakeUp={handleWakeUp} />
-        <GoingToBedButton />
 
         {/* Today's Workout Section */}
         <Text style={styles.sectionTitle}>Today's Workout</Text>
@@ -272,14 +250,6 @@ export default function Home() {
           <Text style={styles.refreshingText}>Refreshing...</Text>
         </View>
       )}
-
-      {/* Sleep Quality Modal */}
-      <SleepQualityModal
-        visible={sleepQualityModalVisible}
-        sleepSessionId={currentSleepSessionId}
-        onClose={() => setSleepQualityModalVisible(false)}
-        onComplete={handleSleepQualityComplete}
-      />
 
       {/* Morning Routine Wizard */}
       <MorningRoutineWizard

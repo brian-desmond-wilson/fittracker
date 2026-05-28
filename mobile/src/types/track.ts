@@ -222,19 +222,6 @@ export interface WorkoutLog {
   logged_at: string;
 }
 
-// Sleep Tracking Types
-export interface SleepLog {
-  id: string;
-  user_id: string;
-  date: string; // YYYY-MM-DD (date went to bed)
-  bedtime: string; // Full timestamp
-  wake_time: string; // Full timestamp
-  hours_slept: number; // Calculated field
-  quality_rating: number | null; // 1-5
-  notes: string | null;
-  logged_at: string;
-}
-
 // Tracking Category Configuration
 export type TrackingCategory =
   | "meals"
@@ -243,8 +230,7 @@ export type TrackingCategory =
   | "weight"
   | "measurements"
   | "photos"
-  | "workouts"
-  | "sleep";
+  | "workouts";
 
 export interface TrackingCategoryConfig {
   id: TrackingCategory;
