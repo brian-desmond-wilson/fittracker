@@ -27,6 +27,13 @@ import { colors } from "@/src/lib/colors";
 import { WaterLog } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { WaterProgressRing } from "./WaterProgressRing";
+import { WaterBarChart } from "./WaterBarChart";
+import {
+  computeCurrentStreak,
+  computeBestStreak,
+  computeRollingStats,
+  buildDailySeries,
+} from "@/src/lib/waterStats";
 
 const OZ_PER_LITER = 33.814;
 type WaterUnit = "oz" | "L";
@@ -163,6 +170,24 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   }, [weekStart]);
 
   const isViewingToday = selectedDate === todayString;
+
+  // Insights (always relative to today, independent of selectedDate)
+  const currentStreak = useMemo(
+    () => computeCurrentStreak(totalsByDate, goalOz),
+    [totalsByDate, goalOz]
+  );
+  const bestStreak = useMemo(
+    () => computeBestStreak(totalsByDate, goalOz),
+    [totalsByDate, goalOz]
+  );
+  const rolling = useMemo(
+    () => computeRollingStats(totalsByDate, goalOz),
+    [totalsByDate, goalOz]
+  );
+  const chartSeries = useMemo(
+    () => buildDailySeries(totalsByDate, 14),
+    [totalsByDate]
+  );
 
   // Handlers
   const logWater = async (amount: number): Promise<boolean> => {
@@ -477,6 +502,34 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                 );
               })}
             </View>
+          </View>
+
+          {/* Insights */}
+          <View style={styles.insightsCard}>
+            <Text style={styles.insightsTitle}>Insights · Last 7 days</Text>
+            <View style={styles.statsRow}>
+              <View style={styles.statCell}>
+                <Text style={styles.statValue}>{currentStreak}</Text>
+                <Text style={styles.statLabel}>Streak</Text>
+              </View>
+              <View style={styles.statCell}>
+                <Text style={styles.statValue}>{bestStreak}</Text>
+                <Text style={styles.statLabel}>Best</Text>
+              </View>
+              <View style={styles.statCell}>
+                <Text style={styles.statValue}>{Math.round(rolling.avgOzPerDay)}</Text>
+                <Text style={styles.statLabel}>Avg oz/day</Text>
+              </View>
+              <View style={styles.statCell}>
+                <Text style={styles.statValue}>
+                  {rolling.daysHit}
+                  <Text style={styles.statValueSub}>/{rolling.daysInWindow}</Text>
+                </Text>
+                <Text style={styles.statLabel}>Goal hit</Text>
+              </View>
+            </View>
+            <Text style={styles.chartLabel}>Last 14 days</Text>
+            <WaterBarChart series={chartSeries} goalOz={goalOz} />
           </View>
 
           {/* Add Water Section */}
@@ -868,6 +921,55 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     marginTop: 6,
+  },
+
+  // Insights card
+  insightsCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  insightsTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 12,
+  },
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  statCell: {
+    flex: 1,
+    alignItems: "center",
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.foreground,
+  },
+  statValueSub: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.mutedForeground,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 2,
+    textAlign: "center",
+  },
+  chartLabel: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    marginBottom: 6,
   },
 
   // Modal
