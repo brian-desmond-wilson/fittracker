@@ -12,6 +12,8 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   ChevronLeft,
   ChevronRight,
@@ -21,10 +23,12 @@ import {
   Pencil,
   Calendar as CalendarIcon,
   Sliders,
+  Share2,
+  Undo2,
 } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
-import { WaterLog } from "@/src/types/track";
+import { WaterLog, WaterBeverageType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { WaterProgressRing } from "./WaterProgressRing";
 import { WaterBarChart } from "./WaterBarChart";
@@ -36,11 +40,22 @@ import {
   computePace,
   PaceState,
 } from "@/src/lib/waterStats";
-
-const OZ_PER_LITER = 33.814;
-type WaterUnit = "oz" | "L";
+import {
+  WaterUnit,
+  OZ_PER_LITER,
+  formatVolume,
+  formatGoal,
+  formatAmount,
+  ozToLiters,
+  BEVERAGE_TYPES,
+  BeverageType,
+  beverageLabel,
+  beverageColor,
+} from "@/src/lib/waterUnits";
 
 const DEFAULT_QUICK_ADD: number[] = [8, 12, 16, 20];
+const DEFAULT_QUICK_ADD_NAMES: string[] = ["", "", "", ""];
+const DEFAULT_QUICK_ADD_TYPES: BeverageType[] = ["water", "water", "water", "water"];
 
 function getLocalDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -69,7 +84,7 @@ interface WaterScreenProps {
   onClose: () => void;
 }
 
-function PaceLine({ pace }: { pace: PaceState }) {
+function PaceLine({ pace, unit }: { pace: PaceState; unit: WaterUnit }) {
   switch (pace.status) {
     case "before_window":
       return null;
@@ -86,13 +101,14 @@ function PaceLine({ pace }: { pace: PaceState }) {
     case "ahead":
       return (
         <Text style={[paceStyles.text, paceStyles.good]}>
-          {pace.ozAhead} oz ahead of pace
+          {formatAmount(pace.ozAhead ?? 0, unit)} ahead of pace
         </Text>
       );
     case "behind":
       return (
         <Text style={[paceStyles.text, paceStyles.behind]}>
-          {pace.ozBehind} oz behind · Drink {pace.catchUpOz} oz by {pace.catchUpTimeLabel}
+          {formatAmount(pace.ozBehind ?? 0, unit)} behind · Drink{" "}
+          {formatAmount(pace.catchUpOz ?? 0, unit)} by {pace.catchUpTimeLabel}
         </Text>
       );
   }
@@ -140,9 +156,28 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
   // Quick-add config
   const [quickAddAmounts, setQuickAddAmounts] = useState<number[]>(DEFAULT_QUICK_ADD);
+  const [quickAddNames, setQuickAddNames] = useState<string[]>(DEFAULT_QUICK_ADD_NAMES);
+  const [quickAddTypes, setQuickAddTypes] = useState<BeverageType[]>(DEFAULT_QUICK_ADD_TYPES);
   const [quickAddEditVisible, setQuickAddEditVisible] = useState(false);
   const [quickAddDrafts, setQuickAddDrafts] = useState<string[]>([]);
+  const [quickAddNameDrafts, setQuickAddNameDrafts] = useState<string[]>([]);
+  const [quickAddTypeDrafts, setQuickAddTypeDrafts] = useState<BeverageType[]>([]);
   const [savingQuickAdd, setSavingQuickAdd] = useState(false);
+
+  // Display + filtering
+  const [displayUnit, setDisplayUnit] = useState<WaterUnit>("oz");
+  const [waterOnlyCounts, setWaterOnlyCounts] = useState(false);
+
+  // Add-flow beverage type
+  const [addType, setAddType] = useState<BeverageType>("water");
+
+  // Undo last log
+  const [lastLogId, setLastLogId] = useState<string | null>(null);
+  const [lastLogLabel, setLastLogLabel] = useState<string>("");
+  const undoTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // CSV export
+  const [exporting, setExporting] = useState(false);
 
   // Date navigation
   const todayString = getLocalDate();
@@ -163,18 +198,36 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       const { data } = await supabase
         .from("profiles")
         .select(
-          "target_water_oz, quick_add_oz, water_window_start, water_window_end, water_workout_bonus_oz"
+          "target_water_oz, quick_add_oz, quick_add_names, quick_add_types, water_window_start, water_window_end, water_workout_bonus_oz, water_display_unit, water_only_counts"
         )
         .eq("id", user.id)
         .single();
       if (data?.target_water_oz) setGoalOz(data.target_water_oz);
-      if (Array.isArray(data?.quick_add_oz) && data.quick_add_oz.length > 0) {
-        setQuickAddAmounts(data.quick_add_oz);
-      }
+      const oz = Array.isArray(data?.quick_add_oz) && data.quick_add_oz.length > 0
+        ? data.quick_add_oz
+        : DEFAULT_QUICK_ADD;
+      setQuickAddAmounts(oz);
+      const names = Array.isArray(data?.quick_add_names) ? data.quick_add_names : [];
+      const types = Array.isArray(data?.quick_add_types) ? data.quick_add_types : [];
+      // Normalize parallel arrays to match oz length
+      setQuickAddNames(oz.map((_: number, i: number) => names[i] ?? ""));
+      setQuickAddTypes(
+        oz.map((_: number, i: number) =>
+          BEVERAGE_TYPES.includes(types[i] as BeverageType)
+            ? (types[i] as BeverageType)
+            : "water"
+        )
+      );
       if (data?.water_window_start) setWindowStart(data.water_window_start);
       if (data?.water_window_end) setWindowEnd(data.water_window_end);
       if (typeof data?.water_workout_bonus_oz === "number") {
         setWorkoutBonusOz(data.water_workout_bonus_oz);
+      }
+      if (data?.water_display_unit === "L" || data?.water_display_unit === "oz") {
+        setDisplayUnit(data.water_display_unit);
+      }
+      if (typeof data?.water_only_counts === "boolean") {
+        setWaterOnlyCounts(data.water_only_counts);
       }
     } catch (error) {
       console.error("Error fetching water settings:", error);
@@ -231,14 +284,16 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     }
   };
 
-  // Derived: per-date totals (used for ring + day strip color)
+  // Derived: per-date totals (used for ring + day strip color).
+  // Respects waterOnlyCounts: when on, non-water logs don't count.
   const totalsByDate = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const log of logs) {
+      if (waterOnlyCounts && log.beverage_type !== "water") continue;
       totals[log.date] = (totals[log.date] || 0) + parseFloat(log.amount_oz.toString());
     }
     return totals;
-  }, [logs]);
+  }, [logs, waterOnlyCounts]);
 
   const selectedDateLogs = useMemo(
     () => logs.filter((l) => l.date === selectedDate),
@@ -290,9 +345,43 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   );
 
   // Handlers
-  const logWater = async (amount: number): Promise<boolean> => {
+  const showUndoFor = (id: string, label: string) => {
+    setLastLogId(id);
+    setLastLogLabel(label);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setLastLogId(null);
+    }, 5000);
+  };
+
+  const dismissUndo = () => {
+    setLastLogId(null);
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!lastLogId) return;
+    const id = lastLogId;
+    dismissUndo();
+    try {
+      const { error } = await supabase.from("water_logs").delete().eq("id", id);
+      if (error) throw error;
+      await fetchWaterLogs({ silent: true });
+    } catch (error: any) {
+      console.error("Undo failed:", error);
+      Alert.alert("Error", "Failed to undo");
+    }
+  };
+
+  const logWater = async (
+    amount: number,
+    type: BeverageType = "water"
+  ): Promise<boolean> => {
     if (isNaN(amount) || amount <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount of water in ounces");
+      Alert.alert("Invalid Amount", "Please enter a valid positive amount");
       return false;
     }
     try {
@@ -301,16 +390,25 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
         Alert.alert("Error", "You must be logged in to log water");
         return false;
       }
-      const { error } = await supabase.from("water_logs").insert([
-        {
-          user_id: user.id,
-          date: selectedDate,
-          amount_oz: amount,
-          logged_at: new Date().toISOString(),
-        },
-      ]);
+      const { data: inserted, error } = await supabase
+        .from("water_logs")
+        .insert([
+          {
+            user_id: user.id,
+            date: selectedDate,
+            amount_oz: amount,
+            logged_at: new Date().toISOString(),
+            beverage_type: type,
+          },
+        ])
+        .select()
+        .single();
       if (error) throw error;
       await fetchWaterLogs({ silent: true });
+      if (inserted?.id) {
+        const label = `Added ${formatAmount(amount, displayUnit)}${type !== "water" ? ` · ${beverageLabel(type)}` : ""}`;
+        showUndoFor(inserted.id, label);
+      }
       return true;
     } catch (error: any) {
       console.error("Error adding water log:", error);
@@ -320,8 +418,18 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   };
 
   const handleAddFromInput = async () => {
-    const ok = await logWater(parseFloat(addAmount));
-    if (ok) setAddAmount("");
+    let amountOz: number;
+    if (displayUnit === "L") {
+      const parsed = parseFloat(addAmount);
+      amountOz = isNaN(parsed) ? NaN : parsed * OZ_PER_LITER;
+    } else {
+      amountOz = parseFloat(addAmount);
+    }
+    const ok = await logWater(amountOz, addType);
+    if (ok) {
+      setAddAmount("");
+      setAddType("water");
+    }
   };
 
   const handleDeleteLog = async (logId: string) => {
@@ -422,11 +530,21 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   // Quick-add edit modal
   const openQuickAddEditor = () => {
     setQuickAddDrafts(quickAddAmounts.map((n) => n.toString()));
+    setQuickAddNameDrafts([...quickAddNames]);
+    setQuickAddTypeDrafts([...quickAddTypes]);
     setQuickAddEditVisible(true);
   };
 
   const updateQuickAddDraft = (i: number, value: string) => {
     setQuickAddDrafts((prev) => prev.map((v, idx) => (idx === i ? value : v)));
+  };
+
+  const updateQuickAddNameDraft = (i: number, value: string) => {
+    setQuickAddNameDrafts((prev) => prev.map((v, idx) => (idx === i ? value : v)));
+  };
+
+  const updateQuickAddTypeDraft = (i: number, value: BeverageType) => {
+    setQuickAddTypeDrafts((prev) => prev.map((v, idx) => (idx === i ? value : v)));
   };
 
   const handleSaveQuickAdd = async () => {
@@ -436,6 +554,10 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       return;
     }
     const rounded = parsed.map((n) => Math.round(n));
+    const names = quickAddNameDrafts.map((n) => n.trim());
+    const types = quickAddTypeDrafts.map((t) =>
+      BEVERAGE_TYPES.includes(t) ? t : "water"
+    );
     try {
       setSavingQuickAdd(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -445,16 +567,62 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       }
       const { error } = await supabase
         .from("profiles")
-        .update({ quick_add_oz: rounded })
+        .update({
+          quick_add_oz: rounded,
+          quick_add_names: names,
+          quick_add_types: types,
+        })
         .eq("id", user.id);
       if (error) throw error;
       setQuickAddAmounts(rounded);
+      setQuickAddNames(names);
+      setQuickAddTypes(types);
       setQuickAddEditVisible(false);
     } catch (error) {
       console.error("Error saving quick-add amounts:", error);
       Alert.alert("Error", "Failed to save quick-add amounts");
     } finally {
       setSavingQuickAdd(false);
+    }
+  };
+
+  // CSV export
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      if (logs.length === 0) {
+        Alert.alert("No data", "Log some water before exporting.");
+        return;
+      }
+      const header = "date,time,amount_oz,beverage_type\n";
+      const rows = [...logs]
+        .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+        .map((l) => {
+          const dt = new Date(l.logged_at);
+          const time = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+          return `${l.date},${time},${l.amount_oz},${l.beverage_type}`;
+        })
+        .join("\n");
+      const csv = header + rows + "\n";
+      const filename = `water-logs-${getLocalDate()}.csv`;
+      const uri = `${FileSystem.cacheDirectory}${filename}`;
+      await FileSystem.writeAsStringAsync(uri, csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("Sharing unavailable", `File saved at ${uri}`);
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: "text/csv",
+        dialogTitle: "Export Water Logs",
+        UTI: "public.comma-separated-values-text",
+      });
+    } catch (error) {
+      console.error("CSV export failed:", error);
+      Alert.alert("Error", "Failed to export CSV");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -513,6 +681,14 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Track</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={exporting}
+            style={styles.headerActionButton}
+            activeOpacity={0.7}
+          >
+            <Share2 size={20} color={exporting ? colors.mutedForeground : colors.foreground} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -524,8 +700,12 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
           {/* Ring card */}
           <View style={styles.ringCard}>
-            <WaterProgressRing current={selectedDateTotal} goal={effectiveGoalOz} />
-            {pace && <PaceLine pace={pace} />}
+            <WaterProgressRing
+              current={selectedDateTotal}
+              goal={effectiveGoalOz}
+              unit={displayUnit}
+            />
+            {pace && <PaceLine pace={pace} unit={displayUnit} />}
             <View style={styles.loggingToRow}>
               <Text style={styles.loggingToText}>
                 Logging to: <Text style={styles.loggingToValue}>{formatSelectedDateLabel()}</Text>
@@ -542,9 +722,12 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
               activeOpacity={0.7}
             >
               <Text style={styles.goalText}>
-                Goal: {effectiveGoalOz} oz
+                Goal: {formatGoal(effectiveGoalOz, displayUnit)}
                 {bonusActive && (
-                  <Text style={styles.goalBonusText}> · +{workoutBonusOz} workout</Text>
+                  <Text style={styles.goalBonusText}>
+                    {" "}
+                    · +{formatAmount(workoutBonusOz, displayUnit)} workout
+                  </Text>
                 )}
               </Text>
               <Pencil size={14} color={colors.mutedForeground} />
@@ -623,8 +806,12 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                 <Text style={styles.statLabel}>Best</Text>
               </View>
               <View style={styles.statCell}>
-                <Text style={styles.statValue}>{Math.round(rolling.avgOzPerDay)}</Text>
-                <Text style={styles.statLabel}>Avg oz/day</Text>
+                <Text style={styles.statValue}>
+                  {displayUnit === "oz"
+                    ? Math.round(rolling.avgOzPerDay)
+                    : ozToLiters(rolling.avgOzPerDay).toFixed(2)}
+                </Text>
+                <Text style={styles.statLabel}>Avg {displayUnit}/day</Text>
               </View>
               <View style={styles.statCell}>
                 <Text style={styles.statValue}>
@@ -640,12 +827,40 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
           {/* Add Water Section */}
           <View style={styles.addSection}>
-            <Text style={styles.sectionTitle}>Log Water</Text>
+            <Text style={styles.sectionTitle}>Log Drink</Text>
+            <View style={styles.beverageChipsRow}>
+              {BEVERAGE_TYPES.map((t) => {
+                const active = addType === t;
+                return (
+                  <TouchableOpacity
+                    key={t}
+                    onPress={() => setAddType(t)}
+                    style={[
+                      styles.beverageChip,
+                      active && {
+                        backgroundColor: beverageColor(t),
+                        borderColor: beverageColor(t),
+                      },
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.beverageChipText,
+                        active && styles.beverageChipTextActive,
+                      ]}
+                    >
+                      {beverageLabel(t)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <View style={styles.addForm}>
               <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Amount (oz)"
+                  placeholder={`Amount (${displayUnit})`}
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType="decimal-pad"
                   value={addAmount}
@@ -675,16 +890,38 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                 </TouchableOpacity>
               </View>
               <View style={styles.quickAddButtons}>
-                {quickAddAmounts.map((amount, i) => (
-                  <TouchableOpacity
-                    key={`${amount}-${i}`}
-                    style={styles.quickAddButton}
-                    onPress={() => logWater(amount)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.quickAddButtonText}>{amount} oz</Text>
-                  </TouchableOpacity>
-                ))}
+                {quickAddAmounts.map((amount, i) => {
+                  const name = quickAddNames[i];
+                  const type = quickAddTypes[i] || "water";
+                  const primaryText = name ? name : formatAmount(amount, displayUnit);
+                  const subText = name ? formatAmount(amount, displayUnit) : null;
+                  return (
+                    <TouchableOpacity
+                      key={`${amount}-${i}`}
+                      style={[
+                        styles.quickAddButton,
+                        type !== "water" && {
+                          borderColor: beverageColor(type),
+                          borderLeftWidth: 3,
+                        },
+                      ]}
+                      onPress={() => logWater(amount, type)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={styles.quickAddButtonText}
+                        numberOfLines={1}
+                      >
+                        {primaryText}
+                      </Text>
+                      {subText && (
+                        <Text style={styles.quickAddButtonSubText} numberOfLines={1}>
+                          {subText}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           </View>
@@ -703,28 +940,46 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                   (sum, log) => sum + parseFloat(log.amount_oz.toString()),
                   0
                 );
+                const dayTotalDisplay = formatVolume(dayTotal, displayUnit);
                 return (
                   <View key={date} style={styles.dayGroup}>
                     <View style={styles.dayHeader}>
                       <Text style={styles.dayDate}>{formatHistoryDate(date)}</Text>
-                      <Text style={styles.dayTotal}>{dayTotal.toFixed(1)} oz</Text>
+                      <Text style={styles.dayTotal}>{dayTotalDisplay}</Text>
                     </View>
-                    {dayLogs.map((log) => (
-                      <View key={log.id} style={styles.logCard}>
-                        <View style={styles.logInfo}>
-                          <Droplets size={16} color="#3B82F6" />
-                          <Text style={styles.logAmount}>{log.amount_oz} oz</Text>
-                          <Text style={styles.logTime}>{formatTime(log.logged_at)}</Text>
+                    {dayLogs.map((log) => {
+                      const type = (log.beverage_type || "water") as BeverageType;
+                      return (
+                        <View key={log.id} style={styles.logCard}>
+                          <View style={styles.logInfo}>
+                            <Droplets size={16} color={beverageColor(type)} />
+                            <Text style={styles.logAmount}>
+                              {formatAmount(Number(log.amount_oz), displayUnit)}
+                            </Text>
+                            {type !== "water" && (
+                              <View
+                                style={[
+                                  styles.beverageBadge,
+                                  { backgroundColor: beverageColor(type) },
+                                ]}
+                              >
+                                <Text style={styles.beverageBadgeText}>
+                                  {beverageLabel(type)}
+                                </Text>
+                              </View>
+                            )}
+                            <Text style={styles.logTime}>{formatTime(log.logged_at)}</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteLog(log.id)}
+                            style={styles.deleteButton}
+                            activeOpacity={0.7}
+                          >
+                            <Trash2 size={18} color={colors.mutedForeground} />
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity
-                          onPress={() => handleDeleteLog(log.id)}
-                          style={styles.deleteButton}
-                          activeOpacity={0.7}
-                        >
-                          <Trash2 size={18} color={colors.mutedForeground} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 );
               })
@@ -733,6 +988,23 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
           <View style={{ height: 40 }} />
         </ScrollView>
+
+        {/* Undo snackbar */}
+        {lastLogId !== null && (
+          <View style={styles.snackbar}>
+            <Text style={styles.snackbarText} numberOfLines={1}>
+              {lastLogLabel}
+            </Text>
+            <TouchableOpacity
+              onPress={handleUndo}
+              style={styles.snackbarUndoButton}
+              activeOpacity={0.7}
+            >
+              <Undo2 size={16} color="#FFFFFF" />
+              <Text style={styles.snackbarUndoText}>Undo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Goal Editor Modal */}
         <Modal
@@ -808,20 +1080,61 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Customize Quick-Add</Text>
-              <Text style={styles.modalSubtitle}>Each amount is in ounces.</Text>
-              {quickAddDrafts.map((draft, i) => (
-                <View key={i} style={styles.quickAddDraftRow}>
-                  <Text style={styles.quickAddDraftLabel}>Button {i + 1}</Text>
-                  <TextInput
-                    style={styles.quickAddDraftInput}
-                    value={draft}
-                    onChangeText={(t) => updateQuickAddDraft(i, t)}
-                    keyboardType="decimal-pad"
-                    placeholderTextColor={colors.mutedForeground}
-                    editable={!savingQuickAdd}
-                  />
-                </View>
-              ))}
+              <Text style={styles.modalSubtitle}>
+                Optional name, amount in ounces, and beverage type per button.
+              </Text>
+              <ScrollView style={{ maxHeight: 420 }}>
+                {quickAddDrafts.map((draft, i) => (
+                  <View key={i} style={styles.quickAddEditBlock}>
+                    <Text style={styles.quickAddDraftLabel}>Button {i + 1}</Text>
+                    <TextInput
+                      style={styles.quickAddDraftInput}
+                      value={quickAddNameDrafts[i] ?? ""}
+                      onChangeText={(t) => updateQuickAddNameDraft(i, t)}
+                      placeholder="Name (optional)"
+                      placeholderTextColor={colors.mutedForeground}
+                      editable={!savingQuickAdd}
+                    />
+                    <TextInput
+                      style={styles.quickAddDraftInput}
+                      value={draft}
+                      onChangeText={(t) => updateQuickAddDraft(i, t)}
+                      placeholder="Amount (oz)"
+                      keyboardType="decimal-pad"
+                      placeholderTextColor={colors.mutedForeground}
+                      editable={!savingQuickAdd}
+                    />
+                    <View style={styles.beverageChipsRowSmall}>
+                      {BEVERAGE_TYPES.map((t) => {
+                        const active = quickAddTypeDrafts[i] === t;
+                        return (
+                          <TouchableOpacity
+                            key={t}
+                            onPress={() => updateQuickAddTypeDraft(i, t)}
+                            disabled={savingQuickAdd}
+                            style={[
+                              styles.beverageChipSmall,
+                              active && {
+                                backgroundColor: beverageColor(t),
+                                borderColor: beverageColor(t),
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.beverageChipTextSmall,
+                                active && styles.beverageChipTextActive,
+                              ]}
+                            >
+                              {beverageLabel(t)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.modalButtonSecondary]}
@@ -863,10 +1176,11 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
                   textColor="#FFFFFF"
                 />
                 <TouchableOpacity
-                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  style={styles.datePickerDoneButton}
                   onPress={() => setDatePickerVisible(false)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.modalButtonPrimaryText}>Done</Text>
+                  <Text style={styles.datePickerDoneButtonText}>Done</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -897,6 +1211,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerActionButton: {
+    padding: 6,
   },
   backButton: {
     flexDirection: "row",
@@ -1185,6 +1505,19 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: 12,
   },
+  datePickerDoneButton: {
+    backgroundColor: "#3B82F6",
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  datePickerDoneButtonText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+  },
 
   // Quick-add edit modal
   quickAddDraftRow: {
@@ -1287,6 +1620,107 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.foreground,
+  },
+  quickAddButtonSubText: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  beverageChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 12,
+  },
+  beverageChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  beverageChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  beverageChipTextActive: {
+    color: "#FFFFFF",
+  },
+  beverageChipsRowSmall: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 4,
+  },
+  beverageChipSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#374151",
+    backgroundColor: "#1F2937",
+  },
+  beverageChipTextSmall: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#D1D5DB",
+  },
+  beverageBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 4,
+  },
+  beverageBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  quickAddEditBlock: {
+    marginBottom: 16,
+    gap: 6,
+  },
+  snackbar: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 24,
+    backgroundColor: "#1F2937",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#374151",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  snackbarText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    flex: 1,
+  },
+  snackbarUndoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  snackbarUndoText: {
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   // History

@@ -2,12 +2,14 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { colors } from "@/src/lib/colors";
+import { formatVolume, formatGoal, WaterUnit } from "@/src/lib/waterUnits";
 
 interface WaterProgressRingProps {
   size?: number;
   strokeWidth?: number;
   current: number;
   goal: number;
+  unit?: WaterUnit;
 }
 
 export function WaterProgressRing({
@@ -15,12 +17,16 @@ export function WaterProgressRing({
   strokeWidth = 14,
   current,
   goal,
+  unit = "oz",
 }: WaterProgressRingProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const ratio = goal > 0 ? Math.min(current / goal, 1) : 0;
   const dashOffset = circumference * (1 - ratio);
   const isComplete = current >= goal && goal > 0;
+
+  const currentLabel = formatVolume(current, unit);
+  const [currentNum, currentUnit] = currentLabel.split(" ");
 
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
@@ -48,10 +54,10 @@ export function WaterProgressRing({
       </Svg>
       <View style={styles.centerLabel}>
         <Text style={[styles.amount, isComplete && styles.amountComplete]}>
-          {current.toFixed(1)}
+          {currentNum}
         </Text>
-        <Text style={styles.unit}>oz</Text>
-        <Text style={styles.goalText}>of {goal} oz</Text>
+        <Text style={styles.unit}>{currentUnit}</Text>
+        <Text style={styles.goalText}>of {formatGoal(goal, unit)}</Text>
       </View>
     </View>
   );

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   StatusBar,
   Modal,
+  Switch,
 } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +28,8 @@ interface GoalsScreenProps {
     water_window_start: string;  // "HH:MM"
     water_window_end: string;    // "HH:MM"
     water_workout_bonus_oz: string;
+    water_display_unit: 'oz' | 'L';
+    water_only_counts: boolean;
   };
   onClose: () => void;
   onSave: () => void;
@@ -118,6 +121,8 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           water_window_start: formData.water_window_start,
           water_window_end: formData.water_window_end,
           water_workout_bonus_oz: bonusOz,
+          water_display_unit: formData.water_display_unit,
+          water_only_counts: formData.water_only_counts,
         })
         .eq('id', userId);
 
@@ -294,6 +299,60 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 keyboardType="number-pad"
                 editable={!saving}
               />
+            </View>
+
+            <View style={styles.formField}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Display Water In</Text>
+                <View style={styles.unitToggle}>
+                  {(['oz', 'L'] as const).map((unit) => (
+                    <TouchableOpacity
+                      key={unit}
+                      style={[
+                        styles.unitButton,
+                        formData.water_display_unit === unit && styles.unitButtonActive,
+                      ]}
+                      onPress={() =>
+                        setFormData({ ...formData, water_display_unit: unit })
+                      }
+                      disabled={saving}
+                    >
+                      <Text
+                        style={[
+                          styles.unitButtonText,
+                          formData.water_display_unit === unit && styles.unitButtonTextActive,
+                        ]}
+                      >
+                        {unit}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <Text style={styles.fieldHelp}>
+                Where you see water amounts on the Water Intake screen.
+              </Text>
+            </View>
+
+            <View style={styles.formField}>
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Only Water Counts</Text>
+                  <Text style={styles.fieldHelp}>
+                    When on, coffee/tea/juice/other don't count toward your daily
+                    goal or streaks. They still show up in History.
+                  </Text>
+                </View>
+                <Switch
+                  value={formData.water_only_counts}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, water_only_counts: v })
+                  }
+                  trackColor={{ false: '#374151', true: '#3B82F6' }}
+                  thumbColor="#FFFFFF"
+                  disabled={saving}
+                />
+              </View>
             </View>
           </View>
 
@@ -502,6 +561,11 @@ const styles = StyleSheet.create({
   timeButtonText: {
     fontSize: 16,
     color: '#FFFFFF',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
   modalBackdrop: {
     flex: 1,

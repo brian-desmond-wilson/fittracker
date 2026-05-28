@@ -50,6 +50,8 @@ export default function Profile() {
     water_window_start: "08:00",
     water_window_end: "23:00",
     water_workout_bonus_oz: "0",
+    water_display_unit: "oz" as "oz" | "L",
+    water_only_counts: false,
   });
 
   useEffect(() => {
@@ -94,6 +96,9 @@ export default function Profile() {
             profile.water_workout_bonus_oz != null
               ? profile.water_workout_bonus_oz.toString()
               : "0",
+          water_display_unit:
+            profile.water_display_unit === "L" ? "L" : "oz",
+          water_only_counts: !!profile.water_only_counts,
         });
       }
     } catch (error) {

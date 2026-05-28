@@ -148,12 +148,15 @@ export interface RecentFoodItem {
 }
 
 // Water Intake Types
+export type WaterBeverageType = "water" | "coffee" | "tea" | "juice" | "other";
+
 export interface WaterLog {
   id: string;
   user_id: string;
   date: string; // YYYY-MM-DD
   amount_oz: number;
   logged_at: string; // Full timestamp
+  beverage_type: WaterBeverageType;
 }
 
 // Weight Tracking Types
