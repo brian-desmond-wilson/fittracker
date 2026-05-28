@@ -100,6 +100,45 @@ function buildDailySeries(totalsByDate, days) {
   return out;
 }
 
+function timeToMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map((s) => parseInt(s, 10));
+  return h * 60 + (m || 0);
+}
+function formatHourLabel(totalMinutes) {
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  if (m === 0) return `${display} ${ampm}`;
+  return `${display}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+function computePace({ currentOz, goalOz, windowStart, windowEnd, now }) {
+  if (goalOz > 0 && currentOz >= goalOz) return { status: "goal_hit" };
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const startMin = timeToMinutes(windowStart);
+  const endMin = timeToMinutes(windowEnd);
+  if (nowMin < startMin) return { status: "before_window" };
+  if (nowMin > endMin) return { status: "after_window" };
+  if (endMin <= startMin || goalOz <= 0) return { status: "on_pace" };
+  const windowLen = endMin - startMin;
+  const elapsedRatio = (nowMin - startMin) / windowLen;
+  const expectedOz = goalOz * elapsedRatio;
+  const delta = currentOz - expectedOz;
+  const tolerance = Math.max(goalOz * 0.05, 4);
+  if (Math.abs(delta) <= tolerance) return { status: "on_pace" };
+  if (delta > 0) return { status: "ahead", ozAhead: Math.round(delta) };
+  const targetMin = Math.min(Math.ceil((nowMin + 30) / 60) * 60, endMin);
+  const targetRatio = (targetMin - startMin) / windowLen;
+  const expectedAtTarget = goalOz * targetRatio;
+  const catchUpOz = Math.max(0, Math.round(expectedAtTarget - currentOz));
+  return {
+    status: "behind",
+    ozBehind: Math.round(-delta),
+    catchUpOz,
+    catchUpTimeLabel: formatHourLabel(targetMin),
+  };
+}
+
 // --- Pull real data ---
 async function fetchJson(path) {
   const res = await fetch(`${SUPABASE_URL}${path}`, {
@@ -225,6 +264,91 @@ assert(
   );
 }
 
+console.log();
+console.log("--- computePace scenarios ---");
+function mkDate(h, m = 0) {
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+const paceCases = [
+  {
+    name: "goal hit (currentOz >= goalOz)",
+    in: { currentOz: 70, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(15) },
+    expectStatus: "goal_hit",
+  },
+  {
+    name: "before window (7am)",
+    in: { currentOz: 0, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(7) },
+    expectStatus: "before_window",
+  },
+  {
+    name: "after window (11:30pm)",
+    in: { currentOz: 30, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(23, 30) },
+    expectStatus: "after_window",
+  },
+  {
+    name: "on pace at midday (50% time, ~50% water)",
+    in: { currentOz: 32, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(15, 30) },
+    expectStatus: "on_pace",
+  },
+  {
+    name: "ahead at noon (50% time, 80% water)",
+    in: { currentOz: 52, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(15, 30) },
+    expectStatus: "ahead",
+  },
+  {
+    name: "behind at 1pm (33% time, 10 oz)",
+    in: { currentOz: 10, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(13) },
+    expectStatus: "behind",
+  },
+  {
+    name: "behind very late (10:45pm, 30 oz) - catch up clamped to window end",
+    in: { currentOz: 30, goalOz: 64, windowStart: "08:00", windowEnd: "23:00", now: mkDate(22, 45) },
+    expectStatus: "behind",
+  },
+];
+let paceFailures = 0;
+for (const c of paceCases) {
+  const r = computePace(c.in);
+  const ok = r.status === c.expectStatus;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ${c.name}`);
+  console.log(`        result: ${JSON.stringify(r)}`);
+  if (!ok) paceFailures++;
+}
+
+// Additional checks on the "behind" case
+{
+  const r = computePace({
+    currentOz: 10,
+    goalOz: 64,
+    windowStart: "08:00",
+    windowEnd: "23:00",
+    now: mkDate(13),
+  });
+  console.log(`  ${r.catchUpOz > 0 ? "PASS" : "FAIL"}  behind case yields catchUpOz > 0 (${r.catchUpOz})`);
+  console.log(`  ${r.catchUpTimeLabel ? "PASS" : "FAIL"}  behind case yields catchUpTimeLabel (${r.catchUpTimeLabel})`);
+  if (!(r.catchUpOz > 0)) paceFailures++;
+  if (!r.catchUpTimeLabel) paceFailures++;
+}
+
+// Clamp check: catch-up time never past window end
+{
+  const r = computePace({
+    currentOz: 30,
+    goalOz: 64,
+    windowStart: "08:00",
+    windowEnd: "23:00",
+    now: mkDate(22, 45),
+  });
+  if (r.status === "behind") {
+    const ok = r.catchUpTimeLabel === "11 PM"; // window end
+    console.log(`  ${ok ? "PASS" : "FAIL"}  late-evening catch-up clamps to window end (got ${r.catchUpTimeLabel})`);
+    if (!ok) paceFailures++;
+  }
+}
+
+failures += paceFailures;
 console.log();
 console.log(
   failures === 0

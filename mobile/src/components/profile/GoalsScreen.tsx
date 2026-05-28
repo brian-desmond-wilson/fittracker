@@ -10,9 +10,11 @@ import {
   Platform,
   ActivityIndicator,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/src/lib/supabase';
 
 interface GoalsScreenProps {
@@ -22,9 +24,30 @@ interface GoalsScreenProps {
     target_weight_kg: string;
     target_calories: string;
     target_water_oz: string;
+    water_window_start: string;  // "HH:MM"
+    water_window_end: string;    // "HH:MM"
+    water_workout_bonus_oz: string;
   };
   onClose: () => void;
   onSave: () => void;
+}
+
+function formatTimeLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map((s) => parseInt(s, 10));
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${display}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function hhmmFromDate(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function dateFromHhmm(hhmm: string): Date {
+  const [h, m] = hhmm.split(':').map((s) => parseInt(s, 10));
+  const d = new Date();
+  d.setHours(h, m || 0, 0, 0);
+  return d;
 }
 
 type WaterUnit = 'oz' | 'L';
@@ -37,6 +60,7 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
   const [waterUnit, setWaterUnit] = useState<WaterUnit>('oz');
   const [waterInput, setWaterInput] = useState(initialData.target_water_oz);
   const [saving, setSaving] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<null | 'start' | 'end'>(null);
 
   const handleWaterUnitChange = (next: WaterUnit) => {
     if (next === waterUnit) return;
@@ -69,6 +93,17 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
             : Math.round(parsed * OZ_PER_LITER);
       }
 
+      // Validate window: end > start
+      if (formData.water_window_end <= formData.water_window_start) {
+        console.error('Water pace end must be after start');
+        setSaving(false);
+        return;
+      }
+
+      const bonusOz = formData.water_workout_bonus_oz.trim() === ''
+        ? 0
+        : Math.max(0, Math.round(parseFloat(formData.water_workout_bonus_oz) || 0));
+
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -80,6 +115,9 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
             ? parseInt(formData.target_calories)
             : null,
           ...(waterOz !== null && { target_water_oz: waterOz }),
+          water_window_start: formData.water_window_start,
+          water_window_end: formData.water_window_end,
+          water_workout_bonus_oz: bonusOz,
         })
         .eq('id', userId);
 
@@ -205,6 +243,58 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 editable={!saving}
               />
             </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.label}>Water Pace Window</Text>
+              <Text style={styles.fieldHelp}>
+                Hours we use to compute your hydration pace each day.
+              </Text>
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Start</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('start')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.water_window_start)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>End</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('end')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.water_window_end)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.label}>Workout Water Bonus (oz)</Text>
+              <Text style={styles.fieldHelp}>
+                Extra oz added to your goal automatically on days you work out.
+                Set to 0 to disable.
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor="#6B7280"
+                value={formData.water_workout_bonus_oz}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, water_workout_bonus_oz: text })
+                }
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+            </View>
           </View>
 
           <TouchableOpacity
@@ -220,6 +310,74 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Time picker modal */}
+      {Platform.OS === 'ios' ? (
+        <Modal
+          visible={pickerTarget !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPickerTarget(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                {pickerTarget === 'start' ? 'Window Start' : 'Window End'}
+              </Text>
+              <DateTimePicker
+                value={dateFromHhmm(
+                  pickerTarget === 'start'
+                    ? formData.water_window_start
+                    : formData.water_window_end
+                )}
+                mode="time"
+                display="spinner"
+                onChange={(_e, picked) => {
+                  if (picked) {
+                    const hhmm = hhmmFromDate(picked);
+                    setFormData((prev) =>
+                      pickerTarget === 'start'
+                        ? { ...prev, water_window_start: hhmm }
+                        : { ...prev, water_window_end: hhmm }
+                    );
+                  }
+                }}
+                textColor="#FFFFFF"
+              />
+              <TouchableOpacity
+                style={styles.modalDoneButton}
+                onPress={() => setPickerTarget(null)}
+              >
+                <Text style={styles.modalDoneButtonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      ) : (
+        pickerTarget !== null && (
+          <DateTimePicker
+            value={dateFromHhmm(
+              pickerTarget === 'start'
+                ? formData.water_window_start
+                : formData.water_window_end
+            )}
+            mode="time"
+            display="default"
+            onChange={(_e, picked) => {
+              const target = pickerTarget;
+              setPickerTarget(null);
+              if (picked && target) {
+                const hhmm = hhmmFromDate(picked);
+                setFormData((prev) =>
+                  target === 'start'
+                    ? { ...prev, water_window_start: hhmm }
+                    : { ...prev, water_window_end: hhmm }
+                );
+              }
+            }}
+          />
+        )
+      )}
       </View>
     </>
   );
@@ -329,6 +487,54 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#FFFFFF',
+  },
+  subLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 6,
+  },
+  fieldHelp: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 10,
+    marginTop: -2,
+  },
+  timeButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#111827',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  modalDoneButton: {
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalDoneButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: '#22C55E',

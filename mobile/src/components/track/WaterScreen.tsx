@@ -33,6 +33,8 @@ import {
   computeBestStreak,
   computeRollingStats,
   buildDailySeries,
+  computePace,
+  PaceState,
 } from "@/src/lib/waterStats";
 
 const OZ_PER_LITER = 33.814;
@@ -67,6 +69,56 @@ interface WaterScreenProps {
   onClose: () => void;
 }
 
+function PaceLine({ pace }: { pace: PaceState }) {
+  switch (pace.status) {
+    case "before_window":
+      return null;
+    case "after_window":
+      return null;
+    case "goal_hit":
+      return (
+        <Text style={[paceStyles.text, paceStyles.good]}>Goal hit! ✓</Text>
+      );
+    case "on_pace":
+      return (
+        <Text style={[paceStyles.text, paceStyles.neutral]}>On pace · keep it up</Text>
+      );
+    case "ahead":
+      return (
+        <Text style={[paceStyles.text, paceStyles.good]}>
+          {pace.ozAhead} oz ahead of pace
+        </Text>
+      );
+    case "behind":
+      return (
+        <Text style={[paceStyles.text, paceStyles.behind]}>
+          {pace.ozBehind} oz behind · Drink {pace.catchUpOz} oz by {pace.catchUpTimeLabel}
+        </Text>
+      );
+  }
+}
+
+const paceStyles = StyleSheet.create({
+  text: {
+    fontSize: 13,
+    marginTop: 12,
+    textAlign: "center",
+    paddingHorizontal: 8,
+  },
+  neutral: {
+    color: "#3B82F6",
+    fontWeight: "600",
+  },
+  good: {
+    color: "#22C55E",
+    fontWeight: "600",
+  },
+  behind: {
+    color: "#F59E0B",
+    fontWeight: "600",
+  },
+});
+
 export function WaterScreen({ onClose }: WaterScreenProps) {
   const insets = useSafeAreaInsets();
   const [logs, setLogs] = useState<WaterLog[]>([]);
@@ -79,6 +131,12 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   const [goalDraft, setGoalDraft] = useState("");
   const [goalUnit, setGoalUnit] = useState<WaterUnit>("oz");
   const [savingGoal, setSavingGoal] = useState(false);
+
+  // Pace + bonus
+  const [windowStart, setWindowStart] = useState("08:00");
+  const [windowEnd, setWindowEnd] = useState("23:00");
+  const [workoutBonusOz, setWorkoutBonusOz] = useState(0);
+  const [hasWorkoutToday, setHasWorkoutToday] = useState(false);
 
   // Quick-add config
   const [quickAddAmounts, setQuickAddAmounts] = useState<number[]>(DEFAULT_QUICK_ADD);
@@ -95,6 +153,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   useEffect(() => {
     fetchWaterLogs();
     fetchSettings();
+    fetchTodayWorkoutFlag();
   }, []);
 
   const fetchSettings = async () => {
@@ -103,15 +162,40 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       if (!user) return;
       const { data } = await supabase
         .from("profiles")
-        .select("target_water_oz, quick_add_oz")
+        .select(
+          "target_water_oz, quick_add_oz, water_window_start, water_window_end, water_workout_bonus_oz"
+        )
         .eq("id", user.id)
         .single();
       if (data?.target_water_oz) setGoalOz(data.target_water_oz);
       if (Array.isArray(data?.quick_add_oz) && data.quick_add_oz.length > 0) {
         setQuickAddAmounts(data.quick_add_oz);
       }
+      if (data?.water_window_start) setWindowStart(data.water_window_start);
+      if (data?.water_window_end) setWindowEnd(data.water_window_end);
+      if (typeof data?.water_workout_bonus_oz === "number") {
+        setWorkoutBonusOz(data.water_workout_bonus_oz);
+      }
     } catch (error) {
       console.error("Error fetching water settings:", error);
+    }
+  };
+
+  const fetchTodayWorkoutFlag = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from("workout_instances")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("scheduled_date", todayString)
+        .in("status", ["in_progress", "completed"])
+        .limit(1);
+      if (error) throw error;
+      setHasWorkoutToday(!!data && data.length > 0);
+    } catch (error) {
+      console.error("Error fetching today's workout flag:", error);
     }
   };
 
@@ -170,6 +254,22 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   }, [weekStart]);
 
   const isViewingToday = selectedDate === todayString;
+
+  // Effective goal includes workout bonus on today only when there's a workout
+  const effectiveGoalOz =
+    isViewingToday && hasWorkoutToday ? goalOz + workoutBonusOz : goalOz;
+  const bonusActive = isViewingToday && hasWorkoutToday && workoutBonusOz > 0;
+
+  // Pace (today's view only, against effective goal)
+  const pace: PaceState | null = useMemo(() => {
+    if (!isViewingToday) return null;
+    return computePace({
+      currentOz: selectedDateTotal,
+      goalOz: effectiveGoalOz,
+      windowStart,
+      windowEnd,
+    });
+  }, [isViewingToday, selectedDateTotal, effectiveGoalOz, windowStart, windowEnd]);
 
   // Insights (always relative to today, independent of selectedDate)
   const currentStreak = useMemo(
@@ -424,7 +524,8 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 
           {/* Ring card */}
           <View style={styles.ringCard}>
-            <WaterProgressRing current={selectedDateTotal} goal={goalOz} />
+            <WaterProgressRing current={selectedDateTotal} goal={effectiveGoalOz} />
+            {pace && <PaceLine pace={pace} />}
             <View style={styles.loggingToRow}>
               <Text style={styles.loggingToText}>
                 Logging to: <Text style={styles.loggingToValue}>{formatSelectedDateLabel()}</Text>
@@ -440,7 +541,12 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
               style={styles.goalRow}
               activeOpacity={0.7}
             >
-              <Text style={styles.goalText}>Goal: {goalOz} oz</Text>
+              <Text style={styles.goalText}>
+                Goal: {effectiveGoalOz} oz
+                {bonusActive && (
+                  <Text style={styles.goalBonusText}> · +{workoutBonusOz} workout</Text>
+                )}
+              </Text>
               <Pencil size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
@@ -857,6 +963,10 @@ const styles = StyleSheet.create({
   goalText: {
     fontSize: 13,
     color: colors.mutedForeground,
+  },
+  goalBonusText: {
+    color: "#22C55E",
+    fontWeight: "600",
   },
 
   // Day strip

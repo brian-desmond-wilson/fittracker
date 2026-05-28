@@ -47,6 +47,9 @@ export default function Profile() {
     target_weight_kg: "",
     target_calories: "",
     target_water_oz: "",
+    water_window_start: "08:00",
+    water_window_end: "23:00",
+    water_workout_bonus_oz: "0",
   });
 
   useEffect(() => {
@@ -85,6 +88,12 @@ export default function Profile() {
           target_weight_kg: profile.target_weight_kg?.toString() || "",
           target_calories: profile.target_calories?.toString() || "",
           target_water_oz: profile.target_water_oz?.toString() || "",
+          water_window_start: (profile.water_window_start || "08:00").slice(0, 5),
+          water_window_end: (profile.water_window_end || "23:00").slice(0, 5),
+          water_workout_bonus_oz:
+            profile.water_workout_bonus_oz != null
+              ? profile.water_workout_bonus_oz.toString()
+              : "0",
         });
       }
     } catch (error) {
