@@ -153,6 +153,8 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   const [windowEnd, setWindowEnd] = useState("23:00");
   const [workoutBonusOz, setWorkoutBonusOz] = useState(0);
   const [hasWorkoutToday, setHasWorkoutToday] = useState(false);
+  // Set of YYYY-MM-DD dates (last 365 days) with in_progress/completed workouts
+  const [workoutDates, setWorkoutDates] = useState<Set<string>>(new Set());
 
   // Quick-add config
   const [quickAddAmounts, setQuickAddAmounts] = useState<number[]>(DEFAULT_QUICK_ADD);
@@ -238,17 +240,25 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      // Pull the last 365 days of in_progress/completed workouts so per-day
+      // historical streaks/insights can use the right effective goal.
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 365);
+      const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
       const { data, error } = await supabase
         .from("workout_instances")
-        .select("id")
+        .select("scheduled_date")
         .eq("user_id", user.id)
-        .eq("scheduled_date", todayString)
-        .in("status", ["in_progress", "completed"])
-        .limit(1);
+        .gte("scheduled_date", cutoffStr)
+        .in("status", ["in_progress", "completed"]);
       if (error) throw error;
-      setHasWorkoutToday(!!data && data.length > 0);
+      const dates = new Set<string>(
+        (data ?? []).map((row: { scheduled_date: string }) => row.scheduled_date)
+      );
+      setWorkoutDates(dates);
+      setHasWorkoutToday(dates.has(todayString));
     } catch (error) {
-      console.error("Error fetching today's workout flag:", error);
+      console.error("Error fetching workout dates:", error);
     }
   };
 
@@ -326,22 +336,28 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     });
   }, [isViewingToday, selectedDateTotal, effectiveGoalOz, windowStart, windowEnd]);
 
+  // Per-day effective goal: base + bonus if there was a workout that day.
+  const goalForDate = useMemo(() => {
+    return (dateKey: string) =>
+      goalOz + (workoutDates.has(dateKey) ? workoutBonusOz : 0);
+  }, [goalOz, workoutBonusOz, workoutDates]);
+
   // Insights (always relative to today, independent of selectedDate)
   const currentStreak = useMemo(
-    () => computeCurrentStreak(totalsByDate, goalOz),
-    [totalsByDate, goalOz]
+    () => computeCurrentStreak(totalsByDate, goalForDate),
+    [totalsByDate, goalForDate]
   );
   const bestStreak = useMemo(
-    () => computeBestStreak(totalsByDate, goalOz),
-    [totalsByDate, goalOz]
+    () => computeBestStreak(totalsByDate, goalForDate),
+    [totalsByDate, goalForDate]
   );
   const rolling = useMemo(
-    () => computeRollingStats(totalsByDate, goalOz),
-    [totalsByDate, goalOz]
+    () => computeRollingStats(totalsByDate, goalForDate),
+    [totalsByDate, goalForDate]
   );
   const chartSeries = useMemo(
-    () => buildDailySeries(totalsByDate, 14),
-    [totalsByDate]
+    () => buildDailySeries(totalsByDate, 14, goalForDate),
+    [totalsByDate, goalForDate]
   );
 
   // Handlers
@@ -867,7 +883,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
               </View>
             </View>
             <Text style={styles.chartLabel}>Last 14 days</Text>
-            <WaterBarChart series={chartSeries} goalOz={goalOz} />
+            <WaterBarChart series={chartSeries} referenceGoalOz={goalOz} />
           </View>
 
           {/* Custom Log Section (manual amount + beverage type) */}

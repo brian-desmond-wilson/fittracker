@@ -38,16 +38,19 @@ function addDays(d, days) {
   return r;
 }
 
-function computeCurrentStreak(totalsByDate, goalOz) {
-  if (goalOz <= 0) return 0;
+function computeCurrentStreak(totalsByDate, goalForDate) {
   const today = new Date();
   const todayKey = getLocalDate(today);
-  const todayHit = (totalsByDate[todayKey] || 0) >= goalOz;
+  const todayGoal = goalForDate(todayKey);
+  if (todayGoal <= 0) return 0;
+  const todayHit = (totalsByDate[todayKey] || 0) >= todayGoal;
   let streak = 0;
   let cursor = todayHit ? 0 : 1;
   while (true) {
     const key = getLocalDate(addDays(today, -cursor));
-    if ((totalsByDate[key] || 0) >= goalOz) {
+    const dayGoal = goalForDate(key);
+    if (dayGoal <= 0) break;
+    if ((totalsByDate[key] || 0) >= dayGoal) {
       streak++;
       cursor++;
     } else {
@@ -57,8 +60,7 @@ function computeCurrentStreak(totalsByDate, goalOz) {
   return streak;
 }
 
-function computeBestStreak(totalsByDate, goalOz) {
-  if (goalOz <= 0) return 0;
+function computeBestStreak(totalsByDate, goalForDate) {
   const dates = Object.keys(totalsByDate);
   if (dates.length === 0) return 0;
   dates.sort();
@@ -67,7 +69,8 @@ function computeBestStreak(totalsByDate, goalOz) {
   let best = 0, running = 0;
   for (let d = new Date(earliest); d <= today; d = addDays(d, 1)) {
     const key = getLocalDate(d);
-    if ((totalsByDate[key] || 0) >= goalOz) {
+    const goal = goalForDate(key);
+    if (goal > 0 && (totalsByDate[key] || 0) >= goal) {
       running++;
       if (running > best) best = running;
     } else {
@@ -77,25 +80,30 @@ function computeBestStreak(totalsByDate, goalOz) {
   return best;
 }
 
-function computeRollingStats(totalsByDate, goalOz) {
+function computeRollingStats(totalsByDate, goalForDate) {
   const days = 7;
   const today = new Date();
   let sum = 0, daysHit = 0;
   for (let i = 0; i < days; i++) {
     const key = getLocalDate(addDays(today, -i));
     const t = totalsByDate[key] || 0;
+    const g = goalForDate(key);
     sum += t;
-    if (goalOz > 0 && t >= goalOz) daysHit++;
+    if (g > 0 && t >= g) daysHit++;
   }
   return { avgOzPerDay: sum / days, daysHit, daysInWindow: days };
 }
 
-function buildDailySeries(totalsByDate, days) {
+function buildDailySeries(totalsByDate, days, goalForDate) {
   const today = new Date();
   const out = [];
   for (let i = days - 1; i >= 0; i--) {
     const key = getLocalDate(addDays(today, -i));
-    out.push({ date: key, total: totalsByDate[key] || 0 });
+    out.push({
+      date: key,
+      total: totalsByDate[key] || 0,
+      goal: goalForDate(key),
+    });
   }
   return out;
 }
@@ -149,14 +157,26 @@ async function fetchJson(path) {
 }
 
 const profile = await fetchJson(
-  `/rest/v1/profiles?id=eq.${USER_ID}&select=target_water_oz,quick_add_oz`,
+  `/rest/v1/profiles?id=eq.${USER_ID}&select=target_water_oz,quick_add_oz,water_workout_bonus_oz`,
 );
 const goalOz = profile[0]?.target_water_oz ?? 64;
+const bonusOz = profile[0]?.water_workout_bonus_oz ?? 0;
 const quickAdd = profile[0]?.quick_add_oz ?? [8, 12, 16, 20];
 
 const logs = await fetchJson(
   `/rest/v1/water_logs?user_id=eq.${USER_ID}&order=date.desc&limit=10000`,
 );
+
+const cutoffDate = new Date();
+cutoffDate.setDate(cutoffDate.getDate() - 365);
+const cutoffStr = getLocalDate(cutoffDate);
+const workouts = await fetchJson(
+  `/rest/v1/workout_instances?user_id=eq.${USER_ID}&status=in.(in_progress,completed)&scheduled_date=gte.${cutoffStr}&select=scheduled_date`,
+);
+const workoutDates = new Set(workouts.map((w) => w.scheduled_date));
+
+const goalForDate = (key) =>
+  goalOz + (workoutDates.has(key) ? bonusOz : 0);
 
 const totalsByDate = {};
 for (const l of logs) {
@@ -167,9 +187,11 @@ console.log("=".repeat(64));
 console.log("SMOKE TEST — water insights against real DB");
 console.log("=".repeat(64));
 console.log(`Today (local): ${getLocalDate()}`);
-console.log(`Goal: ${goalOz} oz · Quick-add: [${quickAdd.join(", ")}]`);
+console.log(`Base goal: ${goalOz} oz · Workout bonus: +${bonusOz} oz`);
+console.log(`Quick-add: [${quickAdd.join(", ")}]`);
 console.log(`Total logs: ${logs.length}`);
 console.log(`Days with any logs: ${Object.keys(totalsByDate).length}`);
+console.log(`Workout days in last 365: ${workoutDates.size}`);
 console.log();
 
 console.log("--- Per-day totals (last 30 days where data exists) ---");
@@ -182,10 +204,10 @@ for (const d of sortedDates) {
 if (sortedDates.length === 0) console.log("  (no logs found)");
 console.log();
 
-const currentStreak = computeCurrentStreak(totalsByDate, goalOz);
-const bestStreak = computeBestStreak(totalsByDate, goalOz);
-const rolling = computeRollingStats(totalsByDate, goalOz);
-const series14 = buildDailySeries(totalsByDate, 14);
+const currentStreak = computeCurrentStreak(totalsByDate, goalForDate);
+const bestStreak = computeBestStreak(totalsByDate, goalForDate);
+const rolling = computeRollingStats(totalsByDate, goalForDate);
+const series14 = buildDailySeries(totalsByDate, 14, goalForDate);
 
 console.log("--- Stats ---");
 console.log(`Current streak:  ${currentStreak}`);
@@ -233,21 +255,52 @@ assert(
   series14[13].date === getLocalDate(),
 );
 
-// Recompute current streak manually for cross-check
+// Recompute current streak manually for cross-check (per-day goal aware)
 {
-  const today = getLocalDate();
   let manual = 0;
-  const todayHit = (totalsByDate[today] || 0) >= goalOz;
-  let cursor = todayHit ? 0 : 1;
   const t = new Date();
+  const todayKey = getLocalDate(t);
+  const todayGoal = goalForDate(todayKey);
+  const todayHit = todayGoal > 0 && (totalsByDate[todayKey] || 0) >= todayGoal;
+  let cursor = todayHit ? 0 : 1;
   while (true) {
     const k = getLocalDate(addDays(t, -cursor));
-    if ((totalsByDate[k] || 0) >= goalOz) {
+    const g = goalForDate(k);
+    if (g > 0 && (totalsByDate[k] || 0) >= g) {
       manual++;
       cursor++;
     } else break;
   }
   assert(`current streak matches manual recomputation (${manual})`, manual === currentStreak);
+}
+
+// Per-day goal invariants
+assert(
+  "chart series entries all carry a goal field",
+  series14.every((s) => typeof s.goal === "number" && s.goal > 0),
+);
+if (bonusOz > 0 && workoutDates.size > 0) {
+  // Sanity: at least one chart entry on a workout day should have goal = base + bonus
+  const workoutEntries = series14.filter((s) => workoutDates.has(s.date));
+  if (workoutEntries.length > 0) {
+    assert(
+      `workout-day chart entries use effective goal (base ${goalOz} + bonus ${bonusOz} = ${goalOz + bonusOz})`,
+      workoutEntries.every((s) => s.goal === goalOz + bonusOz),
+    );
+  }
+  // And non-workout days use base goal
+  const nonWorkoutEntries = series14.filter((s) => !workoutDates.has(s.date));
+  if (nonWorkoutEntries.length > 0) {
+    assert(
+      `non-workout-day chart entries use base goal (${goalOz})`,
+      nonWorkoutEntries.every((s) => s.goal === goalOz),
+    );
+  }
+} else {
+  assert(
+    "no bonus configured: all chart goals equal base",
+    series14.every((s) => s.goal === goalOz),
+  );
 }
 
 // Sum of chart series totals = sum of 14-day totals
@@ -349,6 +402,52 @@ for (const c of paceCases) {
 }
 
 failures += paceFailures;
+
+// --- Synthetic per-day-goal scenarios (bonus path) ---
+console.log();
+console.log("--- per-day goal scenarios (synthetic) ---");
+{
+  // Build a 5-day window where the user hits 70 oz/day every day.
+  // Base goal 64, workout bonus 16. Workout on day 2 (so effective goal=80).
+  // Expected: streak = 1 (today, day 0) only.  Day 2 misses its 80oz target
+  // even though it hit base.
+  const today = new Date();
+  const totals = {};
+  const workouts = new Set();
+  for (let i = 0; i < 5; i++) {
+    const k = getLocalDate(addDays(today, -i));
+    totals[k] = 70;
+  }
+  workouts.add(getLocalDate(addDays(today, -2)));
+  const synGoalForDate = (k) => 64 + (workouts.has(k) ? 16 : 0);
+  const synStreak = computeCurrentStreak(totals, synGoalForDate);
+  const okSynStreak = synStreak === 2;
+  console.log(`  ${okSynStreak ? "PASS" : "FAIL"}  workout-day breaks streak (got ${synStreak}, expected 2)`);
+  if (!okSynStreak) failures++;
+
+  // With NO workout days, all 5 days hit base goal -> streak = 5
+  const noWorkoutGoal = () => 64;
+  const synStreak2 = computeCurrentStreak(totals, noWorkoutGoal);
+  const okSynStreak2 = synStreak2 === 5;
+  console.log(`  ${okSynStreak2 ? "PASS" : "FAIL"}  no workouts: streak runs all 5 days (got ${synStreak2}, expected 5)`);
+  if (!okSynStreak2) failures++;
+
+  // buildDailySeries assigns the right per-day goal
+  const series = buildDailySeries(totals, 5, synGoalForDate);
+  const bonusDay = series.find((s) => workouts.has(s.date));
+  const okBonus = bonusDay && bonusDay.goal === 80;
+  console.log(`  ${okBonus ? "PASS" : "FAIL"}  workout-day series entry has goal=80`);
+  if (!okBonus) failures++;
+
+  // Rolling stats: 4/5 days hit when bonus active (workout day misses)
+  const rolling = computeRollingStats(totals, synGoalForDate);
+  // Window is 7 days; 5 days at 70oz with workout on day 2 of those 5.
+  // Days 0,1,3,4 hit base (64) = 4 hits. Day 2 fails effective (80). Days 5-6 are 0.
+  const okRolling = rolling.daysHit === 4;
+  console.log(`  ${okRolling ? "PASS" : "FAIL"}  rolling daysHit accounts for bonus miss (got ${rolling.daysHit}, expected 4)`);
+  if (!okRolling) failures++;
+}
+
 console.log();
 console.log(
   failures === 0

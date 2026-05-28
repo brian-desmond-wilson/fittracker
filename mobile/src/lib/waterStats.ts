@@ -1,4 +1,5 @@
 export type TotalsByDate = Record<string, number>;
+export type GoalForDate = (dateKey: string) => number;
 
 function getLocalDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -11,26 +12,28 @@ function addDays(d: Date, days: number): Date {
 }
 
 /**
- * Current streak: consecutive days hitting the goal, counting today only
- * if today's goal has already been hit. If today hasn't been hit yet, the
- * streak walks back from yesterday so the user has until midnight to
- * preserve it.
+ * Current streak: consecutive days hitting the per-day effective goal,
+ * counting today only if today's goal has already been hit. If today
+ * hasn't been hit yet, the streak walks back from yesterday so the user
+ * has until midnight to preserve it. Each day uses goalForDate(date).
  */
 export function computeCurrentStreak(
   totalsByDate: TotalsByDate,
-  goalOz: number,
+  goalForDate: GoalForDate,
 ): number {
-  if (goalOz <= 0) return 0;
   const today = new Date();
   const todayKey = getLocalDate(today);
-  const todayHit = (totalsByDate[todayKey] || 0) >= goalOz;
+  const todayGoal = goalForDate(todayKey);
+  if (todayGoal <= 0) return 0;
+  const todayHit = (totalsByDate[todayKey] || 0) >= todayGoal;
 
   let streak = 0;
-  // If today is hit, start counting from today; otherwise start from yesterday.
   let cursor = todayHit ? 0 : 1;
   while (true) {
     const key = getLocalDate(addDays(today, -cursor));
-    if ((totalsByDate[key] || 0) >= goalOz) {
+    const dayGoal = goalForDate(key);
+    if (dayGoal <= 0) break;
+    if ((totalsByDate[key] || 0) >= dayGoal) {
       streak++;
       cursor++;
     } else {
@@ -41,15 +44,14 @@ export function computeCurrentStreak(
 }
 
 /**
- * Best streak: longest consecutive run of goal-hit days within the
- * provided totals. Days with no logs count as misses. Returns 0 if no
- * logs.
+ * Best streak: longest consecutive run of days that hit their own
+ * per-day effective goal. Days with no logs count as misses. Returns 0
+ * if no logs.
  */
 export function computeBestStreak(
   totalsByDate: TotalsByDate,
-  goalOz: number,
+  goalForDate: GoalForDate,
 ): number {
-  if (goalOz <= 0) return 0;
   const dates = Object.keys(totalsByDate);
   if (dates.length === 0) return 0;
 
@@ -60,7 +62,8 @@ export function computeBestStreak(
   let running = 0;
   for (let d = new Date(earliest); d <= today; d = addDays(d, 1)) {
     const key = getLocalDate(d);
-    if ((totalsByDate[key] || 0) >= goalOz) {
+    const goal = goalForDate(key);
+    if (goal > 0 && (totalsByDate[key] || 0) >= goal) {
       running++;
       if (running > best) best = running;
     } else {
@@ -72,11 +75,11 @@ export function computeBestStreak(
 
 /**
  * Rolling 7-day window ending today: average daily oz and number of days
- * (out of 7) that hit the goal.
+ * (out of 7) that hit their own per-day effective goal.
  */
 export function computeRollingStats(
   totalsByDate: TotalsByDate,
-  goalOz: number,
+  goalForDate: GoalForDate,
 ): { avgOzPerDay: number; daysHit: number; daysInWindow: number } {
   const days = 7;
   const today = new Date();
@@ -85,8 +88,9 @@ export function computeRollingStats(
   for (let i = 0; i < days; i++) {
     const key = getLocalDate(addDays(today, -i));
     const total = totalsByDate[key] || 0;
+    const goal = goalForDate(key);
     sum += total;
-    if (goalOz > 0 && total >= goalOz) daysHit++;
+    if (goal > 0 && total >= goal) daysHit++;
   }
   return {
     avgOzPerDay: sum / days,
@@ -181,20 +185,32 @@ export function computePace(opts: {
   };
 }
 
+export interface DailySeriesEntry {
+  date: string;
+  total: number;
+  goal: number;
+}
+
 /**
  * Returns the last N daily totals (oldest -> newest, length N, padded
- * with zeros for missing days) for chart rendering.
+ * with zeros for missing days). Each entry includes the day's effective
+ * goal so the chart can color/size bars per-day.
  */
 export function buildDailySeries(
   totalsByDate: TotalsByDate,
   days: number,
-): { date: string; total: number }[] {
+  goalForDate: GoalForDate,
+): DailySeriesEntry[] {
   const today = new Date();
-  const result: { date: string; total: number }[] = [];
+  const result: DailySeriesEntry[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = addDays(today, -i);
     const key = getLocalDate(d);
-    result.push({ date: key, total: totalsByDate[key] || 0 });
+    result.push({
+      date: key,
+      total: totalsByDate[key] || 0,
+      goal: goalForDate(key),
+    });
   }
   return result;
 }

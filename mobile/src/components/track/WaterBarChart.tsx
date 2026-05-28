@@ -4,17 +4,23 @@ import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
 import { colors } from "@/src/lib/colors";
 
 interface WaterBarChartProps {
-  // Oldest -> newest. Each entry: { date: "YYYY-MM-DD", total: oz }.
-  series: { date: string; total: number }[];
-  goalOz: number;
+  // Oldest -> newest. Each entry: { date: "YYYY-MM-DD", total: oz, goal: oz }.
+  // The per-day `goal` is used to color bars green when hit.
+  series: { date: string; total: number; goal: number }[];
+  // The dashed reference line shows the BASE goal — bonus days where
+  // total exceeds base will visually overshoot this line.
+  referenceGoalOz: number;
   height?: number;
 }
 
 const VIEW_WIDTH = 300;
+// Bars cap visually at 133% of base goal so bonus days can overshoot
+// the reference line, but extreme outliers don't break the chart.
+const VISUAL_SCALE = 1.33;
 
 export function WaterBarChart({
   series,
-  goalOz,
+  referenceGoalOz,
   height = 130,
 }: WaterBarChartProps) {
   const padding = { top: 14, bottom: 22, left: 8, right: 8 };
@@ -22,8 +28,9 @@ export function WaterBarChart({
   const chartHeight = height - padding.top - padding.bottom;
   const slotWidth = innerWidth / Math.max(series.length, 1);
   const barWidth = slotWidth * 0.65;
-  const goalY = padding.top;
   const baseY = padding.top + chartHeight;
+  // Reference line position: bar at 100% of base goal reaches this Y.
+  const goalLineY = baseY - chartHeight * (1 / VISUAL_SCALE);
 
   const labelIndices = series.length > 0
     ? Array.from(new Set([0, Math.floor((series.length - 1) / 2), series.length - 1]))
@@ -32,29 +39,30 @@ export function WaterBarChart({
   return (
     <View style={styles.wrap}>
       <Svg width="100%" height={height} viewBox={`0 0 ${VIEW_WIDTH} ${height}`}>
-        {/* Goal reference line */}
+        {/* Goal reference line (at base goal) */}
         <Line
           x1={padding.left}
           x2={VIEW_WIDTH - padding.right}
-          y1={goalY}
-          y2={goalY}
+          y1={goalLineY}
+          y2={goalLineY}
           stroke="rgba(255,255,255,0.25)"
           strokeWidth={1}
           strokeDasharray="3,3"
         />
         {/* Bars */}
         {series.map((d, i) => {
-          const ratio = goalOz > 0 ? Math.min(d.total / goalOz, 1) : 0;
+          const ratio = referenceGoalOz > 0
+            ? Math.min(d.total / referenceGoalOz, VISUAL_SCALE) / VISUAL_SCALE
+            : 0;
           const barHeight = chartHeight * ratio;
           const x = padding.left + i * slotWidth + (slotWidth - barWidth) / 2;
           const y = baseY - barHeight;
-          const hit = goalOz > 0 && d.total >= goalOz;
+          const hit = d.goal > 0 && d.total >= d.goal;
           const fill = d.total === 0
             ? "rgba(59, 130, 246, 0.18)"
             : hit
               ? "#22C55E"
               : "#3B82F6";
-          // Render a thin baseline rect for zero-data days so the slot is visible.
           if (d.total === 0) {
             return (
               <Rect
