@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,14 @@ import {
   ScrollView,
   Image,
   StatusBar,
+  Switch,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X, Star, Minus, Plus } from "lucide-react-native";
+import { X, Star, Minus, Plus, Package } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { SavedFood, MealType } from "@/src/types/track";
 import { ProductData } from "@/src/services/openFoodFactsApi";
+import { InventoryMatchSummary } from "@/src/services/foodInventoryMatchService";
 
 const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
   { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
@@ -29,11 +31,13 @@ interface FoodPreviewModalProps {
   visible: boolean;
   food: SavedFood | ProductData | null;
   source: "saved" | "api";
+  inventoryMatch?: InventoryMatchSummary | null;
   onClose: () => void;
   onLogMeal: (
     food: SavedFood | ProductData,
     mealType: MealType,
-    servings: number
+    servings: number,
+    useInventory: boolean
   ) => void;
   onSaveToLibrary?: (food: ProductData) => void;
   onToggleFavorite?: (food: SavedFood) => void;
@@ -43,6 +47,7 @@ export function FoodPreviewModal({
   visible,
   food,
   source,
+  inventoryMatch,
   onClose,
   onLogMeal,
   onSaveToLibrary,
@@ -51,6 +56,16 @@ export function FoodPreviewModal({
   const insets = useSafeAreaInsets();
   const [selectedMealType, setSelectedMealType] = useState<MealType>("snack");
   const [servings, setServings] = useState(1);
+  // Default the "use from pantry" toggle to on whenever we have a match
+  // with stock. Resets on modal open.
+  const [useInventory, setUseInventory] = useState(false);
+  useEffect(() => {
+    if (visible) {
+      setUseInventory(
+        !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0,
+      );
+    }
+  }, [visible, inventoryMatch]);
 
   if (!food) return null;
 
@@ -88,7 +103,7 @@ export function FoodPreviewModal({
   };
 
   const handleLogMeal = () => {
-    onLogMeal(food, selectedMealType, servings);
+    onLogMeal(food, selectedMealType, servings, useInventory);
   };
 
   const handleSaveToLibrary = () => {
@@ -268,6 +283,29 @@ export function FoodPreviewModal({
           </View>
         </ScrollView>
 
+        {/* Inventory match (only shown when this food matches an inventory item) */}
+        {inventoryMatch && (
+          <View style={styles.inventoryRow}>
+            <Package size={18} color={colors.foreground} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.inventoryTitle}>
+                Use from pantry
+              </Text>
+              <Text style={styles.inventorySub}>
+                {inventoryMatch.quantity} {inventoryMatch.unit ?? "in stock"} ·{" "}
+                {inventoryMatch.name}
+              </Text>
+            </View>
+            <Switch
+              value={useInventory}
+              onValueChange={setUseInventory}
+              trackColor={{ false: "#374151", true: "#22C55E" }}
+              thumbColor="#FFFFFF"
+              disabled={(inventoryMatch.quantity ?? 0) <= 0}
+            />
+          </View>
+        )}
+
         {/* Action Buttons */}
         <View style={[styles.actions, { paddingBottom: insets.bottom + 16 }]}>
           {source === "api" && onSaveToLibrary && (
@@ -296,6 +334,28 @@ export function FoodPreviewModal({
 }
 
 const styles = StyleSheet.create({
+  inventoryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
+    borderColor: "rgba(34, 197, 94, 0.3)",
+    borderWidth: 1,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  inventoryTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  inventorySub: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

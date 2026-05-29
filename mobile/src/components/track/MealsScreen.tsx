@@ -15,7 +15,17 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, ChevronRight, Utensils, Trash2, Calendar, Plus } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Utensils,
+  Trash2,
+  Calendar,
+  Plus,
+  Share2,
+  Zap,
+  BarChart3,
+} from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
 import { MealLog, MealType, SavedFood, RecentFoodItem } from "@/src/types/track";
@@ -54,6 +64,17 @@ import {
 } from "@/src/lib/mealStats";
 import { computeMealPace, MealPaceState } from "@/src/lib/mealPace";
 import { MealsPaceLines } from "./MealsPaceLines";
+import { MealUndoSnackbar } from "./MealUndoSnackbar";
+import { QuickAdjustmentModal } from "./QuickAdjustmentModal";
+import { MealsDistributionBar } from "./MealsDistributionBar";
+import { MealsWeeklySummaryModal } from "./MealsWeeklySummaryModal";
+import {
+  findInventoryMatchByBarcode,
+  consumeOneInventoryUnit,
+  refundOneInventoryUnit,
+  InventoryMatchSummary,
+} from "@/src/services/foodInventoryMatchService";
+import { Share } from "react-native";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -122,6 +143,26 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Edit-meal modal
   const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Quick adjustment modal
+  const [quickAdjustVisible, setQuickAdjustVisible] = useState(false);
+  const [savingQuickAdjust, setSavingQuickAdjust] = useState(false);
+
+  // Weekly summary modal
+  const [weeklySummaryVisible, setWeeklySummaryVisible] = useState(false);
+
+  // Undo snackbar
+  const [lastLogId, setLastLogId] = useState<string | null>(null);
+  const [lastLogLabel, setLastLogLabel] = useState<string>("");
+  const [lastLogInventoryId, setLastLogInventoryId] = useState<string | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // CSV export
+  const [exporting, setExporting] = useState(false);
+
+  // Inventory match for the currently previewed food
+  const [inventoryMatch, setInventoryMatch] =
+    useState<InventoryMatchSummary | null>(null);
 
   // Templates modal + savedFoods cache
   const [templatesVisible, setTemplatesVisible] = useState(false);
@@ -422,6 +463,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // Step 1: Check local saved_foods first (instant)
       const savedFood = await getSavedFoodByBarcode(barcode);
       if (savedFood) {
+        const match = await findInventoryMatchByBarcode(barcode);
+        setInventoryMatch(match);
         setPreviewFood(savedFood);
         setPreviewSource("saved");
         setScannedBarcode(barcode);
@@ -454,6 +497,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       }
 
       if (productData) {
+        const match = await findInventoryMatchByBarcode(barcode);
+        setInventoryMatch(match);
         setPreviewFood(productData);
         setPreviewSource("api");
         setScannedBarcode(barcode);
@@ -474,11 +519,58 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   };
 
+  // Undo last log
+  const showUndoFor = (
+    id: string,
+    label: string,
+    inventoryItemId: string | null,
+  ) => {
+    setLastLogId(id);
+    setLastLogLabel(label);
+    setLastLogInventoryId(inventoryItemId);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setLastLogId(null);
+      setLastLogInventoryId(null);
+    }, 5000);
+  };
+
+  const dismissUndo = () => {
+    setLastLogId(null);
+    setLastLogInventoryId(null);
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  };
+
+  const handleUndoLastLog = async () => {
+    if (!lastLogId) return;
+    const id = lastLogId;
+    const invId = lastLogInventoryId;
+    dismissUndo();
+    try {
+      const { error } = await supabase.from("meal_logs").delete().eq("id", id);
+      if (error) throw error;
+      if (invId) await refundOneInventoryUnit(invId);
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate);
+    } catch (error) {
+      console.error("Undo failed:", error);
+      Alert.alert("Error", "Failed to undo");
+    }
+  };
+
   // Handle log meal from preview
   const handleLogMealFromPreview = async (
     food: SavedFood | ProductData,
     mealTypeSelected: MealType,
-    servings: number
+    servings: number,
+    useInventory: boolean
   ) => {
     try {
       const {
@@ -553,32 +645,58 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           ? Math.round(foodFiber * servings * 10) / 10
           : null;
 
-      // Log the meal
-      const { error } = await supabase.from("meal_logs").insert({
-        user_id: user.id,
-        date: viewingDateStr,
-        meal_type: mealTypeSelected,
-        name: name,
-        calories: scaledCalories,
-        protein: scaledProtein,
-        carbs: scaledCarbs,
-        fats: scaledFats,
-        sugars: scaledSugars,
-        sodium_mg: scaledSodium,
-        fiber_g: scaledFiber,
-        saved_food_id: savedFoodId,
-        servings: servings,
-        uses_inventory: false,
-        inventory_items: null,
-        logged_at: new Date().toISOString(),
-      });
+      // Log the meal (with optional pantry decrement)
+      const willUseInventory =
+        useInventory && !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0;
+      const inventoryItems = willUseInventory && inventoryMatch
+        ? [{ id: inventoryMatch.id, quantity: 1 }]
+        : null;
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: mealTypeSelected,
+          name: name,
+          calories: scaledCalories,
+          protein: scaledProtein,
+          carbs: scaledCarbs,
+          fats: scaledFats,
+          sugars: scaledSugars,
+          sodium_mg: scaledSodium,
+          fiber_g: scaledFiber,
+          saved_food_id: savedFoodId,
+          servings: servings,
+          uses_inventory: willUseInventory,
+          inventory_items: inventoryItems,
+          logged_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (willUseInventory && inventoryMatch) {
+        await consumeOneInventoryUnit(inventoryMatch.id);
+      }
 
       // Clear state
       setShowFoodPreview(false);
       setPreviewFood(null);
       setScannedBarcode(null);
+      setInventoryMatch(null);
+
+      // Trigger undo snackbar
+      if (inserted?.id) {
+        const label = scaledCalories
+          ? `Logged ${name} · ${scaledCalories} cal`
+          : `Logged ${name}`;
+        showUndoFor(
+          inserted.id,
+          label,
+          willUseInventory && inventoryMatch ? inventoryMatch.id : null,
+        );
+      }
 
       // Invalidate cache and refetch
       setMealsCache((prev) => {
@@ -591,7 +709,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // Refresh recent foods
       fetchRecentAndFavorites();
 
-      Alert.alert("Success", "Meal logged successfully");
+      // (snackbar replaces the success alert)
     } catch (error: any) {
       console.error("Error logging meal:", error);
       Alert.alert("Error", "Failed to log meal");
@@ -692,26 +810,43 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       }
 
       // Log the meal
-      const { error } = await supabase.from("meal_logs").insert({
-        user_id: user.id,
-        date: viewingDateStr,
-        meal_type: mealTypeSelected,
-        name: foodData.name,
-        calories: foodData.calories,
-        protein: foodData.protein,
-        carbs: foodData.carbs,
-        fats: foodData.fats,
-        sugars: foodData.sugars,
-        sodium_mg: foodData.sodium_mg ?? null,
-        fiber_g: foodData.fiber_g ?? null,
-        saved_food_id: savedFoodId,
-        servings: 1,
-        uses_inventory: false,
-        inventory_items: null,
-        logged_at: new Date().toISOString(),
-      });
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: mealTypeSelected,
+          name: foodData.name,
+          calories: foodData.calories,
+          protein: foodData.protein,
+          carbs: foodData.carbs,
+          fats: foodData.fats,
+          sugars: foodData.sugars,
+          sodium_mg: foodData.sodium_mg ?? null,
+          fiber_g: foodData.fiber_g ?? null,
+          saved_food_id: savedFoodId,
+          servings: 1,
+          uses_inventory: false,
+          inventory_items: null,
+          logged_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (inserted?.id) {
+        const calLabel = foodData.calories
+          ? `${foodData.calories} cal`
+          : null;
+        showUndoFor(
+          inserted.id,
+          calLabel
+            ? `Logged ${foodData.name} · ${calLabel}`
+            : `Logged ${foodData.name}`,
+          null,
+        );
+      }
 
       // Clear state
       setShowManualEntry(false);
@@ -730,7 +865,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         fetchRecentAndFavorites();
       }
 
-      Alert.alert("Success", "Meal logged successfully");
+      // (snackbar replaces the success alert)
     } catch (error: any) {
       console.error("Error logging manual meal:", error);
       Alert.alert("Error", "Failed to log meal");
@@ -857,9 +992,24 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         logged_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from("meal_logs").insert([mealData]);
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert([mealData])
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (inserted?.id) {
+        const calLabel = mealData.calories ? `${mealData.calories} cal` : null;
+        showUndoFor(
+          inserted.id,
+          calLabel
+            ? `Logged ${mealData.name} · ${calLabel}`
+            : `Logged ${mealData.name}`,
+          null,
+        );
+      }
 
       // Invalidate cache for the date the meal was added to
       const mealDate = getLocalDateString(selectedDate);
@@ -876,11 +1026,117 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       if (mealDate === viewingDateStr) {
         await fetchMealsForDate(viewingDate);
       }
-
-      Alert.alert("Success", "Meal logged successfully");
     } catch (error: any) {
       console.error("Error adding meal:", error);
       Alert.alert("Error", "Failed to log meal");
+    }
+  };
+
+  // Quick adjustment — log calories+macros without a food.
+  const handleQuickAdjustment = async (input: {
+    name: string;
+    meal_type: MealType;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+  }) => {
+    try {
+      setSavingQuickAdjust(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: input.meal_type,
+          name: input.name,
+          calories: input.calories,
+          protein: input.protein,
+          carbs: input.carbs,
+          fats: input.fats,
+          sugars: null,
+          sodium_mg: null,
+          fiber_g: null,
+          saved_food_id: null,
+          servings: 1,
+          uses_inventory: false,
+          inventory_items: null,
+          logged_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate);
+      setQuickAdjustVisible(false);
+      if (inserted?.id) {
+        showUndoFor(
+          inserted.id,
+          `Logged ${input.name} · ${input.calories ?? 0} cal`,
+          null,
+        );
+      }
+    } catch (error) {
+      console.error("Quick adjustment failed:", error);
+      Alert.alert("Error", "Failed to log adjustment");
+    } finally {
+      setSavingQuickAdjust(false);
+    }
+  };
+
+  // CSV export — share all meal_logs (last 365 days) via the system Share
+  // sheet. Text-based (no native module dependency, same as water).
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      if (historicalLogs.length === 0) {
+        Alert.alert("No data", "Log some meals before exporting.");
+        return;
+      }
+      const header =
+        "date,time,meal_type,name,calories,protein_g,carbs_g,fats_g,sugars_g,sodium_mg,fiber_g,servings\n";
+      const rows = [...historicalLogs]
+        .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+        .map((m) => {
+          const dt = new Date(m.logged_at);
+          const time = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+          const esc = (s: string) =>
+            s.includes(",") || s.includes("\"") ? `"${s.replace(/"/g, '""')}"` : s;
+          return [
+            m.date,
+            time,
+            m.meal_type,
+            esc(m.name),
+            m.calories ?? "",
+            m.protein ?? "",
+            m.carbs ?? "",
+            m.fats ?? "",
+            m.sugars ?? "",
+            m.sodium_mg ?? "",
+            m.fiber_g ?? "",
+            m.servings ?? 1,
+          ].join(",");
+        })
+        .join("\n");
+      const csv = header + rows + "\n";
+      await Share.share({
+        message: csv,
+        title: `Meals ${getLocalDateString()}`,
+      });
+    } catch (error) {
+      console.error("CSV export failed:", error);
+      Alert.alert("Error", "Failed to export CSV");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -1066,6 +1322,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             <ChevronLeft size={24} color="#FFFFFF" />
             <Text style={styles.backText}>Track</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={exporting}
+            style={styles.headerActionButton}
+            activeOpacity={0.7}
+          >
+            <Share2
+              size={20}
+              color={exporting ? colors.mutedForeground : colors.foreground}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Fixed Refresh Indicator */}
@@ -1152,7 +1419,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </View>
             )}
 
-            {/* Insights (streaks + 14-day charts) */}
+            {/* Today's distribution (calories by meal type) */}
+            {viewingToday && (
+              <View style={styles.distributionWrap}>
+                <MealsDistributionBar meals={dayMeals} />
+              </View>
+            )}
+
+            {/* Insights (streaks + 14-day charts) + Weekly Summary entry */}
             <MealsInsightsCard
               calorieStreak={calorieStreak}
               calorieBestStreak={calorieBestStreak}
@@ -1164,6 +1438,16 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               series14={series14}
               calorieGoal={goals.calories ?? 0}
             />
+            <TouchableOpacity
+              onPress={() => setWeeklySummaryVisible(true)}
+              style={styles.weeklySummaryButton}
+              activeOpacity={0.7}
+            >
+              <BarChart3 size={16} color="#F97316" />
+              <Text style={styles.weeklySummaryButtonText}>
+                Weekly Summary
+              </Text>
+            </TouchableOpacity>
 
             {/* Quick Action Bar - Barcode, Search, Add */}
             {!showAddForm && (
@@ -1173,6 +1457,20 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 onBarcodePress={() => setShowBarcodeScanner(true)}
                 onAddPress={handleOpenAddForm}
               />
+            )}
+
+            {/* Quick Adjustment — log cal without picking a food */}
+            {!showAddForm && (
+              <TouchableOpacity
+                onPress={() => setQuickAdjustVisible(true)}
+                style={styles.quickAdjustButton}
+                activeOpacity={0.7}
+              >
+                <Zap size={16} color="#F97316" />
+                <Text style={styles.quickAdjustButtonText}>
+                  Quick Adjustment — calories only
+                </Text>
+              </TouchableOpacity>
             )}
 
             {/* Search Results — from your saved foods library */}
@@ -1525,10 +1823,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         visible={showFoodPreview}
         food={previewFood}
         source={previewSource}
+        inventoryMatch={inventoryMatch}
         onClose={() => {
           setShowFoodPreview(false);
           setPreviewFood(null);
           setScannedBarcode(null);
+          setInventoryMatch(null);
         }}
         onLogMeal={handleLogMealFromPreview}
         onSaveToLibrary={previewSource === "api" ? handleSaveToLibrary : undefined}
@@ -1575,6 +1875,29 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           await fetchRecentAndFavorites();
         }}
       />
+
+      {/* Quick Adjustment Modal */}
+      <QuickAdjustmentModal
+        visible={quickAdjustVisible}
+        saving={savingQuickAdjust}
+        onClose={() => setQuickAdjustVisible(false)}
+        onSave={handleQuickAdjustment}
+      />
+
+      {/* Weekly Summary Modal */}
+      <MealsWeeklySummaryModal
+        visible={weeklySummaryVisible}
+        historicalLogs={historicalLogs}
+        goals={goals}
+        onClose={() => setWeeklySummaryVisible(false)}
+      />
+
+      {/* Undo snackbar */}
+      <MealUndoSnackbar
+        visible={lastLogId !== null}
+        label={lastLogLabel}
+        onUndo={handleUndoLastLog}
+      />
     </>
   );
 }
@@ -1589,6 +1912,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   refreshIndicator: {
     paddingVertical: 12,
@@ -1929,6 +2255,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedForeground,
     marginLeft: 8,
+  },
+  headerActionButton: {
+    padding: 6,
+  },
+  distributionWrap: {
+    marginHorizontal: 20,
+  },
+  weeklySummaryButton: {
+    marginHorizontal: 20,
+    marginTop: -4,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "rgba(249, 115, 22, 0.3)",
+    borderRadius: 10,
+    backgroundColor: "rgba(249, 115, 22, 0.06)",
+  },
+  weeklySummaryButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#F97316",
+  },
+  quickAdjustButton: {
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    backgroundColor: "#1F2937",
+  },
+  quickAdjustButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#F97316",
   },
   templatesButton: {
     marginHorizontal: 20,
