@@ -92,8 +92,8 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
 
       <View style={styles.body}>
         <MiniRing
-          size={72}
-          strokeWidth={7}
+          size={64}
+          strokeWidth={6}
           value={totals.calories}
           goal={goals.calories}
           color={macroColor(totals.calories, goals.calories, "calories")}
@@ -105,7 +105,6 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
             label="Protein"
             value={totals.protein}
             goal={goals.protein}
-            unit="g"
             ratio={macroProgress(totals.protein, goals.protein)}
             color={macroColor(totals.protein, goals.protein, "protein")}
           />
@@ -113,7 +112,6 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
             label="Carbs"
             value={totals.carbs}
             goal={goals.carbs}
-            unit="g"
             ratio={macroProgress(totals.carbs, goals.carbs)}
             color={macroColor(totals.carbs, goals.carbs, "carbs")}
           />
@@ -173,29 +171,30 @@ function MacroLine({
   label,
   value,
   goal,
-  unit,
   ratio,
   color,
 }: {
   label: string;
   value: number;
   goal: number | null;
-  unit: string;
   ratio: number;
   color: string;
 }) {
+  // Stacked layout (label tiny on top, value + bar below) so the row
+  // never overflows even when goals push the value width.
   return (
-    <View style={{ marginBottom: 6 }}>
-      <View style={lineStyles.row}>
-        <Text style={lineStyles.label}>{label}</Text>
-        <Text style={lineStyles.value}>
-          {Math.round(value)}
-          {goal != null ? `/${Math.round(goal)}` : ""}
-          {unit}
-        </Text>
-      </View>
+    <View style={{ marginBottom: 8 }}>
+      <Text style={lineStyles.label} numberOfLines={1}>
+        {label.toUpperCase()}
+      </Text>
+      <Text style={lineStyles.value} numberOfLines={1}>
+        {Math.round(value)}
+        {goal != null ? ` / ${Math.round(goal)}g` : "g"}
+      </Text>
       <View style={lineStyles.track}>
-        <View style={[lineStyles.fill, { width: `${ratio * 100}%`, backgroundColor: color }]} />
+        <View
+          style={[lineStyles.fill, { width: `${ratio * 100}%`, backgroundColor: color }]}
+        />
       </View>
     </View>
   );
@@ -253,26 +252,24 @@ const ringStyles = StyleSheet.create({
 });
 
 const lineStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 2,
-  },
   label: {
-    fontSize: 11,
+    fontSize: 9,
     color: "#9CA3AF",
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
   value: {
     fontSize: 11,
     color: "#FFFFFF",
     fontWeight: "600",
+    marginTop: 1,
   },
   track: {
     height: 3,
     backgroundColor: "rgba(255,255,255,0.08)",
     borderRadius: 1.5,
     overflow: "hidden",
+    marginTop: 3,
   },
   fill: {
     height: 3,
