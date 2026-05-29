@@ -164,6 +164,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [inventoryMatch, setInventoryMatch] =
     useState<InventoryMatchSummary | null>(null);
 
+  // Tracks whether the currently-previewed food has been corrected in
+  // this session — surfaces user_corrected=true when an api-source food
+  // gets persisted to saved_foods at log time.
+  const [previewWasEdited, setPreviewWasEdited] = useState(false);
+
   // Templates modal + savedFoods cache
   const [templatesVisible, setTemplatesVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
@@ -395,6 +400,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setPreviewFood(food);
     setPreviewSource("saved");
     setScannedBarcode(food.barcode);
+    setPreviewWasEdited(false);
     setShowFoodPreview(true);
     setSearchQuery("");
   };
@@ -468,7 +474,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         setPreviewFood(savedFood);
         setPreviewSource("saved");
         setScannedBarcode(barcode);
-        setShowFoodPreview(true);
+        setPreviewWasEdited(false);
+    setShowFoodPreview(true);
         setBarcodeLoading(false);
         return;
       }
@@ -502,7 +509,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         setPreviewFood(productData);
         setPreviewSource("api");
         setScannedBarcode(barcode);
-        setShowFoodPreview(true);
+        setPreviewWasEdited(false);
+    setShowFoodPreview(true);
         setBarcodeLoading(false);
         return;
       }
@@ -616,6 +624,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           image_front_url: apiFood.imageFrontUrl,
           image_back_url: apiFood.imageBackUrl,
           is_favorite: false,
+          user_corrected: previewWasEdited,
+          auto_scaled: apiFood.auto_scaled,
         });
         savedFoodId = newSavedFood.id;
       } else if ("id" in food) {
@@ -737,6 +747,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         image_front_url: food.imageFrontUrl,
         image_back_url: food.imageBackUrl,
         is_favorite: false,
+        user_corrected: false,
+        auto_scaled: food.auto_scaled,
       });
 
       Alert.alert("Success", "Food saved to your library");
@@ -748,6 +760,78 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   };
 
   // Handle toggle favorite
+  // Handle nutrition correction from the preview modal. Updates the
+  // preview's food in-memory so the user sees the new values immediately.
+  // For saved-source foods, persists to saved_foods (and sets
+  // user_corrected=true). For api-source foods, the correction is held
+  // until log time; the existing log flow then writes the corrected
+  // values into saved_foods with user_corrected=true.
+  const handleEditPreviewFood = async (next: {
+    name: string;
+    brand: string | null;
+    serving_size: string | null;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+  }) => {
+    if (!previewFood) return;
+    setPreviewWasEdited(true);
+    if (previewSource === "saved" && "id" in previewFood) {
+      try {
+        const { data, error } = await supabase
+          .from("saved_foods")
+          .update({
+            name: next.name,
+            brand: next.brand,
+            serving_size: next.serving_size,
+            calories: next.calories,
+            protein: next.protein,
+            carbs: next.carbs,
+            fats: next.fats,
+            sugars: next.sugars,
+            sodium_mg: next.sodium_mg,
+            fiber_g: next.fiber_g,
+            user_corrected: true,
+          })
+          .eq("id", (previewFood as SavedFood).id)
+          .select()
+          .single();
+        if (error) throw error;
+        if (data) setPreviewFood(data as SavedFood);
+        // Refresh recents/favorites so the corrected values flow through
+        await fetchRecentAndFavorites();
+        await fetchAllSavedFoods();
+      } catch (error) {
+        console.error("Failed to save correction:", error);
+        Alert.alert("Error", "Failed to save changes");
+        throw error;
+      }
+    } else {
+      // api source — update the in-flight preview only.
+      setPreviewFood((prev) => {
+        if (!prev) return prev;
+        return {
+          ...(prev as any),
+          name: next.name,
+          brand: next.brand,
+          servingSize: next.serving_size,
+          serving_size: next.serving_size,
+          calories: next.calories,
+          protein: next.protein,
+          carbs: next.carbs,
+          fats: next.fats,
+          sugars: next.sugars,
+          sodium_mg: next.sodium_mg,
+          fiber_g: next.fiber_g,
+        } as any;
+      });
+    }
+  };
+
   const handleToggleFavorite = async (food: SavedFood) => {
     try {
       await toggleFavorite(food.id);
@@ -805,6 +889,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           image_front_url: null,
           image_back_url: null,
           is_favorite: false,
+          user_corrected: false,
+          auto_scaled: false,
         });
         savedFoodId = newSavedFood.id;
       }
@@ -877,6 +963,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setPreviewFood(food);
     setPreviewSource("saved");
     setScannedBarcode(food.barcode);
+    setPreviewWasEdited(false);
     setShowFoodPreview(true);
   };
 
@@ -1837,6 +1924,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           // Update the preview food to reflect the change
           setPreviewFood({ ...food, is_favorite: !food.is_favorite });
         } : undefined}
+        onEditFood={handleEditPreviewFood}
       />
 
       {/* Manual Food Entry Modal */}

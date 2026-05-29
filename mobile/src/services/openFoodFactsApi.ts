@@ -59,6 +59,10 @@ export interface ProductData {
   imagePrimaryUrl: string | null;
   imageFrontUrl: string | null;
   imageBackUrl: string | null;
+  auto_scaled: boolean;
+  // True when OFF only had per-100 g/mL data and we couldn't auto-scale
+  // (e.g. no parseable serving size). Presentation-only — not persisted.
+  per100Only: boolean;
 }
 
 const API_BASE_URL = "https://world.openfoodfacts.org/api/v2";
@@ -138,6 +142,39 @@ export async function getProductByBarcode(barcode: string): Promise<ProductData 
 }
 
 /**
+ * Pull a numeric grams/mL quantity out of a free-form serving_size string.
+ * Examples:
+ *   "237 mL"               -> 237
+ *   "1 bottle (237 mL)"    -> 237
+ *   "8 fl oz (237 mL)"     -> 237 (fl oz isn't matched; only g/ml are)
+ *   "60g"                  -> 60
+ *   "1 packet"             -> null
+ */
+export function parseServingSizeToGrams(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const matches = Array.from(
+    s.matchAll(/(\d+(?:\.\d+)?)\s*(g|ml)\b/gi),
+  );
+  if (matches.length === 0) return null;
+  // Prefer a value inside parentheses if present (often the metric
+  // restatement of a colloquial unit like "1 bottle (237 mL)").
+  const parenMatch = s.match(/\(([^)]*?(\d+(?:\.\d+)?)\s*(g|ml)\b[^)]*)\)/i);
+  if (parenMatch) {
+    const n = parseFloat(parenMatch[2]);
+    if (!isNaN(n)) return n;
+  }
+  const last = matches[matches.length - 1];
+  const n = parseFloat(last[1]);
+  return isNaN(n) ? null : n;
+}
+
+// Guardrail: refuse to auto-scale outside this range. Values outside
+// suggest a data error (e.g. a 10g bottle, an 800g packet) — better to
+// leave the per-100 g/mL value visible and let the user Edit.
+const MIN_MULTIPLIER = 0.25;
+const MAX_MULTIPLIER = 10;
+
+/**
  * Parse Open Food Facts product data into our app's format
  */
 function parseProductData(product: OpenFoodFactsProduct): ProductData {
@@ -155,17 +192,57 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
   // Extract serving size
   const servingSize = product.serving_size || product.quantity || null;
 
-  // Extract nutritional information (prefer per serving if available, otherwise per 100g)
-  const calories = nutriments["energy-kcal_serving"] || nutriments["energy-kcal_100g"] || null;
-  const protein = nutriments.proteins_serving || nutriments.proteins_100g || null;
-  const carbs = nutriments.carbohydrates_serving || nutriments.carbohydrates_100g || null;
-  const fats = nutriments.fat_serving || nutriments.fat_100g || null;
-  const sugars = nutriments.sugars_serving || nutriments.sugars_100g || null;
-  const fiber = nutriments.fiber_serving || nutriments.fiber_100g || null;
-  // Open Food Facts reports sodium in grams; convert to mg. Fall back to
-  // salt (g) * 393 if sodium isn't reported (salt ≈ sodium * 2.5).
-  const sodiumG = nutriments.sodium_serving || nutriments.sodium_100g || null;
-  const saltG = nutriments.salt_serving || nutriments.salt_100g || null;
+  // For each nutrient prefer the _serving value; fall back to _100g
+  // when OFF didn't populate _serving. When the fallback fires AND the
+  // serving size parses to g/mL, scale the per-100 value to match.
+  const calServing = nutriments["energy-kcal_serving"];
+  const calPer100 = nutriments["energy-kcal_100g"];
+  const proServing = nutriments.proteins_serving;
+  const proPer100 = nutriments.proteins_100g;
+  const carbServing = nutriments.carbohydrates_serving;
+  const carbPer100 = nutriments.carbohydrates_100g;
+  const fatServing = nutriments.fat_serving;
+  const fatPer100 = nutriments.fat_100g;
+  const sugServing = nutriments.sugars_serving;
+  const sugPer100 = nutriments.sugars_100g;
+  const fibServing = nutriments.fiber_serving;
+  const fibPer100 = nutriments.fiber_100g;
+  // Sodium: OFF reports in grams; we convert to mg downstream. Fall back
+  // to salt × 393 (salt ≈ sodium × 2.5).
+  const sodServingG = nutriments.sodium_serving;
+  const sodPer100G = nutriments.sodium_100g;
+  const saltServingG = nutriments.salt_serving;
+  const saltPer100G = nutriments.salt_100g;
+
+  const usedFallback = calServing == null && calPer100 != null;
+  const grams = parseServingSizeToGrams(servingSize);
+  let multiplier = 1;
+  let autoScaled = false;
+  if (usedFallback && grams != null && grams > 0 && grams !== 100) {
+    const m = grams / 100;
+    if (m >= MIN_MULTIPLIER && m <= MAX_MULTIPLIER) {
+      multiplier = m;
+      autoScaled = true;
+    }
+  }
+
+  const scale = (
+    perServing: number | null | undefined,
+    per100: number | null | undefined,
+  ): number | null => {
+    if (perServing != null) return perServing;
+    if (per100 == null) return null;
+    return per100 * multiplier;
+  };
+
+  const calories = scale(calServing, calPer100);
+  const protein = scale(proServing, proPer100);
+  const carbs = scale(carbServing, carbPer100);
+  const fats = scale(fatServing, fatPer100);
+  const sugars = scale(sugServing, sugPer100);
+  const fiber = scale(fibServing, fibPer100);
+  const sodiumG = scale(sodServingG, sodPer100G);
+  const saltG = scale(saltServingG, saltPer100G);
   const sodiumMg =
     sodiumG != null ? sodiumG * 1000 :
     saltG != null ? saltG * 393 :
@@ -181,16 +258,18 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
     brand,
     category,
     servingSize,
-    calories: calories ? Math.round(calories) : null,
-    protein: protein ? Math.round(protein * 10) / 10 : null,
-    carbs: carbs ? Math.round(carbs * 10) / 10 : null,
-    fats: fats ? Math.round(fats * 10) / 10 : null,
-    sugars: sugars ? Math.round(sugars * 10) / 10 : null,
+    calories: calories != null ? Math.round(calories) : null,
+    protein: protein != null ? Math.round(protein * 10) / 10 : null,
+    carbs: carbs != null ? Math.round(carbs * 10) / 10 : null,
+    fats: fats != null ? Math.round(fats * 10) / 10 : null,
+    sugars: sugars != null ? Math.round(sugars * 10) / 10 : null,
     sodium_mg: sodiumMg != null ? Math.round(sodiumMg) : null,
     fiber_g: fiber != null ? Math.round(fiber * 10) / 10 : null,
     imagePrimaryUrl,
     imageFrontUrl,
     imageBackUrl,
+    auto_scaled: autoScaled,
+    per100Only: usedFallback && !autoScaled,
   };
 }
 
