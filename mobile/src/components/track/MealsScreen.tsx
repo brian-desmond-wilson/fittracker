@@ -134,7 +134,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [searchResults, setSearchResults] = useState<SavedFood[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // Barcode scanner state
+  // Barcode scanner state. handlingBarcodeRef guards against the camera
+  // firing onBarcodeScanned multiple times for the same scan — without it,
+  // 4–5 parallel handlers race, the saved-foods path opens a preview AND
+  // the API path hits rate-limits, and queued alerts make "OK" seem stuck.
+  const handlingBarcodeRef = useRef(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [showFoodPreview, setShowFoodPreview] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -407,6 +411,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   // Handle barcode scanned
   const handleBarcodeScanned = async (barcode: string) => {
+    // Drop repeat events from the camera while we're already processing
+    // one. Cleared in the finally block below.
+    if (handlingBarcodeRef.current) return;
+    handlingBarcodeRef.current = true;
     setShowBarcodeScanner(false);
     setBarcodeLoading(true);
 
@@ -462,6 +470,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       Alert.alert("Error", "Failed to look up barcode");
     } finally {
       setBarcodeLoading(false);
+      handlingBarcodeRef.current = false;
     }
   };
 
