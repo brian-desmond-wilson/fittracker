@@ -25,6 +25,9 @@ import {
   Share2,
   Zap,
   BarChart3,
+  Search,
+  ScanBarcode,
+  X,
 } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
@@ -46,7 +49,6 @@ import {
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { FoodPreviewModal } from "./FoodPreviewModal";
-import { QuickActionBar } from "./meals/QuickActionBar";
 import { RecentFoodsRow } from "./meals/RecentFoodsRow";
 import { RecentFoodChips } from "./meals/RecentFoodChips";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
@@ -1403,22 +1405,46 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
+        {/* Header — back, search (with barcode), add — mirrors Food Inventory */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <ChevronLeft size={24} color="#FFFFFF" />
-            <Text style={styles.backText}>Track</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleExportCsv}
-            disabled={exporting}
-            style={styles.headerActionButton}
-            activeOpacity={0.7}
-          >
-            <Share2
-              size={20}
-              color={exporting ? colors.mutedForeground : colors.foreground}
+          <View style={styles.searchBar}>
+            <Search size={20} color={colors.mutedForeground} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search foods..."
+              placeholderTextColor={colors.mutedForeground}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
             />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity
+                onPress={() => setSearchQuery("")}
+                activeOpacity={0.7}
+                style={styles.searchActionButton}
+              >
+                <X size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowBarcodeScanner(true)}
+                activeOpacity={0.7}
+                style={styles.searchActionButton}
+              >
+                <ScanBarcode size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.headerAddButton}
+            onPress={handleOpenAddForm}
+            activeOpacity={0.7}
+            disabled={showAddForm}
+          >
+            <Plus size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -1441,10 +1467,21 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             />
           }
         >
-          {/* Title */}
+          {/* Title (Share moved here from header) */}
           <View style={styles.titleContainer}>
             <Utensils size={32} color="#F97316" strokeWidth={2} />
             <Text style={styles.pageTitle}>Meals & Snacks</Text>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={exporting}
+              style={styles.titleShareButton}
+              activeOpacity={0.7}
+            >
+              <Share2
+                size={22}
+                color={exporting ? colors.mutedForeground : colors.foreground}
+              />
+            </TouchableOpacity>
           </View>
 
           {/* Date Navigation - with swipe gesture */}
@@ -1535,16 +1572,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 Weekly Summary
               </Text>
             </TouchableOpacity>
-
-            {/* Quick Action Bar - Barcode, Search, Add */}
-            {!showAddForm && (
-              <QuickActionBar
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                onBarcodePress={() => setShowBarcodeScanner(true)}
-                onAddPress={handleOpenAddForm}
-              />
-            )}
 
             {/* Quick Adjustment — log cal without picking a food */}
             {!showAddForm && (
@@ -1996,13 +2023,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
   },
   refreshIndicator: {
     paddingVertical: 12,
@@ -2010,13 +2037,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   backButton: {
+    padding: 4,
+  },
+  searchBar: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
   },
-  backText: {
-    fontSize: 17,
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     color: colors.foreground,
+  },
+  searchActionButton: {
+    padding: 4,
+  },
+  headerAddButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#F97316",
+    alignItems: "center",
+    justifyContent: "center",
   },
   content: {
     flex: 1,
@@ -2064,6 +2113,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 16,
+  },
+  titleShareButton: {
+    marginLeft: "auto",
+    padding: 6,
   },
   pageTitle: {
     fontSize: 28,
@@ -2343,9 +2396,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedForeground,
     marginLeft: 8,
-  },
-  headerActionButton: {
-    padding: 6,
   },
   distributionWrap: {
     marginHorizontal: 20,
