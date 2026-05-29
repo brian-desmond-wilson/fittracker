@@ -63,33 +63,78 @@ export interface ProductData {
 
 const API_BASE_URL = "https://world.openfoodfacts.org/api/v2";
 
+// Open Food Facts requires a unique User-Agent identifying the client.
+// Without it, requests may be silently rate-limited (HTTP 429) or blocked.
+// Format guidance from their docs: "AppName/Version (ContactURL)".
+const USER_AGENT =
+  "FitTracker/1.0 (https://github.com/brian-desmond-wilson/fittracker)";
+
 /**
- * Fetch product information by barcode from Open Food Facts
+ * Custom error class so callers can distinguish "product genuinely not in
+ * the database" (resolved to null) from transient API failures (thrown).
+ */
+export class OpenFoodFactsError extends Error {
+  readonly status: number | null;
+  readonly rateLimited: boolean;
+  constructor(status: number | null, message: string) {
+    super(message);
+    this.name = "OpenFoodFactsError";
+    this.status = status;
+    this.rateLimited = status === 429;
+  }
+}
+
+/**
+ * Fetch product information by barcode from Open Food Facts.
  *
  * @param barcode - The product barcode (UPC, EAN, etc.)
- * @returns Product data or null if not found
+ * @returns Product data on hit, `null` if the API confirmed "not found".
+ * @throws OpenFoodFactsError on transient failures (rate limit, network,
+ *         5xx). The caller is expected to surface a "try again" message
+ *         rather than telling the user "not found".
  */
 export async function getProductByBarcode(barcode: string): Promise<ProductData | null> {
+  let response: Response;
   try {
-    const response = await fetch(`${API_BASE_URL}/product/${barcode}.json`);
+    response = await fetch(`${API_BASE_URL}/product/${barcode}.json`, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+    });
+  } catch (networkErr) {
+    console.error("Open Food Facts network error:", networkErr);
+    throw new OpenFoodFactsError(null, "Network error reaching Open Food Facts");
+  }
 
-    if (!response.ok) {
-      console.error(`Open Food Facts API error: ${response.status}`);
-      return null;
-    }
-
-    const data: OpenFoodFactsResponse = await response.json();
-
-    if (data.status === 0 || !data.product) {
-      console.log(`Product not found for barcode: ${barcode}`);
-      return null;
-    }
-
-    return parseProductData(data.product);
-  } catch (error) {
-    console.error("Error fetching product from Open Food Facts:", error);
+  // 404 from this endpoint means "barcode not in OFF" -> a clean "not
+  // found" result. Other non-OK statuses (especially 429) are transient.
+  if (response.status === 404) {
     return null;
   }
+  if (!response.ok) {
+    console.error(`Open Food Facts API error: ${response.status}`);
+    throw new OpenFoodFactsError(
+      response.status,
+      response.status === 429
+        ? "Open Food Facts is rate-limiting requests; try again shortly."
+        : `Open Food Facts API returned ${response.status}`,
+    );
+  }
+
+  let data: OpenFoodFactsResponse;
+  try {
+    data = await response.json();
+  } catch (parseErr) {
+    console.error("Open Food Facts JSON parse error:", parseErr);
+    throw new OpenFoodFactsError(null, "Bad response from Open Food Facts");
+  }
+
+  if (data.status === 0 || !data.product) {
+    return null;
+  }
+
+  return parseProductData(data.product);
 }
 
 /**
@@ -222,7 +267,13 @@ export async function searchProducts(
 ): Promise<ProductData[]> {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/search?search_terms=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}&json=true`
+      `${API_BASE_URL}/search?search_terms=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}&json=true`,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "application/json",
+        },
+      },
     );
 
     if (!response.ok) {

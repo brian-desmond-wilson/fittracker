@@ -20,7 +20,11 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
 import { MealLog, MealType, SavedFood, RecentFoodItem } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
-import { getProductByBarcode, ProductData } from "@/src/services/openFoodFactsApi";
+import {
+  getProductByBarcode,
+  OpenFoodFactsError,
+  ProductData,
+} from "@/src/services/openFoodFactsApi";
 import {
   getSavedFoodByBarcode,
   createSavedFood,
@@ -419,7 +423,28 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       }
 
       // Step 2: Check Open Food Facts API
-      const productData = await getProductByBarcode(barcode);
+      let productData: ProductData | null = null;
+      try {
+        productData = await getProductByBarcode(barcode);
+      } catch (apiErr) {
+        // Transient API failure (rate limit / network / 5xx). Surface a
+        // try-again message rather than falsely telling the user the
+        // food isn't in the database.
+        if (apiErr instanceof OpenFoodFactsError && apiErr.rateLimited) {
+          Alert.alert(
+            "Open Food Facts is busy",
+            "Their service is rate-limiting right now. Try the scan again in a moment, or tap + to add this food manually."
+          );
+        } else {
+          Alert.alert(
+            "Couldn't reach Open Food Facts",
+            "We couldn't look up this barcode online. Check your connection and try again — or tap + to add it manually."
+          );
+        }
+        setBarcodeLoading(false);
+        return;
+      }
+
       if (productData) {
         setPreviewFood(productData);
         setPreviewSource("api");
@@ -429,7 +454,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         return;
       }
 
-      // Step 3: Not found - open manual entry
+      // Step 3: Genuinely not found in OFF - open manual entry
       setScannedBarcode(barcode);
       setShowManualEntry(true);
     } catch (error) {
