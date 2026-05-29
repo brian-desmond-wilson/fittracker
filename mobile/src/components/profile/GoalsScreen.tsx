@@ -36,6 +36,9 @@ interface GoalsScreenProps {
     water_workout_bonus_oz: string;
     water_display_unit: 'oz' | 'L';
     water_only_counts: boolean;
+    breakfast_time: string;  // "HH:MM"
+    lunch_time: string;
+    dinner_time: string;
   };
   onClose: () => void;
   onSave: () => void;
@@ -84,13 +87,57 @@ function lbsToKg(lbs: number): number {
   return lbs / LBS_PER_KG;
 }
 
+type PickerTarget = 'start' | 'end' | 'breakfast' | 'lunch' | 'dinner';
+
+function pickerTitle(t: PickerTarget | null): string {
+  switch (t) {
+    case 'start': return 'Window Start';
+    case 'end': return 'Window End';
+    case 'breakfast': return 'Breakfast Time';
+    case 'lunch': return 'Lunch Time';
+    case 'dinner': return 'Dinner Time';
+    default: return '';
+  }
+}
+
+function pickerValue(
+  t: PickerTarget | null,
+  fd: GoalsScreenProps['initialData'],
+): string {
+  switch (t) {
+    case 'start': return fd.water_window_start;
+    case 'end': return fd.water_window_end;
+    case 'breakfast': return fd.breakfast_time;
+    case 'lunch': return fd.lunch_time;
+    case 'dinner': return fd.dinner_time;
+    default: return '08:00';
+  }
+}
+
+function applyPicker<T extends GoalsScreenProps['initialData']>(
+  fd: T,
+  t: PickerTarget | null,
+  hhmm: string,
+): T {
+  switch (t) {
+    case 'start': return { ...fd, water_window_start: hhmm };
+    case 'end': return { ...fd, water_window_end: hhmm };
+    case 'breakfast': return { ...fd, breakfast_time: hhmm };
+    case 'lunch': return { ...fd, lunch_time: hhmm };
+    case 'dinner': return { ...fd, dinner_time: hhmm };
+    default: return fd;
+  }
+}
+
 export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScreenProps) {
   const insets = useSafeAreaInsets();
   const [formData, setFormData] = useState(initialData);
   const [waterUnit, setWaterUnit] = useState<WaterUnit>('oz');
   const [waterInput, setWaterInput] = useState(initialData.target_water_oz);
   const [saving, setSaving] = useState(false);
-  const [pickerTarget, setPickerTarget] = useState<null | 'start' | 'end'>(null);
+  const [pickerTarget, setPickerTarget] = useState<
+    null | 'start' | 'end' | 'breakfast' | 'lunch' | 'dinner'
+  >(null);
 
   // Height + weight in imperial (DB stays in cm / kg)
   const initialHeight = (() => {
@@ -176,6 +223,16 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
         weightKg = Math.round(lbsToKg(lbsN) * 10) / 10;
       }
 
+      // Validate meal times ordering (breakfast < lunch < dinner).
+      if (
+        formData.breakfast_time >= formData.lunch_time ||
+        formData.lunch_time >= formData.dinner_time
+      ) {
+        console.error('Meal times must be in order: breakfast < lunch < dinner');
+        setSaving(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -196,6 +253,9 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           water_workout_bonus_oz: bonusOz,
           water_display_unit: formData.water_display_unit,
           water_only_counts: formData.water_only_counts,
+          breakfast_time: formData.breakfast_time,
+          lunch_time: formData.lunch_time,
+          dinner_time: formData.dinner_time,
         })
         .eq('id', userId);
 
@@ -424,6 +484,56 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
               />
             </View>
 
+            {/* Meal target times (used by the meal pace coach) */}
+            <View style={styles.formField}>
+              <Text style={styles.label}>Meal Times</Text>
+              <Text style={styles.fieldHelp}>
+                When you typically eat. The pace coach uses these to suggest
+                catch-up amounts by your next meal.
+              </Text>
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Breakfast</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('breakfast')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.breakfast_time)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Lunch</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('lunch')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.lunch_time)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={[styles.row, { marginTop: 8 }]}>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Dinner</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('dinner')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.dinner_time)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfField} />
+              </View>
+            </View>
+
             <View style={styles.formField}>
               <Text style={styles.label}>Water Pace Window</Text>
               <Text style={styles.fieldHelp}>
@@ -556,24 +666,16 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>
-                {pickerTarget === 'start' ? 'Window Start' : 'Window End'}
+                {pickerTitle(pickerTarget)}
               </Text>
               <DateTimePicker
-                value={dateFromHhmm(
-                  pickerTarget === 'start'
-                    ? formData.water_window_start
-                    : formData.water_window_end
-                )}
+                value={dateFromHhmm(pickerValue(pickerTarget, formData))}
                 mode="time"
                 display="spinner"
                 onChange={(_e, picked) => {
                   if (picked) {
                     const hhmm = hhmmFromDate(picked);
-                    setFormData((prev) =>
-                      pickerTarget === 'start'
-                        ? { ...prev, water_window_start: hhmm }
-                        : { ...prev, water_window_end: hhmm }
-                    );
+                    setFormData((prev) => applyPicker(prev, pickerTarget, hhmm));
                   }
                 }}
                 textColor="#FFFFFF"
@@ -590,11 +692,7 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
       ) : (
         pickerTarget !== null && (
           <DateTimePicker
-            value={dateFromHhmm(
-              pickerTarget === 'start'
-                ? formData.water_window_start
-                : formData.water_window_end
-            )}
+            value={dateFromHhmm(pickerValue(pickerTarget, formData))}
             mode="time"
             display="default"
             onChange={(_e, picked) => {
@@ -602,11 +700,7 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
               setPickerTarget(null);
               if (picked && target) {
                 const hhmm = hhmmFromDate(picked);
-                setFormData((prev) =>
-                  target === 'start'
-                    ? { ...prev, water_window_start: hhmm }
-                    : { ...prev, water_window_end: hhmm }
-                );
+                setFormData((prev) => applyPicker(prev, target, hhmm));
               }
             }}
           />

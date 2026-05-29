@@ -48,6 +48,8 @@ import {
   computeMealsRollingStats,
   buildMealsSeries,
 } from "@/src/lib/mealStats";
+import { computeMealPace, MealPaceState } from "@/src/lib/mealPace";
+import { MealsPaceLines } from "./MealsPaceLines";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -105,6 +107,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     sugars: null,
     fiber_g: null,
   });
+
+  // Pace window + meal times from profile
+  const [windowStart, setWindowStart] = useState("08:00");
+  const [windowEnd, setWindowEnd] = useState("23:00");
+  const [breakfastTime, setBreakfastTime] = useState("08:00");
+  const [lunchTime, setLunchTime] = useState("12:00");
+  const [dinnerTime, setDinnerTime] = useState("18:00");
 
   // Edit-meal modal
   const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
@@ -350,7 +359,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         const { data } = await supabase
           .from("profiles")
           .select(
-            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g"
+            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g, water_window_start, water_window_end, breakfast_time, lunch_time, dinner_time"
           )
           .eq("id", user.id)
           .single();
@@ -364,6 +373,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             sugars: data.target_sugars_g ?? null,
             fiber_g: data.target_fiber_g ?? null,
           });
+          if (data.water_window_start) setWindowStart(String(data.water_window_start).slice(0, 5));
+          if (data.water_window_end) setWindowEnd(String(data.water_window_end).slice(0, 5));
+          if (data.breakfast_time) setBreakfastTime(String(data.breakfast_time).slice(0, 5));
+          if (data.lunch_time) setLunchTime(String(data.lunch_time).slice(0, 5));
+          if (data.dinner_time) setDinnerTime(String(data.dinner_time).slice(0, 5));
         }
       } catch (error) {
         console.error("Error fetching macro goals:", error);
@@ -920,6 +934,36 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // intake is shown regardless of search query.
   const dayTotals = useMemo(() => sumNutrition(dayMeals), [dayMeals]);
 
+  // Pace coach for today's view only. (`isViewingToday` is a function
+  // defined above; cache its result here for memo deps.)
+  const viewingToday = viewingDateStr === todayStr;
+  const mealTimes = useMemo(
+    () => ({ breakfast: breakfastTime, lunch: lunchTime, dinner: dinnerTime }),
+    [breakfastTime, lunchTime, dinnerTime]
+  );
+  const caloriePace: MealPaceState | null = useMemo(() => {
+    if (!viewingToday) return null;
+    return computeMealPace({
+      currentValue: dayTotals.calories,
+      goal: goals.calories,
+      windowStart,
+      windowEnd,
+      mealTimes,
+      macro: "calories",
+    });
+  }, [viewingToday, dayTotals.calories, goals.calories, windowStart, windowEnd, mealTimes]);
+  const proteinPace: MealPaceState | null = useMemo(() => {
+    if (!viewingToday) return null;
+    return computeMealPace({
+      currentValue: dayTotals.protein,
+      goal: goals.protein,
+      windowStart,
+      windowEnd,
+      mealTimes,
+      macro: "protein",
+    });
+  }, [viewingToday, dayTotals.protein, goals.protein, windowStart, windowEnd, mealTimes]);
+
   // Search-filtered subset of dayMeals (used for the list rendering only).
   const filteredDayMeals = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1063,6 +1107,16 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               totals={dayTotals}
               goals={goals}
             />
+
+            {/* Pace coach (today only) */}
+            {viewingToday && (
+              <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
+                <MealsPaceLines
+                  caloriePace={caloriePace}
+                  proteinPace={proteinPace}
+                />
+              </View>
+            )}
 
             {/* Insights (streaks + 14-day charts) */}
             <MealsInsightsCard

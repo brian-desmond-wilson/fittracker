@@ -58,6 +58,9 @@ export default function Profile() {
     water_workout_bonus_oz: "0",
     water_display_unit: "oz" as "oz" | "L",
     water_only_counts: false,
+    breakfast_time: "08:00",
+    lunch_time: "12:00",
+    dinner_time: "18:00",
   });
 
   useEffect(() => {
@@ -111,6 +114,9 @@ export default function Profile() {
           water_display_unit:
             profile.water_display_unit === "L" ? "L" : "oz",
           water_only_counts: !!profile.water_only_counts,
+          breakfast_time: (profile.breakfast_time || "08:00").slice(0, 5),
+          lunch_time: (profile.lunch_time || "12:00").slice(0, 5),
+          dinner_time: (profile.dinner_time || "18:00").slice(0, 5),
         });
       }
     } catch (error) {
