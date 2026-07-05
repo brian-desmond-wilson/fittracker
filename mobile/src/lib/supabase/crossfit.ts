@@ -962,7 +962,7 @@ export async function searchMovementsWithTier(query: string): Promise<ExerciseWi
 /**
  * Fetch a single movement with all its attributes for inheritance
  */
-export async function fetchMovementWithAttributes(exerciseId: string): Promise<Exercise> {
+export async function fetchMovementWithAttributes(exerciseId: string): Promise<ExerciseWithDetails> {
   const { data, error } = await supabase
     .from('exercises')
     .select(`
