@@ -1,92 +1,40 @@
 # FitTracker
 
-A modern fitness tracking web application built with Next.js, Supabase, and Tailwind CSS.
+A personal, all-in-one fitness tracking app for iOS/Android, built with React Native (Expo) and Supabase.
 
 ## Features
 
-- 💪 Workout tracking and exercise library
-- 🍎 Nutrition logging with calorie counting
-- 📊 Progress tracking (weight, measurements, photos)
-- 🏠 Dashboard with daily summaries
-- 👤 User profiles and goals
-- 📱 Mobile-first responsive design
-- 🔒 Secure authentication with Supabase
+- 💪 **Training** — program templates, workout logging (sets/reps/weight/difficulty), exercise & movement library, and CrossFit WODs/classes
+- 🍎 **Meals** — meal logging with macros, barcode scanning (Open Food Facts), saved foods, templates, and insights (streaks, charts)
+- 💧 **Water** — intake tracking with goals, pacing, and reminders
+- ⚖️ **Body** — weight (with trend chart + reminders), measurements, and progress photos
+- 🥫 **Food inventory** — multi-location pantry/fridge/freezer tracking with a shopping list
+- 📅 **Schedule** — a day-view calendar with categories, templates, and notifications
+- 🌅 **Morning routines** — checklist-driven daily routines
+- 🔒 Supabase auth, with data synced live to Postgres
 
-## Tech Stack
+## Repository layout
 
-- **Framework**: Next.js 15.5.4 (App Router)
-- **Database**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
-- **Styling**: Tailwind CSS v4
-- **UI Components**: shadcn/ui (Radix UI)
-- **Language**: TypeScript
-- **Date Handling**: date-fns
-- **Icons**: lucide-react
+| Path | What it is |
+|------|-----------|
+| [`mobile/`](mobile/) | **The app** — Expo / React Native (expo-router). Active development lives here. See [`mobile/README.md`](mobile/README.md) for setup. |
+| [`supabase/`](supabase/) | Database schema, migrations, and edge functions (exercise/movement/WOD image generation, notification dispatch). |
+| [`scripts/`](scripts/) | One-off tooling (e.g. bulk program import) and manually-run migrations. |
 
-## Getting Started
+> **Note:** This repo previously contained a Next.js web app served at `/app2`. It has been removed — the mobile app is the single client and talks to Supabase directly.
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+## Getting started
 
-3. Set up environment variables:
-   ```bash
-   cp .env.example .env.local
-   ```
-
-4. Add your Supabase credentials to `.env.local`
-
-5. Run the development server:
-   ```bash
-   npm run dev
-   ```
-
-6. Open [http://localhost:3001](http://localhost:3001) in your browser
-   - Or if using nginx reverse proxy: [http://localhost:8080/app2](http://localhost:8080/app2)
-
-### Mobile (Expo)
-
-The native client lives in `mobile/` and is built with Expo Router.
+The app is the Expo project in [`mobile/`](mobile/):
 
 ```bash
 cd mobile
 npm install
-npm run start
+npx expo start          # dev server (use a dev client build for native modules)
 ```
 
-Configure your Supabase credentials via `mobile/.env` (see `mobile/README.md` for details) and scan the QR code with Expo Go or run `npm run ios` to launch the simulator.
+See [`mobile/README.md`](mobile/README.md) for the full setup, and [`mobile/CLAUDE.md`](mobile/CLAUDE.md) for development conventions (safe areas, navigation, Supabase/RLS troubleshooting).
 
-## Project Structure
+## Backend
 
-```
-fittracker/
-├── app/
-│   ├── (app)/              # Protected routes
-│   │   ├── layout.tsx      # Bottom nav wrapper
-│   │   ├── page.tsx        # Dashboard
-│   │   ├── workouts/
-│   │   ├── nutrition/
-│   │   ├── progress/
-│   │   └── profile/
-│   ├── (auth)/             # Auth routes
-│   │   ├── login/
-│   │   └── signup/
-│   ├── layout.tsx          # Root layout
-│   └── globals.css
-├── components/
-│   ├── ui/                 # shadcn components
-│   ├── nav/                # Navigation
-│   └── [features]/         # Feature components
-├── lib/
-│   ├── supabase/
-│   │   ├── server.ts
-│   │   └── client.ts
-│   └── utils.ts
-└── types/                  # TypeScript types
-```
-
-## License
-
-MIT
+Supabase provides Postgres, Auth, Storage, and Edge Functions. Database changes live in [`supabase/migrations/`](supabase/migrations/); manage them with the Supabase CLI (`npx supabase db push`, `npx supabase migration list`).
