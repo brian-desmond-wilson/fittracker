@@ -313,8 +313,8 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
                           )}
                         </View>
                       </View>
-                    ) : part.custom_content ? (
-                      <Text style={styles.customContent}>{part.custom_content}</Text>
+                    ) : part.custom_description ? (
+                      <Text style={styles.customContent}>{part.custom_description}</Text>
                     ) : (
                       <Text style={styles.emptyPartText}>No content</Text>
                     )}

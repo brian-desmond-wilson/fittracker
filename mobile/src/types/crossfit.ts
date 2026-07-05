@@ -447,7 +447,7 @@ export interface Class {
   user_id: string;
 
   // Class info
-  class_date: string; // ISO date string
+  date: string; // ISO date string
   name: string;
   duration_minutes: number;
 
@@ -623,10 +623,11 @@ export interface CreateWODMovementInput {
 }
 
 export interface CreateClassInput {
-  class_date: string;
+  date: string;
   name: string;
   duration_minutes?: number;
   notes?: string;
+  parts?: CreateClassPartInput[];
 }
 
 export interface CreateClassPartInput {
@@ -637,6 +638,9 @@ export interface CreateClassPartInput {
   custom_description?: string;
   duration_minutes?: number;
 }
+
+export type UpdateWODInput = Partial<CreateWODInput>;
+export type UpdateClassInput = Partial<CreateClassInput>;
 
 export interface CreateExerciseInput {
   name: string;
@@ -722,7 +726,7 @@ export interface WODFilter {
 
 export interface ClassListItem {
   id: string;
-  class_date: string;
+  date: string;
   name: string;
   wod_preview: string; // e.g., "12-min For Time → 6-min EMOM"
 }

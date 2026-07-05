@@ -313,7 +313,7 @@ export async function fetchMovements(goalTypeId?: string): Promise<ExerciseWithV
   // Build full_name for each exercise (e.g., "Front Squat + Pause + Barbell")
   const movements = (data || []).map((exercise) => {
     const variationNames = exercise.variations
-      ?.map((v) => v.variation_option?.name)
+      ?.map((v: any) => v.variation_option?.name)
       .filter(Boolean) || [];
 
     const full_name = variationNames.length > 0
@@ -369,7 +369,7 @@ export async function searchMovements(query: string): Promise<ExerciseWithVariat
   // Build full_name for search results
   const movements = (data || []).map((exercise) => {
     const variationNames = exercise.variations
-      ?.map((v) => v.variation_option?.name)
+      ?.map((v: any) => v.variation_option?.name)
       .filter(Boolean) || [];
 
     const full_name = variationNames.length > 0
@@ -434,7 +434,7 @@ export async function fetchAllExercises(goalTypeId?: string): Promise<ExerciseWi
   // Build full_name for each exercise (e.g., "Front Squat + Pause + Barbell")
   const exercises = (data || []).map((exercise) => {
     const variationNames = exercise.variations
-      ?.map((v) => v.variation_option?.name)
+      ?.map((v: any) => v.variation_option?.name)
       .filter(Boolean) || [];
 
     const full_name = variationNames.length > 0
@@ -491,7 +491,7 @@ export async function searchAllExercises(query: string): Promise<ExerciseWithVar
   // Build full_name for search results
   const exercises = (data || []).map((exercise) => {
     const variationNames = exercise.variations
-      ?.map((v) => v.variation_option?.name)
+      ?.map((v: any) => v.variation_option?.name)
       .filter(Boolean) || [];
 
     const full_name = variationNames.length > 0
@@ -767,7 +767,7 @@ export async function fetchMovementById(movementId: string): Promise<ExerciseWit
 
   // Build full_name
   const variationNames = data.variations
-    ?.map((v) => v.variation_option?.name)
+    ?.map((v: any) => v.variation_option?.name)
     .filter(Boolean) || [];
 
   const full_name = variationNames.length > 0
@@ -1745,7 +1745,7 @@ export async function createClass(userId: string, input: CreateClassInput): Prom
         part_type: part.part_type,
         part_order: index,
         wod_id: part.wod_id,
-        custom_content: part.custom_content,
+        custom_description: part.custom_description,
       }));
 
       const { error: partsError } = await supabase
@@ -1820,7 +1820,7 @@ export async function addClassPart(
   part: {
     part_type: string;
     wod_id?: string | null;
-    custom_content?: string | null;
+    custom_description?: string | null;
   }
 ): Promise<ClassPart | null> {
   try {
@@ -1843,7 +1843,7 @@ export async function addClassPart(
         part_type: part.part_type,
         part_order: nextOrder,
         wod_id: part.wod_id,
-        custom_content: part.custom_content,
+        custom_description: part.custom_description,
       })
       .select()
       .single();
@@ -1868,7 +1868,7 @@ export async function updateClassPart(
   updates: {
     part_type?: string;
     wod_id?: string | null;
-    custom_content?: string | null;
+    custom_description?: string | null;
   }
 ): Promise<boolean> {
   try {

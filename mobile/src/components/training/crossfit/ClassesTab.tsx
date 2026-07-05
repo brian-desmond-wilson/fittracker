@@ -104,8 +104,8 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
       .map(part => {
         if (part.wod) {
           return `${part.wod.name}`;
-        } else if (part.custom_content) {
-          return part.custom_content.substring(0, 30);
+        } else if (part.custom_description) {
+          return part.custom_description.substring(0, 30);
         } else {
           return part.part_type;
         }
