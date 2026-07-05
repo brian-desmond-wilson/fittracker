@@ -15,25 +15,68 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, ChevronRight, Utensils, Trash2, Calendar, Plus } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Utensils,
+  Trash2,
+  Calendar,
+  Plus,
+  Share2,
+  Zap,
+  BarChart3,
+  Search,
+  ScanBarcode,
+  X,
+} from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
 import { MealLog, MealType, SavedFood, RecentFoodItem } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
-import { getProductByBarcode, ProductData } from "@/src/services/openFoodFactsApi";
+import {
+  getProductByBarcode,
+  OpenFoodFactsError,
+  ProductData,
+} from "@/src/services/openFoodFactsApi";
 import {
   getSavedFoodByBarcode,
   createSavedFood,
   getRecentFoods,
   getFavorites,
+  getSavedFoods,
+  searchSavedFoods,
   toggleFavorite,
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { FoodPreviewModal } from "./FoodPreviewModal";
-import { QuickActionBar } from "./meals/QuickActionBar";
 import { RecentFoodsRow } from "./meals/RecentFoodsRow";
 import { RecentFoodChips } from "./meals/RecentFoodChips";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
+import { MealsNutritionCard } from "./MealsNutritionCard";
+import { MacroGoals, sumNutrition } from "@/src/lib/mealMacros";
+import { MealLogEditorModal } from "./MealLogEditorModal";
+import { MealTemplatesModal } from "./MealTemplatesModal";
+import { MealsInsightsCard } from "./MealsInsightsCard";
+import {
+  buildDailyTotalsByDate,
+  computeMacroStreak,
+  computeMacroBestStreak,
+  computeMealsRollingStats,
+  buildMealsSeries,
+} from "@/src/lib/mealStats";
+import { computeMealPace, MealPaceState } from "@/src/lib/mealPace";
+import { MealsPaceLines } from "./MealsPaceLines";
+import { MealUndoSnackbar } from "./MealUndoSnackbar";
+import { QuickAdjustmentModal } from "./QuickAdjustmentModal";
+import { MealsDistributionBar } from "./MealsDistributionBar";
+import { MealsWeeklySummaryModal } from "./MealsWeeklySummaryModal";
+import {
+  findInventoryMatchByBarcode,
+  consumeOneInventoryUnit,
+  refundOneInventoryUnit,
+  InventoryMatchSummary,
+} from "@/src/services/foodInventoryMatchService";
+import { Share } from "react-native";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -78,8 +121,82 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [carbs, setCarbs] = useState("");
   const [fats, setFats] = useState("");
   const [sugars, setSugars] = useState("");
+  const [sodiumMg, setSodiumMg] = useState("");
+  const [fiberG, setFiberG] = useState("");
 
-  // Barcode scanner state
+  // Macro goals from profile
+  const [goals, setGoals] = useState<MacroGoals>({
+    calories: null,
+    protein: null,
+    carbs: null,
+    sodium_mg: null,
+    fats: null,
+    sugars: null,
+    fiber_g: null,
+  });
+
+  // Pace window + meal times from profile
+  const [windowStart, setWindowStart] = useState("08:00");
+  const [windowEnd, setWindowEnd] = useState("23:00");
+  const [breakfastTime, setBreakfastTime] = useState("08:00");
+  const [lunchTime, setLunchTime] = useState("12:00");
+  const [dinnerTime, setDinnerTime] = useState("18:00");
+
+  // Edit-meal modal
+  const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Quick adjustment modal
+  const [quickAdjustVisible, setQuickAdjustVisible] = useState(false);
+  const [savingQuickAdjust, setSavingQuickAdjust] = useState(false);
+
+  // Weekly summary modal
+  const [weeklySummaryVisible, setWeeklySummaryVisible] = useState(false);
+
+  // Undo snackbar
+  const [lastLogId, setLastLogId] = useState<string | null>(null);
+  const [lastLogLabel, setLastLogLabel] = useState<string>("");
+  const [lastLogInventoryId, setLastLogInventoryId] = useState<string | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // CSV export
+  const [exporting, setExporting] = useState(false);
+
+  // Inventory match for the currently previewed food
+  const [inventoryMatch, setInventoryMatch] =
+    useState<InventoryMatchSummary | null>(null);
+
+  // Tracks whether the currently-previewed food has been corrected in
+  // this session — surfaces user_corrected=true when an api-source food
+  // gets persisted to saved_foods at log time.
+  const [previewWasEdited, setPreviewWasEdited] = useState(false);
+
+  // Today / Insights tab. Today is the logging surface (macros + recents
+  // + logged meals); Insights is reflective (charts, streaks, weekly
+  // summary, quick adjustment). Defaults to Today on mount; auto-switches
+  // to Today when the user starts searching or opens the add form so the
+  // input/results land where they expect.
+  const [activeTab, setActiveTab] = useState<"today" | "insights">("today");
+
+  // Templates modal + savedFoods cache
+  const [templatesVisible, setTemplatesVisible] = useState(false);
+  const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
+
+  // Historical meals (last 365 days) for insights/streaks/chart
+  const [historicalLogs, setHistoricalLogs] = useState<MealLog[]>([]);
+  // Bumped only when meals are written (log/undo/delete/edit/refresh) so the
+  // 365-day insights query refetches on writes but NOT on date navigation.
+  const [historyVersion, setHistoryVersion] = useState(0);
+
+  // Saved-foods search results (debounced from searchQuery)
+  const [searchResults, setSearchResults] = useState<SavedFood[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  // Barcode scanner state. handlingBarcodeRef guards against the camera
+  // firing onBarcodeScanned multiple times for the same scan — without it,
+  // 4–5 parallel handlers race, the saved-foods path opens a preview AND
+  // the API path hits rate-limits, and queued alerts make "OK" seem stuck.
+  const handlingBarcodeRef = useRef(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [showFoodPreview, setShowFoodPreview] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -163,11 +280,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   };
 
   // Fetch meals for a specific date
-  const fetchMealsForDate = async (date: Date) => {
+  const fetchMealsForDate = async (date: Date, force = false) => {
     const dateStr = getLocalDateString(date);
 
-    // Check cache first
-    if (mealsCache.has(dateStr)) {
+    // Check cache first. Mutation paths pass force=true because the cache
+    // delete they queue hasn't committed yet in this closure — without it the
+    // guard reads the stale Map, early-returns, and the refetch is skipped.
+    if (!force && mealsCache.has(dateStr)) {
       setLoadingDay(false);
       return;
     }
@@ -193,6 +312,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       if (error) throw error;
 
       setMealsCache((prev) => new Map(prev).set(dateStr, data || []));
+      // A forced fetch means the day was just written to (or pulled to
+      // refresh) — refresh the insights history too. Plain navigation doesn't.
+      if (force) setHistoryVersion((v) => v + 1);
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
@@ -227,6 +349,123 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchRecentAndFavorites();
   }, [fetchRecentAndFavorites]);
 
+  // Fetch all saved foods once (for the template picker)
+  const fetchAllSavedFoods = useCallback(async () => {
+    try {
+      const all = await getSavedFoods();
+      setAllSavedFoods(all);
+    } catch (error) {
+      console.error("Error fetching saved foods:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAllSavedFoods();
+  }, [fetchAllSavedFoods]);
+
+  // Fetch last 365 days of meals for insights (streaks/chart). Refetches
+  // when the local meals cache for the viewing date is invalidated.
+  const fetchHistoricalLogs = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 365);
+      const cutoffStr = getLocalDateString(cutoff);
+      const { data, error } = await supabase
+        .from("meal_logs")
+        .select(
+          "id, user_id, date, meal_type, name, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, logged_at, saved_food_id, meal_template_id, servings, uses_inventory, inventory_items"
+        )
+        .eq("user_id", user.id)
+        .gte("date", cutoffStr);
+      if (error) throw error;
+      setHistoricalLogs((data ?? []) as MealLog[]);
+    } catch (error) {
+      console.error("Error fetching historical meals:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHistoricalLogs();
+  }, [fetchHistoricalLogs, historyVersion]);
+
+  // Pull the user back to Today when they start a logging action — typing
+  // in the search bar or opening the add form. Otherwise results/input
+  // would land off-screen on the Insights tab.
+  useEffect(() => {
+    if (activeTab !== "today" && (searchQuery.trim().length >= 2 || showAddForm)) {
+      setActiveTab("today");
+    }
+  }, [activeTab, searchQuery, showAddForm]);
+
+  // Debounced search across saved_foods (matches name OR brand).
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        const hits = await searchSavedFoods(q);
+        setSearchResults(hits);
+      } catch (error) {
+        console.error("Search error:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  const handleSearchResultPress = (food: SavedFood) => {
+    setPreviewFood(food);
+    setPreviewSource("saved");
+    setScannedBarcode(food.barcode);
+    setPreviewWasEdited(false);
+    setShowFoodPreview(true);
+    setSearchQuery("");
+  };
+
+  // Fetch macro goals on mount.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from("profiles")
+          .select(
+            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g, water_window_start, water_window_end, breakfast_time, lunch_time, dinner_time"
+          )
+          .eq("id", user.id)
+          .single();
+        if (data) {
+          setGoals({
+            calories: data.target_calories ?? null,
+            protein: data.target_protein_g ?? null,
+            carbs: data.target_carbs_g ?? null,
+            sodium_mg: data.target_sodium_mg ?? null,
+            fats: data.target_fats_g ?? null,
+            sugars: data.target_sugars_g ?? null,
+            fiber_g: data.target_fiber_g ?? null,
+          });
+          if (data.water_window_start) setWindowStart(String(data.water_window_start).slice(0, 5));
+          if (data.water_window_end) setWindowEnd(String(data.water_window_end).slice(0, 5));
+          if (data.breakfast_time) setBreakfastTime(String(data.breakfast_time).slice(0, 5));
+          if (data.lunch_time) setLunchTime(String(data.lunch_time).slice(0, 5));
+          if (data.dinner_time) setDinnerTime(String(data.dinner_time).slice(0, 5));
+        }
+      } catch (error) {
+        console.error("Error fetching macro goals:", error);
+      }
+    })();
+  }, []);
+
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -237,7 +476,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       return newCache;
     });
     await Promise.all([
-      fetchMealsForDate(viewingDate),
+      fetchMealsForDate(viewingDate, true),
       fetchRecentAndFavorites(),
     ]);
     setRefreshing(false);
@@ -245,6 +484,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   // Handle barcode scanned
   const handleBarcodeScanned = async (barcode: string) => {
+    // Drop repeat events from the camera while we're already processing
+    // one. Cleared in the finally block below.
+    if (handlingBarcodeRef.current) return;
+    handlingBarcodeRef.current = true;
     setShowBarcodeScanner(false);
     setBarcodeLoading(true);
 
@@ -252,26 +495,53 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // Step 1: Check local saved_foods first (instant)
       const savedFood = await getSavedFoodByBarcode(barcode);
       if (savedFood) {
+        const match = await findInventoryMatchByBarcode(barcode);
+        setInventoryMatch(match);
         setPreviewFood(savedFood);
         setPreviewSource("saved");
         setScannedBarcode(barcode);
-        setShowFoodPreview(true);
+        setPreviewWasEdited(false);
+    setShowFoodPreview(true);
         setBarcodeLoading(false);
         return;
       }
 
       // Step 2: Check Open Food Facts API
-      const productData = await getProductByBarcode(barcode);
-      if (productData) {
-        setPreviewFood(productData);
-        setPreviewSource("api");
-        setScannedBarcode(barcode);
-        setShowFoodPreview(true);
+      let productData: ProductData | null = null;
+      try {
+        productData = await getProductByBarcode(barcode);
+      } catch (apiErr) {
+        // Transient API failure (rate limit / network / 5xx). Surface a
+        // try-again message rather than falsely telling the user the
+        // food isn't in the database.
+        if (apiErr instanceof OpenFoodFactsError && apiErr.rateLimited) {
+          Alert.alert(
+            "Open Food Facts is busy",
+            "Their service is rate-limiting right now. Try the scan again in a moment, or tap + to add this food manually."
+          );
+        } else {
+          Alert.alert(
+            "Couldn't reach Open Food Facts",
+            "We couldn't look up this barcode online. Check your connection and try again — or tap + to add it manually."
+          );
+        }
         setBarcodeLoading(false);
         return;
       }
 
-      // Step 3: Not found - open manual entry
+      if (productData) {
+        const match = await findInventoryMatchByBarcode(barcode);
+        setInventoryMatch(match);
+        setPreviewFood(productData);
+        setPreviewSource("api");
+        setScannedBarcode(barcode);
+        setPreviewWasEdited(false);
+    setShowFoodPreview(true);
+        setBarcodeLoading(false);
+        return;
+      }
+
+      // Step 3: Genuinely not found in OFF - open manual entry
       setScannedBarcode(barcode);
       setShowManualEntry(true);
     } catch (error) {
@@ -279,6 +549,53 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       Alert.alert("Error", "Failed to look up barcode");
     } finally {
       setBarcodeLoading(false);
+      handlingBarcodeRef.current = false;
+    }
+  };
+
+  // Undo last log
+  const showUndoFor = (
+    id: string,
+    label: string,
+    inventoryItemId: string | null,
+  ) => {
+    setLastLogId(id);
+    setLastLogLabel(label);
+    setLastLogInventoryId(inventoryItemId);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setLastLogId(null);
+      setLastLogInventoryId(null);
+    }, 5000);
+  };
+
+  const dismissUndo = () => {
+    setLastLogId(null);
+    setLastLogInventoryId(null);
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  };
+
+  const handleUndoLastLog = async () => {
+    if (!lastLogId) return;
+    const id = lastLogId;
+    const invId = lastLogInventoryId;
+    dismissUndo();
+    try {
+      const { error } = await supabase.from("meal_logs").delete().eq("id", id);
+      if (error) throw error;
+      if (invId) await refundOneInventoryUnit(invId);
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+    } catch (error) {
+      console.error("Undo failed:", error);
+      Alert.alert("Error", "Failed to undo");
     }
   };
 
@@ -286,7 +603,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const handleLogMealFromPreview = async (
     food: SavedFood | ProductData,
     mealTypeSelected: MealType,
-    servings: number
+    servings: number,
+    useInventory: boolean
   ) => {
     try {
       const {
@@ -306,6 +624,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       const foodFats = food.fats;
       const foodSugars = "sugars" in food ? food.sugars : null;
 
+      // Resolve extended fields (only present on ProductData and the new SavedFood shape)
+      const foodSodium =
+        "sodium_mg" in food ? (food as any).sodium_mg : null;
+      const foodFiber =
+        "fiber_g" in food ? (food as any).fiber_g : null;
+
       // If from API, save to library first
       let savedFoodId: string | null = null;
       if (previewSource === "api" && scannedBarcode) {
@@ -319,11 +643,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: apiFood.carbs,
           fats: apiFood.fats,
           sugars: apiFood.sugars,
+          sodium_mg: apiFood.sodium_mg,
+          fiber_g: apiFood.fiber_g,
           serving_size: apiFood.servingSize,
           image_primary_url: apiFood.imagePrimaryUrl,
           image_front_url: apiFood.imageFrontUrl,
           image_back_url: apiFood.imageBackUrl,
           is_favorite: false,
+          user_corrected: previewWasEdited,
+          auto_scaled: apiFood.auto_scaled,
         });
         savedFoodId = newSavedFood.id;
       } else if ("id" in food) {
@@ -346,31 +674,65 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       const scaledSugars = foodSugars
         ? Math.round(foodSugars * servings * 10) / 10
         : null;
+      const scaledSodium =
+        foodSodium != null ? Math.round(foodSodium * servings) : null;
+      const scaledFiber =
+        foodFiber != null
+          ? Math.round(foodFiber * servings * 10) / 10
+          : null;
 
-      // Log the meal
-      const { error } = await supabase.from("meal_logs").insert({
-        user_id: user.id,
-        date: viewingDateStr,
-        meal_type: mealTypeSelected,
-        name: name,
-        calories: scaledCalories,
-        protein: scaledProtein,
-        carbs: scaledCarbs,
-        fats: scaledFats,
-        sugars: scaledSugars,
-        saved_food_id: savedFoodId,
-        servings: servings,
-        uses_inventory: false,
-        inventory_items: null,
-        logged_at: new Date().toISOString(),
-      });
+      // Log the meal (with optional pantry decrement)
+      const willUseInventory =
+        useInventory && !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0;
+      const inventoryItems = willUseInventory && inventoryMatch
+        ? [{ id: inventoryMatch.id, quantity: 1 }]
+        : null;
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: mealTypeSelected,
+          name: name,
+          calories: scaledCalories,
+          protein: scaledProtein,
+          carbs: scaledCarbs,
+          fats: scaledFats,
+          sugars: scaledSugars,
+          sodium_mg: scaledSodium,
+          fiber_g: scaledFiber,
+          saved_food_id: savedFoodId,
+          servings: servings,
+          uses_inventory: willUseInventory,
+          inventory_items: inventoryItems,
+          logged_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (willUseInventory && inventoryMatch) {
+        await consumeOneInventoryUnit(inventoryMatch.id);
+      }
 
       // Clear state
       setShowFoodPreview(false);
       setPreviewFood(null);
       setScannedBarcode(null);
+      setInventoryMatch(null);
+
+      // Trigger undo snackbar
+      if (inserted?.id) {
+        const label = scaledCalories
+          ? `Logged ${name} · ${scaledCalories} cal`
+          : `Logged ${name}`;
+        showUndoFor(
+          inserted.id,
+          label,
+          willUseInventory && inventoryMatch ? inventoryMatch.id : null,
+        );
+      }
 
       // Invalidate cache and refetch
       setMealsCache((prev) => {
@@ -378,12 +740,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         newCache.delete(viewingDateStr);
         return newCache;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
 
       // Refresh recent foods
       fetchRecentAndFavorites();
 
-      Alert.alert("Success", "Meal logged successfully");
+      // (snackbar replaces the success alert)
     } catch (error: any) {
       console.error("Error logging meal:", error);
       Alert.alert("Error", "Failed to log meal");
@@ -404,11 +766,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: food.carbs,
         fats: food.fats,
         sugars: food.sugars,
+        sodium_mg: food.sodium_mg,
+        fiber_g: food.fiber_g,
         serving_size: food.servingSize,
         image_primary_url: food.imagePrimaryUrl,
         image_front_url: food.imageFrontUrl,
         image_back_url: food.imageBackUrl,
         is_favorite: false,
+        user_corrected: false,
+        auto_scaled: food.auto_scaled,
       });
 
       Alert.alert("Success", "Food saved to your library");
@@ -420,6 +786,78 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   };
 
   // Handle toggle favorite
+  // Handle nutrition correction from the preview modal. Updates the
+  // preview's food in-memory so the user sees the new values immediately.
+  // For saved-source foods, persists to saved_foods (and sets
+  // user_corrected=true). For api-source foods, the correction is held
+  // until log time; the existing log flow then writes the corrected
+  // values into saved_foods with user_corrected=true.
+  const handleEditPreviewFood = async (next: {
+    name: string;
+    brand: string | null;
+    serving_size: string | null;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+  }) => {
+    if (!previewFood) return;
+    setPreviewWasEdited(true);
+    if (previewSource === "saved" && "id" in previewFood) {
+      try {
+        const { data, error } = await supabase
+          .from("saved_foods")
+          .update({
+            name: next.name,
+            brand: next.brand,
+            serving_size: next.serving_size,
+            calories: next.calories,
+            protein: next.protein,
+            carbs: next.carbs,
+            fats: next.fats,
+            sugars: next.sugars,
+            sodium_mg: next.sodium_mg,
+            fiber_g: next.fiber_g,
+            user_corrected: true,
+          })
+          .eq("id", (previewFood as SavedFood).id)
+          .select()
+          .single();
+        if (error) throw error;
+        if (data) setPreviewFood(data as SavedFood);
+        // Refresh recents/favorites so the corrected values flow through
+        await fetchRecentAndFavorites();
+        await fetchAllSavedFoods();
+      } catch (error) {
+        console.error("Failed to save correction:", error);
+        Alert.alert("Error", "Failed to save changes");
+        throw error;
+      }
+    } else {
+      // api source — update the in-flight preview only.
+      setPreviewFood((prev) => {
+        if (!prev) return prev;
+        return {
+          ...(prev as any),
+          name: next.name,
+          brand: next.brand,
+          servingSize: next.serving_size,
+          serving_size: next.serving_size,
+          calories: next.calories,
+          protein: next.protein,
+          carbs: next.carbs,
+          fats: next.fats,
+          sugars: next.sugars,
+          sodium_mg: next.sodium_mg,
+          fiber_g: next.fiber_g,
+        } as any;
+      });
+    }
+  };
+
   const handleToggleFavorite = async (food: SavedFood) => {
     try {
       await toggleFavorite(food.id);
@@ -440,6 +878,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       carbs: number | null;
       fats: number | null;
       sugars: number | null;
+      sodium_mg?: number | null;
+      fiber_g?: number | null;
       serving_size: string | null;
     },
     mealTypeSelected: MealType,
@@ -468,34 +908,57 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: foodData.carbs,
           fats: foodData.fats,
           sugars: foodData.sugars,
+          sodium_mg: foodData.sodium_mg ?? null,
+          fiber_g: foodData.fiber_g ?? null,
           serving_size: foodData.serving_size,
           image_primary_url: null,
           image_front_url: null,
           image_back_url: null,
           is_favorite: false,
+          user_corrected: false,
+          auto_scaled: false,
         });
         savedFoodId = newSavedFood.id;
       }
 
       // Log the meal
-      const { error } = await supabase.from("meal_logs").insert({
-        user_id: user.id,
-        date: viewingDateStr,
-        meal_type: mealTypeSelected,
-        name: foodData.name,
-        calories: foodData.calories,
-        protein: foodData.protein,
-        carbs: foodData.carbs,
-        fats: foodData.fats,
-        sugars: foodData.sugars,
-        saved_food_id: savedFoodId,
-        servings: 1,
-        uses_inventory: false,
-        inventory_items: null,
-        logged_at: new Date().toISOString(),
-      });
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: mealTypeSelected,
+          name: foodData.name,
+          calories: foodData.calories,
+          protein: foodData.protein,
+          carbs: foodData.carbs,
+          fats: foodData.fats,
+          sugars: foodData.sugars,
+          sodium_mg: foodData.sodium_mg ?? null,
+          fiber_g: foodData.fiber_g ?? null,
+          saved_food_id: savedFoodId,
+          servings: 1,
+          uses_inventory: false,
+          inventory_items: null,
+          logged_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (inserted?.id) {
+        const calLabel = foodData.calories
+          ? `${foodData.calories} cal`
+          : null;
+        showUndoFor(
+          inserted.id,
+          calLabel
+            ? `Logged ${foodData.name} · ${calLabel}`
+            : `Logged ${foodData.name}`,
+          null,
+        );
+      }
 
       // Clear state
       setShowManualEntry(false);
@@ -507,14 +970,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         newCache.delete(viewingDateStr);
         return newCache;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
 
       // Refresh recent foods if saved
       if (saveToLibrary) {
         fetchRecentAndFavorites();
       }
 
-      Alert.alert("Success", "Meal logged successfully");
+      // (snackbar replaces the success alert)
     } catch (error: any) {
       console.error("Error logging manual meal:", error);
       Alert.alert("Error", "Failed to log meal");
@@ -526,6 +989,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setPreviewFood(food);
     setPreviewSource("saved");
     setScannedBarcode(food.barcode);
+    setPreviewWasEdited(false);
     setShowFoodPreview(true);
   };
 
@@ -598,6 +1062,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setCarbs("");
     setFats("");
     setSugars("");
+    setSodiumMg("");
+    setFiberG("");
   };
 
   // Open form with viewing date as default
@@ -632,14 +1098,31 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: carbs ? parseFloat(carbs) : null,
         fats: fats ? parseFloat(fats) : null,
         sugars: sugars ? parseFloat(sugars) : null,
+        sodium_mg: sodiumMg ? parseFloat(sodiumMg) : null,
+        fiber_g: fiberG ? parseFloat(fiberG) : null,
         uses_inventory: false,
         inventory_items: null,
         logged_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from("meal_logs").insert([mealData]);
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert([mealData])
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (inserted?.id) {
+        const calLabel = mealData.calories ? `${mealData.calories} cal` : null;
+        showUndoFor(
+          inserted.id,
+          calLabel
+            ? `Logged ${mealData.name} · ${calLabel}`
+            : `Logged ${mealData.name}`,
+          null,
+        );
+      }
 
       // Invalidate cache for the date the meal was added to
       const mealDate = getLocalDateString(selectedDate);
@@ -654,13 +1137,154 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       // Refetch if the meal was added for the viewing date
       if (mealDate === viewingDateStr) {
-        await fetchMealsForDate(viewingDate);
+        await fetchMealsForDate(viewingDate, true);
       }
-
-      Alert.alert("Success", "Meal logged successfully");
     } catch (error: any) {
       console.error("Error adding meal:", error);
       Alert.alert("Error", "Failed to log meal");
+    }
+  };
+
+  // Quick adjustment — log calories+macros without a food.
+  const handleQuickAdjustment = async (input: {
+    name: string;
+    meal_type: MealType;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+  }) => {
+    try {
+      setSavingQuickAdjust(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: input.meal_type,
+          name: input.name,
+          calories: input.calories,
+          protein: input.protein,
+          carbs: input.carbs,
+          fats: input.fats,
+          sugars: null,
+          sodium_mg: null,
+          fiber_g: null,
+          saved_food_id: null,
+          servings: 1,
+          uses_inventory: false,
+          inventory_items: null,
+          logged_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      setQuickAdjustVisible(false);
+      if (inserted?.id) {
+        showUndoFor(
+          inserted.id,
+          `Logged ${input.name} · ${input.calories ?? 0} cal`,
+          null,
+        );
+      }
+    } catch (error) {
+      console.error("Quick adjustment failed:", error);
+      Alert.alert("Error", "Failed to log adjustment");
+    } finally {
+      setSavingQuickAdjust(false);
+    }
+  };
+
+  // CSV export — share all meal_logs (last 365 days) via the system Share
+  // sheet. Text-based (no native module dependency, same as water).
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      if (historicalLogs.length === 0) {
+        Alert.alert("No data", "Log some meals before exporting.");
+        return;
+      }
+      const header =
+        "date,time,meal_type,name,calories,protein_g,carbs_g,fats_g,sugars_g,sodium_mg,fiber_g,servings\n";
+      const rows = [...historicalLogs]
+        .sort((a, b) => a.logged_at.localeCompare(b.logged_at))
+        .map((m) => {
+          const dt = new Date(m.logged_at);
+          const time = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+          const esc = (s: string) =>
+            s.includes(",") || s.includes("\"") ? `"${s.replace(/"/g, '""')}"` : s;
+          return [
+            m.date,
+            time,
+            m.meal_type,
+            esc(m.name),
+            m.calories ?? "",
+            m.protein ?? "",
+            m.carbs ?? "",
+            m.fats ?? "",
+            m.sugars ?? "",
+            m.sodium_mg ?? "",
+            m.fiber_g ?? "",
+            m.servings ?? 1,
+          ].join(",");
+        })
+        .join("\n");
+      const csv = header + rows + "\n";
+      await Share.share({
+        message: csv,
+        title: `Meals ${getLocalDateString()}`,
+      });
+    } catch (error) {
+      console.error("CSV export failed:", error);
+      Alert.alert("Error", "Failed to export CSV");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleSaveMealEdit = async (updates: {
+    name: string;
+    meal_type: MealType;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+  }) => {
+    if (!editingMeal) return;
+    try {
+      setSavingEdit(true);
+      const { error } = await supabase
+        .from("meal_logs")
+        .update(updates)
+        .eq("id", editingMeal.id);
+      if (error) throw error;
+      const date = editingMeal.date;
+      setEditingMeal(null);
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(date);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+    } catch (error) {
+      console.error("Error editing meal:", error);
+      Alert.alert("Error", "Failed to save changes");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -682,7 +1306,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               newCache.delete(viewingDateStr);
               return newCache;
             });
-            await fetchMealsForDate(viewingDate);
+            await fetchMealsForDate(viewingDate, true);
           } catch (error: any) {
             console.error("Error deleting meal:", error);
             Alert.alert("Error", "Failed to delete meal");
@@ -708,15 +1332,76 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Get meals for current viewing date from cache
   const dayMeals = mealsCache.get(viewingDateStr) || [];
 
-  // Calculate totals for viewing date
-  const dayTotals = dayMeals.reduce(
-    (acc, meal) => ({
-      calories: acc.calories + (meal.calories || 0),
-      protein: acc.protein + (meal.protein || 0),
-      carbs: acc.carbs + (meal.carbs || 0),
-      fats: acc.fats + (meal.fats || 0),
-    }),
-    { calories: 0, protein: 0, carbs: 0, fats: 0 }
+  // Calculate totals for viewing date (includes sodium + fiber).
+  // Totals are always over ALL meals (not filtered), so the day's true
+  // intake is shown regardless of search query.
+  const dayTotals = useMemo(() => sumNutrition(dayMeals), [dayMeals]);
+
+  // Pace coach for today's view only. (`isViewingToday` is a function
+  // defined above; cache its result here for memo deps.)
+  const viewingToday = viewingDateStr === todayStr;
+  const mealTimes = useMemo(
+    () => ({ breakfast: breakfastTime, lunch: lunchTime, dinner: dinnerTime }),
+    [breakfastTime, lunchTime, dinnerTime]
+  );
+  const caloriePace: MealPaceState | null = useMemo(() => {
+    if (!viewingToday) return null;
+    return computeMealPace({
+      currentValue: dayTotals.calories,
+      goal: goals.calories,
+      windowStart,
+      windowEnd,
+      mealTimes,
+      macro: "calories",
+    });
+  }, [viewingToday, dayTotals.calories, goals.calories, windowStart, windowEnd, mealTimes]);
+  const proteinPace: MealPaceState | null = useMemo(() => {
+    if (!viewingToday) return null;
+    return computeMealPace({
+      currentValue: dayTotals.protein,
+      goal: goals.protein,
+      windowStart,
+      windowEnd,
+      mealTimes,
+      macro: "protein",
+    });
+  }, [viewingToday, dayTotals.protein, goals.protein, windowStart, windowEnd, mealTimes]);
+
+  // Search-filtered subset of dayMeals (used for the list rendering only).
+  const filteredDayMeals = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q === "") return dayMeals;
+    return dayMeals.filter((m) => m.name.toLowerCase().includes(q));
+  }, [dayMeals, searchQuery]);
+
+  // Insights data — derived from the 365-day historical fetch.
+  const totalsByDate = useMemo(
+    () => buildDailyTotalsByDate(historicalLogs),
+    [historicalLogs]
+  );
+  const calorieStreak = useMemo(
+    () => computeMacroStreak(totalsByDate, goals, "calories"),
+    [totalsByDate, goals]
+  );
+  const calorieBestStreak = useMemo(
+    () => computeMacroBestStreak(totalsByDate, goals, "calories"),
+    [totalsByDate, goals]
+  );
+  const proteinStreak = useMemo(
+    () => computeMacroStreak(totalsByDate, goals, "protein"),
+    [totalsByDate, goals]
+  );
+  const proteinBestStreak = useMemo(
+    () => computeMacroBestStreak(totalsByDate, goals, "protein"),
+    [totalsByDate, goals]
+  );
+  const rolling = useMemo(
+    () => computeMealsRollingStats(totalsByDate, goals),
+    [totalsByDate, goals]
+  );
+  const series14 = useMemo(
+    () => buildMealsSeries(totalsByDate, 14, goals),
+    [totalsByDate, goals]
   );
 
   // Group meals by meal type
@@ -731,7 +1416,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       dessert: [],
     };
 
-    dayMeals.forEach((meal) => {
+    filteredDayMeals.forEach((meal) => {
       grouped[meal.meal_type].push(meal);
     });
 
@@ -744,11 +1429,46 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
+        {/* Header — back, search (with barcode), add — mirrors Food Inventory */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <ChevronLeft size={24} color="#FFFFFF" />
-            <Text style={styles.backText}>Track</Text>
+          </TouchableOpacity>
+          <View style={styles.searchBar}>
+            <Search size={20} color={colors.mutedForeground} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search foods..."
+              placeholderTextColor={colors.mutedForeground}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity
+                onPress={() => setSearchQuery("")}
+                activeOpacity={0.7}
+                style={styles.searchActionButton}
+              >
+                <X size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowBarcodeScanner(true)}
+                activeOpacity={0.7}
+                style={styles.searchActionButton}
+              >
+                <ScanBarcode size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.headerAddButton}
+            onPress={handleOpenAddForm}
+            activeOpacity={0.7}
+            disabled={showAddForm}
+          >
+            <Plus size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -771,10 +1491,21 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             />
           }
         >
-          {/* Title */}
+          {/* Title (Share moved here from header) */}
           <View style={styles.titleContainer}>
             <Utensils size={32} color="#F97316" strokeWidth={2} />
             <Text style={styles.pageTitle}>Meals & Snacks</Text>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={exporting}
+              style={styles.titleShareButton}
+              activeOpacity={0.7}
+            >
+              <Share2
+                size={22}
+                color={exporting ? colors.mutedForeground : colors.foreground}
+              />
+            </TouchableOpacity>
           </View>
 
           {/* Date Navigation - with swipe gesture */}
@@ -819,48 +1550,170 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </TouchableOpacity>
             )}
 
-            {/* Nutrition Summary */}
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>{getNutritionLabel()}</Text>
-              <View style={styles.summaryGrid}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.calories}</Text>
-                  <Text style={styles.summaryItemLabel}>Calories</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.protein.toFixed(1)}g</Text>
-                  <Text style={styles.summaryItemLabel}>Protein</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.carbs.toFixed(1)}g</Text>
-                  <Text style={styles.summaryItemLabel}>Carbs</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryValue}>{dayTotals.fats.toFixed(1)}g</Text>
-                  <Text style={styles.summaryItemLabel}>Fats</Text>
+            {/* Tab pills: Today / Insights. Hidden while the add form is
+                up — that flow takes over the surface. */}
+            {!showAddForm && (
+              <View style={styles.tabsContainer}>
+                <View style={styles.tabsTrack}>
+                  <TouchableOpacity
+                    onPress={() => setActiveTab("today")}
+                    style={[
+                      styles.tabPill,
+                      activeTab === "today" && styles.tabPillActive,
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.tabPillText,
+                        activeTab === "today" && styles.tabPillTextActive,
+                      ]}
+                    >
+                      Today
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setActiveTab("insights")}
+                    style={[
+                      styles.tabPill,
+                      activeTab === "insights" && styles.tabPillActive,
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.tabPillText,
+                        activeTab === "insights" && styles.tabPillTextActive,
+                      ]}
+                    >
+                      Insights
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            </View>
-
-            {/* Quick Action Bar - Barcode, Search, Add */}
-            {!showAddForm && (
-              <QuickActionBar
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                onBarcodePress={() => setShowBarcodeScanner(true)}
-                onAddPress={handleOpenAddForm}
-              />
             )}
 
-            {/* Recent Foods Row */}
-            {!showAddForm && (
-              <RecentFoodsRow
-                recentFoods={recentFoods}
-                favorites={favorites}
-                onFoodPress={handleRecentFoodPress}
-                onFoodLongPress={handleToggleFavorite}
-                loading={loadingRecent}
-              />
+            {/* ── TODAY TAB ── logging surface */}
+            {!showAddForm && activeTab === "today" && (
+              <>
+                {/* Nutrition Summary (rings + bars + compact tier C) */}
+                <MealsNutritionCard
+                  label={getNutritionLabel()}
+                  totals={dayTotals}
+                  goals={goals}
+                />
+
+                {/* Pace coach (today only) */}
+                {viewingToday && (
+                  <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
+                    <MealsPaceLines
+                      caloriePace={caloriePace}
+                      proteinPace={proteinPace}
+                    />
+                  </View>
+                )}
+
+                {/* Search Results — from your saved foods library */}
+                {searchQuery.trim().length >= 2 && (
+                  <View style={styles.searchResults}>
+                    <Text style={styles.searchResultsHeader}>
+                      {searching
+                        ? "Searching…"
+                        : searchResults.length === 0
+                          ? `No saved foods match "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
+                          : `Saved foods matching "${searchQuery.trim()}"`}
+                    </Text>
+                    {searchResults.slice(0, 8).map((f) => (
+                      <TouchableOpacity
+                        key={f.id}
+                        onPress={() => handleSearchResultPress(f)}
+                        style={styles.searchResultRow}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.searchResultName} numberOfLines={1}>
+                            {f.name}
+                          </Text>
+                          {f.brand && (
+                            <Text style={styles.searchResultBrand} numberOfLines={1}>
+                              {f.brand}
+                            </Text>
+                          )}
+                        </View>
+                        {f.calories != null && (
+                          <Text style={styles.searchResultCals}>{f.calories} cal</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Recent Foods (Quick Add) — promoted above meal sections
+                    so the fastest path to logging is one tap from here. */}
+                <RecentFoodsRow
+                  recentFoods={recentFoods}
+                  favorites={favorites}
+                  onFoodPress={handleRecentFoodPress}
+                  onFoodLongPress={handleToggleFavorite}
+                  loading={loadingRecent}
+                />
+
+                {/* My Meals (templates) entry point */}
+                <TouchableOpacity
+                  onPress={() => setTemplatesVisible(true)}
+                  style={styles.templatesButton}
+                  activeOpacity={0.7}
+                >
+                  <Utensils size={16} color="#3B82F6" />
+                  <Text style={styles.templatesButtonText}>My Meals — log a saved template</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* ── INSIGHTS TAB ── reflective stats */}
+            {!showAddForm && activeTab === "insights" && (
+              <>
+                <MealsInsightsCard
+                  calorieStreak={calorieStreak}
+                  calorieBestStreak={calorieBestStreak}
+                  proteinStreak={proteinStreak}
+                  proteinBestStreak={proteinBestStreak}
+                  avgCalsPerDay={rolling.avgCalsPerDay}
+                  daysHit={rolling.daysHit}
+                  daysInWindow={rolling.daysInWindow}
+                  series14={series14}
+                  calorieGoal={goals.calories ?? 0}
+                />
+
+                {/* Today's distribution (calories by meal type) */}
+                {viewingToday && (
+                  <View style={styles.distributionWrap}>
+                    <MealsDistributionBar meals={dayMeals} />
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  onPress={() => setWeeklySummaryVisible(true)}
+                  style={styles.weeklySummaryButton}
+                  activeOpacity={0.7}
+                >
+                  <BarChart3 size={16} color="#F97316" />
+                  <Text style={styles.weeklySummaryButtonText}>
+                    Weekly Summary
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setQuickAdjustVisible(true)}
+                  style={styles.quickAdjustButton}
+                  activeOpacity={0.7}
+                >
+                  <Zap size={16} color="#F97316" />
+                  <Text style={styles.quickAdjustButtonText}>
+                    Quick Adjustment — calories only
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
 
           {/* Add Form */}
@@ -1005,15 +1858,40 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 </View>
               </View>
 
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Sugars (g)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0"
+                    placeholderTextColor={colors.mutedForeground}
+                    keyboardType="decimal-pad"
+                    value={sugars}
+                    onChangeText={setSugars}
+                  />
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Sodium (mg)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0"
+                    placeholderTextColor={colors.mutedForeground}
+                    keyboardType="decimal-pad"
+                    value={sodiumMg}
+                    onChangeText={setSodiumMg}
+                  />
+                </View>
+              </View>
+
               <View style={styles.field}>
-                <Text style={styles.inputLabel}>Sugars (g)</Text>
+                <Text style={styles.inputLabel}>Fiber (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType="decimal-pad"
-                  value={sugars}
-                  onChangeText={setSugars}
+                  value={fiberG}
+                  onChangeText={setFiberG}
                 />
               </View>
 
@@ -1040,7 +1918,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             </View>
           )}
 
-            {/* Meals Section - Grouped by Type */}
+            {/* Meals Section - Grouped by Type (Today tab only; on Insights
+                the logged-food list is hidden to keep that view reflective) */}
+            {(showAddForm || activeTab === "today") && (
             <View style={styles.mealsSection}>
               {loadingDay ? (
                 <Text style={styles.loadingText}>Loading...</Text>
@@ -1072,7 +1952,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                         </View>
                       </View>
                       {mealsOfType.map((meal) => (
-                        <View key={meal.id} style={styles.mealCard}>
+                        <TouchableOpacity
+                          key={meal.id}
+                          style={styles.mealCard}
+                          onPress={() => setEditingMeal(meal)}
+                          activeOpacity={0.7}
+                        >
                           <View style={styles.mealCardHeader}>
                             <Text style={styles.mealTime}>{formatTime(meal.logged_at)}</Text>
                             <TouchableOpacity
@@ -1100,13 +1985,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                               )}
                             </View>
                           )}
-                        </View>
+                        </TouchableOpacity>
                       ))}
                     </View>
                   );
                 })
               )}
             </View>
+            )}
 
             {/* Bottom Spacing */}
             <View style={{ height: 40 }} />
@@ -1125,10 +2011,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         visible={showFoodPreview}
         food={previewFood}
         source={previewSource}
+        inventoryMatch={inventoryMatch}
         onClose={() => {
           setShowFoodPreview(false);
           setPreviewFood(null);
           setScannedBarcode(null);
+          setInventoryMatch(null);
         }}
         onLogMeal={handleLogMealFromPreview}
         onSaveToLibrary={previewSource === "api" ? handleSaveToLibrary : undefined}
@@ -1137,6 +2025,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           // Update the preview food to reflect the change
           setPreviewFood({ ...food, is_favorite: !food.is_favorite });
         } : undefined}
+        onEditFood={handleEditPreviewFood}
       />
 
       {/* Manual Food Entry Modal */}
@@ -1149,6 +2038,55 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         }}
         onSaveAndLog={handleManualSaveAndLog}
       />
+
+      {/* Edit Meal Modal */}
+      <MealLogEditorModal
+        visible={editingMeal !== null}
+        meal={editingMeal}
+        saving={savingEdit}
+        onClose={() => setEditingMeal(null)}
+        onSave={handleSaveMealEdit}
+      />
+
+      {/* Templates Modal */}
+      <MealTemplatesModal
+        visible={templatesVisible}
+        savedFoods={allSavedFoods}
+        todayDate={viewingDateStr}
+        onClose={() => setTemplatesVisible(false)}
+        onLogged={async () => {
+          setMealsCache((prev) => {
+            const next = new Map(prev);
+            next.delete(viewingDateStr);
+            return next;
+          });
+          await fetchMealsForDate(viewingDate, true);
+          await fetchRecentAndFavorites();
+        }}
+      />
+
+      {/* Quick Adjustment Modal */}
+      <QuickAdjustmentModal
+        visible={quickAdjustVisible}
+        saving={savingQuickAdjust}
+        onClose={() => setQuickAdjustVisible(false)}
+        onSave={handleQuickAdjustment}
+      />
+
+      {/* Weekly Summary Modal */}
+      <MealsWeeklySummaryModal
+        visible={weeklySummaryVisible}
+        historicalLogs={historicalLogs}
+        goals={goals}
+        onClose={() => setWeeklySummaryVisible(false)}
+      />
+
+      {/* Undo snackbar */}
+      <MealUndoSnackbar
+        visible={lastLogId !== null}
+        label={lastLogLabel}
+        onUndo={handleUndoLastLog}
+      />
     </>
   );
 }
@@ -1159,6 +2097,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -1170,13 +2111,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   backButton: {
+    padding: 4,
+  },
+  searchBar: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
   },
-  backText: {
-    fontSize: 17,
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     color: colors.foreground,
+  },
+  searchActionButton: {
+    padding: 4,
+  },
+  headerAddButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#F97316",
+    alignItems: "center",
+    justifyContent: "center",
   },
   content: {
     flex: 1,
@@ -1212,6 +2175,36 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 16,
   },
+  tabsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  tabsTrack: {
+    flexDirection: "row",
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tabPill: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 7,
+  },
+  tabPillActive: {
+    backgroundColor: "#F97316",
+  },
+  tabPillText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+  },
+  tabPillTextActive: {
+    color: "#FFFFFF",
+  },
   jumpToTodayText: {
     color: "#FFFFFF",
     fontSize: 14,
@@ -1224,6 +2217,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 16,
+  },
+  titleShareButton: {
+    marginLeft: "auto",
+    padding: 6,
   },
   pageTitle: {
     fontSize: 28,
@@ -1462,6 +2459,109 @@ const styles = StyleSheet.create({
   mealTime: {
     fontSize: 12,
     color: colors.mutedForeground,
+  },
+  searchResults: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchResultsHeader: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  searchResultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  searchResultName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  searchResultBrand: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 1,
+  },
+  searchResultCals: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginLeft: 8,
+  },
+  distributionWrap: {
+    marginHorizontal: 20,
+  },
+  weeklySummaryButton: {
+    marginHorizontal: 20,
+    marginTop: -4,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "rgba(249, 115, 22, 0.3)",
+    borderRadius: 10,
+    backgroundColor: "rgba(249, 115, 22, 0.06)",
+  },
+  weeklySummaryButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#F97316",
+  },
+  quickAdjustButton: {
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    backgroundColor: "#1F2937",
+  },
+  quickAdjustButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#F97316",
+  },
+  templatesButton: {
+    marginHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#374151",
+    borderStyle: "dashed",
+    borderRadius: 10,
+    backgroundColor: "#1F2937",
+  },
+  templatesButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#3B82F6",
   },
   deleteButton: {
     padding: 4,

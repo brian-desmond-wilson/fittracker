@@ -4,5 +4,7 @@ import { ProgressPhotosScreen } from "@/src/components/track/ProgressPhotosScree
 export default function ProgressPhotosPage() {
   const router = useRouter();
 
-  return <ProgressPhotosScreen onClose={() => router.back()} />;
+  // Always land on Track index — router.back() would walk linear
+  // history if entered from outside the Track tab.
+  return <ProgressPhotosScreen onClose={() => router.replace("/(tabs)/track")} />;
 }

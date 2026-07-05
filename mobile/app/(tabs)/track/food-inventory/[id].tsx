@@ -27,7 +27,7 @@ export default function FoodItemDetailsPage() {
 
       if (!user) {
         Alert.alert("Error", "You must be logged in");
-        router.back();
+        router.replace("/(tabs)/track/food-inventory");
         return;
       }
 
@@ -41,7 +41,7 @@ export default function FoodItemDetailsPage() {
 
       if (foodError || !foodItem) {
         Alert.alert("Error", "Item not found");
-        router.back();
+        router.replace("/(tabs)/track/food-inventory");
         return;
       }
 
@@ -113,7 +113,7 @@ export default function FoodItemDetailsPage() {
     } catch (error: any) {
       console.error("Error fetching item details:", error);
       Alert.alert("Error", "Failed to load item details");
-      router.back();
+      router.replace("/(tabs)/track/food-inventory");
     } finally {
       setLoading(false);
     }
@@ -127,7 +127,7 @@ export default function FoodItemDetailsPage() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.replace("/(tabs)/track/food-inventory")} style={styles.backButton}>
               <ChevronLeft size={24} color="#FFFFFF" />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -146,7 +146,7 @@ export default function FoodItemDetailsPage() {
   return (
     <ViewFoodDetailsScreen
       item={item}
-      onClose={() => router.back()}
+      onClose={() => router.replace("/(tabs)/track/food-inventory")}
       onRefresh={fetchItemDetails}
     />
   );

@@ -10,9 +10,12 @@ import {
   Platform,
   ActivityIndicator,
   StatusBar,
+  Modal,
+  Switch,
 } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '@/src/lib/supabase';
 
 interface GoalsScreenProps {
@@ -21,30 +24,238 @@ interface GoalsScreenProps {
     height_cm: string;
     target_weight_kg: string;
     target_calories: string;
+    target_protein_g: string;
+    target_carbs_g: string;
+    target_sodium_mg: string;
+    target_fats_g: string;
+    target_sugars_g: string;
+    target_fiber_g: string;
+    target_water_oz: string;
+    water_window_start: string;  // "HH:MM"
+    water_window_end: string;    // "HH:MM"
+    water_workout_bonus_oz: string;
+    water_display_unit: 'oz' | 'L';
+    water_only_counts: boolean;
+    breakfast_time: string;  // "HH:MM"
+    lunch_time: string;
+    dinner_time: string;
   };
   onClose: () => void;
   onSave: () => void;
 }
 
+function formatTimeLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map((s) => parseInt(s, 10));
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${display}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function hhmmFromDate(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function dateFromHhmm(hhmm: string): Date {
+  const [h, m] = hhmm.split(':').map((s) => parseInt(s, 10));
+  const d = new Date();
+  d.setHours(h, m || 0, 0, 0);
+  return d;
+}
+
+type WaterUnit = 'oz' | 'L';
+
+const OZ_PER_LITER = 33.814;
+const CM_PER_INCH = 2.54;
+const LBS_PER_KG = 2.20462;
+
+function cmToFtIn(cm: number): { ft: number; inches: number } {
+  const totalIn = cm / CM_PER_INCH;
+  const ft = Math.floor(totalIn / 12);
+  const inches = totalIn - ft * 12;
+  return { ft, inches };
+}
+
+function ftInToCm(ft: number, inches: number): number {
+  return (ft * 12 + inches) * CM_PER_INCH;
+}
+
+function kgToLbs(kg: number): number {
+  return kg * LBS_PER_KG;
+}
+
+function lbsToKg(lbs: number): number {
+  return lbs / LBS_PER_KG;
+}
+
+type PickerTarget = 'start' | 'end' | 'breakfast' | 'lunch' | 'dinner';
+
+function pickerTitle(t: PickerTarget | null): string {
+  switch (t) {
+    case 'start': return 'Window Start';
+    case 'end': return 'Window End';
+    case 'breakfast': return 'Breakfast Time';
+    case 'lunch': return 'Lunch Time';
+    case 'dinner': return 'Dinner Time';
+    default: return '';
+  }
+}
+
+function pickerValue(
+  t: PickerTarget | null,
+  fd: GoalsScreenProps['initialData'],
+): string {
+  switch (t) {
+    case 'start': return fd.water_window_start;
+    case 'end': return fd.water_window_end;
+    case 'breakfast': return fd.breakfast_time;
+    case 'lunch': return fd.lunch_time;
+    case 'dinner': return fd.dinner_time;
+    default: return '08:00';
+  }
+}
+
+function applyPicker<T extends GoalsScreenProps['initialData']>(
+  fd: T,
+  t: PickerTarget | null,
+  hhmm: string,
+): T {
+  switch (t) {
+    case 'start': return { ...fd, water_window_start: hhmm };
+    case 'end': return { ...fd, water_window_end: hhmm };
+    case 'breakfast': return { ...fd, breakfast_time: hhmm };
+    case 'lunch': return { ...fd, lunch_time: hhmm };
+    case 'dinner': return { ...fd, dinner_time: hhmm };
+    default: return fd;
+  }
+}
+
 export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScreenProps) {
   const insets = useSafeAreaInsets();
   const [formData, setFormData] = useState(initialData);
+  const [waterUnit, setWaterUnit] = useState<WaterUnit>('oz');
+  const [waterInput, setWaterInput] = useState(initialData.target_water_oz);
   const [saving, setSaving] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<
+    null | 'start' | 'end' | 'breakfast' | 'lunch' | 'dinner'
+  >(null);
+
+  // Height + weight in imperial (DB stays in cm / kg)
+  const initialHeight = (() => {
+    const cm = parseFloat(initialData.height_cm);
+    if (!isNaN(cm) && cm > 0) {
+      const { ft, inches } = cmToFtIn(cm);
+      return { ft: ft.toString(), inches: Math.round(inches).toString() };
+    }
+    return { ft: '', inches: '' };
+  })();
+  const initialWeightLbs = (() => {
+    const kg = parseFloat(initialData.target_weight_kg);
+    if (!isNaN(kg) && kg > 0) return Math.round(kgToLbs(kg)).toString();
+    return '';
+  })();
+  const [heightFt, setHeightFt] = useState(initialHeight.ft);
+  const [heightIn, setHeightIn] = useState(initialHeight.inches);
+  const [weightLbs, setWeightLbs] = useState(initialWeightLbs);
+
+  const handleWaterUnitChange = (next: WaterUnit) => {
+    if (next === waterUnit) return;
+    const parsed = parseFloat(waterInput);
+    if (!isNaN(parsed)) {
+      if (next === 'L') {
+        setWaterInput((parsed / OZ_PER_LITER).toFixed(2));
+      } else {
+        setWaterInput(Math.round(parsed * OZ_PER_LITER).toString());
+      }
+    }
+    setWaterUnit(next);
+  };
 
   const handleSave = async () => {
     try {
       setSaving(true);
 
+      let waterOz: number | null = null;
+      if (waterInput.trim() !== '') {
+        const parsed = parseFloat(waterInput);
+        if (isNaN(parsed) || parsed <= 0) {
+          console.error('Invalid water goal');
+          setSaving(false);
+          return;
+        }
+        waterOz =
+          waterUnit === 'oz'
+            ? Math.round(parsed)
+            : Math.round(parsed * OZ_PER_LITER);
+      }
+
+      // Validate window: end > start
+      if (formData.water_window_end <= formData.water_window_start) {
+        console.error('Water pace end must be after start');
+        setSaving(false);
+        return;
+      }
+
+      const bonusOz = formData.water_workout_bonus_oz.trim() === ''
+        ? 0
+        : Math.max(0, Math.round(parseFloat(formData.water_workout_bonus_oz) || 0));
+
+      // Helper to convert macro-field strings to nullable integers.
+      const intOrNull = (s: string): number | null => {
+        const t = s.trim();
+        if (t === '') return null;
+        const n = parseInt(t);
+        return isNaN(n) || n <= 0 ? null : n;
+      };
+
+      // Convert imperial inputs back to metric for storage.
+      let heightCm: number | null = null;
+      const ftN = parseFloat(heightFt);
+      const inN = parseFloat(heightIn);
+      if (!isNaN(ftN) && ftN >= 0) {
+        const inches = isNaN(inN) ? 0 : inN;
+        const cm = ftInToCm(ftN, inches);
+        heightCm = cm > 0 ? Math.round(cm * 10) / 10 : null;
+      }
+
+      let weightKg: number | null = null;
+      const lbsN = parseFloat(weightLbs);
+      if (!isNaN(lbsN) && lbsN > 0) {
+        weightKg = Math.round(lbsToKg(lbsN) * 10) / 10;
+      }
+
+      // Validate meal times ordering (breakfast < lunch < dinner).
+      if (
+        formData.breakfast_time >= formData.lunch_time ||
+        formData.lunch_time >= formData.dinner_time
+      ) {
+        console.error('Meal times must be in order: breakfast < lunch < dinner');
+        setSaving(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
-          height_cm: formData.height_cm ? parseFloat(formData.height_cm) : null,
-          target_weight_kg: formData.target_weight_kg
-            ? parseFloat(formData.target_weight_kg)
-            : null,
+          height_cm: heightCm,
+          target_weight_kg: weightKg,
           target_calories: formData.target_calories
             ? parseInt(formData.target_calories)
             : null,
+          target_protein_g: intOrNull(formData.target_protein_g),
+          target_carbs_g: intOrNull(formData.target_carbs_g),
+          target_sodium_mg: intOrNull(formData.target_sodium_mg),
+          target_fats_g: intOrNull(formData.target_fats_g),
+          target_sugars_g: intOrNull(formData.target_sugars_g),
+          target_fiber_g: intOrNull(formData.target_fiber_g),
+          ...(waterOz !== null && { target_water_oz: waterOz }),
+          water_window_start: formData.water_window_start,
+          water_window_end: formData.water_window_end,
+          water_workout_bonus_oz: bonusOz,
+          water_display_unit: formData.water_display_unit,
+          water_only_counts: formData.water_only_counts,
+          breakfast_time: formData.breakfast_time,
+          lunch_time: formData.lunch_time,
+          dinner_time: formData.dinner_time,
         })
         .eq('id', userId);
 
@@ -89,34 +300,42 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.label}>Height (cm)</Text>
+                <Text style={styles.label}>Height (ft)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="175"
+                  placeholder="5"
                   placeholderTextColor="#6B7280"
-                  value={formData.height_cm}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, height_cm: text })
-                  }
-                  keyboardType="decimal-pad"
+                  value={heightFt}
+                  onChangeText={setHeightFt}
+                  keyboardType="number-pad"
                   editable={!saving}
                 />
               </View>
-
               <View style={styles.halfField}>
-                <Text style={styles.label}>Target Weight (kg)</Text>
+                <Text style={styles.label}>Height (in)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="70"
+                  placeholder="9"
                   placeholderTextColor="#6B7280"
-                  value={formData.target_weight_kg}
-                  onChangeText={(text) =>
-                    setFormData({ ...formData, target_weight_kg: text })
-                  }
+                  value={heightIn}
+                  onChangeText={setHeightIn}
                   keyboardType="decimal-pad"
                   editable={!saving}
                 />
               </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.label}>Target Weight (lbs)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="155"
+                placeholderTextColor="#6B7280"
+                value={weightLbs}
+                onChangeText={setWeightLbs}
+                keyboardType="decimal-pad"
+                editable={!saving}
+              />
             </View>
 
             <View style={styles.formField}>
@@ -133,6 +352,293 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 editable={!saving}
               />
             </View>
+
+            {/* Primary macros (your priority: protein) */}
+            <View style={styles.formField}>
+              <Text style={styles.label}>Daily Protein Goal (g)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="150"
+                placeholderTextColor="#6B7280"
+                value={formData.target_protein_g}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, target_protein_g: text })
+                }
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+            </View>
+
+            {/* Secondary macros */}
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Carbs (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="225"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_carbs_g}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_carbs_g: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Sodium (mg)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="2300"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_sodium_mg}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_sodium_mg: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+            </View>
+
+            {/* Tertiary macros */}
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Fats (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="65"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_fats_g}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_fats_g: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Sugars (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="50"
+                  placeholderTextColor="#6B7280"
+                  value={formData.target_sugars_g}
+                  onChangeText={(text) =>
+                    setFormData({ ...formData, target_sugars_g: text })
+                  }
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+            </View>
+            <View style={styles.formField}>
+              <Text style={styles.label}>Fiber (g)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="30"
+                placeholderTextColor="#6B7280"
+                value={formData.target_fiber_g}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, target_fiber_g: text })
+                }
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+            </View>
+
+            <View style={styles.formField}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Daily Water Goal</Text>
+                <View style={styles.unitToggle}>
+                  {(['oz', 'L'] as WaterUnit[]).map((unit) => (
+                    <TouchableOpacity
+                      key={unit}
+                      style={[
+                        styles.unitButton,
+                        waterUnit === unit && styles.unitButtonActive,
+                      ]}
+                      onPress={() => handleWaterUnitChange(unit)}
+                      disabled={saving}
+                    >
+                      <Text
+                        style={[
+                          styles.unitButtonText,
+                          waterUnit === unit && styles.unitButtonTextActive,
+                        ]}
+                      >
+                        {unit}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder={waterUnit === 'oz' ? '64' : '2'}
+                placeholderTextColor="#6B7280"
+                value={waterInput}
+                onChangeText={setWaterInput}
+                keyboardType="decimal-pad"
+                editable={!saving}
+              />
+            </View>
+
+            {/* Meal target times (used by the meal pace coach) */}
+            <View style={styles.formField}>
+              <Text style={styles.label}>Meal Times</Text>
+              <Text style={styles.fieldHelp}>
+                When you typically eat. The pace coach uses these to suggest
+                catch-up amounts by your next meal.
+              </Text>
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Breakfast</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('breakfast')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.breakfast_time)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Lunch</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('lunch')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.lunch_time)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={[styles.row, { marginTop: 8 }]}>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Dinner</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('dinner')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.dinner_time)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfField} />
+              </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.label}>Water Pace Window</Text>
+              <Text style={styles.fieldHelp}>
+                Hours we use to compute your hydration pace each day.
+              </Text>
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>Start</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('start')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.water_window_start)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.subLabel}>End</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setPickerTarget('end')}
+                    disabled={saving}
+                  >
+                    <Text style={styles.timeButtonText}>
+                      {formatTimeLabel(formData.water_window_end)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.label}>Workout Water Bonus (oz)</Text>
+              <Text style={styles.fieldHelp}>
+                Extra oz added to your goal automatically on days you work out.
+                Set to 0 to disable.
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="0"
+                placeholderTextColor="#6B7280"
+                value={formData.water_workout_bonus_oz}
+                onChangeText={(text) =>
+                  setFormData({ ...formData, water_workout_bonus_oz: text })
+                }
+                keyboardType="number-pad"
+                editable={!saving}
+              />
+            </View>
+
+            <View style={styles.formField}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Display Water In</Text>
+                <View style={styles.unitToggle}>
+                  {(['oz', 'L'] as const).map((unit) => (
+                    <TouchableOpacity
+                      key={unit}
+                      style={[
+                        styles.unitButton,
+                        formData.water_display_unit === unit && styles.unitButtonActive,
+                      ]}
+                      onPress={() =>
+                        setFormData({ ...formData, water_display_unit: unit })
+                      }
+                      disabled={saving}
+                    >
+                      <Text
+                        style={[
+                          styles.unitButtonText,
+                          formData.water_display_unit === unit && styles.unitButtonTextActive,
+                        ]}
+                      >
+                        {unit}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <Text style={styles.fieldHelp}>
+                Where you see water amounts on the Water Intake screen.
+              </Text>
+            </View>
+
+            <View style={styles.formField}>
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Only Water Counts</Text>
+                  <Text style={styles.fieldHelp}>
+                    When on, coffee/tea/juice/other don't count toward your daily
+                    goal or streaks. They still show up in History.
+                  </Text>
+                </View>
+                <Switch
+                  value={formData.water_only_counts}
+                  onValueChange={(v) =>
+                    setFormData({ ...formData, water_only_counts: v })
+                  }
+                  trackColor={{ false: '#374151', true: '#3B82F6' }}
+                  thumbColor="#FFFFFF"
+                  disabled={saving}
+                />
+              </View>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -148,6 +654,58 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Time picker modal */}
+      {Platform.OS === 'ios' ? (
+        <Modal
+          visible={pickerTarget !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPickerTarget(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                {pickerTitle(pickerTarget)}
+              </Text>
+              <DateTimePicker
+                value={dateFromHhmm(pickerValue(pickerTarget, formData))}
+                mode="time"
+                display="spinner"
+                onChange={(_e, picked) => {
+                  if (picked) {
+                    const hhmm = hhmmFromDate(picked);
+                    setFormData((prev) => applyPicker(prev, pickerTarget, hhmm));
+                  }
+                }}
+                textColor="#FFFFFF"
+              />
+              <TouchableOpacity
+                style={styles.modalDoneButton}
+                onPress={() => setPickerTarget(null)}
+              >
+                <Text style={styles.modalDoneButtonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      ) : (
+        pickerTarget !== null && (
+          <DateTimePicker
+            value={dateFromHhmm(pickerValue(pickerTarget, formData))}
+            mode="time"
+            display="default"
+            onChange={(_e, picked) => {
+              const target = pickerTarget;
+              setPickerTarget(null);
+              if (picked && target) {
+                const hhmm = hhmmFromDate(picked);
+                setFormData((prev) => applyPicker(prev, target, hhmm));
+              }
+            }}
+          />
+        )
+      )}
       </View>
     </>
   );
@@ -219,6 +777,35 @@ const styles = StyleSheet.create({
     color: '#D1D5DB',
     marginBottom: 8,
   },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#1F2937',
+    borderRadius: 6,
+    padding: 2,
+    gap: 2,
+  },
+  unitButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  unitButtonActive: {
+    backgroundColor: '#3B82F6',
+  },
+  unitButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  unitButtonTextActive: {
+    color: '#FFFFFF',
+  },
   input: {
     backgroundColor: '#1F2937',
     borderWidth: 1,
@@ -228,6 +815,59 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#FFFFFF',
+  },
+  subLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 6,
+  },
+  fieldHelp: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 10,
+    marginTop: -2,
+  },
+  timeButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#111827',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  modalDoneButton: {
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalDoneButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: '#22C55E',

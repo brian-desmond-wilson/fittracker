@@ -18,7 +18,7 @@ export default function FoodProductPreviewPage() {
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, { paddingTop: insets.top }]}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.replace("/(tabs)/track/food-inventory")} style={styles.backButton}>
               <ChevronLeft size={24} color="#FFFFFF" />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -42,8 +42,6 @@ export default function FoodProductPreviewPage() {
     flavor: null,
     barcode: barcode,
     storage_type: "single-location",
-    location: null,
-    quantity: 0,
     unit: "count",
     restock_threshold: 0,
     fridge_restock_threshold: null,
@@ -85,7 +83,7 @@ export default function FoodProductPreviewPage() {
   return (
     <ViewFoodDetailsScreen
       item={previewItem}
-      onClose={() => router.back()}
+      onClose={() => router.replace("/(tabs)/track/food-inventory")}
       isPreview={true}
       onAddToInventory={handleAddToInventory}
     />

@@ -27,7 +27,7 @@ export default function EditFoodItemPage() {
 
       if (!user) {
         Alert.alert("Error", "You must be logged in");
-        router.back();
+        router.replace(`/(tabs)/track/food-inventory/${id}`);
         return;
       }
 
@@ -41,7 +41,7 @@ export default function EditFoodItemPage() {
 
       if (foodError || !foodItem) {
         Alert.alert("Error", "Item not found");
-        router.back();
+        router.replace(`/(tabs)/track/food-inventory/${id}`);
         return;
       }
 
@@ -113,7 +113,7 @@ export default function EditFoodItemPage() {
     } catch (error: any) {
       console.error("Error fetching item details:", error);
       Alert.alert("Error", "Failed to load item details");
-      router.back();
+      router.replace(`/(tabs)/track/food-inventory/${id}`);
     } finally {
       setLoading(false);
     }
@@ -122,7 +122,7 @@ export default function EditFoodItemPage() {
   const handleSave = () => {
     // Refresh the data after save
     fetchItemDetails();
-    router.back();
+    router.replace(`/(tabs)/track/food-inventory/${id}`);
   };
 
   if (loading || !item) {
@@ -133,7 +133,7 @@ export default function EditFoodItemPage() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity onPress={() => router.replace(`/(tabs)/track/food-inventory/${id}`)} style={styles.backButton}>
               <ChevronLeft size={24} color="#FFFFFF" />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -149,7 +149,7 @@ export default function EditFoodItemPage() {
     );
   }
 
-  return <EditFoodScreen item={item} onClose={() => router.back()} onSave={handleSave} />;
+  return <EditFoodScreen item={item} onClose={() => router.replace(`/(tabs)/track/food-inventory/${id}`)} onSave={handleSave} />;
 }
 
 const styles = StyleSheet.create({

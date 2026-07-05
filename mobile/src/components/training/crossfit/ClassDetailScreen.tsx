@@ -135,11 +135,6 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
     );
   };
 
-  const handleAddPart = async () => {
-    Alert.alert("Add Class Part", "This feature is coming soon!");
-    // TODO: Implement add class part modal
-  };
-
   const handleDeletePart = async (partId: string) => {
     Alert.alert(
       "Delete Part",
@@ -278,10 +273,6 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
           <View style={styles.partsSection}>
             <View style={styles.partsSectionHeader}>
               <Text style={styles.sectionTitle}>Class Parts</Text>
-              <TouchableOpacity onPress={handleAddPart} style={styles.addPartButton}>
-                <Plus size={20} color="#FFFFFF" />
-                <Text style={styles.addPartButtonText}>Add Part</Text>
-              </TouchableOpacity>
             </View>
 
             {classData.parts && classData.parts.length > 0 ? (
@@ -332,7 +323,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
             ) : (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyStateText}>
-                  No parts added yet. Tap "Add Part" to get started.
+                  No parts added yet.
                 </Text>
               </View>
             )}

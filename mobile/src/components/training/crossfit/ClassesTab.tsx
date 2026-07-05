@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, RefreshControl } from 'react-native';
-import { Calendar, Plus, Clock } from 'lucide-react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
+import { Calendar, Clock } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ClassWithDetails } from '@/src/types/crossfit';
 import { fetchClasses, searchClasses } from '@/src/lib/supabase/crossfit';
@@ -85,10 +85,6 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
     setRefreshing(false);
   };
 
-  const handleCreateClass = () => {
-    Alert.alert('Create Class', 'Class creation feature coming soon!');
-  };
-
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr + 'T00:00:00');
     return date.toLocaleDateString('en-US', {
@@ -144,14 +140,8 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
             <Text style={styles.emptyStateText}>
               {searchQuery
                 ? `No results for "${searchQuery}"`
-                : 'Create your first class to get started!'}
+                : 'Your scheduled classes will appear here.'}
             </Text>
-            {!searchQuery && (
-              <TouchableOpacity style={styles.createButton} onPress={handleCreateClass}>
-                <Plus size={20} color="#FFFFFF" />
-                <Text style={styles.createButtonText}>Create Class</Text>
-              </TouchableOpacity>
-            )}
           </View>
         ) : (
           classes.map((classData) => (

@@ -30,8 +30,6 @@ export default function AddFoodItemPage() {
     flavor: null,
     barcode: barcodeValue || null,
     storage_type: "single-location",
-    location: null,
-    quantity: 0,
     unit: "count",
     restock_threshold: 0,
     fridge_restock_threshold: null,
@@ -59,13 +57,19 @@ export default function AddFoodItemPage() {
     subcategories: [],
   };
 
-  const handleSave = (newItemId: string) => {
-    // Navigate to the newly created item's detail page
-    router.replace(`/(tabs)/track/food-inventory/${newItemId}`);
+  const handleSave = (newItemId?: string) => {
+    // Navigate to the newly created item's detail page, or fall back to the list.
+    router.replace(
+      newItemId
+        ? `/(tabs)/track/food-inventory/${newItemId}`
+        : "/(tabs)/track/food-inventory"
+    );
   };
 
   const handleClose = () => {
-    router.back();
+    // Always land on the inventory list — router.back() would walk
+    // linear history if entered from outside the food-inventory stack.
+    router.replace("/(tabs)/track/food-inventory");
   };
 
   return (

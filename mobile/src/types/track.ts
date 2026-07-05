@@ -112,9 +112,12 @@ export interface MealLog {
   carbs: number | null; // grams
   fats: number | null; // grams
   sugars: number | null; // grams
+  sodium_mg: number | null; // milligrams
+  fiber_g: number | null; // grams
   uses_inventory: boolean;
   inventory_items: InventoryUsage[] | null;
   saved_food_id: string | null; // Link to saved_foods table
+  meal_template_id: string | null; // Link to meal_templates table
   servings: number; // Serving multiplier (e.g., 0.5, 1.0, 2.0)
   logged_at: string;
 }
@@ -131,13 +134,51 @@ export interface SavedFood {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  sodium_mg: number | null;
+  fiber_g: number | null;
   serving_size: string | null;
   image_primary_url: string | null;
   image_front_url: string | null;
   image_back_url: string | null;
   is_favorite: boolean;
+  user_corrected: boolean;
+  auto_scaled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// Multi-food meal template (named recipe / preset)
+export interface MealTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  default_meal_type: MealType | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MealTemplateItem {
+  id: string;
+  template_id: string;
+  saved_food_id: string;
+  servings: number;
+  display_order: number;
+  created_at: string;
+}
+
+// Template + its items + computed totals for the UI
+export interface MealTemplateWithItems extends MealTemplate {
+  items: Array<MealTemplateItem & { savedFood: SavedFood }>;
+  totals: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    sugars: number;
+    sodium_mg: number;
+    fiber_g: number;
+  };
 }
 
 // Recent food item with usage frequency
@@ -148,12 +189,15 @@ export interface RecentFoodItem {
 }
 
 // Water Intake Types
+export type WaterBeverageType = "water" | "coffee" | "tea" | "juice" | "other";
+
 export interface WaterLog {
   id: string;
   user_id: string;
   date: string; // YYYY-MM-DD
   amount_oz: number;
   logged_at: string; // Full timestamp
+  beverage_type: WaterBeverageType;
 }
 
 // Weight Tracking Types
@@ -222,19 +266,6 @@ export interface WorkoutLog {
   logged_at: string;
 }
 
-// Sleep Tracking Types
-export interface SleepLog {
-  id: string;
-  user_id: string;
-  date: string; // YYYY-MM-DD (date went to bed)
-  bedtime: string; // Full timestamp
-  wake_time: string; // Full timestamp
-  hours_slept: number; // Calculated field
-  quality_rating: number | null; // 1-5
-  notes: string | null;
-  logged_at: string;
-}
-
 // Tracking Category Configuration
 export type TrackingCategory =
   | "meals"
@@ -243,8 +274,7 @@ export type TrackingCategory =
   | "weight"
   | "measurements"
   | "photos"
-  | "workouts"
-  | "sleep";
+  | "workouts";
 
 export interface TrackingCategoryConfig {
   id: TrackingCategory;

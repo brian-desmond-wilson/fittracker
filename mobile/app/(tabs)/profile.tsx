@@ -46,6 +46,21 @@ export default function Profile() {
     height_cm: "",
     target_weight_kg: "",
     target_calories: "",
+    target_protein_g: "",
+    target_carbs_g: "",
+    target_sodium_mg: "",
+    target_fats_g: "",
+    target_sugars_g: "",
+    target_fiber_g: "",
+    target_water_oz: "",
+    water_window_start: "08:00",
+    water_window_end: "23:00",
+    water_workout_bonus_oz: "0",
+    water_display_unit: "oz" as "oz" | "L",
+    water_only_counts: false,
+    breakfast_time: "08:00",
+    lunch_time: "12:00",
+    dinner_time: "18:00",
   });
 
   useEffect(() => {
@@ -83,6 +98,25 @@ export default function Profile() {
           height_cm: profile.height_cm?.toString() || "",
           target_weight_kg: profile.target_weight_kg?.toString() || "",
           target_calories: profile.target_calories?.toString() || "",
+          target_protein_g: profile.target_protein_g?.toString() || "",
+          target_carbs_g: profile.target_carbs_g?.toString() || "",
+          target_sodium_mg: profile.target_sodium_mg?.toString() || "",
+          target_fats_g: profile.target_fats_g?.toString() || "",
+          target_sugars_g: profile.target_sugars_g?.toString() || "",
+          target_fiber_g: profile.target_fiber_g?.toString() || "",
+          target_water_oz: profile.target_water_oz?.toString() || "",
+          water_window_start: (profile.water_window_start || "08:00").slice(0, 5),
+          water_window_end: (profile.water_window_end || "23:00").slice(0, 5),
+          water_workout_bonus_oz:
+            profile.water_workout_bonus_oz != null
+              ? profile.water_workout_bonus_oz.toString()
+              : "0",
+          water_display_unit:
+            profile.water_display_unit === "L" ? "L" : "oz",
+          water_only_counts: !!profile.water_only_counts,
+          breakfast_time: (profile.breakfast_time || "08:00").slice(0, 5),
+          lunch_time: (profile.lunch_time || "12:00").slice(0, 5),
+          dinner_time: (profile.dinner_time || "18:00").slice(0, 5),
         });
       }
     } catch (error) {
