@@ -16,7 +16,7 @@ export type GoalTypeName =
 
 export type ScalingLevel = 'Rx' | 'L2' | 'L1';
 
-export type WODFormatName = 'AMRAP' | 'EMOM' | 'For Time' | 'Chipper' | 'Tabata' | 'For Load';
+export type WODFormatName = 'AMRAP' | 'EMOM' | 'For Time' | 'Rounds For Time' | 'Chipper' | 'Tabata' | 'For Load';
 
 export type WODCategoryName = 'All' | 'Daily WOD' | 'Heroes' | 'The Girls';
 
@@ -346,6 +346,7 @@ export interface WOD {
   // Basic info
   name: string;
   description: string | null;
+  is_official?: boolean;
 
   // WOD structure
   format_id: string;
