@@ -314,7 +314,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     try {
       const { error } = await supabase.from("water_logs").delete().eq("id", id);
       if (error) throw error;
-      await fetchWaterLogs({ silent: true });
+      setLogs((prev) => prev.filter((l) => l.id !== id));
     } catch (error: any) {
       console.error("Undo failed:", error);
       Alert.alert("Error", "Failed to undo");
@@ -347,7 +347,17 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
         .select()
         .single();
       if (error) throw error;
-      await fetchWaterLogs({ silent: true });
+      // Insert locally and keep the (date desc, logged_at desc) order instead
+      // of re-downloading a year of rows on every logged drink.
+      if (inserted) {
+        setLogs((prev) =>
+          [inserted as WaterLog, ...prev].sort((a, b) =>
+            a.date !== b.date
+              ? a.date < b.date ? 1 : -1
+              : a.logged_at < b.logged_at ? 1 : -1
+          )
+        );
+      }
       if (inserted?.id) {
         const label = `Added ${formatAmount(amount, displayUnit)}${type !== "water" ? ` · ${beverageLabel(type)}` : ""}`;
         showUndoFor(inserted.id, label);
@@ -407,8 +417,14 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
         })
         .eq("id", editingLog.id);
       if (error) throw error;
+      setLogs((prev) =>
+        prev.map((l) =>
+          l.id === editingLog.id
+            ? { ...l, amount_oz: newOz, beverage_type: editTypeDraft }
+            : l
+        )
+      );
       setEditingLog(null);
-      await fetchWaterLogs({ silent: true });
     } catch (error) {
       console.error("Error editing log:", error);
       Alert.alert("Error", "Failed to save changes");
@@ -427,7 +443,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           try {
             const { error } = await supabase.from("water_logs").delete().eq("id", logId);
             if (error) throw error;
-            await fetchWaterLogs({ silent: true });
+            setLogs((prev) => prev.filter((l) => l.id !== logId));
           } catch (error: any) {
             console.error("Error deleting water log:", error);
             Alert.alert("Error", "Failed to delete water log");

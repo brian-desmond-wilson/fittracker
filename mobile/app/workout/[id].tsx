@@ -741,9 +741,12 @@ export default function WorkoutSessionPage() {
         Image.prefetch(url).catch(() => {}); // Silently ignore failures
       });
 
-      // Fetch last performance for suggestions
+      // Fetch last performance for suggestions. Kick it off now but don't block
+      // on it — it runs concurrently with the resume-state queries below. Bounded
+      // by limit so it doesn't scale with training history (we keep only the
+      // most recent working set per exercise).
       const exerciseIds = sortedExercises.map(e => e.exercise_id);
-      const { data: lastSets } = await supabase
+      const lastSetsPromise = supabase
         .from('set_instances')
         .select(`
           weight_lbs,
@@ -756,18 +759,8 @@ export default function WorkoutSessionPage() {
         .in('exercise_instances.exercise_id', exerciseIds)
         .eq('exercise_instances.workout_instances.user_id', userId)
         .eq('is_warmup', false)
-        .order('created_at', { ascending: false });
-
-      // Build last performance map
-      const lastPerf: Record<string, { weight: number; reps: number }> = {};
-      if (lastSets) {
-        for (const s of lastSets) {
-          const exId = (s.exercise_instances as any)?.exercise_id;
-          if (exId && !lastPerf[exId] && s.weight_lbs) {
-            lastPerf[exId] = { weight: s.weight_lbs, reps: s.actual_reps || 0 };
-          }
-        }
-      }
+        .order('created_at', { ascending: false })
+        .limit(Math.max(exerciseIds.length, 1) * 10);
 
       // If resuming an existing workout, load saved exercise/set data
       let existingExerciseData: Record<string, { 
@@ -857,6 +850,18 @@ export default function WorkoutSessionPage() {
             if (exIdx >= 0) {
               exerciseInstanceIdsRef.current[exIdx] = ex.id;
             }
+          }
+        }
+      }
+
+      // Resolve last performance now (it ran concurrently with the queries above)
+      const { data: lastSets } = await lastSetsPromise;
+      const lastPerf: Record<string, { weight: number; reps: number }> = {};
+      if (lastSets) {
+        for (const s of lastSets) {
+          const exId = (s.exercise_instances as any)?.exercise_id;
+          if (exId && !lastPerf[exId] && s.weight_lbs) {
+            lastPerf[exId] = { weight: s.weight_lbs, reps: s.actual_reps || 0 };
           }
         }
       }
