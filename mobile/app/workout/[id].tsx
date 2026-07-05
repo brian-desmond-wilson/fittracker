@@ -18,7 +18,6 @@ import {
   TouchableOpacity,
   TextInput,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Modal,
@@ -27,10 +26,29 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  CheckSquare,
+  Square,
+  Trash2,
+  Timer,
+  Moon,
+  Play,
+  Check,
+  AlertCircle,
+  X,
+  LayoutGrid,
+  Flag,
+  CheckCircle2,
+  Circle,
+  ChevronRight,
+  PauseCircle,
+  Image as ImageIcon,
+} from 'lucide-react-native';
+import { colors } from '@/src/lib/colors';
 import { Swipeable } from 'react-native-gesture-handler';
 import { supabase } from '@/src/lib/supabase';
 
@@ -212,11 +230,11 @@ function DifficultyPicker({ value, onChange, increaseWeight, onIncreaseWeightCha
         style={styles.increaseWeightRow}
         onPress={() => onIncreaseWeightChange(!increaseWeight)}
       >
-        <Ionicons
-          name={increaseWeight ? 'checkbox' : 'square-outline'}
-          size={20}
-          color={increaseWeight ? '#a78bfa' : '#6b7280'}
-        />
+        {increaseWeight ? (
+          <CheckSquare size={20} color={colors.primary} />
+        ) : (
+          <Square size={20} color="#6b7280" />
+        )}
         <Text style={styles.increaseWeightText}>Add weight next time (^)</Text>
       </TouchableOpacity>
     </View>
@@ -296,7 +314,7 @@ function SetEntryRow({
         style={styles.deleteSwipeAction}
         onPress={onDelete}
       >
-        <Ionicons name="trash-outline" size={20} color="#fff" />
+        <Trash2 size={20} color="#fff" />
         <Text style={styles.deleteSwipeText}>Delete</Text>
       </TouchableOpacity>
     );
@@ -332,14 +350,14 @@ function SetEntryRow({
                 </View>
               )}
               <View style={styles.setDurationBadge}>
-                <Ionicons name="timer-outline" size={12} color="#9ca3af" />
+                <Timer size={12} color={colors.mutedForeground} />
                 <Text style={styles.setDurationText}>{formatDuration(setDuration)}</Text>
               </View>
             </View>
             {/* Rest indicator */}
             {set.rest_seconds !== null && set.rest_seconds > 0 && (
               <View style={styles.restIndicator}>
-                <Ionicons name="moon-outline" size={12} color="#6b7280" />
+                <Moon size={12} color="#6b7280" />
                 <Text style={styles.restIndicatorText}>
                   {formatDuration(set.rest_seconds)} rest
                 </Text>
@@ -387,15 +405,15 @@ function SetEntryRow({
         {/* Timer control */}
         {!isTimerRunning ? (
           <TouchableOpacity style={styles.timerStartButton} onPress={onStartTimer}>
-            <Ionicons name="play" size={14} color="#4ade80" />
+            <Play size={14} color="#4ade80" />
             <Text style={styles.timerStartText}>Start</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.timerRunning}>
-            <Ionicons name="timer" size={14} color="#fbbf24" />
+            <Timer size={14} color="#fbbf24" />
             <Text style={styles.timerRunningText}>{formatDuration(timerSeconds)}</Text>
             <TouchableOpacity onPress={onStopTimer}>
-              <Ionicons name="stop" size={14} color="#ef4444" />
+              <Square size={14} color="#ef4444" />
             </TouchableOpacity>
           </View>
         )}
@@ -445,7 +463,7 @@ function SetEntryRow({
       />
 
       <TouchableOpacity style={styles.logSetButton} onPress={handleComplete}>
-        <Ionicons name="checkmark" size={18} color="#fff" />
+        <Check size={18} color="#fff" />
         <Text style={styles.logSetButtonText}>Log Set</Text>
       </TouchableOpacity>
     </View>
@@ -458,6 +476,7 @@ function SetEntryRow({
 
 export default function WorkoutSessionPage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id, instanceId, programInstanceId } = useLocalSearchParams<{ id: string; instanceId?: string; programInstanceId?: string }>();
   
   const [userId, setUserId] = useState<string | null>(null);
@@ -1656,29 +1675,29 @@ export default function WorkoutSessionPage() {
   // Loading state
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#a78bfa" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading workout...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // Error state
   if (error || !template || !currentExercise) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.centerContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+          <AlertCircle size={48} color="#ef4444" />
           <Text style={styles.errorText}>{error || 'Failed to load workout'}</Text>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1688,7 +1707,7 @@ export default function WorkoutSessionPage() {
     : `${currentExercise.exercise.target_reps_min}`;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Header */}
@@ -1706,7 +1725,7 @@ export default function WorkoutSessionPage() {
             );
           }}
         >
-          <Ionicons name="close" size={24} color="#fff" />
+          <X size={24} color="#fff" />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
@@ -1715,7 +1734,7 @@ export default function WorkoutSessionPage() {
         </View>
         
         <TouchableOpacity style={styles.headerButton} onPress={goToSummary}>
-          <Ionicons name="grid-outline" size={22} color="#fff" />
+          <LayoutGrid size={22} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -1755,7 +1774,7 @@ export default function WorkoutSessionPage() {
               showSummary && styles.exerciseDotActive,
             ]}
           >
-            <Ionicons name="flag" size={6} color={showSummary ? '#fff' : '#6b7280'} />
+            <Flag size={6} color={showSummary ? "#fff" : "#6b7280"} />
           </TouchableOpacity>
         </View>
         <Text style={styles.progressText}>
@@ -1784,16 +1803,16 @@ export default function WorkoutSessionPage() {
                 const totalSets = state.sets.length;
                 
                 // Determine status
-                let statusIcon: string;
+                let StatusIcon: React.ComponentType<{ size?: number; color?: string }>;
                 let statusColor: string;
                 if (state.completed) {
-                  statusIcon = 'checkmark-circle';
+                  StatusIcon = CheckCircle2;
                   statusColor = '#4ade80';
                 } else if (completedSets > 0) {
-                  statusIcon = 'ellipse-outline';
+                  StatusIcon = Circle;
                   statusColor = '#fbbf24';
                 } else {
-                  statusIcon = 'ellipse-outline';
+                  StatusIcon = Circle;
                   statusColor = '#6b7280';
                 }
                 
@@ -1803,7 +1822,7 @@ export default function WorkoutSessionPage() {
                     style={styles.summaryRow}
                     onPress={() => goToExercise(idx)}
                   >
-                    <Ionicons name={statusIcon as any} size={20} color={statusColor} />
+                    <StatusIcon size={20} color={statusColor} />
                     <View style={styles.summaryRowContent}>
                       <Text style={styles.summaryExerciseName} numberOfLines={1}>
                         {exercise.name}
@@ -1812,7 +1831,7 @@ export default function WorkoutSessionPage() {
                         {completedSets}/{totalSets} sets
                       </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={18} color="#6b7280" />
+                    <ChevronRight size={18} color="#6b7280" />
                   </TouchableOpacity>
                 );
               })}
@@ -1826,7 +1845,7 @@ export default function WorkoutSessionPage() {
                 onPress={doneForToday}
                 disabled={isSaving}
               >
-                <Ionicons name="pause-circle" size={20} color="#fff" />
+                <PauseCircle size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>Done for Today</Text>
               </TouchableOpacity>
               
@@ -1840,7 +1859,7 @@ export default function WorkoutSessionPage() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                    <CheckCircle2 size={20} color="#fff" />
                     <Text style={styles.actionButtonText}>Finish Workout</Text>
                   </>
                 )}
@@ -1886,12 +1905,12 @@ export default function WorkoutSessionPage() {
                   >
                     {generatingImage ? (
                       <>
-                        <ActivityIndicator size="small" color="#a78bfa" />
+                        <ActivityIndicator size="small" color={colors.primary} />
                         <Text style={styles.generateImageText}>Generating...</Text>
                       </>
                     ) : (
                       <>
-                        <Ionicons name="image-outline" size={32} color="#6b7280" />
+                        <ImageIcon size={32} color="#6b7280" />
                         <Text style={styles.generateImageText}>Generate Image</Text>
                       </>
                     )}
@@ -2035,7 +2054,7 @@ export default function WorkoutSessionPage() {
           >
             {currentExercise?.completed ? (
               <>
-                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <CheckCircle2 size={20} color="#fff" />
                 <Text style={styles.actionButtonText}>Completed</Text>
               </>
             ) : (
@@ -2063,7 +2082,7 @@ export default function WorkoutSessionPage() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -2101,7 +2120,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backButtonText: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 16,
   },
 
@@ -2147,7 +2166,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#a78bfa',
+    backgroundColor: colors.primary,
   },
   progressText: {
     color: '#6b7280',
@@ -2168,7 +2187,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#374151',
   },
   exerciseDotActive: {
-    backgroundColor: '#a78bfa',
+    backgroundColor: colors.primary,
     width: 24,
   },
   exerciseDotCompleted: {
@@ -2237,7 +2256,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   exerciseTarget: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '500',
     textAlign: 'center',
@@ -2271,7 +2290,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   addWarmupText: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -2323,7 +2342,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   warmupBadge: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -2346,7 +2365,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   difficultyBadgeText: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -2449,12 +2468,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   setRowActive: {
-    backgroundColor: '#1e1b4b',
+    backgroundColor: 'rgba(34, 197, 94, 0.08)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#a78bfa',
+    borderColor: colors.primary,
   },
   setRowHeader: {
     flexDirection: 'row',
@@ -2471,7 +2490,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#a78bfa',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2481,7 +2500,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   warmupBadgeActive: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 4,
@@ -2590,8 +2609,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   difficultyButtonActive: {
-    backgroundColor: '#7c3aed',
-    borderColor: '#a78bfa',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   difficultyButtonText: {
     color: '#9ca3af',
@@ -2621,7 +2640,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
     paddingVertical: 12,
     borderRadius: 8,
   },
@@ -2677,7 +2696,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   nextButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
   },
   completedButton: {
     backgroundColor: '#059669',
@@ -2737,7 +2756,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   doneForTodayButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.secondary,
   },
   actionButtonText: {
     color: '#fff',
@@ -2776,7 +2795,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
     paddingVertical: 14,
     paddingHorizontal: 32,
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
     borderRadius: 10,
   },
   restTimerButtonText: {

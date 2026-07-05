@@ -1,6 +1,6 @@
 /**
  * Today's Workout Card Component
- * 
+ *
  * Shows the next workout in the user's program with:
  * - Workout name and day number
  * - Exercise list with set targets
@@ -17,7 +17,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  CheckCircle2,
+  AlertCircle,
+  Dumbbell,
+  PlayCircle,
+  PauseCircle,
+  Timer,
+  ChevronRight,
+  Clock,
+  Play,
+  Zap,
+} from 'lucide-react-native';
+import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
 import { useTodaysWorkout } from '@/src/hooks/useTodaysWorkout';
 
@@ -42,7 +54,7 @@ function ExerciseRow({ name, targetSets, completedSets, isComplete }: ExerciseRo
     <View style={styles.exerciseRow}>
       <View style={styles.exerciseInfo}>
         {isComplete ? (
-          <Ionicons name="checkmark-circle" size={16} color="#4ade80" style={styles.checkIcon} />
+          <CheckCircle2 size={16} color={colors.primary} style={styles.checkIcon} />
         ) : (
           <View style={styles.bulletPoint} />
         )}
@@ -61,13 +73,13 @@ export function TodaysWorkoutCard() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUserId(user?.id || null);
     });
   }, []);
-  
+
   const { data, isLoading, error, refetch } = useTodaysWorkout(userId ?? undefined);
 
   // Live timer for in-progress workouts (not paused)
@@ -76,13 +88,13 @@ export function TodaysWorkoutCard() {
       setElapsedSeconds(0);
       return;
     }
-    
+
     // For paused sessions, show the saved duration (static)
     if (data.status === 'paused' && data.sessionDurationSeconds) {
       setElapsedSeconds(data.sessionDurationSeconds);
       return;
     }
-    
+
     // For active sessions, show live timer
     if (!data.startedAt) {
       setElapsedSeconds(0);
@@ -90,10 +102,10 @@ export function TodaysWorkoutCard() {
     }
 
     const startTime = new Date(data.startedAt).getTime();
-    
+
     // Update immediately
     setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-    
+
     // Update every second
     const interval = setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
@@ -107,7 +119,7 @@ export function TodaysWorkoutCard() {
     return (
       <View style={styles.card}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#a78bfa" />
+          <ActivityIndicator size="small" color={colors.primary} />
           <Text style={styles.loadingText}>Loading workout...</Text>
         </View>
       </View>
@@ -119,7 +131,7 @@ export function TodaysWorkoutCard() {
     return (
       <View style={styles.card}>
         <View style={styles.emptyContainer}>
-          <Ionicons name="alert-circle-outline" size={32} color="#6b7280" />
+          <AlertCircle size={32} color={colors.mutedForeground} />
           <Text style={styles.emptyTitle}>Unable to load workout</Text>
           <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
             <Text style={styles.retryText}>Tap to retry</Text>
@@ -134,12 +146,12 @@ export function TodaysWorkoutCard() {
     return (
       <View style={styles.card}>
         <View style={styles.emptyContainer}>
-          <Ionicons name="barbell-outline" size={32} color="#6b7280" />
+          <Dumbbell size={32} color={colors.mutedForeground} />
           <Text style={styles.emptyTitle}>No Active Program</Text>
           <Text style={styles.emptySubtitle}>
             Start a program to get personalized workouts
           </Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.startButton}
             onPress={() => router.push('/(tabs)/training')}
           >
@@ -154,6 +166,7 @@ export function TodaysWorkoutCard() {
   const { workoutTemplate, programInstance, cycleNumber, status, exercises, remainingExerciseCount } = data;
   const isContinue = status === 'continue';
   const isPaused = status === 'paused';
+  const ActionIcon = (isPaused || isContinue) ? Play : Zap;
 
   const handlePreviewPress = () => {
     // Navigate to workout preview screen to see full exercise details
@@ -189,19 +202,19 @@ export function TodaysWorkoutCard() {
           </View>
           {isContinue && (
             <View style={styles.continueBadge}>
-              <Ionicons name="play-circle" size={14} color="#fbbf24" />
+              <PlayCircle size={14} color="#fbbf24" />
               <Text style={styles.continueBadgeText}>In Progress</Text>
             </View>
           )}
           {isPaused && (
             <View style={styles.pausedBadge}>
-              <Ionicons name="pause-circle" size={14} color="#6366f1" />
+              <PauseCircle size={14} color={colors.mutedForeground} />
               <Text style={styles.pausedBadgeText}>Paused</Text>
             </View>
           )}
           {(isContinue || isPaused) && elapsedSeconds > 0 && (
             <View style={[styles.timerBadge, isPaused && styles.timerBadgePaused]}>
-              <Ionicons name="timer-outline" size={14} color={isPaused ? "#9ca3af" : "#22c55e"} />
+              <Timer size={14} color={isPaused ? colors.mutedForeground : colors.primary} />
               <Text style={[styles.timerBadgeText, isPaused && styles.timerBadgeTextPaused]}>
                 {formatElapsedTime(elapsedSeconds)}
               </Text>
@@ -209,18 +222,18 @@ export function TodaysWorkoutCard() {
           )}
         </View>
         {/* Preview button - navigates to workout preview page */}
-        <TouchableOpacity 
-          onPress={handlePreviewPress} 
+        <TouchableOpacity
+          onPress={handlePreviewPress}
           style={styles.previewButton}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <ChevronRight size={20} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
       {/* Workout name */}
       <Text style={styles.workoutName}>{workoutTemplate.name}</Text>
-      
+
       {/* Program info */}
       <Text style={styles.programInfo}>
         {programInstance.name} • Cycle {cycleNumber}
@@ -229,7 +242,7 @@ export function TodaysWorkoutCard() {
       {/* Remaining exercises badge for partial workouts */}
       {isContinue && remainingExerciseCount > 0 && (
         <View style={styles.remainingBadge}>
-          <Ionicons name="time-outline" size={14} color="#f97316" />
+          <Clock size={14} color="#f97316" />
           <Text style={styles.remainingText}>
             {remainingExerciseCount} exercise{remainingExerciseCount !== 1 ? 's' : ''} remaining
           </Text>
@@ -253,16 +266,12 @@ export function TodaysWorkoutCard() {
       </View>
 
       {/* Start/Continue/Resume button */}
-      <TouchableOpacity 
-        style={[styles.actionButton, isPaused && styles.actionButtonPaused]} 
+      <TouchableOpacity
+        style={styles.actionButton}
         onPress={handleStartPress}
         activeOpacity={0.8}
       >
-        <Ionicons 
-          name={isPaused ? "play" : isContinue ? "play" : "flash"} 
-          size={16} 
-          color="#fff" 
-        />
+        <ActionIcon size={16} color={colors.primaryForeground} />
         <Text style={styles.actionButtonText}>
           {isPaused ? 'Resume Workout' : isContinue ? 'Continue Workout' : 'Start Workout'}
         </Text>
@@ -273,14 +282,14 @@ export function TodaysWorkoutCard() {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1f2937',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#374151',
   },
-  
+
   // Loading state
   loadingContainer: {
     flexDirection: 'row',
@@ -290,10 +299,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 14,
   },
-  
+
   // Empty state
   emptyContainer: {
     alignItems: 'center',
@@ -306,7 +315,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   emptySubtitle: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 14,
     marginTop: 4,
     textAlign: 'center',
@@ -317,22 +326,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   retryText: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 14,
   },
   startButton: {
     marginTop: 16,
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
   },
   startButtonText: {
-    color: '#fff',
+    color: colors.primaryForeground,
     fontSize: 14,
     fontWeight: '600',
   },
-  
+
   // Header
   header: {
     flexDirection: 'row',
@@ -380,47 +389,47 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   timerBadgePaused: {
-    backgroundColor: 'rgba(156, 163, 175, 0.15)',
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
   },
   timerBadgeText: {
-    color: '#22c55e',
+    color: colors.primary,
     fontSize: 12,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
   timerBadgeTextPaused: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
   },
   pausedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    backgroundColor: 'rgba(148, 163, 184, 0.15)',
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 12,
     gap: 4,
   },
   pausedBadgeText: {
-    color: '#6366f1',
+    color: colors.mutedForeground,
     fontSize: 12,
     fontWeight: '600',
   },
   previewButton: {
     padding: 4,
   },
-  
+
   // Content
   workoutName: {
-    color: '#f9fafb',
+    color: colors.foreground,
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 4,
   },
   programInfo: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 13,
   },
-  
+
   // Remaining badge
   remainingBadge: {
     flexDirection: 'row',
@@ -438,14 +447,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  
+
   // Divider
   divider: {
     height: 1,
     backgroundColor: '#374151',
     marginVertical: 14,
   },
-  
+
   // Exercise list
   exerciseList: {
     gap: 10,
@@ -464,7 +473,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#6b7280',
+    backgroundColor: colors.mutedForeground,
     marginRight: 10,
   },
   checkIcon: {
@@ -476,30 +485,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   exerciseSets: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 13,
   },
   exerciseComplete: {
-    color: '#6b7280',
+    color: colors.mutedForeground,
     textDecorationLine: 'line-through',
   },
-  
+
   // Action button
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#7c3aed',
+    backgroundColor: colors.primary,
     paddingVertical: 12,
     borderRadius: 10,
     marginTop: 16,
     gap: 8,
   },
-  actionButtonPaused: {
-    backgroundColor: '#6366f1',
-  },
   actionButtonText: {
-    color: '#fff',
+    color: colors.primaryForeground,
     fontSize: 15,
     fontWeight: '600',
   },

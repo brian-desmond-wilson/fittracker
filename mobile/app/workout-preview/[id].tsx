@@ -15,12 +15,13 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Clock, AlertCircle, ChevronLeft, CheckCircle2, Zap } from 'lucide-react-native';
+import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
 
 // ============================================================
@@ -232,7 +233,7 @@ function ExerciseCard({ exercise, lastPerformance, index }: ExerciseCardProps) {
         {/* Last performance */}
         {lastPerformance && (
           <View style={styles.lastPerformance}>
-            <Ionicons name="time-outline" size={14} color="#9ca3af" />
+            <Clock size={14} color={colors.mutedForeground} />
             <Text style={styles.lastPerformanceText}>
               Last: {lastPerformance.weight_lbs} lbs × {lastPerformance.reps}
             </Text>
@@ -249,6 +250,7 @@ function ExerciseCard({ exercise, lastPerformance, index }: ExerciseCardProps) {
 
 export default function WorkoutPreviewPage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id, programInstanceId } = useLocalSearchParams<{ id: string; programInstanceId?: string }>();
   const [userId, setUserId] = useState<string | undefined>(undefined);
   
@@ -276,23 +278,23 @@ export default function WorkoutPreviewPage() {
   // Loading state
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a78bfa" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading workout...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // Error state
   if (error || !data) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
+          <AlertCircle size={48} color="#ef4444" />
           <Text style={styles.errorTitle}>Unable to load workout</Text>
           <Text style={styles.errorMessage}>
             {error?.message || 'Something went wrong'}
@@ -301,14 +303,14 @@ export default function WorkoutPreviewPage() {
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   const { workout, lastPerformanceMap, lastCompleted } = data;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
       
       {/* Header */}
@@ -317,7 +319,7 @@ export default function WorkoutPreviewPage() {
           style={styles.headerBackButton} 
           onPress={() => router.back()}
         >
-          <Ionicons name="arrow-back" size={24} color="#ffffff" />
+          <ChevronLeft size={24} color={colors.foreground} />
         </TouchableOpacity>
         
         <View style={styles.headerTitles}>
@@ -335,7 +337,7 @@ export default function WorkoutPreviewPage() {
       {/* Last completed info */}
       {lastCompleted && (
         <View style={styles.lastCompletedBanner}>
-          <Ionicons name="checkmark-circle" size={16} color="#4ade80" />
+          <CheckCircle2 size={16} color="#4ade80" />
           <Text style={styles.lastCompletedText}>
             Last completed: {new Date(lastCompleted).toLocaleDateString()}
           </Text>
@@ -374,11 +376,11 @@ export default function WorkoutPreviewPage() {
           onPress={handleStartWorkout}
           activeOpacity={0.8}
         >
-          <Ionicons name="flash" size={20} color="#ffffff" />
+          <Zap size={20} color={colors.primaryForeground} />
           <Text style={styles.startButtonText}>Start Workout</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -389,7 +391,7 @@ export default function WorkoutPreviewPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0F1E',
+    backgroundColor: colors.background,
   },
   
   // Loading state
@@ -400,7 +402,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   loadingText: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 16,
   },
   
@@ -413,13 +415,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   errorTitle: {
-    color: '#ffffff',
+    color: colors.foreground,
     fontSize: 20,
     fontWeight: '600',
     marginTop: 8,
   },
   errorMessage: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -427,11 +429,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    backgroundColor: '#1f2937',
+    backgroundColor: colors.card,
     borderRadius: 8,
   },
   backButtonText: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -443,7 +445,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
+    borderBottomColor: colors.border,
   },
   headerBackButton: {
     width: 40,
@@ -457,12 +459,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    color: '#ffffff',
+    color: colors.foreground,
     fontSize: 18,
     fontWeight: '700',
   },
   headerSubtitle: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 13,
     marginTop: 2,
   },
@@ -507,10 +509,10 @@ const styles = StyleSheet.create({
   // Exercise card
   exerciseCard: {
     flexDirection: 'row',
-    backgroundColor: '#111827',
+    backgroundColor: colors.card,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: colors.border,
     padding: 14,
     marginBottom: 12,
   },
@@ -537,14 +539,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   exerciseName: {
-    color: '#ffffff',
+    color: colors.foreground,
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
     marginRight: 8,
   },
   setsReps: {
-    color: '#a78bfa',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '500',
     marginTop: 4,
@@ -558,7 +560,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   lastPerformanceText: {
-    color: '#9ca3af',
+    color: colors.mutedForeground,
     fontSize: 13,
   },
   
@@ -574,21 +576,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     paddingBottom: 32,
-    backgroundColor: '#0A0F1E',
+    backgroundColor: colors.background,
     borderTopWidth: 1,
-    borderTopColor: '#1f2937',
+    borderTopColor: colors.border,
   },
   startButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     gap: 10,
   },
   startButtonText: {
-    color: '#ffffff',
+    color: colors.foreground,
     fontSize: 17,
     fontWeight: '700',
   },
