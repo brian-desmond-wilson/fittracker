@@ -42,8 +42,6 @@ export default function FoodProductPreviewPage() {
     flavor: null,
     barcode: barcode,
     storage_type: "single-location",
-    location: null,
-    quantity: 0,
     unit: "count",
     restock_threshold: 0,
     fridge_restock_threshold: null,
