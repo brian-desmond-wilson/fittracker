@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, Calendar, Plus, TrendingUp, Dumbbell } from "lucide-react-native";
+import { Home, Calendar, Plus, Dumbbell } from "lucide-react-native";
 import { TabBarIcon } from "@/src/components/TabBarIcon";
 
 export default function TabLayout() {
@@ -68,10 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="progress"
         options={{
-          title: "Progress",
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon Icon={TrendingUp} color={color} focused={focused} />
-          ),
+          href: null, // Hidden until the Progress charts are built (currently a stub)
         }}
       />
       <Tabs.Screen
