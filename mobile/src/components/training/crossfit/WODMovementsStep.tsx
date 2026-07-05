@@ -50,10 +50,9 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
   const handleEditMovement = (index: number) => {
     const movement = formData.movements[index];
     // Create a mock ExerciseWithVariations for the modal
-    const mockMovement: ExerciseWithVariations = {
+    const mockMovement = {
       id: movement.exercise_id,
       name: movement.exercise_name,
-      full_name: movement.exercise_name,
       slug: '',
       created_at: '',
       updated_at: '',
@@ -77,7 +76,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
       requires_weight: movement.requires_weight ?? false,
       requires_distance: movement.requires_distance ?? false,
       equipment_types: movement.equipment_types ?? null,
-    };
+    } as unknown as ExerciseWithVariations;
     setSelectedMovement(mockMovement);
     setEditingIndex(index);
     setConfigModalVisible(true);
@@ -167,7 +166,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
       } else if (movement.l2_reps) {
         // Check if it's a rep scheme pattern (contains dashes) or a number
         const isRepScheme = typeof movement.l2_reps === 'string' && movement.l2_reps.includes('-');
-        parts.push(isRepScheme ? movement.l2_reps : `${movement.l2_reps} reps`);
+        parts.push(isRepScheme ? String(movement.l2_reps) : `${movement.l2_reps} reps`);
       } else if (repScheme) {
         parts.push(repScheme);
       }
@@ -199,7 +198,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
       } else if (movement.l1_reps) {
         // Check if it's a rep scheme pattern (contains dashes) or a number
         const isRepScheme = typeof movement.l1_reps === 'string' && movement.l1_reps.includes('-');
-        parts.push(isRepScheme ? movement.l1_reps : `${movement.l1_reps} reps`);
+        parts.push(isRepScheme ? String(movement.l1_reps) : `${movement.l1_reps} reps`);
       } else if (repScheme) {
         parts.push(repScheme);
       }
