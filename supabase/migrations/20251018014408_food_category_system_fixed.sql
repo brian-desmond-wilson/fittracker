@@ -23,6 +23,10 @@ BEGIN
   END IF;
 END $$;
 
+-- food_categories are now global/system categories (no per-user owner), so
+-- relax the original NOT NULL on user_id before seeding them.
+ALTER TABLE food_categories ALTER COLUMN user_id DROP NOT NULL;
+
 -- Clear existing categories and re-seed with new structure
 TRUNCATE TABLE food_categories CASCADE;
 

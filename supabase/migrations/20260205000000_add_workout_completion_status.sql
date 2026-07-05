@@ -11,7 +11,9 @@ CHECK (completion_status IN ('completed', 'partial'));
 
 -- Add index for common query pattern (finding latest workout by status)
 CREATE INDEX idx_workout_instances_completion_status 
-ON workout_instances (program_instance_id, performed_date DESC, completion_status)
+-- (workout_instances has no performed_date column — that lives on
+-- exercise_instances; use completed_at, the workout's completion timestamp.)
+ON workout_instances (program_instance_id, completed_at DESC, completion_status)
 WHERE completion_status IS NOT NULL;
 
 -- Comment for documentation
