@@ -64,7 +64,7 @@ function ProgramCard({ program, onPress, onLongPress }: ProgramCardProps) {
     >
       {/* Cover Image */}
       <View style={styles.imageContainer}>
-        <Image source={{ uri: program.coverImageUrl }} style={styles.coverImage} />
+        <Image source={{ uri: program.coverImageUrl || undefined }} style={styles.coverImage} />
         {program.isActive && (
           <View style={styles.activeBadge}>
             <Text style={styles.activeBadgeText}>ACTIVE</Text>
@@ -240,7 +240,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
       <View style={[styles.container, styles.centerContent]}>
         <Text style={styles.errorTitle}>Oops!</Text>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadPrograms}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => loadPrograms()}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>

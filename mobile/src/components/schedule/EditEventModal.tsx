@@ -311,7 +311,7 @@ export function EditEventModal({
             <Text style={styles.pickerTitle}>Select Category</Text>
             <ScrollView style={styles.pickerScroll}>
               {categories.map((category) => {
-                const Icon = (LucideIcons as any)[category.icon];
+                const Icon = (LucideIcons as any)[category.icon ?? ""];
                 return (
                   <TouchableOpacity
                     key={category.id}

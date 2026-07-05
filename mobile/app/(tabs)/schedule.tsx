@@ -77,7 +77,7 @@ export default function Schedule() {
   }, []);
 
   const handleScrollViewLayout = useCallback(() => {
-    scrollViewRef.current?.measureInWindow((_x, y) => {
+    (scrollViewRef.current as any)?.measureInWindow((_x: number, y: number) => {
       scrollViewTopRef.current = y;
     });
   }, []);
@@ -267,7 +267,7 @@ export default function Schedule() {
       // Reload events
       await loadScheduleData();
       // Update selected event
-      setSelectedEvent({ ...selectedEvent, status });
+      setSelectedEvent({ ...selectedEvent, status: status as ScheduleEvent["status"] });
     } catch (error) {
       console.error("Error updating event status:", error);
     }

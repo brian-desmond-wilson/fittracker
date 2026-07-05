@@ -264,7 +264,7 @@ export function MovementConfigModal({
       // Equipment metadata (for edit modal)
       requires_weight: movement.requires_weight,
       requires_distance: movement.requires_distance,
-      equipment_types: movement.equipment_types,
+      equipment_types: movement.equipment_types ?? undefined,
 
       // Rep scheme override
       follows_wod_scheme: followsWodScheme,
