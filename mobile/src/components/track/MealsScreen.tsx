@@ -184,6 +184,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   // Historical meals (last 365 days) for insights/streaks/chart
   const [historicalLogs, setHistoricalLogs] = useState<MealLog[]>([]);
+  // Bumped only when meals are written (log/undo/delete/edit/refresh) so the
+  // 365-day insights query refetches on writes but NOT on date navigation.
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   // Saved-foods search results (debounced from searchQuery)
   const [searchResults, setSearchResults] = useState<SavedFood[]>([]);
@@ -309,6 +312,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       if (error) throw error;
 
       setMealsCache((prev) => new Map(prev).set(dateStr, data || []));
+      // A forced fetch means the day was just written to (or pulled to
+      // refresh) — refresh the insights history too. Plain navigation doesn't.
+      if (force) setHistoryVersion((v) => v + 1);
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
@@ -382,7 +388,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   useEffect(() => {
     fetchHistoricalLogs();
-  }, [fetchHistoricalLogs, mealsCache]);
+  }, [fetchHistoricalLogs, historyVersion]);
 
   // Pull the user back to Today when they start a logging action — typing
   // in the search bar or opening the add form. Otherwise results/input
