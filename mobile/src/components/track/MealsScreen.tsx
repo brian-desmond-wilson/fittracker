@@ -277,11 +277,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   };
 
   // Fetch meals for a specific date
-  const fetchMealsForDate = async (date: Date) => {
+  const fetchMealsForDate = async (date: Date, force = false) => {
     const dateStr = getLocalDateString(date);
 
-    // Check cache first
-    if (mealsCache.has(dateStr)) {
+    // Check cache first. Mutation paths pass force=true because the cache
+    // delete they queue hasn't committed yet in this closure — without it the
+    // guard reads the stale Map, early-returns, and the refetch is skipped.
+    if (!force && mealsCache.has(dateStr)) {
       setLoadingDay(false);
       return;
     }
@@ -468,7 +470,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       return newCache;
     });
     await Promise.all([
-      fetchMealsForDate(viewingDate),
+      fetchMealsForDate(viewingDate, true),
       fetchRecentAndFavorites(),
     ]);
     setRefreshing(false);
@@ -584,7 +586,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         next.delete(viewingDateStr);
         return next;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
     } catch (error) {
       console.error("Undo failed:", error);
       Alert.alert("Error", "Failed to undo");
@@ -732,7 +734,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         newCache.delete(viewingDateStr);
         return newCache;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
 
       // Refresh recent foods
       fetchRecentAndFavorites();
@@ -962,7 +964,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         newCache.delete(viewingDateStr);
         return newCache;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
 
       // Refresh recent foods if saved
       if (saveToLibrary) {
@@ -1129,7 +1131,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       // Refetch if the meal was added for the viewing date
       if (mealDate === viewingDateStr) {
-        await fetchMealsForDate(viewingDate);
+        await fetchMealsForDate(viewingDate, true);
       }
     } catch (error: any) {
       console.error("Error adding meal:", error);
@@ -1181,7 +1183,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         next.delete(viewingDateStr);
         return next;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
       setQuickAdjustVisible(false);
       if (inserted?.id) {
         showUndoFor(
@@ -1271,7 +1273,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         next.delete(date);
         return next;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
     } catch (error) {
       console.error("Error editing meal:", error);
       Alert.alert("Error", "Failed to save changes");
@@ -1298,7 +1300,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               newCache.delete(viewingDateStr);
               return newCache;
             });
-            await fetchMealsForDate(viewingDate);
+            await fetchMealsForDate(viewingDate, true);
           } catch (error: any) {
             console.error("Error deleting meal:", error);
             Alert.alert("Error", "Failed to delete meal");
@@ -2052,7 +2054,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             next.delete(viewingDateStr);
             return next;
           });
-          await fetchMealsForDate(viewingDate);
+          await fetchMealsForDate(viewingDate, true);
           await fetchRecentAndFavorites();
         }}
       />

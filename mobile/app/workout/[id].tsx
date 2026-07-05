@@ -1000,6 +1000,27 @@ export default function WorkoutSessionPage() {
     return exerciseImages[exercise.id] || exercise.image_url;
   };
 
+  // Revert a set's optimistic "completed" mark when its save fails, so the
+  // user sees it as incomplete and can tap to retry instead of losing the data.
+  const revertSetSave = (exerciseIdx: number, setIdx: number) => {
+    setExerciseStates(prev => {
+      const ex = prev[exerciseIdx];
+      if (!ex) return prev;
+      const newStates = [...prev];
+      newStates[exerciseIdx] = {
+        ...ex,
+        sets: ex.sets.map((s, i) =>
+          i === setIdx ? { ...s, completed: false, completed_at: null } : s
+        ),
+      };
+      return newStates;
+    });
+    Alert.alert(
+      'Set not saved',
+      'That set could not be saved — check your connection and tap it again to retry.'
+    );
+  };
+
   // Save a single set to database immediately
   const saveSetToDatabase = async (exerciseIdx: number, setIdx: number, setData: SetEntry) => {
     try {
@@ -1090,8 +1111,11 @@ export default function WorkoutSessionPage() {
             notes: setData.notes,
           })
           .eq('id', setData.id);
-        
-        if (error) console.error('Failed to update set:', error);
+
+        if (error) {
+          console.error('Failed to update set:', error);
+          revertSetSave(exerciseIdx, setIdx);
+        }
       } else {
         // Insert new set
         // Use setIdx+1 for DB set_number (sequential across warmups AND working sets)
@@ -1118,6 +1142,7 @@ export default function WorkoutSessionPage() {
 
         if (error) {
           console.error('Failed to insert set:', error);
+          revertSetSave(exerciseIdx, setIdx);
         } else if (newSet) {
           // Store the set_instance_id for future updates
           setExerciseStates(prev => {
@@ -1134,6 +1159,7 @@ export default function WorkoutSessionPage() {
       }
     } catch (err) {
       console.error('Error saving set:', err);
+      revertSetSave(exerciseIdx, setIdx);
     }
   };
 
@@ -1523,20 +1549,21 @@ export default function WorkoutSessionPage() {
 
       // Save session duration and end time
       if (workoutSessionIdRef.current) {
-        await supabase
+        const { error } = await supabase
           .from('workout_sessions')
           .update({
             ended_at: new Date().toISOString(),
             duration_seconds: elapsedSeconds,
           })
           .eq('id', workoutSessionIdRef.current);
+        if (error) throw error;
       }
 
       // Keep workout in_progress (don't mark as completed)
       // Also update total duration on workout_instances for backward compatibility
       if (workoutInstanceId) {
         const completedCount = exerciseStates.filter(e => e.completed).length;
-        await supabase
+        const { error } = await supabase
           .from('workout_instances')
           .update({
             status: 'in_progress',
@@ -1544,6 +1571,7 @@ export default function WorkoutSessionPage() {
             duration_seconds: elapsedSeconds,
           })
           .eq('id', workoutInstanceId);
+        if (error) throw error;
       }
 
       const completedCount = exerciseStates.filter(e => e.completed).length;
@@ -1573,13 +1601,14 @@ export default function WorkoutSessionPage() {
 
       // Save session duration and end time
       if (workoutSessionIdRef.current) {
-        await supabase
+        const { error } = await supabase
           .from('workout_sessions')
           .update({
             ended_at: new Date().toISOString(),
             duration_seconds: elapsedSeconds,
           })
           .eq('id', workoutSessionIdRef.current);
+        if (error) throw error;
       }
 
       // Update workout instance
@@ -1594,7 +1623,7 @@ export default function WorkoutSessionPage() {
         
         const totalDuration = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || elapsedSeconds;
         
-        await supabase
+        const { error } = await supabase
           .from('workout_instances')
           .update({
             status: 'completed',
@@ -1603,6 +1632,7 @@ export default function WorkoutSessionPage() {
             duration_seconds: totalDuration,
           })
           .eq('id', workoutInstanceId);
+        if (error) throw error;
       }
 
       Alert.alert(

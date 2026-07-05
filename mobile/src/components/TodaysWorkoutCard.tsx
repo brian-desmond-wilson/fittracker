@@ -141,7 +141,7 @@ export function TodaysWorkoutCard() {
           </Text>
           <TouchableOpacity 
             style={styles.startButton}
-            onPress={() => router.push('/programs')}
+            onPress={() => router.push('/(tabs)/training')}
           >
             <Text style={styles.startButtonText}>Browse Programs</Text>
           </TouchableOpacity>
