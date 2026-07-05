@@ -20,7 +20,8 @@ const DEFAULT_SETTINGS: NotificationSettings = {
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -189,6 +190,7 @@ export async function scheduleEventNotification(
         sound: true,
       },
       trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: triggerDate,
       },
     });

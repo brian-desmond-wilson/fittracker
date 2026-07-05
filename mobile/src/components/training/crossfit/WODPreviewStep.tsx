@@ -178,7 +178,7 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
       } else if (movement.l2_reps) {
         // Check if it's a rep scheme pattern (contains dashes) or a number
         const isRepScheme = typeof movement.l2_reps === 'string' && movement.l2_reps.includes('-');
-        parts.push(isRepScheme ? movement.l2_reps : `${movement.l2_reps} reps`);
+        parts.push(isRepScheme ? String(movement.l2_reps) : `${movement.l2_reps} reps`);
       } else if (repScheme) {
         parts.push(repScheme);
       }
@@ -210,7 +210,7 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
       } else if (movement.l1_reps) {
         // Check if it's a rep scheme pattern (contains dashes) or a number
         const isRepScheme = typeof movement.l1_reps === 'string' && movement.l1_reps.includes('-');
-        parts.push(isRepScheme ? movement.l1_reps : `${movement.l1_reps} reps`);
+        parts.push(isRepScheme ? String(movement.l1_reps) : `${movement.l1_reps} reps`);
       } else if (repScheme) {
         parts.push(repScheme);
       }

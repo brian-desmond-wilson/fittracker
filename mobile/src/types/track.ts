@@ -50,6 +50,9 @@ export interface FoodInventoryItemWithLocations extends Omit<FoodInventoryItem, 
   total_quantity: number;
   ready_quantity: number;
   storage_quantity: number;
+  // Legacy single-location fields — present on single-location items.
+  location?: FoodLocation | null;
+  quantity?: number;
 }
 
 // Major food categories (12 main categories)

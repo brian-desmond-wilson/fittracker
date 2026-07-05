@@ -107,9 +107,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
   // Quantity & Storage
   const [storageType, setStorageType] = useState<StorageType>(item.storage_type);
-  const [quantity, setQuantity] = useState(item.quantity.toString());
+  const [quantity, setQuantity] = useState((item.quantity ?? 0).toString());
   const [unit, setUnit] = useState(item.unit);
-  const [location, setLocation] = useState<FoodLocation | null>(item.location);
+  const [location, setLocation] = useState<FoodLocation | null>(item.location ?? null);
   const [restockThreshold, setRestockThreshold] = useState(item.restock_threshold.toString());
   const [requiresRefrigeration, setRequiresRefrigeration] = useState(item.requires_refrigeration);
   const [fridgeRestockThreshold, setFridgeRestockThreshold] = useState(

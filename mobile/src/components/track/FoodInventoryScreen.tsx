@@ -192,7 +192,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     router.push("/(tabs)/track/food-inventory/add");
   };
 
-  const handleEditItem = (item: FoodInventoryItem) => {
+  const handleEditItem = (item: FoodInventoryItemWithCategories) => {
     router.push(`/(tabs)/track/food-inventory/edit/${item.id}`);
   };
 
@@ -229,7 +229,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleAddToShoppingList = async (item: FoodInventoryItem) => {
+  const handleAddToShoppingList = async (item: FoodInventoryItemWithCategories) => {
     try {
       const {
         data: { user },

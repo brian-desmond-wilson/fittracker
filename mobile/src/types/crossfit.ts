@@ -667,10 +667,10 @@ export interface CreateMovementInput {
   movement_category_id: string;
 
   // NEW: Core movement metadata
-  movement_family_id?: string;
+  movement_family_id?: string | null;
   plane_of_motion_id?: string; // Legacy single plane (optional for backward compatibility)
   plane_of_motion_ids?: string[]; // NEW: Multiple planes of motion
-  skill_level?: SkillLevel;
+  skill_level?: SkillLevel | null;
   short_name?: string;
   aliases?: string[];
 
@@ -679,10 +679,10 @@ export interface CreateMovementInput {
   load_position_ids?: string[]; // NEW: Multiple load positions
   stance_id?: string; // Legacy single stance (optional for backward compatibility)
   stance_ids?: string[]; // NEW: Multiple stances
-  range_depth_id?: string;
+  range_depth_id?: string | null;
   movement_style_id?: string; // Legacy single style (deprecated)
   movement_style_ids?: string[]; // Multiple styles
-  symmetry_id?: string;
+  symmetry_id?: string | null;
 
   // Media
   video_url?: string;
@@ -692,7 +692,7 @@ export interface CreateMovementInput {
   equipment_types?: string[];
 
   // Ownership
-  is_movement: true;
+  is_movement: boolean;
   is_official: false;
   created_by: string;
 
