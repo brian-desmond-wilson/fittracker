@@ -143,10 +143,10 @@ export default function ProgramInstanceDetail() {
     if (!instance?.workout_instances) return [];
     
     return [...instance.workout_instances]
-      .filter(w => w.status === 'completed' && w.performed_date)
+      .filter(w => w.status === 'completed' && w.completed_at)
       .sort((a, b) => {
-        const dateA = new Date(a.performed_date || a.scheduled_date);
-        const dateB = new Date(b.performed_date || b.scheduled_date);
+        const dateA = new Date(a.completed_at || a.scheduled_date);
+        const dateB = new Date(b.completed_at || b.scheduled_date);
         return dateB.getTime() - dateA.getTime();
       })
       .slice(0, 10); // Show last 10 workouts
@@ -218,9 +218,9 @@ export default function ProgramInstanceDetail() {
           {/* Program Title Section */}
           <View style={styles.titleSection}>
             <Text style={styles.instanceName}>{instance.instance_name}</Text>
-            <Text style={styles.programTitle}>{instance.program?.name || "Project Mass"}</Text>
+            <Text style={styles.programTitle}>{instance.program?.title || "Project Mass"}</Text>
             <Text style={styles.programCreator}>
-              by {instance.program?.created_by_name || "Dr. Jacob Wilson"}
+              by {instance.program?.creator_name || "Dr. Jacob Wilson"}
             </Text>
           </View>
 
@@ -290,12 +290,12 @@ export default function ProgramInstanceDetail() {
                   {formatDate(instance.expected_end_date)}
                 </Text>
               </View>
-              {instance.end_date && (
+              {instance.actual_end_date && (
                 <View style={styles.timelineRow}>
                   <CheckCircle2 size={18} color="#22C55E" />
                   <Text style={styles.timelineLabel}>Completed</Text>
                   <Text style={styles.timelineValue}>
-                    {formatDate(instance.end_date)}
+                    {formatDate(instance.actual_end_date)}
                   </Text>
                 </View>
               )}
@@ -354,7 +354,7 @@ export default function ProgramInstanceDetail() {
                       <View style={styles.workoutInfo}>
                         <Text style={styles.workoutName}>{workoutName}</Text>
                         <Text style={styles.workoutDate}>
-                          {formatDate(workout.performed_date || workout.scheduled_date)}
+                          {formatDate(workout.completed_at || workout.scheduled_date)}
                         </Text>
                       </View>
                     </View>

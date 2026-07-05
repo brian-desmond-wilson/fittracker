@@ -210,11 +210,6 @@ export function getRequiredEquipment(wod: WODWithDetails): string[] {
       else if (name.includes('swim')) equipmentSet.add('Pool');
       else equipmentSet.add('Cardio Equipment');
     }
-
-    // Check legacy equipment field
-    if (exercise.equipment && exercise.equipment.length > 0) {
-      exercise.equipment.forEach((eq) => equipmentSet.add(eq));
-    }
   });
 
   return Array.from(equipmentSet);
@@ -370,8 +365,8 @@ export function formatWeight(menLbs?: number | null | undefined, womenLbs?: numb
   if (menLbs === womenLbs) {
     return {
       display: `${menLbs} lb`,
-      men: menLbs,
-      women: womenLbs,
+      men: menLbs ?? undefined,
+      women: womenLbs ?? undefined,
     };
   }
 

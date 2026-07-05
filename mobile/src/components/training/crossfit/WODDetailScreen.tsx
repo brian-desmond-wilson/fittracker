@@ -109,8 +109,8 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
         wodName: wod.name,
         formatName: wod.format?.name || 'For Time',
         movements,
-        timeCap: wod.time_cap_minutes,
-        repScheme: wod.rep_scheme,
+        timeCap: wod.time_cap_minutes ?? undefined,
+        repScheme: wod.rep_scheme ?? undefined,
       });
 
       // Call Edge Function
