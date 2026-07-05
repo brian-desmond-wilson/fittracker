@@ -83,11 +83,16 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
   };
 
   useEffect(() => {
-    if (searchQuery.trim()) {
-      handleSearch();
-    } else {
-      loadMovements();
-    }
+    // Debounce so we don't fire a search (and its per-row tier lookups) on
+    // every keystroke — only 300ms after the user stops typing.
+    const handle = setTimeout(() => {
+      if (searchQuery.trim()) {
+        handleSearch();
+      } else {
+        loadMovements();
+      }
+    }, 300);
+    return () => clearTimeout(handle);
   }, [searchQuery, selectedCategory]);
 
   const refreshMovements = async () => {
