@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIn
 import { colors } from '@/src/lib/colors';
 import { WODFormData } from './AddWODWizard';
 import { createWOD } from '@/src/lib/supabase/crossfit';
+import type { CreateWODInput } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
 
 interface WODPreviewStepProps {
@@ -83,7 +84,9 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
         })),
       };
 
-      const result = await createWOD(user.id, wodInput);
+      // Movement reps are string|number in the form (rep schemes or counts) but
+      // CreateWODMovementInput types them as number; cast at this boundary.
+      const result = await createWOD(user.id, wodInput as unknown as CreateWODInput);
 
       if (result) {
         // Update message to show image generation is happening

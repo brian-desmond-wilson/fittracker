@@ -45,7 +45,7 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
       setLoading(true);
       setError(null);
       const data = await fetchAllExercises();
-      setExercises(data);
+      setExercises(data as unknown as Exercise[]);
     } catch (err: any) {
       console.error('Error loading exercises:', err);
       setError(`Failed to load exercises: ${err?.message || 'Unknown error'}`);
@@ -64,7 +64,7 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
       setLoading(true);
       setError(null);
       const results = await searchAllExercises(searchQuery.trim());
-      setExercises(results);
+      setExercises(results as unknown as Exercise[]);
     } catch (err: any) {
       console.error('Error searching exercises:', err);
       setError(`Search failed: ${err?.message || 'Unknown error'}`);

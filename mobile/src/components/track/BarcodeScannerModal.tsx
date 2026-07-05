@@ -125,7 +125,7 @@ export function BarcodeScannerModal({
         <CameraView
           style={styles.camera}
           facing="back"
-          torch={torchEnabled ? "on" : "off"}
+          enableTorch={torchEnabled}
           barcodeScannerSettings={{
             barcodeTypes: [
               "upc_a",
@@ -136,7 +136,7 @@ export function BarcodeScannerModal({
               "code39",
               "code93",
               "itf14",
-            ],
+            ] as any,
           }}
           onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
         >

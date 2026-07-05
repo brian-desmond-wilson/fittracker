@@ -265,7 +265,7 @@ export function DevTaskManager({ userId, onClose }: DevTaskManagerProps) {
       // If status is being changed to done, set completed_at
       if (updates.status === "done") {
         updateData.completed_at = new Date().toISOString();
-      } else if (updates.status && updates.status !== "done") {
+      } else if (updates.status) {
         updateData.completed_at = null;
       }
 
