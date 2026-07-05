@@ -25,6 +25,9 @@ import {
   Share2,
   Zap,
   BarChart3,
+  Search,
+  ScanBarcode,
+  X,
 } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
@@ -46,7 +49,6 @@ import {
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { FoodPreviewModal } from "./FoodPreviewModal";
-import { QuickActionBar } from "./meals/QuickActionBar";
 import { RecentFoodsRow } from "./meals/RecentFoodsRow";
 import { RecentFoodChips } from "./meals/RecentFoodChips";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
@@ -164,6 +166,18 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [inventoryMatch, setInventoryMatch] =
     useState<InventoryMatchSummary | null>(null);
 
+  // Tracks whether the currently-previewed food has been corrected in
+  // this session — surfaces user_corrected=true when an api-source food
+  // gets persisted to saved_foods at log time.
+  const [previewWasEdited, setPreviewWasEdited] = useState(false);
+
+  // Today / Insights tab. Today is the logging surface (macros + recents
+  // + logged meals); Insights is reflective (charts, streaks, weekly
+  // summary, quick adjustment). Defaults to Today on mount; auto-switches
+  // to Today when the user starts searching or opens the add form so the
+  // input/results land where they expect.
+  const [activeTab, setActiveTab] = useState<"today" | "insights">("today");
+
   // Templates modal + savedFoods cache
   const [templatesVisible, setTemplatesVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
@@ -263,11 +277,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   };
 
   // Fetch meals for a specific date
-  const fetchMealsForDate = async (date: Date) => {
+  const fetchMealsForDate = async (date: Date, force = false) => {
     const dateStr = getLocalDateString(date);
 
-    // Check cache first
-    if (mealsCache.has(dateStr)) {
+    // Check cache first. Mutation paths pass force=true because the cache
+    // delete they queue hasn't committed yet in this closure — without it the
+    // guard reads the stale Map, early-returns, and the refetch is skipped.
+    if (!force && mealsCache.has(dateStr)) {
       setLoadingDay(false);
       return;
     }
@@ -368,6 +384,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchHistoricalLogs();
   }, [fetchHistoricalLogs, mealsCache]);
 
+  // Pull the user back to Today when they start a logging action — typing
+  // in the search bar or opening the add form. Otherwise results/input
+  // would land off-screen on the Insights tab.
+  useEffect(() => {
+    if (activeTab !== "today" && (searchQuery.trim().length >= 2 || showAddForm)) {
+      setActiveTab("today");
+    }
+  }, [activeTab, searchQuery, showAddForm]);
+
   // Debounced search across saved_foods (matches name OR brand).
   useEffect(() => {
     const q = searchQuery.trim();
@@ -395,6 +420,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setPreviewFood(food);
     setPreviewSource("saved");
     setScannedBarcode(food.barcode);
+    setPreviewWasEdited(false);
     setShowFoodPreview(true);
     setSearchQuery("");
   };
@@ -444,7 +470,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       return newCache;
     });
     await Promise.all([
-      fetchMealsForDate(viewingDate),
+      fetchMealsForDate(viewingDate, true),
       fetchRecentAndFavorites(),
     ]);
     setRefreshing(false);
@@ -468,7 +494,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         setPreviewFood(savedFood);
         setPreviewSource("saved");
         setScannedBarcode(barcode);
-        setShowFoodPreview(true);
+        setPreviewWasEdited(false);
+    setShowFoodPreview(true);
         setBarcodeLoading(false);
         return;
       }
@@ -502,7 +529,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         setPreviewFood(productData);
         setPreviewSource("api");
         setScannedBarcode(barcode);
-        setShowFoodPreview(true);
+        setPreviewWasEdited(false);
+    setShowFoodPreview(true);
         setBarcodeLoading(false);
         return;
       }
@@ -558,7 +586,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         next.delete(viewingDateStr);
         return next;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
     } catch (error) {
       console.error("Undo failed:", error);
       Alert.alert("Error", "Failed to undo");
@@ -616,6 +644,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           image_front_url: apiFood.imageFrontUrl,
           image_back_url: apiFood.imageBackUrl,
           is_favorite: false,
+          user_corrected: previewWasEdited,
+          auto_scaled: apiFood.auto_scaled,
         });
         savedFoodId = newSavedFood.id;
       } else if ("id" in food) {
@@ -704,7 +734,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         newCache.delete(viewingDateStr);
         return newCache;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
 
       // Refresh recent foods
       fetchRecentAndFavorites();
@@ -737,6 +767,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         image_front_url: food.imageFrontUrl,
         image_back_url: food.imageBackUrl,
         is_favorite: false,
+        user_corrected: false,
+        auto_scaled: food.auto_scaled,
       });
 
       Alert.alert("Success", "Food saved to your library");
@@ -748,6 +780,78 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   };
 
   // Handle toggle favorite
+  // Handle nutrition correction from the preview modal. Updates the
+  // preview's food in-memory so the user sees the new values immediately.
+  // For saved-source foods, persists to saved_foods (and sets
+  // user_corrected=true). For api-source foods, the correction is held
+  // until log time; the existing log flow then writes the corrected
+  // values into saved_foods with user_corrected=true.
+  const handleEditPreviewFood = async (next: {
+    name: string;
+    brand: string | null;
+    serving_size: string | null;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+  }) => {
+    if (!previewFood) return;
+    setPreviewWasEdited(true);
+    if (previewSource === "saved" && "id" in previewFood) {
+      try {
+        const { data, error } = await supabase
+          .from("saved_foods")
+          .update({
+            name: next.name,
+            brand: next.brand,
+            serving_size: next.serving_size,
+            calories: next.calories,
+            protein: next.protein,
+            carbs: next.carbs,
+            fats: next.fats,
+            sugars: next.sugars,
+            sodium_mg: next.sodium_mg,
+            fiber_g: next.fiber_g,
+            user_corrected: true,
+          })
+          .eq("id", (previewFood as SavedFood).id)
+          .select()
+          .single();
+        if (error) throw error;
+        if (data) setPreviewFood(data as SavedFood);
+        // Refresh recents/favorites so the corrected values flow through
+        await fetchRecentAndFavorites();
+        await fetchAllSavedFoods();
+      } catch (error) {
+        console.error("Failed to save correction:", error);
+        Alert.alert("Error", "Failed to save changes");
+        throw error;
+      }
+    } else {
+      // api source — update the in-flight preview only.
+      setPreviewFood((prev) => {
+        if (!prev) return prev;
+        return {
+          ...(prev as any),
+          name: next.name,
+          brand: next.brand,
+          servingSize: next.serving_size,
+          serving_size: next.serving_size,
+          calories: next.calories,
+          protein: next.protein,
+          carbs: next.carbs,
+          fats: next.fats,
+          sugars: next.sugars,
+          sodium_mg: next.sodium_mg,
+          fiber_g: next.fiber_g,
+        } as any;
+      });
+    }
+  };
+
   const handleToggleFavorite = async (food: SavedFood) => {
     try {
       await toggleFavorite(food.id);
@@ -805,6 +909,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           image_front_url: null,
           image_back_url: null,
           is_favorite: false,
+          user_corrected: false,
+          auto_scaled: false,
         });
         savedFoodId = newSavedFood.id;
       }
@@ -858,7 +964,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         newCache.delete(viewingDateStr);
         return newCache;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
 
       // Refresh recent foods if saved
       if (saveToLibrary) {
@@ -877,6 +983,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setPreviewFood(food);
     setPreviewSource("saved");
     setScannedBarcode(food.barcode);
+    setPreviewWasEdited(false);
     setShowFoodPreview(true);
   };
 
@@ -1024,7 +1131,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       // Refetch if the meal was added for the viewing date
       if (mealDate === viewingDateStr) {
-        await fetchMealsForDate(viewingDate);
+        await fetchMealsForDate(viewingDate, true);
       }
     } catch (error: any) {
       console.error("Error adding meal:", error);
@@ -1076,7 +1183,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         next.delete(viewingDateStr);
         return next;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
       setQuickAdjustVisible(false);
       if (inserted?.id) {
         showUndoFor(
@@ -1166,7 +1273,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         next.delete(date);
         return next;
       });
-      await fetchMealsForDate(viewingDate);
+      await fetchMealsForDate(viewingDate, true);
     } catch (error) {
       console.error("Error editing meal:", error);
       Alert.alert("Error", "Failed to save changes");
@@ -1193,7 +1300,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               newCache.delete(viewingDateStr);
               return newCache;
             });
-            await fetchMealsForDate(viewingDate);
+            await fetchMealsForDate(viewingDate, true);
           } catch (error: any) {
             console.error("Error deleting meal:", error);
             Alert.alert("Error", "Failed to delete meal");
@@ -1316,22 +1423,46 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
+        {/* Header — back, search (with barcode), add — mirrors Food Inventory */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <ChevronLeft size={24} color="#FFFFFF" />
-            <Text style={styles.backText}>Track</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleExportCsv}
-            disabled={exporting}
-            style={styles.headerActionButton}
-            activeOpacity={0.7}
-          >
-            <Share2
-              size={20}
-              color={exporting ? colors.mutedForeground : colors.foreground}
+          <View style={styles.searchBar}>
+            <Search size={20} color={colors.mutedForeground} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search foods..."
+              placeholderTextColor={colors.mutedForeground}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
             />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity
+                onPress={() => setSearchQuery("")}
+                activeOpacity={0.7}
+                style={styles.searchActionButton}
+              >
+                <X size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowBarcodeScanner(true)}
+                activeOpacity={0.7}
+                style={styles.searchActionButton}
+              >
+                <ScanBarcode size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.headerAddButton}
+            onPress={handleOpenAddForm}
+            activeOpacity={0.7}
+            disabled={showAddForm}
+          >
+            <Plus size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -1354,10 +1485,21 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             />
           }
         >
-          {/* Title */}
+          {/* Title (Share moved here from header) */}
           <View style={styles.titleContainer}>
             <Utensils size={32} color="#F97316" strokeWidth={2} />
             <Text style={styles.pageTitle}>Meals & Snacks</Text>
+            <TouchableOpacity
+              onPress={handleExportCsv}
+              disabled={exporting}
+              style={styles.titleShareButton}
+              activeOpacity={0.7}
+            >
+              <Share2
+                size={22}
+                color={exporting ? colors.mutedForeground : colors.foreground}
+              />
+            </TouchableOpacity>
           </View>
 
           {/* Date Navigation - with swipe gesture */}
@@ -1402,133 +1544,170 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </TouchableOpacity>
             )}
 
-            {/* Nutrition Summary (rings + bars + compact tier C) */}
-            <MealsNutritionCard
-              label={getNutritionLabel()}
-              totals={dayTotals}
-              goals={goals}
-            />
-
-            {/* Pace coach (today only) */}
-            {viewingToday && (
-              <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
-                <MealsPaceLines
-                  caloriePace={caloriePace}
-                  proteinPace={proteinPace}
-                />
-              </View>
-            )}
-
-            {/* Today's distribution (calories by meal type) */}
-            {viewingToday && (
-              <View style={styles.distributionWrap}>
-                <MealsDistributionBar meals={dayMeals} />
-              </View>
-            )}
-
-            {/* Insights (streaks + 14-day charts) + Weekly Summary entry */}
-            <MealsInsightsCard
-              calorieStreak={calorieStreak}
-              calorieBestStreak={calorieBestStreak}
-              proteinStreak={proteinStreak}
-              proteinBestStreak={proteinBestStreak}
-              avgCalsPerDay={rolling.avgCalsPerDay}
-              daysHit={rolling.daysHit}
-              daysInWindow={rolling.daysInWindow}
-              series14={series14}
-              calorieGoal={goals.calories ?? 0}
-            />
-            <TouchableOpacity
-              onPress={() => setWeeklySummaryVisible(true)}
-              style={styles.weeklySummaryButton}
-              activeOpacity={0.7}
-            >
-              <BarChart3 size={16} color="#F97316" />
-              <Text style={styles.weeklySummaryButtonText}>
-                Weekly Summary
-              </Text>
-            </TouchableOpacity>
-
-            {/* Quick Action Bar - Barcode, Search, Add */}
+            {/* Tab pills: Today / Insights. Hidden while the add form is
+                up — that flow takes over the surface. */}
             {!showAddForm && (
-              <QuickActionBar
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                onBarcodePress={() => setShowBarcodeScanner(true)}
-                onAddPress={handleOpenAddForm}
-              />
-            )}
-
-            {/* Quick Adjustment — log cal without picking a food */}
-            {!showAddForm && (
-              <TouchableOpacity
-                onPress={() => setQuickAdjustVisible(true)}
-                style={styles.quickAdjustButton}
-                activeOpacity={0.7}
-              >
-                <Zap size={16} color="#F97316" />
-                <Text style={styles.quickAdjustButtonText}>
-                  Quick Adjustment — calories only
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Search Results — from your saved foods library */}
-            {!showAddForm && searchQuery.trim().length >= 2 && (
-              <View style={styles.searchResults}>
-                <Text style={styles.searchResultsHeader}>
-                  {searching
-                    ? "Searching…"
-                    : searchResults.length === 0
-                      ? `No saved foods match "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
-                      : `Saved foods matching "${searchQuery.trim()}"`}
-                </Text>
-                {searchResults.slice(0, 8).map((f) => (
+              <View style={styles.tabsContainer}>
+                <View style={styles.tabsTrack}>
                   <TouchableOpacity
-                    key={f.id}
-                    onPress={() => handleSearchResultPress(f)}
-                    style={styles.searchResultRow}
+                    onPress={() => setActiveTab("today")}
+                    style={[
+                      styles.tabPill,
+                      activeTab === "today" && styles.tabPillActive,
+                    ]}
                     activeOpacity={0.7}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.searchResultName} numberOfLines={1}>
-                        {f.name}
-                      </Text>
-                      {f.brand && (
-                        <Text style={styles.searchResultBrand} numberOfLines={1}>
-                          {f.brand}
-                        </Text>
-                      )}
-                    </View>
-                    {f.calories != null && (
-                      <Text style={styles.searchResultCals}>{f.calories} cal</Text>
-                    )}
+                    <Text
+                      style={[
+                        styles.tabPillText,
+                        activeTab === "today" && styles.tabPillTextActive,
+                      ]}
+                    >
+                      Today
+                    </Text>
                   </TouchableOpacity>
-                ))}
+                  <TouchableOpacity
+                    onPress={() => setActiveTab("insights")}
+                    style={[
+                      styles.tabPill,
+                      activeTab === "insights" && styles.tabPillActive,
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.tabPillText,
+                        activeTab === "insights" && styles.tabPillTextActive,
+                      ]}
+                    >
+                      Insights
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
-            {/* Recent Foods Row */}
-            {!showAddForm && (
-              <RecentFoodsRow
-                recentFoods={recentFoods}
-                favorites={favorites}
-                onFoodPress={handleRecentFoodPress}
-                onFoodLongPress={handleToggleFavorite}
-                loading={loadingRecent}
-              />
+            {/* ── TODAY TAB ── logging surface */}
+            {!showAddForm && activeTab === "today" && (
+              <>
+                {/* Nutrition Summary (rings + bars + compact tier C) */}
+                <MealsNutritionCard
+                  label={getNutritionLabel()}
+                  totals={dayTotals}
+                  goals={goals}
+                />
+
+                {/* Pace coach (today only) */}
+                {viewingToday && (
+                  <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
+                    <MealsPaceLines
+                      caloriePace={caloriePace}
+                      proteinPace={proteinPace}
+                    />
+                  </View>
+                )}
+
+                {/* Search Results — from your saved foods library */}
+                {searchQuery.trim().length >= 2 && (
+                  <View style={styles.searchResults}>
+                    <Text style={styles.searchResultsHeader}>
+                      {searching
+                        ? "Searching…"
+                        : searchResults.length === 0
+                          ? `No saved foods match "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
+                          : `Saved foods matching "${searchQuery.trim()}"`}
+                    </Text>
+                    {searchResults.slice(0, 8).map((f) => (
+                      <TouchableOpacity
+                        key={f.id}
+                        onPress={() => handleSearchResultPress(f)}
+                        style={styles.searchResultRow}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.searchResultName} numberOfLines={1}>
+                            {f.name}
+                          </Text>
+                          {f.brand && (
+                            <Text style={styles.searchResultBrand} numberOfLines={1}>
+                              {f.brand}
+                            </Text>
+                          )}
+                        </View>
+                        {f.calories != null && (
+                          <Text style={styles.searchResultCals}>{f.calories} cal</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Recent Foods (Quick Add) — promoted above meal sections
+                    so the fastest path to logging is one tap from here. */}
+                <RecentFoodsRow
+                  recentFoods={recentFoods}
+                  favorites={favorites}
+                  onFoodPress={handleRecentFoodPress}
+                  onFoodLongPress={handleToggleFavorite}
+                  loading={loadingRecent}
+                />
+
+                {/* My Meals (templates) entry point */}
+                <TouchableOpacity
+                  onPress={() => setTemplatesVisible(true)}
+                  style={styles.templatesButton}
+                  activeOpacity={0.7}
+                >
+                  <Utensils size={16} color="#3B82F6" />
+                  <Text style={styles.templatesButtonText}>My Meals — log a saved template</Text>
+                </TouchableOpacity>
+              </>
             )}
 
-            {/* My Meals (templates) entry point */}
-            {!showAddForm && (
-              <TouchableOpacity
-                onPress={() => setTemplatesVisible(true)}
-                style={styles.templatesButton}
-                activeOpacity={0.7}
-              >
-                <Utensils size={16} color="#3B82F6" />
-                <Text style={styles.templatesButtonText}>My Meals — log a saved template</Text>
-              </TouchableOpacity>
+            {/* ── INSIGHTS TAB ── reflective stats */}
+            {!showAddForm && activeTab === "insights" && (
+              <>
+                <MealsInsightsCard
+                  calorieStreak={calorieStreak}
+                  calorieBestStreak={calorieBestStreak}
+                  proteinStreak={proteinStreak}
+                  proteinBestStreak={proteinBestStreak}
+                  avgCalsPerDay={rolling.avgCalsPerDay}
+                  daysHit={rolling.daysHit}
+                  daysInWindow={rolling.daysInWindow}
+                  series14={series14}
+                  calorieGoal={goals.calories ?? 0}
+                />
+
+                {/* Today's distribution (calories by meal type) */}
+                {viewingToday && (
+                  <View style={styles.distributionWrap}>
+                    <MealsDistributionBar meals={dayMeals} />
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  onPress={() => setWeeklySummaryVisible(true)}
+                  style={styles.weeklySummaryButton}
+                  activeOpacity={0.7}
+                >
+                  <BarChart3 size={16} color="#F97316" />
+                  <Text style={styles.weeklySummaryButtonText}>
+                    Weekly Summary
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setQuickAdjustVisible(true)}
+                  style={styles.quickAdjustButton}
+                  activeOpacity={0.7}
+                >
+                  <Zap size={16} color="#F97316" />
+                  <Text style={styles.quickAdjustButtonText}>
+                    Quick Adjustment — calories only
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
 
           {/* Add Form */}
@@ -1733,7 +1912,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             </View>
           )}
 
-            {/* Meals Section - Grouped by Type */}
+            {/* Meals Section - Grouped by Type (Today tab only; on Insights
+                the logged-food list is hidden to keep that view reflective) */}
+            {(showAddForm || activeTab === "today") && (
             <View style={styles.mealsSection}>
               {loadingDay ? (
                 <Text style={styles.loadingText}>Loading...</Text>
@@ -1805,6 +1986,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 })
               )}
             </View>
+            )}
 
             {/* Bottom Spacing */}
             <View style={{ height: 40 }} />
@@ -1837,6 +2019,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           // Update the preview food to reflect the change
           setPreviewFood({ ...food, is_favorite: !food.is_favorite });
         } : undefined}
+        onEditFood={handleEditPreviewFood}
       />
 
       {/* Manual Food Entry Modal */}
@@ -1871,7 +2054,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             next.delete(viewingDateStr);
             return next;
           });
-          await fetchMealsForDate(viewingDate);
+          await fetchMealsForDate(viewingDate, true);
           await fetchRecentAndFavorites();
         }}
       />
@@ -1908,13 +2091,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
   },
   refreshIndicator: {
     paddingVertical: 12,
@@ -1922,13 +2105,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   backButton: {
+    padding: 4,
+  },
+  searchBar: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
   },
-  backText: {
-    fontSize: 17,
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
     color: colors.foreground,
+  },
+  searchActionButton: {
+    padding: 4,
+  },
+  headerAddButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#F97316",
+    alignItems: "center",
+    justifyContent: "center",
   },
   content: {
     flex: 1,
@@ -1964,6 +2169,36 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 16,
   },
+  tabsContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  tabsTrack: {
+    flexDirection: "row",
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tabPill: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 7,
+  },
+  tabPillActive: {
+    backgroundColor: "#F97316",
+  },
+  tabPillText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.mutedForeground,
+  },
+  tabPillTextActive: {
+    color: "#FFFFFF",
+  },
   jumpToTodayText: {
     color: "#FFFFFF",
     fontSize: 14,
@@ -1976,6 +2211,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 16,
+  },
+  titleShareButton: {
+    marginLeft: "auto",
+    padding: 6,
   },
   pageTitle: {
     fontSize: 28,
@@ -2255,9 +2494,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedForeground,
     marginLeft: 8,
-  },
-  headerActionButton: {
-    padding: 6,
   },
   distributionWrap: {
     marginHorizontal: 20,

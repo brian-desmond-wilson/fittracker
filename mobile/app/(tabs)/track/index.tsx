@@ -92,6 +92,12 @@ export default function Track() {
   };
 
   const handleCardPress = (categoryId: TrackingCategory) => {
+    // Workouts are logged in the Training tab — send users there rather than
+    // to a placeholder screen.
+    if (categoryId === "workouts") {
+      router.push("/(tabs)/training");
+      return;
+    }
     router.push(`/(tabs)/track/${categoryId}`);
   };
 

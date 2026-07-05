@@ -59,3 +59,15 @@ BOOTSTRAP.md
 HEARTBEAT.md
 MEMORY.md
 memory/
+USER.md
+TOOLS.md
+
+# Nested dependencies / build output (root /node_modules is anchored and misses these)
+**/node_modules/
+scripts/**/dist/
+
+# Supabase CLI scratch cache
+**/supabase/.temp/
+
+# Scratch/temp dir
+temp/

@@ -11,10 +11,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
-import { Flame, Timer, Menu, User } from "lucide-react-native";
+import { User } from "lucide-react-native";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
 import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard";
-import DrawerMenu from "@/src/components/drawer/DrawerMenu";
 import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
 import { WaterIntakeHomeCard } from "@/src/components/WaterIntakeHomeCard";
 import { MealsHomeCard } from "@/src/components/MealsHomeCard";
@@ -26,7 +25,6 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [morningRoutineWizardVisible, setMorningRoutineWizardVisible] = useState(false);
   const [routineBannerKey, setRoutineBannerKey] = useState(0);
-  const [drawerVisible, setDrawerVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -93,12 +91,6 @@ export default function Home() {
       {/* Top Navigation Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity
-          onPress={() => setDrawerVisible(true)}
-          style={styles.iconButton}
-        >
-          <Menu size={24} color="#9CA3AF" strokeWidth={2} />
-        </TouchableOpacity>
-        <TouchableOpacity
           onPress={() => router.push("/profile")}
           style={styles.iconButton}
         >
@@ -140,47 +132,11 @@ export default function Home() {
 
         {/* Summary Cards Grid */}
         <View style={styles.grid}>
-          {/* Calories Burned Card */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Calories Burned</Text>
-              <View style={styles.iconContainer}>
-                <Flame size={20} color="#F97316" strokeWidth={2} />
-              </View>
-            </View>
-            <Text style={styles.cardValue}>0</Text>
-            <Text style={styles.cardSubtext}>0 workouts</Text>
-          </View>
-
-          {/* Workout Time Card */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Workout Time</Text>
-              <View style={[styles.iconContainer, styles.iconGreen]}>
-                <Timer size={20} color="#22C55E" strokeWidth={2} />
-              </View>
-            </View>
-            <Text style={styles.cardValue}>0m</Text>
-            <Text style={styles.cardSubtext}>Minutes active</Text>
-          </View>
-
           {/* Meals Card */}
           <MealsHomeCard refreshKey={refreshKey} />
 
           {/* Water Intake Card */}
           <WaterIntakeHomeCard refreshKey={refreshKey} />
-        </View>
-
-        {/* Recent Workouts Section */}
-        <Text style={styles.sectionTitle}>Recent Workouts</Text>
-
-        {/* Empty State */}
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateIcon}>🏋️</Text>
-          <Text style={styles.emptyStateTitle}>No workouts yet</Text>
-          <Text style={styles.emptyStateText}>
-            Start your first workout to see it here
-          </Text>
         </View>
       </ScrollView>
 
@@ -200,12 +156,6 @@ export default function Home() {
           setRoutineBannerKey((prev) => prev + 1);
         }}
         onComplete={handleRoutineComplete}
-      />
-
-      {/* Drawer Menu */}
-      <DrawerMenu
-        visible={drawerVisible}
-        onClose={() => setDrawerVisible(false)}
       />
     </SafeAreaView>
   );
@@ -239,7 +189,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,

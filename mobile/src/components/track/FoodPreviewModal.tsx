@@ -11,11 +11,15 @@ import {
   Switch,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X, Star, Minus, Plus, Package } from "lucide-react-native";
+import { X, Star, Minus, Plus, Package, Pencil } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { SavedFood, MealType } from "@/src/types/track";
 import { ProductData } from "@/src/services/openFoodFactsApi";
 import { InventoryMatchSummary } from "@/src/services/foodInventoryMatchService";
+import {
+  FoodCorrectionModal,
+  FoodCorrectionValues,
+} from "./FoodCorrectionModal";
 
 const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
   { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
@@ -41,6 +45,15 @@ interface FoodPreviewModalProps {
   ) => void;
   onSaveToLibrary?: (food: ProductData) => void;
   onToggleFavorite?: (food: SavedFood) => void;
+  // Called when the user edits nutrition info via the correction modal.
+  // The parent should:
+  //   - Update the in-flight preview's food prop with the new values
+  //   - For saved-source foods, persist the changes to saved_foods
+  //     (setting user_corrected=true)
+  // For api-source foods, the existing log path already calls
+  // createSavedFood, which will pick up the corrected values from the
+  // food prop and persist user_corrected=true at that time.
+  onEditFood?: (next: FoodCorrectionValues) => Promise<void> | void;
 }
 
 export function FoodPreviewModal({
@@ -52,6 +65,7 @@ export function FoodPreviewModal({
   onLogMeal,
   onSaveToLibrary,
   onToggleFavorite,
+  onEditFood,
 }: FoodPreviewModalProps) {
   const insets = useSafeAreaInsets();
   const [selectedMealType, setSelectedMealType] = useState<MealType>("snack");
@@ -59,11 +73,19 @@ export function FoodPreviewModal({
   // Default the "use from pantry" toggle to on whenever we have a match
   // with stock. Resets on modal open.
   const [useInventory, setUseInventory] = useState(false);
+  // Correction modal state
+  const [correctionVisible, setCorrectionVisible] = useState(false);
+  const [savingCorrection, setSavingCorrection] = useState(false);
+  // Track whether the user has corrected this preview in-session — used
+  // for the "(edited)" pill on api-source foods that haven't been saved
+  // yet (saved-source foods read user_corrected directly off the row).
+  const [sessionEdited, setSessionEdited] = useState(false);
   useEffect(() => {
     if (visible) {
       setUseInventory(
         !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0,
       );
+      setSessionEdited(false);
     }
   }, [visible, inventoryMatch]);
 
@@ -104,6 +126,42 @@ export function FoodPreviewModal({
 
   const handleLogMeal = () => {
     onLogMeal(food, selectedMealType, servings, useInventory);
+  };
+
+  const wasUserCorrected =
+    sessionEdited ||
+    ("user_corrected" in (food ?? {}) && (food as SavedFood).user_corrected);
+  const wasAutoScaled =
+    "auto_scaled" in (food ?? {}) && (food as SavedFood | (typeof food & { auto_scaled?: boolean })).auto_scaled === true;
+  // per100Only is a presentation-only flag from OFF lookups (not persisted)
+  // signalling we're showing per-100 g/mL values verbatim because no
+  // serving size was available. Edited or auto-scaled foods suppress it.
+  const isPer100Only =
+    !sessionEdited &&
+    !wasUserCorrected &&
+    !wasAutoScaled &&
+    "per100Only" in (food ?? {}) &&
+    (food as typeof food & { per100Only?: boolean }).per100Only === true;
+
+  const handleOpenCorrection = () => {
+    setCorrectionVisible(true);
+  };
+
+  const handleSaveCorrection = async (next: FoodCorrectionValues) => {
+    if (!onEditFood) {
+      setCorrectionVisible(false);
+      return;
+    }
+    try {
+      setSavingCorrection(true);
+      await onEditFood(next);
+      setSessionEdited(true);
+      setCorrectionVisible(false);
+    } catch (error) {
+      console.error("Failed to save correction:", error);
+    } finally {
+      setSavingCorrection(false);
+    }
   };
 
   const handleSaveToLibrary = () => {
@@ -219,7 +277,36 @@ export function FoodPreviewModal({
 
           {/* Nutrition Info (scaled) */}
           <View style={styles.nutritionSection}>
-            <Text style={styles.sectionTitle}>Nutrition</Text>
+            <View style={styles.nutritionHeader}>
+              <View style={styles.nutritionTitleRow}>
+                <Text style={styles.sectionTitle}>Nutrition</Text>
+                {wasAutoScaled && !wasUserCorrected && (
+                  <View style={styles.autoScaledPill}>
+                    <Text style={styles.autoScaledPillText}>auto-scaled</Text>
+                  </View>
+                )}
+                {isPer100Only && (
+                  <View style={styles.per100Pill}>
+                    <Text style={styles.per100PillText}>per 100 g/mL</Text>
+                  </View>
+                )}
+                {wasUserCorrected && (
+                  <View style={styles.editedPill}>
+                    <Text style={styles.editedPillText}>edited</Text>
+                  </View>
+                )}
+              </View>
+              {onEditFood && (
+                <TouchableOpacity
+                  onPress={handleOpenCorrection}
+                  style={styles.editButton}
+                  activeOpacity={0.7}
+                >
+                  <Pencil size={14} color="#F97316" />
+                  <Text style={styles.editButtonText}>Edit</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={styles.nutritionGrid}>
               <View style={styles.nutritionItem}>
                 <Text style={styles.nutritionValue}>
@@ -248,6 +335,11 @@ export function FoodPreviewModal({
             </View>
             {scaledSugars !== null && (
               <Text style={styles.sugarsText}>Sugars: {scaledSugars}g</Text>
+            )}
+            {isPer100Only && (
+              <Text style={styles.per100Hint}>
+                Open Food Facts didn't include a serving size. Tap Edit to set yours.
+              </Text>
             )}
           </View>
 
@@ -328,12 +420,103 @@ export function FoodPreviewModal({
             <Text style={styles.primaryButtonText}>Log Meal</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Nutrition correction modal (per-serving) */}
+        <FoodCorrectionModal
+          visible={correctionVisible}
+          saving={savingCorrection}
+          initialValues={{
+            name: food.name,
+            brand: "brand" in food ? food.brand : null,
+            serving_size: servingSize,
+            calories: food.calories ?? null,
+            protein: food.protein ?? null,
+            carbs: food.carbs ?? null,
+            fats: food.fats ?? null,
+            sugars: "sugars" in food ? food.sugars : null,
+            sodium_mg: "sodium_mg" in food ? (food as any).sodium_mg : null,
+            fiber_g: "fiber_g" in food ? (food as any).fiber_g : null,
+          }}
+          onClose={() => setCorrectionVisible(false)}
+          onSave={handleSaveCorrection}
+        />
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  nutritionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  nutritionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  editedPill: {
+    backgroundColor: "rgba(249, 115, 22, 0.18)",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  editedPillText: {
+    color: "#F97316",
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  autoScaledPill: {
+    backgroundColor: "rgba(59, 130, 246, 0.18)",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  autoScaledPillText: {
+    color: "#3B82F6",
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  per100Pill: {
+    backgroundColor: "rgba(234, 179, 8, 0.18)",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  per100PillText: {
+    color: "#EAB308",
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  per100Hint: {
+    fontSize: 12,
+    color: "#EAB308",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(249, 115, 22, 0.4)",
+  },
+  editButtonText: {
+    color: "#F97316",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   inventoryRow: {
     flexDirection: "row",
     alignItems: "center",

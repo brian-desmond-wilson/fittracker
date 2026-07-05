@@ -141,6 +141,8 @@ export interface SavedFood {
   image_front_url: string | null;
   image_back_url: string | null;
   is_favorite: boolean;
+  user_corrected: boolean;
+  auto_scaled: boolean;
   created_at: string;
   updated_at: string;
 }
