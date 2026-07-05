@@ -102,11 +102,11 @@ export default function ExerciseDetailPage() {
       let currentParentId: string | null = exercise.parent_exercise_id;
 
       while (currentParentId) {
-        const { data: parentData, error: parentError } = await supabase
+        const { data: parentData, error: parentError } = (await supabase
           .from('exercises')
           .select('id, name, is_core, parent_exercise_id')
           .eq('id', currentParentId)
-          .single();
+          .single()) as { data: { id: string; name: string; is_core: boolean; parent_exercise_id: string | null } | null; error: unknown };
 
         if (parentError) throw parentError;
         if (!parentData) break;
