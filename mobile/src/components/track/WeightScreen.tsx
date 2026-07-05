@@ -199,9 +199,9 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
             data: { type: "weight_reminder" },
           },
           trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
             hour: 7,
             minute: 30,
-            repeats: true,
           },
         });
 
