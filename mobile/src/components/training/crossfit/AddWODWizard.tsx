@@ -7,14 +7,16 @@ import { WODBasicsStep } from './WODBasicsStep';
 import { WODMovementsStep } from './WODMovementsStep';
 import { WODPreviewStep } from './WODPreviewStep';
 import { fetchWODFormats, fetchWODCategories } from '@/src/lib/supabase/crossfit';
-import type { WODFormat, WODCategory } from '@/src/types/crossfit';
+import type { WODFormat, WODCategory, RepSchemeType } from '@/src/types/crossfit';
 
 interface AddWODWizardProps {
   onClose: () => void;
   onSave: () => void;
 }
 
-export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom';
+// Re-export the canonical RepSchemeType (defined in @/src/types/crossfit) so
+// existing importers of it from this module keep working.
+export type { RepSchemeType };
 
 export interface WODMovementConfig {
   exercise_id: string;
@@ -82,6 +84,9 @@ export interface WODFormData {
   time_cap_minutes?: number;
   description?: string;
   notes?: string;
+
+  // Scoring
+  score_type_load?: boolean;
 
   // Step 2: Movements
   movements: WODMovementConfig[];

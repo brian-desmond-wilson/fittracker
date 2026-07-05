@@ -17,7 +17,7 @@ import type {
   MovementCategory,
   MovementFamily,
   GoalType,
-  Exercise,
+  ExerciseWithDetails,
 } from '@/src/types/crossfit';
 
 interface Step2ClassificationProps {
@@ -48,7 +48,7 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
   const [showAllFamilies, setShowAllFamilies] = useState(false);
 
   // Attribute inheritance state
-  const [parentMovement, setParentMovement] = useState<Exercise | null>(null);
+  const [parentMovement, setParentMovement] = useState<ExerciseWithDetails | null>(null);
   const [inheritedFields, setInheritedFields] = useState<Set<string>>(new Set());
   const [overriddenFields, setOverriddenFields] = useState<Set<OverridableField>>(new Set());
 

@@ -15,8 +15,8 @@ import { ScheduleEvent } from '../types/schedule';
 export function useNotifications() {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [hasPermission, setHasPermission] = useState(false);
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<Notifications.EventSubscription | undefined>(undefined);
+  const responseListener = useRef<Notifications.EventSubscription | undefined>(undefined);
 
   // Load settings and request permissions on mount
   useEffect(() => {
@@ -59,8 +59,13 @@ export function useNotifications() {
             snoozeDate.setMinutes(snoozeDate.getMinutes() + 5);
 
             await Notifications.scheduleNotificationAsync({
-              content: notification.request.content,
+              content: {
+                title: notification.request.content.title ?? undefined,
+                body: notification.request.content.body ?? undefined,
+                data: notification.request.content.data,
+              },
               trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
                 date: snoozeDate,
               },
             });
@@ -72,12 +77,8 @@ export function useNotifications() {
     );
 
     return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
+      notificationListener.current?.remove();
+      responseListener.current?.remove();
     };
   }, []);
 
