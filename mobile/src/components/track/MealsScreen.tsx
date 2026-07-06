@@ -2,13 +2,11 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   TextInput,
   StatusBar,
   Alert,
-  Platform,
   PanResponder,
   Animated,
   RefreshControl,
@@ -19,7 +17,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Utensils,
-  Trash2,
   Calendar,
   Plus,
   Share2,
@@ -29,9 +26,8 @@ import {
   ScanBarcode,
   X,
 } from "lucide-react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
-import { MealLog, MealType, SavedFood, RecentFoodItem } from "@/src/types/track";
+import { MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import {
   getProductByBarcode,
@@ -41,19 +37,15 @@ import {
 import {
   getSavedFoodByBarcode,
   createSavedFood,
-  getRecentFoods,
-  getFavorites,
   getSavedFoods,
-  searchSavedFoods,
   toggleFavorite,
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { FoodPreviewModal } from "./FoodPreviewModal";
 import { RecentFoodsRow } from "./meals/RecentFoodsRow";
-import { RecentFoodChips } from "./meals/RecentFoodChips";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 import { MealsNutritionCard } from "./MealsNutritionCard";
-import { MacroGoals, sumNutrition } from "@/src/lib/mealMacros";
+import { sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal } from "./MealLogEditorModal";
 import { MealTemplatesModal } from "./MealTemplatesModal";
 import { MealsInsightsCard } from "./MealsInsightsCard";
@@ -77,26 +69,23 @@ import {
   InventoryMatchSummary,
 } from "@/src/services/foodInventoryMatchService";
 import { Share } from "react-native";
+import { styles } from "./meals/mealsScreenStyles";
+import {
+  getLocalDateString,
+  formatViewingDate,
+  getNutritionLabel,
+} from "./meals/mealsHelpers";
+import { useMacroGoals } from "./meals/useMacroGoals";
+import { useRecentAndFavorites } from "./meals/useRecentAndFavorites";
+import { useSavedFoodsSearch } from "./meals/useSavedFoodsSearch";
+import { useHistoricalMeals } from "./meals/useHistoricalMeals";
+import { useMealAddForm } from "./meals/useMealAddForm";
+import { MealsDayList } from "./meals/MealsDayList";
+import { MealAddForm } from "./meals/MealAddForm";
 
 interface MealsScreenProps {
   onClose: () => void;
 }
-
-const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
-  { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { value: "lunch", label: "Lunch", color: "#10B981" },
-  { value: "dinner", label: "Dinner", color: "#3B82F6" },
-  { value: "snack", label: "Snack", color: "#8B5CF6" },
-  { value: "dessert", label: "Dessert", color: "#EC4899" },
-];
-
-// Helper to get local date in YYYY-MM-DD format (not UTC)
-const getLocalDateString = (date: Date = new Date()): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
 
 export function MealsScreen({ onClose }: MealsScreenProps) {
   const insets = useSafeAreaInsets();
@@ -111,36 +100,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const SWIPE_THRESHOLD = 50;
 
-  // Form fields
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [mealType, setMealType] = useState<MealType>("breakfast");
-  const [mealName, setMealName] = useState("");
-  const [calories, setCalories] = useState("");
-  const [protein, setProtein] = useState("");
-  const [carbs, setCarbs] = useState("");
-  const [fats, setFats] = useState("");
-  const [sugars, setSugars] = useState("");
-  const [sodiumMg, setSodiumMg] = useState("");
-  const [fiberG, setFiberG] = useState("");
+  // Manual "Log Meal" form field state (bundled in a hook).
+  const addForm = useMealAddForm();
 
-  // Macro goals from profile
-  const [goals, setGoals] = useState<MacroGoals>({
-    calories: null,
-    protein: null,
-    carbs: null,
-    sodium_mg: null,
-    fats: null,
-    sugars: null,
-    fiber_g: null,
-  });
-
-  // Pace window + meal times from profile
-  const [windowStart, setWindowStart] = useState("08:00");
-  const [windowEnd, setWindowEnd] = useState("23:00");
-  const [breakfastTime, setBreakfastTime] = useState("08:00");
-  const [lunchTime, setLunchTime] = useState("12:00");
-  const [dinnerTime, setDinnerTime] = useState("18:00");
+  // Macro goals + eating-window / meal times from profile (loaded on mount).
+  const { goals, windowStart, windowEnd, breakfastTime, lunchTime, dinnerTime } =
+    useMacroGoals();
 
   // Edit-meal modal
   const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
@@ -182,15 +147,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [templatesVisible, setTemplatesVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
 
-  // Historical meals (last 365 days) for insights/streaks/chart
-  const [historicalLogs, setHistoricalLogs] = useState<MealLog[]>([]);
-  // Bumped only when meals are written (log/undo/delete/edit/refresh) so the
-  // 365-day insights query refetches on writes but NOT on date navigation.
-  const [historyVersion, setHistoryVersion] = useState(0);
-
-  // Saved-foods search results (debounced from searchQuery)
-  const [searchResults, setSearchResults] = useState<SavedFood[]>([]);
-  const [searching, setSearching] = useState(false);
+  // Historical meals (last 365 days) for insights/streaks/chart. refreshHistory
+  // is called on writes so insights refetch, but NOT on plain date navigation.
+  const { historicalLogs, refreshHistory } = useHistoricalMeals();
 
   // Barcode scanner state. handlingBarcodeRef guards against the camera
   // firing onBarcodeScanned multiple times for the same scan — without it,
@@ -205,12 +164,18 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [barcodeLoading, setBarcodeLoading] = useState(false);
 
-  // Recent foods & favorites state
-  const [recentFoods, setRecentFoods] = useState<RecentFoodItem[]>([]);
-  const [favorites, setFavorites] = useState<SavedFood[]>([]);
-  const [loadingRecent, setLoadingRecent] = useState(false);
+  // Recent foods & favorites (fetched on mount, refetched on writes).
+  const {
+    recentFoods,
+    favorites,
+    loadingRecent,
+    refetch: fetchRecentAndFavorites,
+  } = useRecentAndFavorites();
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+
+  // Debounced saved-foods search results, derived from searchQuery.
+  const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -242,41 +207,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     const nextDate = new Date(viewingDate);
     nextDate.setDate(nextDate.getDate() + 1);
     return getLocalDateString(nextDate) <= todayStr;
-  };
-
-  // Format date for display
-  const formatViewingDate = (): string => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = getLocalDateString(yesterday);
-
-    if (viewingDateStr === todayStr) {
-      return "Today";
-    } else if (viewingDateStr === yesterdayStr) {
-      return "Yesterday";
-    } else {
-      return viewingDate.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-    }
-  };
-
-  // Get nutrition label based on viewing date
-  const getNutritionLabel = (): string => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = getLocalDateString(yesterday);
-
-    if (viewingDateStr === todayStr) {
-      return "Today's Nutrition";
-    } else if (viewingDateStr === yesterdayStr) {
-      return "Yesterday's Nutrition";
-    } else {
-      return `${viewingDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}'s Nutrition`;
-    }
   };
 
   // Fetch meals for a specific date
@@ -314,7 +244,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       setMealsCache((prev) => new Map(prev).set(dateStr, data || []));
       // A forced fetch means the day was just written to (or pulled to
       // refresh) — refresh the insights history too. Plain navigation doesn't.
-      if (force) setHistoryVersion((v) => v + 1);
+      if (force) refreshHistory();
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
@@ -327,27 +257,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   useEffect(() => {
     fetchMealsForDate(viewingDate);
   }, [viewingDate]);
-
-  // Fetch recent foods and favorites on mount
-  const fetchRecentAndFavorites = useCallback(async () => {
-    try {
-      setLoadingRecent(true);
-      const [recentData, favoritesData] = await Promise.all([
-        getRecentFoods(5),
-        getFavorites(),
-      ]);
-      setRecentFoods(recentData);
-      setFavorites(favoritesData);
-    } catch (error) {
-      console.error("Error fetching recent/favorites:", error);
-    } finally {
-      setLoadingRecent(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchRecentAndFavorites();
-  }, [fetchRecentAndFavorites]);
 
   // Fetch all saved foods once (for the template picker)
   const fetchAllSavedFoods = useCallback(async () => {
@@ -363,33 +272,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchAllSavedFoods();
   }, [fetchAllSavedFoods]);
 
-  // Fetch last 365 days of meals for insights (streaks/chart). Refetches
-  // when the local meals cache for the viewing date is invalidated.
-  const fetchHistoricalLogs = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 365);
-      const cutoffStr = getLocalDateString(cutoff);
-      const { data, error } = await supabase
-        .from("meal_logs")
-        .select(
-          "id, user_id, date, meal_type, name, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, logged_at, saved_food_id, meal_template_id, servings, uses_inventory, inventory_items"
-        )
-        .eq("user_id", user.id)
-        .gte("date", cutoffStr);
-      if (error) throw error;
-      setHistoricalLogs((data ?? []) as MealLog[]);
-    } catch (error) {
-      console.error("Error fetching historical meals:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchHistoricalLogs();
-  }, [fetchHistoricalLogs, historyVersion]);
-
   // Pull the user back to Today when they start a logging action — typing
   // in the search bar or opening the add form. Otherwise results/input
   // would land off-screen on the Insights tab.
@@ -399,29 +281,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   }, [activeTab, searchQuery, showAddForm]);
 
-  // Debounced search across saved_foods (matches name OR brand).
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (q.length < 2) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    const handle = setTimeout(async () => {
-      try {
-        const hits = await searchSavedFoods(q);
-        setSearchResults(hits);
-      } catch (error) {
-        console.error("Search error:", error);
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 250);
-    return () => clearTimeout(handle);
-  }, [searchQuery]);
-
   const handleSearchResultPress = (food: SavedFood) => {
     setPreviewFood(food);
     setPreviewSource("saved");
@@ -430,41 +289,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setShowFoodPreview(true);
     setSearchQuery("");
   };
-
-  // Fetch macro goals on mount.
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const { data } = await supabase
-          .from("profiles")
-          .select(
-            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g, water_window_start, water_window_end, breakfast_time, lunch_time, dinner_time"
-          )
-          .eq("id", user.id)
-          .single();
-        if (data) {
-          setGoals({
-            calories: data.target_calories ?? null,
-            protein: data.target_protein_g ?? null,
-            carbs: data.target_carbs_g ?? null,
-            sodium_mg: data.target_sodium_mg ?? null,
-            fats: data.target_fats_g ?? null,
-            sugars: data.target_sugars_g ?? null,
-            fiber_g: data.target_fiber_g ?? null,
-          });
-          if (data.water_window_start) setWindowStart(String(data.water_window_start).slice(0, 5));
-          if (data.water_window_end) setWindowEnd(String(data.water_window_end).slice(0, 5));
-          if (data.breakfast_time) setBreakfastTime(String(data.breakfast_time).slice(0, 5));
-          if (data.lunch_time) setLunchTime(String(data.lunch_time).slice(0, 5));
-          if (data.dinner_time) setDinnerTime(String(data.dinner_time).slice(0, 5));
-        }
-      } catch (error) {
-        console.error("Error fetching macro goals:", error);
-      }
-    })();
-  }, []);
 
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
@@ -993,16 +817,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setShowFoodPreview(true);
   };
 
-  // Handle recent food chip selection (auto-fill form)
-  const handleRecentChipPress = (food: SavedFood) => {
-    setMealName(food.name);
-    setCalories(food.calories?.toString() || "");
-    setProtein(food.protein?.toString() || "");
-    setCarbs(food.carbs?.toString() || "");
-    setFats(food.fats?.toString() || "");
-    setSugars(food.sugars?.toString() || "");
-  };
-
   // Swipe gesture handler
   const panResponder = useMemo(
     () =>
@@ -1053,26 +867,27 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     [viewingDate]
   );
 
-  const resetForm = () => {
-    setSelectedDate(viewingDate);
-    setMealType("breakfast");
-    setMealName("");
-    setCalories("");
-    setProtein("");
-    setCarbs("");
-    setFats("");
-    setSugars("");
-    setSodiumMg("");
-    setFiberG("");
-  };
+  const resetForm = () => addForm.reset(viewingDate);
 
   // Open form with viewing date as default
   const handleOpenAddForm = () => {
-    setSelectedDate(viewingDate);
+    addForm.setSelectedDate(viewingDate);
     setShowAddForm(true);
   };
 
   const handleAddMeal = async () => {
+    const {
+      selectedDate,
+      mealType,
+      mealName,
+      calories,
+      protein,
+      carbs,
+      fats,
+      sugars,
+      sodiumMg,
+      fiberG,
+    } = addForm;
     if (!mealName.trim()) {
       Alert.alert("Validation Error", "Meal name is required");
       return;
@@ -1316,19 +1131,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     ]);
   };
 
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  };
-
-  const getMealTypeColor = (type: MealType) => {
-    return MEAL_TYPES.find((t) => t.value === type)?.color || "#6B7280";
-  };
-
-  const getMealTypeLabel = (type: MealType) => {
-    return MEAL_TYPES.find((t) => t.value === type)?.label || type;
-  };
-
   // Get meals for current viewing date from cache
   const dayMeals = mealsCache.get(viewingDateStr) || [];
 
@@ -1405,8 +1207,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   );
 
   // Group meals by meal type
-  const MEAL_TYPE_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
-
   const getMealsGroupedByType = (): Record<MealType, MealLog[]> => {
     const grouped: Record<MealType, MealLog[]> = {
       breakfast: [],
@@ -1522,7 +1322,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 <ChevronLeft size={28} color={colors.foreground} />
               </TouchableOpacity>
 
-              <Text style={styles.dateText}>{formatViewingDate()}</Text>
+              <Text style={styles.dateText}>{formatViewingDate(viewingDate)}</Text>
 
               <TouchableOpacity
                 onPress={goToNextDay}
@@ -1598,7 +1398,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               <>
                 {/* Nutrition Summary (rings + bars + compact tier C) */}
                 <MealsNutritionCard
-                  label={getNutritionLabel()}
+                  label={getNutritionLabel(viewingDate)}
                   totals={dayTotals}
                   goals={goals}
                 />
@@ -1718,280 +1518,29 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
           {/* Add Form */}
           {showAddForm && (
-            <View style={styles.addSection}>
-              <Text style={styles.sectionTitle}>Log Meal</Text>
-
-              {/* Date Selector */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Date</Text>
-                <TouchableOpacity
-                  style={styles.dateButton}
-                  onPress={() => setShowDatePicker(true)}
-                >
-                  <Calendar size={16} color={colors.foreground} />
-                  <Text style={styles.dateButtonText}>
-                    {selectedDate.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {showDatePicker && (
-                <DateTimePicker
-                  value={selectedDate}
-                  mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
-                  onChange={(event, date) => {
-                    setShowDatePicker(Platform.OS === "ios");
-                    if (date) {
-                      setSelectedDate(date);
-                    }
-                  }}
-                  maximumDate={new Date()}
-                />
-              )}
-
-              {/* Meal Type Selector */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Meal Type</Text>
-                <View style={styles.mealTypeButtons}>
-                  {MEAL_TYPES.map((type) => (
-                    <TouchableOpacity
-                      key={type.value}
-                      style={[
-                        styles.mealTypeButton,
-                        mealType === type.value && {
-                          backgroundColor: type.color,
-                          borderColor: type.color,
-                        },
-                      ]}
-                      onPress={() => setMealType(type.value)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.mealTypeButtonText,
-                          mealType === type.value && styles.mealTypeButtonTextActive,
-                        ]}
-                      >
-                        {type.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Recent Food Chips for quick fill */}
-              <RecentFoodChips
-                recentFoods={recentFoods}
-                favorites={favorites}
-                onChipPress={handleRecentChipPress}
-              />
-
-              {/* Meal Name */}
-              <View style={styles.field}>
-                <Text style={styles.label}>
-                  Meal Name <Text style={styles.required}>*</Text>
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g., Grilled chicken with rice"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={mealName}
-                  onChangeText={setMealName}
-                />
-              </View>
-
-              {/* Nutritional Information */}
-              <Text style={styles.subsectionTitle}>Nutrition (optional)</Text>
-
-              <View style={styles.row}>
-                <View style={styles.halfField}>
-                  <Text style={styles.inputLabel}>Calories</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="numeric"
-                    value={calories}
-                    onChangeText={setCalories}
-                  />
-                </View>
-                <View style={styles.halfField}>
-                  <Text style={styles.inputLabel}>Protein (g)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="decimal-pad"
-                    value={protein}
-                    onChangeText={setProtein}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.row}>
-                <View style={styles.halfField}>
-                  <Text style={styles.inputLabel}>Carbs (g)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="decimal-pad"
-                    value={carbs}
-                    onChangeText={setCarbs}
-                  />
-                </View>
-                <View style={styles.halfField}>
-                  <Text style={styles.inputLabel}>Fats (g)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="decimal-pad"
-                    value={fats}
-                    onChangeText={setFats}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.row}>
-                <View style={styles.halfField}>
-                  <Text style={styles.inputLabel}>Sugars (g)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="decimal-pad"
-                    value={sugars}
-                    onChangeText={setSugars}
-                  />
-                </View>
-                <View style={styles.halfField}>
-                  <Text style={styles.inputLabel}>Sodium (mg)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType="decimal-pad"
-                    value={sodiumMg}
-                    onChangeText={setSodiumMg}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.inputLabel}>Fiber (g)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
-                  keyboardType="decimal-pad"
-                  value={fiberG}
-                  onChangeText={setFiberG}
-                />
-              </View>
-
-              {/* Form Buttons */}
-              <View style={styles.formButtons}>
-                <TouchableOpacity
-                  style={[styles.button, styles.cancelButton]}
-                  onPress={() => {
-                    resetForm();
-                    setShowAddForm(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.button, styles.saveButton]}
-                  onPress={handleAddMeal}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.saveButtonText}>Log Meal</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <MealAddForm
+              form={addForm}
+              recentFoods={recentFoods}
+              favorites={favorites}
+              onChipPress={addForm.fillFromChip}
+              onCancel={() => {
+                resetForm();
+                setShowAddForm(false);
+              }}
+              onSubmit={handleAddMeal}
+            />
           )}
 
             {/* Meals Section - Grouped by Type (Today tab only; on Insights
                 the logged-food list is hidden to keep that view reflective) */}
             {(showAddForm || activeTab === "today") && (
-            <View style={styles.mealsSection}>
-              {loadingDay ? (
-                <Text style={styles.loadingText}>Loading...</Text>
-              ) : dayMeals.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Utensils size={48} color={colors.mutedForeground} />
-                  <Text style={styles.emptyStateText}>No meals logged yet</Text>
-                  <Text style={styles.emptyStateSubtext}>
-                    Scan a barcode or tap + to add one
-                  </Text>
-                </View>
-              ) : (
-                MEAL_TYPE_ORDER.map((mealType) => {
-                  const mealsOfType = groupedMealsByType[mealType];
-                  if (mealsOfType.length === 0) return null;
-
-                  return (
-                    <View key={mealType} style={styles.mealTypeSection}>
-                      <View style={styles.mealTypeSectionHeader}>
-                        <View
-                          style={[
-                            styles.mealTypeBadge,
-                            { backgroundColor: getMealTypeColor(mealType) },
-                          ]}
-                        >
-                          <Text style={styles.mealTypeBadgeText}>
-                            {getMealTypeLabel(mealType)}
-                          </Text>
-                        </View>
-                      </View>
-                      {mealsOfType.map((meal) => (
-                        <TouchableOpacity
-                          key={meal.id}
-                          style={styles.mealCard}
-                          onPress={() => setEditingMeal(meal)}
-                          activeOpacity={0.7}
-                        >
-                          <View style={styles.mealCardHeader}>
-                            <Text style={styles.mealTime}>{formatTime(meal.logged_at)}</Text>
-                            <TouchableOpacity
-                              onPress={() => handleDeleteMeal(meal.id)}
-                              style={styles.deleteButton}
-                              activeOpacity={0.7}
-                            >
-                              <Trash2 size={18} color={colors.mutedForeground} />
-                            </TouchableOpacity>
-                          </View>
-                          <Text style={styles.mealName}>{meal.name}</Text>
-                          {(meal.calories || meal.protein || meal.carbs || meal.fats) && (
-                            <View style={styles.mealNutrition}>
-                              {meal.calories && (
-                                <Text style={styles.nutritionText}>{meal.calories} cal</Text>
-                              )}
-                              {meal.protein && (
-                                <Text style={styles.nutritionText}>P: {meal.protein}g</Text>
-                              )}
-                              {meal.carbs && (
-                                <Text style={styles.nutritionText}>C: {meal.carbs}g</Text>
-                              )}
-                              {meal.fats && (
-                                <Text style={styles.nutritionText}>F: {meal.fats}g</Text>
-                              )}
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  );
-                })
-              )}
-            </View>
+              <MealsDayList
+                loadingDay={loadingDay}
+                dayMeals={dayMeals}
+                groupedMealsByType={groupedMealsByType}
+                onEditMeal={setEditingMeal}
+                onDeleteMeal={handleDeleteMeal}
+              />
             )}
 
             {/* Bottom Spacing */}
@@ -2090,495 +1639,3 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  refreshIndicator: {
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backButton: {
-    padding: 4,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  searchActionButton: {
-    padding: 4,
-  },
-  headerAddButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: "#F97316",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  content: {
-    flex: 1,
-  },
-  dateNavigation: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  navArrow: {
-    padding: 8,
-  },
-  navArrowDisabled: {
-    opacity: 0.3,
-  },
-  dateText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  jumpToTodayButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  tabsContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  tabsTrack: {
-    flexDirection: "row",
-    backgroundColor: colors.card,
-    borderRadius: 10,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  tabPill: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 7,
-  },
-  tabPillActive: {
-    backgroundColor: "#F97316",
-  },
-  tabPillText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-  },
-  tabPillTextActive: {
-    color: "#FFFFFF",
-  },
-  jumpToTodayText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 16,
-  },
-  titleShareButton: {
-    marginLeft: "auto",
-    padding: 6,
-  },
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: colors.foreground,
-  },
-  summaryCard: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 20,
-    backgroundColor: "rgba(249, 115, 22, 0.1)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(249, 115, 22, 0.3)",
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-    marginBottom: 12,
-  },
-  summaryGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  summaryItem: {
-    alignItems: "center",
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#F97316",
-    marginBottom: 4,
-  },
-  summaryItemLabel: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-  },
-  addButtonContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  addButton: {
-    backgroundColor: "#F97316",
-    paddingVertical: 14,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  addButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  addSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 16,
-  },
-  subsectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  field: {
-    marginBottom: 16,
-  },
-  halfField: {
-    flex: 1,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 8,
-  },
-  required: {
-    color: "#EF4444",
-  },
-  dateButton: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  mealTypeButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  mealTypeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  mealTypeButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  mealTypeButtonTextActive: {
-    color: "#FFFFFF",
-  },
-  input: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  formButtons: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  cancelButton: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  saveButton: {
-    backgroundColor: "#F97316",
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  mealsSection: {
-    paddingHorizontal: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    textAlign: "center",
-    paddingVertical: 24,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: 48,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    marginTop: 16,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-    marginTop: 8,
-  },
-  mealTypeSection: {
-    marginBottom: 20,
-  },
-  mealTypeSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  mealCard: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  mealCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  mealInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  mealTypeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  mealTypeBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  mealTime: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-  },
-  searchResults: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  searchResultsHeader: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    marginBottom: 8,
-  },
-  searchResultRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.04)",
-  },
-  searchResultName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  searchResultBrand: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginTop: 1,
-  },
-  searchResultCals: {
-    fontSize: 13,
-    color: colors.mutedForeground,
-    marginLeft: 8,
-  },
-  distributionWrap: {
-    marginHorizontal: 20,
-  },
-  weeklySummaryButton: {
-    marginHorizontal: 20,
-    marginTop: -4,
-    marginBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: "rgba(249, 115, 22, 0.3)",
-    borderRadius: 10,
-    backgroundColor: "rgba(249, 115, 22, 0.06)",
-  },
-  weeklySummaryButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#F97316",
-  },
-  quickAdjustButton: {
-    marginHorizontal: 20,
-    marginTop: 4,
-    marginBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: "#374151",
-    borderStyle: "dashed",
-    borderRadius: 10,
-    backgroundColor: "#1F2937",
-  },
-  quickAdjustButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#F97316",
-  },
-  templatesButton: {
-    marginHorizontal: 20,
-    marginTop: 4,
-    marginBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: "#374151",
-    borderStyle: "dashed",
-    borderRadius: 10,
-    backgroundColor: "#1F2937",
-  },
-  templatesButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#3B82F6",
-  },
-  deleteButton: {
-    padding: 4,
-  },
-  mealName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 8,
-  },
-  mealNutrition: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
-  nutritionText: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-  },
-});
