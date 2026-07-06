@@ -2,7 +2,8 @@ import type {
   WODWithDetails,
   WODMovementWithDetails,
   MovementCategoryName,
-  GoalTypeName
+  GoalTypeName,
+  ScalingLevel
 } from '@/src/types/crossfit';
 
 /**
@@ -519,4 +520,117 @@ export function formatTimeCap(
   }
 
   return 'Varies';
+}
+
+
+// ============================================================================
+// SCALED MOVEMENT FORMATTING (WOD detail screen)
+// ============================================================================
+
+// Get rep scheme for movement (custom or WOD-level)
+export function getRepScheme(wod: WODWithDetails | null, movement: any): string {
+  // If movement has custom rep scheme override, use it
+  if (movement.custom_rep_scheme && movement.follows_wod_scheme === false) {
+    return movement.custom_rep_scheme;
+  }
+  // Otherwise use WOD-level rep scheme
+  return wod?.rep_scheme || '';
+}
+
+// Get movements for selected scaling level with formatted details
+export function getScaledMovements(wod: WODWithDetails | null, selectedScaling: ScalingLevel) {
+  if (!wod || !wod.movements) return [];
+
+  return wod.movements.map((movement) => {
+    const repScheme = getRepScheme(wod, movement);
+    let repsDisplay = '';
+    let weightDisplay = '';
+    let variation = '';
+
+    switch (selectedScaling) {
+      case "Rx":
+        // Reps: custom or rep scheme
+        if (movement.rx_reps) {
+          repsDisplay = `${movement.rx_reps} reps`;
+        } else if (repScheme) {
+          repsDisplay = repScheme;
+        }
+
+        // Weight: gender-split format
+        if (movement.rx_weight_men_lbs && movement.rx_weight_women_lbs) {
+          weightDisplay = `${movement.rx_weight_men_lbs}/${movement.rx_weight_women_lbs} lbs`;
+        } else if (movement.rx_weight_men_lbs) {
+          weightDisplay = `${movement.rx_weight_men_lbs} lbs (M)`;
+        } else if (movement.rx_weight_women_lbs) {
+          weightDisplay = `${movement.rx_weight_women_lbs} lbs (W)`;
+        }
+
+        variation = movement.rx_movement_variation || '';
+        break;
+
+      case "L2":
+        // Reps: custom or rep scheme
+        if (movement.l2_reps) {
+          const repsValue = String(movement.l2_reps);
+          const isRepScheme = repsValue.includes('-');
+          repsDisplay = isRepScheme ? repsValue : `${movement.l2_reps} reps`;
+        } else if (repScheme) {
+          repsDisplay = repScheme;
+        }
+
+        // Weight: gender-split format
+        if (movement.l2_weight_men_lbs && movement.l2_weight_women_lbs) {
+          weightDisplay = `${movement.l2_weight_men_lbs}/${movement.l2_weight_women_lbs} lbs`;
+        } else if (movement.l2_weight_men_lbs) {
+          weightDisplay = `${movement.l2_weight_men_lbs} lbs (M)`;
+        } else if (movement.l2_weight_women_lbs) {
+          weightDisplay = `${movement.l2_weight_women_lbs} lbs (W)`;
+        }
+
+        variation = movement.l2_movement_variation || '';
+        break;
+
+      case "L1":
+        // Reps: custom or rep scheme
+        if (movement.l1_reps) {
+          const repsValue = String(movement.l1_reps);
+          const isRepScheme = repsValue.includes('-');
+          repsDisplay = isRepScheme ? repsValue : `${movement.l1_reps} reps`;
+        } else if (repScheme) {
+          repsDisplay = repScheme;
+        }
+
+        // Weight: gender-split format
+        if (movement.l1_weight_men_lbs && movement.l1_weight_women_lbs) {
+          weightDisplay = `${movement.l1_weight_men_lbs}/${movement.l1_weight_women_lbs} lbs`;
+        } else if (movement.l1_weight_men_lbs) {
+          weightDisplay = `${movement.l1_weight_men_lbs} lbs (M)`;
+        } else if (movement.l1_weight_women_lbs) {
+          weightDisplay = `${movement.l1_weight_women_lbs} lbs (W)`;
+        }
+
+        variation = movement.l1_movement_variation || '';
+        break;
+    }
+
+    // Special handling for distance movements in "For Time" WODs
+    const distanceValue = (movement as any)[`${selectedScaling.toLowerCase()}_distance_value`];
+    const distanceUnit = (movement as any)[`${selectedScaling.toLowerCase()}_distance_unit`];
+    const isForTime = wod?.format?.name?.toLowerCase().includes('for time') ||
+                      wod?.format?.name?.toLowerCase().includes('rounds for time');
+
+    if (distanceValue && distanceUnit && isForTime) {
+      // Format: "400m / round @ 5 RFT"
+      const formattedDistance = formatDistance(distanceValue, distanceUnit);
+      const rounds = repScheme?.match(/^\d+/)?.[0] || wod?.rep_scheme?.match(/^\d+/)?.[0] || '5';
+      repsDisplay = `${formattedDistance.primary} / round @ ${rounds} RFT`;
+    }
+
+    return {
+      ...movement,
+      repsDisplay,
+      weightDisplay,
+      variation,
+    };
+  });
 }
