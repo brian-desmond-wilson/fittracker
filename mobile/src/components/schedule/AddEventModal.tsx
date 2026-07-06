@@ -10,6 +10,7 @@ import {
   Platform,
   PanResponder,
   TouchableWithoutFeedback,
+  Alert,
 } from "react-native";
 import { X, Calendar } from "lucide-react-native";
 import { EventCategory } from "@/src/types/schedule";
@@ -161,12 +162,12 @@ export function AddEventModal({
 
   const handleSubmit = async () => {
     if (!formData.title.trim()) {
-      alert("Please enter an event title");
+      Alert.alert("Please enter an event title");
       return;
     }
 
     if (!formData.category_id) {
-      alert("Please select a category");
+      Alert.alert("Please select a category");
       return;
     }
 
@@ -178,7 +179,7 @@ export function AddEventModal({
       } = await supabase.auth.getUser();
 
       if (!user) {
-        alert("You must be logged in to create events");
+        Alert.alert("You must be logged in to create events");
         return;
       }
 
@@ -218,7 +219,10 @@ export function AddEventModal({
       onClose();
     } catch (error) {
       console.error("Failed to create event:", error);
-      alert("Failed to create event. Please try again.");
+      Alert.alert(
+        "Couldn't create event",
+        "We couldn't create your event. Please try again."
+      );
     } finally {
       setLoading(false);
     }
