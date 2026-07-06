@@ -13,10 +13,7 @@ import { ProfileMenu } from "@/src/components/profile/ProfileMenu";
 import { ProfileScreen } from "@/src/components/profile/ProfileScreen";
 import { GoalsScreen } from "@/src/components/profile/GoalsScreen";
 import { RoutinesScreen } from "@/src/components/profile/RoutinesScreen";
-import { PreferencesScreen } from "@/src/components/profile/PreferencesScreen";
 import { NotificationsScreen } from "@/src/components/profile/NotificationsScreen";
-import { PrivacySecurityScreen } from "@/src/components/profile/PrivacySecurityScreen";
-import { HelpSupportScreen } from "@/src/components/profile/HelpSupportScreen";
 import { AboutScreen } from "@/src/components/profile/AboutScreen";
 import { DevTaskManager } from "@/src/components/profile/DevTaskManager";
 
@@ -24,10 +21,7 @@ type ModalScreen =
   | "profile"
   | "goals"
   | "routines"
-  | "preferences"
   | "notifications"
-  | "privacy"
-  | "help"
   | "about"
   | "dev-tasks"
   | null;
@@ -173,10 +167,7 @@ export default function Profile() {
         onProfilePress={() => setActiveModal("profile")}
         onGoalsPress={() => setActiveModal("goals")}
         onRoutinesPress={() => setActiveModal("routines")}
-        onPreferencesPress={() => setActiveModal("preferences")}
         onNotificationsPress={() => setActiveModal("notifications")}
-        onPrivacyPress={() => setActiveModal("privacy")}
-        onHelpPress={() => setActiveModal("help")}
         onAboutPress={() => setActiveModal("about")}
         onDevTasksPress={() => setActiveModal("dev-tasks")}
         onSignOut={handleSignOut}
@@ -225,17 +216,6 @@ export default function Profile() {
         <RoutinesScreen onClose={() => setActiveModal(null)} />
       </Modal>
 
-      {/* Preferences Modal */}
-      <Modal
-        visible={activeModal === "preferences"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        statusBarTranslucent={false}
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <PreferencesScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
       {/* Notifications Modal */}
       <Modal
         visible={activeModal === "notifications"}
@@ -245,28 +225,6 @@ export default function Profile() {
         onRequestClose={() => setActiveModal(null)}
       >
         <NotificationsScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Privacy & Security Modal */}
-      <Modal
-        visible={activeModal === "privacy"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        statusBarTranslucent={false}
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <PrivacySecurityScreen onClose={() => setActiveModal(null)} />
-      </Modal>
-
-      {/* Help & Support Modal */}
-      <Modal
-        visible={activeModal === "help"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        statusBarTranslucent={false}
-        onRequestClose={() => setActiveModal(null)}
-      >
-        <HelpSupportScreen onClose={() => setActiveModal(null)} />
       </Modal>
 
       {/* About Modal */}
