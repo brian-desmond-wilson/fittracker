@@ -8,5 +8,5 @@ export default function WaterPage() {
   // (so coming from Home would go back to Home and leave the Track
   // tab's nested stack at [index, water], which causes the wrong screen
   // when re-entering the Track tab).
-  return <WaterScreen onClose={() => router.replace("/(tabs)/track")} />;
+  return <WaterScreen onClose={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/track")} />;
 }

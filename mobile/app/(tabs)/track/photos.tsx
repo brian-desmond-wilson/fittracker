@@ -6,5 +6,5 @@ export default function ProgressPhotosPage() {
 
   // Always land on Track index — router.back() would walk linear
   // history if entered from outside the Track tab.
-  return <ProgressPhotosScreen onClose={() => router.replace("/(tabs)/track")} />;
+  return <ProgressPhotosScreen onClose={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/track")} />;
 }
