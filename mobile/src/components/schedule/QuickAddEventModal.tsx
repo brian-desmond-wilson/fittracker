@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   PanResponder,
   TouchableWithoutFeedback,
+  Alert,
 } from "react-native";
 import { X } from "lucide-react-native";
 import { EventCategory } from "@/src/types/schedule";
@@ -98,12 +99,12 @@ export function QuickAddEventModal({
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      alert("Please enter an event title");
+      Alert.alert("Please enter an event title");
       return;
     }
 
     if (!categoryId) {
-      alert("Please select a category");
+      Alert.alert("Please select a category");
       return;
     }
 
@@ -115,7 +116,7 @@ export function QuickAddEventModal({
       } = await supabase.auth.getUser();
 
       if (!user) {
-        alert("You must be logged in to create events");
+        Alert.alert("You must be logged in to create events");
         return;
       }
 
@@ -140,7 +141,10 @@ export function QuickAddEventModal({
       onClose();
     } catch (error) {
       console.error("Failed to create event:", error);
-      alert("Failed to create event. Please try again.");
+      Alert.alert(
+        "Couldn't create event",
+        "We couldn't create your event. Please try again."
+      );
     } finally {
       setLoading(false);
     }

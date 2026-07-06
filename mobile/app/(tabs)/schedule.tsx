@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   Modal,
   TextInput,
   RefreshControl,
@@ -230,6 +231,10 @@ export default function Schedule() {
       // waits on it.
     } catch (error) {
       console.error("Error loading schedule data:", error);
+      Alert.alert(
+        "Couldn't load your schedule",
+        "Something went wrong loading your events. Pull down to refresh and try again."
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -288,6 +293,10 @@ export default function Schedule() {
       setSelectedEvent({ ...selectedEvent, status: status as ScheduleEvent["status"] });
     } catch (error) {
       console.error("Error updating event status:", error);
+      Alert.alert(
+        "Couldn't update event",
+        "We couldn't change this event's status. Please try again."
+      );
     }
   };
 
@@ -310,6 +319,10 @@ export default function Schedule() {
       await loadScheduleData();
     } catch (error) {
       console.error("Error deleting event:", error);
+      Alert.alert(
+        "Couldn't delete event",
+        "We couldn't delete this event. Please try again."
+      );
     }
   };
 
@@ -333,6 +346,10 @@ export default function Schedule() {
       await loadScheduleData();
     } catch (error) {
       console.error("Error updating event:", error);
+      Alert.alert(
+        "Couldn't save changes",
+        "We couldn't save your changes to this event. Please try again."
+      );
     }
   };
 
@@ -392,6 +409,10 @@ export default function Schedule() {
 
       if (error) {
         console.error("Error updating event time:", error);
+        Alert.alert(
+          "Couldn't move event",
+          "We couldn't save the new time, so the event was moved back. Please try again."
+        );
         // Revert on error by reloading
         await loadScheduleData();
         return;
@@ -402,6 +423,10 @@ export default function Schedule() {
       await scheduleNotification(updatedEvent, selectedDate);
     } catch (error) {
       console.error("Error updating event time:", error);
+      Alert.alert(
+        "Couldn't move event",
+        "We couldn't save the new time, so the event was moved back. Please try again."
+      );
       // Revert on error by reloading
       await loadScheduleData();
     }
