@@ -36,19 +36,6 @@ export function AboutScreen({ onClose }: AboutScreenProps) {
           <Text style={styles.version}>Version {appVersion}</Text>
         </View>
 
-        <View style={styles.linksCard}>
-          <Text style={styles.linkTitle}>Legal</Text>
-          <TouchableOpacity style={styles.linkItem}>
-            <Text style={styles.linkText}>Terms of Service</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.linkItem}>
-            <Text style={styles.linkText}>Privacy Policy</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.linkItem}>
-            <Text style={styles.linkText}>Licenses</Text>
-          </TouchableOpacity>
-        </View>
-
         <Text style={styles.copyright}>
           © 2025 FitTracker. All rights reserved.
         </Text>

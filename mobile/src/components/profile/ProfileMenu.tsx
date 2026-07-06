@@ -3,10 +3,7 @@ import {
   User,
   Target,
   Calendar,
-  Settings,
   Bell,
-  Lock,
-  HelpCircle,
   Info,
   Wrench,
   ChevronRight,
@@ -25,10 +22,7 @@ interface ProfileMenuProps {
   onProfilePress: () => void;
   onGoalsPress: () => void;
   onRoutinesPress: () => void;
-  onPreferencesPress: () => void;
   onNotificationsPress: () => void;
-  onPrivacyPress: () => void;
-  onHelpPress: () => void;
   onAboutPress: () => void;
   onDevTasksPress: () => void;
   onSignOut: () => void;
@@ -39,10 +33,7 @@ export function ProfileMenu({
   onProfilePress,
   onGoalsPress,
   onRoutinesPress,
-  onPreferencesPress,
   onNotificationsPress,
-  onPrivacyPress,
-  onHelpPress,
   onAboutPress,
   onDevTasksPress,
   onSignOut,
@@ -67,28 +58,10 @@ export function ProfileMenu({
       onPress: onRoutinesPress,
     },
     {
-      id: 'preferences',
-      label: 'Preferences',
-      icon: <Settings size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onPreferencesPress,
-    },
-    {
       id: 'notifications',
       label: 'Notifications',
       icon: <Bell size={22} color="#9CA3AF" strokeWidth={2} />,
       onPress: onNotificationsPress,
-    },
-    {
-      id: 'privacy',
-      label: 'Privacy & Security',
-      icon: <Lock size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onPrivacyPress,
-    },
-    {
-      id: 'help',
-      label: 'Help & Support',
-      icon: <HelpCircle size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onHelpPress,
     },
     {
       id: 'about',
