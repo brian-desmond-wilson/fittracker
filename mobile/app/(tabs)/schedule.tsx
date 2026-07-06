@@ -46,7 +46,6 @@ import {
   detectOverlappingEvents,
 } from "@/src/lib/schedule-utils";
 import { useNotifications } from "@/src/hooks/useNotifications";
-import { shouldRescheduleNotifications } from "@/src/services/notificationService";
 
 export default function Schedule() {
   const isFocused = useIsFocused();
@@ -88,26 +87,45 @@ export default function Schedule() {
   }, [handleScrollViewLayout]);
 
   // Initialize notifications hook
-  const { rescheduleAll, updateSettings, scheduleNotification, cancelNotification } = useNotifications();
+  const {
+    rescheduleAll,
+    updateSettings,
+    scheduleNotification,
+    cancelNotification,
+    settings: notificationSettings,
+    hasPermission: notificationsEnabled,
+  } = useNotifications();
+  const rescheduleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadScheduleData();
   }, [selectedDate]);
 
-  // Check and reschedule notifications on app open (once per day)
+  // Reschedule notifications OFF the render critical path. Data loading no longer
+  // blocks on notification work (see loadScheduleData); instead we debounce a
+  // fire-and-forget reschedule whenever the loaded events change (add/edit/delete/
+  // status/drop) or once notification settings/permission become ready. Debouncing
+  // coalesces rapid date navigation into a single reschedule.
   useEffect(() => {
-    async function checkAndReschedule() {
-      const shouldReschedule = await shouldRescheduleNotifications();
-      if (shouldReschedule && events.length > 0) {
-        console.log('🔄 Auto-rescheduling notifications on Schedule screen mount');
-        await rescheduleAll(events, selectedDate);
-      }
-    }
+    if (loading || !notificationSettings || !notificationsEnabled) return;
 
-    if (!loading && events.length > 0) {
-      checkAndReschedule();
-    }
-  }, [loading, events.length]); // Run when loading completes and events are loaded
+    if (rescheduleTimer.current) clearTimeout(rescheduleTimer.current);
+    rescheduleTimer.current = setTimeout(() => {
+      // Intentionally not awaited — the UI never waits on notification scheduling.
+      void rescheduleAll(events, selectedDate);
+    }, 500);
+
+    return () => {
+      if (rescheduleTimer.current) clearTimeout(rescheduleTimer.current);
+    };
+  }, [
+    events,
+    selectedDate,
+    loading,
+    notificationSettings,
+    notificationsEnabled,
+    rescheduleAll,
+  ]);
 
   // Scroll to current time, centered vertically
   const scrollToCurrentTime = () => {
@@ -207,9 +225,9 @@ export default function Schedule() {
       setEvents(enhancedEvents);
       setCategories((categoriesData || []) as EventCategory[]);
       setTemplates((templatesData || []) as EventTemplate[]);
-
-      // Schedule notifications for all events
-      await rescheduleAll(enhancedEvents, selectedDate);
+      // Notification (re)scheduling is handled by a debounced effect off the
+      // critical path — see the reschedule useEffect above. Loading no longer
+      // waits on it.
     } catch (error) {
       console.error("Error loading schedule data:", error);
     } finally {
