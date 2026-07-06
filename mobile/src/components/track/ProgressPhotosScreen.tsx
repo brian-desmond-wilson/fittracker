@@ -9,13 +9,13 @@ import {
   StatusBar,
   Alert,
   Platform,
-  Image,
   ActionSheetIOS,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Plus, Camera as CameraIcon, Trash2, Calendar } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 import { colors } from "@/src/lib/colors";
 import { ProgressPhoto, ViewType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
@@ -444,7 +444,11 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
                   activeOpacity={0.7}
                 >
                   {photoUri ? (
-                    <Image source={{ uri: photoUri }} style={styles.selectedPhoto} />
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={styles.selectedPhoto}
+                      contentFit="cover"
+                    />
                   ) : (
                     <View style={styles.photoPlaceholder}>
                       <CameraIcon size={40} color={colors.mutedForeground} />
@@ -513,7 +517,13 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
                     <View style={styles.photoGrid}>
                       {dayPhotos.map((photo) => (
                         <View key={photo.id} style={styles.photoCard}>
-                          <Image source={{ uri: photo.photo_url }} style={styles.photoImage} />
+                          <Image
+                            source={{ uri: photo.photo_url }}
+                            style={styles.photoImage}
+                            contentFit="cover"
+                            transition={200}
+                            cachePolicy="memory-disk"
+                          />
                           <View style={styles.photoOverlay}>
                             <Text style={styles.photoViewType}>
                               {getViewTypeLabel(photo.view_type)}
@@ -669,7 +679,6 @@ const styles = StyleSheet.create({
   selectedPhoto: {
     width: "100%",
     height: "100%",
-    resizeMode: "cover",
   },
   photoPlaceholder: {
     flex: 1,
@@ -768,7 +777,6 @@ const styles = StyleSheet.create({
   photoImage: {
     width: "100%",
     aspectRatio: 3 / 4,
-    resizeMode: "cover",
   },
   photoOverlay: {
     position: "absolute",
