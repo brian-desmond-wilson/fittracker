@@ -69,7 +69,26 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
 
       if (error) throw error;
 
-      setPhotos(data || []);
+      // photo_url stores the object path (private bucket) — sign for display.
+      const rows = data || [];
+      const paths = rows
+        .map((p: any) => p.photo_url)
+        .filter((p: string | null): p is string => !!p && !p.startsWith("http"));
+      const signedByPath: Record<string, string> = {};
+      if (paths.length > 0) {
+        const { data: signed } = await supabase.storage
+          .from("progress-photos")
+          .createSignedUrls(paths, 3600);
+        for (const s of signed || []) {
+          if (s.path && s.signedUrl) signedByPath[s.path] = s.signedUrl;
+        }
+      }
+      setPhotos(
+        rows.map((p: any) => ({
+          ...p,
+          photo_url: signedByPath[p.photo_url] ?? p.photo_url,
+        }))
+      );
     } catch (error: any) {
       console.error("Error fetching progress photos:", error);
       Alert.alert("Error", "Failed to load progress photos");
@@ -170,8 +189,8 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
       // Create unique filename
       const fileExt = uri.split(".").pop()?.split("?")[0] || "jpg";
       const timestamp = Date.now();
+      // Object key is <user_id>/<file> so the per-user-folder RLS policy matches.
       const fileName = `${user.id}/${timestamp}_${viewType}.${fileExt}`;
-      const filePath = `progress-photos/${fileName}`;
 
       // Use FormData to upload the file
       const formData = new FormData();
@@ -192,7 +211,7 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
       }
 
       // Upload using fetch with FormData
-      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/progress-photos/${filePath}`;
+      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/progress-photos/${fileName}`;
 
       const uploadResponse = await fetch(uploadUrl, {
         method: "POST",
@@ -208,12 +227,8 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
         return null;
       }
 
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("progress-photos").getPublicUrl(filePath);
-
-      return publicUrl;
+      // Store the object path; the bucket is private, so display signs it on load.
+      return fileName;
     } catch (error) {
       console.error("Photo upload failed:", error);
       return null;
