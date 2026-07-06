@@ -18,7 +18,7 @@ interface SwipeableMovementCardProps {
   detailRoute?: 'movement' | 'exercise'; // Default: 'movement'
 }
 
-export function SwipeableMovementCard({
+function SwipeableMovementCardBase({
   movement,
   onPress,
   onDelete,
@@ -383,3 +383,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+export const SwipeableMovementCard = React.memo(SwipeableMovementCardBase);

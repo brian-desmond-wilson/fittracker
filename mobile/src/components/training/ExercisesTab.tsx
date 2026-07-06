@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
@@ -207,46 +207,48 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
       </View>
 
       {/* Exercises List */}
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-      >
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading exercises...</Text>
-          </View>
-        ) : filteredExercises.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateTitle}>No exercises found</Text>
-            <Text style={styles.emptyStateText}>
-              {searchQuery
-                ? `No results for "${searchQuery}"`
-                : `No exercises in ${selectedCategory} category`}
-            </Text>
-          </View>
-        ) : (
-          filteredExercises.map((exercise) => (
-            <View key={exercise.id} style={styles.exerciseItem}>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading exercises...</Text>
+        </View>
+      ) : (
+        <FlatList
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          data={filteredExercises}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={styles.exerciseItem}>
               <SwipeableMovementCard
-                movement={exercise}
-                onPress={() => router.push(`/(tabs)/training/exercise/${exercise.id}`)}
+                movement={item}
+                onPress={() => router.push(`/(tabs)/training/exercise/${item.id}`)}
                 onDelete={refreshExercises}
                 getMovementIcon={getExerciseIcon}
                 detailRoute="exercise"
               />
             </View>
-          ))
-        )}
-      </ScrollView>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateTitle}>No exercises found</Text>
+              <Text style={styles.emptyStateText}>
+                {searchQuery
+                  ? `No results for "${searchQuery}"`
+                  : `No exercises in ${selectedCategory} category`}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* FAB - Floating Action Button */}
       <TouchableOpacity
