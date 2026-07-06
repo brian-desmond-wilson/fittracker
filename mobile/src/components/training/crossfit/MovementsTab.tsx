@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
@@ -207,45 +207,47 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       </View>
 
       {/* Movements List */}
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-      >
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading movements...</Text>
-          </View>
-        ) : filteredMovements.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateTitle}>No movements found</Text>
-            <Text style={styles.emptyStateText}>
-              {searchQuery
-                ? `No results for "${searchQuery}"`
-                : `No movements in ${selectedCategory} category`}
-            </Text>
-          </View>
-        ) : (
-          filteredMovements.map((movement) => (
-            <View key={movement.id} style={styles.movementItem}>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading movements...</Text>
+        </View>
+      ) : (
+        <FlatList
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          data={filteredMovements}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={styles.movementItem}>
               <SwipeableMovementCard
-                movement={movement}
-                onPress={() => router.push(`/(tabs)/training/movement/${movement.id}`)}
+                movement={item}
+                onPress={() => router.push(`/(tabs)/training/movement/${item.id}`)}
                 onDelete={refreshMovements}
                 getMovementIcon={getMovementIcon}
               />
             </View>
-          ))
-        )}
-      </ScrollView>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateTitle}>No movements found</Text>
+              <Text style={styles.emptyStateText}>
+                {searchQuery
+                  ? `No results for "${searchQuery}"`
+                  : `No movements in ${selectedCategory} category`}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* FAB - Floating Action Button */}
       <TouchableOpacity
