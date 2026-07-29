@@ -16,15 +16,47 @@ export const RATING_POINTS: Record<ConceptRating, number> = {
   never: 0,
 };
 
-const RAW_MAX = 95;
+export const RAW_MAX = 95;
+
+/** Per-component maxima (spec §6). Exported so consumers (chip bars,
+ * per-component breakdown bars) render the same numbers this file scores
+ * against, instead of re-declaring them. Their sum must equal RAW_MAX —
+ * see the invariant test in mealScore.test.ts. */
+export const COMPONENT_MAX = {
+  taste: 30,
+  convenience: 25,
+  protein: 15,
+  eoe: 15,
+  calories: 10,
+} as const;
+
+/** Chip bands (spec §6): >= CORE green, >= MID neutral, below dim. */
+export const SCORE_BAND_CORE_MIN = 95;
+export const SCORE_BAND_MID_MIN = 71;
+
 const PREP_INTENSIVE_PENALTY = 3;
 const EOE_PENALTY_PER_ITEM = 5;
 const APPROVED_MAX_PREP_MINUTES = 10;
 const APPROVED_MIN_PROTEIN_G = 30;
-const APPROVED_MIN_CALORIES = 500;
 const APPROVED_MIN_TASTE = RATING_POINTS.like;
 const BRIDGE_CAL_MIN = 250;
 const BRIDGE_CAL_MAX = 400;
+
+// 500 kcal is both the Calories-component full-score threshold and the
+// Brian-Approved calorie admission bar for non-bridge meals — one policy
+// number, so it gets one spelling instead of two literals that could
+// silently diverge (spec §6).
+const CALORIES_FULL_POINTS_MIN = 500;
+
+/** Round away float-epsilon noise (e.g. 21.999999999999996 instead of 22)
+ * from summing/dividing decimal nutrition values, so threshold comparisons
+ * against exact policy numbers (taste >= 22, protein total === 40, ...)
+ * don't silently miss. The underlying data is decimal, not binary, so
+ * rounding here is semantically correct, not a hack. */
+function round(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
 
 export interface ScoreConceptInput {
   rating: ConceptRating;
@@ -66,13 +98,13 @@ export interface BrianScoreResult {
 export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
   const { prepMinutes, role, tasteOverride, items } = input;
 
-  const totalCalories = items.reduce(
-    (sum, it) => sum + it.servings * (it.calories ?? 0),
-    0,
+  const totalCalories = round(
+    items.reduce((sum, it) => sum + it.servings * (it.calories ?? 0), 0),
+    2,
   );
-  const totalProtein = items.reduce(
-    (sum, it) => sum + it.servings * (it.protein ?? 0),
-    0,
+  const totalProtein = round(
+    items.reduce((sum, it) => sum + it.servings * (it.protein ?? 0), 0),
+    2,
   );
 
   const containsNever = items.some((it) =>
@@ -87,7 +119,7 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
   if (tasteOverride !== null) {
     taste = RATING_POINTS[tasteOverride];
   } else if (linked.length === 0) {
-    taste = 15; // neutral placeholder — surfaced via the flag, not hidden
+    taste = RATING_POINTS.neutral; // neutral placeholder — surfaced via the flag, not hidden
     tasteUnknown = true;
   } else {
     const itemPoints = (it: ScoreItemInput) =>
@@ -97,17 +129,16 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
       (s, it) => s + it.servings * (it.calories ?? 0),
       0,
     );
-    if (totalWeight > 0) {
-      taste =
-        linked.reduce(
-          (s, it) => s + it.servings * (it.calories ?? 0) * itemPoints(it),
-          0,
-        ) / totalWeight;
-    } else {
-      // All linked items lack calorie data — weighting is meaningless, so
-      // fall back to the unweighted average rather than divide by zero.
-      taste = linked.reduce((s, it) => s + itemPoints(it), 0) / linked.length;
-    }
+    const computed =
+      totalWeight > 0
+        ? linked.reduce(
+            (s, it) => s + it.servings * (it.calories ?? 0) * itemPoints(it),
+            0,
+          ) / totalWeight
+        : // All linked items lack calorie data — weighting is meaningless, so
+          // fall back to the unweighted average rather than divide by zero.
+          linked.reduce((s, it) => s + itemPoints(it), 0) / linked.length;
+    taste = round(computed, 4);
   }
 
   // ── Convenience /25 ──
@@ -133,7 +164,7 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
     (it) =>
       !it.smallPiecesOk && it.concepts.some((c) => c.requiresSmallPieces),
   ).length;
-  const eoe = Math.max(0, 15 - EOE_PENALTY_PER_ITEM * unaddressed);
+  const eoe = Math.max(0, COMPONENT_MAX.eoe - EOE_PENALTY_PER_ITEM * unaddressed);
 
   // ── Calories /10 ──
   let calories: number;
@@ -142,19 +173,19 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
       totalCalories >= BRIDGE_CAL_MIN && totalCalories <= BRIDGE_CAL_MAX
         ? 10
         : 4;
-  } else if (totalCalories >= 500) calories = 10;
+  } else if (totalCalories >= CALORIES_FULL_POINTS_MIN) calories = 10;
   else if (totalCalories >= 400) calories = 7;
   else if (totalCalories >= 300) calories = 4;
   else calories = 2;
 
-  const raw = taste + convenience + protein + eoe + calories;
+  const raw = round(taste + convenience + protein + eoe + calories, 1);
   const score = Math.round((raw * 100) / RAW_MAX);
 
   const approved =
     prepMinutes <= APPROVED_MAX_PREP_MINUTES &&
     totalProtein >= APPROVED_MIN_PROTEIN_G &&
-    (totalCalories >= APPROVED_MIN_CALORIES || role === "bridge") &&
-    eoe === 15 &&
+    (totalCalories >= CALORIES_FULL_POINTS_MIN || role === "bridge") &&
+    eoe === COMPONENT_MAX.eoe &&
     taste >= APPROVED_MIN_TASTE &&
     !containsNever;
 

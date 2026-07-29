@@ -1,4 +1,10 @@
-import { computeBrianScore, RATING_POINTS, type ScoreItemInput } from "../mealScore";
+import {
+  computeBrianScore,
+  RATING_POINTS,
+  RAW_MAX,
+  COMPONENT_MAX,
+  type ScoreItemInput,
+} from "../mealScore";
 
 function item(over: Partial<ScoreItemInput> = {}): ScoreItemInput {
   return {
@@ -202,5 +208,99 @@ describe("flags, approval, renormalization", () => {
       items: [item({ calories: 300, protein: 32 })],
     });
     expect(r.approved).toBe(true);
+  });
+});
+
+describe("float-epsilon regressions", () => {
+  it("an all-like meal with a weighted-average taste of exactly 22 is Approved", () => {
+    // Confirmed real failure: weighted-average taste mathematically equals
+    // 22 (all items rated "like"), but naive float division landed on
+    // 21.999999999999996, silently failing `taste >= 22` and denying the
+    // Brian Approved badge on an ordinary meal. Every other criterion here
+    // passes, so this is a direct guard for defect 1 — taste rounding.
+    const like = { rating: "like" as const, requiresSmallPieces: false, prepIntensive: false };
+    const r = computeBrianScore({
+      prepMinutes: 5,
+      role: null,
+      tasteOverride: null,
+      items: [
+        item({ calories: 474, protein: 40, servings: 0.5, smallPiecesOk: true, concepts: [like] }),
+        item({ calories: 798, protein: 40, servings: 0.33, smallPiecesOk: true, concepts: [like] }),
+      ],
+    });
+    expect(r.taste).toBe(22);
+    expect(r.approved).toBe(true);
+  });
+
+  it("carries a non-integer weighted taste through raw and score without a tasteOverride", () => {
+    // Every other raw/score assertion in this file uses tasteOverride: "love",
+    // which only ever produces integer taste. This exercises the weighted-
+    // average branch end to end so raw/score rounding is covered on a
+    // genuinely non-integer path.
+    const r = computeBrianScore({
+      prepMinutes: 5,
+      role: null,
+      tasteOverride: null,
+      items: [
+        item({ calories: 200, protein: 10, servings: 1, concepts: [{ rating: "love", requiresSmallPieces: false, prepIntensive: false }] }),
+        item({ calories: 100, protein: 10, servings: 1, concepts: [{ rating: "dislike", requiresSmallPieces: false, prepIntensive: false }] }),
+      ],
+    });
+    // taste = (200*30 + 100*8) / 300 = 22.666666666666668 -> rounded 22.6667
+    expect(r.taste).toBeCloseTo(22.6667, 4);
+    expect(r.convenience).toBe(20); // prep 5
+    expect(r.protein).toBe(8); // total 20g
+    expect(r.eoe).toBe(15);
+    expect(r.calories).toBe(4); // total 300 cal
+    expect(r.raw).toBe(69.7);
+    expect(r.score).toBe(73); // round(69.7 * 100 / 95)
+  });
+
+  it("denies Approved on EoE alone when every other criterion passes", () => {
+    const r = computeBrianScore({
+      prepMinutes: 5,
+      role: null,
+      tasteOverride: null,
+      items: [
+        item({
+          calories: 600,
+          protein: 40,
+          servings: 1,
+          smallPiecesOk: false,
+          concepts: [{ rating: "love", requiresSmallPieces: true, prepIntensive: false }],
+        }),
+      ],
+    });
+    expect(r.totalProtein).toBeGreaterThanOrEqual(30);
+    expect(r.totalCalories).toBeGreaterThanOrEqual(500);
+    expect(r.taste).toBeGreaterThanOrEqual(22);
+    expect(r.eoe).toBe(10); // one unaddressed small-pieces item
+    expect(r.approved).toBe(false);
+  });
+
+  it("pins current behavior for an empty item list (Task 13 map-miss fallback)", () => {
+    const r = computeBrianScore({
+      prepMinutes: 5,
+      role: null,
+      tasteOverride: null,
+      items: [],
+    });
+    expect(r.totalCalories).toBe(0);
+    expect(r.totalProtein).toBe(0);
+    expect(r.containsNever).toBe(false);
+    expect(r.taste).toBe(15);
+    expect(r.tasteUnknown).toBe(true);
+    expect(r.convenience).toBe(20);
+    expect(r.protein).toBe(0);
+    expect(r.eoe).toBe(15);
+    expect(r.calories).toBe(2);
+    expect(r.raw).toBe(52);
+    expect(r.score).toBe(55); // round(52 * 100 / 95)
+    expect(r.approved).toBe(false);
+  });
+
+  it("COMPONENT_MAX values sum to RAW_MAX", () => {
+    const sum = Object.values(COMPONENT_MAX).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(RAW_MAX);
   });
 });
