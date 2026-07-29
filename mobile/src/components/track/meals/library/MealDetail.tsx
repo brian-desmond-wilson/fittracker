@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import type { MealTotals, MealWithItems } from "@/src/types/meal-library";
-import { ROLE_LABELS, defaultMealTypeFor } from "@/src/types/meal-library";
+import { MEAL_TYPE_LABELS, ROLE_LABELS, defaultMealTypeFor } from "@/src/types/meal-library";
 import type { MealType } from "@/src/types/track";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
@@ -118,7 +118,9 @@ export function MealDetail({
               style={[lib.chip, mealType === t && lib.chipActive]}
               onPress={() => setMealType(t)}
             >
-              <Text style={[lib.chipText, mealType === t && lib.chipTextActive]}>{t}</Text>
+              <Text style={[lib.chipText, mealType === t && lib.chipTextActive]}>
+                {MEAL_TYPE_LABELS[t]}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>

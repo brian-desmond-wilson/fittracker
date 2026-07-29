@@ -47,6 +47,17 @@ export const ROLE_LABELS: Record<MealRole, string> = {
   emergency_catchup: "Emergency Catch-Up",
 };
 
+/** Display labels for the logging-slot enum. Lives here beside
+ * CATEGORY_LABELS / ROLE_LABELS so every enum these screens render goes
+ * through a labels map instead of leaking raw lowercase values into the UI. */
+export const MEAL_TYPE_LABELS: Record<MealType, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snack: "Snack",
+  dessert: "Dessert",
+};
+
 /** Logging slot when meals.default_meal_type is null (spec §5.1). */
 export const CATEGORY_DEFAULT_MEAL_TYPE: Record<MealCategory, MealType> = {
   breakfast: "breakfast",

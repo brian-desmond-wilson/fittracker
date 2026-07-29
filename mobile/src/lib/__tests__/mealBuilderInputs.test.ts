@@ -4,6 +4,7 @@ import {
   DEFAULT_PREP_MINUTES,
   SERVING_STEP,
   MAX_SERVINGS,
+  clampServings,
 } from "../mealBuilderInputs";
 
 describe("parsePrepMinutes", () => {
@@ -107,5 +108,25 @@ describe("snapServings", () => {
 
   it("MAX_SERVINGS sits on the grid, so the upper clamp is reachable", () => {
     expect(MAX_SERVINGS / SERVING_STEP).toBe(Math.round(MAX_SERVINGS / SERVING_STEP));
+  });
+});
+
+describe("clampServings", () => {
+  it("clamps a stored value above the cap (never reachable via the stepper)", () => {
+    expect(clampServings(50)).toBe(MAX_SERVINGS);
+    expect(clampServings(MAX_SERVINGS + SERVING_STEP)).toBe(MAX_SERVINGS);
+  });
+
+  it("clamps a stored value below the floor", () => {
+    expect(clampServings(0)).toBe(SERVING_STEP);
+    expect(clampServings(-1)).toBe(SERVING_STEP);
+  });
+
+  it("leaves an in-range value alone, including an off-grid one", () => {
+    expect(clampServings(1)).toBe(1);
+    expect(clampServings(MAX_SERVINGS)).toBe(MAX_SERVINGS);
+    // Deliberately NOT snapped: this is the user's stored data, and rewriting
+    // it on save would change a number they never touched.
+    expect(clampServings(1.33)).toBe(1.33);
   });
 });

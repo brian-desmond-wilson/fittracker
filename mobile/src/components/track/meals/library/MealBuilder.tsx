@@ -11,7 +11,7 @@ import { CATEGORY_LABELS, ROLE_LABELS } from "@/src/types/meal-library";
 import type { SavedFood } from "@/src/types/track";
 import { computeBrianScore } from "@/src/lib/mealScore";
 import {
-  DEFAULT_PREP_MINUTES, SERVING_STEP, parsePrepMinutes, snapServings,
+  DEFAULT_PREP_MINUTES, SERVING_STEP, clampServings, parsePrepMinutes, snapServings,
 } from "@/src/lib/mealBuilderInputs";
 import { suggestConcepts } from "@/src/lib/conceptMatch";
 import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
@@ -20,6 +20,15 @@ import { lib, scoreChipStyle } from "./styles";
 const CATEGORIES: MealCategory[] = ["breakfast", "lunch", "dinner", "snack", "shake", "emergency"];
 const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const RATINGS: ConceptRating[] = ["love", "like", "neutral", "dislike", "never"];
+// The ± / ✕ glyphs are bare Text at roughly 12×20pt in a `gap: 10` row, and
+// the destructive ✕ sits 10pt from ＋ — well under a comfortable touch target,
+// with a delete as the cost of missing.
+const GLYPH_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
+// `/^\d+$/` has no upper bound, so 11+ digits overflow int4 and the save fails
+// with a raw Postgres 22003 at the very end of the form — the same
+// save-then-fail-later trap MAX_SERVINGS was added to close. 9999 minutes is
+// about seven days.
+const PREP_MINUTES_MAX_LENGTH = 4;
 
 interface BuilderItem extends MealItemInput {
   savedFood: SavedFood;
@@ -131,7 +140,14 @@ export function MealBuilder({
       prep_minutes: prep,
       taste_override: tasteOverride,
       notes: initial?.notes ?? null,
-      items: items.map(({ savedFood: _sf, ...it }) => it),
+      // Clamped here as well as in the stepper: an item seeded from
+      // `initial.items` above MAX_SERVINGS would otherwise be re-saved
+      // unclamped if the user never tapped ±, and the whole point of the cap
+      // is that `meal_logs.servings` (numeric(4,2)) cannot fail at log time.
+      items: items.map(({ savedFood: _sf, ...it }) => ({
+        ...it,
+        servings: clampServings(it.servings),
+      })),
     });
   };
 
@@ -180,6 +196,7 @@ export function MealBuilder({
         <TextInput
           style={lib.input}
           keyboardType="number-pad"
+          maxLength={PREP_MINUTES_MAX_LENGTH}
           value={prepMinutes}
           onChangeText={setPrepMinutes}
         />
@@ -215,14 +232,21 @@ export function MealBuilder({
                   {it.savedFood.name}
                 </Text>
                 <View style={[lib.row, { gap: 10 }]}>
-                  <TouchableOpacity onPress={() => setServings(it.saved_food_id, -SERVING_STEP)}>
+                  <TouchableOpacity
+                    hitSlop={GLYPH_HIT_SLOP}
+                    onPress={() => setServings(it.saved_food_id, -SERVING_STEP)}
+                  >
                     <Text style={lib.headerAction}>−</Text>
                   </TouchableOpacity>
                   <Text style={lib.mutedText}>×{it.servings}</Text>
-                  <TouchableOpacity onPress={() => setServings(it.saved_food_id, SERVING_STEP)}>
+                  <TouchableOpacity
+                    hitSlop={GLYPH_HIT_SLOP}
+                    onPress={() => setServings(it.saved_food_id, SERVING_STEP)}
+                  >
                     <Text style={lib.headerAction}>＋</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
+                    hitSlop={GLYPH_HIT_SLOP}
                     onPress={() =>
                       setItems((prev) => prev.filter((p) => p.saved_food_id !== it.saved_food_id))
                     }
@@ -250,7 +274,17 @@ export function MealBuilder({
               )}
               {suggestion && (
                 <TouchableOpacity
-                  style={[lib.chip, { alignSelf: "flex-start", marginTop: 6 }]}
+                  // The parent's `run()` refetches on success, so the chip does
+                  // disappear — but only once the round trip lands. Until then
+                  // a second tap re-runs `createUserLink`, violates
+                  // `unique (concept_id, saved_food_id)`, and raises a "Failed
+                  // to link food" alert for an operation that already
+                  // succeeded. `saving` is the parent's `busy` flag.
+                  style={[
+                    lib.chip,
+                    { alignSelf: "flex-start", marginTop: 6, opacity: saving ? 0.6 : 1 },
+                  ]}
+                  disabled={saving}
                   onPress={() => onQuickLink(it.saved_food_id, suggestion.conceptId)}
                 >
                   <Text style={lib.chipText}>
@@ -293,8 +327,13 @@ export function MealBuilder({
           </View>
         </View>
         {enteredPrep === null && (
+          // Says "isn't a whole number", not "is blank": the condition is
+          // `parsePrepMinutes(...) === null`, which is also true for "3.5",
+          // "-3" and "abc" — so the old copy claimed the field was empty while
+          // it visibly showed 3.5.
           <Text style={[lib.smallMuted, { marginTop: 6 }]}>
-            Prep time is blank — scored (and saved) as {DEFAULT_PREP_MINUTES} min.
+            Prep time isn’t a whole number of minutes — scored (and saved) as{" "}
+            {DEFAULT_PREP_MINUTES} min.
           </Text>
         )}
         {score.approved && (

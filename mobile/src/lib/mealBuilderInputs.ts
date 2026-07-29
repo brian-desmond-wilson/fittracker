@@ -65,5 +65,24 @@ export function parsePrepMinutes(raw: string): number | null {
  */
 export function snapServings(current: number, delta: number): number {
   const snapped = Math.round((current + delta) / SERVING_STEP) * SERVING_STEP;
-  return Math.min(MAX_SERVINGS, Math.max(SERVING_STEP, snapped));
+  return clampServings(snapped);
+}
+
+/**
+ * Clamp a servings value that is already in hand — one seeded from a stored
+ * row rather than produced by the stepper.
+ *
+ * `snapServings` enforces `MAX_SERVINGS` only on values the user stepped
+ * through, so an item loaded from a row above the cap would be re-saved
+ * unclamped if they never tapped ±. Not reachable through today's UI, but the
+ * bound exists to keep `meal_logs.servings` (numeric(4,2)) from failing at log
+ * time, and an invariant that holds only on one path is not an invariant.
+ *
+ * Deliberately does NOT snap to the grid: a stored off-grid value is the
+ * user's real data, and silently rewriting it on save (rather than on the
+ * deliberate tap that `snapServings` handles) would change a number they never
+ * touched.
+ */
+export function clampServings(servings: number): number {
+  return Math.min(MAX_SERVINGS, Math.max(SERVING_STEP, servings));
 }
