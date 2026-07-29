@@ -1,6 +1,6 @@
 // mobile/src/components/track/meals/library/styles.ts
 import { StyleSheet } from "react-native";
-import { SCORE_BAND_CORE_MIN, SCORE_BAND_MID_MIN } from "@/src/lib/mealScore";
+import { scoreBand } from "@/src/lib/mealScore";
 
 export const lib = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#0A0F1E" },
@@ -111,8 +111,15 @@ export const lib = StyleSheet.create({
   barFill: { height: 6, borderRadius: 3, backgroundColor: "#3B82F6" },
 });
 
+const CHIP_BY_BAND = {
+  core: lib.scoreChipCore,
+  mid: lib.scoreChipMid,
+  low: lib.scoreChipLow,
+} as const;
+
+/** Pure band → style lookup. The band DECISION (spec §6's thresholds) lives in
+ * `mealScore.ts` next to the constants, where Jest can reach it — this file
+ * imports `react-native` and can never be loaded under the node test scope. */
 export function scoreChipStyle(score: number) {
-  if (score >= SCORE_BAND_CORE_MIN) return lib.scoreChipCore;
-  if (score >= SCORE_BAND_MID_MIN) return lib.scoreChipMid;
-  return lib.scoreChipLow;
+  return CHIP_BY_BAND[scoreBand(score)];
 }

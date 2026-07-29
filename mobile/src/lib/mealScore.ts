@@ -34,6 +34,19 @@ export const COMPONENT_MAX = {
 export const SCORE_BAND_CORE_MIN = 95;
 export const SCORE_BAND_MID_MIN = 71;
 
+export type ScoreBand = "core" | "mid" | "low";
+
+/** Which band a /100 score falls in (spec §6). The DECISION lives here, next
+ * to the thresholds and under test with every other §6 threshold; the chip's
+ * `scoreChipStyle` is left a pure band → style lookup. Deliberately not
+ * inlined in `styles.ts`, which imports `react-native` and so can never be
+ * reached by the repo's `testEnvironment: node` Jest scope. */
+export function scoreBand(score: number): ScoreBand {
+  if (score >= SCORE_BAND_CORE_MIN) return "core";
+  if (score >= SCORE_BAND_MID_MIN) return "mid";
+  return "low";
+}
+
 const PREP_INTENSIVE_PENALTY = 3;
 const EOE_PENALTY_PER_ITEM = 5;
 const APPROVED_MAX_PREP_MINUTES = 10;

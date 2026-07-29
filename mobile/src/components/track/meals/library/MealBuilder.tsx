@@ -10,6 +10,9 @@ import type {
 import { CATEGORY_LABELS, ROLE_LABELS } from "@/src/types/meal-library";
 import type { SavedFood } from "@/src/types/track";
 import { computeBrianScore } from "@/src/lib/mealScore";
+import {
+  DEFAULT_PREP_MINUTES, SERVING_STEP, parsePrepMinutes, snapServings,
+} from "@/src/lib/mealBuilderInputs";
 import { suggestConcepts } from "@/src/lib/conceptMatch";
 import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
 import { lib, scoreChipStyle } from "./styles";
@@ -17,19 +20,6 @@ import { lib, scoreChipStyle } from "./styles";
 const CATEGORIES: MealCategory[] = ["breakfast", "lunch", "dinner", "snack", "shake", "emergency"];
 const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const RATINGS: ConceptRating[] = ["love", "like", "neutral", "dislike", "never"];
-const SERVING_STEP = 0.25;
-// `meal_items.servings` is numeric(5,2) (max 999.99) but `meal_logs.servings`
-// is numeric(4,2) (max 99.99) — so a meal item saved above 99.99 saves fine
-// and then FAILS at log time, long after the mistake was made. Cap well below
-// that: 20 servings of a single food is already far beyond anything real.
-const MAX_SERVINGS = 20;
-// Used when the prep-minutes field is blank. NOT 0 — `parseInt("", 10) || 0`
-// would score a half-filled form as an instant meal (convenience 25/25, the
-// best possible), inflating the live score exactly while the user is still
-// typing. 5 matches the value a new meal's field is seeded with, so the score
-// on screen is the score that gets saved. An explicitly typed "0" is a real
-// answer and is scored as 0.
-const DEFAULT_PREP_MINUTES = 5;
 
 interface BuilderItem extends MealItemInput {
   savedFood: SavedFood;
@@ -75,9 +65,7 @@ export function MealBuilder({
   );
 
   // null = the field is blank (or not a number), which is NOT the same as 0.
-  const enteredPrep = /^\d+$/.test(prepMinutes.trim())
-    ? parseInt(prepMinutes.trim(), 10)
-    : null;
+  const enteredPrep = parsePrepMinutes(prepMinutes);
   const prep = enteredPrep ?? DEFAULT_PREP_MINUTES;
   const score = useMemo(
     () =>
@@ -121,7 +109,7 @@ export function MealBuilder({
     setItems((prev) =>
       prev.map((it) =>
         it.saved_food_id === id
-          ? { ...it, servings: Math.min(MAX_SERVINGS, Math.max(SERVING_STEP, Math.round((it.servings + delta) / SERVING_STEP) * SERVING_STEP)) }
+          ? { ...it, servings: snapServings(it.servings, delta) }
           : it,
       ),
     );

@@ -4,6 +4,8 @@ import {
   RAW_MAX,
   COMPONENT_MAX,
   SCORE_BAND_CORE_MIN,
+  SCORE_BAND_MID_MIN,
+  scoreBand,
   type ScoreItemInput,
 } from "../mealScore";
 
@@ -370,5 +372,32 @@ describe("score is derived from the rounded raw, not the exact sum", () => {
     expect(r.raw).toBe(89.8);
     expect(r.score).toBe(95);
     expect(r.score).toBeGreaterThanOrEqual(SCORE_BAND_CORE_MIN);
+  });
+});
+
+describe("scoreBand", () => {
+  // Spec §6's band boundaries are policy. The decision lives here rather than
+  // in the chip's style function, which pulls in react-native and so can never
+  // be imported under this suite's `testEnvironment: node` scope.
+  it("puts SCORE_BAND_CORE_MIN in the core band", () => {
+    expect(scoreBand(SCORE_BAND_CORE_MIN)).toBe("core");
+    expect(scoreBand(95)).toBe("core");
+    expect(scoreBand(100)).toBe("core");
+  });
+
+  it("puts one below SCORE_BAND_CORE_MIN in the mid band", () => {
+    expect(scoreBand(SCORE_BAND_CORE_MIN - 1)).toBe("mid");
+    expect(scoreBand(94)).toBe("mid");
+  });
+
+  it("puts SCORE_BAND_MID_MIN in the mid band", () => {
+    expect(scoreBand(SCORE_BAND_MID_MIN)).toBe("mid");
+    expect(scoreBand(71)).toBe("mid");
+  });
+
+  it("puts one below SCORE_BAND_MID_MIN in the low band", () => {
+    expect(scoreBand(SCORE_BAND_MID_MIN - 1)).toBe("low");
+    expect(scoreBand(70)).toBe("low");
+    expect(scoreBand(0)).toBe("low");
   });
 });
