@@ -14,8 +14,8 @@
 
 ## ⛔ Preconditions — read before Task 1
 
-1. **Phase 2 must be merged before execution starts.** This plan's Tasks 5–9 modify/consume files Phase 2 creates (`lib/supabase/mealLibrary.ts`, `components/track/meals/library/MealLibraryModal.tsx`). Rebase `nutrition-os/recommender` onto the merged result first, resolve nothing silently, and re-run `cd mobile && npm test` before starting.
-2. **Re-read the "⚠️ Execution amendments" section of `docs/superpowers/plans/2026-07-29-nutrition-meal-library.md`** and verify this plan's Phase 2 API references against the *landed* files. Already reconciled into this plan (as of Phase 2 head `a208503`): `mealScore.ts` exports `RAW_MAX`, `COMPONENT_MAX`, `SCORE_BAND_CORE_MIN = 95`, `SCORE_BAND_MID_MIN = 71`, rounds `totalCalories`/`totalProtein` to 2 dp and `raw` to 1 dp; `BrianScoreResult` field names are unchanged. If later amendments changed `fetchMealLibrary`/`MealLibraryData`/`computeMealTotals` shapes, update Tasks 5–8 accordingly and record it in this plan's amendments section.
+1. **SATISFIED 2026-07-29: Phase 2 is merged to `main` and applied to prod** (main @ `685417c` and later). The old `nutrition-os/recommender` doc branch was folded into `main` and deleted — execution starts by **creating a fresh `nutrition-os/recommender` branch from current `main`**. Run `cd mobile && npm test` first and confirm the Phase 1/2 baseline (5 suites, 107 tests) is green before Task 1.
+2. **RECONCILED 2026-07-29 against Phase 2's final execution amendments** (all 16 tasks) and the landed files. Verified matching: `fetchMealLibrary`/`MealLibraryData` (incl. `conceptIdsBySavedFoodId`, `conceptsById`, `targetCalories`), `computeMealTotals` (now rounds 2 dp), `MealLibraryModal` props (`visible/savedFoods/todayDate/onClose/onLogged`) and its `:69` visibility effect (Task 10's edit target), `libraryVisible` state name in MealsScreen, `mealScore.ts` exports (`RAW_MAX`, `COMPONENT_MAX`, `SCORE_BAND_CORE_MIN/MID_MIN`, 2 dp totals / 1 dp `raw` rounding). Changes folded into this plan from the amendments: **ranking uses `score.raw`, not the rounded `score`** (Task 1 — Phase 2's banding analysis: all 10 seeds land 84–95 on /100, `raw` discriminates strictly better; UI still displays `score`); note that `consumeOneInventoryUnit`/`refundOneInventoryUnit` now return `Promise<boolean>` (this plan never calls them — the engine path uses `logMeal`'s RPC flow). Known Phase 2 follow-up NOT in this plan's scope: `findInventoryMatchByBarcode` still reads the legacy `quantity` column (Phase 4 territory).
 3. **A green `tsc --noEmit` proves nothing about DB column names** — the supabase client is untyped (`createClient` without a `Database` generic; see Phase 2 amendment, Task 1). Verify column usage by grep against migrations and by runtime testing.
 4. House rules (identical to Phase 2): migrations idempotent, `public.`-qualified, never applied by implementers (Task 10 is the owner gate); `StyleSheet.create`; `useSafeAreaInsets`; alert-on-failure; commit per task; record deviations in "⚠️ Execution amendments" at the bottom of this file.
 
@@ -118,7 +118,9 @@ function scored(over: {
     },
     score: {
       taste: 22, convenience: 20, protein: 12, eoe: 15, calories: 10,
-      raw: 79, score: over.score ?? 83,
+      // Ranking reads `raw` (Phase 2 amendment: the /100 score's rounding
+      // creates ties raw doesn't have); tests drive both with one knob.
+      raw: over.score ?? 83, score: over.score ?? 83,
       tasteUnknown: false,
       containsNever: over.containsNever ?? false,
       approved: over.approved ?? true,
@@ -310,7 +312,7 @@ describe("filters and ranking", () => {
     expect(overRec.reasons.join(" ")).toMatch(/prep budget/i);
   });
 
-  it("deterministic order: score desc, then prep asc, then name asc; top 3 cap", () => {
+  it("deterministic order: raw desc, then prep asc, then name asc; top 3 cap", () => {
     const a = scored({ name: "A", category: "dinner", score: 90, prep: 5 });
     const b = scored({ name: "B", category: "dinner", score: 90, prep: 3 });
     const c = scored({ name: "C", category: "dinner", score: 95 });
@@ -435,7 +437,10 @@ function rank(cands: Candidate[]): Candidate[] {
   return [...cands].sort(
     (a, b) =>
       a.roleRank - b.roleRank ||
-      b.score.score - a.score.score ||
+      // Rank on the un-renormalized component sum: Phase 2's banding analysis
+      // found the rounded /100 score barely discriminates (all seeds 84-95);
+      // raw is strictly finer and ties less. UI still DISPLAYS score/100.
+      b.score.raw - a.score.raw ||
       a.meal.prep_minutes - b.meal.prep_minutes ||
       a.meal.name.localeCompare(b.meal.name),
   );

@@ -84,7 +84,7 @@ EatNextResult {
 
 ### 5.5 Ranking
 
-Within the context's candidate set: role-match (context's preferred roles first) → **Brian Score descending** → `prep_minutes` ascending → name ascending. Fully deterministic: same input, same order, always. Top 3 returned.
+Within the context's candidate set: role-match (context's preferred roles first) → **Brian Score `raw` descending** (the un-renormalized component sum — per Phase 2's banding finding the rounded /100 score barely discriminates; UI surfaces still display `score`/100) → `prep_minutes` ascending → name ascending. Fully deterministic: same input, same order, always. Top 3 returned.
 
 ### 5.6 Nudge decision
 
