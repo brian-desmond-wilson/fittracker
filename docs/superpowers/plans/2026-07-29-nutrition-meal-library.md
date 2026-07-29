@@ -3407,7 +3407,18 @@ Expected: four migrations applied; seed raises `Meal Library seed — staples: 2
 
 Query and confirm: 10 `meals` (with `korean-beef-bowl` having `taste_override='love'`), 32 `meal_items` (exactly one with `small_pieces_ok=true` — teriyaki chicken), 20 new staples, 15 new `matched_by='seed'` links, RLS enabled on both new tables with 8 policies total, both RPCs exist with `authenticated` execute grants, `meal_templates`/`meal_template_items` gone, `meal_logs.meal_template_id` gone, `meal_logs.meal_id` present.
 
-- [ ] **Step 4: Commit nothing** — this task changes only the database.
+- [ ] **Step 3.5: Land the deferred `useHistoricalMeals` select edit** (amended — deferred from Task 1)
+
+Now that `meal_logs.meal_id` actually exists, add it back to the select string in `mobile/src/components/track/meals/useHistoricalMeals.ts:25` (between `saved_food_id` and `servings`, matching spec §5.3). This edit was reverted in Task 1 because selecting a not-yet-existing column makes PostgREST 400 the whole query, and the hook's `catch` swallows it to `console.error` — silently blanking all 365-day surfaces (daily totals, the four streaks, weekly summary, CSV export). **This step is what satisfies spec §5.3 — it does not happen in Task 1.** See the Task 1 entry under "Execution amendments."
+
+Verify: `cd mobile && npx tsc --noEmit` → 0 errors. Note that tsc proves nothing about the column name here (the Supabase client is untyped — see the Task 1 amendment); confirm instead by reloading the app and checking that streaks/insights render non-empty.
+
+```bash
+git add mobile/src/components/track/meals/useHistoricalMeals.ts
+git commit -m "feat(nutrition-os): useHistoricalMeals selects meal_id now that the column exists"
+```
+
+- [ ] **Step 4: Commit only the Step 3.5 change** — apart from that one deferred line, this task changes only the database.
 
 ---
 
