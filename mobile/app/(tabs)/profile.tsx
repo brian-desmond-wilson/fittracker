@@ -214,11 +214,17 @@ export default function Profile() {
         animationType="slide"
         presentationStyle="fullScreen"
         statusBarTranslucent={false}
-        onRequestClose={() => setActiveModal(null)}
+        onRequestClose={() => {
+          setActiveModal(null);
+          loadUserData();
+        }}
       >
         <NutritionPreferencesScreen
           userId={userId}
-          onClose={() => setActiveModal(null)}
+          onClose={() => {
+            setActiveModal(null);
+            loadUserData();
+          }}
         />
       </Modal>
 
