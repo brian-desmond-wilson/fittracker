@@ -111,11 +111,14 @@ function candidate(
   m: ScoredMeal,
   preferredRoles: ReadonlyArray<MealRole>,
   maxPrepMinutes: number,
+  preferredCategories: ReadonlyArray<string> = [],
 ): Candidate {
+  const roleMatch = m.meal.role !== null && preferredRoles.includes(m.meal.role);
+  const categoryMatch = preferredCategories.includes(m.meal.category);
   return {
     ...m,
     extraReasons: prepReason(m, maxPrepMinutes),
-    roleRank: m.meal.role !== null && preferredRoles.includes(m.meal.role) ? 0 : 1,
+    roleRank: roleMatch || categoryMatch ? 0 : 1,
   };
 }
 
@@ -270,15 +273,17 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   const farFromMeal =
     atMinutes !== null && atMinutes - nowMinutes >= BRIDGE_PREFER_GAP_MIN;
   const preferredRoles: ReadonlyArray<MealRole> = farFromMeal ? ["bridge"] : [];
+  const preferredCategories: ReadonlyArray<string> = farFromMeal ? ["snack"] : [];
   const pool = farFromMeal
     ? eligible.filter(
         (m) =>
-          slotCategories.includes(m.meal.category) ||
-          m.meal.role === "bridge" ||
-          m.meal.category === "snack",
+          m.meal.category !== "emergency" &&
+          (slotCategories.includes(m.meal.category) ||
+            m.meal.role === "bridge" ||
+            m.meal.category === "snack"),
       )
     : eligible.filter((m) => slotCategories.includes(m.meal.category));
-  const cands = pool.map((m) => candidate(m, preferredRoles, maxPrepMinutes));
+  const cands = pool.map((m) => candidate(m, preferredRoles, maxPrepMinutes, preferredCategories));
   return {
     context: "next_meal",
     message:

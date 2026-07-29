@@ -2,6 +2,12 @@ import {
   recommendEatNext,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
+  POST_WORKOUT_WINDOW_MIN,
+  POST_WORKOUT_MIN_PROTEIN_G,
+  PROTEIN_SHORT_G,
+  PROTEIN_SHORT_MAX_CAL,
+  BRIDGE_PREFER_GAP_MIN,
+  CATCH_UP_BAND,
   type EatNextInput,
   type ScoredMeal,
 } from "../eatNext";
@@ -35,6 +41,7 @@ function scored(over: {
   calories?: number;
   protein?: number;
   score?: number;
+  raw?: number;
   containsNever?: boolean;
   approved?: boolean;
 }): ScoredMeal {
@@ -63,8 +70,11 @@ function scored(over: {
     score: {
       taste: 22, convenience: 20, protein: 12, eoe: 15, calories: 10,
       // Ranking reads `raw` (Phase 2 amendment: the /100 score's rounding
-      // creates ties raw doesn't have); tests drive both with one knob.
-      raw: over.score ?? 83, score: over.score ?? 83,
+      // creates ties raw doesn't have). Default keeps the single-knob
+      // convenience most tests use; `raw` can be driven independently of
+      // `score` to prove ranking actually reads `raw` (see "ranks by raw,
+      // not the rounded score" below).
+      raw: over.raw ?? over.score ?? 83, score: over.score ?? 83,
       tasteUnknown: false,
       containsNever: over.containsNever ?? false,
       approved: over.approved ?? true,
@@ -126,6 +136,48 @@ describe("terminal contexts", () => {
     expect(r.context).toBe("goal_hit");
     expect(r.recommendations).toHaveLength(0);
   });
+
+  it("at exactly windowEndMinutes the window is still open (spec §5.3.1: 'past', not 'at')", () => {
+    const snack = scored({ category: "snack" });
+    const r = recommendEatNext(input({ nowMinutes: BASE.windowEndMinutes }, [snack]));
+    expect(r.context).not.toBe("after_window");
+    expect(r.context).toBe("next_meal");
+  });
+
+  it(`goal_hit protein exception: exactly ${PROTEIN_SHORT_G}g short qualifies, ${PROTEIN_SHORT_G - 1}g short does not`, () => {
+    const bridge = scored({ role: "bridge", calories: 250, protein: 20 });
+    const rAt = recommendEatNext(
+      input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2300, protein: 160 - PROTEIN_SHORT_G } },
+        [bridge],
+      ),
+    );
+    expect(rAt.context).toBe("goal_hit");
+    expect(rAt.recommendations).toHaveLength(1);
+    expect(rAt.recommendations[0].mealId).toBe(bridge.meal.id);
+
+    const rUnder = recommendEatNext(
+      input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2300, protein: 160 - (PROTEIN_SHORT_G - 1) } },
+        [bridge],
+      ),
+    );
+    expect(rUnder.context).toBe("goal_hit");
+    expect(rUnder.recommendations).toHaveLength(0);
+  });
+
+  it(`goal_hit protein exception: calories must be strictly under ${PROTEIN_SHORT_MAX_CAL} (at-cap excluded)`, () => {
+    const dayTotals = { ...EMPTY_TOTALS, calories: 2300, protein: 140 }; // 20g short
+    const atCap = scored({ role: "bridge", calories: PROTEIN_SHORT_MAX_CAL, protein: 30 });
+    const rAtCap = recommendEatNext(input({ dayTotals }, [atCap]));
+    expect(rAtCap.context).toBe("goal_hit");
+    expect(rAtCap.recommendations).toHaveLength(0);
+
+    const underCap = scored({ role: "bridge", calories: PROTEIN_SHORT_MAX_CAL - 1, protein: 30 });
+    const rUnderCap = recommendEatNext(input({ dayTotals }, [underCap]));
+    expect(rUnderCap.recommendations).toHaveLength(1);
+    expect(rUnderCap.recommendations[0].mealId).toBe(underCap.meal.id);
+  });
 });
 
 // ── post-workout ───────────────────────────────────────────────────────────
@@ -150,6 +202,33 @@ describe("post_workout", () => {
   it("falls through when no candidate meal qualifies", () => {
     const r = recommendEatNext(input(trained, [scored({ protein: 5 })]));
     expect(r.context).toBe("next_meal");
+  });
+
+  it(`post-workout window includes exactly ${POST_WORKOUT_WINDOW_MIN} minutes elapsed`, () => {
+    const pw = scored({ role: "post_workout" });
+    const r = recommendEatNext(
+      input({ workoutCompletedAtMinutes: BASE.nowMinutes - POST_WORKOUT_WINDOW_MIN }, [pw]),
+    );
+    expect(r.context).toBe("post_workout");
+  });
+
+  it("a workout completed_at in the future (clock skew) does not trigger post_workout", () => {
+    const pw = scored({ role: "post_workout" });
+    const r = recommendEatNext(
+      input({ workoutCompletedAtMinutes: BASE.nowMinutes + 30 }, [pw]),
+    );
+    expect(r.context).not.toBe("post_workout");
+  });
+
+  it(`post-workout protein bar: exactly ${POST_WORKOUT_MIN_PROTEIN_G}g qualifies, ${POST_WORKOUT_MIN_PROTEIN_G - 1}g does not`, () => {
+    const atBar = scored({ protein: POST_WORKOUT_MIN_PROTEIN_G });
+    const rAt = recommendEatNext(input(trained, [atBar]));
+    expect(rAt.context).toBe("post_workout");
+    expect(rAt.recommendations.map((x) => x.mealId)).toEqual([atBar.meal.id]);
+
+    const underBar = scored({ protein: POST_WORKOUT_MIN_PROTEIN_G - 1 });
+    const rUnder = recommendEatNext(input(trained, [underBar]));
+    expect(rUnder.context).not.toBe("post_workout");
   });
 });
 
@@ -200,6 +279,28 @@ describe("emergency and catch_up", () => {
     const r = recommendEatNext(input(behind(500), [scored({ calories: 2000, category: "dinner" })]));
     expect(r.context).toBe("next_meal");
   });
+
+  it("emergency requires being PAST dinner time, even with a huge gap and an emergency-category meal", () => {
+    // Same gap (600) and same emergency-eligible meal as the passing "emergency"
+    // test above, but now (13:00) is still before dinner (18:00): must not
+    // short-circuit into "emergency" — it falls through to catch_up instead.
+    const rescue = scored({ category: "emergency", calories: 700 });
+    const r = recommendEatNext(input({ ...behind(600) }, [rescue]));
+    expect(r.context).not.toBe("emergency");
+    expect(r.context).toBe("catch_up");
+  });
+
+  it(`catch_up band: exactly gap × ${CATCH_UP_BAND} away qualifies, one calorie further does not`, () => {
+    const gap = 100;
+    const bandWidth = gap * CATCH_UP_BAND; // 35
+    const atEdge = scored({ calories: gap + bandWidth }); // 135
+    const pastEdge = scored({ calories: gap + bandWidth + 1 }); // 136
+    const r = recommendEatNext(input(behind(gap), [atEdge, pastEdge]));
+    expect(r.context).toBe("catch_up");
+    const ids = r.recommendations.map((x) => x.mealId);
+    expect(ids).toContain(atEdge.meal.id);
+    expect(ids).not.toContain(pastEdge.meal.id);
+  });
 });
 
 // ── next_meal ──────────────────────────────────────────────────────────────
@@ -232,6 +333,39 @@ describe("next_meal", () => {
     );
     expect(r.context).toBe("next_meal");
     expect(r.recommendations[0].mealId).toBe(b.meal.id);
+  });
+
+  it(`bridge/snack preference kicks in at exactly ${BRIDGE_PREFER_GAP_MIN} minutes out, not at ${BRIDGE_PREFER_GAP_MIN - 1}`, () => {
+    const dinnerMin = BASE.mealTimesMinutes.dinner;
+    const bridge = scored({ role: "bridge", category: "snack", score: 10 }); // low raw
+    const dinner = scored({ category: "dinner", score: 99 }); // high raw
+
+    const rAt = recommendEatNext(
+      input({ nowMinutes: dinnerMin - BRIDGE_PREFER_GAP_MIN }, [dinner, bridge]),
+    );
+    expect(rAt.recommendations[0].mealId).toBe(bridge.meal.id); // preferred despite lower raw
+
+    const rUnder = recommendEatNext(
+      input({ nowMinutes: dinnerMin - (BRIDGE_PREFER_GAP_MIN - 1) }, [dinner, bridge]),
+    );
+    const idsUnder = rUnder.recommendations.map((x) => x.mealId);
+    expect(idsUnder).not.toContain(bridge.meal.id); // pool not expanded — snack category doesn't match slot "dinner"
+  });
+
+  it("prefers category=snack even without role=bridge when far from the next meal (spec §5.3.6)", () => {
+    const snackMeal = scored({ category: "snack", role: null, score: 10 }); // low raw
+    const dinner = scored({ category: "dinner", score: 99 }); // high raw
+    // default nowMinutes 13:00, dinner 18:00 → 300 min out, well past BRIDGE_PREFER_GAP_MIN
+    const r = recommendEatNext(input({}, [dinner, snackMeal]));
+    expect(r.recommendations[0].mealId).toBe(snackMeal.meal.id);
+  });
+
+  it("emergency-category meal never surfaces in next_meal, even with role=bridge (spec §5.3.6)", () => {
+    const emergencyBridge = scored({ category: "emergency", role: "bridge", score: 100 });
+    const dinner = scored({ category: "dinner", score: 50 });
+    const r = recommendEatNext(input({}, [dinner, emergencyBridge])); // 300 min out, pool expanded
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations.map((x) => x.mealId)).not.toContain(emergencyBridge.meal.id);
   });
 });
 
@@ -273,5 +407,12 @@ describe("filters and ranking", () => {
     const r = recommendEatNext(input({}, []));
     expect(r.recommendations).toHaveLength(0);
     expect(r.message).not.toBeNull();
+  });
+
+  it("ranks by raw, not the rounded score (Phase 2 amendment) — raw and score set independently", () => {
+    const highRawLowScore = scored({ category: "dinner", raw: 95, score: 10 });
+    const lowRawHighScore = scored({ category: "dinner", raw: 50, score: 99 });
+    const r = recommendEatNext(input({}, [lowRawHighScore, highRawLowScore]));
+    expect(r.recommendations[0].mealId).toBe(highRawLowScore.meal.id);
   });
 });
