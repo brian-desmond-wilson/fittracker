@@ -5,6 +5,11 @@
 --
 -- meals carry NO nutrition columns — totals are always computed from items
 -- (Concept Map hazard #1: no third nutrition-bearing product entity).
+--
+-- Naming: snake_case policy names (meals_select_own) and <table>_updated_at
+-- triggers. Phase 1 (20260728100000) used sentence-style policy names and
+-- update_<table>_updated_at; the snake_case form here is the intentional
+-- convention going forward.
 
 create table if not exists public.meals (
   id uuid primary key default gen_random_uuid(),
@@ -23,13 +28,17 @@ create table if not exists public.meals (
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (user_id, slug)
+  unique (user_id, slug),
+  -- FK target for meal_items' composite (meal_id, user_id) reference, which
+  -- makes it structurally impossible for an item to belong to a different
+  -- user than its parent meal.
+  unique (id, user_id)
 );
 
 create table if not exists public.meal_items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  meal_id uuid not null references public.meals(id) on delete cascade,
+  meal_id uuid not null,
   -- RESTRICT, deliberately breaking with meal_template_items' CASCADE:
   -- deleting a saved food must not silently shrink a meal (and its
   -- calories). The delete fails loudly until the item is removed first.
@@ -40,9 +49,23 @@ create table if not exists public.meal_items (
   -- meaningful when the linked concept has requires_small_pieces.
   small_pieces_ok boolean not null default false,
   created_at timestamptz not null default now(),
-  unique (meal_id, saved_food_id)
+  unique (meal_id, saved_food_id),
+  -- Composite, not a plain meal_id FK: FK validation runs with RLS bypassed
+  -- (referential-integrity triggers execute as the table owner), so an
+  -- independent meal_id could point at another user's meal while still
+  -- satisfying this table's `with check (user_id = auth.uid())`. Binding both
+  -- columns also makes a client bug loud rather than silent — the Task 9
+  -- query module passes user_id explicitly on both the meals and meal_items
+  -- inserts, and if those ever disagree the rows would simply become
+  -- invisible to RLS with no error. Now they fail.
+  foreign key (meal_id, user_id)
+    references public.meals(id, user_id) on delete cascade
 );
 
+-- Meal Library provenance link on logged meals (spec §5.3): replaces
+-- meal_logs.meal_template_id, which migration 20260729100300 drops once this
+-- feature's code has landed. `on delete set null` — deleting a library meal
+-- must not erase the historical log rows it produced.
 alter table public.meal_logs
   add column if not exists meal_id uuid references public.meals(id) on delete set null;
 
