@@ -1505,6 +1505,9 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     supabase
       .from("food_inventory")
       .select("id, name, brand, barcode, quantity, locations:food_inventory_locations(quantity)"),
+    // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
+    // select policy is `auth.uid() = id`, so this returns exactly the
+    // caller's row — maybeSingle() cannot see a second one.
     supabase.from("profiles").select("target_calories").maybeSingle(),
   ]);
   const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error]
@@ -1630,6 +1633,9 @@ export async function createMeal(userId: string, input: MealInput): Promise<void
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
   const { items, ...meal } = input;
+  // Ordering is load-bearing: meal_items carries a composite FK
+  // (meal_id, user_id) -> meals(id, user_id), so the parent row must be
+  // committed with a MATCHING user_id before any item can reference it.
   const { data, error } = await supabase
     .from("meals")
     .insert({ ...meal, name: input.name.trim(), slug, user_id: userId })
@@ -1720,10 +1726,21 @@ export async function logMeal(
   );
 
   const loggedAt = new Date().toISOString();
+  // Two meal items can resolve to the SAME inventory row (two saved foods
+  // sharing one concept, one in-stock product). The consume call below
+  // de-duplicates, so only ONE unit comes off that container — therefore only
+  // the FIRST item claiming a given inventory id may record uses_inventory /
+  // inventory_items. If both rows claimed {id: X, quantity: 1} the log would
+  // assert two units were taken when one was, and any refund driven off those
+  // rows would over-credit stock.
+  const claimedInventoryIds = new Set<string>();
   const rows = meal.items.map((it) => {
     const f = it.savedFood;
     const s = it.servings;
-    const inventoryId = matches.get(it.saved_food_id) ?? null;
+    const matchedId = matches.get(it.saved_food_id) ?? null;
+    const inventoryId =
+      matchedId !== null && !claimedInventoryIds.has(matchedId) ? matchedId : null;
+    if (inventoryId !== null) claimedInventoryIds.add(inventoryId);
     return {
       user_id: userId,
       date: opts.date,
@@ -3542,3 +3559,14 @@ Merging and pushing are the owner's calls — do not open a PR or merge without 
 - **The emptiness guard is trustworthy — this is the load-bearing check, since `drop table` itself does not care whether rows exist.** A bare `do $$ … $$` block is not `security definer`; it runs as the migration-applying role, which for `supabase db push` is the project's `postgres` superuser role. That role sees every row for two independent reasons: (a) it owns these tables, and Postgres does **not** apply RLS policies to a table's owner unless the table is set to `FORCE ROW LEVEL SECURITY` — `grep` confirms no migration in this repo ever issues `FORCE`, only `ENABLE`; and (b) the Supabase `postgres` role carries `BYPASSRLS`. Either alone is sufficient. This matters concretely: had the guard instead run under a role subject to RLS, `auth.uid()` would be NULL on a non-JWT connection, every `auth.uid() = user_id` policy would evaluate to NULL (not true), all three `exists(...)` probes would return **false**, and the guard would sail through while data sat in the tables — the exact silent-destruction scenario it is written to prevent.
 - **No dependent object can be silently destroyed, and the drop order is what makes that true.** `meal_template_items.template_id` FK-references `meal_templates` (`:44`), and all four `meal_template_items` RLS policies reference `meal_templates` in `EXISTS` subqueries (`:65-76`) — both are real pg_depend edges that would make a bare `drop table public.meal_templates` **abort** ("cannot drop … because other objects depend on it"). The migration uses plain `drop table` with **no `cascade`**, which is the right call: a dependency aborts the migration rather than quietly taking something else with it. It nonetheless applies cleanly because it drops in dependency order — the `meal_logs.meal_template_id` column (and its FK) first, then the child table `meal_template_items` (taking its policies and `idx_meal_template_items_template` with it), then `meal_templates` (taking `idx_meal_templates_user`). By the time the parent is dropped nothing references it. Grep across `supabase/migrations/` finds **no** view, materialized view, function, or trigger referencing either table (`meal_templates` has an `updated_at` column but never had a trigger on it).
 - **⚠️ ORDERING PRECONDITION: this migration must not be applied before Task 13 lands.** Task 13 deletes the last TypeScript consumers, and it has not run yet — `mobile/src/services/mealTemplatesService.ts` still queries `meal_templates` (lines 22, 74, 106) and `meal_template_items` (lines 31, 93), and `mobile/src/components/track/MealTemplatesModal.tsx` still drives it. Applying this migration against prod today would make every one of those calls fail (PostgREST 42P01) in the running app. The plan's sequencing already protects against this — the only apply step is Task 15, which comes after Task 13 — so no code change is needed, but the dependency is implicit in the task numbering and is recorded here explicitly. Those five call sites are the complete set: a repo-wide grep for `meal_template` outside `docs/` and `supabase/migrations/` matches nothing else.
+
+### Task 9
+
+- **The `uses_inventory` first-item-only rule is applied** (recorded in the Task 4 amendment, but not previously reflected in Task 9's code block — it now is). Two meal items can resolve to the same inventory id, and `resolveInventoryMatches`' own header warns of exactly this. `consumedIds` already de-duplicated via `new Set(matches.values())`, so only ONE unit comes off that container; without this rule both `meal_logs` rows would still carry `uses_inventory: true` and `inventory_items: [{id: X, quantity: 1}]`, collectively asserting two units were taken when one was, and any refund driven off those rows would over-credit stock. `logMeal` now tracks a `claimedInventoryIds` Set while mapping items in order; the first item claiming an id keeps it, later items resolving to the same id get `uses_inventory: false` / `inventory_items: null`. **The rule is keyed off the de-duplicated match set, not the RPC's `consumed` counts** — deliberately, because the log rows are inserted BEFORE the consume RPC runs (the meal was eaten either way, so stock bookkeeping must never block or roll back the log), so the true counts are not knowable at insert time. The undo path is the one that uses the truthful `consumed > 0` ids.
+- **Static schema verification (the client is `any`-schema'd — `mobile/src/lib/supabase.ts:7` calls `createClient` with no `Database` generic, so a green `tsc` proves nothing about column or table names).** Every name the module uses was checked against the migrations: `profiles.target_calories` (`20200101000000_bootstrap.sql:10`); `meal_logs` columns `user_id/date/meal_type/name/calories/protein/carbs/fats/sugars/uses_inventory/inventory_items/logged_at` (`20250208_complete_tracking_schema.sql:109-120`), `sodium_mg/fiber_g` (`20260528211349_meals_tier1.sql:18-19`), `saved_food_id/servings` (`20251229000000_saved_foods.sql:75-76`), `meal_id` (`20260729100000_meal_library_schema.sql:69-70`, **unapplied**); `saved_foods.barcode` (`20251229000000_saved_foods.sql:10`); `food_concept_links.id/concept_id/saved_food_id/food_inventory_id/matched_by` (`20260728100000_nutrition_preference_schema.sql:19-30`); all `meals`/`meal_items` columns written by `createMeal`/`updateMeal` (`20260729100000:14-63`).
+- **Both PostgREST embeds resolve via a real FK.** `locations:food_inventory_locations(quantity)` → `food_inventory_locations.food_inventory_id references public.food_inventory(id)` (`20250217000003_add_multi_location_inventory.sql:13`), the only FK between the two tables, so the alias is unambiguous. `savedFood:saved_foods(*)` → `meal_items.saved_food_id references public.saved_foods(id)` (`20260729100000:45`). Note that **no existing app code embeds `food_inventory_locations`** (every current call site queries it as a top-level table), so this embed is the first of its kind in the repo and is unexercised at runtime until Task 13.
+- **`profiles`' bare `.select("target_calories").maybeSingle()` with no filter is correct, and is in fact the only correct form.** `profiles` has no `user_id` column at all — it is keyed by `id uuid primary key references auth.users(id)` (`20200101000000_bootstrap.sql:5`), so an `.eq("user_id", …)` would 42703. Its RLS select policy is `USING (auth.uid() = id)` (`:48`), one row per user, so `maybeSingle()` cannot see a second row and cannot throw. A comment recording this was added at the call site.
+- **The composite FK's ordering requirement is satisfied by both mutations.** `createMeal` awaits the `meals` insert (a separate HTTP request, hence a separate committed transaction) before inserting items, and passes the same `userId` to both — a comment was added marking the ordering as load-bearing. `updateMeal` operates on an already-committed parent. **If `updateMeal`'s reinsert fails after the delete, the error is surfaced sanely:** `insError` is thrown to the caller's alert idiom, and the meal is left visibly item-less and re-editable — the documented accepted risk, unchanged. The composite FK improves this case rather than worsening it: were the passed `userId` ever wrong, the RLS-filtered `meals` update would match zero rows *silently* while the item insert now fails *loudly* on the FK, instead of orphaning rows invisibly.
+- **`consume_inventory_units` returns `table(inventory_id uuid, consumed integer)`** (`20260729100100_inventory_consume_rpc.sql:26-27`), so supabase-js `.rpc()` yields `data` as an array of `{inventory_id, consumed}`. The code reads exactly that shape and guards with `(data ?? [])`, so a null/undefined `data` degrades to an empty `consumedIds` (undo refunds nothing) rather than throwing.
+- **Minor mismatch noted, not fixed (out of scope, not reachable through the planned UI):** `meal_items.servings` is `numeric(5,2)` (max 999.99, `20260729100000:46`) but `meal_logs.servings` is `numeric(4,2)` (max 99.99, `20251229000000_saved_foods.sql:76`). A meal item with servings above 99.99 would insert fine into `meal_items` and then fail the `meal_logs` insert at log time. Task 12's builder should keep servings in a sane range; widening `meal_logs.servings` is not warranted for this feature.
+- **Verification gate: `npx tsc --noEmit` 0 errors; `npm test` 4 suites / 80 tests, all passing** (unchanged from baseline — this task adds no tests, since the pure logic it depends on is already covered by `inventoryResolution.test.ts` and `mealScore.test.ts`, and everything new here is Supabase I/O that would need a mocked client to reach). **No database command was run.**
