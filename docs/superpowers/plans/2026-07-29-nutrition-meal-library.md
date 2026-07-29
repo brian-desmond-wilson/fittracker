@@ -3447,7 +3447,11 @@ Merging and pushing are the owner's calls — do not open a PR or merge without 
 
 ## ⚠️ Execution amendments
 
-None yet. Record every review-driven deviation from this plan here, per task, as execution proceeds.
+### Task 1
+
+- Step 3's premise ("expect exactly two knock-on errors") was factually wrong: `mobile/src/lib/supabase.ts:7` calls `createClient` with no `Database` generic, so the client is `any`-schema'd and `tsc` validates zero column names anywhere in this codebase. The typecheck came back green with zero errors, not two — a green `tsc --noEmit` is not evidence of schema correctness. Later tasks must not treat it as such; verify column-name changes via grep and/or runtime testing instead.
+- `mealTemplatesService.ts`'s insert now **omits** the `meal_id` key entirely rather than writing `meal_id: null` as originally drafted. `meal_logs.meal_id` does not exist in prod until the Task 5 migration is applied at Task 15 — naming the column at all (even as `null`) makes PostgREST reject the insert (42703/400), breaking `logMealTemplate` for the whole Tasks 1–14 window. Omitting the key is valid against both the pre- and post-migration schema (Postgres defaults an absent column to null once it exists).
+- The `useHistoricalMeals.ts:25` select edit (adding `meal_id`) was reverted. The query would 400 against the current schema, and the hook's catch block swallows the error to `console.error` and silently blanks `historicalLogs` — zeroing every 365-day surface (streaks, weekly summary, CSV export) instead of failing loudly. Selecting `meal_id` there is deferred to Task 15 (post-migration-apply), which is where spec §5.3 is actually satisfied, not Task 1.
 
 
 

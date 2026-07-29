@@ -22,7 +22,7 @@ export function useHistoricalMeals() {
       const { data, error } = await supabase
         .from("meal_logs")
         .select(
-          "id, user_id, date, meal_type, name, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, logged_at, saved_food_id, meal_template_id, servings, uses_inventory, inventory_items"
+          "id, user_id, date, meal_type, name, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, logged_at, saved_food_id, servings, uses_inventory, inventory_items"
         )
         .eq("user_id", user.id)
         .gte("date", cutoffStr);

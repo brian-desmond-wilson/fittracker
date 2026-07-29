@@ -120,7 +120,7 @@ export interface MealLog {
   uses_inventory: boolean;
   inventory_items: InventoryUsage[] | null;
   saved_food_id: string | null; // Link to saved_foods table
-  meal_template_id: string | null; // Link to meal_templates table
+  meal_id: string | null; // Link to meals (Meal Library provenance)
   servings: number; // Serving multiplier (e.g., 0.5, 1.0, 2.0)
   logged_at: string;
 }

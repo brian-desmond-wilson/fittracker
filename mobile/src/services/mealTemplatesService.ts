@@ -107,10 +107,8 @@ export async function deleteMealTemplate(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/**
- * Log a template: inserts one meal_log row per template item, all on
- * the same date + meal_type, tagged with meal_template_id.
- */
+// Log a template: one meal_log row per item, same date + meal_type. No
+// library provenance — this path is superseded in Task 13.
 export async function logMealTemplate(
   template: MealTemplateWithItems,
   opts: { date?: string; mealType: MealType }
@@ -137,7 +135,8 @@ export async function logMealTemplate(
       sodium_mg: f.sodium_mg != null ? Math.round(f.sodium_mg * s) : null,
       fiber_g: f.fiber_g != null ? Math.round(f.fiber_g * s * 10) / 10 : null,
       saved_food_id: f.id,
-      meal_template_id: template.id,
+      // meal_id intentionally omitted — column doesn't exist pre-migration
+      // (Task 5/15); this path is superseded in Task 13 anyway.
       servings: s,
       uses_inventory: false,
       inventory_items: null,
