@@ -8,6 +8,7 @@ import {
   Wrench,
   ChevronRight,
   ShieldCheck,
+  Salad,
 } from 'lucide-react-native';
 
 interface MenuItem {
@@ -21,6 +22,7 @@ interface ProfileMenuProps {
   isAdmin: boolean;
   onProfilePress: () => void;
   onGoalsPress: () => void;
+  onNutritionPress: () => void;
   onRoutinesPress: () => void;
   onNotificationsPress: () => void;
   onAboutPress: () => void;
@@ -32,6 +34,7 @@ export function ProfileMenu({
   isAdmin,
   onProfilePress,
   onGoalsPress,
+  onNutritionPress,
   onRoutinesPress,
   onNotificationsPress,
   onAboutPress,
@@ -50,6 +53,12 @@ export function ProfileMenu({
       label: 'Goals',
       icon: <Target size={22} color="#9CA3AF" strokeWidth={2} />,
       onPress: onGoalsPress,
+    },
+    {
+      id: 'nutrition',
+      label: 'Nutrition Preferences',
+      icon: <Salad size={22} color="#9CA3AF" strokeWidth={2} />,
+      onPress: onNutritionPress,
     },
     {
       id: 'routines',

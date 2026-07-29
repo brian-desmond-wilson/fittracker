@@ -16,10 +16,12 @@ import { RoutinesScreen } from "@/src/components/profile/RoutinesScreen";
 import { NotificationsScreen } from "@/src/components/profile/NotificationsScreen";
 import { AboutScreen } from "@/src/components/profile/AboutScreen";
 import { DevTaskManager } from "@/src/components/profile/DevTaskManager";
+import { NutritionPreferencesScreen } from "@/src/components/profile/nutrition/NutritionPreferencesScreen";
 
 type ModalScreen =
   | "profile"
   | "goals"
+  | "nutrition"
   | "routines"
   | "notifications"
   | "about"
@@ -166,6 +168,7 @@ export default function Profile() {
         isAdmin={isAdmin}
         onProfilePress={() => setActiveModal("profile")}
         onGoalsPress={() => setActiveModal("goals")}
+        onNutritionPress={() => setActiveModal("nutrition")}
         onRoutinesPress={() => setActiveModal("routines")}
         onNotificationsPress={() => setActiveModal("notifications")}
         onAboutPress={() => setActiveModal("about")}
@@ -202,6 +205,20 @@ export default function Profile() {
           initialData={formData}
           onClose={() => setActiveModal(null)}
           onSave={handleGoalsSave}
+        />
+      </Modal>
+
+      {/* Nutrition Preferences Modal */}
+      <Modal
+        visible={activeModal === "nutrition"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent={false}
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <NutritionPreferencesScreen
+          userId={userId}
+          onClose={() => setActiveModal(null)}
         />
       </Modal>
 
