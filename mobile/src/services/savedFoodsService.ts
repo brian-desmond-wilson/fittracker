@@ -150,6 +150,84 @@ export async function toggleFavorite(id: string): Promise<SavedFood> {
 }
 
 /**
+ * Postgres foreign_key_violation. On a `saved_foods` delete the only FK that
+ * can raise it is `meal_items_saved_food_id_fkey`, which is deliberately
+ * `on delete restrict` (spec §5.2, migration 20260729100000:45): deleting a
+ * food must never silently shrink a Meal Library meal and its calories.
+ */
+const FOREIGN_KEY_VIOLATION = "23503";
+
+/** How many blocking meals to name before collapsing the rest into a count. */
+const MAX_NAMED_MEALS = 3;
+
+/**
+ * Names of the Meal Library meals that use this saved food.
+ *
+ * Two queries rather than one PostgREST embed: `meal_items`' reference to
+ * `meals` is a COMPOSITE FK on `(meal_id, user_id)`, which is not the
+ * single-column shape the rest of this codebase embeds through, so an
+ * `meals(name)` embed is not a safe assumption to bake into an error path
+ * that only ever runs when something has already gone wrong.
+ *
+ * Never throws. A failure here (including `meal_items` not existing yet —
+ * the Phase 2 migrations are unapplied) must not mask the actual, actionable
+ * error, so it degrades to an empty list and a generic-but-human message.
+ */
+async function findBlockingMealNames(savedFoodId: string): Promise<string[]> {
+  try {
+    const { data: items, error: itemsError } = await supabase
+      .from("meal_items")
+      .select("meal_id")
+      .eq("saved_food_id", savedFoodId);
+    if (itemsError) throw itemsError;
+
+    const mealIds = Array.from(
+      new Set(((items ?? []) as Array<{ meal_id: string }>).map((i) => i.meal_id))
+    );
+    if (mealIds.length === 0) return [];
+
+    const { data: meals, error: mealsError } = await supabase
+      .from("meals")
+      .select("name")
+      .in("id", mealIds)
+      .order("name");
+    if (mealsError) throw mealsError;
+
+    return ((meals ?? []) as Array<{ name: string }>).map((m) => m.name);
+  } catch (e) {
+    console.error("Error looking up meals blocking a saved food delete:", e);
+    return [];
+  }
+}
+
+/**
+ * The RESTRICT message the user actually sees. Raw Postgres text here reads as
+ * an app crash ("violates foreign key constraint meal_items_saved_food_id_fkey")
+ * when the real situation is a routine, fixable one — so name the meals and say
+ * what to do about them.
+ */
+function foodInUseByMealsError(names: string[]): Error {
+  if (names.length === 0) {
+    return new Error(
+      "This food is used by a meal in your Meal Library. Remove it from that meal first, then delete the food."
+    );
+  }
+  const shown = names
+    .slice(0, MAX_NAMED_MEALS)
+    .map((n) => `“${n}”`)
+    .join(", ");
+  const remaining = names.length - MAX_NAMED_MEALS;
+  const list = remaining > 0 ? `${shown} and ${remaining} more` : shown;
+  return names.length === 1
+    ? new Error(
+        `This food is used by the meal ${list}. Remove it from that meal first, then delete the food.`
+      )
+    : new Error(
+        `This food is used by ${names.length} meals — ${list}. Remove it from those meals first, then delete the food.`
+      );
+}
+
+/**
  * Delete a saved food
  */
 export async function deleteSavedFood(id: string): Promise<void> {
@@ -157,6 +235,9 @@ export async function deleteSavedFood(id: string): Promise<void> {
 
   if (error) {
     console.error("Error deleting saved food:", error);
+    if (error.code === FOREIGN_KEY_VIOLATION) {
+      throw foodInUseByMealsError(await findBlockingMealNames(id));
+    }
     throw error;
   }
 }
