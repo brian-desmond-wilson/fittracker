@@ -150,40 +150,6 @@ export interface SavedFood {
   updated_at: string;
 }
 
-// Multi-food meal template (named recipe / preset)
-export interface MealTemplate {
-  id: string;
-  user_id: string;
-  name: string;
-  default_meal_type: MealType | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MealTemplateItem {
-  id: string;
-  template_id: string;
-  saved_food_id: string;
-  servings: number;
-  display_order: number;
-  created_at: string;
-}
-
-// Template + its items + computed totals for the UI
-export interface MealTemplateWithItems extends MealTemplate {
-  items: Array<MealTemplateItem & { savedFood: SavedFood }>;
-  totals: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-    sugars: number;
-    sodium_mg: number;
-    fiber_g: number;
-  };
-}
-
 // Recent food item with usage frequency
 export interface RecentFoodItem {
   savedFood: SavedFood;

@@ -330,8 +330,8 @@ export async function logMeal(
   // An item-less meal must not log "successfully". `rows` would be [],
   // PostgREST accepts an empty insert without error, and the caller would show
   // a "Logged" toast plus a working Undo for zero rows written — a silent lie
-  // that also hides the orphaned meal that produced it. The module this
-  // replaces guarded the same case (mealTemplatesService.ts:147), so dropping
+  // that also hides the orphaned meal that produced it. The superseded meal
+  // templates service (deleted in Task 13) guarded the same case, so dropping
   // the guard would be a regression. createMeal/updateMeal both reject empty
   // item lists, so reaching this means a partial write left a meal behind.
   if (meal.items.length === 0) throw new Error("This meal has no items.");

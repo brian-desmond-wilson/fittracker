@@ -47,7 +47,7 @@ import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal } from "./MealLogEditorModal";
-import { MealTemplatesModal } from "./MealTemplatesModal";
+import { MealLibraryModal } from "./meals/library/MealLibraryModal";
 import { MealsInsightsCard } from "./MealsInsightsCard";
 import {
   buildDailyTotalsByDate,
@@ -143,8 +143,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // input/results land where they expect.
   const [activeTab, setActiveTab] = useState<"today" | "insights">("today");
 
-  // Templates modal + savedFoods cache
-  const [templatesVisible, setTemplatesVisible] = useState(false);
+  // Meal Library modal + savedFoods cache
+  const [libraryVisible, setLibraryVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
 
   // Historical meals (last 365 days) for insights/streaks/chart. refreshHistory
@@ -258,7 +258,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchMealsForDate(viewingDate);
   }, [viewingDate]);
 
-  // Fetch all saved foods once (for the template picker)
+  // Fetch all saved foods once (for the Meal Library builder's food picker)
   const fetchAllSavedFoods = useCallback(async () => {
     try {
       const all = await getSavedFoods();
@@ -1463,14 +1463,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   loading={loadingRecent}
                 />
 
-                {/* My Meals (templates) entry point */}
+                {/* Meal Library entry point */}
                 <TouchableOpacity
-                  onPress={() => setTemplatesVisible(true)}
+                  onPress={() => setLibraryVisible(true)}
                   style={styles.templatesButton}
                   activeOpacity={0.7}
                 >
                   <Utensils size={16} color="#3B82F6" />
-                  <Text style={styles.templatesButtonText}>My Meals — log a saved template</Text>
+                  <Text style={styles.templatesButtonText}>Meal Library</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1602,12 +1602,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         onSave={handleSaveMealEdit}
       />
 
-      {/* Templates Modal */}
-      <MealTemplatesModal
-        visible={templatesVisible}
+      {/* Meal Library Modal */}
+      <MealLibraryModal
+        visible={libraryVisible}
         savedFoods={allSavedFoods}
         todayDate={viewingDateStr}
-        onClose={() => setTemplatesVisible(false)}
+        onClose={() => setLibraryVisible(false)}
         onLogged={async () => {
           setMealsCache((prev) => {
             const next = new Map(prev);
