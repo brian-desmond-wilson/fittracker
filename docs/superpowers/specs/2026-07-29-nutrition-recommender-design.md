@@ -126,7 +126,7 @@ New family, `data: { type: "eat-nudge" }`, modeled line-for-line on `mealReminde
 
 ### 8.3 Landmine fix (existing-behavior change, deliberate)
 
-`notificationService.scheduleEventNotification`/`scheduleRecurringNotifications` gain `data: { type: "schedule-event" }` tags, and `rescheduleAllNotifications` replaces its `cancelAllNotifications()` call with a family-scoped cancel (enumerate + cancel only `schedule-event` ids). The global `cancelAllNotifications()` remains only for sign-out. This makes every reminder family (water, meal, weight, eat-nudge) survive a Schedule-screen reschedule — the same contract those families already honor toward each other.
+Event notifications already carry `data: { type: 'event_reminder' }` tags (verified 2026-07-29 — no new tagging needed). The fix is confined to `rescheduleAllNotifications`: replace its `cancelAllNotifications()` call with a family-scoped cancel (enumerate + cancel only `event_reminder` ids). The global `cancelAllNotifications()` remains available only for sign-out flows. This makes every reminder family (water, meal, weight, eat-nudge) survive a Schedule-screen reschedule — the same contract those families already honor toward each other.
 
 ## 9. Schema + migration (one file, owner-gated)
 
