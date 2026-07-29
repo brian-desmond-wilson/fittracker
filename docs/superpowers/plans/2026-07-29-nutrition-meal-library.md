@@ -1751,7 +1751,9 @@ export async function logMeal(
   // Decrement AFTER the log commits: the meal was eaten either way, so a
   // stock-bookkeeping failure must never block or roll back the log. The
   // caller surfaces the error (alert idiom) without failing the log.
-  const consumedIds = [...matches.values()];
+  // De-duplicate: two meal items can resolve to the SAME inventory row, and
+  // the RPC decrements one unit per id passed. See the Task 4 amendment.
+  const consumedIds = [...new Set(matches.values())];
   if (consumedIds.length > 0) {
     const { error: rpcError } = await supabase.rpc("consume_inventory_units", {
       p_inventory_ids: consumedIds,
@@ -3478,3 +3480,15 @@ Merging and pushing are the owner's calls — do not open a PR or merge without 
 
 
 
+
+### Task 3
+
+- **Two surviving mutants in `suggestConcepts` are now covered.** (1) `MIN_SUFFIX_CONCEPT_LENGTH` 5→6 left all 8 original tests green, because no fixture concept was exactly 5 characters. This is live data, not a hypothetical: §10.1 seeds a `bread` concept whose name is exactly 5 characters, so an off-by-one would silently kill its head-noun matching. Added a `C("bread", "Bread")` fixture and a `'White Bread' → {bread, rank 2}` test pinning the INCLUDED side of the boundary. (2) Replacing the `a.conceptId.localeCompare(b.conceptId)` tiebreak with `0` also left all 8 green; that clause is the only thing making the order deterministic when rank and concept-name length both tie, and it decides which concept becomes the single one-tap link chip in Task 14 — non-determinism would shuffle the chip between renders. Added a duplicate-normalized-name test whose input order is reversed relative to the expected output. Both mutants were re-run and confirmed killed by exactly the new tests.
+- **The file header comment was corrected.** It said to keep `conceptMatch.ts` "in sync" with migration `20260728100200_nutrition_concept_link_backfill.sql`, which is (a) dangerous — that migration is a one-shot, already-applied, forward-only artifact, and a maintainer reading this literally would go edit an applied migration — and (b) false: the SQL used `distinct on` to link exactly ONE concept per product, whereas `suggestConcepts` returns the full ranked list, so only the head of the list corresponds to what the backfill would have linked. The header now states that this file is the sole living implementation and spells out that difference. `MIN_SUFFIX_CONCEPT_LENGTH` also gained the rationale comment the SQL header carried (short generic words are exactly the ones that mis-link), matching the `rampProgress.ts` house style for policy constants. No behavior changed in this task.
+
+### Task 4
+
+- **A barcode match is now TERMINAL regardless of stock**, deviating from the literal wording of spec §7.3 ("...an *in-stock* inventory row shares it") in favour of §7.3's own stated philosophy that under-matching is the intended failure mode and decrementing the wrong product is the real hazard. As drafted, `resolveInventoryMatches` pre-filtered to in-stock rows before searching barcodes, so a barcode hit on an EMPTY row fell through to the concept path and decremented a different SKU. Seed-data counterexample: saved food "Boost Very High Calorie" (barcode …152, concept `boost-high-protein`) matches an inventory row at qty 0, while "Boost Plus" — a different barcode, same concept — sits at qty 6; logging silently decremented Boost Plus even though the barcode was positive evidence that the item is *not* Boost Plus. The barcode is now searched across the FULL unfiltered inventory; a hit decrements only if it has stock and `continue`s either way. The falsy-barcode guard (`it.barcode ? … : undefined`) is retained deliberately — it makes a `null === null` false match structurally impossible and treats `""` as "no barcode". **Spec §7.3 should be reconciled to match this wording.**
+- **`items.slice(0, 1)` on the resolution loop survived** — all 7 original tests passed a single-element `items` array. Added one test that both exercises the multi-item loop and pins the duplicate-value contract: two saved foods sharing one concept resolve independently to the SAME inventory id. Also documented in the file that keying the returned Map by `savedFoodId` is only unambiguous because `meal_items` carries `unique (meal_id, saved_food_id)`.
+- **Not tested, deliberately:** removing `if (it.conceptIds.length === 0) continue;` is an *equivalent* mutant, not a coverage gap — an empty `wanted` Set makes `candidates` always empty, so output cannot change. It is a pure performance guard; leave it and do not add a test for it.
+- **Task 9 consequence (already applied to its code block above):** `consumedIds` must be `[...new Set(matches.values())]`. `consume_inventory_units` decrements one unit per id passed, so two meal items resolving to one physical container would otherwise take two units off a single container. The same duplication affects the `meal_logs` rows: only the FIRST meal item resolving to a given inventory id may carry `uses_inventory: true` / `inventory_items`, otherwise the log rows collectively claim more units than were actually decremented and `undoMealLog`'s refund over-credits stock.

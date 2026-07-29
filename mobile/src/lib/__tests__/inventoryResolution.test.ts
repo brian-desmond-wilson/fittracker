@@ -35,6 +35,21 @@ describe("resolveInventoryMatches", () => {
     expect(got.has("sf1")).toBe(false);
   });
 
+  it("a barcode match is terminal: an empty barcode row does not fall through to concepts", () => {
+    // Seed-data counterexample: "Boost Very High Calorie" (barcode …152) is at
+    // qty 0, while "Boost Plus" (different barcode) shares its concept and has
+    // stock. The barcode is positive evidence that the item is NOT Boost Plus,
+    // so decrementing it would corrupt the owner's stock records.
+    const got = resolveInventoryMatches(
+      [item({ barcode: "152", conceptIds: ["boost-high-protein"] })],
+      [
+        inv({ id: "invVHC", barcode: "152", totalQuantity: 0, conceptIds: ["boost-high-protein"] }),
+        inv({ id: "invPlus", barcode: "999", totalQuantity: 6, conceptIds: ["boost-high-protein"] }),
+      ],
+    );
+    expect(got.has("sf1")).toBe(false);
+  });
+
   it("falls back to a unique shared-concept match", () => {
     const got = resolveInventoryMatches(
       [item({ conceptIds: ["boost"] })],
@@ -69,5 +84,16 @@ describe("resolveInventoryMatches", () => {
 
   it("returns nothing for unmatched items", () => {
     expect(resolveInventoryMatches([item()], [inv()]).size).toBe(0);
+  });
+
+  it("resolves items independently; two items may share one inventory row", () => {
+    const got = resolveInventoryMatches(
+      [
+        item({ savedFoodId: "sfA", conceptIds: ["boost"] }),
+        item({ savedFoodId: "sfB", conceptIds: ["boost"] }),
+      ],
+      [inv({ id: "invX", conceptIds: ["boost"] })],
+    );
+    expect([...got.values()]).toEqual(["invX", "invX"]); // callers must de-dup before consuming
   });
 });
