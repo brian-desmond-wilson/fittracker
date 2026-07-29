@@ -38,6 +38,7 @@ import { RampCard } from "./RampCard";
 import { ConstraintsSection } from "./ConstraintsSection";
 import { VendorsSection } from "./VendorsSection";
 import { ConceptRow } from "./ConceptRow";
+import { FoodMatchingScreen } from "./FoodMatchingScreen";
 import { nutritionStyles as s } from "./styles";
 
 const TREND_WINDOW_DAYS = 42; // 6 weeks of weigh-ins for the ramp assessment
@@ -67,6 +68,7 @@ export function NutritionPreferencesScreen({
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [newConceptName, setNewConceptName] = useState("");
+  const [showMatching, setShowMatching] = useState(false);
 
   // `silent` suppresses the failure alert for the post-write resync path
   // (run() below already shows its own, more specific alert for that case;
@@ -214,6 +216,32 @@ export function NutritionPreferencesScreen({
     );
   }, [data, search]);
 
+  // View switch, not a nested <Modal>: this screen is already inside a
+  // presentationStyle="fullScreen" modal, and stacking a second one is where
+  // iOS gets flaky. Keep the same outer container (StatusBar + inset-padded
+  // screen) and swap only its contents — FoodMatchingScreen brings its own
+  // header with a Back action. Placed after every hook and before the `body`
+  // branches, so no hook is skipped and no unused body is built.
+  if (showMatching) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" />
+        <View style={[s.screen, { paddingTop: insets.top }]}>
+          <FoodMatchingScreen
+            userId={userId}
+            onBack={() => {
+              setShowMatching(false);
+              // Concept links may have changed; resync silently (the user is
+              // back on a screen that already has data — a failure alert here
+              // would be noise, and loadFailed still drives the Retry body).
+              load({ silent: true });
+            }}
+          />
+        </View>
+      </>
+    );
+  }
+
   // The header (title + Done) always renders regardless of load state: this
   // modal is presentationStyle="fullScreen" with no iOS swipe-to-dismiss
   // (onRequestClose is Android-only), so a load failure must never strand
@@ -261,6 +289,19 @@ export function NutritionPreferencesScreen({
               vendors={data.vendors}
               onToggleActive={handleVendorToggle}
             />
+            <TouchableOpacity
+              style={[s.card, s.row]}
+              onPress={() => setShowMatching(true)}
+            >
+              <View style={s.flexShrinkColumn}>
+                <Text style={s.sectionTitle}>Food Matching</Text>
+                <Text style={s.mutedText}>
+                  Link products to rated concepts — powers meal scoring &amp;
+                  stock tracking
+                </Text>
+              </View>
+              <Text style={s.headerAction}>›</Text>
+            </TouchableOpacity>
             <View style={s.card}>
               <Text style={s.sectionTitle}>Food Ratings</Text>
               <Text style={s.mutedText}>

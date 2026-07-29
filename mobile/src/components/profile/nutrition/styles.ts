@@ -34,6 +34,9 @@ export const nutritionStyles = StyleSheet.create({
     paddingVertical: 10,
   },
   rowLabel: { color: colors.foreground, fontSize: 15, flexShrink: 1 },
+  // Leading line of a list item inside a card — same size as rowLabel, a shade
+  // heavier so it reads as the item's name above its muted secondary lines.
+  itemTitle: { color: colors.foreground, fontSize: 15, fontWeight: "600" },
   rowValue: { color: colors.mutedForeground, fontSize: 15 },
   banner: {
     backgroundColor: "rgba(34,197,94,0.12)",
