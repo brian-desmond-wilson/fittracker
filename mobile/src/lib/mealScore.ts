@@ -42,11 +42,15 @@ const APPROVED_MIN_TASTE = RATING_POINTS.like;
 const BRIDGE_CAL_MIN = 250;
 const BRIDGE_CAL_MAX = 400;
 
-// 500 kcal is both the Calories-component full-score threshold and the
-// Brian-Approved calorie admission bar for non-bridge meals — one policy
-// number, so it gets one spelling instead of two literals that could
-// silently diverge (spec §6).
+/** Calories-component full-score threshold: "this meal hits its calorie
+ * target" (spec §6, Calories /10). */
 const CALORIES_FULL_POINTS_MIN = 500;
+/** Brian Approved calorie admission bar: "this is a substantial meal"
+ * (spec §6, Brian Approved). Spec §6 states these as two INDEPENDENT
+ * clauses that merely coincide at 500 today — this bar could drop to 450
+ * without retuning the scoring ladder — so it stays a distinct knob, while
+ * the alias keeps them from drifting apart by accident. */
+const APPROVED_MIN_CALORIES = CALORIES_FULL_POINTS_MIN;
 
 /** Round away float-epsilon noise (e.g. 21.999999999999996 instead of 22)
  * from summing/dividing decimal nutrition values, so threshold comparisons
@@ -179,12 +183,18 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
   else calories = 2;
 
   const raw = round(taste + convenience + protein + eoe + calories, 1);
+  // Deliberately derived from the ROUNDED raw, not the exact component sum:
+  // Task 11 renders "{raw}/95 renormalized to {score}/100", so both numbers
+  // must come from the same raw or the card contradicts itself (e.g. showing
+  // "89.8/95 renormalized to 94/100" when 89.8 × 100 / 95 = 94.5 → 95).
+  // Diverges from the exact sum for ~2.6% of values; pinned by the
+  // "89.8 raw lands on the core band" test in mealScore.test.ts.
   const score = Math.round((raw * 100) / RAW_MAX);
 
   const approved =
     prepMinutes <= APPROVED_MAX_PREP_MINUTES &&
     totalProtein >= APPROVED_MIN_PROTEIN_G &&
-    (totalCalories >= CALORIES_FULL_POINTS_MIN || role === "bridge") &&
+    (totalCalories >= APPROVED_MIN_CALORIES || role === "bridge") &&
     eoe === COMPONENT_MAX.eoe &&
     taste >= APPROVED_MIN_TASTE &&
     !containsNever;

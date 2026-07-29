@@ -89,19 +89,23 @@ Guard first — `raise exception` if `meal_templates`, `meal_template_items`, or
 
 Sibling of `rampProgress.ts`: no I/O, options-object API, Jest-covered.
 
-**Inputs:** meal row (prep_minutes, role, taste_override), items each with saved-food nutrition and linked concepts (rating, `requires_small_pieces`, `prep_intensive`), the `nutrition_constraints` row (reserved for future components; not consumed in v1 scoring).
+**Inputs:** meal row (prep_minutes, role, taste_override), items each with saved-food nutrition and linked concepts (rating, `requires_small_pieces`, `prep_intensive`). The `nutrition_constraints` row is **not** an input — it is reserved for future components and is not consumed in v1 scoring, so `computeBrianScore` does not take it.
 
 **Rating→points map:** `love 30 · like 22 · neutral 15 · dislike 8 · never 0`.
 
 **Components (raw max 95, Cost's 5 points dropped):**
 
-- **Taste /30** — calorie-weighted average of item concept ratings; weight = servings × calories. Items with no linked concept are excluded from the average. If no item has a concept: taste = 15 and output flags `tasteUnknown: true`. `taste_override` (mapped through the same table) replaces the computation entirely.
+- **Taste /30** — calorie-weighted average of item concept ratings; weight = servings × calories. Items with no linked concept are excluded from the average. If no item has a concept: taste = 15 and output flags `tasteUnknown: true`. If the linked items *do* exist but their total weight is 0 (every one of them lacks calorie data), weighting is meaningless, so taste falls back to the **unweighted** mean of the linked items' points rather than dividing by zero; `tasteUnknown` stays false, since the ratings themselves are known. `taste_override` (mapped through the same table) replaces the computation entirely.
 - **Convenience /25** — `prep_minutes` ≤2 → 25, ≤5 → 20, ≤10 → 12, >10 → 5; −3 (once, not per item) if any ingredient concept is `prep_intensive`; floor 0.
 - **Protein /15** — total ≥40 g → 15, ≥30 → 12, ≥20 → 8, ≥10 → 4, else 0.
 - **EoE /15** — 15 − 5 per item whose concept has `requires_small_pieces` and whose `small_pieces_ok` is false; floor 0.
 - **Calories /10** — role `bridge`: 10 if total within 250–400 inclusive, else 4. Otherwise: ≥500 → 10, 400–499 → 7, 300–399 → 4, else 2.
 
-**Score** = `Math.round(raw × 100 / 95)`. Chip bands: ≥95 green ("core"), 71–94 neutral, ≤70 dim.
+**Raw** = the five components summed and then **rounded to 1 decimal place**. The rounding is part of the definition, not a display concern: decimal nutrition values summed in binary floating point otherwise leak epsilon noise into `raw` (`76.6036036036036/95` was rendered verbatim by the detail card), and the band thresholds are compared against exact policy numbers. `totalCalories` / `totalProtein` are likewise rounded to 2 dp and the computed taste to 4 dp before any threshold comparison.
+
+**Score** = `Math.round(raw × 100 / 95)` — computed from that **already-rounded** `raw`, not from the exact component sum. The two differ for roughly 2.6% of inputs (e.g. an exact sum of 89.76 → raw 89.8 → score 95, where the exact sum would give 94). Deriving from the rounded `raw` is deliberate: the detail card renders "*raw*/95 renormalized to *score*/100", and both numbers must come from the same `raw` or the card contradicts its own arithmetic.
+
+Chip bands: ≥95 green ("core"), 71–94 neutral, ≤70 dim.
 
 **Derived flags:**
 

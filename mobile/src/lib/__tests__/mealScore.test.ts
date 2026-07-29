@@ -3,6 +3,7 @@ import {
   RATING_POINTS,
   RAW_MAX,
   COMPONENT_MAX,
+  SCORE_BAND_CORE_MIN,
   type ScoreItemInput,
 } from "../mealScore";
 
@@ -302,5 +303,72 @@ describe("float-epsilon regressions", () => {
   it("COMPONENT_MAX values sum to RAW_MAX", () => {
     const sum = Object.values(COMPONENT_MAX).reduce((a, b) => a + b, 0);
     expect(sum).toBe(RAW_MAX);
+  });
+
+  it("a maximal meal scores each component at its COMPONENT_MAX", () => {
+    // Pins the DECLARATION to the BEHAVIOR. Only COMPONENT_MAX.eoe is wired
+    // into mealScore.ts; taste/convenience/protein/calories maxima are still
+    // inline literals in their band ladders, so COMPONENT_MAX otherwise runs
+    // parallel to the real logic. The sum-to-RAW_MAX test above cannot catch
+    // that drift — retune the convenience ladder top from 25 to 22 and the
+    // sum is still 95, yet Task 11's breakdown bar renders "22/25".
+    const r = computeBrianScore({
+      prepMinutes: 0,
+      role: null,
+      tasteOverride: null,
+      items: [
+        item({
+          calories: 600,
+          protein: 50,
+          servings: 1,
+          smallPiecesOk: true,
+          concepts: [{ rating: "love", requiresSmallPieces: false, prepIntensive: false }],
+        }),
+      ],
+    });
+    expect(r.taste).toBe(COMPONENT_MAX.taste);
+    expect(r.convenience).toBe(COMPONENT_MAX.convenience);
+    expect(r.protein).toBe(COMPONENT_MAX.protein);
+    expect(r.eoe).toBe(COMPONENT_MAX.eoe);
+    expect(r.calories).toBe(COMPONENT_MAX.calories);
+    expect(r.raw).toBe(RAW_MAX);
+    expect(r.score).toBe(100);
+  });
+});
+
+describe("score is derived from the rounded raw, not the exact sum", () => {
+  it("raw 89.8 renormalizes to 95 (core band), not 94", () => {
+    // The one behavior spec §6's literal `Math.round(raw × 100 / 95)` and the
+    // implementation disagree on. Components sum to exactly 89.76, which
+    // rounds to raw 89.8:
+    //   implementation  round(89.8 × 100 / 95) = round(94.5263) = 95  ← core
+    //   literal formula round(89.76 × 100 / 95) = round(94.4842) = 94  ← mid
+    // The implementation is deliberate: Task 11 prints "{raw}/95 renormalized
+    // to {score}/100" and 89.8 × 100 / 95 really is 94.5 → 95, so showing 94
+    // beside 89.8 would read as an arithmetic error. This lands exactly on
+    // the SCORE_BAND_CORE_MIN edge, so the chip color turns on it too.
+    // (The pre-existing raw 69.7 / score 73 assertion yields 73 under BOTH
+    // formulas, so it does not pin this.)
+    const love = { rating: "love" as const, requiresSmallPieces: false, prepIntensive: false };
+    const like = { rating: "like" as const, requiresSmallPieces: false, prepIntensive: false };
+    const r = computeBrianScore({
+      prepMinutes: 5, // convenience 20
+      role: null,
+      tasteOverride: null,
+      items: [
+        item({ calories: 970, protein: 40, servings: 1, concepts: [love] }),
+        item({ calories: 30, protein: 0, servings: 1, concepts: [like] }),
+      ],
+    });
+    // taste = (970×30 + 30×22) / 1000 = 29.76
+    expect(r.taste).toBe(29.76);
+    expect(r.convenience).toBe(20);
+    expect(r.protein).toBe(15); // 40 g
+    expect(r.eoe).toBe(15);
+    expect(r.calories).toBe(10); // 1000 cal
+    // exact component sum is 89.76; raw is that rounded to 1dp
+    expect(r.raw).toBe(89.8);
+    expect(r.score).toBe(95);
+    expect(r.score).toBeGreaterThanOrEqual(SCORE_BAND_CORE_MIN);
   });
 });
