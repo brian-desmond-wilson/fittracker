@@ -1,0 +1,277 @@
+import {
+  recommendEatNext,
+  EMERGENCY_MIN_GAP_CAL,
+  PREP_HARD_CAP_FACTOR,
+  type EatNextInput,
+  type ScoredMeal,
+} from "../eatNext";
+import { EMPTY_TOTALS } from "../mealMacros";
+
+// ── fixtures ───────────────────────────────────────────────────────────────
+// Minutes: window 08:00–23:00 (480–1380); meals 08:00/12:00/18:00.
+const BASE: Omit<EatNextInput, "meals"> = {
+  nowMinutes: 13 * 60, // 13:00
+  windowStartMinutes: 8 * 60,
+  windowEndMinutes: 23 * 60,
+  mealTimesMinutes: { breakfast: 8 * 60, lunch: 12 * 60, dinner: 18 * 60 },
+  dayTotals: { ...EMPTY_TOTALS, calories: 900, protein: 60 },
+  goals: {
+    calories: 2300, protein: 160, carbs: null, sodium_mg: null,
+    fats: null, sugars: null, fiber_g: null,
+  },
+  caloriePace: { status: "on_pace" },
+  proteinPace: { status: "on_pace" },
+  maxPrepMinutes: 5,
+  workoutCompletedAtMinutes: null,
+  nudgesEnabled: false,
+};
+
+let nextId = 0;
+function scored(over: {
+  name?: string;
+  category?: string;
+  role?: string | null;
+  prep?: number;
+  calories?: number;
+  protein?: number;
+  score?: number;
+  containsNever?: boolean;
+  approved?: boolean;
+}): ScoredMeal {
+  const id = `m${nextId++}`;
+  const calories = over.calories ?? 600;
+  const protein = over.protein ?? 35;
+  return {
+    meal: {
+      id,
+      user_id: "u",
+      name: over.name ?? id,
+      slug: id,
+      category: (over.category ?? "lunch") as never,
+      role: (over.role ?? null) as never,
+      default_meal_type: null,
+      prep_minutes: over.prep ?? 5,
+      taste_override: null,
+      notes: null,
+      created_at: "",
+      updated_at: "",
+      items: [],
+    } as never,
+    totals: {
+      calories, protein, carbs: 0, fats: 0, sugars: 0, sodium_mg: 0, fiber_g: 0,
+    },
+    score: {
+      taste: 22, convenience: 20, protein: 12, eoe: 15, calories: 10,
+      // Ranking reads `raw` (Phase 2 amendment: the /100 score's rounding
+      // creates ties raw doesn't have); tests drive both with one knob.
+      raw: over.score ?? 83, score: over.score ?? 83,
+      tasteUnknown: false,
+      containsNever: over.containsNever ?? false,
+      approved: over.approved ?? true,
+      totalCalories: calories, totalProtein: protein,
+    },
+  };
+}
+const input = (over: Partial<EatNextInput>, meals: ScoredMeal[]): EatNextInput =>
+  ({ ...BASE, ...over, meals });
+
+beforeEach(() => { nextId = 0; });
+
+// ── terminal contexts ──────────────────────────────────────────────────────
+describe("terminal contexts", () => {
+  it("after_window: nothing recommended past windowEnd", () => {
+    const r = recommendEatNext(input({ nowMinutes: 23 * 60 + 10 }, [scored({})]));
+    expect(r.context).toBe("after_window");
+    expect(r.recommendations).toHaveLength(0);
+  });
+
+  it("goal_hit with protein satisfied: terminal, no recommendations", () => {
+    const r = recommendEatNext(
+      input(
+        {
+          dayTotals: { ...EMPTY_TOTALS, calories: 2350, protein: 158 },
+          caloriePace: { status: "goal_hit" },
+        },
+        [scored({})],
+      ),
+    );
+    expect(r.context).toBe("goal_hit");
+    expect(r.recommendations).toHaveLength(0);
+    expect(r.message).toMatch(/target hit/i);
+  });
+
+  it("goal_hit but protein ≥15g short: one high-protein bridge/booster under 300 cal", () => {
+    const bridgeSmall = scored({ role: "bridge", calories: 290, protein: 25 });
+    const boosterBig = scored({ role: "calorie_booster", calories: 690, protein: 27 });
+    const plain = scored({ calories: 250, protein: 30 });
+    const r = recommendEatNext(
+      input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 140 } },
+        [boosterBig, plain, bridgeSmall],
+      ),
+    );
+    expect(r.context).toBe("goal_hit");
+    expect(r.recommendations).toHaveLength(1);
+    expect(r.recommendations[0].mealId).toBe(bridgeSmall.meal.id);
+    expect(r.recommendations[0].reasons.join(" ")).toMatch(/protein/i);
+  });
+
+  it("goal_hit protein-short with NO qualifying meal stays terminal (no fall-through)", () => {
+    const r = recommendEatNext(
+      input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 140 } },
+        [scored({ calories: 600 })], // too big to qualify
+      ),
+    );
+    expect(r.context).toBe("goal_hit");
+    expect(r.recommendations).toHaveLength(0);
+  });
+});
+
+// ── post-workout ───────────────────────────────────────────────────────────
+describe("post_workout", () => {
+  const trained = { workoutCompletedAtMinutes: 12 * 60 }; // 12:00, now 13:00
+  it("prefers role=post_workout, then ≥25g protein meals", () => {
+    const pw = scored({ role: "post_workout", score: 70 });
+    const highP = scored({ protein: 40, score: 90 });
+    const lowP = scored({ protein: 10, score: 99 });
+    const r = recommendEatNext(input(trained, [lowP, highP, pw]));
+    expect(r.context).toBe("post_workout");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      pw.meal.id, highP.meal.id,
+    ]); // lowP excluded entirely
+  });
+  it("window closes 180 min after completion", () => {
+    const r = recommendEatNext(
+      input({ workoutCompletedAtMinutes: 13 * 60 - 181 }, [scored({})]),
+    );
+    expect(r.context).not.toBe("post_workout");
+  });
+  it("falls through when no candidate meal qualifies", () => {
+    const r = recommendEatNext(input(trained, [scored({ protein: 5 })]));
+    expect(r.context).toBe("next_meal");
+  });
+});
+
+// ── emergency / catch_up ───────────────────────────────────────────────────
+describe("emergency and catch_up", () => {
+  const behind = (catchUpAmount: number): Partial<EatNextInput> => ({
+    caloriePace: { status: "behind", delta: catchUpAmount, catchUpAmount },
+  });
+
+  it("emergency: past dinner + behind ≥400 → emergency/booster meals, calories descending", () => {
+    const small = scored({ category: "emergency", calories: 400 });
+    const big = scored({ category: "emergency", calories: 700 });
+    const booster = scored({ role: "calorie_booster", category: "shake", calories: 750 });
+    const r = recommendEatNext(
+      input({ nowMinutes: 20 * 60, ...behind(600) }, [small, booster, big]),
+    );
+    expect(r.context).toBe("emergency");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      booster.meal.id, big.meal.id, small.meal.id,
+    ]);
+  });
+
+  it(`emergency requires gap ≥ EMERGENCY_MIN_GAP_CAL (${EMERGENCY_MIN_GAP_CAL})`, () => {
+    // gap 399 misses the emergency bar; 450 cal is within ±35% of 399, so
+    // the same meal is caught by catch_up instead.
+    const r = recommendEatNext(
+      input({ nowMinutes: 20 * 60, ...behind(399) }, [
+        scored({ category: "emergency", calories: 450 }),
+      ]),
+    );
+    expect(r.context).toBe("catch_up");
+  });
+
+  it("catch_up: candidates within ±35% of catchUpAmount, ranked by score", () => {
+    const fits = scored({ calories: 500, score: 80 });
+    const fitsBetter = scored({ calories: 450, score: 95 });
+    const tooBig = scored({ calories: 900 });
+    const tooSmall = scored({ calories: 200 });
+    const r = recommendEatNext(input(behind(500), [fits, tooBig, tooSmall, fitsBetter]));
+    expect(r.context).toBe("catch_up");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      fitsBetter.meal.id, fits.meal.id,
+    ]);
+    expect(r.recommendations[0].reasons.join(" ")).toMatch(/500 cal/);
+  });
+
+  it("catch_up with no meal in band falls through to next_meal", () => {
+    const r = recommendEatNext(input(behind(500), [scored({ calories: 2000, category: "dinner" })]));
+    expect(r.context).toBe("next_meal");
+  });
+});
+
+// ── next_meal ──────────────────────────────────────────────────────────────
+describe("next_meal", () => {
+  it("13:00 → next slot dinner; dinner-category meals win", () => {
+    const dinner = scored({ category: "dinner" });
+    const breakfast = scored({ category: "breakfast" });
+    const r = recommendEatNext(input({ nowMinutes: 13 * 60 + 1 }, [breakfast, dinner]));
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations[0].mealId).toBe(dinner.meal.id);
+  });
+  it("≥120 min before next meal prefers bridge/snack", () => {
+    // 13:00, dinner 18:00 → 300 min out
+    const bridge = scored({ role: "bridge", category: "snack", calories: 300 });
+    const dinner = scored({ category: "dinner", score: 99 });
+    const r = recommendEatNext(input({}, [dinner, bridge]));
+    expect(r.recommendations[0].mealId).toBe(bridge.meal.id);
+  });
+  it("after dinner time (on pace) → snack slot; shakes count as snacks; emergency never surfaces", () => {
+    const shake = scored({ category: "shake" });
+    const emergency = scored({ category: "emergency", score: 100 });
+    const r = recommendEatNext(input({ nowMinutes: 19 * 60 }, [emergency, shake]));
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([shake.meal.id]);
+  });
+  it("before window behaves as next_meal for breakfast", () => {
+    const b = scored({ category: "breakfast" });
+    const r = recommendEatNext(
+      input({ nowMinutes: 7 * 60, caloriePace: { status: "before_window" } }, [b]),
+    );
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations[0].mealId).toBe(b.meal.id);
+  });
+});
+
+// ── filters + ranking ──────────────────────────────────────────────────────
+describe("filters and ranking", () => {
+  it("containsNever never surfaces in any context", () => {
+    const never = scored({ category: "dinner", score: 100, containsNever: true });
+    const ok = scored({ category: "dinner", score: 50 });
+    const r = recommendEatNext(input({}, [never, ok]));
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([ok.meal.id]);
+  });
+
+  it(`prep > maxPrep×${PREP_HARD_CAP_FACTOR} never surfaces; (maxPrep, ×${PREP_HARD_CAP_FACTOR}] surfaces with a budget reason`, () => {
+    const way = scored({ category: "dinner", prep: 11 });   // > 10 → gone
+    const over = scored({ category: "dinner", prep: 8 });    // (5,10] → reason
+    const fine = scored({ category: "dinner", prep: 4 });
+    const r = recommendEatNext(input({}, [way, over, fine]));
+    const ids = r.recommendations.map((x) => x.mealId);
+    expect(ids).not.toContain(way.meal.id);
+    expect(ids).toContain(over.meal.id);
+    const overRec = r.recommendations.find((x) => x.mealId === over.meal.id)!;
+    expect(overRec.reasons.join(" ")).toMatch(/prep budget/i);
+  });
+
+  it("deterministic order: raw desc, then prep asc, then name asc; top 3 cap", () => {
+    const a = scored({ name: "A", category: "dinner", score: 90, prep: 5 });
+    const b = scored({ name: "B", category: "dinner", score: 90, prep: 3 });
+    const c = scored({ name: "C", category: "dinner", score: 95 });
+    const d = scored({ name: "D", category: "dinner", score: 90, prep: 5 });
+    const r1 = recommendEatNext(input({}, [a, d, c, b]));
+    const r2 = recommendEatNext(input({}, [d, b, a, c]));
+    expect(r1.recommendations.map((x) => x.mealId)).toEqual([
+      c.meal.id, b.meal.id, a.meal.id,
+    ]);
+    expect(r2.recommendations).toEqual(r1.recommendations);
+  });
+
+  it("empty library → next_meal with empty recommendations and a message", () => {
+    const r = recommendEatNext(input({}, []));
+    expect(r.recommendations).toHaveLength(0);
+    expect(r.message).not.toBeNull();
+  });
+});
