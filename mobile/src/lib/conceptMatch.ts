@@ -1,6 +1,11 @@
-// TS port of the head-noun concept matcher from migration
-// 20260728100200_nutrition_concept_link_backfill.sql. Keep the two in sync —
-// the UI must suggest exactly what the SQL backfill would have linked.
+// TS port of the head-noun concept matcher originally written in migration
+// 20260728100200_nutrition_concept_link_backfill.sql. That migration was a
+// one-shot backfill: it has already been applied and must never be edited or
+// re-run, so this file is now the sole living implementation of the matcher.
+// The two are NOT equivalent by design: the SQL used `distinct on` to link
+// exactly ONE concept per product, whereas suggestConcepts returns every
+// match in ranked order — only the head of that list corresponds to what the
+// backfill would have linked.
 //
 // English food names put the head noun LAST ("Kerrygold Butter" is butter;
 // "Butter Lettuce" is lettuce), so suffix position is the safe direction.
@@ -18,6 +23,10 @@ export interface ConceptSuggestion {
   rank: 0 | 1 | 2;
 }
 
+// Suffix (rank 2) matching is skipped for concept names shorter than this.
+// Short generic words ("Rice", "Tofu", "Eggs") are exactly the ones that
+// mis-link as a trailing head noun, so they are required to match exactly or
+// plural-modulo instead. 5 is inclusive: "Bread" (a seeded concept) matches.
 const MIN_SUFFIX_CONCEPT_LENGTH = 5;
 
 const norm = (s: string) => s.trim().toLowerCase();
