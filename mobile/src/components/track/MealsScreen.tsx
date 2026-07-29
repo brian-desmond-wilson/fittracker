@@ -536,8 +536,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       if (error) throw error;
 
+      // Only the id whose unit was ACTUALLY taken may be armed for refund on
+      // Undo. `willUseInventory` gates on food_inventory.quantity, but the
+      // consume RPC decides from food_inventory_locations — the two can
+      // disagree, and refund credits unconditionally, so arming on intent
+      // rather than on outcome would invent a unit out of nothing.
+      let consumedInventoryId: string | null = null;
       if (willUseInventory && inventoryMatch) {
-        await consumeOneInventoryUnit(inventoryMatch.id);
+        const consumed = await consumeOneInventoryUnit(inventoryMatch.id);
+        if (consumed) consumedInventoryId = inventoryMatch.id;
       }
 
       // Clear state
@@ -551,11 +558,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         const label = scaledCalories
           ? `Logged ${name} · ${scaledCalories} cal`
           : `Logged ${name}`;
-        showUndoFor(
-          inserted.id,
-          label,
-          willUseInventory && inventoryMatch ? inventoryMatch.id : null,
-        );
+        // The log row itself is always undoable; only the inventory refund
+        // is conditional on a unit having genuinely been consumed.
+        showUndoFor(inserted.id, label, consumedInventoryId);
       }
 
       // Invalidate cache and refetch
