@@ -5,8 +5,15 @@
 -- or rolls back as a unit.
 --
 -- Unit semantics preserved: 1 unit = 1 discrete container per logged item,
--- regardless of servings. consumed/refunded of 0 means "no stock" — never
--- an error, because logging a meal must not fail on stock bookkeeping.
+-- regardless of servings. A consumed/refunded of 0 is never an error, because
+-- logging a meal must not fail on stock bookkeeping — but do NOT read it as
+-- "no stock". It conflates THREE states and cannot distinguish them:
+--   1. the row exists and is yours, but has no stock to take;
+--   2. no row with that id exists at all;
+--   3. the row exists but belongs to another user — RLS filters it out, so
+--      the exists() check is false and the UPDATE matches zero rows.
+-- Callers may only treat 0 as "nothing was moved, do not compensate for it"
+-- (which is exactly what Task 9's consumed > 0 filter does).
 --
 -- Location policy: consume from ready-to-consume locations first, then the
 -- fullest; refund mirrors it. Rows with no location records fall back to
@@ -110,6 +117,14 @@ begin
          where fi.id = v_id;
       end if;
     else
+      -- No `and fi.quantity > 0` guard here, mirroring the location branch's
+      -- lack of a `l.quantity > 0` filter above: refund must be able to credit
+      -- an empty row. The asymmetry with consume therefore exists in BOTH
+      -- branches — a location-less item at quantity 0 invents a unit exactly
+      -- as a location-having item with every location at 0 does. Do not
+      -- "simplify" this on the belief that only the location branch is
+      -- affected. The caller compensates by refunding only the ids that
+      -- actually returned consumed > 0 (see the Task 6/9 plan amendments).
       update public.food_inventory fi
          set quantity = fi.quantity + 1
        where fi.id = v_id;
