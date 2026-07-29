@@ -64,6 +64,13 @@ git commit -m "chore(mobile): wire Jest for pure math libs (R2 groundwork)"
 
 ### Task 2: `rampProgress.ts` — trend math (TDD)
 
+> **AMENDED during execution (commit `96b0ab6`), after code review.** The code below is the original draft; the shipped implementation differs in three accepted ways:
+> 1. **Options-object API** — `assessRampProgress(opts: AssessRampProgressOpts)` with `{weighIns, levelStartedAt, today}`, matching the house convention (`ComputeMealPaceOpts`). Positional string params were trivially swappable.
+> 2. **Gains normalized by weeks spanned** — `isoWeekKey` became `isoWeekAnchor()` returning the ISO week's Thursday as `YYYY-MM-DD`; gains divide by `spanWeeks = daysBetween(prevAnchor, currAnchor) / 7`. Without this, a dropped/thin week made a 2-week delta read as a 1-week rate and suppressed legitimate "advance" suggestions — a real bug for sparse weigh-in logging.
+> 3. **Honest copy on weight loss** — a negative latest gain no longer claims "Gained under…".
+>
+> Test count is 11, not 7. **Downstream tasks must call the options-object form.**
+
 **Files:**
 - Create: `mobile/src/lib/__tests__/rampProgress.test.ts`
 - Create: `mobile/src/lib/rampProgress.ts`
