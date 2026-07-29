@@ -2,11 +2,10 @@
 import React, { useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import type { MealTotals, MealWithItems } from "@/src/types/meal-library";
-import { ROLE_LABELS } from "@/src/types/meal-library";
+import { ROLE_LABELS, defaultMealTypeFor } from "@/src/types/meal-library";
 import type { MealType } from "@/src/types/track";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
-import { defaultMealTypeFor } from "@/src/lib/supabase/mealLibrary";
 import { lib, scoreChipStyle } from "./styles";
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];

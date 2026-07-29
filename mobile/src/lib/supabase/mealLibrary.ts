@@ -10,7 +10,6 @@ import type {
   MealWithItems,
 } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
-import { CATEGORY_DEFAULT_MEAL_TYPE } from "@/src/types/meal-library";
 
 // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -24,8 +23,6 @@ export interface ConceptLinkRow {
 
 interface InventoryRowRaw {
   id: string;
-  name: string;
-  brand: string | null;
   barcode: string | null;
   quantity: number;
   locations: Array<{ quantity: number }>;
@@ -52,7 +49,7 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     supabase.from("food_concept_links").select("*"),
     supabase
       .from("food_inventory")
-      .select("id, name, brand, barcode, quantity, locations:food_inventory_locations(quantity)"),
+      .select("id, barcode, quantity, locations:food_inventory_locations(quantity)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -81,7 +78,17 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     }
   }
 
-  const itemRows = (items.data ?? []) as MealItemWithFood[];
+  // `meal_items.servings` is a `numeric` column, and PostgREST returns numeric
+  // as a JSON *string* in some configurations (this is why the module this
+  // replaced wrapped every read in `Number(...)`). Coerce ONCE here: this is
+  // the only place in the app that constructs `MealItemWithFood` values, so
+  // every downstream consumer gets the `number` the type promises. Without it
+  // the totals below still work by accident (`*` coerces) but Task 12's
+  // builder does `+ delta` (string concatenation) and `.toFixed()` (throws).
+  const itemRows = ((items.data ?? []) as MealItemWithFood[]).map((it) => ({
+    ...it,
+    servings: Number(it.servings),
+  }));
   const byMeal = new Map<string, MealItemWithFood[]>();
   for (const it of itemRows) {
     const arr = byMeal.get(it.meal_id) ?? [];
@@ -130,11 +137,13 @@ export async function fetchDayCalories(date: string): Promise<number> {
 
 // ── Totals (computed, never stored) ────────────────────────────────────────
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export function computeMealTotals(items: MealItemWithFood[]): MealTotals {
   const zero: MealTotals = {
     calories: 0, protein: 0, carbs: 0, fats: 0, sugars: 0, sodium_mg: 0, fiber_g: 0,
   };
-  return items.reduce((acc, it) => {
+  const totals = items.reduce((acc, it) => {
     const f = it.savedFood;
     const s = it.servings;
     return {
@@ -147,6 +156,21 @@ export function computeMealTotals(items: MealItemWithFood[]): MealTotals {
       fiber_g: acc.fiber_g + s * (f.fiber_g ?? 0),
     };
   }, zero);
+  // Round for the same reason computeBrianScore does (see mealScore.ts): the
+  // underlying nutrition data is decimal, so summing servings × macros leaves
+  // float epsilon (1234.5600000000002) that MealRow/MealDetail render
+  // verbatim. These are two independent implementations of the same sum and
+  // MUST agree on rounding — mealScore.ts rounds its totals to 2dp too, so a
+  // meal's calories cannot read differently in the row and in the score card.
+  return {
+    calories: round2(totals.calories),
+    protein: round2(totals.protein),
+    carbs: round2(totals.carbs),
+    fats: round2(totals.fats),
+    sugars: round2(totals.sugars),
+    sodium_mg: round2(totals.sodium_mg),
+    fiber_g: round2(totals.fiber_g),
+  };
 }
 
 // ── Mutations ──────────────────────────────────────────────────────────────
@@ -157,6 +181,22 @@ function slugify(name: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+/** Postgres unique_violation. Here it can only be `meals.unique (user_id, slug)`. */
+const UNIQUE_VIOLATION = "23505";
+
+// slugify() collapses every run of non-alphanumerics to one "-", so names the
+// user sees as DISTINCT can collide: "PB&J" and "PB J" both slugify to "pb-j".
+// Surfacing the raw 23505 there ("duplicate key value violates unique
+// constraint meals_user_id_slug_key") reads as an app bug, since the two
+// displayed names differ. Renaming through updateMeal re-slugifies and hits
+// the same wall, so both mutations map it.
+function duplicateMealNameError(name: string): Error {
+  return new Error(
+    `You already have a meal filed under the same name as “${name.trim()}”. ` +
+      `Names that differ only in punctuation or spacing count as the same meal — pick a different one.`,
+  );
 }
 
 export interface MealItemInput {
@@ -189,7 +229,10 @@ export async function createMeal(userId: string, input: MealInput): Promise<void
     .insert({ ...meal, name: input.name.trim(), slug, user_id: userId })
     .select("id")
     .single();
-  if (error) throw error;
+  if (error) {
+    if (error.code === UNIQUE_VIOLATION) throw duplicateMealNameError(input.name);
+    throw error;
+  }
   const { error: itemsError } = await supabase.from("meal_items").insert(
     items.map((it, idx) => ({
       user_id: userId,
@@ -200,7 +243,17 @@ export async function createMeal(userId: string, input: MealInput): Promise<void
       display_order: idx,
     })),
   );
-  if (itemsError) throw itemsError;
+  if (itemsError) {
+    // Compensating delete — NOT the same accepted risk as updateMeal's
+    // non-atomic replace. The meals row is already committed, and Task 13
+    // keeps the builder open on failure, so the user's natural retry re-runs
+    // the insert above and collides with `unique (user_id, slug)`: they could
+    // never save under that name again, and a phantom item-less meal would
+    // sit in the library. Best-effort by design — if this delete also fails
+    // we still surface the original error, which is the actionable one.
+    await supabase.from("meals").delete().eq("id", data.id);
+    throw itemsError;
+  }
 }
 
 export async function updateMeal(
@@ -216,7 +269,10 @@ export async function updateMeal(
     .from("meals")
     .update({ ...meal, name: input.name.trim(), slug })
     .eq("id", mealId);
-  if (error) throw error;
+  if (error) {
+    if (error.code === UNIQUE_VIOLATION) throw duplicateMealNameError(input.name);
+    throw error;
+  }
   // Full replace: delete + reinsert. Two client writes, not atomic — a
   // failure between them leaves an item-less meal, which is visible in the
   // UI and recoverable by re-editing (unlike silent divergence). An RPC is
@@ -246,7 +302,14 @@ export async function deleteMeal(mealId: string): Promise<void> {
 
 // ── Logging (spec §8) ──────────────────────────────────────────────────────
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+/** The log rows committed; only the stock decrement failed. */
+export class MealLoggedButDecrementFailed extends Error {
+  loggedAt: string;
+  constructor(loggedAt: string, detail: string) {
+    super(`Meal logged, but inventory update failed: ${detail}`);
+    this.loggedAt = loggedAt;
+  }
+}
 
 export interface LogMealResult {
   loggedAt: string;
@@ -264,6 +327,15 @@ export async function logMeal(
     inventory: ResolutionInventoryRow[];
   },
 ): Promise<LogMealResult> {
+  // An item-less meal must not log "successfully". `rows` would be [],
+  // PostgREST accepts an empty insert without error, and the caller would show
+  // a "Logged" toast plus a working Undo for zero rows written — a silent lie
+  // that also hides the orphaned meal that produced it. The module this
+  // replaces guarded the same case (mealTemplatesService.ts:147), so dropping
+  // the guard would be a regression. createMeal/updateMeal both reject empty
+  // item lists, so reaching this means a partial write left a meal behind.
+  if (meal.items.length === 0) throw new Error("This meal has no items.");
+
   const matches = resolveInventoryMatches(
     meal.items.map((it) => ({
       savedFoodId: it.saved_food_id,
@@ -301,8 +373,14 @@ export async function logMeal(
       sugars: f.sugars != null ? round2(f.sugars * s) : null,
       sodium_mg: f.sodium_mg != null ? round2(f.sodium_mg * s) : null,
       fiber_g: f.fiber_g != null ? round2(f.fiber_g * s) : null,
-      uses_inventory: inventoryId != null,
-      inventory_items: inventoryId != null ? [{ id: inventoryId, quantity: 1 }] : null,
+      uses_inventory: inventoryId !== null,
+      // NOTE: this records INTENT, not outcome. These rows are written before
+      // the consume RPC runs below, so a row can claim {id, quantity: 1} for a
+      // unit that was never taken (zero-stock rows are a no-op for consume).
+      // No current code path treats it as truth — undo refunds the RPC's
+      // truthful `consumedIds` instead — but a future "refund from the log
+      // row" path would over-credit stock. Read `consumed > 0`, not this.
+      inventory_items: inventoryId !== null ? [{ id: inventoryId, quantity: 1 }] : null,
       saved_food_id: it.saved_food_id,
       servings: s,
       meal_id: meal.id,
@@ -325,6 +403,12 @@ export async function logMeal(
       p_inventory_ids: requestedIds,
     });
     if (rpcError) {
+      // Clean ONLY for an error the server actually returned: consume_inventory_units
+      // is a single plpgsql call, so a raise aborts the whole body and nothing
+      // was consumed. A NETWORK TIMEOUT lands here too and is genuinely
+      // unrecoverable — the decrement may have committed server-side while the
+      // client saw a failure, and we have no `consumedIds` to refund, so stock
+      // is silently one unit low with no way to detect it from here.
       console.error("consume_inventory_units failed:", rpcError);
       throw new MealLoggedButDecrementFailed(loggedAt, rpcError.message);
     }
@@ -335,15 +419,6 @@ export async function logMeal(
     consumedIds = results.filter(r => r.consumed > 0).map(r => r.inventory_id);
   }
   return { loggedAt, consumedIds };
-}
-
-/** The log rows committed; only the stock decrement failed. */
-export class MealLoggedButDecrementFailed extends Error {
-  loggedAt: string;
-  constructor(loggedAt: string, detail: string) {
-    super(`Meal logged, but inventory update failed: ${detail}`);
-    this.loggedAt = loggedAt;
-  }
 }
 
 export async function undoMealLog(
@@ -363,10 +438,6 @@ export async function undoMealLog(
     });
     if (rpcError) throw rpcError;
   }
-}
-
-export function defaultMealTypeFor(meal: Meal): MealType {
-  return meal.default_meal_type ?? CATEGORY_DEFAULT_MEAL_TYPE[meal.category];
 }
 
 // ── Food Matching (spec §9.2) ──────────────────────────────────────────────

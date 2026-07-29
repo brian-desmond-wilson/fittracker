@@ -91,6 +91,18 @@ export interface MealWithItems extends Meal {
   items: MealItemWithFood[];
 }
 
+/**
+ * The slot a meal logs into by default (spec §5.1). Lives here, not in
+ * `lib/supabase/mealLibrary.ts`: it is pure, its only dependency is
+ * CATEGORY_DEFAULT_MEAL_TYPE in this file, and its callers are
+ * presentational components that must not pull the Supabase client singleton
+ * into their import graph for a two-line lookup. Single home — deliberately
+ * NOT re-exported from the query module.
+ */
+export function defaultMealTypeFor(meal: Meal): MealType {
+  return meal.default_meal_type ?? CATEGORY_DEFAULT_MEAL_TYPE[meal.category];
+}
+
 /** Computed from items — never stored (Concept Map hazard #1). */
 export interface MealTotals {
   calories: number;
