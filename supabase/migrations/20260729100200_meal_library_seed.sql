@@ -8,14 +8,11 @@
 -- Unlinked staples (sauces, jelly, salsa, chips) are deliberate: no matching
 -- Phase 1 concept exists; their small calorie weight keeps taste math honest.
 
--- EXECUTION AMENDMENT (2026-07-29): spec §10.1 and the plan both stamp seeded
--- staples with notes = 'Nutrition OS staple (seeded)', but public.saved_foods
--- has never had a notes column (created 20251229000000; only sodium_mg/fiber_g,
--- user_corrected and auto_scaled were added since — food_inventory has notes,
--- saved_foods does not). Without this the update below fails at apply time with
--- 'column "notes" of relation "saved_foods" does not exist'. Additive, nullable
--- and idempotent, so it is safe ahead of the owner-gated apply.
-alter table public.saved_foods add column if not exists notes text;
+-- EXECUTION AMENDMENT (2026-07-29): spec §10.1's notes marker needs a column
+-- public.saved_foods has never had. It is added by the schema migration
+-- 20260729100000 (which sorts first), not here — a _seed file carries data,
+-- not DDL. The marker is stamped inline in the staple INSERT below, so only
+-- rows this seed actually creates are ever labelled.
 
 do $$
 declare
@@ -24,16 +21,24 @@ declare
   v_links integer;
   v_meals integer;
   v_items integer;
+  v_check integer;
 begin
   select id into v_user_id from auth.users limit 1;
   if v_user_id is null then
     raise exception 'No auth.users row found — cannot seed the Meal Library.';
   end if;
 
+  -- notes is stamped inline rather than by a follow-up update: the column is
+  -- brand new, so every pre-existing row has notes is null, and a
+  -- `where notes is null and lower(name) in (...)` update would also label a
+  -- food the owner already created whose name collides with a staple — a row
+  -- this seed deliberately skipped. Stamping in the INSERT means the marker
+  -- means exactly "created by this seed", and no user note is ever touched.
   insert into public.saved_foods
     (user_id, name, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g,
-     serving_size)
-  select v_user_id, v.name, v.cal, v.p, v.c, v.f, v.sug, v.na, v.fib, v.serving
+     serving_size, notes)
+  select v_user_id, v.name, v.cal, v.p, v.c, v.f, v.sug, v.na, v.fib, v.serving,
+         'Nutrition OS staple (seeded)'
   from (values
     ('Ground Beef, cooked 85/15',      290, 26,   0,   20,   0,  90,  0,   '4 oz'),
     ('Microwave Sticky White Rice',    310, 6,    68,  1,    0,  10,  1,   '1 cup'),
@@ -61,20 +66,6 @@ begin
     where sf.user_id = v_user_id and lower(sf.name) = lower(v.name)
   );
   get diagnostics v_staples = row_count;
-
-  -- Mark seeded staples so they are identifiable later. Separate update so a
-  -- partial re-run (staple pre-existed) never clobbers a user's own notes.
-  update public.saved_foods sf
-     set notes = 'Nutrition OS staple (seeded)'
-   where sf.user_id = v_user_id
-     and sf.notes is null
-     and lower(sf.name) in (
-       'ground beef, cooked 85/15','microwave sticky white rice',
-       'grilled chicken breast, diced','teriyaki sauce','korean bbq sauce',
-       'greek yogurt, whole milk plain','protein granola',
-       'instant oatmeal, prepared','peanut butter','grape jelly','white bread',
-       'banana','blueberries','whole milk','boost very high calorie','cashews',
-       'shredded cheddar','salsa','tortilla chips','whey protein powder');
 
   insert into public.food_concept_links (user_id, concept_id, saved_food_id, matched_by)
   select v_user_id, c.id, sf.id, 'seed'
@@ -167,9 +158,20 @@ begin
   raise notice 'Meal Library seed — staples: %, links: %, meals: %, items: %',
     v_staples, v_links, v_meals, v_items;
 
-  if v_meals > 0 and v_items < v_meals then
-    -- Ten meals should have produced 32 items; a tiny count means a
-    -- food_name/meal_slug typo silently dropped join rows. Fail loudly.
-    raise exception 'Meal items joined incompletely (% items for % meals) — check name spellings', v_items, v_meals;
+  -- Completeness guard on the ACTUAL final state, not on rows-inserted-this-run.
+  -- Counting inserts cannot work: on a re-run every counter is legitimately 0,
+  -- and on a first run `v_items < v_meals` only fires below 10 items, so a
+  -- food_name/meal_slug typo dropping 12 of 32 would pass silently. Restricting
+  -- to the 10 seeded slugs also makes it immune to meals the owner adds later.
+  select count(*) into v_check
+  from public.meal_items mi
+  join public.meals m on m.id = mi.meal_id
+  where m.user_id = v_user_id
+    and m.slug in (
+      'protein-oatmeal-bowl','greek-yogurt-bowl','korean-beef-bowl',
+      'teriyaki-chicken-bowl','cheeseburger-bowl','taco-bowl','pb-and-j',
+      'banana-pb','boost-cashews','brian-bulk-shake');
+  if v_check <> 32 then
+    raise exception 'Meal Library seed: expected 32 items across the 10 seeded meals, found % — check food_name/meal_slug spellings', v_check;
   end if;
 end $$;

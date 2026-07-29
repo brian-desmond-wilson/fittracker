@@ -69,6 +69,14 @@ create table if not exists public.meal_items (
 alter table public.meal_logs
   add column if not exists meal_id uuid references public.meals(id) on delete set null;
 
+-- Backs spec §10.1's seeded-staple marker: the seed (20260729100200) stamps
+-- notes = 'Nutrition OS staple (seeded)' on the staples it inserts, but
+-- public.saved_foods has never had a notes column (only food_inventory does).
+-- Additive, nullable and idempotent; this file sorts first, so the column
+-- exists before the seed runs.
+alter table public.saved_foods
+  add column if not exists notes text;
+
 create index if not exists idx_meals_user_category
   on public.meals(user_id, category);
 create index if not exists idx_meal_items_meal
