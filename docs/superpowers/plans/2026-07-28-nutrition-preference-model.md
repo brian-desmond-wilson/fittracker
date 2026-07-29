@@ -11,6 +11,35 @@
 **Spec:** `docs/superpowers/specs/2026-07-28-nutrition-preference-model-design.md`
 **Branch:** `nutrition-os/preference-model` (exists)
 
+---
+
+## ⚠️ Execution amendments (what actually shipped)
+
+Every task below was implemented, then put through a spec-compliance review and a code-quality review. Several reviews found real defects, and the fixes deviate from the task text. **Where this section and a task body disagree, this section is authoritative.**
+
+**Task 2 — `rampProgress.ts`** (also noted inline): options-object API; gains normalized by `spanWeeks` via an ISO-week *Thursday anchor* (a dropped/thin week previously made a 2-week delta read as a 1-week rate and suppressed legitimate "advance" suggestions); honest copy on weight loss. 11 tests, not 7.
+
+**Task 4 — schema migration:**
+- RLS uses **20 per-operation policies** (4 per table), not 5 blanket `for all` policies — zero `FOR ALL` precedent exists in this repo. All scoped `to authenticated`.
+- Every `create policy` / `create trigger` is preceded by a `drop ... if exists` guard, so a mid-failure re-run completes cleanly. This matters: prod has no staging and cannot be rebuilt from the repo.
+- Added 4 `updated_at` triggers reusing the shared `update_updated_at_column()` helper (the client no longer sends `updated_at`).
+- Added 4 indexes for the real query patterns: `food_concepts (user_id, name)`, `nutrition_vendors (user_id, display_order)`, and partial indexes on each `food_concept_links` FK for reverse lookups.
+- All identifiers `public.`-qualified.
+
+**Task 5 — seed migration:** wrapped in a `do $$ ... $$` block that resolves the owner once and **raises** if `auth.users` is empty (a silent zero-row seed would have surfaced much later as an empty screen), plus closing row-count notices. Seed data itself unchanged.
+
+**Task 6 — link backfill: the plan's SQL is superseded entirely.** Bidirectional substring containment mis-linked real products (`Butter Lettuce` → `Butter`; `Pasta Sauce` → `Pasta`). Replaced with three precise clauses: exact match; exact modulo a trailing plural (so `Banana` still matches `Bananas`); and **product name ends with the concept as its trailing head noun** (`Kerrygold Butter` ✓, `Butter Lettuce` ✗). No `LIKE` anywhere, which also removes the unescaped `%`/`_` hazard (`2% Milk`). Adds per-pair `raise notice` logging and a documented undo line. Known accepted residuals are documented in the file header.
+
+**New migration (not in the original plan) — `20260728100300_set_active_ramp_level_rpc.sql`:** `changeRampLevel` originally did two client writes plus a `profiles` write. A failure after the level swap left the active level and the owner's real daily targets **silently disagreeing**. Replaced with an atomic `set_active_ramp_level(uuid, date)` plpgsql function (`security invoker`, `search_path = ''`, revoke-then-grant), which also asserts the `profiles` row exists via `get diagnostics`.
+
+**Task 8 — query module:** `changeRampLevel(targetLevelId, todayLocalDate)` now delegates to that RPC; no client `updated_at`; `slugify` empty-result guard in create *and* update; slug recomputed on rename; extra parallel-fetch errors logged before throwing the first; `WeighIn` imported rather than re-declared.
+
+**Task 9 — sections:** added an explicit top-of-ramp banner — at Level 4 with a plateau the advance banner previously vanished silently. Inline styles moved into `styles.ts`.
+
+**Task 10 — `ConceptRow`:** added an unmount/collapse flush for the form note (the modal *unmounts* its children, so `onEndEditing` may never fire and typed text was silently lost) plus dirty-checks so no-op taps don't trigger a full refetch. Deliberately **no** `formNote` resync effect — writes are partial patches and rows are keyed by stable id, so a resync would only introduce a transient revert mid-typing.
+
+**Task 11 — container:** adapts to the RPC signature and the options-object `assessRampProgress`; `useCallback`-stabilized callbacks and `renderItem` so `ConceptRow`'s `React.memo` is actually effective; glyph legend in the Food Ratings header; header renders unconditionally with a **Retry** affordance (a load failure previously left an inescapable spinner on a full-screen modal with no iOS swipe-to-dismiss); silent resync after write failures to avoid stacked alerts; parallelized weigh-ins fetch; typed text preserved when an add fails. Optimistic local patching was explicitly rejected — server-as-truth is the invariant.
+
 **Deviations from spec (agreed rationale):**
 - Concept deletion is a destructive button inside the expanded row editor rather than swipe-to-delete (avoids nesting gesture handlers inside the screen's FlatList; same capability).
 - The concept list IS the screen's FlatList (ramp/constraints/vendors render via `ListHeaderComponent`) — nesting a FlatList inside a ScrollView is an RN anti-pattern.

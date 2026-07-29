@@ -114,7 +114,9 @@ Unique on `user_id`; exactly one row.
 
 Seeded levels: 1 Foundation 2300 kcal / 160 g P; 2 Momentum 2500 / 165; 3 Growth 2700 / 170; 4 Peak 2900 / 175. Level 1 is seeded active with `started_at = null`; **seeding does NOT write `profiles` targets** — the first write happens on the first user-confirmed level change in-app.
 
-**Level-change semantics:** confirm → set old level `is_active=false` → set new level `is_active=true`, `started_at=today` → write `target_calories`/`target_protein_g` (and carbs/fats when present) onto `profiles`. On partial failure, the client re-syncs from DB state and surfaces a named alert.
+**Level-change semantics:** confirm → set old level `is_active=false` → set new level `is_active=true`, `started_at=today` → write `target_calories`/`target_protein_g` (and carbs/fats when present) onto `profiles`.
+
+> **AMENDED during implementation.** Doing this as separate client writes meant a failure after the level swap left the active level and the owner's real daily targets **silently disagreeing** — the worst failure mode in this feature. It is now a single atomic Postgres function, `set_active_ramp_level(p_level_id uuid, p_today date)` (`security invoker`, `search_path = ''`), added by `supabase/migrations/20260728100300_set_active_ramp_level_rpc.sql`. A plpgsql body runs in one implicit transaction, so all three writes commit or none do; it also asserts a `profiles` row exists rather than succeeding vacuously. The client function is `changeRampLevel(targetLevelId, todayLocalDate)`.
 
 ## 6. Ramp progression math
 
