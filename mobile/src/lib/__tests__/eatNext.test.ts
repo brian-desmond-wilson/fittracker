@@ -1294,6 +1294,108 @@ describe("buildStockByMealId", () => {
   });
 });
 
+// Two builder paths that the round-1 tests left unexecuted. Both were found by
+// mutation, both survived the full 116-test run across this file and
+// stockState.test.ts, and both are ordinary production paths rather than edge
+// cases — the round-1 fixtures simply never drove them.
+describe("buildStockByMealId — paths the first round of tests never executed", () => {
+  const invRow = (o: Partial<AssemblabilityInventoryRow> = {}): AssemblabilityInventoryRow => ({
+    id: "inv1",
+    name: "Boost Very High Calorie",
+    barcode: null,
+    totalQuantity: 1,
+    conceptIds: [],
+    daysLeft: null,
+    ...o,
+  });
+  const libMeal = (
+    id: string,
+    items: Array<{ sf: string; name: string; barcode?: string }>,
+  ): StockAssessmentMeal => ({
+    id,
+    items: items.map((it) => ({
+      saved_food_id: `sf-${it.sf}`,
+      savedFood: { name: it.name, barcode: it.barcode ?? null },
+    })),
+  });
+  const conceptsFor = (entries: Array<[string, string[]]>) =>
+    new Map(entries.map(([sf, ids]) => [`sf-${sf}`, ids]));
+
+  // 🚩 Spec §9's flagship rescue: assemblable AND expiring. `expiringRank` only
+  // ever bites INSIDE `stockRank: 0` — `rank()` compares stock first, and its
+  // own comment scopes the tiebreak to "the meals you can make" — so if the
+  // builder never emits `{assemblable: true, expiringItemName: "…"}` the whole
+  // rescue feature is dead in production while every hand-written-map test in
+  // this file still passes. Round 1's field-mapping test only drove the
+  // `assemblable: false` branch (2 of its 3 items were missing).
+  // Kills: `expiringItemName: a.assemblable ? null : a.expiringItemName`,
+  // which left all 116 tests green.
+  it("assemblable AND expiring: the rescue signal survives a fully-resolved meal, and breaks the in-stock tie", () => {
+    const plain = scored({ category: "dinner", score: 95 });
+    const rescue = scored({ category: "dinner", score: 60 });
+    const stockByMealId = buildStockByMealId({
+      meals: [
+        libMeal(plain.meal.id, [{ sf: "oats", name: "Oats" }]),
+        libMeal(rescue.meal.id, [
+          { sf: "boost", name: "Boost" },
+          { sf: "rice", name: "Rice" },
+        ]),
+      ],
+      conceptIdsBySavedFoodId: conceptsFor([
+        ["oats", ["oats"]], ["boost", ["boost"]], ["rice", ["rice"]],
+      ]),
+      inventory: [
+        invRow({ id: "inv0", name: "Rolled Oats", conceptIds: ["oats"] }),
+        // Named unlike the meal item on purpose: pins that `expiringItemName`
+        // is read off the INVENTORY row, not the saved food.
+        invRow({ id: "inv1", name: "Kefir", conceptIds: ["boost"], daysLeft: 3 }),
+        invRow({ id: "inv2", name: "Sticky Rice", conceptIds: ["rice"] }),
+      ],
+    });
+    expect(stockByMealId.get(rescue.meal.id)).toEqual({
+      assemblable: true,
+      missingCount: 0,
+      expiringItemName: "Kefir",
+      expiringDaysLeft: 3,
+    });
+    // Both meals are stockRank 0, so `expiringRank` is the only term that can
+    // separate them — and it must beat a 35-point raw deficit.
+    const r = recommendEatNext({ ...input({}, [plain, rescue]), stockByMealId });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      rescue.meal.id, plain.meal.id,
+    ]);
+    expect(r.recommendations[0].reasons).toEqual([
+      "next: dinner", "in stock", "uses Kefir — expires in 3d",
+    ]);
+    expect(r.recommendations[1].reasons).toEqual(["next: dinner", "in stock"]);
+  });
+
+  // Barcode is TERMINAL and outranks concept matching regardless of stock
+  // (`inventoryResolution.ts`), and it is the dominant production path — saved
+  // foods scanned via OpenFoodFacts all carry one. Every round-1 fixture set
+  // `barcode: null` on both sides, so the builder's passthrough never ran.
+  // `conceptIds: []` on both the item and the row means ONLY the barcode can
+  // resolve this, so the assertion cannot pass by the concept route.
+  // Kills: `barcode: it.savedFood.barcode` → `barcode: null`, which left all
+  // 116 tests green.
+  it("passes the saved food's barcode through, so barcode-terminal matching still resolves", () => {
+    const m = scored({ category: "dinner" });
+    const stockByMealId = buildStockByMealId({
+      meals: [libMeal(m.meal.id, [
+        { sf: "boost", name: "Boost", barcode: "0123456789012" },
+      ])],
+      conceptIdsBySavedFoodId: conceptsFor([["boost", []]]),
+      inventory: [invRow({ barcode: "0123456789012", conceptIds: [] })],
+    });
+    expect(stockByMealId.get(m.meal.id)).toEqual({
+      assemblable: true,
+      missingCount: 0,
+      expiringItemName: null,
+      expiringDaysLeft: null,
+    });
+  });
+});
+
 // The OTHER half of Task 10's hand-off. `EatNextStockInfo` is an exported,
 // optional public input, so `{assemblable: false, missingCount: 0}` remains a
 // constructible value even though `buildStockByMealId` now refuses to produce
