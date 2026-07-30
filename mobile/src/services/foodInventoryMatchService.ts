@@ -34,6 +34,14 @@ export async function findInventoryMatchByBarcode(
       .select("id, name, brand, barcode, unit, storage_type, locations:food_inventory_locations(quantity)")
       .eq("user_id", user.id)
       .eq("barcode", barcode)
+      // Nothing stops two items sharing a barcode — food_inventory has only a
+      // plain index on it (20250209_extend_food_inventory.sql:28), and the
+      // edit screen does not dedupe. Without an ORDER BY the winner is
+      // arbitrary AND unstable: the consume RPC's resync UPDATE rewrites the
+      // tuple, which can move it in a heap scan. Oldest-first is at least
+      // deterministic, and it matters more now that duplicates project
+      // different totals.
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (error) {
@@ -41,16 +49,10 @@ export async function findInventoryMatchByBarcode(
       return null;
     }
     if (!data) return null;
-    // `Omit<…, "quantity">` rather than the whole interface: the select above
-    // deliberately does NOT fetch the legacy column, so a cast naming it would
-    // assert a field that is not there. Narrow but real payoff — it makes the
-    // projection below load-bearing: delete the `quantity:` line and this stops
-    // compiling (TS2741), whereas the un-Omitted cast would happily ship a row
-    // whose `quantity` is `undefined`. It buys nothing against a field ADDED to
-    // InventoryMatchSummary but forgotten in the select string: `Omit` would
-    // include it, the cast would assert it, and it would compile. A type
-    // assertion cannot police an opaque query string, and against an untyped
-    // supabase client nothing in tsc can — grep supabase/migrations/ instead.
+    // `Omit<…, "quantity">` because the select drops the legacy column. Buys:
+    // the projection is load-bearing — delete `quantity:` below and it stops
+    // compiling. Does not buy: a field added here but missing from the select
+    // string still compiles (no cast can catch that — grep the migrations).
     const { locations, ...rest } = data as Omit<
       InventoryMatchSummary,
       "quantity"

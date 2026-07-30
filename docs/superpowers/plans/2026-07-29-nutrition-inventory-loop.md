@@ -1117,6 +1117,14 @@ export async function findInventoryMatchByBarcode(
       .select("id, name, brand, barcode, unit, storage_type, locations:food_inventory_locations(quantity)")
       .eq("user_id", user.id)
       .eq("barcode", barcode)
+      // Nothing stops two items sharing a barcode — food_inventory has only a
+      // plain index on it (20250209_extend_food_inventory.sql:28), and the
+      // edit screen does not dedupe. Without an ORDER BY the winner is
+      // arbitrary AND unstable: the consume RPC's resync UPDATE rewrites the
+      // tuple, which can move it in a heap scan. Oldest-first is at least
+      // deterministic, and it matters more now that duplicates project
+      // different totals.
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (error) {
@@ -1124,16 +1132,10 @@ export async function findInventoryMatchByBarcode(
       return null;
     }
     if (!data) return null;
-    // `Omit<…, "quantity">` rather than the whole interface: the select above
-    // deliberately does NOT fetch the legacy column, so a cast naming it would
-    // assert a field that is not there. Narrow but real payoff — it makes the
-    // projection below load-bearing: delete the `quantity:` line and this stops
-    // compiling (TS2741), whereas the un-Omitted cast would happily ship a row
-    // whose `quantity` is `undefined`. It buys nothing against a field ADDED to
-    // InventoryMatchSummary but forgotten in the select string: `Omit` would
-    // include it, the cast would assert it, and it would compile. A type
-    // assertion cannot police an opaque query string, and against an untyped
-    // supabase client nothing in tsc can — grep supabase/migrations/ instead.
+    // `Omit<…, "quantity">` because the select drops the legacy column. Buys:
+    // the projection is load-bearing — delete `quantity:` below and it stops
+    // compiling. Does not buy: a field added here but missing from the select
+    // string still compiles (no cast can catch that — grep the migrations).
     const { locations, ...rest } = data as Omit<
       InventoryMatchSummary,
       "quantity"
@@ -1466,7 +1468,11 @@ git commit -m "feat(nutrition-os): Eat Next surfaces receive live stock signals"
 
 ### Task 11: Delete the dead client copies + comment cleanup sweep
 
-**Before starting, read the "Deliberately routed to Task 11" lists in "⚠️ Execution amendments"** (under `### Task 5` and `### Task 6`). They are this task's real backlog — the uncapped/unscrollable "Expiring soon" section, the duplicate-location restock rows, the two synthetic literals hand-writing the mirrors, the `expiration_date` sort key and `formatExpirationDate`'s UTC parse, the `location: null` vs `"pantry"` disagreement on single-location saves, and the four sibling numeric fields that still validate and write with mismatched parsers (a straight reuse of Task 6's `parseQuantityInput`). One item in the Task 6 list is explicitly **not** a Task 11 fix — the integer-vs-continuous-units schema question — and is recorded there as an open product decision only. The greps below are the mechanical half only.
+**Before starting, read the "Deliberately routed to Task 11" lists in "⚠️ Execution amendments"** (under `### Task 5`, `### Task 6` and `### Task 7`). They are this task's real backlog — the uncapped/unscrollable "Expiring soon" section, the duplicate-location restock rows, the two synthetic literals hand-writing the mirrors, the `expiration_date` sort key and `formatExpirationDate`'s UTC parse, the `location: null` vs `"pantry"` disagreement on single-location saves, and the four sibling numeric fields that still validate and write with mismatched parsers (a straight reuse of Task 6's `parseQuantityInput`). One item in the Task 6 list is explicitly **not** a Task 11 fix — the integer-vs-continuous-units schema question — and is recorded there as an open product decision only. The greps below are the mechanical half only.
+
+> **⚠️ Two comment-sweep boundaries, both from Task 7 — this task runs BEFORE Task 12 (apply).**
+> 1. **Do NOT remove the three "before Task 12's reconcile" hedges** (`foodInventoryMatchService.ts`'s two docstrings and `MealsScreen.tsx`'s refund-arming comment). They are **still true** when this sweep runs and only become false after the migration applies. **Task 13 Step 2b owns their removal** and names all three sites.
+> 2. The Phase 2 divergence comments this sweep might otherwise hunt for are **already updated by Task 7** — do not re-edit them.
 
 - [ ] **Step 1:** Grep for leftovers of the old projection and views:
 
@@ -1675,6 +1681,15 @@ commit;
 
 - [ ] **Step 1:** `cd mobile && npx tsc --noEmit && npm test` — all suites green (stockState + extended eatNext + all prior).
 - [ ] **Step 2 (owner, on device — Metro reload, free `--port`):** list/detail/edit show identical quantities for the same item; restock (both "from store" and location→location) updates instantly and survives refresh with both strata equal; "Use from pantry" now offered on the canary item; multi→single edit leaves exactly one location row (verify via detail view); expiring section lists the right items; Meal Library "In stock" badges + filter; MealDetail missing list; Eat Next top pick prefers an in-stock meal and names an expiring ingredient when applicable; log a meal consuming the canary → quantities drop coherently everywhere.
+
+  **Plus one check added by Task 7's review — the multi-location refund approximation.** On a multi-location item whose **ready row is empty** (so consume must take from a non-ready row), log a meal using it, then **Undo**. The unit comes back to the **ready** row, not the row it left — `20260729100100:96-98` documents this as the deliberate v1 approximation. Σ is conserved and nothing user-visible diverges, so this is a "see it once on real data" check, not a pass/fail gate. Record what you observe; if Σ is *not* conserved, that is a real bug and stops the sweep.
+
+- [ ] **Step 2b: Remove the pre-migration hedges (code, one commit).** Three comments describe the *pre-reconcile* world and become false the moment Task 12 applies. **Task 11's sweep runs BEFORE Task 12, so it must NOT remove them** (they are still true when it runs) — that is why they land here instead. Delete the "before Task 12's reconcile / zero-row item projects 0" qualifiers, keeping the surrounding statements, at exactly these three sites:
+  - `mobile/src/services/foodInventoryMatchService.ts` — the `findInventoryMatchByBarcode` docstring's "Pre-Task-12 note" paragraph (delete the paragraph entirely).
+  - `mobile/src/services/foodInventoryMatchService.ts` — `consumeOneInventoryUnit`'s docstring, the "Where the two still differ … unreachable from the barcode path" sentences. **Keep** the "callers MUST NOT infer / arm on outcome" guidance and the TOCTOU reason — those survive the migration.
+  - `mobile/src/components/track/MealsScreen.tsx` — the refund-arming comment's "Not yet identical, though … which is what makes it safe" sentences. **Keep** "arm on outcome, never on intent" and its reasons.
+
+  After the reconcile the plain claim ("the gate and the RPC read the same truth") is finally literally true, which is what these hedges were waiting on. Full context in "⚠️ Execution amendments → Task 7".
 - [ ] **Step 3 (owner):** Once **Task 13 Step 2's** on-device checklist is fully satisfied, drop the **Task 12 Step 2** snapshots — they are a recovery path, not a permanent table, and they hold a copy of the inventory:
 
 ```sql
@@ -1842,7 +1857,7 @@ Steps 1 and 2 landed as written except for the two spellings corrected in place 
 
 ### Task 7
 
-Landed as `3e2e56c` (implementation) + a second commit (review fixes + this amendment's corrections). Steps 1 and 2 went in essentially as written, with one correction to the plan's own code (the cast) and two additions to what it prescribed (a docstring paragraph, and a correction to Task 12's banner that this task caused). Spec review returned **"the shipped code is correct"** with four documentation-accuracy defects, all fixed in the second commit and listed below; no logic changed between the two. No database-connecting command was run at any point; every schema claim below is grep evidence from `supabase/migrations/`, not a live query. Gates on the final tree: `tsc --noEmit` 0 errors, 9 Jest suites / 231 tests green, no test file touched (this module does I/O — the suite covers pure TS libs only, by design).
+Landed as `3e2e56c` (implementation) + a second commit (spec-review fixes) + a third (quality-review fixes). Steps 1 and 2 went in essentially as written, with one correction to the plan's own code (the cast) and two additions to what it prescribed (a docstring paragraph, and a correction to Task 12's banner that this task caused). Spec review returned **"the shipped code is correct"** with four documentation-accuracy defects, all fixed in the second commit; quality review returned **"Ready to merge: Yes"** with four minor items, fixed in the third — of which only the `.order("created_at")` determinism fix changed behaviour. Both rounds are listed below. No database-connecting command was run at any point; every schema claim below is grep evidence from `supabase/migrations/`, not a live query. Gates on the final tree: `tsc --noEmit` 0 errors, 9 Jest suites / 231 tests green, no test file touched (this module does I/O — the suite covers pure TS libs only, by design).
 
 **Embed verified against the FK, not assumed.** `locations:food_inventory_locations(quantity)` resolves through `food_inventory_locations.food_inventory_id UUID NOT NULL REFERENCES public.food_inventory(id) ON DELETE CASCADE` (`20250217000003_add_multi_location_inventory.sql:13`). It is the **only** FK between that pair — the table's other FK is `user_id → auth.users(id)` (`:14`), and the two later migrations that reference `public.food_inventory` do so from *different* tables (`20250209_extend_food_inventory.sql:76`, `20260728100000_nutrition_preference_schema.sql:24`), which cannot make this embed ambiguous. The Phase 4 migration adds no FK. So PostgREST has exactly one relationship to pick and the alias cannot misresolve. Independently, the identical string already ships and works against prod in `mealLibrary.ts:52` — same table, same alias, same embedded column — so this is a copy of a proven idiom rather than a new spelling.
 
@@ -1877,6 +1892,19 @@ The rest of the `inventoryMatch` surface reads other fields only: `.id` (`MealsS
 - **FIX 2 — the self-correction had landed only in the least-read place.** The amendment said the `Omit` gives no protection against a field added to the interface but missing from the select; the **code comment and the plan fence still claimed it did**. The reviewer ran the probe I had not: adding `future_field_probe: string` to `InventoryMatchSummary` and leaving the select alone gives `tsc` exit 0. Both the comment (`foodInventoryMatchService.ts`) and the fence in Step 1 above are rewritten to the narrower true claim — the `Omit` makes the projection load-bearing, and nothing in `tsc` can police an opaque query string. Correcting the record in the amendment while shipping the overclaim in the source is the wrong half to fix.
 - **FIX 3 — only one of the two comments was actually hedged.** The service docstring carried the pre-Task-12 qualifier; `MealsScreen.tsx`'s said flatly that the gate and the RPC "now read the same truth", which is untrue for zero-row items today — while this amendment claimed both were hedged. The MealsScreen comment now carries the same one-directional qualifier. Its operative guidance ("arm on outcome, never on intent") was correct and is unchanged.
 - **FIX 4 — SPEC DEFECT, now recorded.** Spec §7's second bullet still specified `(quantity, is_ready_to_consume)` and `totalQuantity` "from the shared projection". The first report noted the tradeoff but framed it as "the plan is right here" without naming that it *conflicts with the spec*, leaving the spec disagreeing with prod code with nothing on record. Adjudicated **plan right, spec wrong**, on a stronger ground than the payload argument I gave: **spec §7 is internally incoherent** — its own column list cannot construct a `projectItemStock` call (`stockState.ts:55-59` needs a full `StockItemInput` plus `id`/`location` per row, none of which §7 fetches), and the projection's `totalQuantity` is byte-identical to the inline reduce (`stockState.ts:60`), so it specifies extra I/O for zero behavioral difference. `docs/superpowers/specs/2026-07-29-nutrition-inventory-loop-design.md` §7 is amended to `(quantity)` + inline Σ, corrected in place with a dated italic note — matching the post-hoc-correction convention the Phase 3 spec already uses (e.g. its §5.2/§6/§8.1 notes), including that convention's rule of folding the correction into the normative block rather than leaving a stale block under a correcting note. **First spec edit of this phase.**
+
+**Quality-review fixes (third commit) — "Ready to merge: Yes"; four minor items, one of them a real correctness improvement.**
+
+- **The review proved the one-directional claim outright, rather than by trace.** `food_inventory_locations.quantity` carries `CHECK (quantity >= 0)` (`20250217000003:16`), so `Σ > 0` implies at least one strictly-positive row; and the consume RPC filters on `l.quantity > 0` **alone**, using `is_ready_to_consume` only as an `ORDER BY` tiebreak, never as a filter (`20260729100100:43-49`). Therefore whenever the gate is on, the RPC has something to take — the gate is *never* optimistic relative to the RPC, not merely "conservative in the cases traced". **This also retroactively justifies dropping `is_ready_to_consume` from the select**: spec §7 originally asked for it, and including it would have been an active error, since a ready-only Σ would *under*-count what the RPC will actually consume.
+- **FIX 1 — the barcode match was non-deterministic, and Task 7 raised the stakes.** `.limit(1).maybeSingle()` had no `ORDER BY`. There is **no** unique constraint on `food_inventory(user_id, barcode)` — only a plain index (`20250209_extend_food_inventory.sql:28`; the partial unique index at `20251229000000_saved_foods.sql:26-28` is on `saved_foods`, a different table) — and `EditFoodScreen.tsx:561-569` inserts with no barcode dedupe, so duplicates are reachable. The winner was not just arbitrary but **unstable across calls**: the consume RPC's resync `UPDATE` (`20260729100100:57-62`) rewrites the `food_inventory` tuple, which can move it in a heap scan. Pre-existing, but this task sharpens it — two duplicates now project two *different* totals, so the arbitrary pick decides what the pantry toggle says. **Fix:** `.order("created_at", { ascending: true })`. Column verified present before use: `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` at `20250206_tracking_tables.sql:17`, re-declared identically at `20250208_complete_tracking_schema.sql:87`, with no `DROP COLUMN`/`RENAME COLUMN` against it anywhere in the tree. Oldest-first is a deterministic choice, not a *correct* one — the real fix is a unique constraint or a merge flow, which is a schema question and therefore a future phase.
+- **FIX 2 — the pre-migration hedges had no scheduled removal.** All three ("before Task 12's reconcile…") would have gone stale silently: **Task 11's comment sweep runs before Task 12**, so it correctly must not touch them, and Task 13 had no comment step at all. **Added Task 13 Step 2b**, naming all three sites and what to keep versus delete, plus a boundary note at the top of Task 11 telling the sweep to leave them alone. Sequencing hazard, not a code defect.
+- **FIX 3 — the cast comment was longer than the function's logic.** Ten lines reproducing this amendment nearly verbatim, in a file already carrying a 14-line docstring on `consumeOneInventoryUnit`. Trimmed to four: what `Omit` buys, what it does not, and "grep the migrations". The hedged divergence docstrings were left alone — they are load-bearing and Task 13 Step 2b is what retires them. The plan fence above was trimmed in lockstep and re-verified byte-identical.
+
+**Deliberately routed to Task 11 rather than fixed here:**
+
+- **`storage_type` is fetched and read by nobody.** It is declared on `InventoryMatchSummary` (`foodInventoryMatchService.ts:10`) and selected (`:34`), but `grep -rn "inventoryMatch.storage_type\|match.storage_type" mobile/src mobile/app` returns **zero hits**. Pre-existing dead payload, not introduced here — Task 7 merely rewrote the select around it and deliberately did not widen its own scope to drop a field. Removing it means touching the interface and the select together.
+
+**Found here, deliberately NOT absorbed — tracked outside this phase.** The review surfaced an Important pre-existing defect: **deleting a logged meal never refunds the consumed unit**, and `meal_logs.inventory_items` is written from `willUseInventory` *before* `consumeOneInventoryUnit` runs (`MealsScreen.tsx:568-570` vs `:604-606`) — so the row persists **intent, not outcome**, which makes a §11-safe delete-refund impossible until the actual outcome is persisted. Dates from Phase 2 and is owned by no task in this plan or spec. Task 7 makes it **newly reachable for the stale-zero-cache class**: an item with a `0` legacy cache but stocked location rows (the §1 canary shape) previously failed the gate and so was never consumed, and now it is. The coordinator has tracked it as separate work; recorded here so the record shows it was seen and consciously left rather than missed.
 
 **Task 12's banner needed a correction, and this task caused it.** The banner asserted "What still works meanwhile: **consumption** … so logging meals is fine. The breakage is display and edit-save only." That was accurate when written and is now too broad: Task 7 removed the legacy fallback from the barcode gate, so for a zero-row item the "Use from pantry" toggle is off and disabled where it previously worked off the cache. **Assessment: a real pre-gate functional gap, not covered by the existing banners, but not a data hazard** — the meal still logs in full, nothing is written to the item, and no stock is destroyed, which puts it in a different class from the edit-save warning it now sits beside. It needs no operator action beyond awareness and it closes wholesale when section A seeds the canonical rows. The banner now distinguishes the Meal Library path (still falls back, still decrements) from the barcode path (no longer does), and the sequencing recommendation gains one more argument. Recorded rather than "fixed" in code: restoring a legacy fallback here would re-arm precisely the divergence Task 7 exists to close.
 
