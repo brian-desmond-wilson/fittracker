@@ -107,8 +107,9 @@ const toMinutes = (t: string) => {
  * `details` and `hint` are folded in, not just `message` + `code`: for the
  * 42703 class this whole hook guards against, `hint` carries PostgREST's
  * "Perhaps you meant to reference the column …", which is the single most
- * actionable line — and the surfaced `Error` is what gets read off a screen
- * and relayed, while the raw object only reaches a console nobody is watching.
+ * actionable line. Note the audience today is the console and any future
+ * consumer that reads `error.message` — Task 8's card renders a fixed string
+ * and never reads it, so this is not currently surfaced on screen.
  */
 function toError(e: unknown): Error {
   if (e instanceof Error) return e;
