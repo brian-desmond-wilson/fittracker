@@ -29,6 +29,7 @@ import {
   cancelAllEatNudges,
   sendTestEatNudge,
 } from "@/src/services/eatNudgeService";
+import { requestPermissions } from "@/src/services/notificationService";
 import { MealType } from "@/src/types/track";
 
 const MEAL_TYPE_OPTIONS: MealType[] = [
@@ -419,7 +420,35 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
         Alert.alert("Failed to save", error.message);
         return;
       }
-      if (!value) await cancelAllEatNudges(); // off = no pending nudge survives
+      if (value) {
+        // Turning ON: request permission now, at the gesture, mirroring
+        // persistMeals (:284-298) — this is the one place a denial has to
+        // be caught, since syncEatNudge's own resyncs run in the background
+        // on every load/write with no gesture to alert from and stay silent
+        // on purpose (see its doc comment in eatNudgeService.ts).
+        const granted = await requestPermissions();
+        if (!granted) {
+          Alert.alert(
+            "Notifications Disabled",
+            "Enable notifications for FitTracker in Settings to receive pace nudges.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ]
+          );
+          await supabase
+            .from("profiles")
+            .update({ eat_nudges_enabled: false })
+            .eq("id", user.id);
+          setEatNudges(false);
+        }
+      } else {
+        await cancelAllEatNudges(); // off = no pending nudge survives
+      }
+    } catch (error) {
+      console.error("Saving pace nudge settings failed:", error);
+      setEatNudges(!value);
+      Alert.alert("Error", "Failed to save pace nudge settings");
     } finally {
       setEatNudgesSaving(false);
     }
