@@ -12,6 +12,7 @@ import {
 } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
+import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import {
   computeMealTotals, createMeal, createUserLink, deleteMeal,
   fetchDayCalories, fetchMealLibrary, logMeal, MealLoggedButDecrementFailed,
@@ -52,6 +53,7 @@ export function MealLibraryModal({
   const [loadFailed, setLoadFailed] = useState(false);
   const [view, setView] = useState<View_>({ mode: "list" });
   const [busy, setBusy] = useState(false);
+  const [inStockOnly, setInStockOnly] = useState(false);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
@@ -165,10 +167,41 @@ export function MealLibraryModal({
     return map;
   }, [data]);
 
+  // Same shape and lifetime as `scores`/`totalsById` above, for the same
+  // reason: MealRow is React.memo'd, so it must receive an object whose
+  // identity is stable between renders. Recomputing per renderItem call would
+  // hand it a fresh object every time and defeat the memo.
+  const assemblabilityById = useMemo(() => {
+    const map = new Map<string, MealAssemblability>();
+    if (!data) return map;
+    for (const meal of data.meals) {
+      map.set(
+        meal.id,
+        assessAssemblability({
+          items: meal.items.map((it) => ({
+            savedFoodId: it.saved_food_id,
+            name: it.savedFood.name,
+            barcode: it.savedFood.barcode,
+            conceptIds: data.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+          })),
+          inventory: data.inventory,
+        }),
+      );
+    }
+    return map;
+  }, [data]);
+
   const sections = useMemo(() => {
     if (!data) return [];
     return CATEGORY_SECTION_ORDER.map((category) => {
       let meals = data.meals.filter((m) => m.category === category);
+      // Composes with the category split rather than replacing it: each
+      // section is narrowed in place, and `.filter((s) => s.data.length > 0)`
+      // below then drops any section left empty — so a category with no
+      // makeable meal disappears instead of rendering a bare header.
+      if (inStockOnly) {
+        meals = meals.filter((m) => assemblabilityById.get(m.id)?.assemblable);
+      }
       if (category === "emergency") {
         // Biggest rescue first (spec §9.1).
         meals = [...meals].sort(
@@ -178,7 +211,7 @@ export function MealLibraryModal({
       }
       return { category, data: meals };
     }).filter((s) => s.data.length > 0);
-  }, [data]);
+  }, [data, inStockOnly, assemblabilityById]);
 
   const remaining =
     data?.targetCalories != null && dayCalories != null
@@ -324,11 +357,12 @@ export function MealLibraryModal({
           meal={item}
           totals={totals}
           score={score}
+          assemblability={assemblabilityById.get(item.id)}
           onPress={handleOpenDetail}
         />
       );
     },
-    [scores, totalsById, handleOpenDetail],
+    [scores, totalsById, assemblabilityById, handleOpenDetail],
   );
 
   const detailMeal =
@@ -360,6 +394,7 @@ export function MealLibraryModal({
         meal={detailMeal}
         totals={computeMealTotals(detailMeal.items)}
         score={scores.get(detailMeal.id)!}
+        assemblability={assemblabilityById.get(detailMeal.id)}
         logging={busy}
         onLog={handleLog}
         onEdit={(m) => setView({ mode: "builder", mealId: m.id })}
@@ -373,6 +408,7 @@ export function MealLibraryModal({
         savedFoods={savedFoods}
         conceptsById={data.conceptsById}
         conceptIdsBySavedFoodId={data.conceptIdsBySavedFoodId}
+        inventory={data.inventory}
         saving={busy}
         onSave={handleSave}
         onQuickLink={handleQuickLink}
@@ -403,8 +439,15 @@ export function MealLibraryModal({
           </View>
         )}
         ListEmptyComponent={
+          // The filter must never strand the user in front of an empty list
+          // that reads as "you have no meals". `sections` drops empty
+          // sections, so an over-narrow filter yields [] exactly like an empty
+          // library — the two cases have to say different things, and the
+          // filtered one has to name the way out.
           <Text style={[lib.mutedText, { padding: 24, textAlign: "center" }]}>
-            No meals yet — add your first one.
+            {inStockOnly
+              ? "No meals you can make from what's in stock. Tap “In stock only” again to see everything."
+              : "No meals yet — add your first one."}
           </Text>
         }
       />
@@ -443,6 +486,21 @@ export function MealLibraryModal({
             <Text style={lib.headerAction}>Done</Text>
           </TouchableOpacity>
         </View>
+        {/* Filter bar, list mode only. Kept OUT of the scrolling SectionList
+            so it can't scroll away while it is hiding rows — the state that
+            most needs to stay visible is the one that shortens the list. */}
+        {view.mode === "list" && data && (
+          <View style={lib.filterBar}>
+            <TouchableOpacity
+              style={[lib.chip, { marginBottom: 0 }, inStockOnly && lib.chipActive]}
+              onPress={() => setInStockOnly((v) => !v)}
+            >
+              <Text style={[lib.chipText, inStockOnly && lib.chipTextActive]}>
+                In stock only
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {body}
       </View>
     </Modal>

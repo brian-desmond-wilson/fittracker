@@ -2,6 +2,8 @@
 // Data access for Nutrition OS Phase 2 (house pattern: domain query module).
 import { supabase } from "../supabase";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
+import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
+import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
 import type { FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
@@ -23,9 +25,12 @@ export interface ConceptLinkRow {
 
 interface InventoryRowRaw {
   id: string;
+  name: string;
   barcode: string | null;
+  /** Legacy cache. Selected but NEVER read — see the mapping below. */
   quantity: number;
-  locations: Array<{ quantity: number }>;
+  expiration_date: string | null;
+  locations: Array<{ quantity: number; is_ready_to_consume: boolean }>;
 }
 
 export interface MealLibraryData {
@@ -33,7 +38,10 @@ export interface MealLibraryData {
   conceptsById: Map<string, FoodConcept>;
   /** saved_food_id -> concept ids (a food can carry several links). */
   conceptIdsBySavedFoodId: Map<string, string[]>;
-  inventory: ResolutionInventoryRow[];
+  /** Widened from `ResolutionInventoryRow[]` in Phase 4 Task 8 — additive
+   *  (`AssemblabilityInventoryRow extends ResolutionInventoryRow`), so
+   *  resolution-only consumers such as `logMeal` are unaffected. */
+  inventory: AssemblabilityInventoryRow[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
 }
@@ -49,7 +57,7 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     supabase.from("food_concept_links").select("*"),
     supabase
       .from("food_inventory")
-      .select("id, barcode, quantity, locations:food_inventory_locations(quantity)"),
+      .select("id, name, barcode, quantity, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -97,17 +105,43 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
   }
 
   const invRows = (inventory.data ?? []) as unknown as InventoryRowRaw[];
-  const resolutionInventory: ResolutionInventoryRow[] = invRows.map((r) => ({
-    id: r.id,
-    barcode: r.barcode,
-    // Location rows are the live stock model; location-less rows fall back
-    // to the legacy quantity column (mirrors the consume RPC's policy).
-    totalQuantity:
-      r.locations.length > 0
-        ? r.locations.reduce((s, l) => s + l.quantity, 0)
-        : r.quantity,
-    conceptIds: conceptIdsByInventoryId.get(r.id) ?? [],
-  }));
+  // ONE clock for the whole map: `getLocalDateString()` inside the callback
+  // would sample a fresh `new Date()` per row and could straddle local
+  // midnight mid-list, banding two items against different "today"s.
+  const todayLocalDate = getLocalDateString();
+  // Location rows are the ONLY quantity truth (spec §5.1). The legacy
+  // `r.quantity` fallback this replaced is gone deliberately — it is the
+  // divergence Phase 4 exists to close, and restoring it would re-arm it.
+  // ⚠️ Until the Phase 4 reconcile runs (Task 12), most single-location items
+  // have zero location rows and therefore project 0 here: they read as
+  // out-of-stock in the library and are NOT decremented on log. Non-
+  // destructive and it closes wholesale when section A seeds the rows.
+  const resolutionInventory: AssemblabilityInventoryRow[] = invRows.map((r) => {
+    const state = projectItemStock({
+      // Synthetic item: only `expiration_date` participates in what this call
+      // site reads (`totalQuantity`, `daysLeft`). The thresholds and
+      // `storage_type` drive isLow/needsFridgeRestock, which nothing here
+      // consumes — see the null-storage_type note in `projectItemStock`.
+      item: {
+        storage_type: null,
+        restock_threshold: null,
+        fridge_restock_threshold: null,
+        total_restock_threshold: null,
+        requires_refrigeration: null,
+        expiration_date: r.expiration_date,
+      },
+      locations: r.locations,
+      todayLocalDate,
+    });
+    return {
+      id: r.id,
+      name: r.name,
+      barcode: r.barcode,
+      totalQuantity: state.totalQuantity,
+      daysLeft: state.daysLeft,
+      conceptIds: conceptIdsByInventoryId.get(r.id) ?? [],
+    };
+  });
 
   return {
     meals: ((meals.data ?? []) as Meal[]).map((m) => ({

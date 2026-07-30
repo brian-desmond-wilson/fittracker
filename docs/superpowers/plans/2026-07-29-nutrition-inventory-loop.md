@@ -1184,16 +1184,17 @@ git commit -m "fix(nutrition-os): pantry gate reads projected stock, closing the
       .select("id, name, barcode, quantity, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
 ```
 
-and the mapping to produce `AssemblabilityInventoryRow[]` (type change on `MealLibraryData.inventory` — additive for existing consumers):
+and the mapping to produce `AssemblabilityInventoryRow[]` (type change on `MealLibraryData.inventory` — additive for existing consumers). **Updated in place to the landed code** — the synthetic-row fabrication is gone (Task 1's deferred `Pick<>` widening was taken here) and the clock is hoisted out of the callback; see "⚠️ Execution amendments → Task 8":
 
 ```ts
+  const todayLocalDate = getLocalDateString();
   const resolutionInventory: AssemblabilityInventoryRow[] = invRows.map((r) => {
     const state = projectItemStock({
       item: { storage_type: null, restock_threshold: null, fridge_restock_threshold: null,
               total_restock_threshold: null, requires_refrigeration: null,
               expiration_date: r.expiration_date },
-      locations: r.locations.map((l, i) => ({ id: String(i), location: "", ...l })),
-      todayLocalDate: getLocalDateString(),
+      locations: r.locations,
+      todayLocalDate,
     });
     return {
       id: r.id,
@@ -1207,6 +1208,8 @@ and the mapping to produce `AssemblabilityInventoryRow[]` (type change on `MealL
 ```
 
 (The location-less legacy fallback disappears deliberately — post-reconcile every item has rows; imports: `projectItemStock`, `AssemblabilityInventoryRow` from `../stockState`, `getLocalDateString`.) Update the `InventoryRowRaw` interface to include `name`, `expiration_date`, and `is_ready_to_consume` on locations.
+
+> **🚨 Pre-migration consequence the plan did not price in — removing this fallback also stops meal logging from decrementing stock.** Not just badges. `logMeal` resolves through this same array, and `resolveInventoryMatches` drops every row with `totalQuantity === 0` (including on the *terminal barcode* branch, `inventoryResolution.ts:43`), so a zero-location-row item is never in `matches`, never in `requestedIds`, and `consume_inventory_units` is never called for it — its legacy `else` branch (`20260729100100:66-70`) becomes unreachable from this path. Per Task 6's Finding A that class is most of the single-location pantry. **Correct anyway, and the fallback must NOT be restored** — it is the divergence Phase 4 closes, and section A fixes the class wholesale. Task 12's banner is updated to say so. Full trace in "⚠️ Execution amendments → Task 8".
 
 - [ ] **Step 2: Container map** — in `MealLibraryModal`, alongside the `scores`/`totalsById` memos, add:
 
@@ -1229,7 +1232,7 @@ and the mapping to produce `AssemblabilityInventoryRow[]` (type change on `MealL
   }, [data]);
 ```
 
-plus an `inStockOnly` boolean state toggled by a header chip ("In stock only"); when on, section data filters to `assemblabilityById.get(m.id)?.assemblable`. Pass `assemblability={assemblabilityById.get(item.id)}` into `MealRow` (stable object from the memo — keeps the memo contract) and into `MealDetail`; pass `inventory={data.inventory}` into `MealBuilder` (it already receives `conceptIdsBySavedFoodId`).
+plus an `inStockOnly` boolean state toggled by a header chip ("In stock only"); when on, section data filters to `assemblabilityById.get(m.id)?.assemblable`. **The chip landed as a filter bar row between the header and `body`, list mode only** — the three-slot header (`＋ New` / title / `Done`) has no room, and a chip inside the `SectionList` would scroll away while still hiding rows. **`ListEmptyComponent` is now conditional on `inStockOnly`** — `sections` drops empty sections, so an over-narrow filter produces the same `[]` as an empty library and would otherwise tell the user "No meals yet — add your first one." Pass `assemblability={assemblabilityById.get(item.id)}` into `MealRow` (stable object from the memo — keeps the memo contract) and into `MealDetail`; pass `inventory={data.inventory}` into `MealBuilder` (it already receives `conceptIdsBySavedFoodId`).
 
 - [ ] **Step 3: Surface rendering**
 
@@ -1237,8 +1240,8 @@ plus an `inStockOnly` boolean state toggled by a header chip ("In stock only"); 
 
 ```tsx
         {assemblability?.assemblable && (
-          <View style={[lib.badge, { backgroundColor: "rgba(34,197,94,0.15)" }]}>
-            <Text style={[lib.badgeText, { color: "#22C55E" }]}>In stock</Text>
+          <View style={[lib.badge, lib.inStockBadge]}>
+            <Text style={[lib.badgeText, lib.inStockBadgeText]}>In stock</Text>
           </View>
         )}
 ```
@@ -1252,11 +1255,16 @@ plus an `inStockOnly` boolean state toggled by a header chip ("In stock only"); 
           </Text>
         )}
         {assemblability?.expiringItemName && (
-          <Text style={[lib.smallMuted, { marginTop: 4, color: "#F59E0B" }]}>
-            Uses {assemblability.expiringItemName} — expires in {assemblability.expiringDaysLeft}d
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 4 }]}>
+            Uses {assemblability.expiringItemName} —{" "}
+            {assemblability.expiringDaysLeft === 0
+              ? "expires today"
+              : `expires in ${assemblability.expiringDaysLeft}d`}
           </Text>
         )}
 ```
+
+(The `expiringDaysLeft === 0` branch is a **correction to the plan's copy**, flagged by Task 2's review: day 0 is a *retained* rescue case, so `expires in 0d` was reachable, not hypothetical. The inline colors also moved into named `styles.ts` entries. See "⚠️ Execution amendments → Task 8".)
 
 `MealBuilder` — new optional props `inventory?: AssemblabilityInventoryRow[]` + reuse of `conceptIdsBySavedFoodId` it already has; per item row, a leading dot:
 
@@ -1271,15 +1279,17 @@ plus an `inStockOnly` boolean state toggled by a header chip ("In stock only"); 
                 : null;
 ```
 
-rendered as `●` colored `#22C55E` when true / `#6B7280` when false, `null` renders nothing.
+rendered as `●` colored `#22C55E` when true / `#6B7280` when false, `null` renders nothing. (Landed as a nested inline `<Text>` with the trailing space inside the literal — margins on inline nested `Text` are unreliable on iOS, and a third sibling would break the row's `space-between` layout.)
 
 - [ ] **Step 4: Verify + commit**
 
 ```bash
 cd mobile && npx tsc --noEmit && npm test
-git add mobile/src/lib/supabase/mealLibrary.ts mobile/src/components/track/meals/library/
+git add mobile/src/lib/stockState.ts mobile/src/lib/supabase/mealLibrary.ts mobile/src/components/track/meals/library/
 git commit -m "feat(nutrition-os): in-stock badge/filter, missing list, builder availability dots"
 ```
+
+(`stockState.ts` added to the `git add` line: the `Pick<>` widening Task 1 deferred here lives there and is compile-forced for the fabrication-free mapping above. The plan doc is staged too — house rule #4.)
 
 ---
 
@@ -1471,7 +1481,7 @@ git commit -m "feat(nutrition-os): Eat Next surfaces receive live stock signals"
 **Before starting, read the "Deliberately routed to Task 11" lists in "⚠️ Execution amendments"** (under `### Task 5`, `### Task 6` and `### Task 7`). They are this task's real backlog — the uncapped/unscrollable "Expiring soon" section, the duplicate-location restock rows, the two synthetic literals hand-writing the mirrors, the `expiration_date` sort key and `formatExpirationDate`'s UTC parse, the `location: null` vs `"pantry"` disagreement on single-location saves, and the four sibling numeric fields that still validate and write with mismatched parsers (a straight reuse of Task 6's `parseQuantityInput`). One item in the Task 6 list is explicitly **not** a Task 11 fix — the integer-vs-continuous-units schema question — and is recorded there as an open product decision only. The greps below are the mechanical half only.
 
 > **⚠️ Two comment-sweep boundaries, both from Task 7 — this task runs BEFORE Task 12 (apply).**
-> 1. **Do NOT remove the three "before Task 12's reconcile" hedges** (`foodInventoryMatchService.ts`'s two docstrings and `MealsScreen.tsx`'s refund-arming comment). They are **still true** when this sweep runs and only become false after the migration applies. **Task 13 Step 2b owns their removal** and names all three sites.
+> 1. **Do NOT remove the four "before Task 12's reconcile" hedges** (`foodInventoryMatchService.ts`'s two docstrings, `MealsScreen.tsx`'s refund-arming comment, and — added by Task 8 — the `⚠️ Until the Phase 4 reconcile runs` paragraph in `mealLibrary.ts`'s `fetchMealLibrary`). They are **still true** when this sweep runs and only become false after the migration applies. **Task 13 Step 2b owns their removal** and names all four sites.
 > 2. The Phase 2 divergence comments this sweep might otherwise hunt for are **already updated by Task 7** — do not re-edit them.
 
 - [ ] **Step 1:** Grep for leftovers of the old projection and views:
@@ -1504,9 +1514,13 @@ git commit -m "chore(nutrition-os): remove last storage_type quantity branches"
 >
 > Almost certainly **most single-location items have zero location rows today** (evidence in "⚠️ Execution amendments → Task 6": the Feb-2025 backfill only seeded items with `location IS NOT NULL`, and every app write path since gated location-row creation on `storage_type === 'multi-location'`). Task 5 made every reader project Σ location rows, so those items already render **`Qty: 0` / out of stock** in the grid, the detail view and the edit screen. Task 6 then makes a save write what the screen shows: one location row at `0`, plus `fi.quantity` resynced to `0`. **The legacy number is the only copy, and the save overwrites it.** There is no undo short of the Step 2 snapshot, which does not exist yet at that point.
 >
-> What still works meanwhile: **consumption via the Meal Library**. `mealLibrary.ts:105-108` falls back to `r.quantity` when an item has no location rows, and `consume_inventory_units` takes its legacy branch for the same reason — so logging a meal from the library still decrements a zero-row item. Logging a meal is never blocked on either path.
+> ~~What still works meanwhile: **consumption via the Meal Library**. `mealLibrary.ts:105-108` falls back to `r.quantity` when an item has no location rows, and `consume_inventory_units` takes its legacy branch for the same reason — so logging a meal from the library still decrements a zero-row item.~~ **No longer true as of Task 8 — see the second narrowing below.** What remains true unconditionally: **logging a meal is never blocked on either path**, and no meal-logging path writes anything destructive to an item.
 >
 > **⚠️ Narrowed by Task 7 — the barcode path no longer participates.** `findInventoryMatchByBarcode` used to gate "Use from pantry" on `food_inventory.quantity`; as of Task 7 it projects Σ location rows with **no legacy fallback** (deliberately — the fallback is the divergence this phase removes). So for a zero-row item, scanning its barcode now shows the pantry toggle **off and disabled**, where before the gate it read the cache and worked — and the line beside it (`FoodPreviewModal.tsx:387`) reads **"0 {unit} · {name}"**, since that string renders the same projected number the gate uses. Both halves are the same one-line change and both revert to normal when section A seeds the rows. Conversely, the §1 canary (legacy `0` / locations `60`) now reads **"60 …"** with a working toggle, which is the defect this task fixes. Non-destructive: the meal still logs in full, the item's stock is simply not decremented, and nothing is overwritten — so unlike the edit-save hazard above there is no data to lose and no need to avoid the flow. It is a *functional* gap for the exposure window, and it closes wholesale the moment section A seeds the canonical rows. One more reason the sequencing note at the end of this task matters: this widens the pre-gate cost from "display and edit-save" to "display, edit-save, and barcode-path pantry decrements".
+>
+> **⚠️ Narrowed again by Task 8 — the Meal Library path no longer participates either, and NO decrement path is left for a zero-row item.** Task 8 removed `mealLibrary.ts`'s `r.locations.length > 0 ? … : r.quantity` fallback, so `fetchMealLibrary` now projects Σ location rows with no fallback — exactly like Task 7 did to the barcode path, and for the same reason. Trace: a zero-row item gets `totalQuantity: 0` → `resolveInventoryMatches` drops it (`inventoryResolution.ts:43` gates even the *terminal barcode* branch on `> 0`, and `:33` excludes it from the concept candidates) → its id is never in `matches`, so never in `requestedIds` (`mealLibrary.ts`, `logMeal`) → **`consume_inventory_units` is never called for it**, and the legacy `else` branch that used to decrement `fi.quantity` (`20260729100100:66-70`) is now unreachable from every app path. User-visible: no "In stock" badge and the item appears in MealDetail's `Missing:` list; the meal still logs in full, with `uses_inventory: false` on the row.
+>
+> **Assessment — the largest pre-gate functional gap of the phase, but still not a data hazard.** Nothing is written to the item, nothing is overwritten, and the log itself is complete and correct. **But it is not merely cosmetic like the barcode narrowing:** before Task 8 a meal logged from the library *did* take a unit off `fi.quantity`, and that decrement was preserved by the reconcile (section A seeds the canonical row **from** `fi.quantity`). Now those consumptions are not recorded anywhere, so **every unit eaten between this bundle landing and the apply is invisible to section A** — the reconcile will seed each affected item at a stale, too-high number, and the owner's pantry will over-report by exactly the units consumed in the window. Nothing detects or corrects that afterwards. It is a *silent, accumulating, un-auditable* count drift, unlike the barcode gap which simply did nothing. **Restoring the fallback is still the wrong fix** — it re-arms the divergence Phase 4 exists to close, and the drift is bounded by elapsed time whereas the divergence is permanent. **The right fix is to shorten the window**: this is now the strongest of the three arguments for the sequencing recommendation at the end of this task. Pre-gate cost is now "display, edit-save, barcode-path decrements, **and Meal-Library decrements**" — i.e. **no inventory decrement happens at all** for zero-row items until section A runs. If the window has been long, expect to correct a few quantities by hand after the apply.
 >
 > **The fix is this migration.** Spec §6.1(3) — in the file, **section A** (`20260730100000:40-61`), which loops over *every* single-location item, not only ones with rows: for a zero-row item the `loc_total > quantity` guard passes trivially (`0 > n` is false), the `delete` is a no-op, and it inserts one canonical row at `fi.quantity` / `coalesce(fi.location,'pantry')`. Wholesale, for the entire class. Nothing needs doing by hand.
 >
@@ -1684,10 +1698,11 @@ commit;
 
   **Plus one check added by Task 7's review — the multi-location refund approximation.** On a multi-location item whose **ready row is empty** (so consume must take from a non-ready row), log a meal using it, then **Undo**. The unit comes back to the **ready** row, not the row it left — `20260729100100:96-98` documents this as the deliberate v1 approximation. Σ is conserved and nothing user-visible diverges, so this is a "see it once on real data" check, not a pass/fail gate. Record what you observe; if Σ is *not* conserved, that is a real bug and stops the sweep.
 
-- [ ] **Step 2b: Remove the pre-migration hedges (code, one commit).** Three comments describe the *pre-reconcile* world and become false the moment Task 12 applies. **Task 11's sweep runs BEFORE Task 12, so it must NOT remove them** (they are still true when it runs) — that is why they land here instead. Delete the "before Task 12's reconcile / zero-row item projects 0" qualifiers, keeping the surrounding statements, at exactly these three sites:
+- [ ] **Step 2b: Remove the pre-migration hedges (code, one commit).** **Four** comments (three from Task 7, one added by Task 8 — the fourth site is listed after the original three) describe the *pre-reconcile* world and become false the moment Task 12 applies. **Task 11's sweep runs BEFORE Task 12, so it must NOT remove them** (they are still true when it runs) — that is why they land here instead. Delete the "before Task 12's reconcile / zero-row item projects 0" qualifiers, keeping the surrounding statements, at exactly these three sites:
   - `mobile/src/services/foodInventoryMatchService.ts` — the `findInventoryMatchByBarcode` docstring's "Pre-Task-12 note" paragraph (delete the paragraph entirely).
   - `mobile/src/services/foodInventoryMatchService.ts` — `consumeOneInventoryUnit`'s docstring, the "Where the two still differ … unreachable from the barcode path" sentences. **Keep** the "callers MUST NOT infer / arm on outcome" guidance and the TOCTOU reason — those survive the migration.
   - `mobile/src/components/track/MealsScreen.tsx` — the refund-arming comment's "Not yet identical, though … which is what makes it safe" sentences. **Keep** "arm on outcome, never on intent" and its reasons.
+  - **(Added by Task 8)** `mobile/src/lib/supabase/mealLibrary.ts` — in `fetchMealLibrary`, the `⚠️ Until the Phase 4 reconcile runs (Task 12) …` paragraph above `resolutionInventory` (delete that paragraph only). **Keep** the two sentences above it — "Location rows are the ONLY quantity truth … restoring it would re-arm it" is a permanent statement of the invariant and the reason the fallback must never come back.
 
   After the reconcile the plain claim ("the gate and the RPC read the same truth") is finally literally true, which is what these hedges were waiting on. Full context in "⚠️ Execution amendments → Task 7".
 - [ ] **Step 3 (owner):** Once **Task 13 Step 2's** on-device checklist is fully satisfied, drop the **Task 12 Step 2** snapshots — they are a recovery path, not a permanent table, and they hold a copy of the inventory:
@@ -1908,3 +1923,39 @@ The rest of the `inventoryMatch` surface reads other fields only: `.id` (`MealsS
 
 **Task 12's banner needed a correction, and this task caused it.** The banner asserted "What still works meanwhile: **consumption** … so logging meals is fine. The breakage is display and edit-save only." That was accurate when written and is now too broad: Task 7 removed the legacy fallback from the barcode gate, so for a zero-row item the "Use from pantry" toggle is off and disabled where it previously worked off the cache. **Assessment: a real pre-gate functional gap, not covered by the existing banners, but not a data hazard** — the meal still logs in full, nothing is written to the item, and no stock is destroyed, which puts it in a different class from the edit-save warning it now sits beside. It needs no operator action beyond awareness and it closes wholesale when section A seeds the canonical rows. The banner now distinguishes the Meal Library path (still falls back, still decrements) from the barcode path (no longer does), and the sequencing recommendation gains one more argument. Recorded rather than "fixed" in code: restoring a legacy fallback here would re-arm precisely the divergence Task 7 exists to close.
 
+
+### Task 8
+
+Steps 1–3 landed essentially as written, with two deliberate deviations from the plan's own code (both resolutions of decisions earlier tasks explicitly deferred here), one copy correction, and one finding that is materially larger than the plan knew. No database-connecting command was run at any point; every schema claim below is grep evidence from `supabase/migrations/`, not a live query. Gates on the final tree: `tsc --noEmit` 0 errors, 9 Jest suites / 231 tests green, **no test file touched** (these are React components and an I/O module — the suite covers pure TS libs only, by design; the pure logic underneath, `assessAssemblability`, already carries 25 tests from Task 2).
+
+**🚨 THE FINDING — removing the legacy fallback also stops meal logging from decrementing inventory, not just badges. The plan and Task 12's banner both said the opposite.** The banner read "What still works meanwhile: **consumption via the Meal Library** … so logging a meal from the library still decrements a zero-row item." As of this task that is false. Traced end to end rather than inferred:
+
+1. `fetchMealLibrary` now projects `totalQuantity = Σ r.locations` with no `: r.quantity` arm, so a zero-location-row item is `0`.
+2. `logMeal` (`mealLibrary.ts`) resolves through **that same array** — `resolveInventoryMatches(items, opts.inventory)`.
+3. `resolveInventoryMatches` excludes `totalQuantity === 0` rows on **both** branches: `:33` (`inStock` filter, concept path) and — the one that is easy to miss — `:43`, where even the *terminal barcode* hit requires `barcodeRow.totalQuantity > 0` before it is recorded.
+4. So the id is never in `matches`, never in `requestedIds`, and **`consume_inventory_units` is never invoked for it**. Its legacy `else` branch (`20260729100100:66-70`), which decrements `fi.quantity` when an item has no location rows, is now unreachable from every app path — Task 7 closed the barcode one, this task closes the last one.
+
+**Verified by execution, not by reading:** a throwaway Jest probe asserted that an item with `locations: []` projects `totalQuantity: 0` and that `assessAssemblability` with an exact barcode match against that row returns `{ assemblable: false, missing: ["Yogurt"] }` — i.e. the barcode-terminal branch really does refuse a zero-stock row. Probe deleted; it left no residue.
+
+**Why it was not "fixed" by restoring the fallback:** that is the divergence Phase 4 exists to close, it is what re-arms the consume RPC's legacy branch and `EditFoodScreen`'s laundering path, and the reconcile repairs the whole class wholesale. The right lever is the *window*, not the fallback.
+
+**Why it is nonetheless a bigger deal than Task 7's equivalent narrowing, and is written up that way in the banner.** The barcode gap was inert — the toggle did nothing, and nothing was lost. This one is not: before this task a Meal-Library log *did* take a unit off `fi.quantity`, and section A seeds each canonical location row **from** `fi.quantity`, so those decrements survived the migration. They no longer happen, so **every unit eaten between this bundle landing on the phone and the apply is invisible to the reconcile** — section A will seed a stale, too-high number and nothing downstream detects it. Silent, accumulating, un-auditable count drift, bounded only by elapsed time. Still not a *data hazard* in the edit-save sense (nothing is overwritten, no meal is blocked, the log rows are complete and correctly carry `uses_inventory: false`), but it is the strongest argument yet for the sequencing recommendation. Task 12's banner now: strikes the false "consumption still works" sentence, adds a third narrowing paragraph with the trace and the drift analysis, and tells the operator to expect to hand-correct a few quantities if the window was long.
+
+**DECISION 1 — the `Pick<>` widening Task 1 deferred here: TAKEN.** `projectItemStock`'s `locations` param is now `ReadonlyArray<StockQuantityRow>` where `StockQuantityRow = Pick<StockLocationRow, "quantity" | "is_ready_to_consume">`, and the plan's `r.locations.map((l, i) => ({ id: String(i), location: "", ...l }))` fabrication is deleted. Reasoning: the fabrication does not merely add noise, it manufactures **two false values** — an `id` that is a list index rather than a location row's UUID, and `location: ""`, which no row can hold (`CHECK (location IN ('fridge','freezer','pantry','cabinet'))`, `20250217000003:15` as widened by `20250217000004:21`). Today `projectItemStock` reads neither, so it is harmless; the hazard is that the *type* says otherwise, so any future read of `locations[i].id` or `.location` inside the projection would compile and be silently wrong for this caller only. The widening makes the signature state exactly what the function reads, which is the same "make the type describe the query" property Task 7 argued for. **Verified as a true widening by mutation, not by assertion:** the param was reverted to `StockLocationRow[]` and `tsc` re-run — it produced **exactly one** error, at the new Task 8 call site (`mealLibrary.ts(133,7): TS2322 … missing the following properties … id, location`), proving both that no pre-existing caller relied on the narrow type and that the fabrication would otherwise be mandatory. Reverted; `tsc` 0 errors and the 25 `stockState` tests pass **unmodified** — `StockLocationRow` is still exported and still what the test helper `loc()` builds, so the tests exercise the wider signature with the narrower value, which is the assignability that matters.
+
+**DECISION 2 — the "expires in 0d" copy Task 2 flagged: SPECIAL-CASED.** MealDetail renders `expires today` for `expiringDaysLeft === 0` and `expires in {n}d` otherwise. Reasoning: day 0 is a *deliberately retained* rescue case (Task 2's FIX 1 bounded the window below at 0 precisely so "expires today" stays actionable while already-expired rows are excluded), so `0` is not an edge case that "shouldn't happen" — it is the most urgent value the field can hold, and it would have rendered as the least urgent-sounding string in the template. **Verified reachable end-to-end by the same probe:** an item dated today projects `{ daysLeft: 0, expiration: "today" }` and `assessAssemblability` returns `expiringDaysLeft: 0` with a non-null `expiringItemName`. The alternative — surfacing `projectItemStock`'s `"today"` band through `MealAssemblability` — was rejected as a wider type change for one string; the band is not otherwise needed and `daysLeft === 0` is the same predicate. Note the render guard is `assemblability?.expiringItemName`, **not** truthiness on `expiringDaysLeft`, per Task 2's forward note; the plan already had this right and a comment now records why.
+
+- **`ListEmptyComponent` had to become conditional, or the filter strands the user.** `sections` drops empty sections, so `inStockOnly` with nothing makeable yields `[]` — byte-identical to an empty library, which renders "No meals yet — add your first one." A user with 40 meals would be told they have none, with no hint that a filter caused it. The message now branches on `inStockOnly` and names the way out. Not in the plan; a filter that can silently misreport the library's contents is a defect, not a polish item.
+- **The chip landed as a filter-bar row under the header, not "in" the header.** The header is a fixed three-slot `space-between` row (`＋ New` / title / `Done`); a fourth child breaks it. Putting the chip inside the `SectionList` (as a `ListHeaderComponent`) was rejected for a specific reason: it would scroll out of view while still hiding rows, which is exactly the state that must stay visible. The bar is gated on `view.mode === "list" && data`.
+- **Memoization contract preserved and checked against the existing pattern.** `assemblabilityById` is built in a `useMemo` keyed `[data]`, alongside `scores`/`totalsById` and for the same stated reason (`totalsById`'s comment: a fresh object per `renderItem` call defeats `MealRow`'s `React.memo`). `renderItem`'s dep array gained `assemblabilityById`; `sections`' gained `assemblabilityById` and `inStockOnly`. `MealRow`'s new prop is documented as requiring a stable object. A miss is structurally impossible for the same reason the existing `scores`/`totals` miss is — all three maps and `sections` derive from the one `data.meals` array — and is deliberately not papered over.
+- **The `MealBuilder` per-item call degenerates correctly, and the cost is nil.** `assessAssemblability` over a one-item array returns `assemblable = (missing.length === 0)`, and `missing` is empty iff that item is in `matches` — so the dot agrees **by construction** with whether the whole-meal call would list the item as missing (resolution is per-item and stateless; no cross-item interaction exists in `resolveInventoryMatches`). Cost per call is `O(inventory)`: one `inStock` filter plus one `find`. At ~25 inventory rows × ~10 builder items that is ~250 comparisons per render, recomputed on every keystroke in the name/search fields. Measured against the alternative (a `useMemo` map keyed by `saved_food_id`) and left inline **as the plan prescribes** — the memo would add a dependency on `items`, which changes on every ± tap anyway, for a saving that is below noise at this scale.
+- **Embed and columns verified against the FK and the DDL, not assumed.** `locations:food_inventory_locations(quantity, is_ready_to_consume)` resolves through `food_inventory_locations.food_inventory_id UUID NOT NULL REFERENCES public.food_inventory(id) ON DELETE CASCADE` (`20250217000003:13`) — the only FK between that pair (the table's other FK is `user_id → auth.users(id)`, `:14`), so PostgREST has exactly one relationship to pick. The identical alias already ships against prod one line above, at `mealLibrary.ts:52` pre-change, and Task 7 re-derived the same conclusion independently. New columns: `food_inventory.name` — `name TEXT NOT NULL` (`20250206_tracking_tables.sql:13`, re-declared identically at `20250208_complete_tracking_schema.sql:83`); `food_inventory.expiration_date` — `ADD COLUMN IF NOT EXISTS expiration_date DATE` (`20250209_extend_food_inventory.sql:17`, nullable, hence `string | null`); `food_inventory_locations.is_ready_to_consume` — `BOOLEAN NOT NULL DEFAULT false` (`20250217000003:17`). A repo-wide `grep -rn "DROP COLUMN\|RENAME COLUMN" supabase/migrations/` returns exactly one hit, `exercises.full_name`, so none of the three has been dropped or renamed since.
+- **Every consumer of `MealLibraryData.inventory`, re-derived by grep rather than inherited** — the Task 7 amendment's FIX 1 is explicit that a sweep taken from a secondary source is not a sweep. `grep -rn "MealLibraryData\|fetchMealLibrary" mobile/src mobile/app` returns four consuming files, and only two touch `.inventory`: `MealLibraryModal.tsx` (passes `data.inventory` to `logMeal`, and now to `assessAssemblability` and `MealBuilder`) and `mealLibrary.ts` itself (`logMeal`'s `opts.inventory`, still typed `ResolutionInventoryRow[]` — deliberately, since resolution is all it needs; the widened value is assignable because `AssemblabilityInventoryRow extends ResolutionInventoryRow`). **`useEatNext.ts` never reads `library.inventory` at all** — it reads only `library.meals`, `library.conceptIdsBySavedFoodId` and `library.conceptsById` (`:272-279`), which is why the plan's self-review worry about Phase 3 compiling against the old shape came to nothing. `mealScoreInput.ts` mentions `fetchMealLibrary` in prose only. The type change is additive and `tsc` is 0 with the full suite green.
+- **The clock is hoisted out of the `.map` callback.** The plan's `todayLocalDate: getLocalDateString()` sampled a fresh `new Date()` per inventory row; a list crossing local midnight would band two items against different "today"s. Same "ONE clock for the whole assembly" reasoning `useEatNext.ts:166-170` already states for its own load.
+- **Inline hex colors moved into named `styles.ts` entries** (`inStockBadge`, `inStockBadgeText`, `warnText`, `availableDot`, `unavailableDot`, `filterBar`). The plan wrote them inline; every other color in this directory is a named style, and inline style objects are freshly allocated per render, which is the specific thing this file's memo comments care about.
+- **The builder dot is a nested inline `<Text>` with the trailing space inside the string literal.** A third sibling in the row would break its `space-between` layout, and `marginRight` on inline nested `Text` is unreliable on iOS.
+
+**Deliberately routed to Task 11 rather than fixed here:**
+
+- **`food_inventory.quantity` is still selected by `fetchMealLibrary` and now read by nobody.** With the fallback gone, `InventoryRowRaw.quantity` is dead payload — the same class as the `storage_type` Task 7 routed to Task 11 from `InventoryMatchSummary`. Kept for now because the plan's select string prescribes it verbatim and removing it is a query change, not a compile-forced one; the field carries an inline `Selected but NEVER read` comment so the state is not mistaken for an oversight. There is a mild argument for dropping it sooner — an absent column makes re-adding the fallback impossible without editing the query — but that is Task 11's sweep to make, alongside `storage_type`.
+- **The `?? 0` dead defensiveness at `FoodPreviewModal.tsx:86,396` and `MealsScreen.tsx:567`**, which Task 7 named as "Task 8/11's to remove", was left alone. It is in `MealsScreen`/`FoodPreviewModal`, neither of which Task 8 touches, and folding an unrelated three-site edit into this commit would widen the diff past the task's stated file list for no behavioral change. Task 11 owns it; recorded here so the hand-off is not dropped.

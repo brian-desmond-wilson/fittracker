@@ -30,6 +30,21 @@ export interface StockLocationRow {
   is_ready_to_consume: boolean;
 }
 
+/**
+ * The only two fields `projectItemStock` reads off a location row. Callers
+ * that HAVE real rows (`fetchInventoryWithState`, the add/preview routes) pass
+ * `StockLocationRow`s and are unaffected — this is a widening. Callers that
+ * only have quantities (Task 8's Meal Library fetch, which selects
+ * `locations:food_inventory_locations(quantity, is_ready_to_consume)`) no
+ * longer have to fabricate an `id` and a `location: ""` that nothing reads and
+ * that no `location` CHECK would accept. Deferred to Task 8 by Task 1's
+ * review; folded in here because Task 8 touches this call anyway.
+ */
+export type StockQuantityRow = Pick<
+  StockLocationRow,
+  "quantity" | "is_ready_to_consume"
+>;
+
 export interface ItemStockState {
   totalQuantity: number;
   readyQuantity: number;
@@ -55,7 +70,7 @@ export function daysBetweenLocalDates(a: string, b: string): number {
 
 export function projectItemStock(opts: {
   item: StockItemInput;
-  locations: StockLocationRow[];
+  locations: ReadonlyArray<StockQuantityRow>;
   todayLocalDate: string;
 }): ItemStockState {
   const { item, locations, todayLocalDate } = opts;

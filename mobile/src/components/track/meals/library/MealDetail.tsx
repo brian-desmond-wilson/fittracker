@@ -6,6 +6,7 @@ import { MEAL_TYPE_LABELS, ROLE_LABELS, defaultMealTypeFor } from "@/src/types/m
 import type { MealType } from "@/src/types/track";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
+import type { MealAssemblability } from "@/src/lib/stockState";
 import { lib, scoreChipStyle } from "./styles";
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
@@ -14,6 +15,7 @@ interface MealDetailProps {
   meal: MealWithItems;
   totals: MealTotals;
   score: BrianScoreResult;
+  assemblability?: MealAssemblability;
   logging: boolean;
   onLog: (meal: MealWithItems, mealType: MealType) => void;
   onEdit: (meal: MealWithItems) => void;
@@ -35,7 +37,7 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
 }
 
 export function MealDetail({
-  meal, totals, score, logging, onLog, onEdit, onDelete,
+  meal, totals, score, assemblability, logging, onLog, onEdit, onDelete,
 }: MealDetailProps) {
   const [mealType, setMealType] = useState<MealType>(defaultMealTypeFor(meal));
 
@@ -93,6 +95,22 @@ export function MealDetail({
         {hasSmallPieces && (
           <Text style={[lib.smallMuted, { marginTop: 8 }]}>
             ✂︎ already cut small — EoE-safe
+          </Text>
+        )}
+        {assemblability && !assemblability.assemblable && (
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 8 }]}>
+            Missing: {assemblability.missing.join(", ")}
+          </Text>
+        )}
+        {/* Gated on `expiringItemName`, NOT on the truthiness of
+            `expiringDaysLeft`: 0 means "expires today" — a retained rescue
+            signal (see stockState.ts) — and 0 is falsy. */}
+        {assemblability?.expiringItemName && (
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 4 }]}>
+            Uses {assemblability.expiringItemName} —{" "}
+            {assemblability.expiringDaysLeft === 0
+              ? "expires today"
+              : `expires in ${assemblability.expiringDaysLeft}d`}
           </Text>
         )}
       </View>
