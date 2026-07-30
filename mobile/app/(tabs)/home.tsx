@@ -17,6 +17,7 @@ import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard"
 import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
 import { WaterIntakeHomeCard } from "@/src/components/WaterIntakeHomeCard";
 import { MealsHomeCard } from "@/src/components/MealsHomeCard";
+import { EatNextHomeCard } from "@/src/components/EatNextHomeCard";
 
 export default function Home() {
   const router = useRouter();
@@ -126,6 +127,10 @@ export default function Home() {
         {/* Today's Workout Section */}
         <Text style={styles.sectionTitle}>Today's Workout</Text>
         <TodaysWorkoutCard key={`workout-${refreshKey}`} />
+
+        {/* Eat Next Section */}
+        <Text style={styles.sectionTitle}>Eat Next</Text>
+        <EatNextHomeCard refreshKey={refreshKey} />
 
         {/* Today's Summary Section */}
         <Text style={styles.sectionTitle}>Today's Summary</Text>
