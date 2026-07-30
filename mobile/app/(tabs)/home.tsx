@@ -18,6 +18,7 @@ import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
 import { WaterIntakeHomeCard } from "@/src/components/WaterIntakeHomeCard";
 import { MealsHomeCard } from "@/src/components/MealsHomeCard";
 import { EatNextHomeCard } from "@/src/components/EatNextHomeCard";
+import { RampHomeBanner } from "@/src/components/RampHomeBanner";
 
 export default function Home() {
   const router = useRouter();
@@ -123,6 +124,9 @@ export default function Home() {
           onPress={() => setMorningRoutineWizardVisible(true)}
           refreshKey={routineBannerKey}
         />
+
+        {/* Ramp advance banner (renders nothing unless actionable) */}
+        <RampHomeBanner refreshKey={refreshKey} />
 
         {/* Today's Workout Section */}
         <Text style={styles.sectionTitle}>Today's Workout</Text>
