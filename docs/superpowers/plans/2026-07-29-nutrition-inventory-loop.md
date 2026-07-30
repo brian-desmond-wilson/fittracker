@@ -141,6 +141,18 @@ describe("thresholds — UI semantics preserved", () => {
         item: item({ requires_refrigeration: true, fridge_restock_threshold: 2, storage_type: "single-location" }),
       }).needsFridgeRestock,
     ).toBe(false); // multi-location concept only
+    // pins the (threshold ?? 0) > 0 guard: no threshold configured, empty fridge stratum
+    expect(
+      projectItemStock({
+        item: item({ requires_refrigeration: true, fridge_restock_threshold: null }),
+        locations: [loc(9, false)],
+        todayLocalDate: TODAY,
+      }).needsFridgeRestock,
+    ).toBe(false);
+    // pins the <= boundary from above: ready stock exceeds the threshold
+    expect(
+      projectItemStock({ ...base, locations: [loc(3, true), loc(9, false)] }).needsFridgeRestock,
+    ).toBe(false);
   });
 });
 
@@ -162,6 +174,9 @@ describe("expiration banding", () => {
     const s = exp(null);
     expect(s.expiration).toBeNull();
     expect(s.daysLeft).toBeNull();
+  });
+  it("malformed date → null/null, not NaN", () => {
+    expect(exp("not-a-date")).toMatchObject({ expiration: null, daysLeft: null });
   });
 });
 ```
@@ -218,7 +233,9 @@ export interface ItemStockState {
 export function daysBetweenLocalDates(a: string, b: string): number {
   const [ay, am, ad] = a.split("-").map((s) => parseInt(s, 10));
   const [by, bm, bd] = b.split("-").map((s) => parseInt(s, 10));
-  // Local-noon anchors sidestep DST edges (rampProgress precedent).
+  // Local-noon anchors sidestep DST edges: a midnight anchor could land on
+  // either side of a spring-forward/fall-back transition and shift the
+  // whole-day diff by an hour; noon is never within an hour of a transition.
   const da = new Date(ay, am - 1, ad, 12).getTime();
   const db = new Date(by, bm - 1, bd, 12).getTime();
   return Math.round((db - da) / 86_400_000);
@@ -236,6 +253,11 @@ export function projectItemStock(opts: {
     .reduce((s, l) => s + l.quantity, 0);
   const storageQuantity = totalQuantity - readyQuantity;
 
+  // Anything that isn't exactly "single-location" — including a null/unknown
+  // storage_type — is treated as multi-location. Real rows can't hit this:
+  // storage_type is NOT NULL with a two-value CHECK. Synthetic callers (e.g.
+  // Task 8's assemblability inputs) can pass null; that's intentional here,
+  // not an oversight.
   const single = item.storage_type === "single-location";
   const lowThreshold = single
     ? item.restock_threshold ?? 0
@@ -251,12 +273,20 @@ export function projectItemStock(opts: {
   let expiration: ExpirationBand | null = null;
   let daysLeft: number | null = null;
   if (item.expiration_date) {
-    daysLeft = daysBetweenLocalDates(todayLocalDate, item.expiration_date);
-    expiration =
-      daysLeft < 0 ? "expired"
-      : daysLeft === 0 ? "today"
-      : daysLeft <= EXPIRING_SOON_DAYS ? "soon"
-      : "later";
+    const rawDaysLeft = daysBetweenLocalDates(todayLocalDate, item.expiration_date);
+    if (Number.isFinite(rawDaysLeft)) {
+      daysLeft = rawDaysLeft;
+      expiration =
+        daysLeft < 0 ? "expired"
+        : daysLeft === 0 ? "today"
+        : daysLeft <= EXPIRING_SOON_DAYS ? "soon"
+        : "later";
+    }
+    // Else: an unparseable expiration_date behaves as "no date" rather than
+    // poisoning downstream comparisons — NaN is silently false in every
+    // band/filter comparison (NaN < 0, NaN === 0, NaN <= 7 all false), which
+    // would otherwise land the row in "later" carrying daysLeft: NaN and
+    // defeat callers that treat `daysLeft === null` as the "skip" case.
   }
 
   return {
@@ -1314,6 +1344,17 @@ git commit -m "chore(nutrition-os): remove last storage_type quantity branches"
 
 ## ⚠️ Execution amendments
 
-None yet. Record every review-driven deviation here, per task, as execution proceeds.
+### Task 1
+
+Task 1 landed spec-compliant on first pass (verbatim to the plan's Step 1/3 blocks, 12/12 tests, `tsc` 0 errors) and a follow-up code-quality review returned "Ready to merge: with fixes" — no spec drift, but four defects in the plan's own code/tests. All four are fixed below, in the same commit as this amendment.
+
+- **`needsFridgeRestock`'s two conjuncts — `(fridge_restock_threshold ?? 0) > 0` and the `readyQuantity <= threshold` boundary — were unpinned by the plan's own test.** The plan's single `needsFridgeRestock` test reused `base.locations = [loc(2, true), loc(9, false)]` (`readyQuantity = 2`) for every sub-case, so `2 <= 0` was already false whenever the threshold guard was disabled — the last conjunct did the work and the guard itself was never exercised. Mutation testing confirmed two surviving mutants against the plan's 12-test suite: (1) replacing `(item.fridge_restock_threshold ?? 0) > 0 &&` with `true &&` — all 12 tests still passed; (2) replacing `readyQuantity <= (item.fridge_restock_threshold ?? 0)` with `readyQuantity <= (item.fridge_restock_threshold ?? 0) + 1` — all 12 tests still passed. Without the first guard, a refrigerated multi-location item with `fridge_restock_threshold: null` and an empty fridge stratum evaluates `0 <= 0` → `true`, producing a permanently-stuck "Restock Fridge" badge on the most common item shape (Task 5 reads `state.needsFridgeRestock` for exactly that badge + action-sheet entry). **Fix:** two assertions added to the existing `needsFridgeRestock` test in `stockState.test.ts` — one with `fridge_restock_threshold: null` and an empty (not-ready) fridge stratum, one with `readyQuantity` (3) one unit past the threshold (2). No source change; the predicate itself (`stockState.ts` lines ~74–78) was already correct. **Verified:** both mutants re-applied individually to `stockState.ts`, each run against `npm test -- stockState`, each observed to fail exactly the newly-added assertion (mutant 1 fails the "no threshold configured" case; mutant 2 fails the "ready stock exceeds threshold" case), then reverted; suite confirmed green after each revert.
+- **NaN propagation on a malformed `expiration_date`.** `daysBetweenLocalDates` returns `NaN` for an unparseable date string, and since `NaN < 0`, `NaN === 0`, and `NaN <= 7` are all `false`, the original banding chain silently fell through to `"later"` while carrying `daysLeft: NaN`. Task 2's planned expiring-filter (plan line 436, `row.daysLeft === null || row.daysLeft > EXPIRING_SOON_DAYS`) does not skip this row (`NaN > 7` is also `false`), so a malformed date would become the "most urgent expiring item," surfacing "expires in NaNd" in Eat Next reason strings and MealDetail. **Fix:** `projectItemStock` now checks `Number.isFinite(rawDaysLeft)` before assigning `daysLeft`/computing `expiration`; a non-finite result leaves both `null`, i.e. an unparseable date behaves as "no date" — normalized once at the source instead of defended at three downstream read sites. **New test:** `exp("not-a-date")` asserts `{ expiration: null, daysLeft: null }`. 219/219 tests green (was 218) after this fix, `tsc` 0 errors.
+- **Stale comment attribution.** The `daysBetweenLocalDates` local-noon-anchor comment cited "(rampProgress precedent)" — but `rampProgress.ts`'s `isoWeekAnchor`/`daysBetween` use `Date.UTC` anchors, not local noon; both are DST-safe, but the citation was simply wrong and would mislead a reader about this repo's actual idiom. **Fix:** comment reworded to state the DST reasoning directly (a midnight anchor can straddle a spring-forward/fall-back transition and shift the diff by an hour; noon never does) without the false citation. No arithmetic change.
+- **Undocumented `storage_type: null` classification.** `single = item.storage_type === "single-location"` treats any non-`"single-location"` value — including `null` — as multi-location. For real rows this is moot (`storage_type` is `NOT NULL` with a two-value `CHECK`), but Task 8 deliberately passes a synthetic item with `storage_type: null`, which is therefore silently classified multi-location; Task 8 only reads `totalQuantity`/`daysLeft` so this is harmless today, but was undocumented. **Fix:** comment-only — added at the `const single = ...` site, explaining the null/unknown-storage_type behavior is intentional so a future caller isn't surprised by it. No logic change.
+
+Not fixed, per the review's explicit scope: widening the `locations` param to a `Pick<...>` to avoid Task 8's synthetic-row fabrication (deferred to Task 8, if it ends up touching that signature) — flagged here as a possible required deviation from Task 8's plan code when that task executes. Also not added: a direct unit test for `daysBetweenLocalDates` (transitively covered by the projection tests).
+
+Final state: 9 Jest suites / 219 tests passing (13 in `stockState.test.ts`, up from 12), `tsc --noEmit` 0 errors.
 
 

@@ -40,7 +40,9 @@ export interface ItemStockState {
 export function daysBetweenLocalDates(a: string, b: string): number {
   const [ay, am, ad] = a.split("-").map((s) => parseInt(s, 10));
   const [by, bm, bd] = b.split("-").map((s) => parseInt(s, 10));
-  // Local-noon anchors sidestep DST edges (rampProgress precedent).
+  // Local-noon anchors sidestep DST edges: a midnight anchor could land on
+  // either side of a spring-forward/fall-back transition and shift the
+  // whole-day diff by an hour; noon is never within an hour of a transition.
   const da = new Date(ay, am - 1, ad, 12).getTime();
   const db = new Date(by, bm - 1, bd, 12).getTime();
   return Math.round((db - da) / 86_400_000);
@@ -58,6 +60,11 @@ export function projectItemStock(opts: {
     .reduce((s, l) => s + l.quantity, 0);
   const storageQuantity = totalQuantity - readyQuantity;
 
+  // Anything that isn't exactly "single-location" — including a null/unknown
+  // storage_type — is treated as multi-location. Real rows can't hit this:
+  // storage_type is NOT NULL with a two-value CHECK. Synthetic callers (e.g.
+  // Task 8's assemblability inputs) can pass null; that's intentional here,
+  // not an oversight.
   const single = item.storage_type === "single-location";
   const lowThreshold = single
     ? item.restock_threshold ?? 0
@@ -73,12 +80,20 @@ export function projectItemStock(opts: {
   let expiration: ExpirationBand | null = null;
   let daysLeft: number | null = null;
   if (item.expiration_date) {
-    daysLeft = daysBetweenLocalDates(todayLocalDate, item.expiration_date);
-    expiration =
-      daysLeft < 0 ? "expired"
-      : daysLeft === 0 ? "today"
-      : daysLeft <= EXPIRING_SOON_DAYS ? "soon"
-      : "later";
+    const rawDaysLeft = daysBetweenLocalDates(todayLocalDate, item.expiration_date);
+    if (Number.isFinite(rawDaysLeft)) {
+      daysLeft = rawDaysLeft;
+      expiration =
+        daysLeft < 0 ? "expired"
+        : daysLeft === 0 ? "today"
+        : daysLeft <= EXPIRING_SOON_DAYS ? "soon"
+        : "later";
+    }
+    // Else: an unparseable expiration_date behaves as "no date" rather than
+    // poisoning downstream comparisons — NaN is silently false in every
+    // band/filter comparison (NaN < 0, NaN === 0, NaN <= 7 all false), which
+    // would otherwise land the row in "later" carrying daysLeft: NaN and
+    // defeat callers that treat `daysLeft === null` as the "skip" case.
   }
 
   return {

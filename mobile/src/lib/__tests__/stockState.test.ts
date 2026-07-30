@@ -93,6 +93,18 @@ describe("thresholds — UI semantics preserved", () => {
         item: item({ requires_refrigeration: true, fridge_restock_threshold: 2, storage_type: "single-location" }),
       }).needsFridgeRestock,
     ).toBe(false); // multi-location concept only
+    // pins the (threshold ?? 0) > 0 guard: no threshold configured, empty fridge stratum
+    expect(
+      projectItemStock({
+        item: item({ requires_refrigeration: true, fridge_restock_threshold: null }),
+        locations: [loc(9, false)],
+        todayLocalDate: TODAY,
+      }).needsFridgeRestock,
+    ).toBe(false);
+    // pins the <= boundary from above: ready stock exceeds the threshold
+    expect(
+      projectItemStock({ ...base, locations: [loc(3, true), loc(9, false)] }).needsFridgeRestock,
+    ).toBe(false);
   });
 });
 
@@ -114,5 +126,8 @@ describe("expiration banding", () => {
     const s = exp(null);
     expect(s.expiration).toBeNull();
     expect(s.daysLeft).toBeNull();
+  });
+  it("malformed date → null/null, not NaN", () => {
+    expect(exp("not-a-date")).toMatchObject({ expiration: null, daysLeft: null });
   });
 });
