@@ -143,8 +143,12 @@ revoke all on function public.transfer_inventory_units(uuid, uuid, uuid, integer
 revoke execute on function public.transfer_inventory_units(uuid, uuid, uuid, integer) from anon;
 grant execute on function public.transfer_inventory_units(uuid, uuid, uuid, integer) to authenticated;
 
-drop view if exists public.food_inventory_with_locations;
+-- Drop order matters: low_stock_items, out_of_stock_items and expiring_soon_items
+-- are all defined FROM food_inventory_with_locations (20250217000003:106,122,130),
+-- so the parent must go last. Deliberately NOT `cascade` — an unforeseen dependent
+-- should abort the apply loudly rather than be silently dropped.
 drop view if exists public.low_stock_items;
 drop view if exists public.out_of_stock_items;
 drop view if exists public.expiring_soon_items;
+drop view if exists public.food_inventory_with_locations;
 drop view if exists public.shopping_list_active;

@@ -701,10 +701,14 @@ revoke all on function public.transfer_inventory_units(uuid, uuid, uuid, integer
 revoke execute on function public.transfer_inventory_units(uuid, uuid, uuid, integer) from anon;
 grant execute on function public.transfer_inventory_units(uuid, uuid, uuid, integer) to authenticated;
 
-drop view if exists public.food_inventory_with_locations;
+-- Drop order matters: low_stock_items, out_of_stock_items and expiring_soon_items
+-- are all defined FROM food_inventory_with_locations (20250217000003:106,122,130),
+-- so the parent must go last. Deliberately NOT `cascade` — an unforeseen dependent
+-- should abort the apply loudly rather than be silently dropped.
 drop view if exists public.low_stock_items;
 drop view if exists public.out_of_stock_items;
 drop view if exists public.expiring_soon_items;
+drop view if exists public.food_inventory_with_locations;
 drop view if exists public.shopping_list_active;
 ```
 
@@ -1381,7 +1385,37 @@ git commit -m "chore(nutrition-os): remove last storage_type quantity branches"
 
 **Do not execute without the owner's explicit go-ahead in the session.**
 
-- [ ] **Step 1: Pre-flight (read-only).** `npx supabase migration list` → exactly `20260730100000_inventory_locations_truth` pending (Phase 3's `20260729110000` must be APPLIED — else the merge-order precondition was violated; stop). Read-only queries: per-item legacy quantity vs locations sum (capture the full divergence table — expect the known canary: one item legacy 0 / locations 60); count of single-location items with location rows; confirm all five views still exist.
+- [ ] **Step 1: Pre-flight (read-only).** `npx supabase migration list` → exactly `20260730100000_inventory_locations_truth` pending (Phase 3's `20260729110000` must be APPLIED — else the merge-order precondition was violated; stop). Then run the divergence query below **verbatim** and capture its full output; also confirm all five views still exist.
+
+  The divergence table must include `storage_type` per item, because the reconcile's winner rule branches on it (spec §4) and the two branches move stock in opposite directions:
+
+```sql
+-- READ-ONLY. Per-item legacy cache vs. locations truth, with the storage_type
+-- that decides which one wins in the reconcile. `left join` so that
+-- location-less items appear with a sum of 0 instead of vanishing.
+-- Ordered so divergences surface first, largest imbalance at the top.
+select
+  fi.id,
+  fi.name,
+  fi.storage_type,
+  fi.quantity                             as legacy_quantity,
+  coalesce(sum(l.quantity), 0)            as locations_sum,
+  coalesce(sum(l.quantity), 0) - fi.quantity as difference,
+  count(l.id)                             as location_row_count
+from public.food_inventory fi
+left join public.food_inventory_locations l
+       on l.food_inventory_id = fi.id
+group by fi.id, fi.name, fi.storage_type, fi.quantity
+order by abs(coalesce(sum(l.quantity), 0) - fi.quantity) desc,
+         fi.storage_type,
+         fi.name;
+```
+
+  **🛑 ABORT CONDITION — check this before applying.** If ANY row reports `storage_type = 'single-location'` together with `difference > 0` (i.e. `locations_sum > legacy_quantity`), **STOP and surface it to the owner.** Section A of the migration makes the legacy column win for single-location items: it deletes their location rows and re-inserts one row at `fi.quantity`. For any such row, the excess location stock is destroyed **irreversibly** on apply, with no error and no notice distinguishing it from a normal canonicalization — the post-condition assertion (D) passes happily, because 0 = 0 is a perfectly consistent state.
+
+  This generalizes past the one known canary to the entire "the edit flow never cleaned up stale location rows" class the spec describes in §1 — `migrate_single_location_items()` (20250217000003) seeded location rows for single-location items in Feb 2025, and every subsequent single-location edit wrote only `food_inventory.quantity`, leaving those rows frozen at their seeded values. Any item edited *downward* since then now carries stale location rows above its legacy number. The count of affected items is unknown until this query runs; do not assume it is one, and do not assume it is zero.
+
+  **Expected benign case.** The known canary should report `storage_type = 'multi-location'`, `legacy_quantity = 0`, `locations_sum = 60`, `difference = +60` — which is the *safe* direction: multi-location items take the locations-win branch, so section C resyncs the cache to 60 and the item reads 60/60 post-apply. This is also the expected shape for **every** multi-location item, because `EditFoodScreen.tsx:474` writes `quantity: storageType === 'single-location' ? parseInt(quantity) : 0` — it deliberately parks the legacy column at 0 for multi-location items. A large block of `multi-location` rows with `legacy_quantity = 0` is therefore normal and not a cause to stop; only `single-location` rows with a positive `difference` are.
 
 - [ ] **Step 2: Apply.** `npx supabase db push --yes`. Expected notices: one line per canonicalized/seeded item + the closing counts; no exception from the post-condition assertion.
 
@@ -1434,5 +1468,19 @@ Not in scope for this amendment, confirmed rather than assumed: the `new Set(mat
 **Forward note for Task 9:** when Task 9 computes `expiringRank` from `MealAssemblability`, it must key off `expiringItemName != null`, not a truthiness check on `expiringDaysLeft` — `expiringDaysLeft: 0` (expires today, a retained rescuable case per the FIX above) is falsy in JS and a truthiness check would silently drop the expires-today rescue signal from the ranking. See also the caution added directly in Task 9's section below.
 
 Final state: 9 Jest suites / 231 tests passing (25 in `stockState.test.ts`, up from 21), `tsc --noEmit` 0 errors.
+
+### Task 3
+
+Task 3 landed byte-identical to the plan's Step 1 block (verified by extracting the fence and `diff`-ing it against the written file, not by eye) and was committed as `51cb638`. Since the migration is owner-gated (Task 12) and nothing here is executable in CI, the static analysis *was* the quality gate — no database-connecting command was run at any point, by design. That analysis found one apply-blocking defect in the plan's own SQL and three documentation gaps. The blocker is fixed below and in the Step 1 block above, in the same commit as this amendment; the other three are recorded as deliberate decisions so a future reader doesn't "fix" them.
+
+- **🚨 BLOCKING: the five `drop view` statements were ordered parent-first, which would have aborted the entire migration.** `low_stock_items`, `out_of_stock_items` and `expiring_soon_items` are each defined `FROM public.food_inventory_with_locations` (`20250217000003_add_multi_location_inventory.sql:106`, `:122`, `:130` — they were re-pointed at the aggregate view in that migration, having originally been plain `SELECT * FROM food_inventory` views at `20250209_extend_food_inventory.sql:121,127,135`). The plan dropped the parent `food_inventory_with_locations` **first**, with all three dependents still present and no `cascade`, which raises `2BP01: cannot drop view food_inventory_with_locations because other objects depend on it`. `if exists` does not help — it suppresses *absent*-object errors, not dependency errors. Because `supabase db push` runs the file in a transaction, this would have rolled back **everything**: the reconcile, the RPC, and the grants — a total no-op apply presenting as a hard error at the very last statement, after the owner had already seen the reconcile's `raise notice` output scroll past and had every reason to think it worked. **Fix:** dependents dropped first (`low_stock_items`, `out_of_stock_items`, `expiring_soon_items`), then the parent, then the independent `shopping_list_active`; a comment at the site records the dependency and cites the defining lines. **Deliberately still not `cascade`** — this preserves Phase 3's stance (`20260729110000`: "an unforeseen dependent should fail the apply loudly and roll the whole file back, not be silently taken down with it"). The four-line ordering is exhaustive against the known dependency graph; `cascade` would trade a loud failure on an *unknown* dependent for a silent one.
+- **Task 12's pre-flight was an inference, not a measurement — now hardened (see Task 12 Step 1 above).** The spec's §4 winner rule (single-location → legacy wins) and Task 12's post-verify (the canary must read 60) can only both hold if the canary is `multi-location`. Static evidence says it is: `EditFoodScreen.tsx:474` writes `quantity: storageType === 'single-location' ? parseInt(quantity) : 0`, i.e. the app deliberately parks the legacy column at 0 for multi-location items, which is exactly the mechanism that manufactures "legacy 0 / locations 60" and fires *only* for multi-location. Corroborating: spec §1 calls "Use from pantry" **wrongly** disabled on the canary, which requires the owner to be seeing 60 — only true if the item's UI reads locations. But this is inference from client code, and the failure mode if it is wrong is silent, irreversible destruction of real stock (section A would delete the canary's 60 units and re-insert one row at 0; assertion D then passes, because 0 = 0 is internally consistent). **Fix:** Task 12 Step 1 now carries a verbatim read-only divergence query that surfaces `storage_type` per item alongside legacy/locations/difference, plus an explicit abort condition — STOP if any `single-location` item has `locations_sum > legacy_quantity`. This generalizes past the one known canary to the whole stale-location-row class §1 describes; the affected count is unknown until the query runs. The §4 winner rules themselves are unchanged — this measures the blast radius of a deliberate owner decision rather than overriding it.
+- **Spec §6.1(1) says "Skip items already in exactly this shape (idempotency)"; the SQL does not implement that skip — kept as-is, deliberately.** Section A unconditionally deletes and re-inserts a canonical row for every single-location item on every run. The end state is correct and *idempotent in effect* — traced explicitly: on a second run, A re-inserts at `fi.quantity`, which run 1's section C already set equal to that same single row's quantity; B's `not exists` then matches nothing (A and B together guarantee ≥1 row per item), so there is **no doubling**; C's `is distinct from` guard makes it a no-op (`v_resynced = 0`); D passes. Idempotent-in-effect is what the file's own header claims and what actually matters for a once-run, owner-gated migration, and a shape-comparison skip is complexity for zero behavioral gain. Known and accepted consequences: location-row UUIDs churn on every run (harmless — `grep -rn "REFERENCES.*food_inventory_locations"` over `supabase/migrations/` returns no matches, so no FK depends on those ids); any `notes` on the replaced rows are dropped, including the `'Migrated from single-location'` marker that `migrate_single_location_items()` wrote; `created_at` resets to now; and one `raise notice` fires per single-location item on every run. Note also that `v_replaced` is a *processed* count, not a *changed* count — a re-run still reports the same nonzero number. Its notice text says "canonicalized", which is accurate. (`v_resynced`, by contrast, comes from `get diagnostics row_count` on an UPDATE whose WHERE includes the `is distinct from` guard, so it honestly counts only caches that were actually wrong and got fixed.)
+- **`select id into v_user_id from auth.users limit 1` is non-deterministic without an ORDER BY — recorded as a known single-user limitation.** Additionally, the migration runs as the migration owner, so **RLS is bypassed** and `where fi.user_id = v_user_id` is the only scoping in play. That filter is applied consistently across A, B, C's UPDATE **and** the D assertion, so the block is internally consistent — but it asserts only over the arbitrarily-picked user, and a second user's `food_inventory` rows would be silently skipped by the reconcile *and* excluded from the post-condition. Correct for a single-user app; revisit if the app ever goes multi-user. (Related, and also fine as-is: section A's `delete` has no `user_id` predicate, which is the correct orphan-cleanup behavior here; and section C's `sub` subquery aggregates location rows without a user filter, which only matters in a multi-user world.)
+- **`transfer_inventory_units` locks the target row before the source — deadlock-prone in principle, nil risk here.** Two concurrent opposing transfers (A→B and B→A on the same item) could deadlock. The app is single-user with a serial UI, so this is recorded rather than fixed; a fix would mean ordering the two `for update` selects by location id, which buys nothing today.
+
+Explicitly checked and left alone: the `%rowtype` + `if v_to.id is null` no-rows idiom is valid — plpgsql assigns NULL to *all* fields of a record target when `select into` returns no row, and `id` is the PK (`NOT NULL`), so a found row always has a non-null `id`. `found` would be more idiomatic but is exactly equivalent here.
+
+Verification performed (all static, no DB): a dollar-quote-aware parser over the final file reports paren depth 0 at EOF, no unterminated string literals, and 4 `$$` tokens forming 2 correct pairs (DO block, function body, no nesting); every NOT NULL column without a default on `food_inventory_locations` (`20250217000003:11-22`) is supplied by both INSERTs, and `notes` is nullable; there is no unique constraint on `(food_inventory_id, location)` for section A's delete-then-insert to violate (`grep -i unique` over `20250217000003` → no matches); the `location` CHECK admits `fridge|freezer|pantry|cabinet` on **both** tables (widened identically by `20250217000004`), so `coalesce(r.location, 'pantry')` always satisfies the target constraint; `storage_type` is `NOT NULL` with a two-value CHECK, making sections A and B exhaustive (a hypothetical third value falls through both and is caught by D); `grep -rn "transfer_inventory_units"` across `*.sql`/`*.ts`/`*.tsx` matches only the new migration (no collision); none of the five dropped views is referenced by any app code, function, or grant — only their own historical definitions, the `20251031000001` `security_invoker` ALTERs, and COMMENTs — so the adopt-or-drop premise holds; and `20260730100000` sorts last among all migration filenames, with Phase 3's `20260729110000` present in the tree.
 
 
