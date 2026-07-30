@@ -25,6 +25,11 @@ import {
   syncMealReminders,
   sendTestMealReminder,
 } from "@/src/services/mealReminderService";
+import {
+  cancelAllEatNudges,
+  sendTestEatNudge,
+} from "@/src/services/eatNudgeService";
+import { requestPermissions } from "@/src/services/notificationService";
 import { MealType } from "@/src/types/track";
 
 const MEAL_TYPE_OPTIONS: MealType[] = [
@@ -85,6 +90,9 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
     | null
   >(null);
 
+  const [eatNudges, setEatNudges] = useState(false);
+  const [eatNudgesSaving, setEatNudgesSaving] = useState(false);
+
   useEffect(() => {
     (async () => {
       try {
@@ -93,7 +101,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
         const { data } = await supabase
           .from("profiles")
           .select(
-            "water_reminders_enabled, water_reminder_times, meal_reminders_enabled, meal_reminder_times, meal_reminder_types"
+            "water_reminders_enabled, water_reminder_times, meal_reminders_enabled, meal_reminder_times, meal_reminder_types, eat_nudges_enabled"
           )
           .eq("id", user.id)
           .single();
@@ -105,6 +113,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
               : ["08:00", "12:00", "16:00", "20:00"]
           );
           setMealEnabled(!!data.meal_reminders_enabled);
+          setEatNudges(!!data.eat_nudges_enabled);
           const loadedTimes: string[] =
             Array.isArray(data.meal_reminder_times) && data.meal_reminder_times.length > 0
               ? data.meal_reminder_times
@@ -380,6 +389,81 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
     }
   };
 
+  const handleEatNudgesToggle = async (value: boolean) => {
+    setEatNudges(value);
+    setEatNudgesSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setEatNudges(!value);
+        Alert.alert("Error", "You must be logged in");
+        return;
+      }
+      const { error } = await supabase
+        .from("profiles")
+        .update({ eat_nudges_enabled: value })
+        .eq("id", user.id);
+      if (error) {
+        setEatNudges(!value);
+        Alert.alert("Failed to save", error.message);
+        return;
+      }
+      if (value) {
+        // Turning ON: request permission now, at the gesture, mirroring
+        // persistMeals (:284-298) — this is the one place a denial has to
+        // be caught, since syncEatNudge's own resyncs run in the background
+        // on every load/write with no gesture to alert from and stay silent
+        // on purpose (see its doc comment in eatNudgeService.ts).
+        const granted = await requestPermissions();
+        if (!granted) {
+          Alert.alert(
+            "Notifications Disabled",
+            "Enable notifications for FitTracker in Settings to receive pace nudges.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ]
+          );
+          await supabase
+            .from("profiles")
+            .update({ eat_nudges_enabled: false })
+            .eq("id", user.id);
+          setEatNudges(false);
+          return;
+        }
+      } else {
+        await cancelAllEatNudges(); // off = no pending nudge survives
+      }
+    } catch (error) {
+      console.error("Saving pace nudge settings failed:", error);
+      setEatNudges(!value);
+      Alert.alert("Error", "Failed to save pace nudge settings");
+    } finally {
+      setEatNudgesSaving(false);
+    }
+  };
+
+  const handleEatNudgeTestReminder = async () => {
+    const result = await sendTestEatNudge();
+    if (result.ok) {
+      Alert.alert(
+        "Test sent",
+        "A test reminder should appear in about a second. If you don't see it, check your system notification settings."
+      );
+    } else if (result.permissionDenied) {
+      Alert.alert(
+        "Notifications Disabled",
+        "Enable notifications for FitTracker in Settings to receive pace nudges.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
+    } else {
+      Alert.alert("Error", "Failed to send test reminder");
+    }
+  };
+
   const handleTestReminder = async () => {
     const result = await sendTestWaterReminder();
     if (result.ok) {
@@ -546,6 +630,43 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
                     <BellRing size={16} color="#F97316" />
                     <Text style={[styles.testButtonText, { color: "#F97316" }]}>
                       Send Test Meal Reminder
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Pace nudges (Nutrition OS Phase 3) */}
+          {!loading && (
+            <View style={[styles.card, { marginTop: 16 }]}>
+              <View style={styles.cardHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Pace nudges</Text>
+                  <Text style={styles.cardSubtitle}>
+                    One smart reminder when you're falling behind on
+                    calories — only fires when needed.
+                  </Text>
+                </View>
+                <Switch
+                  value={eatNudges}
+                  onValueChange={handleEatNudgesToggle}
+                  trackColor={{ false: "#374151", true: "#A855F7" }}
+                  thumbColor="#FFFFFF"
+                  disabled={eatNudgesSaving}
+                />
+              </View>
+
+              {eatNudges && (
+                <View style={styles.timesSection}>
+                  <TouchableOpacity
+                    onPress={handleEatNudgeTestReminder}
+                    style={styles.testButton}
+                    activeOpacity={0.7}
+                  >
+                    <BellRing size={16} color="#A855F7" />
+                    <Text style={[styles.testButtonText, { color: "#A855F7" }]}>
+                      Send Test Nudge
                     </Text>
                   </TouchableOpacity>
                 </View>

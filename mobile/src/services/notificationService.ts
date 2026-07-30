@@ -277,6 +277,26 @@ export async function cancelAllNotifications(): Promise<void> {
 }
 
 /**
+ * Cancel only schedule-event reminders (data.type === 'event_reminder'),
+ * leaving the other families (water-reminder, meal-reminder, weight_reminder,
+ * eat-nudge) untouched. rescheduleAllNotifications previously used the global
+ * cancelAllNotifications() here, which silently evicted every other family
+ * each time the Schedule screen rescheduled — the "64-slot landmine".
+ */
+export async function cancelAllEventReminders(): Promise<void> {
+  try {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of all) {
+      if (n.content.data?.type === 'event_reminder') {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+    }
+  } catch (error) {
+    console.error('Error canceling event reminders:', error);
+  }
+}
+
+/**
  * Reschedule notifications for all events
  */
 export async function rescheduleAllNotifications(
@@ -291,8 +311,8 @@ export async function rescheduleAllNotifications(
     console.log('Events count:', events.length);
     console.log('Selected date:', selectedDate.toLocaleDateString());
 
-    // Cancel all existing notifications
-    await cancelAllNotifications();
+    // Cancel only this family — other reminder families own their own slots.
+    await cancelAllEventReminders();
 
     if (!settings.enabled) {
       console.log('Notifications disabled, skipping schedule');

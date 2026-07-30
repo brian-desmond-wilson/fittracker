@@ -13,6 +13,15 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+// `useLocalSearchParams`, NOT `useGlobalSearchParams`: the deep link below
+// clears its param with `router.setParams({ suggestMealId: undefined })`, and
+// React Navigation shallow-merges params — it cannot delete a key. Only
+// `useLocalSearchParams` hides an `undefined` value again on read
+// (expo-router 6.0.24, `build/hooks.js:150-160`, with the library's own
+// comment saying exactly that); the global hook returns
+// `useRouteInfo().params` raw. Same choice, for the same reason, as the
+// `?modal=nutrition` link in `app/(tabs)/profile.tsx:67`.
+import { router, useLocalSearchParams } from "expo-router";
 import {
   ChevronLeft,
   ChevronRight,
@@ -82,6 +91,9 @@ import { useHistoricalMeals } from "./meals/useHistoricalMeals";
 import { useMealAddForm } from "./meals/useMealAddForm";
 import { MealsDayList } from "./meals/MealsDayList";
 import { MealAddForm } from "./meals/MealAddForm";
+import { EatNextRow } from "./meals/EatNextRow";
+import { useEatNext } from "@/src/hooks/useEatNext";
+import { syncEatNudge } from "@/src/services/eatNudgeService";
 
 interface MealsScreenProps {
   onClose: () => void;
@@ -146,6 +158,36 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Meal Library modal + savedFoods cache
   const [libraryVisible, setLibraryVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
+
+  // Eat Next recommender (spec §7.2). Declared here rather than beside the
+  // pace `useMemo`s further down because `fetchMealsForDate` below reads
+  // `eatNext.refetch` — same shape as `useHistoricalMeals`'s `refreshHistory`
+  // just below, which that function already calls. No `refreshKey`: this
+  // screen has no `useFocusEffect` (verified — the only focus reloads in the
+  // app are on the Home cards), so the hook's own mount effect is the single
+  // initial load, and every subsequent reload comes from the write path in
+  // `fetchMealsForDate`. Nothing here can double-load the way Task 8's card
+  // could.
+  const eatNext = useEatNext();
+
+  // Deep link from `EatNextHomeCard` (spec §7.1: `router.push({ pathname:
+  // "/(tabs)/track/meals", params: { suggestMealId: top.mealId } })`) and the
+  // target of the "Suggested now" chips below — both open the Meal Library
+  // modal directly on a meal's detail.
+  const [libraryInitialMealId, setLibraryInitialMealId] = useState<string | null>(null);
+  const params = useLocalSearchParams<{ suggestMealId?: string }>();
+  useEffect(() => {
+    if (params.suggestMealId) {
+      setLibraryInitialMealId(params.suggestMealId);
+      setLibraryVisible(true);
+      // Consume once, so returning to this screen later doesn't re-open the
+      // modal. Settles in one extra render rather than looping: the effect
+      // re-fires when `params.suggestMealId` flips to `undefined`, and the
+      // guard above is then false (the identical lifecycle Task 9 traced for
+      // `?modal=nutrition`).
+      router.setParams({ suggestMealId: undefined });
+    }
+  }, [params.suggestMealId]);
 
   // Historical meals (last 365 days) for insights/streaks/chart. refreshHistory
   // is called on writes so insights refetch, but NOT on plain date navigation.
@@ -245,6 +287,21 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // A forced fetch means the day was just written to (or pulled to
       // refresh) — refresh the insights history too. Plain navigation doesn't.
       if (force) refreshHistory();
+      // Same trigger, for the Eat Next recommender (spec §7.2: "refreshed by
+      // the screen's existing write-refetch path, so logging a meal
+      // immediately updates or clears the suggestion"). This IS that path:
+      // every write handler in this file — preview log, manual entry, add
+      // form, quick adjustment, edit, delete, undo, and the Meal Library
+      // modal's `onLogged` — invalidates the day cache and then calls this
+      // function with `force = true`. Narrowed to the day the recommender
+      // actually reads (it always computes for TODAY, whatever day is being
+      // viewed), so editing a past day doesn't fire a pointless reload.
+      // Not awaited, matching `refreshHistory` above: `refetch`'s declared
+      // type is `() => void`, and nothing downstream of here depends on the
+      // new result — the nudge resync happens in an effect keyed on
+      // `eatNext.result`, because the value in THIS closure is the
+      // pre-refetch one and would sync a stale decision.
+      if (force && dateStr === todayStr) eatNext.refetch();
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
@@ -1174,6 +1231,48 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     });
   }, [viewingToday, dayTotals.protein, goals.protein, windowStart, windowEnd, mealTimes]);
 
+  // Second of the eat-nudge family's two resync points (spec §8.1; the Home
+  // card is the other, covering app open/foreground). Sited here, rather than
+  // up with the other effects, because it reads `viewingToday` — a dep array
+  // is evaluated during render, so referencing that `const` before the line
+  // above would be a TDZ ReferenceError, not a lint nit.
+  //
+  // Keyed on the hook's state rather than called from the write handlers on
+  // purpose: `refetch` resolves asynchronously, so any `eatNext.result` read
+  // in a handler's closure is the pre-write decision. This effect therefore
+  // covers both the initial load and every post-write reload, and does NOT
+  // fire on a failed refetch (the hook is stale-while-revalidate — it leaves
+  // `result`'s identity untouched on failure).
+  //
+  // `result` and `computedAt` are a matched pair from the same load — the
+  // hook sets them together on success and neither alone — which is exactly
+  // what `syncEatNudge`'s required `sourceDay` demands (`fireAtMinutes` is
+  // minutes since local midnight on the day the decision was computed, so
+  // resolving it against a fresh `new Date()` is the cross-midnight
+  // mis-schedule that parameter exists to make uncompilable). `computedAt` is
+  // `Date | null` until the first load resolves; that case has no decision to
+  // sync, so skipping it is deliberate. Passed straight through, never
+  // mutated — it is the `Date` object held in the hook's state.
+  //
+  // `viewingToday` only narrows WHEN this runs, never what it schedules: the
+  // recommender always computes for today regardless of the viewed date, so
+  // browsing a past day merely skips a redundant resync (recoverable at the
+  // next one — the same tolerance the service documents for a failed cancel)
+  // and cannot cancel or stale-schedule anything. Coming back to today
+  // re-syncs.
+  //
+  // `void` + `.catch`: `syncEatNudge` can reject (`requestPermissions` has no
+  // try/catch around its native calls and `syncEatNudgeCore` awaits it
+  // outside its own try), and there is no gesture here to surface it on —
+  // uncaught, it is a dev yellow-box and silence in prod. Same handling, for
+  // the same reason, as `EatNextHomeCard`.
+  useEffect(() => {
+    if (!viewingToday || !eatNext.result || !eatNext.computedAt) return;
+    void syncEatNudge(eatNext.result.nudge, eatNext.computedAt).catch((e) => {
+      console.error("MealsScreen nudge resync:", e);
+    });
+  }, [viewingToday, eatNext.result, eatNext.computedAt]);
+
   // Search-filtered subset of dayMeals (used for the list rendering only).
   const filteredDayMeals = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1415,6 +1514,16 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                       caloriePace={caloriePace}
                       proteinPace={proteinPace}
                     />
+                    {/* "Suggested now" (spec §7.2) — directly under the pace
+                        lines, inside the same `viewingToday` guard and gutter.
+                        Renders nothing when there are no recommendations. */}
+                    <EatNextRow
+                      result={eatNext.result}
+                      onMealPress={(mealId) => {
+                        setLibraryInitialMealId(mealId);
+                        setLibraryVisible(true);
+                      }}
+                    />
                   </View>
                 )}
 
@@ -1607,7 +1716,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         visible={libraryVisible}
         savedFoods={allSavedFoods}
         todayDate={viewingDateStr}
-        onClose={() => setLibraryVisible(false)}
+        initialMealId={libraryInitialMealId}
+        // Cleared alongside `visible` so the next open — from the "Meal
+        // Library" button, which sets no target — lands on the list rather
+        // than re-opening the last suggested meal's detail.
+        onClose={() => {
+          setLibraryVisible(false);
+          setLibraryInitialMealId(null);
+        }}
         onLogged={async () => {
           setMealsCache((prev) => {
             const next = new Map(prev);

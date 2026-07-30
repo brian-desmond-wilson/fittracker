@@ -139,3 +139,25 @@ export async function fetchRecentWeighIns(
   if (error) throw error;
   return data ?? [];
 }
+
+// Narrow projection of `calorie_ramp_levels` for consumers that only need to
+// find the active level and derive the next one (e.g. RampHomeBanner) —
+// unlike `fetchNutritionPreferences`, which legitimately needs the full
+// dataset (concepts, constraints, vendors) for NutritionPreferencesScreen.
+// Purely additive: does not change `fetchNutritionPreferences` or any other
+// existing export in this module.
+export interface RampLevelSummary {
+  level: number;
+  name: string;
+  is_active: boolean;
+  started_at: string | null;
+}
+
+export async function fetchRampLevels(): Promise<RampLevelSummary[]> {
+  const { data, error } = await supabase
+    .from("calorie_ramp_levels")
+    .select("level, name, is_active, started_at")
+    .order("level");
+  if (error) throw error;
+  return (data ?? []) as RampLevelSummary[];
+}
