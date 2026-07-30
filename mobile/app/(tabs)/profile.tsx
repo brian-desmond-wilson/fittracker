@@ -38,6 +38,27 @@ export default function Profile() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalScreen>(null);
 
+  const [formData, setFormData] = useState({
+    height_cm: "",
+    target_weight_kg: "",
+    target_calories: "",
+    target_protein_g: "",
+    target_carbs_g: "",
+    target_sodium_mg: "",
+    target_fats_g: "",
+    target_sugars_g: "",
+    target_fiber_g: "",
+    target_water_oz: "",
+    water_window_start: "08:00",
+    water_window_end: "23:00",
+    water_workout_bonus_oz: "0",
+    water_display_unit: "oz" as "oz" | "L",
+    water_only_counts: false,
+    breakfast_time: "08:00",
+    lunch_time: "12:00",
+    dinner_time: "18:00",
+  });
+
   // Deep link from RampHomeBanner (spec §7.3): ?modal=nutrition auto-opens
   // the Nutrition Preferences modal, then clears the param so navigating
   // back to this screen later doesn't re-open it. `router` above (from
@@ -60,27 +81,6 @@ export default function Profile() {
       router.setParams({ modal: undefined });
     }
   }, [params.modal]);
-
-  const [formData, setFormData] = useState({
-    height_cm: "",
-    target_weight_kg: "",
-    target_calories: "",
-    target_protein_g: "",
-    target_carbs_g: "",
-    target_sodium_mg: "",
-    target_fats_g: "",
-    target_sugars_g: "",
-    target_fiber_g: "",
-    target_water_oz: "",
-    water_window_start: "08:00",
-    water_window_end: "23:00",
-    water_workout_bonus_oz: "0",
-    water_display_unit: "oz" as "oz" | "L",
-    water_only_counts: false,
-    breakfast_time: "08:00",
-    lunch_time: "12:00",
-    dinner_time: "18:00",
-  });
 
   useEffect(() => {
     loadUserData();
