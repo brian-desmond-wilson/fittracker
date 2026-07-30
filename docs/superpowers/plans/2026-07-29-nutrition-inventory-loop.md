@@ -1098,6 +1098,12 @@ git commit -m "fix(nutrition-os): saves keep locations-as-truth invariant (no st
  * `quantity` is the PROJECTED total across location rows (locations are the
  * stock truth as of Phase 4) — the legacy column is a cache and is not read.
  * Returns null when there's no match (or no barcode to match against).
+ *
+ * Pre-Task-12 note: an item with zero location rows projects 0, so the pantry
+ * toggle reads "out of stock" for it until the reconcile seeds its canonical
+ * row. Deliberate — this is the same direction Task 5 took for the grid, and
+ * the alternative is a legacy-cache fallback, which is the divergence this
+ * phase exists to remove.
  */
 export async function findInventoryMatchByBarcode(
   barcode: string | null,
@@ -1118,7 +1124,14 @@ export async function findInventoryMatchByBarcode(
       return null;
     }
     if (!data) return null;
-    const { locations, ...rest } = data as InventoryMatchSummary & {
+    // `Omit<…, "quantity">` rather than the whole interface: the select above
+    // deliberately does NOT fetch the legacy column, so a cast claiming it is
+    // present would be a lie, and would let a future field added to
+    // InventoryMatchSummary go missing from the select without tsc noticing.
+    const { locations, ...rest } = data as Omit<
+      InventoryMatchSummary,
+      "quantity"
+    > & {
       locations: Array<{ quantity: number }>;
     };
     return {
@@ -1132,13 +1145,18 @@ export async function findInventoryMatchByBarcode(
 }
 ```
 
-Update the stale divergence comments at both files to state the gate and the RPC now read the same truth. `InventoryMatchSummary` keeps its shape (`quantity` redefined as projected total — spec §7); MealsScreen's `willUseInventory` gate needs no code change.
+> **The cast above was `data as InventoryMatchSummary & { locations: … }` in the plan as written, and it was dishonest — corrected in place to `Omit<InventoryMatchSummary, "quantity">`. See "⚠️ Execution amendments → Task 7". The pre-Task-12 paragraph in the docstring is also an addition, recorded there.**
+
+Update the stale divergence comments at both files to state the gate and the RPC now read the same truth. `InventoryMatchSummary` keeps its shape (`quantity` redefined as projected total — spec §7); MealsScreen's `willUseInventory` gate needs no code change. **"The same truth" needed hedging to stay true before Task 12 — the shipped comments say the divergence is closed *and* that what remains is one-directional and safe; see the amendment.**
 
 - [ ] **Step 2: Verify + commit**
 
 ```bash
 cd mobile && npx tsc --noEmit && npm test
 git add mobile/src/services/foodInventoryMatchService.ts mobile/src/components/track/MealsScreen.tsx
+# The plan doc is staged too — house rule #4, and Task 12's banner needed a
+# correction this task caused. See "⚠️ Execution amendments → Task 7".
+git add docs/superpowers/plans/2026-07-29-nutrition-inventory-loop.md
 git commit -m "fix(nutrition-os): pantry gate reads projected stock, closing the Phase 2 follow-up"
 ```
 
@@ -1474,7 +1492,9 @@ git commit -m "chore(nutrition-os): remove last storage_type quantity branches"
 >
 > Almost certainly **most single-location items have zero location rows today** (evidence in "⚠️ Execution amendments → Task 6": the Feb-2025 backfill only seeded items with `location IS NOT NULL`, and every app write path since gated location-row creation on `storage_type === 'multi-location'`). Task 5 made every reader project Σ location rows, so those items already render **`Qty: 0` / out of stock** in the grid, the detail view and the edit screen. Task 6 then makes a save write what the screen shows: one location row at `0`, plus `fi.quantity` resynced to `0`. **The legacy number is the only copy, and the save overwrites it.** There is no undo short of the Step 2 snapshot, which does not exist yet at that point.
 >
-> What still works meanwhile: **consumption**. `mealLibrary.ts:105-108` falls back to `r.quantity` when an item has no location rows, and `consume_inventory_units` takes its legacy branch for the same reason — so logging meals is fine. The breakage is display and edit-save only.
+> What still works meanwhile: **consumption via the Meal Library**. `mealLibrary.ts:105-108` falls back to `r.quantity` when an item has no location rows, and `consume_inventory_units` takes its legacy branch for the same reason — so logging a meal from the library still decrements a zero-row item. Logging a meal is never blocked on either path.
+>
+> **⚠️ Narrowed by Task 7 — the barcode path no longer participates.** `findInventoryMatchByBarcode` used to gate "Use from pantry" on `food_inventory.quantity`; as of Task 7 it projects Σ location rows with **no legacy fallback** (deliberately — the fallback is the divergence this phase removes). So for a zero-row item, scanning its barcode now shows the pantry toggle **off and disabled**, where before the gate it read the cache and worked. Non-destructive: the meal still logs in full, the item's stock is simply not decremented, and nothing is overwritten — so unlike the edit-save hazard above there is no data to lose and no need to avoid the flow. It is a *functional* gap for the exposure window, and it closes wholesale the moment section A seeds the canonical rows. One more reason the sequencing note at the end of this task matters: this widens the pre-gate cost from "display and edit-save" to "display, edit-save, and barcode-path pantry decrements".
 >
 > **The fix is this migration.** Spec §6.1(3) — in the file, **section A** (`20260730100000:40-61`), which loops over *every* single-location item, not only ones with rows: for a zero-row item the `loc_total > quantity` guard passes trivially (`0 > n` is false), the `delete` is a no-op, and it inserts one canonical row at `fi.quantity` / `coalesce(fi.location,'pantry')`. Wholesale, for the entire class. Nothing needs doing by hand.
 >
@@ -1813,4 +1833,22 @@ Steps 1 and 2 landed as written except for the two spellings corrected in place 
 - **`"0x10"` now writes 16 where the old code wrote 0.** `Number("0x10")` is 16; `parseInt("0x10", 10)` stopped at the `x` and returned 0. Not typeable on the numeric keypad (paste only), and the new reading is the more defensible of the two, but it is a behaviour change worth having on record so it is not discovered as a surprise.
 - **Open product question, not a Task 11 fix: the quantity columns are integers but half the units are continuous.** `UNITS` (`edit-food/constants.ts:11`) is `["oz","lbs","g","kg","ml","L","count","servings"]`, and both `food_inventory.quantity` and `food_inventory_locations.quantity` are `INTEGER`. FIX 1's rejection of `"1.5"` is what surfaced this: the old truncation stored "1 lb" for a user who typed "1.5 lbs" — silent data corruption — whereas rejecting turns an int-only column into a visible product decision. The real resolution is a schema one (a `numeric` quantity column, or unit-aware precision), which means a migration and another owner gate, so it belongs to a future phase. Recorded here with the evidence so the decision is made deliberately rather than inherited.
 - **A single-location save writes `location: null` to `food_inventory` while its location row falls back to `"pantry"`.** The item row keeps its existing `storageType === 'single-location' ? location : null` expression (Step 1 says leave it), and the location row uses the plan's own `location ?? "pantry"` — so an item saved without picking a location ends up with the two disagreeing. Harmless today: `food_inventory.location` is display-only and no quantity math reads it. Task 11 is the sweep that decides whether that column survives at all; if it does, the two spellings should be made to agree (either default the item column to `"pantry"` too, or derive the display from the location row). Recorded here so it has a written home rather than living only in a review comment.
+
+### Task 7
+
+Steps 1 and 2 landed essentially as written, with one correction to the plan's own code (the cast) and two additions to what it prescribed (a docstring paragraph, and a correction to Task 12's banner that this task caused). No database-connecting command was run at any point; every schema claim below is grep evidence from `supabase/migrations/`, not a live query. Gates on the final tree: `tsc --noEmit` 0 errors, 9 Jest suites / 231 tests green, no test file touched (this module does I/O — the suite covers pure TS libs only, by design).
+
+**Embed verified against the FK, not assumed.** `locations:food_inventory_locations(quantity)` resolves through `food_inventory_locations.food_inventory_id UUID NOT NULL REFERENCES public.food_inventory(id) ON DELETE CASCADE` (`20250217000003_add_multi_location_inventory.sql:13`). It is the **only** FK between that pair — the table's other FK is `user_id → auth.users(id)` (`:14`), and the two later migrations that reference `public.food_inventory` do so from *different* tables (`20250209_extend_food_inventory.sql:76`, `20260728100000_nutrition_preference_schema.sql:24`), which cannot make this embed ambiguous. The Phase 4 migration adds no FK. So PostgREST has exactly one relationship to pick and the alias cannot misresolve. Independently, the identical string already ships and works against prod in `mealLibrary.ts:52` — same table, same alias, same embedded column — so this is a copy of a proven idiom rather than a new spelling.
+
+**🚨 PLAN DEFECT (minor, latent) — the prescribed cast lied about the row's shape.** `data as InventoryMatchSummary & { locations: … }` asserts that `data` carries `quantity`, but the select deliberately stops fetching it, so `rest.quantity` is `undefined` at runtime. Harmless *today* only by luck of statement order: `{ ...rest, quantity: locations.reduce(…) }` overwrites it on the very next line. **Fix:** `Omit<InventoryMatchSummary, "quantity">`, so the cast describes exactly what the query returns. Column-by-column the two now match 1:1 — the select names `id, name, brand, barcode, unit, storage_type`, the `Omit` requires those same six — which is the property a reviewer can check by diffing two lines instead of reasoning about spread precedence.
+
+**What that fix does and does not buy, established by probe rather than by argument.** Both spellings were compiled side by side in a throwaway module with the `quantity:` line deleted from the return literal. The plan's cast **compiles clean** — the projection can silently vanish and ship a row whose `quantity` is `undefined`, which every consumer's `(x.quantity ?? 0) > 0` then reads as out-of-stock. The landed cast fails: `error TS2741: Property 'quantity' is missing in type '{ id: string; name: string; unit: string | null; brand: string | null; barcode: string | null; storage_type: … }' but required in type 'InventoryMatchSummary'`. So the guarantee gained is precisely **"the projection is load-bearing and cannot be dropped"** — narrow, but it is the one line of this function that the whole task exists for. The probe was deleted; it left no residue. **It buys nothing against a future field added to `InventoryMatchSummary` but forgotten in the select string** — an earlier draft of this amendment claimed it did, and that is wrong: `Omit` would include the new field, the cast would assert it, and the return would compile. A type *assertion* cannot police an opaque query string, and against an untyped supabase client nothing in `tsc` can. Grepping `supabase/migrations/` remains the only real check, which is why the embed verification above is not optional.
+
+**`locations` is `[]`, never `null`, and `.reduce` is additionally inside the existing `try`.** PostgREST returns an empty array for a to-many embed with no children, and the repo's proven precedent agrees: `mealLibrary.ts:106` does a bare `r.locations.length > 0` with no null guard and has shipped against prod since Phase 3. `.reduce` is given an explicit `0` seed so `[]` yields `0`. No `?? []` was added — it would diverge from the working idiom for a case that cannot occur, and the surrounding `try/catch` already degrades a hypothetical throw to "no match" rather than a crash. Deliberate, recorded so a future reader does not add one thinking it was overlooked.
+
+- **`willUseInventory` needs no change — confirmed by reading it, not assumed.** `MealsScreen.tsx:566-567` is `useInventory && !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0`. It asks one question — "is there stock" — and never assumes cache semantics, so redefining `quantity` as the projected total changes the answer without touching the expression. Same for the only two other consumers, `FoodPreviewModal.tsx:86` (initial toggle state) and `:396` (`disabled={(inventoryMatch.quantity ?? 0) <= 0}`): both are `> 0` / `<= 0` predicates. **No consumer reads `quantity` as a displayed number or does arithmetic on it**, so there is no site where "cache value" vs "projected total" could leak out as a wrong figure. The `?? 0` in all three is dead defensiveness — the field is non-optional `number` — and is Task 8/11's to remove, not this task's.
+- **The prescribed comment wording — "the gate and the RPC now read the same truth" — is not yet literally true, so it shipped hedged.** Post-Task-7 the two agree exactly for any item with ≥1 location row. For a zero-row item (per Task 6's Finding A, most single-location items today) they still differ: the gate projects `0` and the RPC's legacy branch would have taken a unit. What makes this safe rather than a surviving defect is that the residual divergence is **one-directional** — the gate is strictly more conservative, so when it is off the RPC is never called and its legacy branch is unreachable from this path, and when it is on the item has location rows and both read them. The gate can no longer claim stock the RPC will not take, which was half of the §1 defect; the canary (legacy `0` / locations `60`) is the other half and is fully fixed. Both comments say this rather than overclaiming, and the `findInventoryMatchByBarcode` docstring gained a paragraph naming the pre-Task-12 behaviour explicitly. Writing "the same truth" flat would have been a comment that is false for most of the inventory on the day it landed.
+- **The inline `locations.reduce(…)` was kept over `projectItemStock`, and the plan is right here.** Routing through the shared projection would require the select to fetch `id, location, is_ready_to_consume` per location row plus `storage_type`, three threshold columns, `requires_refrigeration` and `expiration_date` off the item — roughly triple the payload — to compute one number from a `StockItemInput`/`StockLocationRow[]` pair this call site has no other use for. `projectItemStock` earns its keep where the bands and badges are consumed; here only `totalQuantity` is. Assessed and left as prescribed, noted so it is not "fixed" later.
+
+**Task 12's banner needed a correction, and this task caused it.** The banner asserted "What still works meanwhile: **consumption** … so logging meals is fine. The breakage is display and edit-save only." That was accurate when written and is now too broad: Task 7 removed the legacy fallback from the barcode gate, so for a zero-row item the "Use from pantry" toggle is off and disabled where it previously worked off the cache. **Assessment: a real pre-gate functional gap, not covered by the existing banners, but not a data hazard** — the meal still logs in full, nothing is written to the item, and no stock is destroyed, which puts it in a different class from the edit-save warning it now sits beside. It needs no operator action beyond awareness and it closes wholesale when section A seeds the canonical rows. The banner now distinguishes the Meal Library path (still falls back, still decrements) from the barcode path (no longer does), and the sequencing recommendation gains one more argument. Recorded rather than "fixed" in code: restoring a legacy fallback here would re-arm precisely the divergence Task 7 exists to close.
 

@@ -12,7 +12,15 @@ export interface InventoryMatchSummary {
 
 /**
  * Look up an inventory item matching a barcode for the current user.
+ * `quantity` is the PROJECTED total across location rows (locations are the
+ * stock truth as of Phase 4) — the legacy column is a cache and is not read.
  * Returns null when there's no match (or no barcode to match against).
+ *
+ * Pre-Task-12 note: an item with zero location rows projects 0, so the pantry
+ * toggle reads "out of stock" for it until the reconcile seeds its canonical
+ * row. Deliberate — this is the same direction Task 5 took for the grid, and
+ * the alternative is a legacy-cache fallback, which is the divergence this
+ * phase exists to remove.
  */
 export async function findInventoryMatchByBarcode(
   barcode: string | null,
@@ -23,7 +31,7 @@ export async function findInventoryMatchByBarcode(
     if (!user) return null;
     const { data, error } = await supabase
       .from("food_inventory")
-      .select("id, name, brand, barcode, quantity, unit, storage_type")
+      .select("id, name, brand, barcode, unit, storage_type, locations:food_inventory_locations(quantity)")
       .eq("user_id", user.id)
       .eq("barcode", barcode)
       .limit(1)
@@ -32,7 +40,21 @@ export async function findInventoryMatchByBarcode(
       console.error("Inventory lookup failed:", error);
       return null;
     }
-    return (data as InventoryMatchSummary | null) ?? null;
+    if (!data) return null;
+    // `Omit<…, "quantity">` rather than the whole interface: the select above
+    // deliberately does NOT fetch the legacy column, so a cast claiming it is
+    // present would be a lie, and would let a future field added to
+    // InventoryMatchSummary go missing from the select without tsc noticing.
+    const { locations, ...rest } = data as Omit<
+      InventoryMatchSummary,
+      "quantity"
+    > & {
+      locations: Array<{ quantity: number }>;
+    };
+    return {
+      ...rest,
+      quantity: locations.reduce((s, l) => s + l.quantity, 0),
+    };
   } catch (error) {
     console.error("findInventoryMatchByBarcode error:", error);
     return null;
@@ -62,12 +84,18 @@ interface RefundResultRow {
  * read-modify-write that only touched food_inventory.quantity.
  *
  * Returns true only when a unit was actually taken. Callers MUST NOT infer
- * that from their own pre-check: the barcode path gates on
- * food_inventory.quantity (see findInventoryMatchByBarcode) while the RPC
- * decides from food_inventory_locations, so the two can disagree. A false
+ * that from their own pre-check. The Phase 2 divergence is closed — the
+ * barcode gate now projects Σ food_inventory_locations (see
+ * findInventoryMatchByBarcode), the same rows this RPC prefers — but the gate
+ * is still a separate, earlier read: stock can move between the two, and a 0
+ * result also covers no-such-row / RLS-filtered. Where the two still differ
+ * is one-directional and safe: before Task 12's reconcile, a zero-row item
+ * projects 0 so the gate is simply off and this RPC is never called, leaving
+ * its legacy-column branch unreachable from the barcode path. The gate can
+ * only be more conservative than the RPC, never more optimistic. A false
  * return means "nothing moved" — do not compensate for it with a refund.
  * A 0 result is never an error (logging a meal must not fail on stock
- * bookkeeping), and it conflates no-stock / no-such-row / RLS-filtered.
+ * bookkeeping).
  */
 export async function consumeOneInventoryUnit(
   itemId: string,
