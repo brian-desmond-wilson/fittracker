@@ -7,7 +7,7 @@ import { StyleSheet, Text, TouchableOpacity } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { TrendingUp } from "lucide-react-native";
 import {
-  fetchNutritionPreferences,
+  fetchRampLevels,
   fetchRecentWeighIns,
 } from "@/src/lib/supabase/nutritionPreferences";
 import { assessRampProgress } from "@/src/lib/rampProgress";
@@ -40,13 +40,13 @@ export function RampHomeBanner({ refreshKey }: RampHomeBannerProps) {
     try {
       const since = new Date();
       since.setDate(since.getDate() - TREND_WINDOW_DAYS);
-      const [prefs, weighIns] = await Promise.all([
-        fetchNutritionPreferences(),
+      const [rampLevels, weighIns] = await Promise.all([
+        fetchRampLevels(),
         fetchRecentWeighIns(getLocalDateString(since)),
       ]);
-      const active = prefs.rampLevels.find((l) => l.is_active) ?? null;
+      const active = rampLevels.find((l) => l.is_active) ?? null;
       const next = active
-        ? prefs.rampLevels.find((l) => l.level === active.level + 1) ?? null
+        ? rampLevels.find((l) => l.level === active.level + 1) ?? null
         : null;
       const assessment = assessRampProgress({
         weighIns,
@@ -59,9 +59,12 @@ export function RampHomeBanner({ refreshKey }: RampHomeBannerProps) {
         setNextLevel(null);
       }
     } catch (error) {
-      // A Home banner is decoration — fail silent, never alert from here.
+      // A Home banner is decoration — fail silent (no Alert), but a visible
+      // banner is known-good state earned by a prior successful load; a
+      // transient refetch failure (network blip on refocus) must not wipe
+      // it, same stale-while-revalidate rule useEatNext.ts follows. Log only
+      // — deliberately no `setNextLevel(null)` here.
       console.error("RampHomeBanner load:", error);
-      setNextLevel(null);
     }
   }, []);
 
