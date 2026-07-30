@@ -68,6 +68,9 @@ export interface EatNextRecommendation {
 }
 
 export interface EatNextNudge {
+  /** Minutes since local midnight, on the SAME local day as the `nowMinutes`
+   *  that produced it. Always `> nowMinutes` and `<= windowEndMinutes`.
+   *  Consumers must resolve it against that same day, not a fresh `new Date()`. */
   fireAtMinutes: number;
   title: string;
   body: string;
@@ -140,6 +143,17 @@ function candidate(
 function calorieGoalHit(goals: MacroGoals, dayTotals: MacroTotals): boolean {
   const calorieGoal = goals.calories;
   return calorieGoal != null && calorieGoal > 0 && dayTotals.calories >= calorieGoal;
+}
+
+/** Spec §5.3.5's catch-up candidate set: eligible meals within ±CATCH_UP_BAND
+ *  of the gap, `bridge` preferred. Shared by the catch_up context and the
+ *  nudge's own body pick so the band rule has exactly one definition. */
+function catchUpCandidates(
+  eligible: ScoredMeal[], gap: number, maxPrepMinutes: number,
+): Candidate[] {
+  return eligible
+    .filter((m) => Math.abs(m.totals.calories - gap) <= gap * CATCH_UP_BAND)
+    .map((m) => candidate(m, ["bridge"], maxPrepMinutes));
 }
 
 /** Next main-meal slot strictly after now, else snack (mealPace's milestone rule). */
@@ -274,9 +288,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 
   // 5. catch_up — falls through when empty.
   if (behind && gap > 0) {
-    const cands = eligible
-      .filter((m) => Math.abs(m.totals.calories - gap) <= gap * CATCH_UP_BAND)
-      .map((m) => candidate(m, ["bridge"], maxPrepMinutes));
+    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes);
     if (cands.length > 0) {
       return {
         context: "catch_up",
@@ -335,7 +347,12 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
  * ineligible — just possibly a different eligible meal than `recommendations[0]`.
  * When nothing lands in the ±`CATCH_UP_BAND` window, it falls back to the
  * single best-ranked eligible meal of any size — a concrete suggestion, even
- * an oversized one, beats a bare "~N cal to go" with nothing to act on.
+ * an oversized one, beats a bare "~N cal to go" with nothing to act on. That
+ * fallback drops the `bridge` role preference (`[]`, not `["bridge"]`) on
+ * purpose: once nothing fits the catch-up profile, "closest to the gap" no
+ * longer means anything, so the pick reduces to the plain rank ordering
+ * (score, then prep, then name) rather than pretending a role preference
+ * still applies to an out-of-band set.
  */
 function computeNudge(input: EatNextInput): EatNextNudge | null {
   const {
@@ -343,9 +360,25 @@ function computeNudge(input: EatNextInput): EatNextNudge | null {
     caloriePace, meals, maxPrepMinutes, nudgesEnabled,
   } = input;
   if (!nudgesEnabled) return null;
+  // Defensive invariants, both unreachable-in-effect through the current call
+  // path: `recommendEatNext` already discards this return's `nudge` field
+  // whenever `goal_hit`/`after_window` is the resolved context (it hardcodes
+  // `nudge: null` there), and the `fireAt > windowEndMinutes` clamp below
+  // already forces null whenever `nowMinutes >= windowEndMinutes` (the
+  // post-bump `fireAt > nowMinutes` invariant makes the two guards redundant
+  // by construction). Kept so `computeNudge` is correct standalone, e.g. if a
+  // future refactor calls it outside the context chain. See the Task 2
+  // execution amendment (round 1, item 4, and the Correction A finding) for
+  // the mutation-tested proof neither guard is currently test-observable.
   if (nowMinutes > windowEndMinutes) return null;
   if (calorieGoalHit(goals, dayTotals)) return null;
   if (caloriePace.status !== "behind") return null;
+  // `?? 0`, unlike the two guards above, IS load-bearing: `catchUpAmount` is
+  // optional on `MealPaceState` (a `behind` pace can omit it), and without
+  // the fallback `undefined < NUDGE_MIN_GAP_CAL` evaluates to `false` — the
+  // guard below would silently pass and emit a nudge reading "~undefined cal
+  // to go". Reading a missing amount as "nothing owed" is the correct and
+  // intentional behavior, not an incidental default.
   const gap = caloriePace.catchUpAmount ?? 0;
   if (gap < NUDGE_MIN_GAP_CAL) return null;
 
@@ -359,14 +392,10 @@ function computeNudge(input: EatNextInput): EatNextNudge | null {
 
   // Best catch-up candidate for the body: same eligibility + ranking rules.
   const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
-  const inBand = rank(
-    eligible
-      .filter((m) => Math.abs(m.totals.calories - gap) <= gap * CATCH_UP_BAND)
-      .map((m) => candidate(m, ["bridge"], maxPrepMinutes)),
-  );
+  const inBand = rank(catchUpCandidates(eligible, gap, maxPrepMinutes));
   const pick = inBand[0] ?? rank(eligible.map((m) => candidate(m, [], maxPrepMinutes)))[0];
   const suggestion = pick
-    ? ` — ${pick.meal.name} fixes it in ${pick.meal.prep_minutes} min`
+    ? ` — ${pick.meal.name} ${pick.meal.prep_minutes > 0 ? `fixes it in ${pick.meal.prep_minutes} min` : "is ready now"}`
     : "";
   return {
     fireAtMinutes: fireAt,

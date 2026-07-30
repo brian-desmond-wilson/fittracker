@@ -266,12 +266,17 @@ describe("emergency and catch_up", () => {
     const big = scored({ category: "emergency", calories: 700 });
     const booster = scored({ role: "calorie_booster", category: "shake", calories: 750 });
     const r = recommendEatNext(
-      input({ nowMinutes: 20 * 60, ...behind(600) }, [small, booster, big]),
+      input({ nowMinutes: 20 * 60, nudgesEnabled: true, ...behind(600) }, [small, booster, big]),
     );
     expect(r.context).toBe("emergency");
     expect(r.recommendations.map((x) => x.mealId)).toEqual([
       booster.meal.id, big.meal.id, small.meal.id,
     ]);
+    // The nudge decision is independent of context (see "nudge decision"
+    // below) but must still be attached to the returned result on every
+    // non-terminal context, including this one — the context this feature
+    // most exists for (behind pace, past dinner, a large gap owed).
+    expect(r.nudge).not.toBeNull();
   });
 
   it(`emergency requires gap ≥ EMERGENCY_MIN_GAP_CAL (${EMERGENCY_MIN_GAP_CAL})`, () => {
@@ -475,7 +480,7 @@ describe("nudge decision", () => {
     const m = meal();
     const r = recommendEatNext(input(behindBy(500), [m]));
     expect(r.nudge).not.toBeNull();
-    expect(r.nudge!.fireAtMinutes).toBe(18 * 60 + NUDGE_MILESTONE_OFFSET_MIN);
+    expect(r.nudge!.fireAtMinutes).toBe(BASE.mealTimesMinutes.dinner + NUDGE_MILESTONE_OFFSET_MIN);
     expect(r.nudge!.title).toBe("Eat something");
     expect(r.nudge!.body).toMatch(/500 cal/);
     expect(r.nudge!.body).toContain(m.meal.name);
@@ -485,7 +490,8 @@ describe("nudge decision", () => {
     const r = recommendEatNext(
       input({ ...behindBy(600), nowMinutes: 19 * 60 }, [meal()]),
     );
-    expect(r.nudge!.fireAtMinutes).toBe(23 * 60 - EMERGENCY_CHECK_BEFORE_END_MIN);
+    expect(r.nudge).not.toBeNull();
+    expect(r.nudge!.fireAtMinutes).toBe(BASE.windowEndMinutes - EMERGENCY_CHECK_BEFORE_END_MIN);
   });
 
   it("computed time already past → now + offset", () => {
@@ -493,34 +499,47 @@ describe("nudge decision", () => {
     const r = recommendEatNext(
       input({ ...behindBy(600), nowMinutes: 22 * 60 }, [meal()]),
     );
+    expect(r.nudge).not.toBeNull();
     expect(r.nudge!.fireAtMinutes).toBe(22 * 60 + NUDGE_MILESTONE_OFFSET_MIN);
   });
 
   it("even now + offset exceeds windowEnd → null", () => {
+    // The last minute at which now + NUDGE_MILESTONE_OFFSET_MIN still
+    // overshoots windowEnd — one minute earlier, the bumped fire time would
+    // land exactly on windowEnd and still nudge (see the boundary test below).
     const r = recommendEatNext(
-      input({ ...behindBy(600), nowMinutes: 22 * 60 + 50 }, [meal()]),
+      input(
+        { ...behindBy(600), nowMinutes: BASE.windowEndMinutes - NUDGE_MILESTONE_OFFSET_MIN + 1 },
+        [meal()],
+      ),
     );
     expect(r.nudge).toBeNull();
   });
 
-  it.each([
+  it.each<[string, Partial<EatNextInput>]>([
     ["disabled", { ...behindBy(600), nudgesEnabled: false }],
     [`gap below ${NUDGE_MIN_GAP_CAL}`, behindBy(NUDGE_MIN_GAP_CAL - 1)],
     ["on pace", { nudgesEnabled: true }],
     [
       "goal hit",
       {
-        // caloriePace is set to "behind" (not the BASE default "on_pace") so
-        // this row isolates the goal-hit guard: without it, the "behind" +
-        // sufficient-gap checks below it would let the nudge through anyway,
-        // and the test would pass for the wrong reason.
+        // caloriePace is set to "behind" (not the BASE default "on_pace") —
+        // leaving it at on_pace would make the EARLIER `status !== "behind"`
+        // guard return null first, so the row would pass without ever
+        // reaching the goal-hit guard this row is meant to test. This row
+        // pins the engine-level contract "goal hit ⇒ no nudge"; it does NOT
+        // isolate the goal-hit guard specifically — dropping that guard
+        // alone still leaves this row (and the full suite) green, because
+        // `recommendEatNext` independently forces `nudge: null` whenever the
+        // same predicate is true (see the Task 2 execution amendment,
+        // Correction A finding, for the mutation-tested proof).
         nudgesEnabled: true,
         caloriePace: { status: "behind", delta: 300, catchUpAmount: 300 },
         dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 170 },
       },
     ],
   ])("no nudge when %s", (_label, over) => {
-    const r = recommendEatNext(input(over as Partial<EatNextInput>, [meal()]));
+    const r = recommendEatNext(input(over, [meal()]));
     expect(r.nudge).toBeNull();
   });
 
@@ -548,6 +567,7 @@ describe("nudge decision", () => {
     const r = recommendEatNext(
       input({ ...behindBy(600), nowMinutes: now }, [meal()]),
     );
+    expect(r.nudge).not.toBeNull();
     expect(r.nudge!.fireAtMinutes).toBe(now + NUDGE_MILESTONE_OFFSET_MIN);
   });
 
@@ -588,6 +608,7 @@ describe("nudge decision", () => {
     const bridgeMeal = scored({ role: "bridge", category: "snack", calories: gap, raw: 10 });
     const plainMeal = scored({ category: "dinner", calories: gap, raw: 95 });
     const r = recommendEatNext(input(behindBy(gap), [plainMeal, bridgeMeal]));
+    expect(r.nudge).not.toBeNull();
     expect(r.nudge!.body).toContain(bridgeMeal.meal.name);
   });
 
