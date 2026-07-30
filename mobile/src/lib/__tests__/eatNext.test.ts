@@ -8,6 +8,9 @@ import {
   PROTEIN_SHORT_MAX_CAL,
   BRIDGE_PREFER_GAP_MIN,
   CATCH_UP_BAND,
+  NUDGE_MIN_GAP_CAL,
+  NUDGE_MILESTONE_OFFSET_MIN,
+  EMERGENCY_CHECK_BEFORE_END_MIN,
   type EatNextInput,
   type ScoredMeal,
 } from "../eatNext";
@@ -318,6 +321,7 @@ describe("emergency and catch_up", () => {
     const zeroCal = scored({ calories: 0, category: "dinner" });
     const r = recommendEatNext(input(behind(0), [zeroCal]));
     expect(r.context).not.toBe("catch_up");
+    expect(r.context).toBe("next_meal");
   });
 
   it(`catch_up band: exactly gap × ${CATCH_UP_BAND} away qualifies, one calorie further does not`, () => {
@@ -455,5 +459,117 @@ describe("filters and ranking", () => {
     const lowRawHighScore = scored({ category: "dinner", raw: 50, score: 99 });
     const r = recommendEatNext(input({}, [lowRawHighScore, highRawLowScore]));
     expect(r.recommendations[0].mealId).toBe(highRawLowScore.meal.id);
+  });
+});
+
+// ── nudge decision ──────────────────────────────────────────────────────────
+describe("nudge decision", () => {
+  const behindBy = (catchUpAmount: number): Partial<EatNextInput> => ({
+    nudgesEnabled: true,
+    caloriePace: { status: "behind", delta: catchUpAmount, catchUpAmount },
+  });
+  const meal = () => scored({ category: "dinner", calories: 500 });
+
+  it("fires at next milestone + offset with gap and top rec in the body", () => {
+    // now 13:00 → next milestone dinner 18:00 → fire 18:20
+    const m = meal();
+    const r = recommendEatNext(input(behindBy(500), [m]));
+    expect(r.nudge).not.toBeNull();
+    expect(r.nudge!.fireAtMinutes).toBe(18 * 60 + NUDGE_MILESTONE_OFFSET_MIN);
+    expect(r.nudge!.body).toMatch(/500 cal/);
+    expect(r.nudge!.body).toContain(m.meal.name);
+  });
+
+  it("no meal time remaining → windowEnd − 90", () => {
+    const r = recommendEatNext(
+      input({ ...behindBy(600), nowMinutes: 19 * 60 }, [meal()]),
+    );
+    expect(r.nudge!.fireAtMinutes).toBe(23 * 60 - EMERGENCY_CHECK_BEFORE_END_MIN);
+  });
+
+  it("computed time already past → now + offset", () => {
+    // 22:00: windowEnd−90 = 21:30 is past → 22:20
+    const r = recommendEatNext(
+      input({ ...behindBy(600), nowMinutes: 22 * 60 }, [meal()]),
+    );
+    expect(r.nudge!.fireAtMinutes).toBe(22 * 60 + NUDGE_MILESTONE_OFFSET_MIN);
+  });
+
+  it("even now + offset exceeds windowEnd → null", () => {
+    const r = recommendEatNext(
+      input({ ...behindBy(600), nowMinutes: 22 * 60 + 50 }, [meal()]),
+    );
+    expect(r.nudge).toBeNull();
+  });
+
+  it.each([
+    ["disabled", { ...behindBy(600), nudgesEnabled: false }],
+    [`gap below ${NUDGE_MIN_GAP_CAL}`, behindBy(NUDGE_MIN_GAP_CAL - 1)],
+    ["on pace", { nudgesEnabled: true }],
+    [
+      "goal hit",
+      {
+        // caloriePace is set to "behind" (not the BASE default "on_pace") so
+        // this row isolates the goal-hit guard: without it, the "behind" +
+        // sufficient-gap checks below it would let the nudge through anyway,
+        // and the test would pass for the wrong reason.
+        nudgesEnabled: true,
+        caloriePace: { status: "behind", delta: 300, catchUpAmount: 300 },
+        dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 170 },
+      },
+    ],
+  ])("no nudge when %s", (_label, over) => {
+    const r = recommendEatNext(input(over as Partial<EatNextInput>, [meal()]));
+    expect(r.nudge).toBeNull();
+  });
+
+  it("nudge fires even when the surfaced context is post_workout (independent decisions)", () => {
+    const r = recommendEatNext(
+      input({ ...behindBy(500), workoutCompletedAtMinutes: 12 * 60 }, [
+        scored({ role: "post_workout", calories: 500 }),
+      ]),
+    );
+    expect(r.context).toBe("post_workout");
+    expect(r.nudge).not.toBeNull();
+  });
+
+  // ── threshold edges (spec §10: "for every §5.7 constant") ────────────────
+  it(`gap exactly ${NUDGE_MIN_GAP_CAL} still nudges (the minimum is inclusive)`, () => {
+    const r = recommendEatNext(input(behindBy(NUDGE_MIN_GAP_CAL), [meal()]));
+    expect(r.nudge).not.toBeNull();
+  });
+
+  it("a computed fire time landing exactly on now still bumps forward, not left in place", () => {
+    // atMinutes=null branch (no meal time left) puts fireAt at
+    // windowEnd − EMERGENCY_CHECK_BEFORE_END_MIN; choosing now to equal that
+    // makes the "already past" bump trigger at the equality boundary.
+    const now = BASE.windowEndMinutes - EMERGENCY_CHECK_BEFORE_END_MIN;
+    const r = recommendEatNext(
+      input({ ...behindBy(600), nowMinutes: now }, [meal()]),
+    );
+    expect(r.nudge!.fireAtMinutes).toBe(now + NUDGE_MILESTONE_OFFSET_MIN);
+  });
+
+  it("a fire time landing exactly on windowEnd still nudges (the cap is inclusive)", () => {
+    const dinner = BASE.windowEndMinutes - NUDGE_MILESTONE_OFFSET_MIN;
+    const r = recommendEatNext(
+      input(
+        {
+          ...behindBy(600),
+          nowMinutes: dinner - 60,
+          mealTimesMinutes: { breakfast: 100, lunch: 200, dinner },
+        },
+        [meal()],
+      ),
+    );
+    expect(r.nudge).not.toBeNull();
+    expect(r.nudge!.fireAtMinutes).toBe(BASE.windowEndMinutes);
+  });
+
+  it("now exactly at windowEnd never nudges (no room for a strictly-future fire time)", () => {
+    const r = recommendEatNext(
+      input({ ...behindBy(600), nowMinutes: BASE.windowEndMinutes }, [meal()]),
+    );
+    expect(r.nudge).toBeNull();
   });
 });

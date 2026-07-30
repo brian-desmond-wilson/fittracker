@@ -322,7 +322,52 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   };
 }
 
-// Task 2 replaces this stub with the real decision (spec §5.6).
-function computeNudge(_input: EatNextInput): EatNextNudge | null {
-  return null;
+/**
+ * Spec §5.6. Deliberately independent of the context chain above: this fires
+ * later (next milestone + 20 min), while the app is closed, as a static
+ * message about closing a calorie gap — so it re-derives its own catch-up-band
+ * pick from the gap rather than reading `recommendations[0]`, which reflects
+ * whatever context is current *now* (e.g. a small `next_meal` bridge snack
+ * would not close a 650 cal gap). Spec §5.6's "the top recommendation" is read
+ * as "the top recommendation for closing the gap" for this reason. It still
+ * applies the same eligibility (`baseEligible`) and ranking (`rank`) rules as
+ * every other context, so it can never suggest a meal the engine considers
+ * ineligible — just possibly a different eligible meal than `recommendations[0]`.
+ */
+function computeNudge(input: EatNextInput): EatNextNudge | null {
+  const {
+    nowMinutes, windowEndMinutes, mealTimesMinutes, dayTotals, goals,
+    caloriePace, meals, maxPrepMinutes, nudgesEnabled,
+  } = input;
+  if (!nudgesEnabled) return null;
+  if (nowMinutes > windowEndMinutes) return null;
+  if (calorieGoalHit(goals, dayTotals)) return null;
+  if (caloriePace.status !== "behind") return null;
+  const gap = caloriePace.catchUpAmount ?? 0;
+  if (gap < NUDGE_MIN_GAP_CAL) return null;
+
+  const { atMinutes } = nextSlot(nowMinutes, mealTimesMinutes);
+  let fireAt =
+    atMinutes !== null
+      ? atMinutes + NUDGE_MILESTONE_OFFSET_MIN
+      : windowEndMinutes - EMERGENCY_CHECK_BEFORE_END_MIN;
+  if (fireAt <= nowMinutes) fireAt = nowMinutes + NUDGE_MILESTONE_OFFSET_MIN;
+  if (fireAt > windowEndMinutes) return null;
+
+  // Best catch-up candidate for the body: same eligibility + ranking rules.
+  const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
+  const inBand = rank(
+    eligible
+      .filter((m) => Math.abs(m.totals.calories - gap) <= gap * CATCH_UP_BAND)
+      .map((m) => candidate(m, ["bridge"], maxPrepMinutes)),
+  );
+  const pick = inBand[0] ?? rank(eligible.map((m) => candidate(m, [], maxPrepMinutes)))[0];
+  const suggestion = pick
+    ? ` — ${pick.meal.name} fixes it in ${pick.meal.prep_minutes} min`
+    : "";
+  return {
+    fireAtMinutes: fireAt,
+    title: "Eat something",
+    body: `~${gap} cal to go${suggestion}`,
+  };
 }
