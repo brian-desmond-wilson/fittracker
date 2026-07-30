@@ -90,19 +90,6 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
     | null
   >(null);
 
-  // Pace nudges (Nutrition OS Phase 3). Seeded `false` rather than loaded from
-  // `profiles.eat_nudges_enabled` — that column is added only by the unapplied
-  // migration `supabase/migrations/20260729110000_recommender_profile_and_view_cleanup.sql`
-  // (Task 11 is the owner gate). PostgREST rejects the ENTIRE select when any
-  // named column is unknown (42703 → HTTP 400), so naming it in the effect
-  // below would break every setting on this screen for the whole Task 6 →
-  // Task 11 window — the same landmine Task 5's `useEatNext` amendment hit and
-  // handled the same way. The `.update({ eat_nudges_enabled })` write below is
-  // left as-is: it will fail with the alert-on-failure idiom until the
-  // migration lands, which is honest and never user-visible pre-Task 12.
-  // TO WIRE UP after Task 11 applies the migration: add
-  // `eat_nudges_enabled` to this screen's profile `select(...)` and seed
-  // `eatNudges` from `!!data.eat_nudges_enabled`. See Task 11 Step 4.
   const [eatNudges, setEatNudges] = useState(false);
   const [eatNudgesSaving, setEatNudgesSaving] = useState(false);
 
@@ -114,7 +101,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
         const { data } = await supabase
           .from("profiles")
           .select(
-            "water_reminders_enabled, water_reminder_times, meal_reminders_enabled, meal_reminder_times, meal_reminder_types"
+            "water_reminders_enabled, water_reminder_times, meal_reminders_enabled, meal_reminder_times, meal_reminder_types, eat_nudges_enabled"
           )
           .eq("id", user.id)
           .single();
@@ -126,6 +113,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
               : ["08:00", "12:00", "16:00", "20:00"]
           );
           setMealEnabled(!!data.meal_reminders_enabled);
+          setEatNudges(!!data.eat_nudges_enabled);
           const loadedTimes: string[] =
             Array.isArray(data.meal_reminder_times) && data.meal_reminder_times.length > 0
               ? data.meal_reminder_times
