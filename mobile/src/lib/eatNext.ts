@@ -102,7 +102,14 @@ function sameLocalDay(a: Date, b: Date): boolean {
  *  - The resolved instant is not strictly after `now` — already passed.
  *
  * Pure: takes `now` rather than reading the clock, so the engine stays free
- * of I/O and tests control time directly.
+ * of I/O and tests control time directly. The `new Date(...)` below is
+ * deterministic construction from its arguments, not a clock read — this is
+ * the one place `new Date(` appears in this otherwise-clockless file; note
+ * for anyone grepping for purity regressions. It's also freshly constructed,
+ * not a mutation of `sourceDay` (no `.setHours(...)` on the caller's Date) —
+ * `sourceDay` may be the exact object a caller is holding in state (see
+ * `useEatNext.ts`'s `computedAt`), and mutating it in place would corrupt
+ * that state as a side effect of what looks like a pure read.
  */
 export function nudgeFireDate(
   fireAtMinutes: number,
@@ -110,6 +117,10 @@ export function nudgeFireDate(
   now: Date,
 ): Date | null {
   if (!sameLocalDay(sourceDay, now)) return null;
+  // `Math.floor` on the hour is redundant with the `Date` constructor's own
+  // truncation of a fractional hour component (verified, including across a
+  // DST-transition day) — kept anyway so this reads as an intentional
+  // hour/minute split, not a value left for the constructor to fix up.
   const fireDate = new Date(
     sourceDay.getFullYear(),
     sourceDay.getMonth(),

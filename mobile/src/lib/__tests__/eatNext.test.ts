@@ -635,14 +635,16 @@ describe("nudge decision", () => {
 // from it. Task 6 execution amendment covers the reachability analysis this
 // closes off.
 describe("nudgeFireDate", () => {
-  // Jul 29 2026, 08:00:00.000 local — same instant used as both `sourceDay`
-  // and `now` unless a test deliberately moves one of the two.
-  const DAY = new Date(2026, 6, 29, 8, 0, 0, 0);
+  // Jul 29 2026, 08:00:00.000 local. Factory, not a shared const — every
+  // other fixture in this file is a factory (`meal()`, `scored()`, etc.);
+  // a shared mutable `Date` is an unnecessary cross-test-leakage risk that
+  // buys nothing here (`new Date(...)` is cheap).
+  const DAY = () => new Date(2026, 6, 29, 8, 0, 0, 0);
 
   it("resolves a same-day, still-future fireAtMinutes to that clock time on sourceDay's date", () => {
     // 10:00 (600 min) is distinct in hour vs. minute from 08:00's own
     // components, so a swapped hour/minute mutant cannot pass by accident.
-    const result = nudgeFireDate(600, DAY, DAY);
+    const result = nudgeFireDate(600, DAY(), DAY());
     expect(result).not.toBeNull();
     expect(result).toEqual(new Date(2026, 6, 29, 10, 0, 0, 0));
   });
@@ -653,7 +655,7 @@ describe("nudgeFireDate", () => {
     // is set earlier than 02:15 (rather than reusing DAY's 08:00) so the
     // strictly-after-now guard doesn't itself reject a correct result.
     const now = new Date(2026, 6, 29, 1, 0, 0, 0);
-    const result = nudgeFireDate(135, DAY, now);
+    const result = nudgeFireDate(135, DAY(), now);
     expect(result).toEqual(new Date(2026, 6, 29, 2, 15, 0, 0));
   });
 
@@ -662,12 +664,12 @@ describe("nudgeFireDate", () => {
     // same-day `now` is >= it — this is a real, permanent null case, not a
     // gap in the function.
     const now = new Date(2026, 6, 29, 0, 0, 0, 1);
-    expect(nudgeFireDate(0, DAY, now)).toBeNull();
+    expect(nudgeFireDate(0, DAY(), now)).toBeNull();
   });
 
   it("resolves fireAtMinutes=1439 (23:59, the last valid minute of the day)", () => {
     const now = new Date(2026, 6, 29, 23, 0, 0, 0);
-    expect(nudgeFireDate(1439, DAY, now)).toEqual(
+    expect(nudgeFireDate(1439, DAY(), now)).toEqual(
       new Date(2026, 6, 29, 23, 59, 0, 0),
     );
   });
@@ -678,38 +680,86 @@ describe("nudgeFireDate", () => {
     // later one, so this direction is also caught by the after-now check —
     // it documents the realistic overnight-background scenario, but does
     // NOT by itself prove the day guard is doing independent work (see the
-    // next test, which isolates that).
+    // tests below, which isolate that along each of `sameLocalDay`'s three
+    // comparisons).
     const sourceDay = new Date(2026, 6, 29, 23, 58, 0, 0);
     const now = new Date(2026, 6, 30, 0, 5, 0, 0);
     expect(nudgeFireDate(1439, sourceDay, now)).toBeNull();
   });
 
-  it("rejects a mismatched sourceDay even when the naive same-clock-time instant would be strictly after now", () => {
-    // sourceDay is a day AHEAD of now. Without the day guard, the naive
-    // instant (sourceDay's date + fireAtMinutes=0, i.e. 00:00 on the 30th)
-    // is strictly after `now` (20:00 on the 29th) and would be wrongly
-    // returned — this is the case that isolates the day guard from the
-    // after-now guard: deleting `sameLocalDay` changes this test's result,
-    // where the previous test's does not.
+  // The four tests below each isolate ONE of `sameLocalDay`'s three
+  // `Date` accessors (year / month / date) from the other two AND from the
+  // after-now guard, by picking a `sourceDay`/`now` pair that agrees on
+  // every dimension except the one under test, with the naive
+  // (day-guard-less) instant landing strictly after `now` — so only the
+  // targeted comparison stands between "correctly rejected" and "wrongly
+  // scheduled". Mutation-verified: see the Task 6 amendment for the table
+  // (drop-the-whole-guard, drop-year, drop-month, drop-date, and
+  // getDay()-substituted-for-getDate all die; only the sourceDay-vs-now
+  // Y/M/D swap in `nudgeFireDate` itself survives, and is unobservable by
+  // construction once any of these guards has passed).
+
+  it("rejects a mismatched sourceDay (differs by date only, same year+month) — isolates the date comparison", () => {
+    // sourceDay is a day AHEAD of now, same month/year. Without the day
+    // guard, the naive instant (00:00 on the 30th) is strictly after `now`
+    // (20:00 on the 29th) and would be wrongly returned.
     const sourceDay = new Date(2026, 6, 30, 0, 0, 0, 0);
     const now = new Date(2026, 6, 29, 20, 0, 0, 0);
     expect(nudgeFireDate(0, sourceDay, now)).toBeNull();
   });
 
+  it("rejects a mismatched sourceDay (differs by date only, same weekday+month+year) — isolates against a getDay()-substitution mutant", () => {
+    // -7 days from Jul 29 lands on Jul 22: same year, same month, a
+    // different date-of-month, but the SAME weekday (both Wednesdays) —
+    // unlike the date-only test above, month is held constant too, so a
+    // `sameLocalDay` that compared weekday instead of date-of-month (year
+    // and month both still correct) would see "same year, same month, same
+    // weekday" and wrongly call this a match. This is the fixture that
+    // actually isolates that mutant — an earlier draft used Aug 5 (also
+    // same weekday, +7 days), but Aug 5 differs in MONTH too, so a
+    // month-preserving getDay() mutant would already be rejected by the
+    // month comparison alone and this specific mutant would survive
+    // undetected. Verified empirically: the Aug-5 fixture measurably did
+    // NOT kill this mutant when tried; this one does.
+    const sourceDay = new Date(2026, 6, 29, 0, 0, 0, 0); // Jul 29, 2026 (Wed)
+    const now = new Date(2026, 6, 22, 20, 0, 0, 0); // Jul 22, 2026 (Wed), 20:00
+    expect(sourceDay.getDay()).toBe(now.getDay()); // guards the fixture itself
+    expect(sourceDay.getMonth()).toBe(now.getMonth()); // and that month is held constant
+    expect(nudgeFireDate(0, sourceDay, now)).toBeNull();
+  });
+
+  it("rejects a mismatched sourceDay (differs by month only, same year+date-of-month) — isolates the month comparison", () => {
+    // Feb 15 vs Jan 15: same year, same date-of-month (15), different
+    // month. A `sameLocalDay` that dropped the month comparison would see
+    // "same year, same date" and wrongly call this a match.
+    const sourceDay = new Date(2026, 1, 15, 0, 0, 0, 0); // Feb 15, 2026
+    const now = new Date(2026, 0, 15, 20, 0, 0, 0); // Jan 15, 2026, 20:00
+    expect(nudgeFireDate(0, sourceDay, now)).toBeNull();
+  });
+
+  it("rejects a mismatched sourceDay (differs by year only, same month+date-of-month) — isolates the year comparison", () => {
+    // Jul 29, 2026 vs Jul 29, 2025: same month and date-of-month, a year
+    // apart. A `sameLocalDay` that dropped the year comparison would see
+    // "same month, same date" and wrongly call this a match.
+    const sourceDay = new Date(2026, 6, 29, 0, 0, 0, 0);
+    const now = new Date(2025, 6, 29, 20, 0, 0, 0);
+    expect(nudgeFireDate(0, sourceDay, now)).toBeNull();
+  });
+
   it("rejects when the resolved instant equals now exactly (not strictly after)", () => {
     const now = new Date(2026, 6, 29, 10, 0, 0, 0);
-    expect(nudgeFireDate(600, DAY, now)).toBeNull();
+    expect(nudgeFireDate(600, DAY(), now)).toBeNull();
   });
 
   it("resolves when the resolved instant is 1ms after now", () => {
     const now = new Date(2026, 6, 29, 9, 59, 59, 999);
-    expect(nudgeFireDate(600, DAY, now)).toEqual(
+    expect(nudgeFireDate(600, DAY(), now)).toEqual(
       new Date(2026, 6, 29, 10, 0, 0, 0),
     );
   });
 
   it("rejects when the resolved instant is 1ms before now", () => {
     const now = new Date(2026, 6, 29, 10, 0, 0, 1);
-    expect(nudgeFireDate(600, DAY, now)).toBeNull();
+    expect(nudgeFireDate(600, DAY(), now)).toBeNull();
   });
 });
