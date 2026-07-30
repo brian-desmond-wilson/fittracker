@@ -104,6 +104,19 @@ describe("milestone label formatting", () => {
     // mealPace.ts's `h === 0 ? 12 : ...` maps to display "12". now=23:30
     // is after all three main meals, so nextMilestone falls through to its
     // windowEnd default ("end of day").
+    //
+    // Provenance: this input is DB-reachable but NOT app-reachable. Postgres
+    // accepts "24:00:00" for the `water_window_end TIME` column and it
+    // passes the `water_window_end > water_window_start` CHECK, and
+    // useMacroGoals.ts's `.slice(0,5)` would pass "24:00" through unchanged
+    // — but GoalsScreen.tsx derives the window-end string from
+    // `d.getHours()`, which is always 0–23, so the app's own UI can never
+    // produce "24:00". The two alternative routes into the h===0 branch are
+    // also blocked: a 00:00 *meal* time is pickable but can never be
+    // selected as a milestone (`c.minutes > nowMin` can't hold for 0), and
+    // `windowEnd: "00:00"` is rejected by the same CHECK constraint. This
+    // test pins a real branch of a shipped lib that is reachable only via
+    // an out-of-band DB write, not through the app itself.
     const r = computeMealPace({
       ...base,
       windowEnd: "24:00",
@@ -112,6 +125,23 @@ describe("milestone label formatting", () => {
     });
     expect(r.status).toBe("behind");
     expect(r.catchUpLabel).toBe("end of day (12 AM)");
+  });
+
+  it("single-digit minutes are zero-padded", () => {
+    // lunch at 12:05 (a real time-picker output — GoalsScreen.tsx builds
+    // meal-time strings with `String(d.getMinutes()).padStart(2,'0')`, so
+    // ":05" is an ordinary selection, not a contrived edge case).
+    // formatHourLabel(725): h=12, m=5, m!==0 so it takes the
+    // `${display}:${String(m).padStart(2,'0')} ${ampm}` branch — pins that
+    // the minutes are zero-padded ("05"), not left bare ("5").
+    const r = computeMealPace({
+      ...base,
+      mealTimes: { breakfast: "08:00", lunch: "12:05", dinner: "18:00" },
+      currentValue: 100,
+      now: at(11),
+    });
+    expect(r.status).toBe("behind");
+    expect(r.catchUpLabel).toBe("lunch (12:05 PM)");
   });
 });
 
