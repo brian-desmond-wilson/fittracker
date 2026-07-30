@@ -97,7 +97,14 @@ export function MealDetail({
             ✂︎ already cut small — EoE-safe
           </Text>
         )}
-        {assemblability && !assemblability.assemblable && (
+        {/* Gated on the LIST, not on the `assemblable` verdict. They are not
+            the same predicate: `assemblable` is
+            `items.length > 0 && missing.length === 0`, so an item-less meal
+            is not-assemblable with an EMPTY missing list and the verdict gate
+            renders a bare "Missing:" with nothing after it. Item-less meals
+            are a live state — `updateMeal`'s non-atomic replace documents
+            leaving one behind. */}
+        {assemblability && assemblability.missing.length > 0 && (
           <Text style={[lib.smallMuted, lib.warnText, { marginTop: 8 }]}>
             Missing: {assemblability.missing.join(", ")}
           </Text>
