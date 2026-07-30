@@ -29,6 +29,30 @@ import { SectionHeader } from "./edit-food/SectionHeader";
 import { SectionKey, UNITS, LocationEntry } from "./edit-food/constants";
 import { useFoodImages } from "./edit-food/useFoodImages";
 
+/** `food_inventory_locations.quantity` is int4; anything above this overflows. */
+const INT4_MAX = 2_147_483_647;
+
+/**
+ * Parse a quantity text field into the number that will actually be written,
+ * or null if it isn't writable. One function so validation and the write can
+ * never disagree — they used to: validation ran `parseFloat` and the write ran
+ * `parseInt`, so ".5" passed validation (0.5 >= 0) and reached the insert as
+ * NaN, and "1.5" was silently truncated to 1. Both are typeable on the numeric
+ * keypad, which includes ".".
+ *
+ * `Number` rather than `parseInt`, deliberately: `parseInt("1.5")` returns 1
+ * (accepting a value the user did not type), while `Number("1.5")` is 1.5 and
+ * fails the integer test. It also rejects trailing garbage ("12abc" -> NaN)
+ * that `parseInt` would happily truncate. The explicit empty/whitespace check
+ * comes first because `Number("")` and `Number(" ")` are both 0, not NaN.
+ */
+function parseQuantityInput(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > INT4_MAX) return null;
+  return value;
+}
+
 interface EditFoodScreenProps {
   item: InventoryItemWithState;
   onClose: () => void;
@@ -410,15 +434,36 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       return;
     }
 
+    // The exact set of location rows this save must end with — the only
+    // quantity truth. BOTH storage types go through replaceItemLocations, so a
+    // single-location save always leaves exactly one row and a multi -> single
+    // flip leaves no orphan rows behind.
+    //
+    // Built HERE, inside validation, and this placement is load-bearing: the
+    // numbers that get validated are by construction the numbers that get
+    // written. There is no second parse downstream that could disagree.
+    const locationRows: Array<{
+      location: FoodLocation;
+      quantity: number;
+      is_ready_to_consume: boolean;
+      notes?: string | null;
+    }> = [];
+
     // Validate based on storage type
     if (storageType === 'single-location') {
-      if (!quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) < 0) {
+      const parsedQuantity = parseQuantityInput(quantity);
+      if (parsedQuantity === null) {
         errors.add("quantity");
         setValidationErrors(errors);
         setExpandedSection("storage");
         Alert.alert("Validation Error", "Valid quantity is required");
         return;
       }
+      locationRows.push({
+        location: location ?? "pantry",
+        quantity: parsedQuantity,
+        is_ready_to_consume: true,
+      });
     } else {
       // Multi-location validation
       if (locationEntries.length === 0) {
@@ -430,13 +475,20 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       }
 
       for (const entry of locationEntries) {
-        if (!entry.quantity || isNaN(parseFloat(entry.quantity)) || parseFloat(entry.quantity) < 0) {
+        const parsedQuantity = parseQuantityInput(entry.quantity);
+        if (parsedQuantity === null) {
           errors.add("locationEntries");
           setValidationErrors(errors);
           setExpandedSection("storage");
           Alert.alert("Validation Error", "All location entries must have valid quantities");
           return;
         }
+        locationRows.push({
+          location: entry.location,
+          quantity: parsedQuantity,
+          is_ready_to_consume: entry.isReadyToConsume,
+          notes: entry.notes || null,
+        });
       }
     }
 
@@ -502,25 +554,6 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         image_side_url: sideUrl,
       };
 
-      // The exact set of location rows this save must end with — the only
-      // quantity truth. BOTH storage types go through replaceItemLocations, so
-      // a single-location save always leaves exactly one row and a
-      // multi -> single flip leaves no orphan rows behind.
-      const locationRows = storageType === 'single-location'
-        ? [
-            {
-              location: location ?? "pantry",
-              quantity: parseInt(quantity, 10),
-              is_ready_to_consume: true,
-            },
-          ]
-        : locationEntries.map((entry) => ({
-            location: entry.location,
-            quantity: parseInt(entry.quantity, 10),
-            is_ready_to_consume: entry.isReadyToConsume,
-            notes: entry.notes || null,
-          }));
-
       let foodItemId: string;
 
       if (isNew) {
@@ -542,10 +575,31 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
         foodItemId = newItem.id;
 
-        // Runs after the item row exists, so foodItemId is real. Throws on
-        // failure (including the empty-rows backstop) and the catch below
-        // surfaces it as an alert.
-        await replaceItemLocations(user.id, foodItemId, locationRows);
+        // Runs after the item row exists, so foodItemId is real.
+        //
+        // ⚠️ CREATE PATH ONLY — the rollback below DELETES the item row. That
+        // is correct here and only here, because this code created it moments
+        // ago: creating is no longer one atomic INSERT but insert -> delete ->
+        // insert -> update, and a failure past the first step would strand an
+        // item with zero location rows and a 0 cache, which the grid renders as
+        // a real out-of-stock product and which every retry would duplicate.
+        // The update path's equivalent call is deliberately NOT wrapped in
+        // this — see the comment there.
+        try {
+          await replaceItemLocations(user.id, foodItemId, locationRows);
+        } catch (locationError) {
+          const { error: rollbackError } = await supabase
+            .from("food_inventory")
+            .delete()
+            .eq("id", foodItemId);
+          // Logged, never rethrown: the location failure is the one the user
+          // has to see, and a failed rollback must not mask it. Same precedent
+          // as replaceItemLocations' own failed cache-resync handling.
+          if (rollbackError) {
+            console.error("Failed to roll back orphaned item after location write failed:", rollbackError);
+          }
+          throw locationError;
+        }
 
         // Insert category mappings
         if (selectedCategoryIds.length > 0) {
@@ -594,7 +648,27 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // Unconditional, not multi-location-only: the old code left a
         // single-location save's rows untouched, so a stale row survived every
         // edit and a multi -> single flip orphaned every row it used to have.
-        await replaceItemLocations(user.id, foodItemId, locationRows);
+        //
+        // NO rollback wrapper here, unlike the create path: this item
+        // pre-existed the save, so deleting it would destroy the user's data
+        // rather than clean up after ourselves.
+        //
+        // A failure here is not "the save didn't happen" — the item UPDATE
+        // above already committed, and replaceItemLocations drives the stock to
+        // 0 on its failure path so that every reader agrees. That recovery
+        // story only works if the user is told to re-save, so this failure gets
+        // its own message instead of the generic one below, and the screen
+        // stays open with the typed quantity intact so re-saving is one tap.
+        try {
+          await replaceItemLocations(user.id, foodItemId, locationRows);
+        } catch (locationError) {
+          console.error("Error saving location rows:", locationError);
+          Alert.alert(
+            "Stock Not Saved",
+            "The item's details were saved, but its stock could not be written and now reads 0. Tap Save again to restore the quantity.",
+          );
+          return;
+        }
 
         // Handle category and subcategory mappings
         // Delete existing category mappings
