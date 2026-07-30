@@ -34,10 +34,17 @@ interface MealLibraryModalProps {
   todayDate: string; // the viewed local date — logs land on this day
   onClose: () => void;
   onLogged: () => Promise<void> | void;
+  /** Phase 3 (spec §7.1/§7.2): open straight onto this meal's detail instead
+   *  of the list, for the Home card's `suggestMealId` deep link and the
+   *  in-Meals "Suggested now" chips. Read only when `visible` flips to true
+   *  (or while visible, if it changes) — see the effect below. A stale/deleted
+   *  id is safe: `detailMeal` then resolves to `undefined` and the body chain
+   *  falls through to the list. */
+  initialMealId?: string | null;
 }
 
 export function MealLibraryModal({
-  visible, savedFoods, todayDate, onClose, onLogged,
+  visible, savedFoods, todayDate, onClose, onLogged, initialMealId,
 }: MealLibraryModalProps) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<MealLibraryData | null>(null);
@@ -68,10 +75,14 @@ export function MealLibraryModal({
 
   useEffect(() => {
     if (visible) {
-      setView({ mode: "list" });
+      setView(
+        initialMealId
+          ? { mode: "detail", mealId: initialMealId }
+          : { mode: "list" },
+      );
       load();
     }
-  }, [visible, load]);
+  }, [visible, initialMealId, load]);
 
   const run = useCallback(
     async (title: string, fn: () => Promise<void>): Promise<boolean> => {
