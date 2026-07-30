@@ -1,8 +1,9 @@
 // Home surface for the Eat Next recommender (spec §7.1). Full-width card,
-// TodaysWorkoutCard pattern: self-fetching, refreshKey remount/reload,
-// loading / error+retry / contextual-empty states. Also the app-open resync
-// point for the eat-nudge family.
-import React, { useCallback, useEffect } from "react";
+// TodaysWorkoutCard pattern: self-fetching, refreshKey prop-driven reload
+// (no remount — the same component instance re-fetches when refreshKey
+// changes), loading / error+retry / contextual-empty states. Also the
+// app-open resync point for the eat-nudge family.
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   ActivityIndicator, StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
@@ -19,8 +20,19 @@ interface EatNextHomeCardProps {
 export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   const { result, loading, error, refetch, computedAt } = useEatNext(refreshKey);
 
+  // `useEatNext`'s own mount effect already issues the first load — this
+  // ref skips ONLY the focus callback that fires alongside that same first
+  // mount, so the card doesn't double-load on every mount. Every subsequent
+  // focus (tab switch back, app foreground) still refetches normally; a
+  // remount resets the ref (fresh component instance) and the hook's own
+  // mount effect fires again in lockstep, so that path stays correct too.
+  const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
       refetch();
     }, [refetch]),
   );
@@ -34,9 +46,22 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // comment and useEatNext.ts's `computedAt` doc comment). `computedAt` is
   // `Date | null` before the first load resolves; that case has no decision
   // to sync yet, so it's a deliberate no-op, not an oversight.
+  //
+  // `syncEatNudge` can reject (`requestPermissions` in `notificationService.ts`
+  // has no try/catch around its native calls, and `syncEatNudgeCore` awaits
+  // it outside its own try). Its doc comment names the caller as responsible
+  // for that rejection; unlike `persistMeals` (which awaits `syncMealReminders`
+  // inside a try/catch), this is a background effect with nothing to catch it
+  // — an uncaught rejection here is a dev yellow-box and silence in prod.
+  // Caught and logged, not surfaced to the user: this runs on every
+  // background resync with no gesture to attach an alert to, matching how
+  // permission denial is handled everywhere else in this family (surfaced
+  // once, at the toggle gesture, not from a background resync).
   useEffect(() => {
     if (!result || !computedAt) return;
-    syncEatNudge(result.nudge, computedAt);
+    void syncEatNudge(result.nudge, computedAt).catch((e) => {
+      console.error("EatNextHomeCard nudge resync:", e);
+    });
   }, [result, computedAt]);
 
   if (loading && !result) {
