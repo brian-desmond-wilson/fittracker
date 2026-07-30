@@ -142,18 +142,31 @@ export function assessAssemblability(opts: {
   const matches = resolveInventoryMatches(items, inventory);
   const missing = items.filter((it) => !matches.has(it.savedFoodId)).map((it) => it.name);
 
+  // "Expiring" is a rescue signal (eat this soon), not a spoilage report:
+  // bounded below at 0 so already-expired rows (daysLeft < 0) never win the
+  // minimum — they're a throw-out, not a rescue, and can't share the
+  // "expires in {n}d" copy template. Day 0 (expires today) is retained.
   const byId = new Map(inventory.map((r) => [r.id, r]));
-  let expiring: AssemblabilityInventoryRow | null = null;
+  let expiringItemName: string | null = null;
+  let expiringDays: number | null = null;
   for (const invId of new Set(matches.values())) {
     const row = byId.get(invId);
-    if (!row || row.daysLeft === null || row.daysLeft > EXPIRING_SOON_DAYS) continue;
-    if (expiring === null || row.daysLeft < (expiring.daysLeft as number)) expiring = row;
+    if (!row) continue;
+    const d = row.daysLeft;
+    if (d === null || d < 0 || d > EXPIRING_SOON_DAYS) continue;
+    // Strict `<` (not `<=`): on a tie, the first-encountered row wins, which
+    // — since matches preserves meal-item insertion order — means the
+    // earlier meal item's resolution wins. Deliberate, not incidental.
+    if (expiringDays === null || d < expiringDays) {
+      expiringItemName = row.name;
+      expiringDays = d;
+    }
   }
 
   return {
     assemblable: items.length > 0 && missing.length === 0,
     missing,
-    expiringItemName: expiring?.name ?? null,
-    expiringDaysLeft: expiring?.daysLeft ?? null,
+    expiringItemName,
+    expiringDaysLeft: expiringDays,
   };
 }

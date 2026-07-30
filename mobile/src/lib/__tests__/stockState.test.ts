@@ -215,12 +215,50 @@ describe("assessAssemblability", () => {
     expect(r.expiringItemName).toBe("Sirloin");
     expect(r.expiringDaysLeft).toBe(2);
   });
-  it("expiring ignores items beyond the soon window and null dates", () => {
+  it("expiring ignores items beyond the soon window", () => {
     const r = assessAssemblability({
       items: [mealItem({ conceptIds: ["beef"] })],
       inventory: [invRow({ conceptIds: ["beef"], daysLeft: EXPIRING_SOON_DAYS + 1 })],
     });
     expect(r.expiringItemName).toBeNull();
+  });
+  it("expiring includes the EXPIRING_SOON_DAYS boundary itself (inclusive upper bound)", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: EXPIRING_SOON_DAYS })],
+    });
+    expect(r.expiringItemName).toBe("Boost, Very High Calorie");
+    expect(r.expiringDaysLeft).toBe(EXPIRING_SOON_DAYS);
+  });
+  it("expiring excludes already-expired rows — a throw-out is not a rescue", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: -3 })],
+    });
+    expect(r.expiringItemName).toBeNull();
+    expect(r.expiringDaysLeft).toBeNull();
+  });
+  it("a matched row with no expiration date is not 'expiring'", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: null })],
+    });
+    expect(r.expiringItemName).toBeNull();
+    expect(r.expiringDaysLeft).toBeNull();
+  });
+  it("a tie between two matched rows favors the first meal item's resolution", () => {
+    const r = assessAssemblability({
+      items: [
+        mealItem({ savedFoodId: "a", conceptIds: ["beef"] }),
+        mealItem({ savedFoodId: "b", name: "Rice", conceptIds: ["rice"] }),
+      ],
+      inventory: [
+        invRow({ id: "i1", name: "Sirloin", conceptIds: ["beef"], daysLeft: 3 }),
+        invRow({ id: "i2", name: "Sticky Rice", conceptIds: ["rice"], daysLeft: 3 }),
+      ],
+    });
+    expect(r.expiringItemName).toBe("Sirloin");
+    expect(r.expiringDaysLeft).toBe(3);
   });
   it("empty meal is not assemblable", () => {
     expect(assessAssemblability({ items: [], inventory: [invRow()] }).assemblable).toBe(false);

@@ -406,18 +406,58 @@ describe("assessAssemblability", () => {
     expect(r.expiringItemName).toBe("Sirloin");
     expect(r.expiringDaysLeft).toBe(2);
   });
-  it("expiring ignores items beyond the soon window and null dates", () => {
+  it("expiring ignores items beyond the soon window", () => {
     const r = assessAssemblability({
       items: [mealItem({ conceptIds: ["beef"] })],
       inventory: [invRow({ conceptIds: ["beef"], daysLeft: EXPIRING_SOON_DAYS + 1 })],
     });
     expect(r.expiringItemName).toBeNull();
   });
+  it("expiring includes the EXPIRING_SOON_DAYS boundary itself (inclusive upper bound)", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: EXPIRING_SOON_DAYS })],
+    });
+    expect(r.expiringItemName).toBe("Boost, Very High Calorie");
+    expect(r.expiringDaysLeft).toBe(EXPIRING_SOON_DAYS);
+  });
+  it("expiring excludes already-expired rows — a throw-out is not a rescue", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: -3 })],
+    });
+    expect(r.expiringItemName).toBeNull();
+    expect(r.expiringDaysLeft).toBeNull();
+  });
+  it("a matched row with no expiration date is not 'expiring'", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: null })],
+    });
+    expect(r.expiringItemName).toBeNull();
+    expect(r.expiringDaysLeft).toBeNull();
+  });
+  it("a tie between two matched rows favors the first meal item's resolution", () => {
+    const r = assessAssemblability({
+      items: [
+        mealItem({ savedFoodId: "a", conceptIds: ["beef"] }),
+        mealItem({ savedFoodId: "b", name: "Rice", conceptIds: ["rice"] }),
+      ],
+      inventory: [
+        invRow({ id: "i1", name: "Sirloin", conceptIds: ["beef"], daysLeft: 3 }),
+        invRow({ id: "i2", name: "Sticky Rice", conceptIds: ["rice"], daysLeft: 3 }),
+      ],
+    });
+    expect(r.expiringItemName).toBe("Sirloin");
+    expect(r.expiringDaysLeft).toBe(3);
+  });
   it("empty meal is not assemblable", () => {
     expect(assessAssemblability({ items: [], inventory: [invRow()] }).assemblable).toBe(false);
   });
 });
 ```
+
+> **Landed vs. planned:** the four `expiring…` tests above (boundary-inclusive, already-expired exclusion, null-date, and tie-order) were added by the Task 2 execution amendment below, after a code-quality review found the plan's original single "expiring ignores items beyond the soon window and null dates" test didn't actually exercise the null-date and boundary cases it claimed to. See "⚠️ Execution amendments → Task 2".
 
 - [ ] **Step 2: Run — new tests FAIL**
 
@@ -459,22 +499,37 @@ export function assessAssemblability(opts: {
   const matches = resolveInventoryMatches(items, inventory);
   const missing = items.filter((it) => !matches.has(it.savedFoodId)).map((it) => it.name);
 
+  // "Expiring" is a rescue signal (eat this soon), not a spoilage report:
+  // bounded below at 0 so already-expired rows (daysLeft < 0) never win the
+  // minimum — they're a throw-out, not a rescue, and can't share the
+  // "expires in {n}d" copy template. Day 0 (expires today) is retained.
   const byId = new Map(inventory.map((r) => [r.id, r]));
-  let expiring: AssemblabilityInventoryRow | null = null;
+  let expiringItemName: string | null = null;
+  let expiringDays: number | null = null;
   for (const invId of new Set(matches.values())) {
     const row = byId.get(invId);
-    if (!row || row.daysLeft === null || row.daysLeft > EXPIRING_SOON_DAYS) continue;
-    if (expiring === null || row.daysLeft < (expiring.daysLeft as number)) expiring = row;
+    if (!row) continue;
+    const d = row.daysLeft;
+    if (d === null || d < 0 || d > EXPIRING_SOON_DAYS) continue;
+    // Strict `<` (not `<=`): on a tie, the first-encountered row wins, which
+    // — since matches preserves meal-item insertion order — means the
+    // earlier meal item's resolution wins. Deliberate, not incidental.
+    if (expiringDays === null || d < expiringDays) {
+      expiringItemName = row.name;
+      expiringDays = d;
+    }
   }
 
   return {
     assemblable: items.length > 0 && missing.length === 0,
     missing,
-    expiringItemName: expiring?.name ?? null,
-    expiringDaysLeft: expiring?.daysLeft ?? null,
+    expiringItemName,
+    expiringDaysLeft: expiringDays,
   };
 }
 ```
+
+> **Landed vs. planned:** the expiring-window filter and tie-break above differ from the plan's original code — see "⚠️ Execution amendments → Task 2" for the defects (unbounded-below window, `<=` tie-break, `as number` cast) and their fixes.
 
 - [ ] **Step 4: Run — PASS (all stockState + existing suites); tsc 0**
 
@@ -1226,6 +1281,8 @@ export interface EatNextStockInfo {
 
 `Candidate` gains `stockRank: number` (0 in-stock, 1 unknown, 2 known-missing) and `expiringRank: number` (0 uses-expiring, 1 not). `candidate()` gains a **fifth** optional parameter — its landed signature is `(m, preferredRoles, maxPrepMinutes, preferredCategories = [])` — becoming `(m, preferredRoles, maxPrepMinutes, preferredCategories = [], stockByMealId?)`; it looks up `stockByMealId?.get(m.meal.id)`, computes both ranks (undefined map or missing entry → `stockRank: 1`, `expiringRank: 1`), and appends stock reasons to `extraReasons`. Every `candidate()` call site forwards the map, **including `catchUpCandidates`**, which gains and forwards a `stockByMealId` parameter so the `catch_up` context and the nudge's body pick stay availability-aware through the one shared definition:
 
+**Caution (Task 2 amendment carry-forward):** compute `expiringRank` from `info.expiringItemName != null`, never from a truthiness check on `info.expiringDaysLeft` — `expiringDaysLeft: 0` (expires today) is a valid, retained rescuable case from `assessAssemblability`, and `0` is falsy in JS. A truthiness check would silently drop the expires-today rescue signal from the ranking.
+
 ```ts
 function stockReasons(info: EatNextStockInfo | undefined): string[] {
   if (!info) return [];
@@ -1356,5 +1413,21 @@ Task 1 landed spec-compliant on first pass (verbatim to the plan's Step 1/3 bloc
 Not fixed, per the review's explicit scope: widening the `locations` param to a `Pick<...>` to avoid Task 8's synthetic-row fabrication (deferred to Task 8, if it ends up touching that signature) — flagged here as a possible required deviation from Task 8's plan code when that task executes. Also not added: a direct unit test for `daysBetweenLocalDates` (transitively covered by the projection tests).
 
 Final state: 9 Jest suites / 219 tests passing (13 in `stockState.test.ts`, up from 12), `tsc --noEmit` 0 errors.
+
+### Task 2
+
+Task 2 landed spec-compliant on first pass (byte-identical to the plan's Step 1/3 blocks, 21/21 tests, `tsc` 0 errors; the barcode-terminal test was independently mutation-verified as load-bearing). A follow-up code-quality review returned "Ready to merge: with fixes" — no spec drift, but one important behavioral defect and three coverage gaps in the plan's own code/tests. All five are fixed below, in the same commit as this amendment.
+
+- **The expiring window had no lower bound — already-expired rows could win the "expiring" minimum.** The plan's filter (`row.daysLeft === null || row.daysLeft > EXPIRING_SOON_DAYS`) only bounds `daysLeft` above; a negative `daysLeft` (already expired — `projectItemStock` deliberately bands this as `"expired"`, distinct from `"soon"`, at `stockState.ts` ~92–94, so negatives are an expected, not exceptional, value) passes the filter, and since expired food has the smallest `daysLeft`, it always wins the `<` minimum over anything actually rescuable. Confirmed empirically pre-fix: `daysLeft: -3` alone produced `{ expiringItemName: "Rotten Sirloin", expiringDaysLeft: -3 }`; `-9` vs. `+1` produced `{ expiringItemName: "Rotten Sirloin", expiringDaysLeft: -9 }`. **Blast radius once downstream tasks land:** Task 8's `MealDetail` would render `Uses Rotten Sirloin — expires in -3d`; Task 9's `expiringRank` (`roleRank → stockRank → expiringRank → raw` comparator) would promote that meal above every fresh in-stock meal — "rescue food first" inverted into "eat the worst thing first," silently, in production, the first time an expired item shared a concept with something fresh. **Fix:** the skip condition now also excludes `d < 0`; day 0 (expires today) is retained as rescuable, matching `projectItemStock`'s own `"today"`/`"soon"` bands. Rationale recorded in-line at `stockState.ts`: "expiring" is a rescue signal (eat this soon), not a spoilage report, and can't share the `expires in {n}d` copy template once negative. **Verified:** the `d < 0` guard removed from `stockState.ts` and run against `npm test -- stockState` → the new "expiring excludes already-expired rows" test failed (`expiringItemName` received `"Boost, Very High Calorie"`, expected `null`); reverted, suite green again.
+- **The `daysLeft === null` skip was untested — mutant SURVIVED.** The existing test titled "expiring ignores items beyond the soon window and null dates" never actually exercised a null `daysLeft`; only `EXPIRING_SOON_DAYS + 1` was tested. Removing the null check in a type-valid way (casting both read sites to `number`, since a bare removal is a genuine `tsc` error, not a test kill) left all 21 original tests passing — a matched row with `daysLeft: null` would render `expires in nulld`. **Fix:** the implementation was restructured to narrow `d` via a local `const` (`const d = row.daysLeft; if (d === null || d < 0 || d > EXPIRING_SOON_DAYS) continue;`) instead of re-reading `row.daysLeft`/casting; a dedicated test ("a matched row with no expiration date is not 'expiring'") now pins `daysLeft: null → expiringItemName: null, expiringDaysLeft: null`. **Verified:** null-check removed via `(d as number) < 0 || (d as number) > EXPIRING_SOON_DAYS` (plus a matching cast at the tie-break comparison, since removing only the guard's null-narrowing still left a downstream `tsc` error) — this compiled clean and failed the new test (`expiringItemName` received `"Boost, Very High Calorie"`, expected `null`); reverted, suite green.
+- **The inclusive `EXPIRING_SOON_DAYS` boundary was unpinned — mutant SURVIVED.** `> EXPIRING_SOON_DAYS` → `>= EXPIRING_SOON_DAYS` passed all 21 tests: the only "beyond window" test used `EXPIRING_SOON_DAYS + 1`, never the boundary value itself. Real behavior includes day 7 (matching `projectItemStock`'s own `<= EXPIRING_SOON_DAYS → "soon"` band). **Fix:** new test pins `daysLeft: EXPIRING_SOON_DAYS` as still-expiring. **Verified:** `>` mutated to `>=`, run against `npm test -- stockState` → the new boundary test failed (`expiringItemName` received `null`, expected `"Boost, Very High Calorie"`); reverted, suite green.
+- **The tie-break's strict `<` was unpinned — mutant SURVIVED.** `<` → `<=` in `d < expiringDays` also passed all 21 tests: no test put two matched rows at the same `daysLeft`. Two rows tied on `daysLeft` resolve to whichever the loop visits first — which, since `matches` (and therefore `new Set(matches.values())`) preserves meal-item insertion order, means the earlier meal item's resolution wins. That was already the real behavior; it just wasn't a decision anyone could point to. **Fix:** new test ties two rows at `daysLeft: 3` and pins the first item's row as the winner; a comment at the tie-break site now states the intent explicitly. **Verified:** `<` mutated to `<=`, run against `npm test -- stockState` → the new tie-order test failed (`expiringItemName` received `"Sticky Rice"`, expected `"Sirloin"`); reverted, suite green.
+- **The `(expiring.daysLeft as number)` cast was an escape hatch, not a necessity.** It was safe at the time (the code guarantees non-null at that point) but is exactly the kind of cast that would have silently absorbed a future loosening of the null/range guard above it — and in fact, the FIX-2 mutant above was killable only because the *guard's own* `row.daysLeft` was left type-checked; the cast on the comparison side would not itself have caught anything. **Fix:** replaced the `expiring: AssemblabilityInventoryRow | null` + cast pattern with two parallel locals (`expiringItemName: string | null`, `expiringDays: number | null`) populated only inside the already-narrowed branch, so no cast is needed anywhere in the function; `tsc --noEmit` remains 0 errors. Behavior is unchanged — this is a pure "delete the escape hatch" refactor.
+
+Not in scope for this amendment, confirmed rather than assumed: the `new Set(matches.values())` dedup is not itself a coverage hole. Mutating it away (iterating `matches.values()` directly, without the `Set`) is a provably **equivalent** mutant here — revisiting the same inventory row a second time re-evaluates `d < expiringDays` with `d` equal to the already-recorded `expiringDays`, which is `false`, so the second visit is a no-op and the result is byte-identical either way. No test should be written to try to kill it.
+
+**Forward note for Task 9:** when Task 9 computes `expiringRank` from `MealAssemblability`, it must key off `expiringItemName != null`, not a truthiness check on `expiringDaysLeft` — `expiringDaysLeft: 0` (expires today, a retained rescuable case per the FIX above) is falsy in JS and a truthiness check would silently drop the expires-today rescue signal from the ranking. See also the caution added directly in Task 9's section below.
+
+Final state: 9 Jest suites / 231 tests passing (25 in `stockState.test.ts`, up from 21), `tsc --noEmit` 0 errors.
 
 
