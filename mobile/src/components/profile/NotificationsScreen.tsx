@@ -25,6 +25,10 @@ import {
   syncMealReminders,
   sendTestMealReminder,
 } from "@/src/services/mealReminderService";
+import {
+  cancelAllEatNudges,
+  sendTestEatNudge,
+} from "@/src/services/eatNudgeService";
 import { MealType } from "@/src/types/track";
 
 const MEAL_TYPE_OPTIONS: MealType[] = [
@@ -84,6 +88,22 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
       }
     | null
   >(null);
+
+  // Pace nudges (Nutrition OS Phase 3). Seeded `false` rather than loaded from
+  // `profiles.eat_nudges_enabled` — that column is added only by the unapplied
+  // migration `supabase/migrations/20260729110000_recommender_profile_and_view_cleanup.sql`
+  // (Task 11 is the owner gate). PostgREST rejects the ENTIRE select when any
+  // named column is unknown (42703 → HTTP 400), so naming it in the effect
+  // below would break every setting on this screen for the whole Task 6 →
+  // Task 11 window — the same landmine Task 5's `useEatNext` amendment hit and
+  // handled the same way. The `.update({ eat_nudges_enabled })` write below is
+  // left as-is: it will fail with the alert-on-failure idiom until the
+  // migration lands, which is honest and never user-visible pre-Task 12.
+  // TO WIRE UP after Task 11 applies the migration: add
+  // `eat_nudges_enabled` to this screen's profile `select(...)` and seed
+  // `eatNudges` from `!!data.eat_nudges_enabled`. See Task 11 Step 4.
+  const [eatNudges, setEatNudges] = useState(false);
+  const [eatNudgesSaving, setEatNudgesSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -380,6 +400,52 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
     }
   };
 
+  const handleEatNudgesToggle = async (value: boolean) => {
+    setEatNudges(value);
+    setEatNudgesSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setEatNudges(!value);
+        Alert.alert("Error", "You must be logged in");
+        return;
+      }
+      const { error } = await supabase
+        .from("profiles")
+        .update({ eat_nudges_enabled: value })
+        .eq("id", user.id);
+      if (error) {
+        setEatNudges(!value);
+        Alert.alert("Failed to save", error.message);
+        return;
+      }
+      if (!value) await cancelAllEatNudges(); // off = no pending nudge survives
+    } finally {
+      setEatNudgesSaving(false);
+    }
+  };
+
+  const handleEatNudgeTestReminder = async () => {
+    const result = await sendTestEatNudge();
+    if (result.ok) {
+      Alert.alert(
+        "Test sent",
+        "A test reminder should appear in about a second. If you don't see it, check your system notification settings."
+      );
+    } else if (result.permissionDenied) {
+      Alert.alert(
+        "Notifications Disabled",
+        "Enable notifications for FitTracker in Settings to receive pace nudges.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
+    } else {
+      Alert.alert("Error", "Failed to send test reminder");
+    }
+  };
+
   const handleTestReminder = async () => {
     const result = await sendTestWaterReminder();
     if (result.ok) {
@@ -546,6 +612,43 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
                     <BellRing size={16} color="#F97316" />
                     <Text style={[styles.testButtonText, { color: "#F97316" }]}>
                       Send Test Meal Reminder
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Pace nudges (Nutrition OS Phase 3) */}
+          {!loading && (
+            <View style={[styles.card, { marginTop: 16 }]}>
+              <View style={styles.cardHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Pace nudges</Text>
+                  <Text style={styles.cardSubtitle}>
+                    One smart reminder when you're falling behind on
+                    calories — only fires when needed.
+                  </Text>
+                </View>
+                <Switch
+                  value={eatNudges}
+                  onValueChange={handleEatNudgesToggle}
+                  trackColor={{ false: "#374151", true: "#A855F7" }}
+                  thumbColor="#FFFFFF"
+                  disabled={eatNudgesSaving}
+                />
+              </View>
+
+              {eatNudges && (
+                <View style={styles.timesSection}>
+                  <TouchableOpacity
+                    onPress={handleEatNudgeTestReminder}
+                    style={styles.testButton}
+                    activeOpacity={0.7}
+                  >
+                    <BellRing size={16} color="#A855F7" />
+                    <Text style={[styles.testButtonText, { color: "#A855F7" }]}>
+                      Send Test Nudge
                     </Text>
                   </TouchableOpacity>
                 </View>
