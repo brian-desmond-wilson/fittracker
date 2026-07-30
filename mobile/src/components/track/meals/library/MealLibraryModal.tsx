@@ -84,6 +84,28 @@ export function MealLibraryModal({
     }
   }, [visible, initialMealId, load]);
 
+  // Stale-target recovery, and it has to run HERE rather than in the effect
+  // above: at that point `load()` hasn't resolved, so `data` is null and there
+  // is nothing to validate the id against. Reachable only narrowly — a meal
+  // deleted between the recommendation that named it and the tap that opens it
+  // — but without this the body chain falls through to the library list
+  // (verified: `view.mode === "detail" && detailMeal` is false, `builder` is
+  // false, so the final `else` renders the `SectionList`) while the header
+  // still reads "Meal" with a `‹ Library` action that appears to do nothing
+  // when tapped, because the list is already what's on screen. Resetting the
+  // view makes the header agree with the body. Cannot loop: it only ever
+  // moves `detail` → `list`, and the `view.mode === "detail"` test is false on
+  // the next run.
+  useEffect(() => {
+    if (
+      data &&
+      view.mode === "detail" &&
+      !data.meals.some((m) => m.id === view.mealId)
+    ) {
+      setView({ mode: "list" });
+    }
+  }, [data, view]);
+
   const run = useCallback(
     async (title: string, fn: () => Promise<void>): Promise<boolean> => {
       setBusy(true);
