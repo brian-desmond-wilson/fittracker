@@ -1,0 +1,94 @@
+// THE stock projection (Nutrition OS Phase 4). Pure, no I/O. Replaces the
+// three byte-identical client computations (FoodInventoryScreen and the two
+// detail/edit routes) and the four dropped stock views. Locations are the
+// only quantity truth — storage_type never branches quantity math; it
+// survives solely as a threshold-semantics + UI presentation hint.
+// Threshold semantics are pinned to the SHIPPED UI, not the dropped views
+// (the views OR'd thresholds and ignored requires_refrigeration).
+export const EXPIRING_SOON_DAYS = 7;
+
+export type ExpirationBand = "expired" | "today" | "soon" | "later";
+
+export interface StockItemInput {
+  storage_type: string | null;
+  restock_threshold: number | null;
+  fridge_restock_threshold: number | null;
+  total_restock_threshold: number | null;
+  requires_refrigeration: boolean | null;
+  expiration_date: string | null; // YYYY-MM-DD
+}
+
+export interface StockLocationRow {
+  id: string;
+  location: string;
+  quantity: number;
+  is_ready_to_consume: boolean;
+}
+
+export interface ItemStockState {
+  totalQuantity: number;
+  readyQuantity: number;
+  storageQuantity: number;
+  isOut: boolean;
+  isLow: boolean;
+  needsFridgeRestock: boolean;
+  expiration: ExpirationBand | null;
+  daysLeft: number | null;
+}
+
+/** Whole-day difference between two local YYYY-MM-DD strings (b − a). */
+export function daysBetweenLocalDates(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map((s) => parseInt(s, 10));
+  const [by, bm, bd] = b.split("-").map((s) => parseInt(s, 10));
+  // Local-noon anchors sidestep DST edges (rampProgress precedent).
+  const da = new Date(ay, am - 1, ad, 12).getTime();
+  const db = new Date(by, bm - 1, bd, 12).getTime();
+  return Math.round((db - da) / 86_400_000);
+}
+
+export function projectItemStock(opts: {
+  item: StockItemInput;
+  locations: StockLocationRow[];
+  todayLocalDate: string;
+}): ItemStockState {
+  const { item, locations, todayLocalDate } = opts;
+  const totalQuantity = locations.reduce((s, l) => s + l.quantity, 0);
+  const readyQuantity = locations
+    .filter((l) => l.is_ready_to_consume)
+    .reduce((s, l) => s + l.quantity, 0);
+  const storageQuantity = totalQuantity - readyQuantity;
+
+  const single = item.storage_type === "single-location";
+  const lowThreshold = single
+    ? item.restock_threshold ?? 0
+    : item.total_restock_threshold ?? 0;
+  const isLow = totalQuantity > 0 && totalQuantity <= lowThreshold;
+
+  const needsFridgeRestock =
+    !single &&
+    item.requires_refrigeration === true &&
+    (item.fridge_restock_threshold ?? 0) > 0 &&
+    readyQuantity <= (item.fridge_restock_threshold ?? 0);
+
+  let expiration: ExpirationBand | null = null;
+  let daysLeft: number | null = null;
+  if (item.expiration_date) {
+    daysLeft = daysBetweenLocalDates(todayLocalDate, item.expiration_date);
+    expiration =
+      daysLeft < 0 ? "expired"
+      : daysLeft === 0 ? "today"
+      : daysLeft <= EXPIRING_SOON_DAYS ? "soon"
+      : "later";
+  }
+
+  return {
+    totalQuantity,
+    readyQuantity,
+    storageQuantity,
+    isOut: totalQuantity === 0,
+    isLow,
+    needsFridgeRestock,
+    expiration,
+    daysLeft,
+  };
+}
