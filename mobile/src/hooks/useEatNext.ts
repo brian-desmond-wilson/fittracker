@@ -85,6 +85,24 @@ export interface UseEatNextValue {
   loading: boolean;
   error: Error | null;
   refetch: () => void;
+  /**
+   * The single clock (`load`'s local `now`) this `result` was computed
+   * against — `null` before the first successful load. Stale-while-revalidate
+   * like `result`: it updates only alongside a successful `setResult`, so the
+   * two are always a matched pair (an in-flight refetch or a failed one never
+   * makes `computedAt` describe a different `result` than the one on screen).
+   *
+   * Exists so callers can hand `EatNextNudge.fireAtMinutes` to
+   * `eatNudgeService.ts`'s `syncEatNudge(decision, sourceDay)` — whose
+   * required `sourceDay` argument is exactly this value. `fireAtMinutes` is
+   * minutes since local midnight on the SAME local day `now` fell on (see
+   * `EatNextNudge`'s doc comment in `eatNext.ts`); resolving it against
+   * anything else — a fresh `new Date()` at call time, in particular — can
+   * silently mis-schedule by up to ~24h if the caller runs on a different
+   * calendar day than this hook computed the decision on (Task 6 execution
+   * amendment has the full trace). Pass this field, not `new Date()`.
+   */
+  computedAt: Date | null;
 }
 
 const hhmm = (t: string) => t.slice(0, 5); // "HH:MM:SS" → "HH:MM"
@@ -136,6 +154,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
   const [result, setResult] = useState<EatNextResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [computedAt, setComputedAt] = useState<Date | null>(null);
   // Stale-response guard. Overlapping loads are expected by design here: per
   // the plan (Tasks 8 and 10 — not yet written, so this is the plan's stated
   // intent rather than verified code), the Home card refetches on focus and
@@ -321,6 +340,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
       // the old error stands until a result or a fresh error supersedes it.
       setError(null);
       setResult(next);
+      setComputedAt(now);
     } catch (e) {
       console.error("useEatNext:", e);
       if (runId !== runIdRef.current) return;
@@ -345,5 +365,5 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, refreshKey]);
 
-  return { result, loading, error, refetch: load };
+  return { result, loading, error, refetch: load, computedAt };
 }
