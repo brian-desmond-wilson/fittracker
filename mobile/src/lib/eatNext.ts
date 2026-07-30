@@ -65,6 +65,16 @@ export interface EatNextRecommendation {
   mealId: string;
   name: string;
   reasons: string[];
+  /** Rounded to match how the reason strings already render these numbers
+   *  (`Math.round`), so the structured fields and any reason text that
+   *  happens to embed the same number can never disagree on screen. */
+  calories: number;
+  protein: number;
+  prepMinutes: number;
+  /** The /100 renormalized score (`BrianScoreResult.score`), NOT `raw`.
+   *  Spec §5.5: ranking reads `raw`; "UI surfaces still display `score`/100."
+   *  This field is the UI-facing one — do not swap it for `raw`. */
+  score: number;
 }
 
 export interface EatNextNudge {
@@ -175,6 +185,10 @@ function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): 
     mealId: c.meal.id,
     name: c.meal.name,
     reasons: [...contextReason(c), ...c.extraReasons],
+    calories: Math.round(c.totals.calories),
+    protein: Math.round(c.totals.protein),
+    prepMinutes: c.meal.prep_minutes,
+    score: c.score.score,
   }));
 }
 
@@ -273,6 +287,10 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
               `${Math.round(top.totals.protein)} g protein in ${Math.round(top.totals.calories)} cal`,
               ...prepReason(top, maxPrepMinutes),
             ],
+            calories: Math.round(top.totals.calories),
+            protein: Math.round(top.totals.protein),
+            prepMinutes: top.meal.prep_minutes,
+            score: top.score.score,
           }],
           nudge: null,
         };

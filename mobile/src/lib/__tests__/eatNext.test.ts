@@ -468,6 +468,41 @@ describe("filters and ranking", () => {
   });
 });
 
+// ── recommendation fields (spec §7.1/§7.2: cal/protein/prep/score) ─────────
+describe("recommendation structured fields", () => {
+  it("pins calories, protein, and prepMinutes from the meal's own totals", () => {
+    const m = scored({ category: "dinner", calories: 512.6, protein: 33.6, prep: 4 });
+    const r = recommendEatNext(input({}, [m]));
+    expect(r.recommendations[0].calories).toBe(513); // Math.round(512.6)
+    expect(r.recommendations[0].protein).toBe(34); // Math.round(33.6)
+    expect(r.recommendations[0].prepMinutes).toBe(4);
+  });
+
+  it("recommendation.score is the /100 renormalized score, NOT raw (spec §5.5) — raw and score set independently so a raw-projection mutant fails", () => {
+    const m = scored({ category: "dinner", raw: 50, score: 99 });
+    const r = recommendEatNext(input({}, [m]));
+    expect(r.recommendations[0].score).toBe(99);
+    expect(r.recommendations[0].score).not.toBe(50);
+  });
+
+  it("goal_hit protein-short projection site also carries calories/protein/prepMinutes/score (not just toRecs)", () => {
+    const bridgeSmall = scored({
+      role: "bridge", calories: 290.2, protein: 25.7, prep: 7, raw: 50, score: 88,
+    });
+    const r = recommendEatNext(
+      input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 140 } },
+        [bridgeSmall],
+      ),
+    );
+    expect(r.context).toBe("goal_hit");
+    expect(r.recommendations[0].calories).toBe(290); // Math.round(290.2)
+    expect(r.recommendations[0].protein).toBe(26); // Math.round(25.7)
+    expect(r.recommendations[0].prepMinutes).toBe(7);
+    expect(r.recommendations[0].score).toBe(88); // not raw (50)
+  });
+});
+
 // ── nudge decision ──────────────────────────────────────────────────────────
 describe("nudge decision", () => {
   const behindBy = (catchUpAmount: number): Partial<EatNextInput> => ({
