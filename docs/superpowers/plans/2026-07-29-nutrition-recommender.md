@@ -2322,6 +2322,58 @@ Quality: ✅ ready to merge, no fixes — and independently defended the core/se
 
 **Gates after round 2:** `cd mobile && npx tsc --noEmit` → 0 errors. `cd mobile && npm test` → 8/8 suites, 203/203 tests (200 from round 1 + 3 net-new `nudgeFireDate` isolation cases — the original single "isolates the day guard" test was kept and three more added alongside it, per the Jul-30-vs-Aug-5 coverage finding above). Files touched this round: `docs/superpowers/specs/2026-07-29-nutrition-recommender-design.md` (§8.1 amendment — new to this task's touch list, added because the coordinator's fix explicitly required it), `mobile/src/lib/eatNext.ts`, `mobile/src/lib/__tests__/eatNext.test.ts`, `mobile/src/hooks/useEatNext.ts`, `mobile/src/services/eatNudgeService.ts`, `mobile/src/components/profile/NotificationsScreen.tsx`, this plan doc. No database-connecting command run.
 
+#### Task 6 — whole-branch review (X1/X2): resolve-before-cancel reorder
+
+Found during the whole-branch review, after the migration was applied and Task 11 wired `nudgesEnabled` to the real column, making the nudge path live for the first time.
+
+**The defect (X2).** `syncEatNudgeCore` cancelled the family before `nudgeFireDate` had a chance to reject a stale or already-past decision. A stale decision was therefore not an inert no-op — it was a **silent unschedule** of whatever was already pending. `nudgeFireDate`'s day guard correctly prevented mis-*scheduling* (Task 6 round 1/2's whole subject); nothing previously stopped a stale caller from *un*scheduling a good pending nudge.
+
+**Why it's reachable (X1).** `MealsScreen` mounts `useEatNext` with no `refreshKey` and no focus effect; expo-router preserves tab stacks, so that screen can hold a `result`/`computedAt` snapshot for hours, re-syncing only when its `viewingToday` flag flips. Concrete sequence: open Track→Meals → Profile → Notifications → toggle Pace nudges ON → Home (loads, schedules a nudge) → back to Track→Meals → date-back then date-forward. `viewingToday` flips false→true, the effect fires with the pre-toggle snapshot (`nudge: null`), and the freshly-scheduled nudge is destroyed. Self-heals at the next Home focus, so the user-visible symptom is "the nudge silently doesn't fire," not data loss. The coordinator's fix removes the destructive half of this without touching either consumer (`EatNextHomeCard.tsx`/`MealsScreen`'s freshness is a separate, un-addressed question — X1's *destructiveness*, not its staleness, is what this fix closes).
+
+**The fix.** `syncEatNudgeCore` (`eatNudgeService.ts`) now resolves `fireDate` first:
+
+```ts
+const fireDate = decision
+  ? nudgeFireDate(decision.fireAtMinutes, sourceDay, new Date())
+  : null;
+if (decision && !fireDate) return; // stale/past — leave pending state alone
+
+const cancelled = await cancelAllEatNudgesCore();
+if (!decision) return;             // null → cancel-only, unchanged contract
+if (!cancelled) return;            // cancel failed — don't schedule onto unknown state
+const granted = await requestPermissions();
+if (!granted) return;
+if (!fireDate) return;             // TS-narrowing only — see below; unreachable in practice
+// … schedule at fireDate, unchanged
+```
+
+Implemented essentially as the coordinator's suggested shape, adapted to the function's actual structure: the `decision && !fireDate` guard sits first (before any `await`, so it's synchronous and instant); the `!decision` / `!cancelled` / `!granted` guards keep their relative order from before, just shifted later. One addition not in the sketch: a trailing `if (!fireDate) return;` right before the `Notifications.scheduleNotificationAsync` call, needed only because TypeScript can't narrow `fireDate: Date | null` to `Date` across the compound `decision && !fireDate` condition two guards back — confirmed by removing it and getting `TS2322` on the `trigger.date` assignment. It is provably unreachable (by the time execution passes both the `decision && !fireDate` guard and the `!decision` guard, `decision` is non-null and `fireDate` cannot be null), and is commented as such so it isn't later "cleaned up" as dead code that would silently reopen the type error.
+
+**`serialize`/`cancelAllEatNudgesCore` split is unchanged**, per the coordinator's explicit requirement: `syncEatNudgeCore` still calls the internal `cancelAllEatNudgesCore` directly, never the exported queue-wrapped `cancelAllEatNudges` — the re-entrancy hazard the split exists to prevent (documented in round 1) stays closed. The reorder is entirely internal to `syncEatNudgeCore`'s body; `serialize`, `queue`, and `syncEatNudge`'s own signature are byte-identical to before this fix.
+
+**Six-case trace (the only verification available — this module has no automated coverage, imports `expo-notifications`, same reason as always).** Axes: `decision` null vs non-null × `fireDate` resolving vs null × cancel succeeding vs failing — 8 nominal combinations, 2 vacuous (`decision = null` forces `fireDate = null` by construction, so "`decision` null AND `fireDate` resolving" cannot occur), leaving 6. For the two rows where `decision` is non-null and `fireDate` is `null`, the function returns before `cancelAllEatNudgesCore` is ever called — the "cancel" column is notional there (both listed for completeness of the requested cross-product; they produce the identical outcome since cancel never runs):
+
+| # | `decision` | `fireDate` | cancel | Resulting pending state |
+| --- | --- | --- | --- | --- |
+| 1 | `null` | N/A (never computed) | succeeds | Family cancelled — empty. |
+| 2 | `null` | N/A (never computed) | fails | Whatever the failed cancel loop left partially removed — unknown/partial. Nothing scheduled either way (cancel-only contract has nothing to schedule regardless of cancel's outcome). |
+| 3 | non-null | `null` (stale/past) | *(not reached — succeed)* | **Untouched.** Whatever was pending before this call remains exactly as it was. This is the fixed case: previously, cancel ran unconditionally and this row emptied the family. |
+| 4 | non-null | `null` (stale/past) | *(not reached — fail)* | Same as row 3 — **untouched**. Cancel is never invoked regardless of what it would have done, so this row is identical to row 3 by construction. |
+| 5 | non-null | resolves | succeeds | If `requestPermissions()` also grants: exactly one nudge (the new one), old ones removed by cancel. If permission is denied instead: empty (cancelled, nothing scheduled) — permission isn't one of the three requested axes but is the remaining gate between "cancel succeeded" and "schedule," so it's noted here rather than silently collapsed into row 5's single outcome. |
+| 6 | non-null | resolves | fails | Whatever the failed cancel loop left partially removed — unknown/partial. Nothing new scheduled (cancel-failure bail, unchanged from round 1). |
+
+Rows 1↔2 and 5↔6 (both cancel-fails variants) share the same "partial/unknown" characterization deliberately: `cancelAllEatNudgesCore`'s enumerate-then-cancel loop can throw partway through, after removing some but not all matching ids, and neither this trace nor the code distinguishes how far it got — that granularity was never available before this fix either, and reproducing it exactly would require synthetic thrown-after-N-cancellations tests. Rows 3 and 4 are the fix's entire point: a stale/past decision is now provably a no-op on pending state, full stop, independent of what a hypothetical cancel would have done — which is exactly why cancel is never called on that path at all, not merely skipped after the fact.
+
+**Spec.** §8.1's normative block now states the corrected `syncEatNudge`/`cancelAllEatNudges` signatures directly (previously left stale under a correcting amendment — see below), the resolve-before-cancel ordering, and a corrected resync-coverage parenthetical (cold start + navigation focus, NOT warm foreground — see next). Two amendment paragraphs follow the block: the first (already present from Task 6 round 1) is now framed purely as rationale for the signatures the block itself states; the second, new this round, records the reorder — why (a stale decision must not be able to unschedule a good nudge), the reachability trace (X1, condensed), that `null → cancel-only` and the ≤1-slot invariant are unaffected, and that the `serialize` queue is untouched.
+
+**§8.1's "covers app open/foreground" claim was false for warm foreground, fixed in the block and in code.** `useFocusEffect` (`EatNextHomeCard.tsx`) is a navigation-focus hook — it does not fire when the app returns from background with Home already the focused screen, and `app/_layout.tsx:53-71`'s `AppState` handler only logs, doesn't resync. So a warm foreground return — including the user tapping the nudge notification itself — refires neither. Corrected §8.1's parenthetical to "covers a cold start and every navigation focus onto Home — NOT a warm foreground return with Home already focused, which fires neither." The identical over-claim in `EatNextHomeCard.tsx`'s own comment (the "app foreground" phrase in the `firstFocus` ref's explanation) is corrected the same way, with a pointer to the corrected spec parenthetical; **comment-only, no logic touched in that file**, per the coordinator's scope. Mostly benign in practice — nothing about the *decision* can change while the app is backgrounded — but the clock advances regardless, and the comment shouldn't claim coverage it doesn't have.
+
+**Folded into the same doc pass (not X1/X2, but the coordinator's explicit instruction to fix while in §8.1):**
+- **§5.2's normative block** had the identical "amendment says the block is stale, block left stale" problem as §8.1 did. Folded the corrected `recommendations` element type (`{ mealId, name, reasons, calories, protein, prepMinutes, score }`, from the existing Task 8 amendment) directly into the block; the Task 8 amendment paragraph is kept as rationale, with a one-sentence pointer noting the block itself is now current.
+- **§5.7's constant list was missing two exported, load-bearing constants**: `PROTEIN_SHORT_MAX_CAL = 300` (the "under 300 cal" cap §5.3.2 already states in prose) and `EMPTY_LIBRARY_MESSAGE = "No meals in your library yet."` (the exact string `EatNextHomeCard`, §7.1, branches on). Both added with a dated note that this corrects an omission, not a new decision — verified against `eatNext.ts:19,26` (both `export const`).
+
+**Gates after this round:** `cd mobile && npx tsc --noEmit` → 0 errors. `cd mobile && npm test` → 8/8 suites, 206/206 tests, unchanged from Task 11's baseline (no test file touched this round — `eatNudgeService.ts` has no automated coverage by design, and the reorder is a pure control-flow change inside an already-untested function; the six-case trace above is the verification). Files touched: `mobile/src/services/eatNudgeService.ts`, `mobile/src/components/EatNextHomeCard.tsx` (comment only), `docs/superpowers/specs/2026-07-29-nutrition-recommender-design.md` (§8.1, §5.2, §5.7), this plan doc. No database-connecting command run — the migration is already applied and verified; this round's only checks were static (`tsc`, reading source, the hand trace above).
+
 ### Task 7
 
 Implemented exactly as the plan's Step 1 snippet specifies, byte-for-byte: `cancelAllEventReminders` added below `cancelAllNotifications`, and `rescheduleAllNotifications`'s `await cancelAllNotifications();` (with its `// Cancel all existing notifications` comment) replaced by the plan's two-line block. No deviations — this is the smallest task in the plan and needed none.
