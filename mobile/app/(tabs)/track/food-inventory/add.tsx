@@ -6,7 +6,7 @@ import { ChevronLeft } from "lucide-react-native";
 import { EditFoodScreen } from "@/src/components/track/EditFoodScreen";
 import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { projectItemStock } from "@/src/lib/stockState";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 import { ProductData } from "@/src/services/openFoodFactsApi";
 
 export default function AddFoodItemPage() {

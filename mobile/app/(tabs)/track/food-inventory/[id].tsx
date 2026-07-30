@@ -8,7 +8,7 @@ import {
   fetchInventoryWithState,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 
 export default function FoodItemDetailsPage() {
   const router = useRouter();

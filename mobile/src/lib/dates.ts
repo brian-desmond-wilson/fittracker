@@ -3,8 +3,10 @@
 // from `src/components/**`, and `getLocalDateString` used to live in
 // `components/track/meals/mealsHelpers.ts` while `lib/supabase/mealLibrary.ts`
 // imported it — the app's only lib -> components edge. The definition moved
-// here; `mealsHelpers` re-exports it so the existing component/route call
-// sites keep working unchanged.
+// here. `mealsHelpers` re-exports it so the existing call sites under
+// `src/components/**` keep working unchanged — every caller OUTSIDE that tree
+// (`src/lib`, `src/hooks`, the `app/` routes) imports from this module
+// directly, so the re-export serves components and nothing else.
 //
 // Related: `daysBetweenLocalDates` in `lib/stockState.ts` owns the whole-day
 // arithmetic over the strings this produces.

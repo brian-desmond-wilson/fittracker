@@ -29,6 +29,24 @@ interface ViewFoodDetailsScreenProps {
   onAddToInventory?: () => void;
 }
 
+const DATE_FORMAT = { month: "long", day: "numeric", year: "numeric" } as const;
+
+/** For TIMESTAMPTZ columns (`created_at`, `updated_at`) — full ISO instants,
+ *  which `new Date` resolves to the correct local moment. */
+const formatTimestamp = (dateStr: string | null) => {
+  if (!dateStr) return "Not set";
+  return new Date(dateStr).toLocaleDateString("en-US", DATE_FORMAT);
+};
+
+/** For DATE columns (`expiration_date`) — a bare YYYY-MM-DD, which `new Date`
+ *  reads as UTC midnight and so renders one day EARLY west of Greenwich.
+ *  Must match what the grid shows for the same item (FoodInventoryScreen's
+ *  `formatExpirationDate` goes through the same helper). */
+const formatCalendarDate = (dateStr: string | null) => {
+  if (!dateStr) return "Not set";
+  return parseLocalDate(dateStr).toLocaleDateString("en-US", DATE_FORMAT);
+};
+
 export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = false, onAddToInventory }: ViewFoodDetailsScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -59,24 +77,6 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
         setRefreshing(false);
       }
     }
-  };
-
-  const DATE_FORMAT = { month: "long", day: "numeric", year: "numeric" } as const;
-
-  /** For TIMESTAMPTZ columns (`created_at`, `updated_at`) — full ISO instants,
-   *  which `new Date` resolves to the correct local moment. */
-  const formatTimestamp = (dateStr: string | null) => {
-    if (!dateStr) return "Not set";
-    return new Date(dateStr).toLocaleDateString("en-US", DATE_FORMAT);
-  };
-
-  /** For DATE columns (`expiration_date`) — a bare YYYY-MM-DD, which `new Date`
-   *  reads as UTC midnight and so renders one day EARLY west of Greenwich.
-   *  Must match what the grid shows for the same item (FoodInventoryScreen's
-   *  `formatExpirationDate` goes through the same helper). */
-  const formatCalendarDate = (dateStr: string | null) => {
-    if (!dateStr) return "Not set";
-    return parseLocalDate(dateStr).toLocaleDateString("en-US", DATE_FORMAT);
   };
 
   const renderSection = (title: string, content: React.ReactNode) => (

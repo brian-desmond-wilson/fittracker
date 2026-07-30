@@ -17,7 +17,7 @@ import {
   computeMealTotals,
   fetchMealLibrary,
 } from "@/src/lib/supabase/mealLibrary";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 
 /** Mirrors `nutrition_constraints.max_prep_minutes`'s own schema default
  *  (`20260728100000_nutrition_preference_schema.sql:54`), so a missing

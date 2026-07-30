@@ -54,6 +54,31 @@ function parseQuantityInput(raw: string): number | null {
   return value;
 }
 
+/** The macro columns are `DECIMAL(10, 2) CHECK (>= 0)` (20250206_tracking_tables.sql:55-58,
+ *  re-declared 20250209_extend_food_inventory.sql:12-15), so 99999999.99 is the ceiling. */
+const DECIMAL_10_2_MAX = 99_999_999.99;
+
+/**
+ * Continuous sibling of `parseQuantityInput`, for the gram macros. Same
+ * contract — one function shared by validation and the write, so they cannot
+ * disagree — but it ACCEPTS decimals, because grams genuinely are continuous
+ * where the quantity/threshold columns are `INTEGER`. Reusing the integer
+ * parser here would reject "1.5 g of fat", which is a legitimate value.
+ *
+ * Replaces a bare `parseFloat`, which failed the same silent way the integer
+ * fields did: `parseFloat("abc")` is NaN, which serialises to null and CLEARS
+ * a stored macro while the user is told "Item updated successfully". It also
+ * truncated on trailing garbage — `parseFloat("1,5")` is 1, so a comma decimal
+ * separator silently stored 1 g instead of 1.5 g. `Number` rejects both.
+ * Values beyond two decimal places are still rounded by the column itself.
+ */
+function parseDecimalInput(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > DECIMAL_10_2_MAX) return null;
+  return value;
+}
+
 interface EditFoodScreenProps {
   item: InventoryItemWithState;
   onClose: () => void;
@@ -460,8 +485,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     // reconcile's own `coalesce(fi.location, 'pantry')` (20260730100000:40-61).
     const singleLocation: FoodLocation = location ?? "pantry";
 
+    const isSingle = storageType === 'single-location';
+
     // Validate based on storage type
-    if (storageType === 'single-location') {
+    if (isSingle) {
       const parsedQuantity = parseQuantityInput(quantity);
       if (parsedQuantity === null) {
         errors.add("quantity");
@@ -503,17 +530,21 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       }
     }
 
-    // The sibling INTEGER columns get the same treatment `quantity` got: one
-    // parser shared by validation and the write, so they cannot disagree.
-    // They used to run a bare `parseInt` with only a truthiness check in
-    // front of it, and because all four are NULLABLE the failure was silent
-    // rather than loud — `parseInt(".5")` is NaN, which serialises to null and
-    // CLEARS a stored threshold instead of rejecting the input. ".", and so
-    // ".5", is typeable on the numeric keypad. All four are INTEGER in the
-    // schema (calories 20250206_tracking_tables.sql:54; restock_threshold
-    // 20250209_extend_food_inventory.sql:19; the two multi-location
-    // thresholds 20250217000003:57-58), so `parseQuantityInput`'s
-    // integer + range test is exactly the right acceptance rule.
+    // Every remaining numeric field gets the treatment `quantity` got: ONE
+    // parser shared by validation and the write, so the number that is checked
+    // is by construction the number that is stored. They all used to run a bare
+    // `parseInt`/`parseFloat` behind only a truthiness check, and because every
+    // one of these columns is NULLABLE the failure was silent rather than loud
+    // — a NaN serialises to null, so a fat-fingered entry CLEARED the stored
+    // value while the user was told the save succeeded.
+    //
+    // Two parsers, because the columns are two different kinds:
+    //   • INTEGER  — calories (20250206_tracking_tables.sql:54), restock_threshold
+    //     (20250209_extend_food_inventory.sql:19), the two multi-location
+    //     thresholds (20250217000003:57-58). Decimals are rejected.
+    //   • DECIMAL(10,2) — protein/carbs/fats/sugars (20250206:55-58). Decimals
+    //     are ACCEPTED; grams are continuous and "1.5" is a legitimate value,
+    //     so reusing the integer parser here would reject real data.
     //
     // Scoped to the fields the ACTIVE storage type actually renders. The
     // threshold inputs are mutually exclusive on screen — "Restock Threshold"
@@ -522,25 +553,41 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     // see or reach: type garbage into "Ready Threshold", flip to
     // single-location, and the save dead-ends on an alert pointing at a
     // section that no longer contains the field. You can only be blocked by
-    // what you can edit; correspondingly, the write below leaves the inactive
-    // pair at the item's stored value instead of re-parsing hidden text.
-    const isSingle = storageType === 'single-location';
-    const visibleIntFields: Array<[string, string, SectionKey, string]> = [
+    // what you can edit; correspondingly, `itemData` below OMITS the inactive
+    // pair entirely rather than rewriting it.
+    type NumericField = {
+      key: string;
+      raw: string;
+      section: SectionKey;
+      label: string;
+      parse: (raw: string) => number | null;
+      rule: string;
+    };
+    const int = (key: string, raw: string, section: SectionKey, label: string): NumericField =>
+      ({ key, raw, section, label, parse: parseQuantityInput, rule: "a whole number of 0 or more" });
+    const dec = (key: string, raw: string, label: string): NumericField =>
+      ({ key, raw, section: "nutrition", label, parse: parseDecimalInput, rule: "a number of 0 or more" });
+
+    const visibleNumericFields: NumericField[] = [
       ...(isSingle
-        ? ([["restockThreshold", restockThreshold, "storage", "Restock Threshold"]] as Array<[string, string, SectionKey, string]>)
-        : ([
-            ["fridgeRestockThreshold", fridgeRestockThreshold, "storage", "Ready Threshold"],
-            ["totalRestockThreshold", totalRestockThreshold, "storage", "Total Threshold"],
-          ] as Array<[string, string, SectionKey, string]>)),
-      ["calories", calories, "nutrition", "Calories"],
+        ? [int("restockThreshold", restockThreshold, "storage", "Restock Threshold")]
+        : [
+            int("fridgeRestockThreshold", fridgeRestockThreshold, "storage", "Ready Threshold"),
+            int("totalRestockThreshold", totalRestockThreshold, "storage", "Total Threshold"),
+          ]),
+      int("calories", calories, "nutrition", "Calories"),
+      dec("protein", protein, "Protein"),
+      dec("carbs", carbs, "Carbohydrates"),
+      dec("fats", fats, "Fats"),
+      dec("sugars", sugars, "Sugars"),
     ];
-    for (const [key, raw, section, label] of visibleIntFields) {
+    for (const { key, raw, section, label, parse, rule } of visibleNumericFields) {
       // Empty means "not set" and stays null — only a non-empty value has to parse.
-      if (raw.trim() !== "" && parseQuantityInput(raw) === null) {
+      if (raw.trim() !== "" && parse(raw) === null) {
         errors.add(key);
         setValidationErrors(errors);
         setExpandedSection(section);
-        Alert.alert("Validation Error", `${label} must be a whole number of 0 or more`);
+        Alert.alert("Validation Error", `${label} must be ${rule}`);
         return;
       }
     }
@@ -588,24 +635,37 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // replaceItemLocations owns it now. Writing it from here is what let
         // the cache and the location rows tell two different stories.
         unit: unit,
-        location: storageType === 'single-location' ? singleLocation : null,
-        // Validated above with this same parser, and written only for the
-        // storage type that renders them — the inactive pair carries the
-        // item's stored value through untouched, so a save can never change a
-        // threshold the user could not see. (`restock_threshold` keeps its
-        // historical 0 for "not set"; unlike its three nullable siblings the
-        // column is `INTEGER DEFAULT 1` with no CHECK and the TS type is
-        // non-null, so 0 rather than null is the consistent "unset" here —
-        // a whitespace-only entry now writes 0 where it used to write null.)
-        restock_threshold: isSingle ? (parseQuantityInput(restockThreshold) ?? 0) : item.restock_threshold,
+        location: isSingle ? singleLocation : null,
         requires_refrigeration: requiresRefrigeration,
-        fridge_restock_threshold: isSingle ? item.fridge_restock_threshold : parseQuantityInput(fridgeRestockThreshold),
-        total_restock_threshold: isSingle ? item.total_restock_threshold : parseQuantityInput(totalRestockThreshold),
+        // Only the thresholds the active storage type RENDERS appear in the
+        // payload; the inactive ones are absent, so an UPDATE genuinely does
+        // not touch those columns. Writing them from `item.*` instead would
+        // rewrite them from a snapshot that can be STALE: on the update path a
+        // `replaceItemLocations` failure keeps this screen mounted (see the
+        // "Stock Not Saved — tap Save again" branch) after the item UPDATE has
+        // already committed, so `item` still holds the pre-save values. A user
+        // who then flips storage type and re-saves as instructed would silently
+        // revert the threshold they just changed. Absence has no such failure
+        // mode. (The INSERT re-supplies them at the call site — `item` there is
+        // the synthetic literal from add.tsx/preview.tsx and cannot be stale.)
+        ...(isSingle
+          // `restock_threshold` keeps its historical 0 for "not set": unlike
+          // its three nullable siblings the column is `INTEGER DEFAULT 1` with
+          // no CHECK and the TS type is non-null, so 0 rather than null is the
+          // consistent "unset" — a whitespace-only entry now writes 0 where it
+          // used to write null.
+          ? { restock_threshold: parseQuantityInput(restockThreshold) ?? 0 }
+          : {
+              fridge_restock_threshold: parseQuantityInput(fridgeRestockThreshold),
+              total_restock_threshold: parseQuantityInput(totalRestockThreshold),
+            }),
+        // Validated above with these same two parsers, so no second parse can
+        // disagree. The macros accept decimals; the integers do not.
         calories: parseQuantityInput(calories),
-        protein: protein ? parseFloat(protein) : null,
-        carbs: carbs ? parseFloat(carbs) : null,
-        fats: fats ? parseFloat(fats) : null,
-        sugars: sugars ? parseFloat(sugars) : null,
+        protein: parseDecimalInput(protein),
+        carbs: parseDecimalInput(carbs),
+        fats: parseDecimalInput(fats),
+        sugars: parseDecimalInput(sugars),
         serving_size: servingSize.trim() || null,
         // `getLocalDateString`, not `.toISOString().split("T")[0]`: the picker
         // returns the chosen date carrying a TIME component (iOS spinner keeps
@@ -633,7 +693,19 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           // if the replaceItemLocations call below fails, a 0 cache alongside 0
           // location rows is what every reader agrees on — the same damage
           // bound replaceItemLocations applies on its own failure path.
-          .insert({ ...itemData, quantity: 0 })
+          .insert({
+            // `itemData` omits the thresholds the active storage type does not
+            // render, so an UPDATE cannot disturb them. An INSERT has to supply
+            // every column it wants set, and here the values come from the
+            // synthetic literal in add.tsx / preview.tsx — a fresh object built
+            // this render, so the staleness that motivated the omission cannot
+            // arise. Spread first so the active threshold still wins.
+            restock_threshold: item.restock_threshold,
+            fridge_restock_threshold: item.fridge_restock_threshold,
+            total_restock_threshold: item.total_restock_threshold,
+            ...itemData,
+            quantity: 0,
+          })
           .select('id')
           .single();
 
@@ -1332,7 +1404,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               title="Nutritional Information"
               sectionKey="nutrition"
               isExpanded={expandedSection === "nutrition"}
-              hasError={validationErrors.has("calories")}
+              hasError={validationErrors.has("calories") || validationErrors.has("protein")
+                || validationErrors.has("carbs") || validationErrors.has("fats")
+                || validationErrors.has("sugars")}
               onPress={() => toggleSection("nutrition")}
             />
 
@@ -1367,7 +1441,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Protein (g)</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, validationErrors.has("protein") && styles.inputError]}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       value={protein}
@@ -1379,7 +1453,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Carbs (g)</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, validationErrors.has("carbs") && styles.inputError]}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       value={carbs}
@@ -1393,7 +1467,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Fats (g)</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, validationErrors.has("fats") && styles.inputError]}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       value={fats}
@@ -1405,7 +1479,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Sugars (g)</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, validationErrors.has("sugars") && styles.inputError]}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       value={sugars}

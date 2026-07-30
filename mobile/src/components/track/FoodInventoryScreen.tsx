@@ -598,7 +598,23 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             const expiring = filteredItems.filter(
               (it) => !it.state.isOut &&
                 (it.state.expiration === "expired" || it.state.expiration === "today" || it.state.expiration === "soon"),
-            );
+            )
+              // Rescue-first WITHIN the section, overriding the grid's plain
+              // soonest-first order. Same objection that ruled out a "+k more"
+              // cap applies to the scroll: expired days are negative, so
+              // inheriting the grid order puts the least actionable rows —
+              // things that went off months ago — in the visible five and
+              // pushes the item expiring tomorrow below the fold. Still
+              // rescuable (daysLeft >= 0) ascending first, then the expired
+              // ones most-recent-first. One rule: nearest to today wins, and
+              // the future beats the past.
+              .sort((a, b) => {
+                const ad = a.state.daysLeft ?? 0;
+                const bd = b.state.daysLeft ?? 0;
+                if (ad >= 0 && bd >= 0) return ad - bd;
+                if (ad < 0 && bd < 0) return bd - ad;
+                return ad >= 0 ? -1 : 1;
+              });
             if (expiring.length === 0) return null;
             return (
               <View style={styles.expiringSection}>
@@ -619,6 +635,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                   style={styles.expiringList}
                   nestedScrollEnabled
                   showsVerticalScrollIndicator
+                  /* The list is filtered by `searchQuery`, so search-then-tap is
+                     the natural flow — and the default ("never") makes the first
+                     tap with the keyboard up only dismiss the keyboard. */
+                  keyboardShouldPersistTaps="handled"
                 >
                   {expiring.map((it) => (
                     <TouchableOpacity key={it.id} onPress={() => handleViewItem(it)} style={styles.expiringRow}>
