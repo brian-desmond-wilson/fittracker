@@ -38,8 +38,7 @@ interface ProfileRow {
   dinner_time: string;
   water_window_start: string;
   water_window_end: string;
-  // NOTE: `eat_nudges_enabled` is deliberately ABSENT here — see the
-  // `nudgesEnabled: false` comment at the recommendEatNext call below.
+  eat_nudges_enabled: boolean;
 }
 
 /**
@@ -66,6 +65,7 @@ const PROFILE_COLUMNS = {
   dinner_time: true,
   water_window_start: true,
   water_window_end: true,
+  eat_nudges_enabled: true,
 } satisfies Record<keyof ProfileRow, true>;
 
 const PROFILE_SELECT = Object.keys(PROFILE_COLUMNS).join(", ");
@@ -310,22 +310,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
           (constraints.data as { max_prep_minutes: number } | null)
             ?.max_prep_minutes ?? DEFAULT_MAX_PREP_MINUTES,
         workoutCompletedAtMinutes,
-        // Hardcoded until `profiles.eat_nudges_enabled` EXISTS. The column is
-        // added only by `supabase/migrations/20260729110000_recommender_profile_and_view_cleanup.sql`,
-        // which is written but unapplied (Task 11 is the owner gate) — and
-        // PostgREST rejects the ENTIRE select with 42703/HTTP 400 if any named
-        // column is unknown, so naming it above would break this hook, and
-        // every surface built on it, for the whole pre-migration window.
-        // Phase 2 hit this exact failure for the same reason — see its Task 1
-        // amendment on `meal_logs.meal_id`
-        // (`docs/superpowers/plans/2026-07-29-nutrition-meal-library.md`).
-        // `false` is both the migration's default and the correct
-        // pre-migration behavior — nudges are opt-in, so nothing is lost.
-        // TO WIRE UP after Task 11 applies the migration: add
-        // `eat_nudges_enabled: boolean` to `ProfileRow` (the compiler then
-        // forces the matching `PROFILE_COLUMNS` entry) and pass
-        // `p.eat_nudges_enabled` here. See Task 11 Step 4.
-        nudgesEnabled: false,
+        nudgesEnabled: p.eat_nudges_enabled,
       });
       if (runId !== runIdRef.current) return;
       // Clearing the error HERE, not at the top of `load`: `loading` stays
