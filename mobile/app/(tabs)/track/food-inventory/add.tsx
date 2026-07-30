@@ -4,7 +4,9 @@ import { View, Text, TouchableOpacity, StatusBar, StyleSheet } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import { EditFoodScreen } from "@/src/components/track/EditFoodScreen";
-import { FoodInventoryItemWithCategories } from "@/src/types/track";
+import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import { projectItemStock } from "@/src/lib/stockState";
+import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
 import { ProductData } from "@/src/services/openFoodFactsApi";
 
 export default function AddFoodItemPage() {
@@ -22,9 +24,11 @@ export default function AddFoodItemPage() {
   }
 
   // Create a new empty item for adding
-  const newItem: FoodInventoryItemWithCategories = {
+  const newItemFields: Omit<InventoryItemWithState, "state"> = {
     id: "new",
     user_id: "new",
+    quantity: 0,
+    location: null,
     name: barcodeData?.name || "",
     brand: barcodeData?.brand || null,
     flavor: null,
@@ -55,6 +59,17 @@ export default function AddFoodItemPage() {
     storage_quantity: 0,
     categories: [],
     subcategories: [],
+  };
+
+  // Run the real projection over zero locations rather than hand-writing an
+  // ItemStockState literal that could drift from projectItemStock.
+  const newItem: InventoryItemWithState = {
+    ...newItemFields,
+    state: projectItemStock({
+      item: newItemFields,
+      locations: [],
+      todayLocalDate: getLocalDateString(),
+    }),
   };
 
   const handleSave = (newItemId?: string) => {

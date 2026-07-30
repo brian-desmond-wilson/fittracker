@@ -4,14 +4,17 @@ import { Alert, View, Text, TouchableOpacity, StatusBar, StyleSheet, ActivityInd
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import { ViewFoodDetailsScreen } from "@/src/components/track/ViewFoodDetailsScreen";
-import { FoodInventoryItemWithCategories } from "@/src/types/track";
-import { supabase } from "@/src/lib/supabase";
+import {
+  fetchInventoryWithState,
+  type InventoryItemWithState,
+} from "@/src/lib/supabase/inventory";
+import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
 
 export default function FoodItemDetailsPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [item, setItem] = useState<FoodInventoryItemWithCategories | null>(null);
+  const [item, setItem] = useState<InventoryItemWithState | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,95 +24,19 @@ export default function FoodItemDetailsPage() {
   const fetchItemDetails = async () => {
     try {
       setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      // One code path for every inventory read: fetch the whole list and pick
+      // this item out of it. At current data volume (~25 rows) that costs
+      // nothing, and it keeps the projection in exactly one place.
+      const items = await fetchInventoryWithState(getLocalDateString());
+      const found = items.find((it) => it.id === id);
 
-      if (!user) {
-        Alert.alert("Error", "You must be logged in");
-        router.replace("/(tabs)/track/food-inventory");
-        return;
-      }
-
-      // Fetch the food item
-      const { data: foodItem, error: foodError } = await supabase
-        .from("food_inventory")
-        .select("*")
-        .eq("id", id)
-        .eq("user_id", user.id)
-        .single();
-
-      if (foodError || !foodItem) {
+      if (!found) {
         Alert.alert("Error", "Item not found");
         router.replace("/(tabs)/track/food-inventory");
         return;
       }
 
-      // Fetch locations
-      const { data: locations, error: locationsError } = await supabase
-        .from("food_inventory_locations")
-        .select("*")
-        .eq("food_inventory_id", id)
-        .eq("user_id", user.id);
-
-      if (locationsError) throw locationsError;
-
-      // Fetch category mappings
-      const { data: categoryMaps, error: categoryMapsError } = await supabase
-        .from("food_inventory_category_map")
-        .select("*, food_categories(*)")
-        .eq("food_inventory_id", id)
-        .eq("user_id", user.id);
-
-      if (categoryMapsError) throw categoryMapsError;
-
-      // Fetch subcategory mappings
-      const { data: subcategoryMaps, error: subcategoryMapsError } = await supabase
-        .from("food_inventory_subcategory_map")
-        .select("*, food_subcategories(*)")
-        .eq("food_inventory_id", id)
-        .eq("user_id", user.id);
-
-      if (subcategoryMapsError) throw subcategoryMapsError;
-
-      // Calculate quantities
-      const itemLocations = locations || [];
-      const total_quantity = foodItem.storage_type === 'single-location'
-        ? foodItem.quantity
-        : itemLocations.reduce((sum, loc) => sum + loc.quantity, 0);
-
-      const ready_quantity = foodItem.storage_type === 'single-location'
-        ? foodItem.quantity
-        : itemLocations
-            .filter(loc => loc.is_ready_to_consume)
-            .reduce((sum, loc) => sum + loc.quantity, 0);
-
-      const storage_quantity = foodItem.storage_type === 'single-location'
-        ? 0
-        : itemLocations
-            .filter(loc => !loc.is_ready_to_consume)
-            .reduce((sum, loc) => sum + loc.quantity, 0);
-
-      // Extract categories and subcategories
-      const categories = (categoryMaps || [])
-        .map(map => map.food_categories)
-        .filter(Boolean);
-
-      const subcategories = (subcategoryMaps || [])
-        .map(map => map.food_subcategories)
-        .filter(Boolean);
-
-      const itemWithDetails: FoodInventoryItemWithCategories = {
-        ...foodItem,
-        locations: itemLocations,
-        total_quantity,
-        ready_quantity,
-        storage_quantity,
-        categories,
-        subcategories,
-      };
-
-      setItem(itemWithDetails);
+      setItem(found);
     } catch (error: any) {
       console.error("Error fetching item details:", error);
       Alert.alert("Error", "Failed to load item details");

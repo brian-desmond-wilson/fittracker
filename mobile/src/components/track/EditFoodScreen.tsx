@@ -16,7 +16,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Camera, Barcode, Trash2, Plus, ChevronDown, Circle, CheckCircle } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { FoodInventoryItemWithCategories, FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
+import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
+import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { supabase } from "@/src/lib/supabase";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
@@ -26,7 +27,7 @@ import { SectionKey, UNITS, LocationEntry } from "./edit-food/constants";
 import { useFoodImages } from "./edit-food/useFoodImages";
 
 interface EditFoodScreenProps {
-  item: FoodInventoryItemWithCategories;
+  item: InventoryItemWithState;
   onClose: () => void;
   onSave: (newItemId?: string) => void;  // Changed to accept optional newItemId
   isNew?: boolean;  // NEW prop to indicate if this is a new item

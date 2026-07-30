@@ -16,12 +16,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { ChevronLeft, Package, Pencil, Plus } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { FoodInventoryItemWithCategories } from "@/src/types/track";
+import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
 interface ViewFoodDetailsScreenProps {
-  item: FoodInventoryItemWithCategories;
+  item: InventoryItemWithState;
   onClose: () => void;
   onRefresh?: () => Promise<void>;
   isPreview?: boolean;
