@@ -58,7 +58,13 @@ function scored(over: {
       id,
       user_id: "u",
       name: over.name ?? id,
-      slug: id,
+      // Deliberately NOT `id`. `slug`, `name` and `id` were all the same
+      // `m{n}` string, so a `stockByMealId.get(m.meal.slug)` (or `.name`)
+      // mutant resolved correctly and survived every stock test. Task 10
+      // wires this map; if either side keys by anything but `meal.id`, every
+      // meal silently reads unknown-stock. Keeping the three distinct is what
+      // makes that mutant die. (Nothing in eatNext.ts reads `slug`.)
+      slug: `${id}-slug`,
       category: over.category ?? "lunch",
       role: over.role ?? null,
       default_meal_type: null,
@@ -931,6 +937,9 @@ describe("stock awareness — mutation-driven coverage", () => {
       ]),
     });
     expect(r.recommendations[0].mealId).toBe(expiresToday.meal.id);
+    // The expiring line ACCOMPANIES "in stock", it does not replace it —
+    // otherwise a rescue meal stops announcing it is makeable at all.
+    expect(r.recommendations[0].reasons).toContain("in stock");
     // Copy matches Task 8's MealDetail treatment of the same value: the most
     // urgent day must not render as "expires in 0d", the least urgent-sounding
     // string the template can produce.
@@ -1032,5 +1041,122 @@ describe("stock awareness — mutation-driven coverage", () => {
     });
     const u = r.recommendations.find((x) => x.mealId === unknown.meal.id)!;
     expect(u.reasons).toEqual(["next: dinner"]);
+  });
+});
+
+// Second mutation round (post-review). Every test below closes a mutant that
+// survived the first round's 89 tests. See the Task 9 amendment's round-2 table.
+describe("stock awareness — key, precedence, and copy pinning", () => {
+  const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
+    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+  });
+  const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
+    new Map(entries.map(([id, o]) => [id, info(o)]));
+
+  // THE one that matters for Task 10. `scored()` used to set slug === name ===
+  // id, so `.get(m.meal.slug)` and `.get(m.meal.name)` both resolved and both
+  // survived. If Task 10 keys either side of the seam by anything but
+  // `meal.id`, every meal reads unknown-stock: ranking degenerates to Phase 3,
+  // every stock reason vanishes, the nudge stops being availability-aware —
+  // and without this test, not one assertion fails.
+  it("the stock map is keyed by meal.id — not slug, not name", () => {
+    const inStock = scored({ category: "dinner", name: "Alpha", score: 60 });
+    const outStock = scored({ category: "dinner", name: "Bravo", score: 95 });
+    // Guards the fixture itself: all three candidate keys must differ, or a
+    // wrong-key mutant could resolve by accident and survive again.
+    expect(new Set([inStock.meal.id, inStock.meal.slug, inStock.meal.name]).size).toBe(3);
+    const r = recommendEatNext({
+      ...input({}, [outStock, inStock]),
+      stockByMealId: stock([
+        [inStock.meal.id, {}],
+        [outStock.meal.id, { assemblable: false, missingCount: 1 }],
+      ]),
+    });
+    expect(r.recommendations[0].mealId).toBe(inStock.meal.id);
+    expect(r.recommendations[0].reasons).toContain("in stock");
+  });
+
+  // Pins BOTH new comparator terms in their correct order, and pins the
+  // containment argument the amendment makes for concern (a) — that
+  // `expiringRank` can only reorder WITHIN a stockRank tier and can never
+  // lift an unmakeable meal above a makeable one.
+  it("stockRank outranks expiringRank: an unmakeable expiring-rescue never beats a makeable meal", () => {
+    const inStockPlain = scored({ category: "dinner", name: "Aaa", score: 60 });
+    const missingExpiring = scored({ category: "dinner", name: "Bbb", score: 70 });
+    const missingPlain = scored({ category: "dinner", name: "Ccc", score: 95 });
+    const r = recommendEatNext({
+      ...input({}, [missingPlain, missingExpiring, inStockPlain]),
+      stockByMealId: stock([
+        [inStockPlain.meal.id, {}],
+        [missingExpiring.meal.id, {
+          assemblable: false, missingCount: 1, expiringItemName: "Sirloin", expiringDaysLeft: 1,
+        }],
+        [missingPlain.meal.id, { assemblable: false, missingCount: 1 }],
+      ]),
+    });
+    // in-stock first despite the LOWEST raw; among the two unmakeable meals
+    // the expiring rescue wins despite the LOWER raw of the two.
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      inStockPlain.meal.id, missingExpiring.meal.id, missingPlain.meal.id,
+    ]);
+    // Task 8's ruling, adopted here: the expiring line renders on an
+    // unmakeable meal too — the rescue is about an ingredient already owned.
+    // This also stops `expiringRank`/`stockReasons` from disagreeing about
+    // whether `assemblable` gates the expiring signal.
+    expect(r.recommendations[1].reasons).toEqual([
+      "next: dinner", "missing 1 ingredient", "uses Sirloin — expires in 1d",
+    ]);
+  });
+
+  // Full-array equality, not substring: display order is user-visible, and
+  // every other reason assertion in this file is a `toContain`/`toMatch` that
+  // survives both appended junk and a reordered `extraReasons` spread.
+  it("pins the exact reason array and its order (context, prep budget, stock, expiring)", () => {
+    const m = scored({ category: "dinner", prep: 8 }); // maxPrepMinutes is 5
+    const r = recommendEatNext({
+      ...input({}, [m]),
+      stockByMealId: stock([[m.meal.id, { expiringItemName: "Kefir", expiringDaysLeft: 4 }]]),
+    });
+    expect(r.recommendations[0].reasons).toEqual([
+      "next: dinner",
+      "8 min — over your prep budget",
+      "in stock",
+      "uses Kefir — expires in 4d",
+    ]);
+  });
+
+  it("emergency's calorie tie breaks on name, NOT on availability (spec §5.3.4)", () => {
+    // Equal calories is the only case where an availability term smuggled in
+    // after the calorie comparison would be observable — and it sits directly
+    // under a comment telling future readers not to make this sort
+    // availability-aware. ~50 meals makes an exact tie unremarkable.
+    const outStockAlpha = scored({ category: "emergency", name: "Alpha", calories: 700 });
+    const inStockZulu = scored({ category: "emergency", name: "Zulu", calories: 700 });
+    const r = recommendEatNext({
+      ...input({ nowMinutes: 20 * 60, caloriePace: { status: "behind", delta: 600, catchUpAmount: 600 } },
+        [inStockZulu, outStockAlpha]),
+      stockByMealId: stock([
+        [inStockZulu.meal.id, {}],
+        [outStockAlpha.meal.id, { assemblable: false, missingCount: 1 }],
+      ]),
+    });
+    expect(r.context).toBe("emergency");
+    expect(r.recommendations.map((x) => x.name)).toEqual(["Alpha", "Zulu"]);
+  });
+
+  // ⚠️ PLAN DEFECT, recorded rather than edited so the Step 1 fence stays
+  // byte-verbatim: the plan's "absent map = bit-for-bit prior behavior" test
+  // above CANNOT FAIL. `{ ...input(...), stockByMealId: undefined }` and
+  // `input(...)` are the same value under TS optional-property semantics, so
+  // it compares a result to itself. The load-bearing bit-compat evidence is
+  // that all 231 pre-existing tests pass byte-unmodified; this is the
+  // assertion with teeth.
+  it("no stock map → Phase 3 ordering exactly (raw desc) and no stock reason; an empty map is indistinguishable", () => {
+    const low = scored({ category: "dinner", score: 60 });
+    const high = scored({ category: "dinner", score: 95 });
+    const r = recommendEatNext(input({}, [low, high]));
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([high.meal.id, low.meal.id]);
+    expect(r.recommendations.flatMap((x) => x.reasons)).toEqual(["next: dinner", "next: dinner"]);
+    expect(recommendEatNext({ ...input({}, [low, high]), stockByMealId: new Map() })).toEqual(r);
   });
 });

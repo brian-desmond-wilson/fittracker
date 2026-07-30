@@ -175,10 +175,16 @@ interface Candidate extends ScoredMeal {
  *  an unmakeable meal still surfaces, it just ranks last and says why. */
 function stockReasons(info: EatNextStockInfo | undefined): string[] {
   if (!info) return [];
-  if (!info.assemblable) {
-    return [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
-  }
-  const out = ["in stock"];
+  const out = info.assemblable
+    ? ["in stock"]
+    : [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
+  // The expiring line is appended on BOTH branches — deliberately, adopting
+  // Task 8's DECISION for the same signal in MealDetail: the rescue is about
+  // an ingredient the user ALREADY OWNS, which is *more* actionable when the
+  // meal is unmakeable, not less ("buying the two missing items also saves
+  // the one about to spoil"). Suppressing it here would also rank on a signal
+  // the UI never states — `expiringRank` is deliberately NOT conditioned on
+  // `assemblable`, and the two must agree.
   // `expiringItemName != null`, NOT truthiness on `expiringDaysLeft`:
   // `expiringDaysLeft: 0` means "expires today", the MOST urgent value
   // `assessAssemblability` can return (its window is bounded below at 0 so
