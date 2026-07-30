@@ -351,7 +351,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
  * fallback drops the `bridge` role preference (`[]`, not `["bridge"]`) on
  * purpose: once nothing fits the catch-up profile, "closest to the gap" no
  * longer means anything, so the pick reduces to the plain rank ordering
- * (score, then prep, then name) rather than pretending a role preference
+ * (raw, then prep, then name) rather than pretending a role preference
  * still applies to an out-of-band set.
  */
 function computeNudge(input: EatNextInput): EatNextNudge | null {
@@ -391,6 +391,9 @@ function computeNudge(input: EatNextInput): EatNextNudge | null {
   if (fireAt > windowEndMinutes) return null;
 
   // Best catch-up candidate for the body: same eligibility + ranking rules.
+  // (`maxPrepMinutes` reaches catchUpCandidates only to build the "over your
+  // prep budget" reason, which the nudge body discards — the nudge honors the
+  // same prep budget as the surfaces, it just doesn't restate it.)
   const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
   const inBand = rank(catchUpCandidates(eligible, gap, maxPrepMinutes));
   const pick = inBand[0] ?? rank(eligible.map((m) => candidate(m, [], maxPrepMinutes)))[0];
