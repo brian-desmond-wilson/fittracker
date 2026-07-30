@@ -333,6 +333,9 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
  * applies the same eligibility (`baseEligible`) and ranking (`rank`) rules as
  * every other context, so it can never suggest a meal the engine considers
  * ineligible — just possibly a different eligible meal than `recommendations[0]`.
+ * When nothing lands in the ±`CATCH_UP_BAND` window, it falls back to the
+ * single best-ranked eligible meal of any size — a concrete suggestion, even
+ * an oversized one, beats a bare "~N cal to go" with nothing to act on.
  */
 function computeNudge(input: EatNextInput): EatNextNudge | null {
   const {

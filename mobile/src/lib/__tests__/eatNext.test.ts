@@ -476,6 +476,7 @@ describe("nudge decision", () => {
     const r = recommendEatNext(input(behindBy(500), [m]));
     expect(r.nudge).not.toBeNull();
     expect(r.nudge!.fireAtMinutes).toBe(18 * 60 + NUDGE_MILESTONE_OFFSET_MIN);
+    expect(r.nudge!.title).toBe("Eat something");
     expect(r.nudge!.body).toMatch(/500 cal/);
     expect(r.nudge!.body).toContain(m.meal.name);
   });
@@ -571,5 +572,37 @@ describe("nudge decision", () => {
       input({ ...behindBy(600), nowMinutes: BASE.windowEndMinutes }, [meal()]),
     );
     expect(r.nudge).toBeNull();
+  });
+
+  it("falls back to the best-ranked eligible meal when nothing lands in the catch-up band", () => {
+    const gap = 500;
+    // Band is ±CATCH_UP_BAND of the gap (325–675 here) — well clear of it.
+    const outOfBand = scored({ category: "dinner", calories: gap * 3 });
+    const r = recommendEatNext(input(behindBy(gap), [outOfBand]));
+    expect(r.nudge).not.toBeNull();
+    expect(r.nudge!.body).toContain(outOfBand.meal.name);
+  });
+
+  it("within the catch-up band, prefers role=bridge over a higher-raw plain meal", () => {
+    const gap = 500;
+    const bridgeMeal = scored({ role: "bridge", category: "snack", calories: gap, raw: 10 });
+    const plainMeal = scored({ category: "dinner", calories: gap, raw: 95 });
+    const r = recommendEatNext(input(behindBy(gap), [plainMeal, bridgeMeal]));
+    expect(r.nudge!.body).toContain(bridgeMeal.meal.name);
+  });
+
+  it("behind pace with no catchUpAmount produces no nudge (?? 0 default, not NaN)", () => {
+    const r = recommendEatNext(
+      input({ nudgesEnabled: true, caloriePace: { status: "behind" } }, [meal()]),
+    );
+    expect(r.nudge).toBeNull();
+  });
+
+  it("behind pace with no catchUpAmount does not enter catch_up either (gap defaults to 0)", () => {
+    const r = recommendEatNext(
+      input({ caloriePace: { status: "behind" } }, [meal()]),
+    );
+    expect(r.context).not.toBe("catch_up");
+    expect(r.context).toBe("next_meal");
   });
 });
