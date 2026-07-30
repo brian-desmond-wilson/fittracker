@@ -19,13 +19,23 @@
 //  - `calories`/`prepMinutes` are per-recommendation and always present
 //    (`EatNextRecommendation`, added in Task 8 precisely so §7.1 and §7.2
 //    could render numbers rather than prose).
-// So the gap appears exactly once, at strip level, in the engine's own words
-// (`result.message`), and each chip carries its own numbers. In `catch_up` —
-// the context §7.2's example is drawn from — the two nearly coincide anyway:
-// candidates are filtered to within ±35% of the gap (`CATCH_UP_BAND`), so a
-// 450 cal gap surfaces ~450 cal meals.
+// The gap is not rendered at strip level either, and deliberately so: this row
+// mounts DIRECTLY beneath `MealsPaceLines`, whose `behind` branch already
+// renders "Calories: {delta}cal behind · eat {catchUpAmount}cal by {label}"
+// (`MealsPaceLines.tsx:56-62`) from the screen's own pace state — a more
+// precise statement of the same fact, one line up. Adding `result.message`
+// here would not only duplicate it in all three contexts where a message can
+// co-occur with a recommendation (catch_up, emergency, and goal_hit
+// protein-short, whose shortfall the protein pace line likewise already
+// states), it would stack TWO INDEPENDENTLY COMPUTED versions of one number
+// adjacently: `useEatNext` and MealsScreen read `meal_logs` and sample
+// `new Date()` separately and settle asynchronously after a write, so the two
+// lines can briefly disagree on screen. (This reasoning is specific to this
+// surface — `EatNextHomeCard` has no pace lines beside it and correctly does
+// render `message`.)
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { colors } from "@/src/lib/colors";
 import type { EatNextResult } from "@/src/lib/eatNext";
 
 interface EatNextRowProps {
@@ -40,20 +50,9 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
   // so with nothing to tap it renders nothing. This is also §7.2's "clear the
   // suggestion" path after a log lands.
   if (!result || result.recommendations.length === 0) return null;
-  // `!!` rather than a bare `&&`: `message` is `string | null`, and a falsy
-  // *string* ("") would land as a bare text child of the `View` below, which
-  // RN rejects ("Text strings must be rendered within a <Text> component").
-  // Unreachable with today's engine — every message it produces is `null` or
-  // a non-empty literal — but this reads as a boolean and should be one.
-  const showMessage = !!result.message;
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Suggested now</Text>
-      {showMessage && (
-        <Text style={styles.message} numberOfLines={1}>
-          {result.message}
-        </Text>
-      )}
       {result.recommendations.slice(0, 2).map((rec) => (
         <TouchableOpacity
           key={rec.mealId}
@@ -71,30 +70,34 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
   );
 }
 
+// Local `StyleSheet` rather than the shared `mealsScreenStyles`, matching how
+// `MealsPaceLines` and `RecentFoodChips` scope their own small-widget styles.
+// Colors come from `colors` for the same reason `RecentFoodChips.tsx:90-115`
+// does: these two chip rows can be on screen together, and hardcoded hex had
+// them rendering different backgrounds (`#111827` against `colors.card`'s
+// `#1E293B`). Geometry deliberately differs from that peer — full-width
+// stacked blocks at `borderRadius: 10` rather than its `maxWidth: "48%"`
+// pills — because a meal name plus a stats line does not fit a half-width
+// pill without truncating the name to uselessness.
 const styles = StyleSheet.create({
   container: { marginTop: 8, marginBottom: 4 },
   label: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#9CA3AF",
+    color: colors.mutedForeground,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 6,
   },
-  // Deliberately NOT folded into `label`: uppercased with `letterSpacing`,
-  // the longest message that can co-occur with a recommendation ("Calorie
-  // target hit — protein still short.", 40 chars) would overflow the strip's
-  // width beside "SUGGESTED NOW". Its own line keeps both intact.
-  message: { fontSize: 12, color: "#9CA3AF", marginTop: -2, marginBottom: 6 },
   chip: {
-    backgroundColor: "#111827",
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: "#1F2937",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 6,
   },
-  chipName: { fontSize: 14, fontWeight: "600", color: "#FFFFFF" },
-  chipStats: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  chipName: { fontSize: 14, fontWeight: "600", color: colors.foreground },
+  chipStats: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
 });
