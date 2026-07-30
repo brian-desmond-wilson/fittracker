@@ -798,3 +798,239 @@ describe("nudgeFireDate", () => {
     expect(nudgeFireDate(600, DAY(), now)).toBeNull();
   });
 });
+
+import type { EatNextStockInfo } from "../eatNext";
+
+describe("stock awareness", () => {
+  const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
+    new Map(entries.map(([id, o]) => [id, {
+      assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    }]));
+
+  it("assemblable beats higher raw", () => {
+    const inStock = scored({ category: "dinner", score: 79 });
+    const outStock = scored({ category: "dinner", score: 90 });
+    const r = recommendEatNext({
+      ...input({}, [outStock, inStock]),
+      stockByMealId: stock([
+        [inStock.meal.id, {}],
+        [outStock.meal.id, { assemblable: false, missingCount: 2 }],
+      ]),
+    });
+    expect(r.recommendations[0].mealId).toBe(inStock.meal.id);
+    expect(r.recommendations[0].reasons).toContain("in stock");
+    const out = r.recommendations.find((x) => x.mealId === outStock.meal.id)!;
+    expect(out.reasons.join(" ")).toMatch(/missing 2 ingredients/);
+  });
+
+  it("role match still beats availability", () => {
+    const pwOut = scored({ role: "post_workout", protein: 40, score: 70 });
+    const plainIn = scored({ protein: 40, score: 95 });
+    const r = recommendEatNext({
+      ...input({ workoutCompletedAtMinutes: 12 * 60 }, [plainIn, pwOut]),
+      stockByMealId: stock([
+        [pwOut.meal.id, { assemblable: false, missingCount: 1 }],
+        [plainIn.meal.id, {}],
+      ]),
+    });
+    expect(r.context).toBe("post_workout");
+    expect(r.recommendations[0].mealId).toBe(pwOut.meal.id);
+  });
+
+  it("expiring usage breaks assemblable ties and lands in reasons", () => {
+    const usesExpiring = scored({ category: "dinner", score: 80 });
+    const fresh = scored({ category: "dinner", score: 80 });
+    const r = recommendEatNext({
+      ...input({}, [fresh, usesExpiring]),
+      stockByMealId: stock([
+        [fresh.meal.id, {}],
+        [usesExpiring.meal.id, { expiringItemName: "Sirloin", expiringDaysLeft: 2 }],
+      ]),
+    });
+    expect(r.recommendations[0].mealId).toBe(usesExpiring.meal.id);
+    expect(r.recommendations[0].reasons.join(" ")).toMatch(/Sirloin.*2/);
+  });
+
+  it("never a hard filter: all-out-of-stock still recommends, with reasons", () => {
+    const only = scored({ category: "dinner" });
+    const r = recommendEatNext({
+      ...input({}, [only]),
+      stockByMealId: stock([[only.meal.id, { assemblable: false, missingCount: 1 }]]),
+    });
+    expect(r.recommendations).toHaveLength(1);
+    expect(r.recommendations[0].reasons.join(" ")).toMatch(/missing 1 ingredient\b/);
+  });
+
+  it("absent map = bit-for-bit prior behavior", () => {
+    const meals = [scored({ category: "dinner", score: 90 }), scored({ category: "dinner", score: 80 })];
+    const withUndefined = recommendEatNext({ ...input({}, meals), stockByMealId: undefined });
+    const without = recommendEatNext(input({}, meals));
+    expect(withUndefined).toEqual(without);
+  });
+
+  it("meal missing from the map ranks as unknown-stock (after in-stock, before known-missing)", () => {
+    const known = scored({ category: "dinner", score: 70 });
+    const unknown = scored({ category: "dinner", score: 95 });
+    const out = scored({ category: "dinner", score: 99 });
+    const r = recommendEatNext({
+      ...input({}, [out, unknown, known]),
+      stockByMealId: stock([
+        [known.meal.id, {}],
+        [out.meal.id, { assemblable: false, missingCount: 1 }],
+      ]),
+    });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      known.meal.id, unknown.meal.id, out.meal.id,
+    ]);
+  });
+});
+
+// Mutation-driven coverage. Every test below was added because a specific
+// mutant survived the plan's own six stock-awareness tests; each names the
+// mutant it kills. See the Task 9 execution amendment for the evidence table.
+describe("stock awareness — mutation-driven coverage", () => {
+  const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
+    new Map(entries.map(([id, o]) => [id, {
+      assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    }]));
+  const behind = (catchUpAmount: number): Partial<EatNextInput> => ({
+    caloriePace: { status: "behind", delta: catchUpAmount, catchUpAmount },
+  });
+
+  // The plan's "expiring usage breaks assemblable ties" test is tie-only, and
+  // its fixture happens to name the expiring meal first — so the name
+  // tiebreak already put it on top and DELETING the expiringRank term passed.
+  // expiringRank sits ABOVE raw in the comparator; this pins that.
+  it("an expiring rescue outranks a strictly higher-raw fresh meal (expiringRank is above raw, not a tiebreak)", () => {
+    const fresh = scored({ category: "dinner", score: 95 });
+    const usesExpiring = scored({ category: "dinner", score: 70 });
+    const r = recommendEatNext({
+      ...input({}, [fresh, usesExpiring]),
+      stockByMealId: stock([
+        [fresh.meal.id, {}],
+        [usesExpiring.meal.id, { expiringItemName: "Sirloin", expiringDaysLeft: 3 }],
+      ]),
+    });
+    expect(r.recommendations[0].mealId).toBe(usesExpiring.meal.id);
+  });
+
+  // Task 2's forward-caution, pinned. `expiringDaysLeft: 0` ("expires today")
+  // is the MOST urgent value assessAssemblability can return — its window is
+  // bounded below at 0 so already-expired rows never reach here — and `0` is
+  // falsy. An `expiringRank` derived from `!!expiringDaysLeft` instead of
+  // `expiringItemName != null` silently drops exactly this signal, and passed
+  // every one of the plan's tests (all of which use a non-zero day).
+  it("day 0 (expires today) is the most urgent rescue, not a falsy no-op", () => {
+    const fresh = scored({ category: "dinner", score: 95 });
+    const expiresToday = scored({ category: "dinner", score: 70 });
+    const r = recommendEatNext({
+      ...input({}, [fresh, expiresToday]),
+      stockByMealId: stock([
+        [fresh.meal.id, {}],
+        [expiresToday.meal.id, { expiringItemName: "Sirloin", expiringDaysLeft: 0 }],
+      ]),
+    });
+    expect(r.recommendations[0].mealId).toBe(expiresToday.meal.id);
+    // Copy matches Task 8's MealDetail treatment of the same value: the most
+    // urgent day must not render as "expires in 0d", the least urgent-sounding
+    // string the template can produce.
+    expect(r.recommendations[0].reasons).toContain("uses Sirloin — expires today");
+    expect(r.recommendations[0].reasons.join(" ")).not.toMatch(/0d/);
+  });
+
+  it("post_workout candidates are availability-aware within the role tier, and say so", () => {
+    // Both qualify on protein alone (role null → equal roleRank), so stock is
+    // the only thing that can separate them. Pins the post_workout call site's
+    // forwarding, which the plan's post_workout test cannot: that test asserts
+    // a roleRank win, which holds whether or not the map is forwarded.
+    const outStock = scored({ protein: 40, score: 95 });
+    const inStock = scored({ protein: 40, score: 70 });
+    const r = recommendEatNext({
+      ...input({ workoutCompletedAtMinutes: 12 * 60 }, [outStock, inStock]),
+      stockByMealId: stock([
+        [inStock.meal.id, {}],
+        [outStock.meal.id, { assemblable: false, missingCount: 3 }],
+      ]),
+    });
+    expect(r.context).toBe("post_workout");
+    expect(r.recommendations[0].mealId).toBe(inStock.meal.id);
+    expect(r.recommendations[0].reasons).toContain("in stock");
+    expect(r.recommendations[1].reasons.join(" ")).toMatch(/missing 3 ingredients/);
+  });
+
+  it("catch_up candidates are availability-aware", () => {
+    const outStock = scored({ calories: 500, score: 95 });
+    const inStock = scored({ calories: 500, score: 70 });
+    const r = recommendEatNext({
+      ...input(behind(500), [outStock, inStock]),
+      stockByMealId: stock([
+        [inStock.meal.id, {}],
+        [outStock.meal.id, { assemblable: false, missingCount: 2 }],
+      ]),
+    });
+    expect(r.context).toBe("catch_up");
+    expect(r.recommendations[0].mealId).toBe(inStock.meal.id);
+    expect(r.recommendations[0].reasons).toContain("in stock");
+  });
+
+  it("the nudge's in-band body pick is availability-aware (same shared catchUpCandidates definition)", () => {
+    const outStock = scored({ category: "dinner", calories: 500, raw: 95 });
+    const inStock = scored({ category: "dinner", calories: 500, raw: 70 });
+    const r = recommendEatNext({
+      ...input({ ...behind(500), nudgesEnabled: true }, [outStock, inStock]),
+      stockByMealId: stock([
+        [inStock.meal.id, {}],
+        [outStock.meal.id, { assemblable: false, missingCount: 2 }],
+      ]),
+    });
+    expect(r.nudge).not.toBeNull();
+    expect(r.nudge!.body).toContain(inStock.meal.name);
+    expect(r.nudge!.body).not.toContain(outStock.meal.name);
+  });
+
+  it("the nudge's out-of-band fallback pick is availability-aware too", () => {
+    // 1500 cal is well clear of the ±35% band around a 500 gap (325–675), so
+    // both meals reach the `rank(eligible.map(candidate(...)))` fallback.
+    const outStock = scored({ category: "dinner", calories: 1500, raw: 95 });
+    const inStock = scored({ category: "dinner", calories: 1500, raw: 70 });
+    const r = recommendEatNext({
+      ...input({ ...behind(500), nudgesEnabled: true }, [outStock, inStock]),
+      stockByMealId: stock([
+        [inStock.meal.id, {}],
+        [outStock.meal.id, { assemblable: false, missingCount: 2 }],
+      ]),
+    });
+    expect(r.nudge).not.toBeNull();
+    expect(r.nudge!.body).toContain(inStock.meal.name);
+    expect(r.nudge!.body).not.toContain(outStock.meal.name);
+  });
+
+  it("emergency candidates carry stock reasons but stay ordered by rescue size (spec §5.3.4)", () => {
+    // The one context whose order availability must NOT change: a bigger
+    // rescue you have to shop for still beats a small one in the fridge.
+    const bigOut = scored({ category: "emergency", calories: 700 });
+    const smallIn = scored({ category: "emergency", calories: 450 });
+    const r = recommendEatNext({
+      ...input({ nowMinutes: 20 * 60, ...behind(600) }, [smallIn, bigOut]),
+      stockByMealId: stock([
+        [smallIn.meal.id, {}],
+        [bigOut.meal.id, { assemblable: false, missingCount: 2 }],
+      ]),
+    });
+    expect(r.context).toBe("emergency");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([bigOut.meal.id, smallIn.meal.id]);
+    expect(r.recommendations[0].reasons.join(" ")).toMatch(/missing 2 ingredients/);
+    expect(r.recommendations[1].reasons).toContain("in stock");
+  });
+
+  it("a meal absent from a present map gets NO stock reason (unknown says nothing, it does not guess)", () => {
+    const known = scored({ category: "dinner" });
+    const unknown = scored({ category: "dinner" });
+    const r = recommendEatNext({
+      ...input({}, [known, unknown]),
+      stockByMealId: stock([[known.meal.id, {}]]),
+    });
+    const u = r.recommendations.find((x) => x.mealId === unknown.meal.id)!;
+    expect(u.reasons).toEqual(["next: dinner"]);
+  });
+});

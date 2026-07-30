@@ -1415,12 +1415,18 @@ function stockReasons(info: EatNextStockInfo | undefined): string[] {
     return [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
   }
   const out = ["in stock"];
-  if (info.expiringItemName) {
-    out.push(`uses ${info.expiringItemName} — expires in ${info.expiringDaysLeft}d`);
+  if (info.expiringItemName != null) {
+    out.push(
+      info.expiringDaysLeft === 0
+        ? `uses ${info.expiringItemName} — expires today`
+        : `uses ${info.expiringItemName} — expires in ${info.expiringDaysLeft}d`,
+    );
   }
   return out;
 }
 ```
+
+*(Fence corrected during execution to match the landed source: `!= null` rather than truthiness on `expiringItemName` — the caution above says exactly this and the original fence's `if (info.expiringItemName)` was merely accidentally equivalent, since `expiringItemName` is a non-empty display name whenever it is set — and the day-0 special case, which reconciles this copy with the "expires today" treatment Task 8's DECISION 2 shipped in `MealDetail` for the same field. See "⚠️ Execution amendments → Task 9".)*
 
 `rank()` comparator becomes: `roleRank` → `stockRank` → `expiringRank` → `raw` desc → prep asc → name. The emergency context's calorie-desc sort is unchanged (rescue size stays king there); its candidates still get stock reasons. `computeNudge`'s pick inherits the new ordering automatically because it calls the same `rank()`.
 
@@ -1993,3 +1999,55 @@ Two things were caught by running this rather than asserting it. **(1)** The fir
 - **`StockLocationRow` now has zero production importers.** Only `stockState.test.ts` and the `Pick<>` in `stockState.ts` reference it; `inventory.ts` passes `FoodInventoryLocation`, a structurally compatible but separate type. Not worth changing and explicitly **not** a cleanup target — recorded only so that if those two types ever drift, the reason the compiler stayed quiet is on the record.
 
 **Explicitly NOT done, per review:** no `stockState.test.ts` case passing a bare `StockQuantityRow`. The compile gate already catches a re-narrowing at `mealLibrary.ts:133`, as the mutation above proved, and the suite stays unmodified at 231.
+
+### Task 9
+
+Steps 1–4 landed as written: the Step 1 test fence was appended **byte-for-byte verbatim** (verified by substring-matching the extracted fence against the landed test file, not by eye), and the Step 3 additions match the plan's prose seam-for-seam with one deliberate copy deviation, recorded below. `eatNext.ts` is a pure lib, so unlike Tasks 4–8 this task is fully test-covered. No database-connecting command was run at any point. Gates on the final tree: `tsc --noEmit` 0 errors; **9 Jest suites / 245 tests** (was 231 — +6 from the plan's Step 1 block, +8 mutation-driven), with **every pre-existing test byte-unmodified** (`git diff --numstat` on the test file: `236 0`, i.e. additions only, zero deletions).
+
+**The five landed-API facts the preconditions record were re-verified against the source before coding, not inherited.** `rank()` compared `roleRank → score.raw → prep → name` with the banding comment (`eatNext.ts:170-181` pre-change); `candidate()` took four params with `roleRank` 0 on role **OR** category match (`:195-208`); `catchUpCandidates(eligible, gap, maxPrepMinutes)` was shared by the `catch_up` context (`:367`) and the nudge's body pick (`:474`); `EatNextRecommendation` already carried `calories/protein/prepMinutes/score`, populated in `toRecs` and the `goal_hit` inline site; the emergency context's calorie-desc sort was intact with its "do not route through `rank()`" comment. No drift.
+
+**All five `candidate()` call sites forward the map — enumerated by grep, then each one independently mutation-proven load-bearing.** `grep -rn "candidate(" mobile/src mobile/app` returns the definition plus exactly five calls, all inside `eatNext.ts`: `catchUpCandidates` (`:284`), post_workout (`:370`), emergency (`:405`), next_meal (`:457`), and the nudge's out-of-band fallback (`:537`) — line numbers as landed. `catchUpCandidates` gained a fifth parameter and both of **its** call sites forward it too, so the shared band definition stays availability-aware from either entry point. Reading the list was not treated as evidence — see the mutation table.
+
+**🚨 THE FINDING — the plan's own six tests do not pin the feature. Nine of eighteen mutants survived them, including the exact bug the plan's bolded forward-caution warns about.** Every mutant below was applied to `eatNext.ts` individually, run against `npx jest eatNext.test.ts`, then reverted; `git status --porcelain` was confirmed clean of residue before committing. "Plan-only" is the six-test suite; "final" is after the eight mutation-driven tests were added.
+
+| # | Mutant | Plan-only | Final | Killed by |
+|---|---|---|---|---|
+| M1 | delete `a.stockRank - b.stockRank` | KILLED (2) | KILLED | *assemblable beats higher raw*; *unknown-stock ordering* |
+| M2 | invert to `b.stockRank - a.stockRank` | KILLED (2) | KILLED | same two |
+| M3 | **delete `a.expiringRank - b.expiringRank`** | **SURVIVED** | KILLED (2) | *expiring rescue outranks higher raw*; *day 0* |
+| M4 | invert to `b.expiringRank - a.expiringRank` | KILLED (1) | KILLED | *expiring usage breaks assemblable ties* |
+| M5 | **`expiringRank` from `!!info.expiringDaysLeft`** | **SURVIVED** | KILLED (1) | *day 0 is the most urgent rescue* |
+| M6 | `stockRank` folds unknown into in-stock | KILLED (1) | KILLED | *unknown-stock ordering* |
+| M7 | `stockRank` folds unknown into known-missing | KILLED (1) | KILLED | *unknown-stock ordering* |
+| M8 | pluralization always `"s"` | KILLED (1) | KILLED | *never a hard filter* (`missing 1 ingredient\b`) |
+| M9 | pluralization always `""` | KILLED (1) | KILLED | *assemblable beats higher raw* (`missing 2 ingredients`) |
+| M10 | **`catchUpCandidates` drops the map** | **SURVIVED** | KILLED (2) | *catch_up availability-aware*; *nudge in-band pick* |
+| M11 | **post_workout call site drops the map** | **SURVIVED** | KILLED (1) | *post_workout availability-aware within the role tier* |
+| M12 | **emergency call site drops the map** | **SURVIVED** | KILLED (1) | *emergency carries stock reasons, order unchanged* |
+| M13 | next_meal call site drops the map | KILLED (4) | KILLED | four of the plan's six |
+| M14 | **nudge out-of-band fallback drops the map** | **SURVIVED** | KILLED (1) | *nudge out-of-band fallback availability-aware* |
+| M15 | **`catch_up` context drops the map arg** | **SURVIVED** | KILLED (1) | *catch_up availability-aware* |
+| M16 | **nudge drops the map arg to `catchUpCandidates`** | **SURVIVED** | KILLED (1) | *nudge in-band pick* |
+| M17 | **delete the day-0 "expires today" branch** | **SURVIVED** | KILLED (1) | *day 0* |
+| M18 | `stockReasons` returns a string for unknown | (n/a — new code) | KILLED (1) | *absent from a present map gets NO stock reason* |
+
+Three of those survivals are worth naming individually, because each is a different way for a test to look like it covers something it does not.
+
+- **M5 is the plan's own bolded caution, and the plan's tests do not catch it.** Every plan test uses `expiringDaysLeft: 2`, so `!!2` and `expiringItemName != null` agree on all of them. The caution was correct and load-bearing; it was simply unenforced. Now pinned by a `expiringDaysLeft: 0` test.
+- **M3 survived because the plan's expiring test is accidentally vacuous on ordering.** Its fixture constructs `usesExpiring` **first**, so `scored()` gives it `m0` and the pre-existing `name.localeCompare` tiebreak already placed it on top with the two meals tied on `raw` and `prep` — the `mealId` assertion passed with the whole `expiringRank` term deleted, leaving only the reason-string assertion doing work. The replacement test gives the expiring meal a strictly **lower** raw (70 vs 95), which pins the term's real semantics: `expiringRank` sits *above* `raw`, so a rescue outranks a better-scoring fresh meal rather than merely breaking its ties.
+- **M11 survived despite the plan having a post_workout test.** *"role match still beats availability"* asserts a `roleRank` win, which holds identically whether or not the map reaches that call site — it is a test of the comparator's ordering, not of the call site's wiring. The new test gives both candidates the same `roleRank` (both qualify on protein, both `role: null`) so stock is the only separator, and additionally asserts the reason strings.
+
+The general lesson, consistent with the Task 7 amendment's FIX 1: **a call site is not covered because some test exercises its context.** Four of the five call sites were exercised by a passing test and four were unpinned. Only per-call-site mutation showed which.
+
+**DEVIATION — the day-0 reason string. `expires today`, not `expires in 0d`.** The Step 3 fence prescribed `uses ${name} — expires in ${days}d` unconditionally; the landed code special-cases `expiringDaysLeft === 0`, and the fence above is corrected to match. Grounds: this is **reconciliation with a decision made after Task 9's fence was written**, not an override of it. Task 8's DECISION 2 special-cased the identical value in `MealDetail` on the reasoning that day 0 is a *deliberately retained* rescue case (Task 2's FIX 1 bounded the expiring window below at 0 precisely so "expires today" stays actionable), i.e. the most urgent value the field can hold — and it would otherwise render as the least urgent-sounding string the template can produce. Two surfaces of the same app rendering the same field two different ways is a defect regardless of which reading is better, and `expires in 0d` is the worse of the two on its own merits. The fence's `if (info.expiringItemName)` was also tightened to `!= null` to match the caution's own wording; the two are equivalent in practice (`expiringItemName` is a non-empty saved-food display name whenever it is set), so this is a legibility fix, not a behavior change — unlike the `expiringDaysLeft` truthiness the caution actually warns about, which is a live bug.
+
+**Bit-compatibility is real, not just asserted by the plan's `toEqual` test.** `stockReasons(undefined)` returns `[]`, so `extraReasons` is unchanged when there is no info; `stockRank`/`expiringRank` both default to `1`, so an absent map leaves every candidate tied on both new terms and the comparator falls through to `raw` exactly as before; and neither new field appears on `EatNextRecommendation`, so they cannot leak into the output. `reasons` is therefore present and identical on both paths — the array is built the same way, not merely equal by luck of an empty spread. The plan's test passed unmodified from the first implementation attempt.
+
+**Verified and deliberately left alone**, so a future reader does not "fix" them:
+
+- **The emergency context deliberately does not reorder on availability**, per spec §5.3.4 — a bigger rescue you have to shop for still beats a small one in the fridge. The map is forwarded there **only** for the reason strings; `rank()` is never called on that set. The site's existing "do not route this through `rank()`" comment was extended to name `stockRank`/`expiringRank` alongside `roleRank`, and the new emergency test asserts both halves: the stock reasons appear *and* the calorie-descending order is unchanged. Without that second assertion the test would not distinguish "emergency is availability-aware in its reasons" from "emergency was accidentally made availability-aware in its ordering".
+- **The `goal_hit` protein-short site gets no stock reasons.** It builds its `EatNextRecommendation` inline rather than through `candidate()`/`toRecs`, and is a terminal single-pick sorted by protein desc. Adding stock there would mean a second construction path for stock reasons and is outside Task 9's stated seam (`rank`/`candidate`/`catchUpCandidates`). Recorded as a known gap rather than silently skipped: a protein-short pick can name a meal the user cannot currently assemble, with no reason saying so. Small — it is one meal in a terminal context the user reaches only after hitting their calorie goal — but real, and the natural home is whichever future task unifies that site with `toRecs`.
+- **A non-assemblable meal can still carry `expiringRank: 0`, and the reason string does not say so — LEFT AS IS, per the plan's own fence.** `expiringRank` is derived from `expiringItemName != null` alone, unconditioned on `assemblable`, while `stockReasons` early-returns the `missing N ingredients` string and never reaches the expiring push. The state is reachable: `assessAssemblability` computes `expiringItemName` from the items that *did* resolve, so a meal missing two ingredients while using a third that expires tomorrow returns `{ assemblable: false, expiringItemName: "X" }`. Effect: among out-of-stock meals it ranks first, silently. Left alone on three grounds — the plan's `stockReasons` fence is explicit about the early return; the *ordering* is the one Task 8 argued for when it decided to render the expiring line even on unmakeable meals ("buying the two missing items also saves C"), so suppressing it here would put the recommender out of step with `MealDetail` in the opposite direction; and `stockRank` (2) dominates `expiringRank` in the comparator, so this can only reorder *within* the out-of-stock tier and can never lift an unmakeable meal above a makeable one. Recorded because it is a one-directional weakening of this file's stated invariant: the docstring promises "the UI can never claim a reason the ranking didn't use", which still holds — but the converse now does not, and that was previously true by construction. If it is ever revisited, the fix is to append the expiring reason to the not-assemblable branch too, not to condition `expiringRank` on `assemblable`.
+- **`stockRank` is `number`, not a union or enum.** It is consumed only by subtraction inside `rank()`, matching the existing `roleRank: number` idiom one line above; a three-value union would need a widening cast at the subtraction for no gain.
+
+**Forward note for Task 10:** `EatNextStockInfo`'s four fields are a structural subset of `MealAssemblability` except for `missingCount`, which is `missing.length`. Task 10's mapping block in the plan already spells this correctly (`missingCount: a.missing.length`). Note also that `assemblable` is `items.length > 0 && missing.length === 0` (`stockState.ts:182`), so an **item-less** meal maps to `{ assemblable: false, missingCount: 0 }` and this task's `stockReasons` renders `missing 0 ingredients` for it — the same predicate divergence Task 8's FIX 1 fixed in `MealDetail` by gating on the list rather than the verdict. Left unfixed here because the fix belongs at the boundary that *creates* the info (Task 10's map), not at the string formatter: an item-less meal should arguably be `stockRank: 1` (unknown) rather than 2, since nothing is actually known to be missing. **Task 10 should decide this explicitly and record the decision**; `updateMeal`'s non-atomic delete-then-reinsert makes item-less meals a live, reachable state, not a hypothetical.

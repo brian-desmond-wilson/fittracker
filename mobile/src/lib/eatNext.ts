@@ -59,6 +59,14 @@ export interface EatNextInput {
   maxPrepMinutes: number;
   workoutCompletedAtMinutes: number | null;
   nudgesEnabled: boolean;
+  stockByMealId?: Map<string, EatNextStockInfo>;
+}
+
+export interface EatNextStockInfo {
+  assemblable: boolean;
+  missingCount: number;
+  expiringItemName: string | null;
+  expiringDaysLeft: number | null;
 }
 
 export interface EatNextRecommendation {
@@ -154,6 +162,39 @@ export interface EatNextResult {
 interface Candidate extends ScoredMeal {
   extraReasons: string[];
   roleRank: number; // 0 = preferred role, 1 = otherwise (lower sorts first)
+  // 0 = assemblable now, 1 = unknown (no map, or no entry for this meal),
+  // 2 = known-missing. Three-way, not boolean: "we don't know" must not be
+  // treated as "we know it's missing" — an unknown meal still outranks one
+  // we've positively established the user can't make.
+  stockRank: number;
+  // 0 = uses an expiring in-stock item (a rescue), 1 = otherwise.
+  expiringRank: number;
+}
+
+/** Spec §9's stock reason strings. Availability is never a hard filter —
+ *  an unmakeable meal still surfaces, it just ranks last and says why. */
+function stockReasons(info: EatNextStockInfo | undefined): string[] {
+  if (!info) return [];
+  if (!info.assemblable) {
+    return [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
+  }
+  const out = ["in stock"];
+  // `expiringItemName != null`, NOT truthiness on `expiringDaysLeft`:
+  // `expiringDaysLeft: 0` means "expires today", the MOST urgent value
+  // `assessAssemblability` can return (its window is bounded below at 0 so
+  // already-expired rows never reach here) — and `0` is falsy. See the Task 2
+  // execution amendment's forward note.
+  if (info.expiringItemName != null) {
+    // Day 0 gets its own string rather than "expires in 0d", matching the
+    // treatment Task 8 shipped in MealDetail for the same value: the most
+    // urgent day would otherwise read as the least urgent-sounding copy.
+    out.push(
+      info.expiringDaysLeft === 0
+        ? `uses ${info.expiringItemName} — expires today`
+        : `uses ${info.expiringItemName} — expires in ${info.expiringDaysLeft}d`,
+    );
+  }
+  return out;
 }
 
 function baseEligible(m: ScoredMeal, maxPrepMinutes: number): boolean {
@@ -171,6 +212,13 @@ function rank(cands: Candidate[]): Candidate[] {
   return [...cands].sort(
     (a, b) =>
       a.roleRank - b.roleRank ||
+      // Availability sits between role and score (spec §9): the context's
+      // role preference still wins — a post-workout meal you must shop for
+      // beats a plain one in the fridge — but below that, "can I make it"
+      // outranks "how good is it", and rescuing an expiring item breaks
+      // ties among the meals you can make.
+      a.stockRank - b.stockRank ||
+      a.expiringRank - b.expiringRank ||
       // Rank on the un-renormalized component sum: Phase 2's banding analysis
       // found the rounded /100 score barely discriminates (all seeds 84-95);
       // raw is strictly finer and ties less. UI still DISPLAYS score/100.
@@ -197,13 +245,20 @@ function candidate(
   preferredRoles: ReadonlyArray<MealRole>,
   maxPrepMinutes: number,
   preferredCategories: ReadonlyArray<MealCategory> = [],
+  stockByMealId?: Map<string, EatNextStockInfo>,
 ): Candidate {
   const roleMatch = m.meal.role !== null && preferredRoles.includes(m.meal.role);
   const categoryMatch = preferredCategories.includes(m.meal.category);
+  const info = stockByMealId?.get(m.meal.id);
   return {
     ...m,
-    extraReasons: prepReason(m, maxPrepMinutes),
+    extraReasons: [...prepReason(m, maxPrepMinutes), ...stockReasons(info)],
     roleRank: roleMatch || categoryMatch ? 0 : 1,
+    // No map, or no entry for this meal → 1 (unknown), which sorts after
+    // in-stock and before known-missing. An absent map therefore leaves
+    // every candidate tied on both new terms, i.e. bit-for-bit prior order.
+    stockRank: info === undefined ? 1 : info.assemblable ? 0 : 2,
+    expiringRank: info !== undefined && info.expiringItemName != null ? 0 : 1,
   };
 }
 
@@ -222,10 +277,11 @@ function calorieGoalHit(goals: MacroGoals, dayTotals: MacroTotals): boolean {
  *  nudge's own body pick so the band rule has exactly one definition. */
 function catchUpCandidates(
   eligible: ScoredMeal[], gap: number, maxPrepMinutes: number,
+  stockByMealId?: Map<string, EatNextStockInfo>,
 ): Candidate[] {
   return eligible
     .filter((m) => Math.abs(m.totals.calories - gap) <= gap * CATCH_UP_BAND)
-    .map((m) => candidate(m, ["bridge"], maxPrepMinutes));
+    .map((m) => candidate(m, ["bridge"], maxPrepMinutes, [], stockByMealId));
 }
 
 /** Next main-meal slot strictly after now, else snack (mealPace's milestone rule). */
@@ -246,7 +302,7 @@ function nextSlot(
 export function recommendEatNext(input: EatNextInput): EatNextResult {
   const {
     nowMinutes, windowEndMinutes, mealTimesMinutes, dayTotals, goals,
-    caloriePace, meals, maxPrepMinutes, workoutCompletedAtMinutes,
+    caloriePace, meals, maxPrepMinutes, workoutCompletedAtMinutes, stockByMealId,
   } = input;
 
   const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
@@ -311,7 +367,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           m.meal.role === "post_workout" ||
           m.totals.protein >= POST_WORKOUT_MIN_PROTEIN_G,
       )
-      .map((m) => candidate(m, ["post_workout"], maxPrepMinutes));
+      .map((m) => candidate(m, ["post_workout"], maxPrepMinutes, [], stockByMealId));
     if (cands.length > 0) {
       return {
         context: "post_workout",
@@ -338,12 +394,15 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           m.meal.role === "emergency_catchup" ||
           m.meal.role === "calorie_booster",
       )
-      // `candidate()` is called only for its `extraReasons` (prep-budget
-      // copy) here — the `roleRank` it computes is deliberately unread by
-      // the calories-descending sort below (spec §5.3.4: rescue size, not
-      // role or score, decides emergency order). Do not "fix" this by
-      // routing it through `rank()`.
-      .map((m) => candidate(m, ["emergency_catchup", "calorie_booster"], maxPrepMinutes))
+      // `candidate()` is called only for its `extraReasons` (prep-budget and
+      // stock copy) here — the `roleRank`/`stockRank`/`expiringRank` it
+      // computes are deliberately unread by the calories-descending sort
+      // below (spec §5.3.4: rescue size, not role, score or availability,
+      // decides emergency order — a bigger rescue you must shop for still
+      // beats a small one in the fridge). The map is still forwarded so the
+      // reasons say what's makeable. Do not "fix" this by routing it
+      // through `rank()`.
+      .map((m) => candidate(m, ["emergency_catchup", "calorie_booster"], maxPrepMinutes, [], stockByMealId))
       // Emergency ranks by rescue size, not score (spec §5.3.4).
       .sort(
         (a, b) =>
@@ -364,7 +423,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 
   // 5. catch_up — falls through when empty.
   if (behind && gap > 0) {
-    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes);
+    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId);
     if (cands.length > 0) {
       return {
         context: "catch_up",
@@ -394,7 +453,8 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             m.meal.category === "snack"),
       )
     : eligible.filter((m) => slotCategories.includes(m.meal.category));
-  const cands = pool.map((m) => candidate(m, preferredRoles, maxPrepMinutes, preferredCategories));
+  const cands = pool.map((m) =>
+    candidate(m, preferredRoles, maxPrepMinutes, preferredCategories, stockByMealId));
   return {
     context: "next_meal",
     message:
@@ -433,7 +493,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 function computeNudge(input: EatNextInput): EatNextNudge | null {
   const {
     nowMinutes, windowEndMinutes, mealTimesMinutes, dayTotals, goals,
-    caloriePace, meals, maxPrepMinutes, nudgesEnabled,
+    caloriePace, meals, maxPrepMinutes, nudgesEnabled, stockByMealId,
   } = input;
   if (!nudgesEnabled) return null;
   // Defensive invariants, both unreachable-in-effect through the current call
@@ -471,8 +531,10 @@ function computeNudge(input: EatNextInput): EatNextNudge | null {
   // prep budget" reason, which the nudge body discards — the nudge honors the
   // same prep budget as the surfaces, it just doesn't restate it.)
   const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
-  const inBand = rank(catchUpCandidates(eligible, gap, maxPrepMinutes));
-  const pick = inBand[0] ?? rank(eligible.map((m) => candidate(m, [], maxPrepMinutes)))[0];
+  const inBand = rank(catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId));
+  const pick =
+    inBand[0] ??
+    rank(eligible.map((m) => candidate(m, [], maxPrepMinutes, [], stockByMealId)))[0];
   const suggestion = pick
     ? ` — ${pick.meal.name} ${pick.meal.prep_minutes > 0 ? `fixes it in ${pick.meal.prep_minutes} min` : "is ready now"}`
     : "";
