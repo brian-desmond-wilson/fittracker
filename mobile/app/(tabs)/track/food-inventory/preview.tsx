@@ -4,7 +4,9 @@ import { View, Text, TouchableOpacity, StatusBar, StyleSheet } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import { ViewFoodDetailsScreen } from "@/src/components/track/ViewFoodDetailsScreen";
-import { FoodInventoryItemWithCategories } from "@/src/types/track";
+import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import { projectItemStock } from "@/src/lib/stockState";
+import { getLocalDateString } from "@/src/lib/dates";
 import { ProductData } from "@/src/services/openFoodFactsApi";
 
 export default function FoodProductPreviewPage() {
@@ -33,10 +35,12 @@ export default function FoodProductPreviewPage() {
 
   const productData: ProductData = JSON.parse(productDataString);
 
-  // Convert ProductData to FoodInventoryItemWithCategories format for preview
-  const previewItem: FoodInventoryItemWithCategories = {
+  // Convert ProductData to inventory-item format for preview
+  const previewItemFields: Omit<InventoryItemWithState, "state"> = {
     id: "preview",
     user_id: "preview",
+    quantity: 0,
+    location: null,
     name: productData.name,
     brand: productData.brand,
     flavor: null,
@@ -62,11 +66,19 @@ export default function FoodProductPreviewPage() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     locations: [],
-    total_quantity: 0,
-    ready_quantity: 0,
-    storage_quantity: 0,
     categories: [],
     subcategories: [],
+  };
+
+  // Run the real projection over zero locations rather than hand-writing an
+  // ItemStockState literal that could drift from projectItemStock.
+  const previewItem: InventoryItemWithState = {
+    ...previewItemFields,
+    state: projectItemStock({
+      item: previewItemFields,
+      locations: [],
+      todayLocalDate: getLocalDateString(),
+    }),
   };
 
   const handleAddToInventory = () => {

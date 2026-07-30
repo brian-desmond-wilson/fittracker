@@ -45,15 +45,12 @@ export interface FoodInventoryLocation {
   updated_at: string;
 }
 
-export interface FoodInventoryItemWithLocations extends Omit<FoodInventoryItem, 'quantity' | 'location'> {
-  locations: FoodInventoryLocation[];
-  total_quantity: number;
-  ready_quantity: number;
-  storage_quantity: number;
-  // Legacy single-location fields — present on single-location items.
-  location?: FoodLocation | null;
-  quantity?: number;
-}
+// `FoodInventoryItemWithLocations` / `FoodInventoryItemWithCategories` used to
+// live here. They mirrored the shape of a stock view that Phase 4 drops
+// (20260730100000), carrying three denormalised quantity fields. The
+// replacement is `InventoryItemWithState` in `lib/supabase/inventory.ts`: one
+// `state: ItemStockState` projected from the location rows, which are the only
+// quantity truth. Deleted once the last reader moved to `state.*`.
 
 // Major food categories (12 main categories)
 export interface FoodCategory {
@@ -72,12 +69,6 @@ export interface FoodSubcategory {
   slug: string;
   display_order: number;
   created_at: string;
-}
-
-// Food inventory item with category and subcategory data
-export interface FoodInventoryItemWithCategories extends FoodInventoryItemWithLocations {
-  categories: FoodCategory[];
-  subcategories: FoodSubcategory[];
 }
 
 export type ShoppingListPriority = 1 | 2 | 3; // 1=high, 2=medium, 3=low

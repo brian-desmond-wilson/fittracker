@@ -8,6 +8,7 @@ import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { computeMealPace, type MealPaceState } from "@/src/lib/mealPace";
 import { sumNutrition, type MacroGoals } from "@/src/lib/mealMacros";
 import {
+  buildStockByMealId,
   recommendEatNext,
   type EatNextResult,
   type ScoredMeal,
@@ -16,7 +17,7 @@ import {
   computeMealTotals,
   fetchMealLibrary,
 } from "@/src/lib/supabase/mealLibrary";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 
 /** Mirrors `nutrition_constraints.max_prep_minutes`'s own schema default
  *  (`20260728100000_nutrition_preference_schema.sql:54`), so a missing
@@ -281,6 +282,21 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
         ),
       }));
 
+      // Live stock signals (spec §9), from what `library` already carries —
+      // zero extra round trips. Sits here in `load` rather than a `useMemo`
+      // because `library` is a function-local awaited value that never enters
+      // state, so it recomputes at exactly the fetch's cadence: per mount, per
+      // `refreshKey` bump, per focus and per meal write. Never per render.
+      //
+      // A pure export of `eatNext.ts` rather than inlined here (as the plan's
+      // Task 10 fence had it) because this file is a hook and gets no Jest
+      // coverage, while the `meal.id` lookup key and the item-less-meal
+      // decision are both seams that fail SILENTLY. Rationale for those, the
+      // input contract, and why `MealLibraryModal` deliberately computes its
+      // own copy all live in that function's doc comment — one home, so this
+      // pointer cannot drift from it.
+      const stockByMealId = buildStockByMealId(library);
+
       // Minutes since LOCAL midnight, the coordinate system the engine
       // compares against `nowMinutes`. Safe without a day check because the
       // query above can only return a completion inside today's local range.
@@ -311,6 +327,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
             ?.max_prep_minutes ?? DEFAULT_MAX_PREP_MINUTES,
         workoutCompletedAtMinutes,
         nudgesEnabled: p.eat_nudges_enabled,
+        stockByMealId,
       });
       if (runId !== runIdRef.current) return;
       // Clearing the error HERE, not at the top of `load`: `loading` stays

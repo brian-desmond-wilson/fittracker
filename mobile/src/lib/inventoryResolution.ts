@@ -16,7 +16,18 @@ export interface ResolutionItem {
 export interface ResolutionInventoryRow {
   id: string;
   barcode: string | null;
-  /** Sum of location quantities, or the legacy quantity for location-less rows. */
+  /**
+   * Σ of the item's `food_inventory_locations.quantity` rows — the ONLY stock
+   * truth (spec §5.1). There is no legacy arm and there must never be one:
+   * `food_inventory.quantity` is a maintained cache that this phase stopped
+   * reading everywhere (`mealLibrary.ts` is the only producer of these rows,
+   * and `foodInventoryMatchService.ts` projects the same way). A row with no
+   * location rows is therefore 0 — genuinely out of stock as far as every
+   * reader is concerned — NOT a cue to fall back to the cache. Restoring a
+   * `locations.length > 0 ? … : quantity` fallback here re-arms the exact
+   * divergence Phase 4 exists to close, including the consume RPC's legacy
+   * decrement branch.
+   */
   totalQuantity: number;
   conceptIds: string[];
 }

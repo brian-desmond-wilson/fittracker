@@ -6,6 +6,7 @@ import { MEAL_TYPE_LABELS, ROLE_LABELS, defaultMealTypeFor } from "@/src/types/m
 import type { MealType } from "@/src/types/track";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
+import type { MealAssemblability } from "@/src/lib/stockState";
 import { lib, scoreChipStyle } from "./styles";
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
@@ -14,6 +15,7 @@ interface MealDetailProps {
   meal: MealWithItems;
   totals: MealTotals;
   score: BrianScoreResult;
+  assemblability?: MealAssemblability;
   logging: boolean;
   onLog: (meal: MealWithItems, mealType: MealType) => void;
   onEdit: (meal: MealWithItems) => void;
@@ -35,7 +37,7 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
 }
 
 export function MealDetail({
-  meal, totals, score, logging, onLog, onEdit, onDelete,
+  meal, totals, score, assemblability, logging, onLog, onEdit, onDelete,
 }: MealDetailProps) {
   const [mealType, setMealType] = useState<MealType>(defaultMealTypeFor(meal));
 
@@ -93,6 +95,34 @@ export function MealDetail({
         {hasSmallPieces && (
           <Text style={[lib.smallMuted, { marginTop: 8 }]}>
             ✂︎ already cut small — EoE-safe
+          </Text>
+        )}
+        {/* Gated on the LIST, not on the `assemblable` verdict. They are not
+            the same predicate: `assemblable` is
+            `items.length > 0 && missing.length === 0`, so an item-less meal
+            is not-assemblable with an EMPTY missing list and the verdict gate
+            renders a bare "Missing:" with nothing after it. Item-less meals
+            are a live state — `updateMeal`'s non-atomic replace documents
+            leaving one behind. */}
+        {assemblability && assemblability.missing.length > 0 && (
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 8 }]}>
+            Missing: {assemblability.missing.join(", ")}
+          </Text>
+        )}
+        {/* Gated on `expiringItemName != null`, NOT on the truthiness of
+            `expiringDaysLeft`: 0 means "expires today" — a retained rescue
+            signal (see stockState.ts) — and 0 is falsy. `!= null` rather than
+            truthiness on the NAME either, so this matches `eatNext.ts`'s
+            `expiringRank`/`stockReasons` exactly: an empty-string name would
+            still rank the meal as a rescue there, and a truthiness gate here
+            would silently render nothing for it — the recommender ordering on
+            a signal the UI never states. */}
+        {assemblability?.expiringItemName != null && (
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 4 }]}>
+            Uses {assemblability.expiringItemName} —{" "}
+            {assemblability.expiringDaysLeft === 0
+              ? "expires today"
+              : `expires in ${assemblability.expiringDaysLeft}d`}
           </Text>
         )}
       </View>

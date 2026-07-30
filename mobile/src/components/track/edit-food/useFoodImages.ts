@@ -1,13 +1,22 @@
 import { useState } from "react";
 import { Platform, Alert, ActionSheetIOS } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { FoodInventoryItemWithCategories } from "@/src/types/track";
+import { FoodInventoryItem } from "@/src/types/track";
 
 export type FoodImageType = "primary" | "front" | "back" | "side";
 
+/** Exactly the fields this hook reads. It used to ask for a whole
+ *  `FoodInventoryItemWithCategories`, which coupled it to the legacy
+ *  `total_quantity`/`ready_quantity`/`storage_quantity` mirrors it never
+ *  touched — so deleting those mirrors broke this call site for no reason. */
+type FoodImageSeed = Pick<
+  FoodInventoryItem,
+  "image_primary_url" | "image_front_url" | "image_back_url" | "image_side_url"
+>;
+
 // Owns the four food-image URIs and the camera/library picker flow. Values seed
 // from the item; the picker updates them (local file:// URIs until save uploads).
-export function useFoodImages(item: FoodInventoryItemWithCategories) {
+export function useFoodImages(item: FoodImageSeed) {
   const [imagePrimary, setImagePrimary] = useState<string | null>(item.image_primary_url);
   const [imageFront, setImageFront] = useState<string | null>(item.image_front_url);
   const [imageBack, setImageBack] = useState<string | null>(item.image_back_url);

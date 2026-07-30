@@ -83,7 +83,7 @@ export function FoodPreviewModal({
   useEffect(() => {
     if (visible) {
       setUseInventory(
-        !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0,
+        !!inventoryMatch && inventoryMatch.quantity > 0,
       );
       setSessionEdited(false);
     }
@@ -393,7 +393,7 @@ export function FoodPreviewModal({
               onValueChange={setUseInventory}
               trackColor={{ false: "#374151", true: "#22C55E" }}
               thumbColor="#FFFFFF"
-              disabled={(inventoryMatch.quantity ?? 0) <= 0}
+              disabled={inventoryMatch.quantity <= 0}
             />
           </View>
         )}

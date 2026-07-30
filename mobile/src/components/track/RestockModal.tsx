@@ -12,74 +12,93 @@ import {
 } from "react-native";
 import { X, Package } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { FoodInventoryItemWithLocations, FoodLocation } from "@/src/types/track";
+import { FoodLocation } from "@/src/types/track";
+import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 
 interface RestockModalProps {
   visible: boolean;
   onClose: () => void;
-  item: FoodInventoryItemWithLocations | null;
-  onConfirm: (sourceLocation: FoodLocation | "store", quantity: number) => void;
+  item: InventoryItemWithState | null;
+  /** `null` source = "from store" (new units enter inventory); otherwise the
+   *  id of the location ROW to move units out of. An id, not a location name:
+   *  there is no UNIQUE (food_inventory_id, location) constraint and the edit
+   *  screen does not dedupe entries, so an item can legitimately hold two rows
+   *  in the same location. Resolving by name made the second one unreachable
+   *  (and rendered a duplicate React key); the row the user picked is now the
+   *  row the RPC moves. */
+  onConfirm: (sourceLocationId: string | null, quantity: number) => void;
 }
 
-type SourceOption = FoodLocation | "store";
-
-const LOCATION_LABELS: Record<SourceOption, string> = {
+const LOCATION_LABELS: Record<FoodLocation, string> = {
   fridge: "Fridge",
   freezer: "Freezer",
   pantry: "Pantry",
   cabinet: "Cabinet",
-  store: "Store (Add New)",
 };
 
+const STORE = "store";
+
+/** One selectable row in "RESTOCK FROM". `id` is a location row id, or STORE. */
+interface SourceOption {
+  id: string;
+  label: string;
+  /** Infinity for the store — it is never the limiting factor. */
+  quantity: number;
+}
+
 export function RestockModal({ visible, onClose, item, onConfirm }: RestockModalProps) {
-  const [selectedSource, setSelectedSource] = useState<SourceOption | null>(null);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState("");
 
   // Reset state when modal opens/closes or item changes
   useEffect(() => {
     if (!visible || !item) {
-      setSelectedSource(null);
+      setSelectedSourceId(null);
       setQuantity("");
     }
   }, [visible, item]);
 
   if (!item) return null;
 
-  // Get available source locations (those with quantity > 0)
+  // The restock target is the ready-to-consume row; every transfer lands here.
+  const targetLocation = item.locations.find(loc => loc.is_ready_to_consume);
+
+  // Sources are the stocked rows, minus the target: transfer_inventory_units
+  // raises "source and target locations must differ", so offering the target
+  // would be offering a guaranteed failure. Keyed by row id, so two rows in
+  // the same location are two distinct, individually selectable options.
   const availableSources: SourceOption[] = [
     ...item.locations
-      .filter(loc => loc.quantity > 0)
-      .map(loc => loc.location),
-    "store", // Always include store
+      .filter(loc => loc.quantity > 0 && loc.id !== targetLocation?.id)
+      .map(loc => ({
+        id: loc.id,
+        label: LOCATION_LABELS[loc.location],
+        quantity: loc.quantity,
+      })),
+    { id: STORE, label: "Store (Add New)", quantity: Infinity },
   ];
 
-  // Get quantity available at selected source
-  const getSourceQuantity = (source: SourceOption): number => {
-    if (source === "store") return Infinity;
-    const location = item.locations.find(loc => loc.location === source);
-    return location?.quantity || 0;
-  };
+  const selectedSource = availableSources.find(s => s.id === selectedSourceId) ?? null;
+  const isStoreSelected = selectedSourceId === STORE;
 
   // Calculate preview quantities
   const quantityNum = parseInt(quantity) || 0;
-  const sourceQuantity = selectedSource ? getSourceQuantity(selectedSource) : 0;
+  const sourceQuantity = selectedSource?.quantity ?? 0;
   const isValid = quantityNum > 0 && selectedSource !== null &&
-    (selectedSource === "store" || quantityNum <= sourceQuantity);
+    quantityNum <= sourceQuantity;
 
-  // Get the target location (ready to consume location)
-  const targetLocation = item.locations.find(loc => loc.is_ready_to_consume);
   const currentTargetQty = targetLocation?.quantity || 0;
   const newTargetQty = currentTargetQty + quantityNum;
 
   // Calculate new source quantity
-  const currentSourceQty = selectedSource ? getSourceQuantity(selectedSource) : 0;
-  const newSourceQty = selectedSource === "store"
+  const currentSourceQty = sourceQuantity;
+  const newSourceQty = isStoreSelected
     ? currentSourceQty
     : currentSourceQty - quantityNum;
 
   const handleConfirm = () => {
     if (!isValid || !selectedSource) return;
-    onConfirm(selectedSource, quantityNum);
+    onConfirm(isStoreSelected ? null : selectedSource.id, quantityNum);
     onClose();
   };
 
@@ -126,7 +145,7 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
               </View>
               <View style={styles.quantityBox}>
                 <Text style={styles.quantityLabel}>Total</Text>
-                <Text style={styles.quantityValue}>{item.total_quantity}</Text>
+                <Text style={styles.quantityValue}>{item.state.totalQuantity}</Text>
               </View>
             </View>
           </View>
@@ -135,24 +154,23 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>RESTOCK FROM</Text>
             {availableSources.map((source) => {
-              const sourceQty = getSourceQuantity(source);
-              const isSelected = selectedSource === source;
+              const isSelected = selectedSourceId === source.id;
 
               return (
                 <TouchableOpacity
-                  key={source}
+                  key={source.id}
                   style={styles.radioOption}
-                  onPress={() => setSelectedSource(source)}
+                  onPress={() => setSelectedSourceId(source.id)}
                   activeOpacity={0.7}
                 >
                   <View style={styles.radioLeft}>
                     <View style={[styles.radio, isSelected && styles.radioSelected]}>
                       {isSelected && <View style={styles.radioInner} />}
                     </View>
-                    <Text style={styles.radioLabel}>{LOCATION_LABELS[source]}</Text>
+                    <Text style={styles.radioLabel}>{source.label}</Text>
                   </View>
-                  {source !== "store" && (
-                    <Text style={styles.sourceQuantity}>Qty: {sourceQty}</Text>
+                  {source.id !== STORE && (
+                    <Text style={styles.sourceQuantity}>Qty: {source.quantity}</Text>
                   )}
                 </TouchableOpacity>
               );
@@ -170,7 +188,7 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
               value={quantity}
               onChangeText={setQuantity}
             />
-            {selectedSource && selectedSource !== "store" && quantityNum > sourceQuantity && (
+            {selectedSource && !isStoreSelected && quantityNum > sourceQuantity && (
               <Text style={styles.errorText}>
                 Exceeds available quantity ({sourceQuantity})
               </Text>
@@ -197,10 +215,10 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
               </View>
 
               {/* Source Location Preview */}
-              {selectedSource !== "store" && (
+              {selectedSource && !isStoreSelected && (
                 <View style={styles.previewRow}>
                   <Text style={styles.previewLabel}>
-                    {LOCATION_LABELS[selectedSource]}
+                    {selectedSource.label}
                   </Text>
                   <View style={styles.previewChange}>
                     <Text style={styles.previewOld}>{currentSourceQty}</Text>
@@ -214,12 +232,12 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
               <View style={[styles.previewRow, styles.previewTotal]}>
                 <Text style={[styles.previewLabel, styles.previewTotalLabel]}>Total Inventory</Text>
                 <View style={styles.previewChange}>
-                  <Text style={styles.previewOld}>{item.total_quantity}</Text>
+                  <Text style={styles.previewOld}>{item.state.totalQuantity}</Text>
                   <Text style={styles.previewArrow}>→</Text>
                   <Text style={[styles.previewNew, styles.previewTotalValue]}>
-                    {selectedSource === "store"
-                      ? item.total_quantity + quantityNum
-                      : item.total_quantity}
+                    {isStoreSelected
+                      ? item.state.totalQuantity + quantityNum
+                      : item.state.totalQuantity}
                   </Text>
                 </View>
               </View>

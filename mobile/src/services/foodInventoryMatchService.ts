@@ -7,12 +7,19 @@ export interface InventoryMatchSummary {
   barcode: string | null;
   quantity: number;
   unit: string | null;
-  storage_type: "single-location" | "multi-location" | string;
 }
 
 /**
  * Look up an inventory item matching a barcode for the current user.
+ * `quantity` is the PROJECTED total across location rows (locations are the
+ * stock truth as of Phase 4) — the legacy column is a cache and is not read.
  * Returns null when there's no match (or no barcode to match against).
+ *
+ * There is deliberately NO legacy-cache fallback here. Every item now holds
+ * at least one location row — the Phase 4 reconcile seeded one for every
+ * item that had none, and every write path since maintains that — so a
+ * projected 0 means genuinely out of stock, and re-adding a fallback could
+ * only re-arm the divergence this phase exists to remove. Do not add one.
  */
 export async function findInventoryMatchByBarcode(
   barcode: string | null,
@@ -23,16 +30,38 @@ export async function findInventoryMatchByBarcode(
     if (!user) return null;
     const { data, error } = await supabase
       .from("food_inventory")
-      .select("id, name, brand, barcode, quantity, unit, storage_type")
+      .select("id, name, brand, barcode, unit, locations:food_inventory_locations(quantity)")
       .eq("user_id", user.id)
       .eq("barcode", barcode)
+      // Nothing stops two items sharing a barcode — food_inventory has only a
+      // plain index on it (20250209_extend_food_inventory.sql:28), and the
+      // edit screen does not dedupe. Without an ORDER BY the winner is
+      // arbitrary AND unstable: the consume RPC's resync UPDATE rewrites the
+      // tuple, which can move it in a heap scan. Oldest-first is at least
+      // deterministic, and it matters more now that duplicates project
+      // different totals.
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (error) {
       console.error("Inventory lookup failed:", error);
       return null;
     }
-    return (data as InventoryMatchSummary | null) ?? null;
+    if (!data) return null;
+    // `Omit<…, "quantity">` because the select drops the legacy column. Buys:
+    // the projection is load-bearing — delete `quantity:` below and it stops
+    // compiling. Does not buy: a field added here but missing from the select
+    // string still compiles (no cast can catch that — grep the migrations).
+    const { locations, ...rest } = data as Omit<
+      InventoryMatchSummary,
+      "quantity"
+    > & {
+      locations: Array<{ quantity: number }>;
+    };
+    return {
+      ...rest,
+      quantity: locations.reduce((s, l) => s + l.quantity, 0),
+    };
   } catch (error) {
     console.error("findInventoryMatchByBarcode error:", error);
     return null;
@@ -62,12 +91,17 @@ interface RefundResultRow {
  * read-modify-write that only touched food_inventory.quantity.
  *
  * Returns true only when a unit was actually taken. Callers MUST NOT infer
- * that from their own pre-check: the barcode path gates on
- * food_inventory.quantity (see findInventoryMatchByBarcode) while the RPC
- * decides from food_inventory_locations, so the two can disagree. A false
+ * that from their own pre-check. The Phase 2 divergence is closed — the
+ * barcode gate now projects Σ food_inventory_locations (see
+ * findInventoryMatchByBarcode), the same rows this RPC prefers, and since the
+ * Phase 4 reconcile every item holds at least one location row — so the RPC's
+ * legacy-column fallback branch is unreachable in practice and the gate and
+ * the RPC read the same truth. The gate is still a separate, EARLIER read,
+ * though, and that is why the rule below stands: stock can move between the
+ * two, and a 0 result also covers no-such-row / RLS-filtered. A false
  * return means "nothing moved" — do not compensate for it with a refund.
  * A 0 result is never an error (logging a meal must not fail on stock
- * bookkeeping), and it conflates no-stock / no-such-row / RLS-filtered.
+ * bookkeeping).
  */
 export async function consumeOneInventoryUnit(
   itemId: string,

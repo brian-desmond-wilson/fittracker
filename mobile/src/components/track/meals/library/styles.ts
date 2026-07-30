@@ -68,6 +68,19 @@ export const lib = StyleSheet.create({
     backgroundColor: "rgba(59,130,246,0.15)",
   },
   badgeText: { fontSize: 11, fontWeight: "600", color: "#60A5FA" },
+  // Availability surfaces (Phase 4 Task 8). Green = in stock, amber = a
+  // caveat you can still act on (missing item / expiring soon).
+  inStockBadge: { backgroundColor: "rgba(34,197,94,0.15)" },
+  inStockBadgeText: { color: "#22C55E" },
+  warnText: { color: "#F59E0B" },
+  availableDot: { fontSize: 12, color: "#22C55E" },
+  unavailableDot: { fontSize: 12, color: "#6B7280" },
+  filterBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
   neverFlag: { fontSize: 11, fontWeight: "700", color: "#F87171" },
   chip: {
     paddingHorizontal: 12,

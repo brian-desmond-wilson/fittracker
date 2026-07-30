@@ -2,6 +2,8 @@
 // Data access for Nutrition OS Phase 2 (house pattern: domain query module).
 import { supabase } from "../supabase";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
+import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
+import { getLocalDateString } from "../dates";
 import type { FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
@@ -23,9 +25,14 @@ export interface ConceptLinkRow {
 
 interface InventoryRowRaw {
   id: string;
+  name: string;
   barcode: string | null;
-  quantity: number;
-  locations: Array<{ quantity: number }>;
+  expiration_date: string | null;
+  /** `is_ready_to_consume` is NOT dead payload despite nothing here reading
+   *  the ready/storage split: `projectItemStock` takes a `StockQuantityRow`
+   *  (`Pick<StockLocationRow, "quantity" | "is_ready_to_consume">`), so the
+   *  field is required by the call below. Spec §9 prescribes selecting it too. */
+  locations: Array<{ quantity: number; is_ready_to_consume: boolean }>;
 }
 
 export interface MealLibraryData {
@@ -33,7 +40,10 @@ export interface MealLibraryData {
   conceptsById: Map<string, FoodConcept>;
   /** saved_food_id -> concept ids (a food can carry several links). */
   conceptIdsBySavedFoodId: Map<string, string[]>;
-  inventory: ResolutionInventoryRow[];
+  /** Widened from `ResolutionInventoryRow[]` in Phase 4 Task 8 — additive
+   *  (`AssemblabilityInventoryRow extends ResolutionInventoryRow`), so
+   *  resolution-only consumers such as `logMeal` are unaffected. */
+  inventory: AssemblabilityInventoryRow[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
 }
@@ -49,7 +59,11 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     supabase.from("food_concept_links").select("*"),
     supabase
       .from("food_inventory")
-      .select("id, barcode, quantity, locations:food_inventory_locations(quantity)"),
+      // `quantity` (the legacy cache) is deliberately NOT selected: nothing
+      // reads it, and an absent column means the removed fallback cannot be
+      // re-added without also editing this query — one more step between a
+      // future reader and re-arming the divergence Phase 4 closed.
+      .select("id, name, barcode, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -83,8 +97,10 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
   // replaced wrapped every read in `Number(...)`). Coerce ONCE here: this is
   // the only place in the app that constructs `MealItemWithFood` values, so
   // every downstream consumer gets the `number` the type promises. Without it
-  // the totals below still work by accident (`*` coerces) but Task 12's
-  // builder does `+ delta` (string concatenation) and `.toFixed()` (throws).
+  // the totals below still work by accident (`*` coerces) but the Meal
+  // Library plan's Task 12 builder (`MealBuilder`, `setServings`) does
+  // `+ delta` (string concatenation) and `.toFixed()` (throws). NB: a
+  // different plan's Task 12 — not this phase's migration apply.
   const itemRows = ((items.data ?? []) as MealItemWithFood[]).map((it) => ({
     ...it,
     servings: Number(it.servings),
@@ -97,17 +113,41 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
   }
 
   const invRows = (inventory.data ?? []) as unknown as InventoryRowRaw[];
-  const resolutionInventory: ResolutionInventoryRow[] = invRows.map((r) => ({
-    id: r.id,
-    barcode: r.barcode,
-    // Location rows are the live stock model; location-less rows fall back
-    // to the legacy quantity column (mirrors the consume RPC's policy).
-    totalQuantity:
-      r.locations.length > 0
-        ? r.locations.reduce((s, l) => s + l.quantity, 0)
-        : r.quantity,
-    conceptIds: conceptIdsByInventoryId.get(r.id) ?? [],
-  }));
+  // ONE clock for the whole map: `getLocalDateString()` inside the callback
+  // would sample a fresh `new Date()` per row and could straddle local
+  // midnight mid-list, banding two items against different "today"s.
+  const todayLocalDate = getLocalDateString();
+  // Location rows are the ONLY quantity truth (spec §5.1). The legacy
+  // `r.quantity` fallback this replaced is gone deliberately — it is the
+  // divergence Phase 4 exists to close, and restoring it would re-arm it.
+  // The reconcile seeded a location row for every item that had none, so a 0
+  // projected here is a genuine out-of-stock, not a missing row.
+  const resolutionInventory: AssemblabilityInventoryRow[] = invRows.map((r) => {
+    const state = projectItemStock({
+      // Synthetic item: only `expiration_date` participates in what this call
+      // site reads (`totalQuantity`, `daysLeft`). The thresholds and
+      // `storage_type` drive isLow/needsFridgeRestock, which nothing here
+      // consumes — see the null-storage_type note in `projectItemStock`.
+      item: {
+        storage_type: null,
+        restock_threshold: null,
+        fridge_restock_threshold: null,
+        total_restock_threshold: null,
+        requires_refrigeration: null,
+        expiration_date: r.expiration_date,
+      },
+      locations: r.locations,
+      todayLocalDate,
+    });
+    return {
+      id: r.id,
+      name: r.name,
+      barcode: r.barcode,
+      totalQuantity: state.totalQuantity,
+      daysLeft: state.daysLeft,
+      conceptIds: conceptIdsByInventoryId.get(r.id) ?? [],
+    };
+  });
 
   return {
     meals: ((meals.data ?? []) as Meal[]).map((m) => ({

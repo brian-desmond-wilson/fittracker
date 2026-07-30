@@ -7,6 +7,10 @@
 import type { MealPaceState } from "./mealPace";
 import type { BrianScoreResult } from "./mealScore";
 import type { MacroGoals, MacroTotals } from "./mealMacros";
+import {
+  assessAssemblability,
+  type AssemblabilityInventoryRow,
+} from "./stockState";
 import type { MealCategory, MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
 
 export const POST_WORKOUT_WINDOW_MIN = 180;
@@ -59,6 +63,129 @@ export interface EatNextInput {
   maxPrepMinutes: number;
   workoutCompletedAtMinutes: number | null;
   nudgesEnabled: boolean;
+  stockByMealId?: Map<string, EatNextStockInfo>;
+}
+
+export interface EatNextStockInfo {
+  assemblable: boolean;
+  missingCount: number;
+  expiringItemName: string | null;
+  expiringDaysLeft: number | null;
+}
+
+/** The `meals` shape `buildStockByMealId` reads: a structural subset of
+ *  `MealWithItems` (assignable with no cast), narrowed to the four fields
+ *  `assessAssemblability` actually consumes so this module doesn't take on
+ *  the whole meal-library surface — and so a test fixture is three fields,
+ *  not a full `Meal` plus a full `SavedFood`. */
+export interface StockAssessmentMeal {
+  id: string;
+  items: Array<{
+    saved_food_id: string;
+    savedFood: { name: string; barcode: string | null };
+  }>;
+}
+
+/**
+ * Builds the optional `stockByMealId` above out of what `fetchMealLibrary`
+ * already returns.
+ *
+ * **Lives here, next to its only reader** (`candidate()`'s
+ * `stockByMealId?.get(m.meal.id)`, further down this file), so both halves of the
+ * lookup-key seam sit in one file and are pinned by one test file. That seam
+ * is silent when broken: Task 9 round 2 showed a wrong key on the read side
+ * degenerates ranking to Phase 3 — no stock reasons, no availability-aware
+ * nudge — with 81/81 tests still green. The write side has the same property.
+ * The plan (Task 10 Step 1) inlined this block in `useEatNext.ts`; that file
+ * is a React hook and this repo's Jest run covers pure libs only, so inlining
+ * would have left both the key AND the decision below unpinnable. Recorded in
+ * "⚠️ Execution amendments → Task 10".
+ *
+ * **DECISION (Task 10) — an ITEM-LESS meal is OMITTED from the map**, so it
+ * ranks `stockRank: 1` (unknown) and carries no stock reason at all, instead
+ * of the `stockRank: 2` + `"missing 0 ingredients"` that `assessAssemblability`
+ * would otherwise yield (`assemblable = items.length > 0 && missing.length === 0`,
+ * `stockState.ts`). Item-less meals are live state, not hypothetical:
+ * `updateMeal` deletes then re-inserts items non-atomically and says so in its
+ * own comment (`mealLibrary.ts:310-313`). The argument:
+ *   - Rank 2 asserts "we established you can't make this". For a meal with no
+ *     recorded ingredients we established nothing — `missing` is empty because
+ *     there was nothing to check, not because nothing is missing. That is a
+ *     positive claim with no evidence behind it, and it mislabels the tier for
+ *     every other member of it.
+ *   - Rank 0 is the opposite over-claim: it would say "in stock" about a meal
+ *     we cannot verify and promote a corrupt record ABOVE meals we positively
+ *     confirmed the user can assemble. Strictly the worst option.
+ *   - Rank 1 is the literal epistemic state, and it is exactly what this map's
+ *     existing "no entry = unknown" semantics already mean — so it needs no new
+ *     field and creates no second way to be unknown.
+ * Omitting also drops the reason string for free rather than special-casing a
+ * formatter, which keeps this in step with Task 8's `MealDetail` fix (gate on
+ * the missing LIST, not on the `assemblable` verdict) instead of inventing a
+ * third rendering of the same state. The user-visible effect is that a broken
+ * meal surfaces plainly, with nothing claimed about its stock — and surfacing
+ * is the recovery path, since `updateMeal`'s comment notes item-less meals are
+ * "recoverable by re-editing".
+ *
+ * **Input contract.** Everything here is trusted, not validated — this is a
+ * pure function with one production caller — so the expectations are stated
+ * instead:
+ * @param library.meals every meal to rank. Item-less ones are skipped (above).
+ * @param library.conceptIdsBySavedFoodId must be COMPLETE. A miss defaults to
+ *   `[]`, which silently makes that item resolvable by barcode only, so it
+ *   counts as missing and the meal reads unassemblable. Under-claiming is the
+ *   intended failure direction, but a partial map produces wrong answers with
+ *   no error.
+ * @param library.inventory the WHOLE inventory, not pre-filtered per meal:
+ *   `assessAssemblability` indexes it by id to find the most urgent expiring
+ *   row across everything the meal resolved to.
+ * A `meals`/`inventory` inconsistency is absorbed as "missing", never thrown.
+ *
+ * **Why `MealLibraryModal` computes its own `assemblabilityById` instead of
+ * sharing this** (the one home for this argument — the call site in
+ * `useEatNext.ts` and the modal both point here rather than restating it).
+ * They run the same predicate over the same inputs but are not the same value:
+ * the modal holds `MealAssemblability` because it renders the missing item
+ * NAMES and filters `inStockOnly` on the verdict, while this holds the
+ * four-field `EatNextStockInfo` for a comparator. Their lifetimes differ more
+ * than their shapes — the modal's is a `useMemo` keyed on that modal's own
+ * `data`, alive while a sheet is open; this is a per-fetch local in a hook
+ * whose consumers include the background nudge scheduler and which refetches
+ * on focus and after every meal write. Sharing would couple two independent
+ * fetch lifetimes behind a cache whose staleness bugs would be silent, to save
+ * arithmetic that is already free: ~50 meals x ~10 items x ~25 inventory rows
+ * is sub-millisecond and dwarfed by the round trip that produced its inputs.
+ * `MealBuilder` holds a third copy for a third reason (a draft meal with no
+ * row yet). Duplicate computation, single DEFINITION — all three call
+ * `assessAssemblability`.
+ */
+export function buildStockByMealId(library: {
+  meals: StockAssessmentMeal[];
+  conceptIdsBySavedFoodId: Map<string, string[]>;
+  inventory: AssemblabilityInventoryRow[];
+}): Map<string, EatNextStockInfo> {
+  const map = new Map<string, EatNextStockInfo>();
+  for (const meal of library.meals) {
+    if (meal.items.length === 0) continue; // see DECISION above
+    const a = assessAssemblability({
+      items: meal.items.map((it) => ({
+        savedFoodId: it.saved_food_id,
+        name: it.savedFood.name,
+        barcode: it.savedFood.barcode,
+        conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+      })),
+      inventory: library.inventory,
+    });
+    // Keyed by `meal.id`, which MUST stay in lockstep with `candidate()`'s
+    // `.get(m.meal.id)`. Pinned from both sides in eatNext.test.ts.
+    map.set(meal.id, {
+      assemblable: a.assemblable,
+      missingCount: a.missing.length,
+      expiringItemName: a.expiringItemName,
+      expiringDaysLeft: a.expiringDaysLeft,
+    });
+  }
+  return map;
 }
 
 export interface EatNextRecommendation {
@@ -75,6 +202,125 @@ export interface EatNextRecommendation {
    *  Spec §5.5: ranking reads `raw`; "UI surfaces still display `score`/100."
    *  This field is the UI-facing one — do not swap it for `raw`. */
   score: number;
+  /** The stock verdict this recommendation was ranked with, carried as a
+   *  TYPED field rather than left only in `reasons`.
+   *
+   *  `undefined` = **unknown**, matching `stockByMealId`'s existing "absent
+   *  entry = unknown" semantics exactly (no map at all, no entry for this
+   *  meal, or — per `buildStockByMealId`'s DECISION — an item-less meal).
+   *  There is deliberately no second way to be unknown.
+   *
+   *  Why this exists (Task 14): `reasons` is a flat `string[]` built as
+   *  `[contextReason, ...prepReason, ...stockReasons]`, so the stock copy is
+   *  never at a fixed index — `prepReason` is conditional. Both Eat Next
+   *  surfaces rendered `reasons[0]` or nothing, so every stock string the
+   *  engine produced was invisible on device and the Home card recommended
+   *  meals the user could not assemble with no indication of it. Surfaces
+   *  must branch on THIS field, never on a position in `reasons` or a
+   *  substring match against it.
+   *
+   *  ⚠️ **This ALIASES the caller's map entry — it is not a copy.** The same
+   *  object is reachable from `stockByMealId`, from `Candidate.stock`, and
+   *  from every recommendation for that meal, deliberately: one lookup means
+   *  the badge and the ranking tier cannot disagree. It is read-only in
+   *  practice (nothing in this file or either surface mutates it), but the
+   *  same hazard `nudgeFireDate` documents for `sourceDay` applies — a
+   *  consumer that "normalizes" a field in place would corrupt the map its
+   *  caller is still holding, as a side effect of what looks like a pure
+   *  read. Treat it as frozen; copy before mutating. */
+  stock?: EatNextStockInfo;
+}
+
+/** What a surface renders for `EatNextRecommendation.stock`. */
+export interface EatNextStockBadge {
+  /** `true` → the green "can make it now" treatment; `false` → the amber
+   *  "you're short something" one. A boolean, not a color: the two surfaces
+   *  own their own palettes (Home card vs. the denser Meals chip). */
+  assemblable: boolean;
+  label: string;
+}
+
+/**
+ * The ONE definition of Eat Next's stock badge copy, shared by
+ * `EatNextHomeCard` (§7.1) and `EatNextRow` (§7.2) so the two surfaces cannot
+ * drift apart on the wording of the same verdict — the failure this task
+ * exists to fix was one surface under-reporting stock and the other reporting
+ * nothing, and two hand-rolled ternaries would be the same shape of bug.
+ * Lives here rather than in a component because it is pure and this file's
+ * test run is the only one that covers either half.
+ *
+ * `null` = unknown → render NOTHING. Silence is the correct rendering of "we
+ * don't know": a badge saying anything at all would be a claim the ranking did
+ * not make (`stockRank: 1`).
+ *
+ * `missingCount === 0` on a non-assemblable meal is not producible by
+ * `buildStockByMealId` — its item-less DECISION removed the one input that
+ * yielded it — but `EatNextStockInfo` is an exported public input, so the
+ * value stays CONSTRUCTIBLE. "Missing 0" would read as a rendering bug, so it
+ * degrades to a countless "Missing items" rather than printing the zero.
+ */
+export function eatNextStockBadge(
+  stock: EatNextStockInfo | undefined,
+): EatNextStockBadge | null {
+  // `== null`, not `=== undefined`: `undefined` is the only value `strict` can
+  // deliver here today, but `stockReasons` two functions down guards the same
+  // input with the loose `if (!info)` and this should not be the one place
+  // that lets a `null` through to a property read. Free, and matches the
+  // neighbour.
+  if (stock == null) return null;
+  if (stock.assemblable) return { assemblable: true, label: "In stock" };
+  return {
+    assemblable: false,
+    label: stock.missingCount > 0 ? `Missing ${stock.missingCount}` : "Missing items",
+  };
+}
+
+/** The tail of every expiring-rescue string this app renders, in ALL THREE
+ *  places that render one: `stockReasons`' reason fragment below,
+ *  `eatNextExpiringLine` just under this, and — by matching copy, not by
+ *  import — `MealDetail.tsx`. Day 0 gets its own words rather than
+ *  "expires in 0d", which would make the MOST urgent value read as the least
+ *  urgent-sounding copy (Task 8's DECISION for the same field).
+ *
+ *  Extracted (Task 14) purely so the day-0 rule and the `Nd` suffix have ONE
+ *  definition instead of two identical ternaries eleven lines apart. Both
+ *  callers' output is byte-identical to what shipped before — the existing
+ *  exact-reason-array test pins that — and the capitalisation difference
+ *  between the two callers is the only thing that stayed per-caller, because
+ *  it is the only thing that genuinely differs (see `eatNextExpiringLine`). */
+function expiryClause(daysLeft: number | null): string {
+  return daysLeft === 0 ? "expires today" : `expires in ${daysLeft}d`;
+}
+
+/**
+ * The expiring-rescue line for a recommendation — spec §10's on-device
+ * requirement that Eat Next "names an expiring ingredient", which Task 14's
+ * first commit left unshipped.
+ *
+ * **The copy is `MealDetail.tsx:120-125`'s, to the character** (`Uses X —
+ * expires today` / `Uses X — expires in Nd`, em dash). That file was the only
+ * renderer of these two fields in the whole app; a second phrasing of one fact
+ * is exactly the drift this task exists to close, so this states it the same
+ * way rather than better. The lowercase `uses …` in `stockReasons` is NOT a
+ * third phrasing — it is the same sentence as a fragment inside a reason list,
+ * and both take their tail from `expiryClause` above so the day-0 rule cannot
+ * diverge between them.
+ *
+ * **Gated on `expiringItemName != null`, never on the truthiness of
+ * `expiringDaysLeft`** — `0` means "expires today", the most urgent value
+ * `assessAssemblability` produces, and `0` is falsy (the Task 2 forward
+ * caution; the mutant that gets this wrong is E1 in the Task 14 amendment).
+ * `!= null` on the NAME rather than truthiness for the reason MealDetail
+ * documents: an empty-string name still earns `expiringRank: 0`, so a
+ * truthiness gate would rank on a signal the UI silently declines to state.
+ *
+ * `null` = render nothing. Unknown stock, and a known meal with no expiring
+ * ingredient, are both correctly silent — this line is a rescue notice, not a
+ * status field.
+ */
+export function eatNextExpiringLine(stock: EatNextStockInfo | undefined): string | null {
+  if (stock == null || stock.expiringItemName == null) return null;
+  return `Uses ${stock.expiringItemName} — ${expiryClause(stock.expiringDaysLeft)}`;
 }
 
 export interface EatNextNudge {
@@ -154,6 +400,52 @@ export interface EatNextResult {
 interface Candidate extends ScoredMeal {
   extraReasons: string[];
   roleRank: number; // 0 = preferred role, 1 = otherwise (lower sorts first)
+  // 0 = assemblable now, 1 = unknown (no map, or no entry for this meal),
+  // 2 = known-missing. Three-way, not boolean: "we don't know" must not be
+  // treated as "we know it's missing" — an unknown meal still outranks one
+  // we've positively established the user can't make.
+  stockRank: number;
+  // 0 = uses an expiring in-stock item (a rescue), 1 = otherwise.
+  expiringRank: number;
+  // The looked-up info the two ranks above were DERIVED from, carried rather
+  // than discarded so `toRecs` can project it onto the recommendation without
+  // a second `stockByMealId.get(...)` — one lookup, one source, so the badge
+  // a surface renders and the tier the comparator used can never disagree.
+  // `undefined` = unknown, same as the ranks' `info === undefined` branch.
+  stock?: EatNextStockInfo;
+}
+
+/** Spec §9's stock reason strings. Availability is never a hard filter —
+ *  an unmakeable meal still surfaces, it just ranks last and says why. */
+function stockReasons(info: EatNextStockInfo | undefined): string[] {
+  if (!info) return [];
+  const out = info.assemblable
+    ? ["in stock"]
+    : [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
+  // The expiring line is appended on BOTH branches — deliberately, adopting
+  // Task 8's DECISION for the same signal in MealDetail: the rescue is about
+  // an ingredient the user ALREADY OWNS, which is *more* actionable when the
+  // meal is unmakeable, not less ("buying the two missing items also saves
+  // the one about to spoil"). Suppressing it here would also rank on a signal
+  // the UI never states — `expiringRank` is deliberately NOT conditioned on
+  // `assemblable`, and the two must agree.
+  // `expiringItemName != null`, NOT truthiness on `expiringDaysLeft`:
+  // `expiringDaysLeft: 0` means "expires today", the MOST urgent value
+  // `assessAssemblability` can return (its window is bounded below at 0 so
+  // already-expired rows never reach here) — and `0` is falsy. See the Task 2
+  // execution amendment's forward note.
+  if (info.expiringItemName != null) {
+    // Day 0 gets its own string rather than "expires in 0d" — the rule now
+    // lives in `expiryClause`, shared with `eatNextExpiringLine` so the two
+    // renderings of this fact cannot drift. The string below is byte-identical
+    // to what shipped before the extraction (pinned by the exact-reason-array
+    // test); only the lowercase `uses` is local, because this is a fragment in
+    // a reason list rather than a standalone line.
+    out.push(
+      `uses ${info.expiringItemName} — ${expiryClause(info.expiringDaysLeft)}`,
+    );
+  }
+  return out;
 }
 
 function baseEligible(m: ScoredMeal, maxPrepMinutes: number): boolean {
@@ -171,6 +463,13 @@ function rank(cands: Candidate[]): Candidate[] {
   return [...cands].sort(
     (a, b) =>
       a.roleRank - b.roleRank ||
+      // Availability sits between role and score (spec §9): the context's
+      // role preference still wins — a post-workout meal you must shop for
+      // beats a plain one in the fridge — but below that, "can I make it"
+      // outranks "how good is it", and rescuing an expiring item breaks
+      // ties among the meals you can make.
+      a.stockRank - b.stockRank ||
+      a.expiringRank - b.expiringRank ||
       // Rank on the un-renormalized component sum: Phase 2's banding analysis
       // found the rounded /100 score barely discriminates (all seeds 84-95);
       // raw is strictly finer and ties less. UI still DISPLAYS score/100.
@@ -189,6 +488,7 @@ function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): 
     protein: Math.round(c.totals.protein),
     prepMinutes: c.meal.prep_minutes,
     score: c.score.score,
+    stock: c.stock,
   }));
 }
 
@@ -197,13 +497,21 @@ function candidate(
   preferredRoles: ReadonlyArray<MealRole>,
   maxPrepMinutes: number,
   preferredCategories: ReadonlyArray<MealCategory> = [],
+  stockByMealId?: Map<string, EatNextStockInfo>,
 ): Candidate {
   const roleMatch = m.meal.role !== null && preferredRoles.includes(m.meal.role);
   const categoryMatch = preferredCategories.includes(m.meal.category);
+  const info = stockByMealId?.get(m.meal.id);
   return {
     ...m,
-    extraReasons: prepReason(m, maxPrepMinutes),
+    extraReasons: [...prepReason(m, maxPrepMinutes), ...stockReasons(info)],
+    stock: info,
     roleRank: roleMatch || categoryMatch ? 0 : 1,
+    // No map, or no entry for this meal → 1 (unknown), which sorts after
+    // in-stock and before known-missing. An absent map therefore leaves
+    // every candidate tied on both new terms, i.e. bit-for-bit prior order.
+    stockRank: info === undefined ? 1 : info.assemblable ? 0 : 2,
+    expiringRank: info !== undefined && info.expiringItemName != null ? 0 : 1,
   };
 }
 
@@ -222,10 +530,11 @@ function calorieGoalHit(goals: MacroGoals, dayTotals: MacroTotals): boolean {
  *  nudge's own body pick so the band rule has exactly one definition. */
 function catchUpCandidates(
   eligible: ScoredMeal[], gap: number, maxPrepMinutes: number,
+  stockByMealId?: Map<string, EatNextStockInfo>,
 ): Candidate[] {
   return eligible
     .filter((m) => Math.abs(m.totals.calories - gap) <= gap * CATCH_UP_BAND)
-    .map((m) => candidate(m, ["bridge"], maxPrepMinutes));
+    .map((m) => candidate(m, ["bridge"], maxPrepMinutes, [], stockByMealId));
 }
 
 /** Next main-meal slot strictly after now, else snack (mealPace's milestone rule). */
@@ -246,7 +555,7 @@ function nextSlot(
 export function recommendEatNext(input: EatNextInput): EatNextResult {
   const {
     nowMinutes, windowEndMinutes, mealTimesMinutes, dayTotals, goals,
-    caloriePace, meals, maxPrepMinutes, workoutCompletedAtMinutes,
+    caloriePace, meals, maxPrepMinutes, workoutCompletedAtMinutes, stockByMealId,
   } = input;
 
   const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
@@ -291,6 +600,17 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             protein: Math.round(top.totals.protein),
             prepMinutes: top.meal.prep_minutes,
             score: top.score.score,
+            // This site builds its recommendation inline (terminal, single
+            // pick, sorted by protein desc) and so bypasses `candidate()` and
+            // `toRecs` — which is exactly why Task 9 recorded it as the one
+            // context carrying no stock REASONS. The typed field is still
+            // populated here, from the same map every other context reads, so
+            // every context that produces a recommendation at all produces one
+            // the surfaces can badge, and this site cannot be the one that
+            // silently shows nothing. It does NOT add reason
+            // strings: that gap is Task 9's, unchanged, and closing it means
+            // unifying this site with `toRecs`, not patching a formatter.
+            stock: stockByMealId?.get(top.meal.id),
           }],
           nudge: null,
         };
@@ -311,7 +631,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           m.meal.role === "post_workout" ||
           m.totals.protein >= POST_WORKOUT_MIN_PROTEIN_G,
       )
-      .map((m) => candidate(m, ["post_workout"], maxPrepMinutes));
+      .map((m) => candidate(m, ["post_workout"], maxPrepMinutes, [], stockByMealId));
     if (cands.length > 0) {
       return {
         context: "post_workout",
@@ -338,12 +658,15 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           m.meal.role === "emergency_catchup" ||
           m.meal.role === "calorie_booster",
       )
-      // `candidate()` is called only for its `extraReasons` (prep-budget
-      // copy) here — the `roleRank` it computes is deliberately unread by
-      // the calories-descending sort below (spec §5.3.4: rescue size, not
-      // role or score, decides emergency order). Do not "fix" this by
-      // routing it through `rank()`.
-      .map((m) => candidate(m, ["emergency_catchup", "calorie_booster"], maxPrepMinutes))
+      // `candidate()` is called only for its `extraReasons` (prep-budget and
+      // stock copy) here — the `roleRank`/`stockRank`/`expiringRank` it
+      // computes are deliberately unread by the calories-descending sort
+      // below (spec §5.3.4: rescue size, not role, score or availability,
+      // decides emergency order — a bigger rescue you must shop for still
+      // beats a small one in the fridge). The map is still forwarded so the
+      // reasons say what's makeable. Do not "fix" this by routing it
+      // through `rank()`.
+      .map((m) => candidate(m, ["emergency_catchup", "calorie_booster"], maxPrepMinutes, [], stockByMealId))
       // Emergency ranks by rescue size, not score (spec §5.3.4).
       .sort(
         (a, b) =>
@@ -364,7 +687,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 
   // 5. catch_up — falls through when empty.
   if (behind && gap > 0) {
-    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes);
+    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId);
     if (cands.length > 0) {
       return {
         context: "catch_up",
@@ -394,7 +717,8 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             m.meal.category === "snack"),
       )
     : eligible.filter((m) => slotCategories.includes(m.meal.category));
-  const cands = pool.map((m) => candidate(m, preferredRoles, maxPrepMinutes, preferredCategories));
+  const cands = pool.map((m) =>
+    candidate(m, preferredRoles, maxPrepMinutes, preferredCategories, stockByMealId));
   return {
     context: "next_meal",
     message:
@@ -433,7 +757,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 function computeNudge(input: EatNextInput): EatNextNudge | null {
   const {
     nowMinutes, windowEndMinutes, mealTimesMinutes, dayTotals, goals,
-    caloriePace, meals, maxPrepMinutes, nudgesEnabled,
+    caloriePace, meals, maxPrepMinutes, nudgesEnabled, stockByMealId,
   } = input;
   if (!nudgesEnabled) return null;
   // Defensive invariants, both unreachable-in-effect through the current call
@@ -471,8 +795,10 @@ function computeNudge(input: EatNextInput): EatNextNudge | null {
   // prep budget" reason, which the nudge body discards — the nudge honors the
   // same prep budget as the surfaces, it just doesn't restate it.)
   const eligible = meals.filter((m) => baseEligible(m, maxPrepMinutes));
-  const inBand = rank(catchUpCandidates(eligible, gap, maxPrepMinutes));
-  const pick = inBand[0] ?? rank(eligible.map((m) => candidate(m, [], maxPrepMinutes)))[0];
+  const inBand = rank(catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId));
+  const pick =
+    inBand[0] ??
+    rank(eligible.map((m) => candidate(m, [], maxPrepMinutes, [], stockByMealId)))[0];
   const suggestion = pick
     ? ` — ${pick.meal.name} ${pick.meal.prep_minutes > 0 ? `fixes it in ${pick.meal.prep_minutes} min` : "is ready now"}`
     : "";

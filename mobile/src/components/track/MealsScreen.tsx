@@ -564,7 +564,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       // Log the meal (with optional pantry decrement)
       const willUseInventory =
-        useInventory && !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0;
+        useInventory && !!inventoryMatch && inventoryMatch.quantity > 0;
       const inventoryItems = willUseInventory && inventoryMatch
         ? [{ id: inventoryMatch.id, quantity: 1 }]
         : null;
@@ -594,10 +594,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       if (error) throw error;
 
       // Only the id whose unit was ACTUALLY taken may be armed for refund on
-      // Undo. `willUseInventory` gates on food_inventory.quantity, but the
-      // consume RPC decides from food_inventory_locations — the two can
-      // disagree, and refund credits unconditionally, so arming on intent
-      // rather than on outcome would invent a unit out of nothing.
+      // Undo. Phase 4 closed the divergence that had this gate reading the
+      // legacy food_inventory.quantity cache: `willUseInventory` now projects
+      // Σ food_inventory_locations, the same rows the consume RPC prefers, and
+      // since the Phase 4 reconcile every item holds at least one location
+      // row — so the two now read the same truth.
+      // Still arm on outcome, never on intent: the gate is an earlier,
+      // separate read (stock can move in between) and the RPC also reports 0
+      // for no-such-row / RLS-filtered, while refund credits unconditionally.
       let consumedInventoryId: string | null = null;
       if (willUseInventory && inventoryMatch) {
         const consumed = await consumeOneInventoryUnit(inventoryMatch.id);

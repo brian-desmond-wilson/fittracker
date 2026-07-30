@@ -22,14 +22,17 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import {
-  FoodInventoryItem,
-  FoodInventoryItemWithLocations,
-  FoodLocation,
   FoodCategory,
   FoodSubcategory,
-  FoodInventoryItemWithCategories
 } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import {
+  fetchInventoryWithState,
+  transferInventoryUnits,
+  type InventoryItemWithState,
+} from "@/src/lib/supabase/inventory";
+import { projectItemStock } from "@/src/lib/stockState";
+import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
@@ -57,7 +60,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>([]);
 
   // Inventory data state
-  const [items, setItems] = useState<FoodInventoryItemWithCategories[]>([]);
+  const [items, setItems] = useState<InventoryItemWithState[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,7 +68,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // Restock modal state
   const [showRestockModal, setShowRestockModal] = useState(false);
-  const [restockingItem, setRestockingItem] = useState<FoodInventoryItemWithLocations | null>(null);
+  const [restockingItem, setRestockingItem] = useState<InventoryItemWithState | null>(null);
 
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -103,78 +106,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        Alert.alert("Error", "You must be logged in to view inventory");
-        return;
-      }
-
-      // Fetch food inventory items, locations, and category/subcategory mappings in parallel
-      const [foodResult, locationsResult, categoryMapsResult, subcategoryMapsResult] = await Promise.all([
-        supabase.from("food_inventory").select("*").eq("user_id", user.id),
-        supabase.from("food_inventory_locations").select("*").eq("user_id", user.id),
-        supabase.from("food_inventory_category_map").select("*, food_categories(*)").eq("user_id", user.id),
-        supabase.from("food_inventory_subcategory_map").select("*, food_subcategories(*)").eq("user_id", user.id),
-      ]);
-
-      if (foodResult.error) throw foodResult.error;
-      if (locationsResult.error) throw locationsResult.error;
-      if (categoryMapsResult.error) throw categoryMapsResult.error;
-      if (subcategoryMapsResult.error) throw subcategoryMapsResult.error;
-
-      const foodItems = foodResult.data || [];
-      const locations = locationsResult.data || [];
-      const categoryMaps = categoryMapsResult.data || [];
-      const subcategoryMaps = subcategoryMapsResult.data || [];
-
-      // Combine the data
-      const itemsWithCategories: FoodInventoryItemWithCategories[] = foodItems.map(item => {
-        const itemLocations = locations.filter(loc => loc.food_inventory_id === item.id);
-
-        // Calculate quantities
-        const total_quantity = item.storage_type === 'single-location'
-          ? item.quantity
-          : itemLocations.reduce((sum, loc) => sum + loc.quantity, 0);
-
-        const ready_quantity = item.storage_type === 'single-location'
-          ? item.quantity
-          : itemLocations
-              .filter(loc => loc.is_ready_to_consume)
-              .reduce((sum, loc) => sum + loc.quantity, 0);
-
-        const storage_quantity = item.storage_type === 'single-location'
-          ? 0
-          : itemLocations
-              .filter(loc => !loc.is_ready_to_consume)
-              .reduce((sum, loc) => sum + loc.quantity, 0);
-
-        // Get categories and subcategories for this item
-        const itemCategories = categoryMaps
-          .filter(map => map.food_inventory_id === item.id)
-          .map(map => map.food_categories)
-          .filter(Boolean) as FoodCategory[];
-
-        const itemSubcategories = subcategoryMaps
-          .filter(map => map.food_inventory_id === item.id)
-          .map(map => map.food_subcategories)
-          .filter(Boolean) as FoodSubcategory[];
-
-        return {
-          ...item,
-          locations: itemLocations,
-          total_quantity,
-          ready_quantity,
-          storage_quantity,
-          categories: itemCategories,
-          subcategories: itemSubcategories,
-        };
-      });
-
-      setItems(itemsWithCategories);
-    } catch (error: any) {
+      const items = await fetchInventoryWithState(getLocalDateString());
+      setItems(items);
+    } catch (error) {
       console.error("Error fetching inventory:", error);
       Alert.alert("Error", "Failed to load inventory");
     } finally {
@@ -192,7 +126,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     router.push("/(tabs)/track/food-inventory/add");
   };
 
-  const handleEditItem = (item: FoodInventoryItemWithCategories) => {
+  const handleViewItem = (item: InventoryItemWithState) => {
+    router.push(`/(tabs)/track/food-inventory/${item.id}`);
+  };
+
+  const handleEditItem = (item: InventoryItemWithState) => {
     router.push(`/(tabs)/track/food-inventory/edit/${item.id}`);
   };
 
@@ -229,7 +167,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleAddToShoppingList = async (item: FoodInventoryItemWithCategories) => {
+  const handleAddToShoppingList = async (item: InventoryItemWithState) => {
     try {
       const {
         data: { user },
@@ -257,18 +195,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleLongPress = (item: FoodInventoryItemWithCategories) => {
-    const isOutOfStock = item.total_quantity === 0;
-    const needsRestockFridge = item.storage_type === 'multi-location' &&
-      item.requires_refrigeration === true &&
-      item.fridge_restock_threshold != null &&
-      item.fridge_restock_threshold > 0 &&
-      item.ready_quantity <= item.fridge_restock_threshold;
+  const handleLongPress = (item: InventoryItemWithState) => {
+    const isOutOfStock = item.state.isOut;
+    const needsRestockFridge = item.state.needsFridgeRestock;
 
     // Build action sheet options dynamically
     const options: string[] = ['View Details', 'Edit Details', 'Delete Item'];
     const actions: (() => void)[] = [
-      () => router.push(`/(tabs)/track/food-inventory/${item.id}`),
+      () => handleViewItem(item),
       () => handleEditItem(item),
       () => {
         Alert.alert(
@@ -329,17 +263,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleRestockConfirm = async (sourceLocation: FoodLocation | "store", quantity: number) => {
+  // `sourceLocationId` is null for "from store" (units enter inventory);
+  // otherwise it is the id of the exact location row the modal offered, so no
+  // lookup by location name is needed here and the ambiguity that lookup had
+  // (two rows may share a location) is gone at the source.
+  const handleRestockConfirm = async (sourceLocationId: string | null, quantity: number) => {
     if (!restockingItem) return;
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      // Find the target location (ready to consume) and source location
+      // Find the target location (ready to consume)
       const targetLocation = restockingItem.locations.find(loc => loc.is_ready_to_consume);
 
       if (!targetLocation) {
@@ -347,85 +279,48 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         return;
       }
 
-      if (sourceLocation === "store") {
-        // From Store: Just increment the target location quantity (adds to total)
-        const { error: updateError } = await supabase
-          .from("food_inventory_locations")
-          .update({
-            quantity: targetLocation.quantity + quantity,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", targetLocation.id);
-
-        if (updateError) throw updateError;
-      } else {
-        // From another location: decrement source, increment target
-        const sourceLocationData = restockingItem.locations.find(loc => loc.location === sourceLocation);
-
-        if (!sourceLocationData) {
-          Alert.alert("Error", "Could not find source location");
-          return;
-        }
-
-        // Update both locations in parallel
-        const [targetResult, sourceResult] = await Promise.all([
-          supabase
-            .from("food_inventory_locations")
-            .update({
-              quantity: targetLocation.quantity + quantity,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", targetLocation.id),
-          supabase
-            .from("food_inventory_locations")
-            .update({
-              quantity: sourceLocationData.quantity - quantity,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", sourceLocationData.id),
-        ]);
-
-        if (targetResult.error) throw targetResult.error;
-        if (sourceResult.error) throw sourceResult.error;
-      }
+      await transferInventoryUnits(
+        restockingItem.id,
+        sourceLocationId,
+        targetLocation.id,
+        quantity,
+      );
 
       // Optimistic update: update local state
       setItems(prevItems =>
         prevItems.map(item => {
           if (item.id !== restockingItem.id) return item;
 
+          // Match on the ids the RPC actually moved. sourceLocationId is null
+          // for "from store", and no row id equals null, so that branch is
+          // inert without a separate guard.
           const updatedLocations = item.locations.map(loc => {
             if (loc.id === targetLocation.id) {
               return { ...loc, quantity: loc.quantity + quantity };
             }
-            if (sourceLocation !== "store") {
-              const sourceLocationData = item.locations.find(l => l.location === sourceLocation);
-              if (sourceLocationData && loc.id === sourceLocationData.id) {
-                return { ...loc, quantity: loc.quantity - quantity };
-              }
+            if (loc.id === sourceLocationId) {
+              return { ...loc, quantity: loc.quantity - quantity };
             }
             return loc;
           });
 
-          // Recalculate totals
-          const total_quantity = sourceLocation === "store"
-            ? item.total_quantity + quantity
-            : item.total_quantity;
-
-          const ready_quantity = updatedLocations
-            .filter(loc => loc.is_ready_to_consume)
-            .reduce((sum, loc) => sum + loc.quantity, 0);
-
-          const storage_quantity = updatedLocations
-            .filter(loc => !loc.is_ready_to_consume)
-            .reduce((sum, loc) => sum + loc.quantity, 0);
+          // Re-project rather than recompute by hand: the projection is the
+          // one place quantity math lives, and the optimistic row has to
+          // agree with what the next fetch will produce.
+          const state = projectItemStock({
+            item,
+            locations: updatedLocations,
+            todayLocalDate: getLocalDateString(),
+          });
 
           return {
             ...item,
             locations: updatedLocations,
-            total_quantity,
-            ready_quantity,
-            storage_quantity,
+            state,
+            // The RPC resyncs food_inventory.quantity to sum(locations)
+            // (20260730100000:153-157); carry it so the whole in-memory row
+            // matches the server rather than half-updating it.
+            quantity: state.totalQuantity,
           };
         })
       );
@@ -473,10 +368,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       if (selectedCategory) {
         if (selectedCategory.slug === "all-products") {
           // "All Products" shows all in-stock items
-          matchesCategory = item.total_quantity > 0;
+          matchesCategory = !item.state.isOut;
         } else if (selectedCategory.slug === "out-of-stock") {
           // "Out of Stock" shows all out-of-stock items
-          matchesCategory = item.total_quantity === 0;
+          matchesCategory = item.state.isOut;
         } else {
           // For specific categories, check if item belongs to that category
           matchesCategory = item.categories.some(cat => cat.id === selectedCategoryId);
@@ -498,50 +393,53 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       return matchesCategory && matchesSearch;
     })
     .sort((a, b) => {
-      // Sort by expiration date - items expiring soonest first
-      // Items without expiration dates go to the end
-      if (!a.expiration_date && !b.expiration_date) return 0;
-      if (!a.expiration_date) return 1; // a goes to end
-      if (!b.expiration_date) return -1; // b goes to end
-
-      // Both have expiration dates - sort by date (earliest first)
-      return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
+      // Soonest-expiring first; no (or unparseable) date goes to the end.
+      // Keyed off `state.daysLeft`, not the raw `expiration_date` column, so
+      // this screen has exactly one source of date truth — the projection.
+      // Ordering is identical for well-formed dates (daysLeft is monotone in
+      // expiration_date against a single "today"), and strictly better for a
+      // malformed one: `projectItemStock` normalises that to `daysLeft: null`
+      // and it sorts to the end, where the raw comparison produced NaN and an
+      // implementation-defined position.
+      const ad = a.state.daysLeft;
+      const bd = b.state.daysLeft;
+      if (ad === null && bd === null) return 0;
+      if (ad === null) return 1; // a goes to end
+      if (bd === null) return -1; // b goes to end
+      return ad - bd;
     });
 
-  const formatExpirationDate = (dateStr: string | null) => {
-    if (!dateStr) return null;
-    const date = new Date(dateStr);
-    const today = new Date();
-    const diffTime = date.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return { text: "Expired", color: "#EF4444" };
-    if (diffDays === 0) return { text: "Expires today", color: "#F59E0B" };
-    if (diffDays <= 7) return { text: `Exp: ${diffDays}d left`, color: "#F59E0B" };
-    return { text: `Exp: ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`, color: colors.mutedForeground };
+  // Bands and day counts come from the projection; this only picks copy/colour.
+  const formatExpirationDate = (item: InventoryItemWithState) => {
+    const { expiration, daysLeft } = item.state;
+    if (!item.expiration_date || expiration === null) return null;
+    if (expiration === "expired") return { text: "Expired", color: "#EF4444" };
+    if (expiration === "today") return { text: "Expires today", color: "#F59E0B" };
+    if (expiration === "soon") return { text: `Exp: ${daysLeft}d left`, color: "#F59E0B" };
+    // `parseLocalDate`, not `new Date(str)`: the bare constructor reads a
+    // YYYY-MM-DD literal as UTC midnight, and toLocaleDateString then renders
+    // the PREVIOUS calendar day everywhere west of Greenwich — so an item
+    // stored as Aug 15 displayed "Aug 14" for this user.
+    return {
+      text: `Exp: ${parseLocalDate(item.expiration_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+      color: colors.mutedForeground,
+    };
   };
 
   // Render function for grid items
-  const renderGridItem = ({ item }: { item: FoodInventoryItemWithCategories }) => {
-    const expiration = formatExpirationDate(item.expiration_date);
+  const renderGridItem = ({ item }: { item: InventoryItemWithState }) => {
+    const expiration = formatExpirationDate(item);
 
     // Badge logic
-    const needsRestockFridge = item.storage_type === 'multi-location' &&
-      item.requires_refrigeration === true &&
-      item.fridge_restock_threshold != null &&
-      item.fridge_restock_threshold > 0 &&
-      item.ready_quantity <= item.fridge_restock_threshold;
-
-    const isLowTotalStock = item.storage_type === 'single-location'
-      ? item.total_quantity <= item.restock_threshold && item.total_quantity > 0
-      : item.total_quantity <= (item.total_restock_threshold || 0) && item.total_quantity > 0;
+    const needsRestockFridge = item.state.needsFridgeRestock;
+    const isLowTotalStock = item.state.isLow;
 
     const hasNoCategories = item.categories.length === 0;
 
     return (
       <Pressable
         style={styles.gridItem}
-        onPress={() => router.push(`/(tabs)/track/food-inventory/${item.id}`)}
+        onPress={() => handleViewItem(item)}
         onLongPress={() => handleLongPress(item)}
       >
         {/* Product Image with Badges Overlay */}
@@ -591,9 +489,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             </Text>
           )}
           <Text style={styles.gridItemQuantity}>
-            Qty: {item.total_quantity} {item.unit}
-            {item.storage_type === 'multi-location' && item.ready_quantity > 0 && (
-              <Text style={styles.gridItemQuantityDetail}> ({item.ready_quantity} Ready)</Text>
+            Qty: {item.state.totalQuantity} {item.unit}
+            {item.storage_type === 'multi-location' && item.state.readyQuantity > 0 && (
+              <Text style={styles.gridItemQuantityDetail}> ({item.state.readyQuantity} Ready)</Text>
             )}
           </Text>
           {expiration && (
@@ -693,6 +591,68 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               );
             }
             return null;
+          })()}
+
+          {/* Expiring soon — pinned above the grid */}
+          {(() => {
+            const expiring = filteredItems.filter(
+              (it) => !it.state.isOut &&
+                (it.state.expiration === "expired" || it.state.expiration === "today" || it.state.expiration === "soon"),
+            )
+              // Rescue-first WITHIN the section, overriding the grid's plain
+              // soonest-first order. Same objection that ruled out a "+k more"
+              // cap applies to the scroll: expired days are negative, so
+              // inheriting the grid order puts the least actionable rows —
+              // things that went off months ago — in the visible five and
+              // pushes the item expiring tomorrow below the fold. Still
+              // rescuable (daysLeft >= 0) ascending first, then the expired
+              // ones most-recent-first. One rule: nearest to today wins, and
+              // the future beats the past.
+              .sort((a, b) => {
+                const ad = a.state.daysLeft ?? 0;
+                const bd = b.state.daysLeft ?? 0;
+                if (ad >= 0 && bd >= 0) return ad - bd;
+                if (ad < 0 && bd < 0) return bd - ad;
+                return ad >= 0 ? -1 : 1;
+              });
+            if (expiring.length === 0) return null;
+            return (
+              <View style={styles.expiringSection}>
+                <Text style={styles.expiringTitle}>
+                  Expiring soon{expiring.length > 1 ? ` (${expiring.length})` : ""}
+                </Text>
+                {/* Bounded height with internal scroll rather than a "+k more"
+                    cap. The `"expired"` band has NO lower bound, so an in-stock
+                    item that expired months ago stays here forever and sorts
+                    FIRST (soonest-daysLeft first, and expired days are
+                    negative) — a cap would push genuinely rescuable items out
+                    of view behind the stalest ones. Scrolling bounds the chrome
+                    above the grid while keeping every row reachable, and needs
+                    no policy decision about when an expired item stops
+                    mattering. Safe to nest: the parent is a plain View and the
+                    grid below is a sibling FlatList, not an enclosing scroller. */}
+                <ScrollView
+                  style={styles.expiringList}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  /* The list is filtered by `searchQuery`, so search-then-tap is
+                     the natural flow — and the default ("never") makes the first
+                     tap with the keyboard up only dismiss the keyboard. */
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {expiring.map((it) => (
+                    <TouchableOpacity key={it.id} onPress={() => handleViewItem(it)} style={styles.expiringRow}>
+                      <Text style={styles.expiringName} numberOfLines={1}>{it.name}</Text>
+                      <Text style={[styles.expiringWhen, it.state.expiration === "expired" && { color: "#EF4444" }]}>
+                        {it.state.expiration === "expired" ? "Expired"
+                          : it.state.expiration === "today" ? "Today"
+                          : `${it.state.daysLeft}d left`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            );
           })()}
 
         {/* Items Grid */}
@@ -850,6 +810,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
+  expiringSection: {
+    backgroundColor: "rgba(245,158,11,0.08)", borderColor: "rgba(245,158,11,0.35)",
+    borderWidth: 1, borderRadius: 12, marginHorizontal: 16, marginBottom: 12, padding: 12,
+  },
+  expiringTitle: { fontSize: 13, fontWeight: "700", color: "#F59E0B", marginBottom: 6 },
+  // ~5 rows (26px each); past that the list scrolls instead of growing.
+  expiringList: { maxHeight: 130 },
+  expiringRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
+  expiringName: { color: "#D1D5DB", fontSize: 14, flexShrink: 1 },
+  expiringWhen: { color: "#F59E0B", fontSize: 13, fontWeight: "600" },
   // Grid Layout Styles
   flatList: {
     flex: 1,

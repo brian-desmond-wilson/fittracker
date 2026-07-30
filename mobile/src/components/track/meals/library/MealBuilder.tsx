@@ -14,6 +14,9 @@ import {
   DEFAULT_PREP_MINUTES, SERVING_STEP, clampServings, parsePrepMinutes, snapServings,
 } from "@/src/lib/mealBuilderInputs";
 import { suggestConcepts } from "@/src/lib/conceptMatch";
+import {
+  assessAssemblability, type AssemblabilityInventoryRow,
+} from "@/src/lib/stockState";
 import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
 import { lib, scoreChipStyle } from "./styles";
 
@@ -40,13 +43,16 @@ interface MealBuilderProps {
   savedFoods: SavedFood[];
   conceptsById: Map<string, FoodConcept>;
   conceptIdsBySavedFoodId: Map<string, string[]>;
+  /** Optional: omit to render no availability dots at all. */
+  inventory?: AssemblabilityInventoryRow[];
   saving: boolean;
   onSave: (input: MealInput) => void;
   onQuickLink: (savedFoodId: string, conceptId: string) => void;
 }
 
 export function MealBuilder({
-  initial, savedFoods, conceptsById, conceptIdsBySavedFoodId, saving, onSave, onQuickLink,
+  initial, savedFoods, conceptsById, conceptIdsBySavedFoodId, inventory, saving,
+  onSave, onQuickLink,
 }: MealBuilderProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [category, setCategory] = useState<MealCategory>(initial?.category ?? "lunch");
@@ -225,10 +231,36 @@ export function MealBuilder({
           const suggestion = unlinked
             ? suggestConcepts(it.savedFood.name, [...conceptsById.values()])[0]
             : undefined;
+          // One-item assemblability degenerates to "does this item resolve to
+          // an in-stock inventory row" — `missing` is empty iff the item
+          // matched, so `assemblable` IS that predicate, and it agrees by
+          // construction with whether the whole-meal call would list this item
+          // as missing (resolution is per-item and stateless). null = no
+          // inventory supplied, which renders nothing.
+          const available = inventory
+            ? assessAssemblability({
+                items: [{
+                  savedFoodId: it.saved_food_id,
+                  name: it.savedFood.name,
+                  barcode: it.savedFood.barcode,
+                  conceptIds: conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+                }],
+                inventory,
+              }).assemblable
+            : null;
           return (
             <View key={it.saved_food_id} style={{ marginTop: 10 }}>
               <View style={lib.rowBetween}>
                 <Text style={[lib.mutedText, { color: "#D1D5DB", flexShrink: 1 }]} numberOfLines={1}>
+                  {/* Nested inline Text, so the dot wraps with the name and
+                      the row keeps its two-child space-between layout. The
+                      trailing space is inside the literal because margins on
+                      inline nested Text are unreliable on iOS. */}
+                  {available !== null && (
+                    <Text style={available ? lib.availableDot : lib.unavailableDot}>
+                      {"● "}
+                    </Text>
+                  )}
                   {it.savedFood.name}
                 </Text>
                 <View style={[lib.row, { gap: 10 }]}>
