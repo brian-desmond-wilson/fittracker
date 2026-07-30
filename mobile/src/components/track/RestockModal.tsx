@@ -45,18 +45,27 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
 
   if (!item) return null;
 
-  // Get available source locations (those with quantity > 0)
+  // The restock target is the ready-to-consume row; every transfer lands here.
+  const targetLocation = item.locations.find(loc => loc.is_ready_to_consume);
+
+  // Get available source locations (those with quantity > 0). The target row
+  // is excluded: transfer_inventory_units raises "source and target locations
+  // must differ", so offering it would be offering a guaranteed failure.
   const availableSources: SourceOption[] = [
     ...item.locations
-      .filter(loc => loc.quantity > 0)
+      .filter(loc => loc.quantity > 0 && loc.id !== targetLocation?.id)
       .map(loc => loc.location),
     "store", // Always include store
   ];
 
-  // Get quantity available at selected source
+  // Get quantity available at selected source. Resolves by location name, so
+  // it must skip the target row too — nothing stops an item from holding two
+  // rows in the same location, and the target's quantity is not transferable.
   const getSourceQuantity = (source: SourceOption): number => {
     if (source === "store") return Infinity;
-    const location = item.locations.find(loc => loc.location === source);
+    const location = item.locations.find(
+      loc => loc.location === source && loc.id !== targetLocation?.id,
+    );
     return location?.quantity || 0;
   };
 
@@ -66,8 +75,6 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
   const isValid = quantityNum > 0 && selectedSource !== null &&
     (selectedSource === "store" || quantityNum <= sourceQuantity);
 
-  // Get the target location (ready to consume location)
-  const targetLocation = item.locations.find(loc => loc.is_ready_to_consume);
   const currentTargetQty = targetLocation?.quantity || 0;
   const newTargetQty = currentTargetQty + quantityNum;
 

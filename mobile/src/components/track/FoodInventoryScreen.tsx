@@ -23,7 +23,6 @@ import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X, Tag }
 import { colors } from "@/src/lib/colors";
 import {
   FoodInventoryItem,
-  FoodInventoryItemWithLocations,
   FoodLocation,
   FoodCategory,
   FoodSubcategory,
@@ -71,7 +70,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // Restock modal state
   const [showRestockModal, setShowRestockModal] = useState(false);
-  const [restockingItem, setRestockingItem] = useState<FoodInventoryItemWithLocations | null>(null);
+  const [restockingItem, setRestockingItem] = useState<InventoryItemWithState | null>(null);
 
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -279,11 +278,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       }
 
       // null source = "from store" (units enter inventory); otherwise move
-      // units between two of this item's location rows.
+      // units between two of this item's location rows. The target row is
+      // excluded from the lookup: locations resolve by name, an item may hold
+      // two rows in the same location, and the RPC rejects source === target.
       const sourceLocationId =
         sourceLocation === "store"
           ? null
-          : restockingItem.locations.find((loc) => loc.location === sourceLocation)?.id ?? null;
+          : restockingItem.locations.find(
+              (loc) => loc.location === sourceLocation && loc.id !== targetLocation.id,
+            )?.id ?? null;
       if (sourceLocation !== "store" && sourceLocationId === null) {
         Alert.alert("Error", "Could not find source location");
         return;
@@ -300,15 +303,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         prevItems.map(item => {
           if (item.id !== restockingItem.id) return item;
 
+          // Match on the ids the RPC actually moved. sourceLocationId is null
+          // for "from store", and no row id equals null, so that branch is
+          // inert without a separate guard.
           const updatedLocations = item.locations.map(loc => {
             if (loc.id === targetLocation.id) {
               return { ...loc, quantity: loc.quantity + quantity };
             }
-            if (sourceLocation !== "store") {
-              const sourceLocationData = item.locations.find(l => l.location === sourceLocation);
-              if (sourceLocationData && loc.id === sourceLocationData.id) {
-                return { ...loc, quantity: loc.quantity - quantity };
-              }
+            if (loc.id === sourceLocationId) {
+              return { ...loc, quantity: loc.quantity - quantity };
             }
             return loc;
           });
@@ -326,6 +329,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             ...item,
             locations: updatedLocations,
             state,
+            // The RPC resyncs food_inventory.quantity to sum(locations)
+            // (20260730100000:153-157); carry it so the whole in-memory row
+            // matches the server rather than half-updating it.
+            quantity: state.totalQuantity,
             total_quantity: state.totalQuantity,
             ready_quantity: state.readyQuantity,
             storage_quantity: state.storageQuantity,
