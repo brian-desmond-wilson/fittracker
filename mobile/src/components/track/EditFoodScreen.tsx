@@ -858,7 +858,8 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // leaves correct rows and a stale cache), and this handler cannot tell
         // them apart, so the copy hedges on the diagnosis. It does NOT hedge on
         // the action: re-saving is idempotent and repairs all three, including
-        // the stale-cache case that would otherwise block Task 12's reconcile.
+        // the stale-cache case, which is the one that leaves the item's two
+        // quantity sources disagreeing until someone re-saves it.
         // That recovery only works if the user is told to re-save, so this gets
         // its own message instead of the generic one below, and the screen
         // stays open with the typed quantity intact so re-saving is one tap.

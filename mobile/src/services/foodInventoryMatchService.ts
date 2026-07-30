@@ -15,11 +15,11 @@ export interface InventoryMatchSummary {
  * stock truth as of Phase 4) — the legacy column is a cache and is not read.
  * Returns null when there's no match (or no barcode to match against).
  *
- * Pre-Task-12 note: an item with zero location rows projects 0, so the pantry
- * toggle reads "out of stock" for it until the reconcile seeds its canonical
- * row. Deliberate — this is the same direction Task 5 took for the grid, and
- * the alternative is a legacy-cache fallback, which is the divergence this
- * phase exists to remove.
+ * There is deliberately NO legacy-cache fallback here. Every item now holds
+ * at least one location row — the Phase 4 reconcile seeded one for every
+ * item that had none, and every write path since maintains that — so a
+ * projected 0 means genuinely out of stock, and re-adding a fallback could
+ * only re-arm the divergence this phase exists to remove. Do not add one.
  */
 export async function findInventoryMatchByBarcode(
   barcode: string | null,
@@ -93,13 +93,12 @@ interface RefundResultRow {
  * Returns true only when a unit was actually taken. Callers MUST NOT infer
  * that from their own pre-check. The Phase 2 divergence is closed — the
  * barcode gate now projects Σ food_inventory_locations (see
- * findInventoryMatchByBarcode), the same rows this RPC prefers — but the gate
- * is still a separate, earlier read: stock can move between the two, and a 0
- * result also covers no-such-row / RLS-filtered. Where the two still differ
- * is one-directional and safe: before Task 12's reconcile, a zero-row item
- * projects 0 so the gate is simply off and this RPC is never called, leaving
- * its legacy-column branch unreachable from the barcode path. The gate can
- * only be more conservative than the RPC, never more optimistic. A false
+ * findInventoryMatchByBarcode), the same rows this RPC prefers, and since the
+ * Phase 4 reconcile every item holds at least one location row — so the RPC's
+ * legacy-column fallback branch is unreachable in practice and the gate and
+ * the RPC read the same truth. The gate is still a separate, EARLIER read,
+ * though, and that is why the rule below stands: stock can move between the
+ * two, and a 0 result also covers no-such-row / RLS-filtered. A false
  * return means "nothing moved" — do not compensate for it with a refund.
  * A 0 result is never an error (logging a meal must not fail on stock
  * bookkeeping).

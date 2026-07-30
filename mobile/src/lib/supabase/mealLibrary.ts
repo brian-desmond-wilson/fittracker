@@ -97,8 +97,10 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
   // replaced wrapped every read in `Number(...)`). Coerce ONCE here: this is
   // the only place in the app that constructs `MealItemWithFood` values, so
   // every downstream consumer gets the `number` the type promises. Without it
-  // the totals below still work by accident (`*` coerces) but Task 12's
-  // builder does `+ delta` (string concatenation) and `.toFixed()` (throws).
+  // the totals below still work by accident (`*` coerces) but the Meal
+  // Library plan's Task 12 builder (`MealBuilder`, `setServings`) does
+  // `+ delta` (string concatenation) and `.toFixed()` (throws). NB: a
+  // different plan's Task 12 — not this phase's migration apply.
   const itemRows = ((items.data ?? []) as MealItemWithFood[]).map((it) => ({
     ...it,
     servings: Number(it.servings),
@@ -118,10 +120,8 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
   // Location rows are the ONLY quantity truth (spec §5.1). The legacy
   // `r.quantity` fallback this replaced is gone deliberately — it is the
   // divergence Phase 4 exists to close, and restoring it would re-arm it.
-  // ⚠️ Until the Phase 4 reconcile runs (Task 12), most single-location items
-  // have zero location rows and therefore project 0 here: they read as
-  // out-of-stock in the library and are NOT decremented on log. Non-
-  // destructive and it closes wholesale when section A seeds the rows.
+  // The reconcile seeded a location row for every item that had none, so a 0
+  // projected here is a genuine out-of-stock, not a missing row.
   const resolutionInventory: AssemblabilityInventoryRow[] = invRows.map((r) => {
     const state = projectItemStock({
       // Synthetic item: only `expiration_date` participates in what this call

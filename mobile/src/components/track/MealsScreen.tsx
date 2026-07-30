@@ -596,12 +596,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // Only the id whose unit was ACTUALLY taken may be armed for refund on
       // Undo. Phase 4 closed the divergence that had this gate reading the
       // legacy food_inventory.quantity cache: `willUseInventory` now projects
-      // Σ food_inventory_locations, the same rows the consume RPC prefers.
-      // Not yet identical, though — before Task 12's reconcile a zero-row item
-      // projects 0, so the gate is simply off and this RPC is never called,
-      // leaving its legacy branch unreachable from here. That residual gap is
-      // one-directional (the gate can only be MORE conservative than the RPC,
-      // never more optimistic), which is what makes it safe.
+      // Σ food_inventory_locations, the same rows the consume RPC prefers, and
+      // since the Phase 4 reconcile every item holds at least one location
+      // row — so the two now read the same truth.
       // Still arm on outcome, never on intent: the gate is an earlier,
       // separate read (stock can move in between) and the RPC also reports 0
       // for no-such-row / RLS-filtered, while refund credits unconditionally.
