@@ -563,7 +563,11 @@ Do **not** apply — Task 12 is the owner gate.
 --     the UI displayed); their location rows are replaced by one canonical
 --     row. Multi-location items — LOCATIONS win; legacy column resynced.
 --     Location-less items get their canonical row created. Idempotent in
---     effect: a re-run reproduces the same state.
+--     effect: a re-run reproduces the same state. The apply REFUSES (raise
+--     exception, whole file rolls back) if any single-location item's
+--     location rows hold more than its legacy column — that is stock
+--     destruction, not reconciliation, and no assertion downstream can see
+--     it after the fact.
 -- (2) transfer_inventory_units: atomic restock transfer (replaces two
 --     independent client UPDATEs). Loud failure on insufficient stock —
 --     deliberately unlike consume's silent-0, which is correct for logging.
@@ -585,18 +589,33 @@ begin
 
   -- A. Single-location (or null storage_type) items: replace location rows
   --    with the one canonical row derived from the legacy columns.
+  --    §4 says legacy wins here, but "wins" must not mean "destroys": if the
+  --    location rows hold MORE than the legacy column, this item is Task 12
+  --    Step 1's abort condition and the whole apply refuses. Assertion D
+  --    cannot catch that case — it compares fi.quantity against the row A
+  --    just wrote FROM fi.quantity, so destruction is tautologically
+  --    satisfied at 0 = 0. The guard has to be here, before the delete.
   for r in
-    select fi.id, fi.name, fi.quantity, fi.location
+    select fi.id, fi.name, fi.quantity, fi.location,
+           coalesce((select sum(l.quantity) from public.food_inventory_locations l
+                      where l.food_inventory_id = fi.id), 0) as loc_total,
+           (select count(*) from public.food_inventory_locations l
+             where l.food_inventory_id = fi.id)              as loc_rows
     from public.food_inventory fi
     where fi.user_id = v_user_id
       and coalesce(fi.storage_type, 'single-location') = 'single-location'
   loop
+    if r.loc_total > r.quantity then
+      raise exception 'Refusing to destroy stock: single-location item "%" (%) holds % units across % location row(s) but legacy quantity is %. This is Task 12 Step 1''s abort condition. Reconcile by hand, then re-run.',
+        r.name, r.id, r.loc_total, r.loc_rows, r.quantity;
+    end if;
     delete from public.food_inventory_locations where food_inventory_id = r.id;
     insert into public.food_inventory_locations
       (food_inventory_id, user_id, location, quantity, is_ready_to_consume)
     values (r.id, v_user_id, coalesce(r.location, 'pantry'), r.quantity, true);
     v_replaced := v_replaced + 1;
-    raise notice '  single-location canonicalized: % (qty %)', r.name, r.quantity;
+    raise notice '  single-location canonicalized: % — % row(s) totalling % replaced by 1 row of % at %',
+      r.name, r.loc_rows, r.loc_total, r.quantity, coalesce(r.location, 'pantry');
   end loop;
 
   -- B. Multi-location items with no location rows at all: same treatment.
@@ -1385,41 +1404,107 @@ git commit -m "chore(nutrition-os): remove last storage_type quantity branches"
 
 **Do not execute without the owner's explicit go-ahead in the session.**
 
-- [ ] **Step 1: Pre-flight (read-only).** `npx supabase migration list` → exactly `20260730100000_inventory_locations_truth` pending (Phase 3's `20260729110000` must be APPLIED — else the merge-order precondition was violated; stop). Then run the divergence query below **verbatim** and capture its full output; also confirm all five views still exist.
+- [ ] **Step 1: Pre-flight (read-only).** `npx supabase migration list` → exactly `20260730100000_inventory_locations_truth` pending (Phase 3's `20260729110000` must be APPLIED — else the merge-order precondition was violated; stop). Then run all three query blocks below **verbatim** and capture their full output.
 
-  The divergence table must include `storage_type` per item, because the reconcile's winner rule branches on it (spec §4) and the two branches move stock in opposite directions:
+  **1a. Measure the single-user assumption.** The reconcile picks its target with `select id from auth.users limit 1` — no `ORDER BY`, so with more than one user row the choice is arbitrary. The consequence is not a crash but a *silent no-op*: if the wrong user is picked, A/B/C touch nothing, assertion D passes **vacuously over zero rows**, the closing notice reads `canonicalized: 0, resynced: 0`, and the apply is green while nothing was reconciled.
 
 ```sql
--- READ-ONLY. Per-item legacy cache vs. locations truth, with the storage_type
--- that decides which one wins in the reconcile. `left join` so that
--- location-less items appear with a sum of 0 instead of vanishing.
--- Ordered so divergences surface first, largest imbalance at the top.
-select
-  fi.id,
-  fi.name,
-  fi.storage_type,
-  fi.quantity                             as legacy_quantity,
-  coalesce(sum(l.quantity), 0)            as locations_sum,
-  coalesce(sum(l.quantity), 0) - fi.quantity as difference,
-  count(l.id)                             as location_row_count
-from public.food_inventory fi
-left join public.food_inventory_locations l
-       on l.food_inventory_id = fi.id
-group by fi.id, fi.name, fi.storage_type, fi.quantity
-order by abs(coalesce(sum(l.quantity), 0) - fi.quantity) desc,
-         fi.storage_type,
-         fi.name;
+-- READ-ONLY. Does the single-user assumption the reconcile relies on hold?
+select (select count(*) from auth.users)              as auth_user_count,
+       (select id from auth.users limit 1)            as reconcile_target_user,
+       (select count(*) from public.food_inventory
+         where user_id is distinct from (select id from auth.users limit 1))
+                                                      as items_outside_target;
+
+-- READ-ONLY. Location rows whose owner differs from their item's owner.
+select count(*) as cross_user_location_rows
+from public.food_inventory_locations l
+join public.food_inventory fi on fi.id = l.food_inventory_id
+where l.user_id is distinct from fi.user_id;
 ```
 
-  **🛑 ABORT CONDITION — check this before applying.** If ANY row reports `storage_type = 'single-location'` together with `difference > 0` (i.e. `locations_sum > legacy_quantity`), **STOP and surface it to the owner.** Section A of the migration makes the legacy column win for single-location items: it deletes their location rows and re-inserts one row at `fi.quantity`. For any such row, the excess location stock is destroyed **irreversibly** on apply, with no error and no notice distinguishing it from a normal canonicalization — the post-condition assertion (D) passes happily, because 0 = 0 is a perfectly consistent state.
+  **🛑 STOP if `auth_user_count <> 1`, or `items_outside_target > 0`, or `cross_user_location_rows > 0`.** The first two mean the reconcile would skip real data while still reporting success. The third is subtler and worth spelling out: **nothing at the schema level ties `food_inventory_locations.user_id` to its item's owner** — it is an independent `NOT NULL REFERENCES auth.users(id)` with no constraint linking it to `food_inventory.user_id`. Where the two diverge, the migration and the app disagree about Σ locations: the migration runs as owner with **RLS bypassed** and sums every row, while the app reads under **RLS enforced** and sees only rows matching `auth.uid()`. Assertion D would pass over data the app renders as broken.
 
-  This generalizes past the one known canary to the entire "the edit flow never cleaned up stale location rows" class the spec describes in §1 — `migrate_single_location_items()` (20250217000003) seeded location rows for single-location items in Feb 2025, and every subsequent single-location edit wrote only `food_inventory.quantity`, leaving those rows frozen at their seeded values. Any item edited *downward* since then now carries stale location rows above its legacy number. The count of affected items is unknown until this query runs; do not assume it is one, and do not assume it is zero.
+  **1b. The classified divergence table.** This is the one that decides whether the apply may proceed. It must carry `storage_type` per item, because the reconcile's winner rule branches on it (spec §4) and the two branches move stock in opposite directions — and it must *classify* rather than just report, because the lossy cases are not all visible as a nonzero `difference`.
 
-  **Expected benign case.** The known canary should report `storage_type = 'multi-location'`, `legacy_quantity = 0`, `locations_sum = 60`, `difference = +60` — which is the *safe* direction: multi-location items take the locations-win branch, so section C resyncs the cache to 60 and the item reads 60/60 post-apply. This is also the expected shape for **every** multi-location item, because `EditFoodScreen.tsx:474` writes `quantity: storageType === 'single-location' ? parseInt(quantity) : 0` — it deliberately parks the legacy column at 0 for multi-location items. A large block of `multi-location` rows with `legacy_quantity = 0` is therefore normal and not a cause to stop; only `single-location` rows with a positive `difference` are.
+```sql
+-- READ-ONLY. Everything section A of the reconcile will overwrite, classified.
+select
+  fi.id, fi.name, fi.storage_type,
+  fi.location                                                            as item_location,
+  fi.quantity                                                            as legacy_quantity,
+  coalesce(sum(l.quantity), 0)                                           as locations_sum,
+  coalesce(sum(l.quantity), 0) - fi.quantity                             as difference,
+  count(l.id)                                                            as location_row_count,
+  coalesce(sum(l.quantity) filter (where l.is_ready_to_consume), 0)      as ready_sum,
+  coalesce(sum(l.quantity) filter (where not l.is_ready_to_consume), 0)  as storage_sum,
+  string_agg(distinct l.location, ',' order by l.location)               as row_locations,
+  case
+    when coalesce(fi.storage_type, 'single-location') <> 'single-location' then null
+    when coalesce(sum(l.quantity), 0) > fi.quantity                     then 'STOCK DESTROYED'
+    when count(l.id) > 1
+      or coalesce(sum(l.quantity) filter (where not l.is_ready_to_consume), 0) > 0
+                                                                        then 'STRATA COLLAPSED'
+    when count(l.id) = 1 and coalesce(fi.location, 'pantry') <> min(l.location)
+                                                                        then 'LOCATION MOVED'
+  end                                                                    as section_a_effect
+from public.food_inventory fi
+left join public.food_inventory_locations l on l.food_inventory_id = fi.id
+group by fi.id, fi.name, fi.storage_type, fi.location, fi.quantity
+order by (case
+  when coalesce(fi.storage_type, 'single-location') <> 'single-location' then 3
+  when coalesce(sum(l.quantity), 0) > fi.quantity                        then 0
+  when count(l.id) > 1
+    or coalesce(sum(l.quantity) filter (where not l.is_ready_to_consume), 0) > 0 then 1
+  when count(l.id) = 1 and coalesce(fi.location, 'pantry') <> min(l.location)    then 1
+  else 2 end),
+  abs(coalesce(sum(l.quantity), 0) - fi.quantity) desc, fi.name;
+```
 
-- [ ] **Step 2: Apply.** `npx supabase db push --yes`. Expected notices: one line per canonicalized/seeded item + the closing counts; no exception from the post-condition assertion.
+  Decision rules, by `section_a_effect`:
 
-- [ ] **Step 3: Post-verify (read-only).** Every item has ≥1 location row and `quantity = Σ locations` (re-run the §6.1(D) query — expect 0 violations); the canary reads 60 in both strata; `transfer_inventory_units` exists with `authenticated`-only execute; all five views gone.
+  - **`STOCK DESTROYED` → STOP.** Section A makes the legacy column win for single-location items: it deletes their location rows and re-inserts one row at `fi.quantity`. Where the rows hold more than the legacy column, the excess is destroyed **irreversibly**. As of the Task 3 amendment the migration itself now refuses this case (`raise exception`, whole file rolls back), so a missed row fails loudly rather than silently — but the query is still how you find out *before* burning an apply attempt. This generalizes past the one known canary to the entire "the edit flow never cleaned up stale location rows" class the spec describes in §1: `migrate_single_location_items()` (20250217000003) seeded location rows for single-location items in Feb 2025, and every subsequent single-location edit wrote only `food_inventory.quantity`, leaving those rows frozen. Any item edited *downward* since then carries stale rows above its legacy number. The count is unknown until this query runs — do not assume it is one, and do not assume it is zero.
+  - **`STRATA COLLAPSED` → surface to the owner, get an explicit acknowledgement, then proceed.** Spec-prescribed but lossy. The item has either multiple location rows or a not-ready (storage) stratum; section A merges all of it into **one row, `is_ready_to_consume = true`**. The unit total is preserved — this is not stock loss — but the ready/storage split and the per-row breakdown are gone for good. Read `ready_sum`, `storage_sum` and `row_locations` to see exactly what is being flattened.
+  - **`LOCATION MOVED` → surface to the owner, get an explicit acknowledgement, then proceed.** Also spec-prescribed but lossy. The item has exactly one location row whose `location` differs from `coalesce(fi.location, 'pantry')`, and section A's canonical row takes the *item's* location. So e.g. a single `freezer` row on an item whose `fi.location` is null becomes a `pantry` row. Quantity is preserved; where it lives is rewritten.
+  - **`null` → nothing to review.** Either a multi-location item (untouched by A) or a single-location item already in canonical shape.
+
+  **Expected benign case.** The known canary should report `storage_type = 'multi-location'` → `section_a_effect = null`, `legacy_quantity = 0`, `locations_sum = 60`, `difference = +60`. That is the *safe* direction: multi-location items take the locations-win branch, so section C resyncs the cache to 60. This is also the expected shape for **every** multi-location item, because `EditFoodScreen.tsx:474` writes `quantity: storageType === 'single-location' ? parseInt(quantity) : 0` — it deliberately parks the legacy column at 0 for multi-location items. A large block of `multi-location` rows with `legacy_quantity = 0` is normal and **not** a cause to stop.
+
+  **1c. Confirm the five views still exist** (expect exactly 5 rows):
+
+```sql
+-- READ-ONLY.
+select table_name from information_schema.views
+ where table_schema = 'public'
+   and table_name in ('food_inventory_with_locations','low_stock_items',
+                      'out_of_stock_items','expiring_soon_items','shopping_list_active');
+```
+
+- [ ] **Step 1b: Snapshot before applying (owner-run).** Section A issues a hard `DELETE` against production. The plan must not silently rely on Supabase PITR being enabled, so take an explicit in-database snapshot first — this is the recovery path if post-verify finds something wrong:
+
+```sql
+create table public.zz_backup_fil_20260730 as select * from public.food_inventory_locations;
+create table public.zz_backup_fi_20260730  as select id, user_id, name, storage_type, location, quantity
+                                              from public.food_inventory;
+```
+
+  These are **owner-drops-when-satisfied** — Task 13 carries the reminder. One caveat worth acting on: `create table as` produces tables with **RLS disabled**, and Supabase's default privileges grant `anon`/`authenticated` access to new tables in `public`, so until they are dropped these snapshots are reachable through PostgREST by anyone holding the anon key. Close that immediately after creating them:
+
+```sql
+alter table public.zz_backup_fil_20260730 enable row level security;
+alter table public.zz_backup_fi_20260730  enable row level security;
+```
+
+  With RLS on and **no policies defined**, both tables are readable by the table owner and `service_role` but by nobody coming through the API — which is exactly what a transient snapshot wants.
+
+- [ ] **Step 2: Apply.** `npx supabase db push --yes`.
+
+  - **Expected output:** one notice line per canonicalized/seeded item + the closing counts; no exception from the guard in section A or from the post-condition assertion.
+  - **⚠️ Absent notice output is NOT a failure — and this is unverified.** The Supabase CLI applies migrations through a `pgx.SendBatch` pipeline, and pgx only relays server `NOTICE` messages when an `OnNotice` handler is configured; whether the CLI installs one **could not be confirmed**. So a silent, successful push is expected-possible and proves nothing either way. **Step 3 is the real gate** — do not treat seen-notices as verification, and do not treat missing notices as an error.
+  - **Reload the app bundle around the apply.** The reconcile makes `fi.quantity = Σ locations` a live invariant, but `EditFoodScreen.tsx:474` still writes `quantity` directly until **Task 6 is running on the device**. Task 12 runs after Task 6 in the repo; the owner's phone runs whatever bundle is loaded. A multi-location save from a pre-Task-6 bundle re-breaks the invariant minutes after the apply. Reload Metro / rebuild before or immediately after pushing, and **do not save any inventory item from a pre-Task-6 bundle.**
+  - **If the push fails:** re-run `npx supabase migration list` and confirm the version is still **pending** before retrying. If it shows applied, use `supabase migration repair` rather than pushing again. Re-running after a mid-apply abort is safe: the CLI batches a migration file into one implicit transaction, so an abort leaves prod byte-identical and the version unrecorded.
+
+- [ ] **Step 3: Post-verify (read-only).** Every item has ≥1 location row and `quantity = Σ locations` — re-run the §6.1(4) post-condition query (labelled `D` inside the migration), expect 0 violations. The canary's **legacy column and locations sum both read 60** (note: not "both strata" — this plan uses *strata* for the ready/storage split, and the canary is 20 ready / 40 storage; the claim here is about the two *sources of truth* agreeing). `transfer_inventory_units` exists with `authenticated`-only execute. All five views are gone — re-run the Step 1c query, expect **0** rows.
 
 ---
 
@@ -1427,7 +1512,16 @@ order by abs(coalesce(sum(l.quantity), 0) - fi.quantity) desc,
 
 - [ ] **Step 1:** `cd mobile && npx tsc --noEmit && npm test` — all suites green (stockState + extended eatNext + all prior).
 - [ ] **Step 2 (owner, on device — Metro reload, free `--port`):** list/detail/edit show identical quantities for the same item; restock (both "from store" and location→location) updates instantly and survives refresh with both strata equal; "Use from pantry" now offered on the canary item; multi→single edit leaves exactly one location row (verify via detail view); expiring section lists the right items; Meal Library "In stock" badges + filter; MealDetail missing list; Eat Next top pick prefers an in-stock meal and names an expiring ingredient when applicable; log a meal consuming the canary → quantities drop coherently everywhere.
-- [ ] **Step 3:** Stop. Merge/push are the owner's calls.
+- [ ] **Step 3 (owner):** Once Step 2's on-device checklist is fully satisfied, drop the Task 12 Step 1b snapshots — they are a recovery path, not a permanent table, and they hold a copy of the inventory:
+
+```sql
+drop table if exists public.zz_backup_fil_20260730;
+drop table if exists public.zz_backup_fi_20260730;
+```
+
+  Do **not** drop them before the on-device checklist passes; they are the only in-plan undo for section A's `DELETE`.
+
+- [ ] **Step 4:** Stop. Merge/push are the owner's calls.
 
 ---
 
@@ -1479,8 +1573,15 @@ Task 3 landed byte-identical to the plan's Step 1 block (verified by extracting 
 - **`select id into v_user_id from auth.users limit 1` is non-deterministic without an ORDER BY — recorded as a known single-user limitation.** Additionally, the migration runs as the migration owner, so **RLS is bypassed** and `where fi.user_id = v_user_id` is the only scoping in play. That filter is applied consistently across A, B, C's UPDATE **and** the D assertion, so the block is internally consistent — but it asserts only over the arbitrarily-picked user, and a second user's `food_inventory` rows would be silently skipped by the reconcile *and* excluded from the post-condition. Correct for a single-user app; revisit if the app ever goes multi-user. (Related, and also fine as-is: section A's `delete` has no `user_id` predicate, which is the correct orphan-cleanup behavior here; and section C's `sub` subquery aggregates location rows without a user filter, which only matters in a multi-user world.)
 - **`transfer_inventory_units` locks the target row before the source — deadlock-prone in principle, nil risk here.** Two concurrent opposing transfers (A→B and B→A on the same item) could deadlock. The app is single-user with a serial UI, so this is recorded rather than fixed; a fix would mean ordering the two `for update` selects by location id, which buys nothing today.
 
+A second code-quality review then found that the abort condition added above was, on its own, not a real guard — one finding that reframes the owner gate. The remaining bullets are that round; the `.sql` changes among them are a knowing, recorded deviation from the plan's Step 1 SQL (the fence above has been updated to match the landed file).
+
+- **🚨 CRITICAL: assertion D cannot detect stock destruction — by construction — so section A now refuses instead.** D checks `fi.quantity = Σ locations`, but for a single-location item section A has *just written* that sole location row **from** `fi.quantity`. The two sides of the comparison come from the same number, so D is tautologically satisfied for exactly the case it most needs to catch: the canary shape (legacy 0, locations 60) canonicalizes to 0, and D cheerfully confirms `0 = 0`. No post-condition, no post-verify query, and no notice can distinguish "destroyed 60 units" from "was already empty" **after** the delete. That left the entire defense as prose in Task 12 that a human had to remember to run, read, and interpret correctly, before a one-shot irreversible apply. **Fix:** section A's cursor now also selects `loc_total` (`coalesce(sum(quantity), 0)`) and `loc_rows` (`count(*)`) per item via correlated subqueries, and raises before the `delete` when `r.loc_total > r.quantity`, naming the item, its id, the units and row count at risk, and the legacy value. **This enforces rather than overrides spec §4:** it refuses only in the direction Task 12 Step 1 already declares must stop the apply; when `legacy >= locations`, legacy still wins exactly as §4 specifies, and the location row is rewritten upward as before. **Idempotency is preserved** — traced: after a successful run, A leaves one row at `q0 = fi.quantity` and C leaves `fi.quantity = q0`, so on any re-run `loc_total = q0 = r.quantity`, the strict `>` is false, the guard does not fire, and the loop proceeds to reproduce the same state. The guard can therefore never fire on a database the migration itself produced; it only fires on the pre-existing divergence class. (Snapshot note: the `FOR ... IN <query>` cursor is opened once against the transaction snapshot, so `loc_total`/`loc_rows` reflect state *before* the loop's own writes — which is what the guard wants, and is safe regardless because each item's subqueries are scoped to that item's own rows.)
+- **The reconcile's per-item notice could not distinguish success from destruction.** The original text printed `r.quantity` — the value being *written* — so a canary being zeroed logged `single-location canonicalized: Boost (qty 0)`, indistinguishable from a genuinely empty item. **Fix:** with `loc_total`/`loc_rows` now in scope from the guard above, the notice reports what was replaced as well as what replaced it: `'  single-location canonicalized: % — % row(s) totalling % replaced by 1 row of % at %'` with `r.name, r.loc_rows, r.loc_total, r.quantity, coalesce(r.location, 'pantry')`. A destructive rewrite is now self-evident in the log even in the counterfactual where the guard were absent. **Verified:** all 11 `raise` statements in the file were machine-checked for format-placeholder count vs. argument count (a mismatch inside the guard would itself be a runtime error, defeating the purpose) — the new 5-placeholder exception and 5-placeholder notice both match their 5 arguments, and the escaped `''` in `Step 1''s` parses as one apostrophe inside the literal without terminating it.
+- **Task 12 was materially rewritten — its text now differs substantially from the plan as originally written.** (a) **Step 1a added:** the `auth.users limit 1` non-determinism is measured rather than assumed, with a stop rule on `auth_user_count <> 1`, `items_outside_target > 0`, or `cross_user_location_rows > 0`; the failure mode being guarded is a *silent no-op* (wrong user picked → A/B/C touch nothing → D passes vacuously over zero rows → green apply, nothing reconciled). The cross-user check exists because nothing at the schema level ties `food_inventory_locations.user_id` to its item's owner, and where they diverge the migration (RLS bypassed) and the app (RLS enforced) compute different sums. (b) **Step 1b's divergence query replaced with a classifying version.** The previous query had confirmed false negatives: it selected `location_row_count` but nothing said it mattered, and `order by abs(difference) desc` sorted every `difference = 0` row to the *bottom* — so strata-collapse and location-move cases, both of which are lossy at `difference = 0`, were present in the output and invisible in practice. The replacement emits a `section_a_effect` classification (`STOCK DESTROYED` / `STRATA COLLAPSED` / `LOCATION MOVED` / null) and sorts by severity class first. Decision rules: destroyed → stop; collapsed or moved → surface as spec-prescribed-but-lossy and obtain explicit owner acknowledgement, do not stop. (c) **Step 1b (snapshot) added** — `create table as` backups of both tables before the apply, so the plan carries its own undo instead of relying on PITR being enabled. (d) **Step 2 gained three operational notes:** absent NOTICE output is a CLI limitation and not a failure (the CLI applies through `pgx.SendBatch` and pgx relays NOTICEs only with an `OnNotice` handler configured — whether the CLI installs one is **unverified**, so Step 3 is the real gate); a stale-bundle warning (the invariant is live the moment the migration applies, but `EditFoodScreen.tsx:474` keeps writing `quantity` directly until Task 6 is running *on the device*, so a save from a pre-Task-6 bundle re-breaks it minutes later); and a failed-push recovery note (re-check `migration list` for still-pending before retrying, `migration repair` if it shows applied; re-running is safe because the file is applied in one implicit transaction). (e) **Minor operator-clarity fixes:** "the canary reads 60 in both strata" reworded — this plan uses *strata* for the ready/storage split and the canary is 20 ready / 40 storage, so the intended claim is that the legacy column and the locations sum agree; the "§6.1(D)" citation corrected to "§6.1(4)" (D is the migration's internal label, not a spec section); and a verbatim `information_schema.views` query added for the five-views check in Steps 1 and 3 (expect 5, then 0), which previously asked the operator to confirm something with no SQL to run.
+- **Deliberately not changed, per review:** a dedicated `p_to_location_id is null` guard in `transfer_inventory_units` (current behavior already fails loudly and correctly via the not-found path — only the message is worse), plus the §4 winner rules, the `%rowtype` idiom, the not-`cascade` stance, and the RPC lock ordering.
+
 Explicitly checked and left alone: the `%rowtype` + `if v_to.id is null` no-rows idiom is valid — plpgsql assigns NULL to *all* fields of a record target when `select into` returns no row, and `id` is the PK (`NOT NULL`), so a found row always has a non-null `id`. `found` would be more idiomatic but is exactly equivalent here.
 
-Verification performed (all static, no DB): a dollar-quote-aware parser over the final file reports paren depth 0 at EOF, no unterminated string literals, and 4 `$$` tokens forming 2 correct pairs (DO block, function body, no nesting); every NOT NULL column without a default on `food_inventory_locations` (`20250217000003:11-22`) is supplied by both INSERTs, and `notes` is nullable; there is no unique constraint on `(food_inventory_id, location)` for section A's delete-then-insert to violate (`grep -i unique` over `20250217000003` → no matches); the `location` CHECK admits `fridge|freezer|pantry|cabinet` on **both** tables (widened identically by `20250217000004`), so `coalesce(r.location, 'pantry')` always satisfies the target constraint; `storage_type` is `NOT NULL` with a two-value CHECK, making sections A and B exhaustive (a hypothetical third value falls through both and is caught by D); `grep -rn "transfer_inventory_units"` across `*.sql`/`*.ts`/`*.tsx` matches only the new migration (no collision); none of the five dropped views is referenced by any app code, function, or grant — only their own historical definitions, the `20251031000001` `security_invoker` ALTERs, and COMMENTs — so the adopt-or-drop premise holds; and `20260730100000` sorts last among all migration filenames, with Phase 3's `20260729110000` present in the tree.
+Verification performed (all static, no DB): a dollar-quote-aware parser over the final file reports paren depth 0 at EOF, no unterminated string literals, and 4 `$$` tokens forming 2 correct pairs (DO block, function body, no nesting); every NOT NULL column without a default on `food_inventory_locations` (`20250217000003:11-22`) is supplied by both INSERTs, and `notes` is nullable; there is no unique constraint on `(food_inventory_id, location)` for section A's delete-then-insert to violate — verified **repo-wide**, not just in the defining migration: a case-insensitive `unique` grep across all of `supabase/migrations/` (covering both the `UNIQUE(...)` and lowercase `unique (...)` spellings, and `alter table ... add constraint`) returns no hit mentioning `food_inventory_locations` at all; the nearest neighbours are `food_categories(user_id, name)` (`20250209_extend_food_inventory.sql:47`), `food_inventory_category_map(food_inventory_id, category_id)` and `food_inventory_subcategory_map(food_inventory_id, subcategory_id)` (`20251018014408_food_category_system_fixed.sql:66,76`), and `food_concept_links(concept_id, food_inventory_id)` (`20260728100000_nutrition_preference_schema.sql:29`); the `location` CHECK admits `fridge|freezer|pantry|cabinet` on **both** tables (widened identically by `20250217000004`), so `coalesce(r.location, 'pantry')` always satisfies the target constraint; `storage_type` is `NOT NULL` with a two-value CHECK, making sections A and B exhaustive (a hypothetical third value falls through both and is caught by D); `grep -rn "transfer_inventory_units"` across `*.sql`/`*.ts`/`*.tsx` matches only the new migration (no collision); none of the five dropped views is referenced by any app code, function, or grant — only their own historical definitions, the `20251031000001` `security_invoker` ALTERs, and COMMENTs — so the adopt-or-drop premise holds; and `20260730100000` sorts last among all migration filenames, with Phase 3's `20260729110000` present in the tree.
 
 

@@ -5,7 +5,11 @@
 --     the UI displayed); their location rows are replaced by one canonical
 --     row. Multi-location items — LOCATIONS win; legacy column resynced.
 --     Location-less items get their canonical row created. Idempotent in
---     effect: a re-run reproduces the same state.
+--     effect: a re-run reproduces the same state. The apply REFUSES (raise
+--     exception, whole file rolls back) if any single-location item's
+--     location rows hold more than its legacy column — that is stock
+--     destruction, not reconciliation, and no assertion downstream can see
+--     it after the fact.
 -- (2) transfer_inventory_units: atomic restock transfer (replaces two
 --     independent client UPDATEs). Loud failure on insufficient stock —
 --     deliberately unlike consume's silent-0, which is correct for logging.
@@ -27,18 +31,33 @@ begin
 
   -- A. Single-location (or null storage_type) items: replace location rows
   --    with the one canonical row derived from the legacy columns.
+  --    §4 says legacy wins here, but "wins" must not mean "destroys": if the
+  --    location rows hold MORE than the legacy column, this item is Task 12
+  --    Step 1's abort condition and the whole apply refuses. Assertion D
+  --    cannot catch that case — it compares fi.quantity against the row A
+  --    just wrote FROM fi.quantity, so destruction is tautologically
+  --    satisfied at 0 = 0. The guard has to be here, before the delete.
   for r in
-    select fi.id, fi.name, fi.quantity, fi.location
+    select fi.id, fi.name, fi.quantity, fi.location,
+           coalesce((select sum(l.quantity) from public.food_inventory_locations l
+                      where l.food_inventory_id = fi.id), 0) as loc_total,
+           (select count(*) from public.food_inventory_locations l
+             where l.food_inventory_id = fi.id)              as loc_rows
     from public.food_inventory fi
     where fi.user_id = v_user_id
       and coalesce(fi.storage_type, 'single-location') = 'single-location'
   loop
+    if r.loc_total > r.quantity then
+      raise exception 'Refusing to destroy stock: single-location item "%" (%) holds % units across % location row(s) but legacy quantity is %. This is Task 12 Step 1''s abort condition. Reconcile by hand, then re-run.',
+        r.name, r.id, r.loc_total, r.loc_rows, r.quantity;
+    end if;
     delete from public.food_inventory_locations where food_inventory_id = r.id;
     insert into public.food_inventory_locations
       (food_inventory_id, user_id, location, quantity, is_ready_to_consume)
     values (r.id, v_user_id, coalesce(r.location, 'pantry'), r.quantity, true);
     v_replaced := v_replaced + 1;
-    raise notice '  single-location canonicalized: % (qty %)', r.name, r.quantity;
+    raise notice '  single-location canonicalized: % — % row(s) totalling % replaced by 1 row of % at %',
+      r.name, r.loc_rows, r.loc_total, r.quantity, coalesce(r.location, 'pantry');
   end loop;
 
   -- B. Multi-location items with no location rows at all: same treatment.
