@@ -2008,3 +2008,62 @@ A code-quality review returned "Ready to merge with fixes," no Critical issues, 
 
 **Final state after this round:** 159/159 Jest tests passing (52 in `eatNext.test.ts`, unchanged — this round strengthened existing tests and added assertions rather than new `it` blocks, except the one new emergency assertion folded into an existing test), `tsc --noEmit` 0 errors. Mutation-verified: the emergency-attachment gap (killed, 1 failure), both re-run band mutations post-extraction (each killed, 1 failure, coverage unchanged), and the type-hole fix (typo rejected with `TS2769`, reverted). Working tree confirmed to match the intended post-fix `eatNext.ts`/`eatNext.test.ts` exactly (`diff` against saved copies) after every mutation was reverted, before committing.
 
+### Task 3
+
+The plan's 11-case block (Step 1) was transcribed verbatim and passed 11/11 on the first run — every hand-derived expectation in the plan text matched `mealPace.ts`'s actual behavior, so no correction was needed to the plan's own tests. `mealPace.ts` was not modified.
+
+Per the task's explicit instruction, the suite was then mutation-tested against the lib (every comparison operator, boundary, constant, rounding call, and branch), one mutation at a time: apply, run the 11-test suite, record kill/survive, revert. Eleven observable survivors were found and closed with 11 new tests; three further survivors were proven to be equivalent mutants (documented below, no test added). The full battery was then re-run against the final 22-test suite to confirm every closed mutation is now killed and every equivalent-mutant finding still holds.
+
+**Mutation table (killed by the plan's original 11 tests, no action needed):**
+
+| # | Mutation | Line (pre-change) | Result |
+|---|---|---|---|
+| B1 | `currentValue >= goal` → `>` | `mealPace.ts:100` | killed — "currentValue ≥ goal → goal_hit" (equal-value fixture) |
+| C1 | `nowMin < startMin` → `<=` | `mealPace.ts:106` | killed — "degenerate window" (coincidental: `nowMin===startMin===endMin`) |
+| D1 | `nowMin > endMin` → `>=` | `mealPace.ts:107` | killed — "degenerate window" (same coincidence) |
+| E1 | `endMin <= startMin` → `<` | `mealPace.ts:108` | killed — "degenerate window" (falls through to a `0/0` NaN cascade, status becomes `"behind"`) |
+| F1 | `windowLen = endMin - startMin` → `+` | `mealPace.ts:110` | killed, 4 failures |
+| F2 | `elapsedRatio` numerator `nowMin - startMin` → `+` | `mealPace.ts:111` | killed, 5 failures |
+| G1 | `expected = goal * elapsedRatio` → `+` | `mealPace.ts:112` | killed |
+| H1 | `delta = currentValue - expected` → `+` | `mealPace.ts:113` | killed, 7 failures |
+| J2 | `Math.max(goal*0.05, floor)` → `Math.min` | `mealPace.ts:117` | killed, 2 failures |
+| M (floor variant) | ahead's `Math.round(delta)` → `Math.floor` | `mealPace.ts:120` | killed (187 vs 186) |
+| behind-delta (floor variant) | `Math.round(-delta)` → `Math.floor` | `mealPace.ts:129` | killed (367 vs 366) |
+| catchUp (ceil variant) | `Math.round(expectedAtTarget - currentValue)` → `Math.ceil` | `mealPace.ts:126` | killed (1133 vs 1134) |
+| sort direction | `.sort((a,b)=>a.minutes-b.minutes)` → `b.minutes-a.minutes` | `mealPace.ts:56` | killed — "half-hour meal times" (two upcoming candidates, lunch/dinner) |
+| O1 | `h >= 12 ? "PM" : "AM"` → `h > 12` | `formatHourLabel`, `mealPace.ts:33` | killed — "half-hour meal times" (lunch at exactly noon, h=12) |
+| `timeToMinutes` | `h * 60` → `h * 61` | `mealPace.ts:27` | killed, 6 failures (broad breakage, as expected) |
+| P (targetRatio numerator) | `next.minutes - startMin` → `+` | `mealPace.ts:124` | killed, 2 failures |
+| expectedAtTarget | `goal * targetRatio` → `+` | `mealPace.ts:125` | killed, 2 failures |
+| macro ternary | `macro === "calories"` → `"protein"` | `mealPace.ts:116` | killed — "protein floor" fixture flips which branch it hits |
+
+**Mutation table (survived the plan's 11 tests — closed with new tests, then re-confirmed killed):**
+
+| # | Mutation | Survived because | Closing test | Re-verified |
+|---|---|---|---|---|
+| A1 | `goal == null` → `goal === null` | `goal` is typed `number \| null` (no `undefined` in the signature) | **Not closed — equivalent mutant** (see below) | 22/22 pass under mutation |
+| I1 | calories floor `100` → `99` | plan's floor test sits 23.3 inside the floor, not at it | "calories, floor binding: exactly at the floor…" | killed, 1 failure |
+| I2 | protein floor `8` → `7` | plan's floor test sits 1.3 inside the floor, not at it | "protein, floor binding: exactly at the floor…" | killed, 1 failure |
+| J1 | tolerance `0.05` → `0.06` | no test's `abs(delta)` straddles both the real and mutated tolerance | "calories, 5% binding: exactly at tolerance…" (over-boundary case) | killed, 1 failure |
+| K1 | `Math.abs(delta) <= tolerance` → `<` | no test lands exactly on the tolerance boundary | all three "tolerance boundary" tests (at-boundary case) | killed, 3 failures |
+| L1 | `delta > 0` → `delta >= 0` | `delta === 0` is unreachable at this branch | **Not closed — equivalent mutant** (see below) | 22/22 pass under mutation |
+| M (ceil variant) | ahead's `Math.round` → `Math.ceil` | plan's fixture (186.667) has fractional ≥ .5, so round and ceil agree | "ahead delta below the midpoint rounds down…" (fractional .2) | killed, 1 failure |
+| behind-delta (ceil variant) | `Math.round(-delta)` → `Math.ceil` | plan's fixture (366.667) has fractional ≥ .5, round and ceil agree | "behind delta below the midpoint rounds down…" (fractional .2) | killed, 1 failure |
+| catchUp (floor variant) | `Math.round(...)` → `Math.floor` | plan's fixture (1133.333) has fractional < .5, round and floor agree | "catch-up amount at/above the midpoint rounds up…" (fractional .533) | killed, 1 failure |
+| Q | `Math.max(0, Math.round(...))` clamp dropped | unreachable given inputs reachable through the public API | **Not closed — equivalent mutant** (see below) | 22/22 pass under mutation |
+| N1 | milestone filter `c.minutes > nowMin` → `>=` | no fixture has a meal time exactly equal to `now` | "a meal exactly at now has already passed…" | killed, 1 failure |
+| N2 | milestone filter `c.minutes <= windowEndMin` → `<` | no fixture has a meal time exactly equal to `windowEnd` | "a meal exactly at windowEnd is still a reachable milestone…" | killed, 1 failure |
+| O2 | `h === 0 ? 12 : ...` → wrong display value | no fixture's clock time lands at midnight/hour-0 | "midnight wraparound: hour 0 displays as 12, not 0" (`windowEnd: "24:00"`) | killed, 1 failure |
+
+**Equivalent mutants (no test added — proofs):**
+
+1. **A1 — `goal == null` vs `goal === null`.** `ComputeMealPaceOpts.goal` is typed `number \| null`; the function signature admits no `undefined`. `tsc` on the call sites (this repo's only shape check on hand-built fixtures, per the untyped-Supabase-client note) rejects any attempt to pass `undefined` as `goal`. Since `==` and `===` against `null` differ only on `undefined`, and `undefined` cannot reach this line through the typed API, the two are behaviorally identical for every input the public API can produce. Re-confirmed against the final 22-test suite: 22/22 pass under the mutation.
+
+2. **L1 — `delta > 0` vs `delta >= 0`.** This branch is only reached after `Math.abs(delta) <= tolerance` has already returned `on_pace` (line 119) for `false`. `tolerance` is `Math.max(goal * 0.05, floor)` with `floor` either 100 or 8 — always strictly positive since `goal > 0` is already guaranteed by the earlier `goal <= 0` guard. So `delta === 0` implies `Math.abs(0) === 0 <= tolerance` (tolerance > 0), which always returns `on_pace` first — `delta` can never be exactly `0` at line 120. `delta > 0` and `delta >= 0` therefore agree on every reachable input. Re-confirmed: 22/22 pass under the mutation.
+
+3. **Q — the `Math.max(0, ...)` clamp on `catchUp`.** This is reached only inside the `behind` branch, i.e. only when `delta < -tolerance` (so `currentValue < expected - tolerance < expected`, using `tolerance > 0`). `nextMilestone` only ever returns a milestone at `next.minutes >= nowMin` (either a candidate strictly `> nowMin`, or the `windowEndMin` fallback which is `>= nowMin` because the earlier `nowMin > endMin` guard already returned `after_window` otherwise). Since `windowLen > 0` (guarded at line 108) and `targetRatio = (next.minutes - startMin) / windowLen`, `next.minutes >= nowMin` implies `targetRatio >= elapsedRatio`, hence `expectedAtTarget = goal * targetRatio >= goal * elapsedRatio = expected > currentValue`. So `expectedAtTarget - currentValue > 0` on every input that reaches this line — the `Math.max(0, ...)` floor can never actually clamp anything through the public API. Re-confirmed: 22/22 pass under the mutation (both the direct-value swap and, checked separately, dropping the `Math.max` call outright).
+
+**Timezone sensitivity:** none found. `computeMealPace` reads `now.getHours()`/`now.getMinutes()` (local time), and the test file's `at()` helper constructs dates with the local `Date(y, m, d, h, min)` constructor — both sides interpret "now" in the machine's local timezone consistently, so no test's pass/fail depends on which timezone the runner executes in. The one deliberately unusual fixture (`windowEnd: "24:00"`, i.e. 1440 minutes) is pure integer-minutes arithmetic with no `Date` object involved on that side, so it isn't a timezone concern either.
+
+**Final state:** 181/181 Jest tests passing (7 suites; 22 in the new `mealPace.test.ts`, up from the plan's 11), `tsc --noEmit` 0 errors. `mealPace.ts` confirmed byte-for-byte unmodified (`git diff` clean before every commit) — every mutation listed above was applied to a working-tree copy, run, recorded, then reverted with `git checkout --`, never left in place.
+
