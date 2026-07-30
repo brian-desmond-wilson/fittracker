@@ -17,7 +17,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Camera, Barcode, Trash2, Plus, ChevronDown, Circle, CheckCircle } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
-import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import {
+  replaceItemLocations,
+  type InventoryItemWithState,
+} from "@/src/lib/supabase/inventory";
 import { supabase } from "@/src/lib/supabase";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
@@ -57,7 +60,11 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
   // Quantity & Storage
   const [storageType, setStorageType] = useState<StorageType>(item.storage_type);
-  const [quantity, setQuantity] = useState((item.quantity ?? 0).toString());
+  // Seeded from the projection (Σ location rows), NOT from item.quantity —
+  // that column is a cache, and on the path where the two diverge, seeding
+  // from it would show the stale number and then write it back into the
+  // location rows on save, laundering drift into the one source of truth.
+  const [quantity, setQuantity] = useState(item.state.totalQuantity.toString());
   const [unit, setUnit] = useState(item.unit);
   const [location, setLocation] = useState<FoodLocation | null>(item.location ?? null);
   const [restockThreshold, setRestockThreshold] = useState(item.restock_threshold.toString());
@@ -472,7 +479,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         flavor: flavor.trim() || null,
         barcode: barcode.trim() || null,
         storage_type: storageType,
-        quantity: storageType === 'single-location' ? parseInt(quantity) : 0,
+        // No `quantity` here: food_inventory.quantity is the legacy cache and
+        // replaceItemLocations owns it now. Writing it from here is what let
+        // the cache and the location rows tell two different stories.
         unit: unit,
         location: storageType === 'single-location' ? location : null,
         restock_threshold: restockThreshold ? parseInt(restockThreshold) : 0,
@@ -493,13 +502,38 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         image_side_url: sideUrl,
       };
 
+      // The exact set of location rows this save must end with — the only
+      // quantity truth. BOTH storage types go through replaceItemLocations, so
+      // a single-location save always leaves exactly one row and a
+      // multi -> single flip leaves no orphan rows behind.
+      const locationRows = storageType === 'single-location'
+        ? [
+            {
+              location: location ?? "pantry",
+              quantity: parseInt(quantity, 10),
+              is_ready_to_consume: true,
+            },
+          ]
+        : locationEntries.map((entry) => ({
+            location: entry.location,
+            quantity: parseInt(entry.quantity, 10),
+            is_ready_to_consume: entry.isReadyToConsume,
+            notes: entry.notes || null,
+          }));
+
       let foodItemId: string;
 
       if (isNew) {
         // CREATE new item
         const { data: newItem, error: insertError } = await supabase
           .from("food_inventory")
-          .insert(itemData)
+          // `quantity` is dropped from itemData above, but the column is
+          // INTEGER NOT NULL with no default (20250206_tracking_tables.sql:14),
+          // so the INSERT still has to supply one. 0 is the only honest seed:
+          // if the replaceItemLocations call below fails, a 0 cache alongside 0
+          // location rows is what every reader agrees on — the same damage
+          // bound replaceItemLocations applies on its own failure path.
+          .insert({ ...itemData, quantity: 0 })
           .select('id')
           .single();
 
@@ -508,23 +542,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
         foodItemId = newItem.id;
 
-        // For multi-location items, insert location entries
-        if (storageType === 'multi-location') {
-          const locationsToInsert = locationEntries.map(entry => ({
-            food_inventory_id: foodItemId,
-            user_id: user.id,
-            location: entry.location,
-            quantity: parseInt(entry.quantity),
-            is_ready_to_consume: entry.isReadyToConsume,
-            notes: entry.notes || null,
-          }));
-
-          const { error: locationInsertError } = await supabase
-            .from("food_inventory_locations")
-            .insert(locationsToInsert);
-
-          if (locationInsertError) throw locationInsertError;
-        }
+        // Runs after the item row exists, so foodItemId is real. Throws on
+        // failure (including the empty-rows backstop) and the catch below
+        // surfaces it as an alert.
+        await replaceItemLocations(user.id, foodItemId, locationRows);
 
         // Insert category mappings
         if (selectedCategoryIds.length > 0) {
@@ -570,32 +591,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
         foodItemId = item.id;
 
-        // For multi-location items, handle location entries
-        if (storageType === 'multi-location') {
-          // Delete existing locations
-          const { error: deleteError } = await supabase
-            .from("food_inventory_locations")
-            .delete()
-            .eq("food_inventory_id", item.id);
-
-          if (deleteError) throw deleteError;
-
-          // Insert new locations
-          const locationsToInsert = locationEntries.map(entry => ({
-            food_inventory_id: item.id,
-            user_id: user.id,
-            location: entry.location,
-            quantity: parseInt(entry.quantity),
-            is_ready_to_consume: entry.isReadyToConsume,
-            notes: entry.notes || null,
-          }));
-
-          const { error: insertError } = await supabase
-            .from("food_inventory_locations")
-            .insert(locationsToInsert);
-
-          if (insertError) throw insertError;
-        }
+        // Unconditional, not multi-location-only: the old code left a
+        // single-location save's rows untouched, so a stale row survived every
+        // edit and a multi -> single flip orphaned every row it used to have.
+        await replaceItemLocations(user.id, foodItemId, locationRows);
 
         // Handle category and subcategory mappings
         // Delete existing category mappings
