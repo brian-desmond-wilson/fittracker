@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 import { ChevronLeft, Package, Pencil, Plus } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import { parseLocalDate } from "@/src/lib/dates";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -60,13 +61,22 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
     }
   };
 
-  const formatDate = (dateStr: string | null) => {
+  const DATE_FORMAT = { month: "long", day: "numeric", year: "numeric" } as const;
+
+  /** For TIMESTAMPTZ columns (`created_at`, `updated_at`) — full ISO instants,
+   *  which `new Date` resolves to the correct local moment. */
+  const formatTimestamp = (dateStr: string | null) => {
     if (!dateStr) return "Not set";
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric"
-    });
+    return new Date(dateStr).toLocaleDateString("en-US", DATE_FORMAT);
+  };
+
+  /** For DATE columns (`expiration_date`) — a bare YYYY-MM-DD, which `new Date`
+   *  reads as UTC midnight and so renders one day EARLY west of Greenwich.
+   *  Must match what the grid shows for the same item (FoodInventoryScreen's
+   *  `formatExpirationDate` goes through the same helper). */
+  const formatCalendarDate = (dateStr: string | null) => {
+    if (!dateStr) return "Not set";
+    return parseLocalDate(dateStr).toLocaleDateString("en-US", DATE_FORMAT);
   };
 
   const renderSection = (title: string, content: React.ReactNode) => (
@@ -184,11 +194,11 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           {renderSection(
             "Inventory",
             <>
-              {renderDetailRow("Total Quantity", `${item.total_quantity} ${item.unit}`)}
+              {renderDetailRow("Total Quantity", `${item.state.totalQuantity} ${item.unit}`)}
               {item.storage_type === 'multi-location' && (
                 <>
-                  {renderDetailRow("Ready to Consume", `${item.ready_quantity} ${item.unit}`)}
-                  {renderDetailRow("In Storage", `${item.storage_quantity} ${item.unit}`)}
+                  {renderDetailRow("Ready to Consume", `${item.state.readyQuantity} ${item.unit}`)}
+                  {renderDetailRow("In Storage", `${item.state.storageQuantity} ${item.unit}`)}
                 </>
               )}
               {renderDetailRow("Storage Type", item.storage_type === 'single-location' ? 'Single Location' : 'Multi-Location')}
@@ -284,9 +294,9 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           {renderSection(
             "Dates",
             <>
-              {renderDetailRow("Expiration Date", formatDate(item.expiration_date))}
-              {renderDetailRow("Added", formatDate(item.created_at))}
-              {renderDetailRow("Last Updated", formatDate(item.updated_at))}
+              {renderDetailRow("Expiration Date", formatCalendarDate(item.expiration_date))}
+              {renderDetailRow("Added", formatTimestamp(item.created_at))}
+              {renderDetailRow("Last Updated", formatTimestamp(item.updated_at))}
             </>
           )}
 

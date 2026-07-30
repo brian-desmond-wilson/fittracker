@@ -109,10 +109,15 @@ export function MealDetail({
             Missing: {assemblability.missing.join(", ")}
           </Text>
         )}
-        {/* Gated on `expiringItemName`, NOT on the truthiness of
+        {/* Gated on `expiringItemName != null`, NOT on the truthiness of
             `expiringDaysLeft`: 0 means "expires today" — a retained rescue
-            signal (see stockState.ts) — and 0 is falsy. */}
-        {assemblability?.expiringItemName && (
+            signal (see stockState.ts) — and 0 is falsy. `!= null` rather than
+            truthiness on the NAME either, so this matches `eatNext.ts`'s
+            `expiringRank`/`stockReasons` exactly: an empty-string name would
+            still rank the meal as a rescue there, and a truthiness gate here
+            would silently render nothing for it — the recommender ordering on
+            a signal the UI never states. */}
+        {assemblability?.expiringItemName != null && (
           <Text style={[lib.smallMuted, lib.warnText, { marginTop: 4 }]}>
             Uses {assemblability.expiringItemName} —{" "}
             {assemblability.expiringDaysLeft === 0

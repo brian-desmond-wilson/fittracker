@@ -282,32 +282,19 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
         ),
       }));
 
-      // Live stock signals (spec §9). `library` already carries everything
-      // this needs — `fetchMealLibrary` selects `food_inventory` with its
-      // location rows and Task 8 projected them into
-      // `AssemblabilityInventoryRow[]` — so this adds ZERO round trips and
-      // recomputes at exactly the fetch's cadence: once per `load`, i.e. per
-      // mount, per `refreshKey` bump, per focus and per meal write. It is
-      // deliberately inside `load` rather than a `useMemo`: the inputs are
-      // the response we just awaited, so anything coarser would rank fresh
-      // meals against stale inventory. Cost is ~50 meals × ~10 items × ~25
-      // inventory rows of pure array work — sub-millisecond, and dwarfed by
-      // the network round trip that produced its inputs.
+      // Live stock signals (spec §9), from what `library` already carries —
+      // zero extra round trips. Sits here in `load` rather than a `useMemo`
+      // because `library` is a function-local awaited value that never enters
+      // state, so it recomputes at exactly the fetch's cadence: per mount, per
+      // `refreshKey` bump, per focus and per meal write. Never per render.
       //
-      // The builder is a pure export of `eatNext.ts`, not inlined here as the
-      // plan's Task 10 fence had it: this file is a hook and gets no Jest
-      // coverage, and both the `meal.id` lookup key and the item-less-meal
-      // decision are seams that fail silently. See that module's doc comment
-      // and "⚠️ Execution amendments → Task 10".
-      //
-      // `MealLibraryModal` computes its own `assemblabilityById` over the same
-      // predicate. NOT shared, and that is correct: it holds `MealAssemblability`
-      // (it renders the `missing` NAMES and filters on the verdict), this holds
-      // the four-field `EatNextStockInfo`; it is a `useMemo` keyed on a modal's
-      // own `data` with a modal's lifetime, this is a per-fetch local in a hook
-      // whose consumers include the background nudge scheduler. Hoisting to a
-      // shared cache would couple two independent fetch lifetimes to save
-      // arithmetic that is already free at this scale.
+      // A pure export of `eatNext.ts` rather than inlined here (as the plan's
+      // Task 10 fence had it) because this file is a hook and gets no Jest
+      // coverage, while the `meal.id` lookup key and the item-less-meal
+      // decision are both seams that fail SILENTLY. Rationale for those, the
+      // input contract, and why `MealLibraryModal` deliberately computes its
+      // own copy all live in that function's doc comment — one home, so this
+      // pointer cannot drift from it.
       const stockByMealId = buildStockByMealId(library);
 
       // Minutes since LOCAL midnight, the coordinate system the engine

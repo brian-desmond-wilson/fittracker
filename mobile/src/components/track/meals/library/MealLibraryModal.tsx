@@ -171,6 +171,11 @@ export function MealLibraryModal({
   // reason: MealRow is React.memo'd, so it must receive an object whose
   // identity is stable between renders. Recomputing per renderItem call would
   // hand it a fresh object every time and defeat the memo.
+  //
+  // `useEatNext` builds a SECOND map over this same predicate
+  // (`buildStockByMealId` in `lib/eatNext.ts`). Not shared, deliberately —
+  // different value type and different lifetime; the reasoning is recorded in
+  // that function's doc comment. If you change what this computes, read it.
   const assemblabilityById = useMemo(() => {
     const map = new Map<string, MealAssemblability>();
     if (!data) return map;

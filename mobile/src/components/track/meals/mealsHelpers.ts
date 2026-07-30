@@ -1,4 +1,5 @@
 import { MealType } from "@/src/types/track";
+import { getLocalDateString } from "@/src/lib/dates";
 
 // Meal type metadata (order matters for the type selector and section ordering).
 export const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
@@ -18,13 +19,12 @@ export const MEAL_TYPE_ORDER: MealType[] = [
   "dessert",
 ];
 
-// Local date in YYYY-MM-DD format (not UTC).
-export const getLocalDateString = (date: Date = new Date()): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
+// Local date in YYYY-MM-DD format (not UTC). Defined in `@/src/lib/dates` and
+// re-exported here so the many existing component call sites keep working —
+// it moved because `src/lib/**` must not depend on `src/components/**`, and
+// `lib/supabase/mealLibrary.ts` importing it from this file was the app's only
+// such edge. New non-component callers should import from `@/src/lib/dates`.
+export { getLocalDateString };
 
 export const getMealTypeColor = (type: MealType): string =>
   MEAL_TYPES.find((t) => t.value === type)?.color || "#6B7280";

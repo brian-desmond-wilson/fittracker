@@ -54,9 +54,6 @@ export default function AddFoodItemPage() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     locations: [],
-    total_quantity: 0,
-    ready_quantity: 0,
-    storage_quantity: 0,
     categories: [],
     subcategories: [],
   };

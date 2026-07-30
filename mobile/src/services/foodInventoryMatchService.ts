@@ -7,7 +7,6 @@ export interface InventoryMatchSummary {
   barcode: string | null;
   quantity: number;
   unit: string | null;
-  storage_type: "single-location" | "multi-location" | string;
 }
 
 /**
@@ -31,7 +30,7 @@ export async function findInventoryMatchByBarcode(
     if (!user) return null;
     const { data, error } = await supabase
       .from("food_inventory")
-      .select("id, name, brand, barcode, unit, storage_type, locations:food_inventory_locations(quantity)")
+      .select("id, name, brand, barcode, unit, locations:food_inventory_locations(quantity)")
       .eq("user_id", user.id)
       .eq("barcode", barcode)
       // Nothing stops two items sharing a barcode — food_inventory has only a

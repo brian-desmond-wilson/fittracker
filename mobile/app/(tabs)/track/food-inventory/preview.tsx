@@ -66,9 +66,6 @@ export default function FoodProductPreviewPage() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     locations: [],
-    total_quantity: 0,
-    ready_quantity: 0,
-    storage_quantity: 0,
     categories: [],
     subcategories: [],
   };

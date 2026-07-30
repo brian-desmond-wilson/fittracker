@@ -1,10 +1,17 @@
-// THE stock projection (Nutrition OS Phase 4). Pure, no I/O. Replaces the
-// three byte-identical client computations (FoodInventoryScreen and the two
-// detail/edit routes) and the four dropped stock views. Locations are the
-// only quantity truth — storage_type never branches quantity math; it
-// survives solely as a threshold-semantics + UI presentation hint.
-// Threshold semantics are pinned to the SHIPPED UI, not the dropped views
-// (the views OR'd thresholds and ignored requires_refrigeration).
+// THE stock projection AND the meal-assemblability read on top of it
+// (Nutrition OS Phase 4). Pure, no I/O. Two exports carry the module:
+//   • `projectItemStock` — per-item quantities, low/out/restock flags and the
+//     expiration band (spec §5.1). Replaces the three byte-identical client
+//     computations (FoodInventoryScreen and the two detail/edit routes) and
+//     the four dropped stock views.
+//   • `assessAssemblability` — "can this meal be made right now", plus the
+//     most urgent expiring ingredient it uses (spec §5.2). Read by the Meal
+//     Library surfaces and, via `buildStockByMealId`, by the recommender.
+// Locations are the only quantity truth — storage_type never branches
+// quantity math; it survives solely as a threshold-semantics + UI
+// presentation hint. Threshold semantics are pinned to the SHIPPED UI, not
+// the dropped views (the views OR'd thresholds and ignored
+// requires_refrigeration).
 import {
   resolveInventoryMatches,
   type ResolutionInventoryRow,

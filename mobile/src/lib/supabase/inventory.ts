@@ -20,12 +20,16 @@ export interface InventoryItemWithState extends FoodInventoryItem {
   locations: FoodInventoryLocation[];
   categories: FoodCategory[];
   subcategories: FoodSubcategory[];
+  /**
+   * The ONE place a quantity may be read from. The Phase 4 transition kept
+   * `total_quantity`/`ready_quantity`/`storage_quantity` mirrors alongside
+   * this so render code could migrate gradually; they are gone — every reader
+   * now goes through `state`, and there is no second copy of these numbers on
+   * the row to drift from it or to be assigned by hand. (`quantity`, inherited
+   * from `FoodInventoryItem`, is the legacy DB cache column, not a projection:
+   * do not read it as stock.)
+   */
   state: ItemStockState;
-  // Legacy projection names kept so existing render code needs minimal
-  // change; always mirror state.* (delete once all readers use state).
-  total_quantity: number;
-  ready_quantity: number;
-  storage_quantity: number;
 }
 
 export async function fetchInventoryWithState(
@@ -63,9 +67,6 @@ export async function fetchInventoryWithState(
         .map((m) => m.food_subcategories)
         .filter((c): c is FoodSubcategory => !!c),
       state,
-      total_quantity: state.totalQuantity,
-      ready_quantity: state.readyQuantity,
-      storage_quantity: state.storageQuantity,
     };
   });
 }

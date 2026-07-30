@@ -3,7 +3,7 @@
 import { supabase } from "../supabase";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
 import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "../dates";
 import type { FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
@@ -27,9 +27,11 @@ interface InventoryRowRaw {
   id: string;
   name: string;
   barcode: string | null;
-  /** Legacy cache. Selected but NEVER read — see the mapping below. */
-  quantity: number;
   expiration_date: string | null;
+  /** `is_ready_to_consume` is NOT dead payload despite nothing here reading
+   *  the ready/storage split: `projectItemStock` takes a `StockQuantityRow`
+   *  (`Pick<StockLocationRow, "quantity" | "is_ready_to_consume">`), so the
+   *  field is required by the call below. Spec §9 prescribes selecting it too. */
   locations: Array<{ quantity: number; is_ready_to_consume: boolean }>;
 }
 
@@ -57,7 +59,11 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     supabase.from("food_concept_links").select("*"),
     supabase
       .from("food_inventory")
-      .select("id, name, barcode, quantity, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      // `quantity` (the legacy cache) is deliberately NOT selected: nothing
+      // reads it, and an absent column means the removed fallback cannot be
+      // re-added without also editing this query — one more step between a
+      // future reader and re-arming the divergence Phase 4 closed.
+      .select("id, name, barcode, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.

@@ -126,6 +126,38 @@ export interface StockAssessmentMeal {
  * meal surfaces plainly, with nothing claimed about its stock — and surfacing
  * is the recovery path, since `updateMeal`'s comment notes item-less meals are
  * "recoverable by re-editing".
+ *
+ * **Input contract.** Everything here is trusted, not validated — this is a
+ * pure function with one production caller — so the expectations are stated
+ * instead:
+ * @param library.meals every meal to rank. Item-less ones are skipped (above).
+ * @param library.conceptIdsBySavedFoodId must be COMPLETE. A miss defaults to
+ *   `[]`, which silently makes that item resolvable by barcode only, so it
+ *   counts as missing and the meal reads unassemblable. Under-claiming is the
+ *   intended failure direction, but a partial map produces wrong answers with
+ *   no error.
+ * @param library.inventory the WHOLE inventory, not pre-filtered per meal:
+ *   `assessAssemblability` indexes it by id to find the most urgent expiring
+ *   row across everything the meal resolved to.
+ * A `meals`/`inventory` inconsistency is absorbed as "missing", never thrown.
+ *
+ * **Why `MealLibraryModal` computes its own `assemblabilityById` instead of
+ * sharing this** (the one home for this argument — the call site in
+ * `useEatNext.ts` and the modal both point here rather than restating it).
+ * They run the same predicate over the same inputs but are not the same value:
+ * the modal holds `MealAssemblability` because it renders the missing item
+ * NAMES and filters `inStockOnly` on the verdict, while this holds the
+ * four-field `EatNextStockInfo` for a comparator. Their lifetimes differ more
+ * than their shapes — the modal's is a `useMemo` keyed on that modal's own
+ * `data`, alive while a sheet is open; this is a per-fetch local in a hook
+ * whose consumers include the background nudge scheduler and which refetches
+ * on focus and after every meal write. Sharing would couple two independent
+ * fetch lifetimes behind a cache whose staleness bugs would be silent, to save
+ * arithmetic that is already free: ~50 meals x ~10 items x ~25 inventory rows
+ * is sub-millisecond and dwarfed by the round trip that produced its inputs.
+ * `MealBuilder` holds a third copy for a third reason (a draft meal with no
+ * row yet). Duplicate computation, single DEFINITION — all three call
+ * `assessAssemblability`.
  */
 export function buildStockByMealId(library: {
   meals: StockAssessmentMeal[];

@@ -22,8 +22,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import {
-  FoodInventoryItem,
-  FoodLocation,
   FoodCategory,
   FoodSubcategory,
 } from "@/src/types/track";
@@ -34,7 +32,7 @@ import {
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
 import { projectItemStock } from "@/src/lib/stockState";
-import { getLocalDateString } from "./meals/mealsHelpers";
+import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
@@ -265,11 +263,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
-  const handleRestockConfirm = async (sourceLocation: FoodLocation | "store", quantity: number) => {
+  // `sourceLocationId` is null for "from store" (units enter inventory);
+  // otherwise it is the id of the exact location row the modal offered, so no
+  // lookup by location name is needed here and the ambiguity that lookup had
+  // (two rows may share a location) is gone at the source.
+  const handleRestockConfirm = async (sourceLocationId: string | null, quantity: number) => {
     if (!restockingItem) return;
 
     try {
-      // Find the target location (ready to consume) and source location
+      // Find the target location (ready to consume)
       const targetLocation = restockingItem.locations.find(loc => loc.is_ready_to_consume);
 
       if (!targetLocation) {
@@ -277,20 +279,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         return;
       }
 
-      // null source = "from store" (units enter inventory); otherwise move
-      // units between two of this item's location rows. The target row is
-      // excluded from the lookup: locations resolve by name, an item may hold
-      // two rows in the same location, and the RPC rejects source === target.
-      const sourceLocationId =
-        sourceLocation === "store"
-          ? null
-          : restockingItem.locations.find(
-              (loc) => loc.location === sourceLocation && loc.id !== targetLocation.id,
-            )?.id ?? null;
-      if (sourceLocation !== "store" && sourceLocationId === null) {
-        Alert.alert("Error", "Could not find source location");
-        return;
-      }
       await transferInventoryUnits(
         restockingItem.id,
         sourceLocationId,
@@ -333,9 +321,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             // (20260730100000:153-157); carry it so the whole in-memory row
             // matches the server rather than half-updating it.
             quantity: state.totalQuantity,
-            total_quantity: state.totalQuantity,
-            ready_quantity: state.readyQuantity,
-            storage_quantity: state.storageQuantity,
           };
         })
       );
@@ -408,14 +393,20 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       return matchesCategory && matchesSearch;
     })
     .sort((a, b) => {
-      // Sort by expiration date - items expiring soonest first
-      // Items without expiration dates go to the end
-      if (!a.expiration_date && !b.expiration_date) return 0;
-      if (!a.expiration_date) return 1; // a goes to end
-      if (!b.expiration_date) return -1; // b goes to end
-
-      // Both have expiration dates - sort by date (earliest first)
-      return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
+      // Soonest-expiring first; no (or unparseable) date goes to the end.
+      // Keyed off `state.daysLeft`, not the raw `expiration_date` column, so
+      // this screen has exactly one source of date truth — the projection.
+      // Ordering is identical for well-formed dates (daysLeft is monotone in
+      // expiration_date against a single "today"), and strictly better for a
+      // malformed one: `projectItemStock` normalises that to `daysLeft: null`
+      // and it sorts to the end, where the raw comparison produced NaN and an
+      // implementation-defined position.
+      const ad = a.state.daysLeft;
+      const bd = b.state.daysLeft;
+      if (ad === null && bd === null) return 0;
+      if (ad === null) return 1; // a goes to end
+      if (bd === null) return -1; // b goes to end
+      return ad - bd;
     });
 
   // Bands and day counts come from the projection; this only picks copy/colour.
@@ -425,8 +416,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     if (expiration === "expired") return { text: "Expired", color: "#EF4444" };
     if (expiration === "today") return { text: "Expires today", color: "#F59E0B" };
     if (expiration === "soon") return { text: `Exp: ${daysLeft}d left`, color: "#F59E0B" };
+    // `parseLocalDate`, not `new Date(str)`: the bare constructor reads a
+    // YYYY-MM-DD literal as UTC midnight, and toLocaleDateString then renders
+    // the PREVIOUS calendar day everywhere west of Greenwich — so an item
+    // stored as Aug 15 displayed "Aug 14" for this user.
     return {
-      text: `Exp: ${new Date(item.expiration_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+      text: `Exp: ${parseLocalDate(item.expiration_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
       color: colors.mutedForeground,
     };
   };
@@ -607,17 +602,35 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             if (expiring.length === 0) return null;
             return (
               <View style={styles.expiringSection}>
-                <Text style={styles.expiringTitle}>Expiring soon</Text>
-                {expiring.map((it) => (
-                  <TouchableOpacity key={it.id} onPress={() => handleViewItem(it)} style={styles.expiringRow}>
-                    <Text style={styles.expiringName} numberOfLines={1}>{it.name}</Text>
-                    <Text style={[styles.expiringWhen, it.state.expiration === "expired" && { color: "#EF4444" }]}>
-                      {it.state.expiration === "expired" ? "Expired"
-                        : it.state.expiration === "today" ? "Today"
-                        : `${it.state.daysLeft}d left`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                <Text style={styles.expiringTitle}>
+                  Expiring soon{expiring.length > 1 ? ` (${expiring.length})` : ""}
+                </Text>
+                {/* Bounded height with internal scroll rather than a "+k more"
+                    cap. The `"expired"` band has NO lower bound, so an in-stock
+                    item that expired months ago stays here forever and sorts
+                    FIRST (soonest-daysLeft first, and expired days are
+                    negative) — a cap would push genuinely rescuable items out
+                    of view behind the stalest ones. Scrolling bounds the chrome
+                    above the grid while keeping every row reachable, and needs
+                    no policy decision about when an expired item stops
+                    mattering. Safe to nest: the parent is a plain View and the
+                    grid below is a sibling FlatList, not an enclosing scroller. */}
+                <ScrollView
+                  style={styles.expiringList}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                >
+                  {expiring.map((it) => (
+                    <TouchableOpacity key={it.id} onPress={() => handleViewItem(it)} style={styles.expiringRow}>
+                      <Text style={styles.expiringName} numberOfLines={1}>{it.name}</Text>
+                      <Text style={[styles.expiringWhen, it.state.expiration === "expired" && { color: "#EF4444" }]}>
+                        {it.state.expiration === "expired" ? "Expired"
+                          : it.state.expiration === "today" ? "Today"
+                          : `${it.state.daysLeft}d left`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
             );
           })()}
@@ -782,6 +795,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 12, marginHorizontal: 16, marginBottom: 12, padding: 12,
   },
   expiringTitle: { fontSize: 13, fontWeight: "700", color: "#F59E0B", marginBottom: 6 },
+  // ~5 rows (26px each); past that the list scrolls instead of growing.
+  expiringList: { maxHeight: 130 },
   expiringRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
   expiringName: { color: "#D1D5DB", fontSize: 14, flexShrink: 1 },
   expiringWhen: { color: "#F59E0B", fontSize: 13, fontWeight: "600" },

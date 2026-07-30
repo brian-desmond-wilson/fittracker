@@ -564,7 +564,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       // Log the meal (with optional pantry decrement)
       const willUseInventory =
-        useInventory && !!inventoryMatch && (inventoryMatch.quantity ?? 0) > 0;
+        useInventory && !!inventoryMatch && inventoryMatch.quantity > 0;
       const inventoryItems = willUseInventory && inventoryMatch
         ? [{ id: inventoryMatch.id, quantity: 1 }]
         : null;

@@ -449,6 +449,12 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       notes?: string | null;
     }> = [];
 
+    // ONE expression for a single-location item's location, used for BOTH the
+    // location row that holds the stock and `food_inventory.location` below,
+    // so the display column cannot disagree with the row. Matches the
+    // reconcile's own `coalesce(fi.location, 'pantry')` (20260730100000:40-61).
+    const singleLocation: FoodLocation = location ?? "pantry";
+
     // Validate based on storage type
     if (storageType === 'single-location') {
       const parsedQuantity = parseQuantityInput(quantity);
@@ -460,7 +466,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         return;
       }
       locationRows.push({
-        location: location ?? "pantry",
+        location: singleLocation,
         quantity: parsedQuantity,
         is_ready_to_consume: true,
       });
@@ -489,6 +495,34 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           is_ready_to_consume: entry.isReadyToConsume,
           notes: entry.notes || null,
         });
+      }
+    }
+
+    // The sibling INTEGER columns get the same treatment `quantity` got: one
+    // parser shared by validation and the write, so they cannot disagree.
+    // They used to run a bare `parseInt` with only a truthiness check in
+    // front of it, and because all four are NULLABLE the failure was silent
+    // rather than loud — `parseInt(".5")` is NaN, which serialises to null and
+    // CLEARS a stored threshold instead of rejecting the input. ".", and so
+    // ".5", is typeable on the numeric keypad. All four are INTEGER in the
+    // schema (calories 20250206_tracking_tables.sql:54; restock_threshold
+    // 20250209_extend_food_inventory.sql:19; the two multi-location
+    // thresholds 20250217000003:57-58), so `parseQuantityInput`'s
+    // integer + range test is exactly the right acceptance rule.
+    const optionalIntFields: Array<[string, string, SectionKey, string]> = [
+      ["restockThreshold", restockThreshold, "storage", "Restock threshold"],
+      ["fridgeRestockThreshold", fridgeRestockThreshold, "storage", "Fridge restock threshold"],
+      ["totalRestockThreshold", totalRestockThreshold, "storage", "Total restock threshold"],
+      ["calories", calories, "nutrition", "Calories"],
+    ];
+    for (const [key, raw, section, label] of optionalIntFields) {
+      // Empty means "not set" and stays null — only a non-empty value has to parse.
+      if (raw.trim() !== "" && parseQuantityInput(raw) === null) {
+        errors.add(key);
+        setValidationErrors(errors);
+        setExpandedSection(section);
+        Alert.alert("Validation Error", `${label} must be a whole number of 0 or more`);
+        return;
       }
     }
 
@@ -535,12 +569,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // replaceItemLocations owns it now. Writing it from here is what let
         // the cache and the location rows tell two different stories.
         unit: unit,
-        location: storageType === 'single-location' ? location : null,
-        restock_threshold: restockThreshold ? parseInt(restockThreshold) : 0,
+        location: storageType === 'single-location' ? singleLocation : null,
+        // Validated above with this same parser; empty -> null, and
+        // restock_threshold keeps its historical 0 default for "not set".
+        restock_threshold: parseQuantityInput(restockThreshold) ?? 0,
         requires_refrigeration: requiresRefrigeration,
-        fridge_restock_threshold: fridgeRestockThreshold ? parseInt(fridgeRestockThreshold) : null,
-        total_restock_threshold: totalRestockThreshold ? parseInt(totalRestockThreshold) : null,
-        calories: calories ? parseInt(calories) : null,
+        fridge_restock_threshold: parseQuantityInput(fridgeRestockThreshold),
+        total_restock_threshold: parseQuantityInput(totalRestockThreshold),
+        calories: parseQuantityInput(calories),
         protein: protein ? parseFloat(protein) : null,
         carbs: carbs ? parseFloat(carbs) : null,
         fats: fats ? parseFloat(fats) : null,
