@@ -201,15 +201,19 @@ describe("assessAssemblability", () => {
     });
     expect(r.assemblable).toBe(true);
   });
-  it("reports the most urgent expiring in-stock item the meal uses", () => {
+  it("reports the most urgent expiring in-stock item the meal uses, and a later skipped row does not clobber it", () => {
     const r = assessAssemblability({
       items: [
         mealItem({ savedFoodId: "a", conceptIds: ["beef"] }),
         mealItem({ savedFoodId: "b", name: "Rice", conceptIds: ["rice"] }),
+        mealItem({ savedFoodId: "c", name: "Pasta", conceptIds: ["pasta"] }),
       ],
       inventory: [
         invRow({ id: "i1", name: "Sirloin", conceptIds: ["beef"], daysLeft: 2 }),
         invRow({ id: "i2", name: "Sticky Rice", conceptIds: ["rice"], daysLeft: 5 }),
+        // Matched but non-qualifying (already expired), visited AFTER the
+        // winner above — pins that a skip does not reset the running minimum.
+        invRow({ id: "i3", name: "Stale Pasta", conceptIds: ["pasta"], daysLeft: -3 }),
       ],
     });
     expect(r.expiringItemName).toBe("Sirloin");

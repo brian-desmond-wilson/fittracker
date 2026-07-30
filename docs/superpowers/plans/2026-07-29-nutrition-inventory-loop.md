@@ -392,15 +392,19 @@ describe("assessAssemblability", () => {
     });
     expect(r.assemblable).toBe(true);
   });
-  it("reports the most urgent expiring in-stock item the meal uses", () => {
+  it("reports the most urgent expiring in-stock item the meal uses, and a later skipped row does not clobber it", () => {
     const r = assessAssemblability({
       items: [
         mealItem({ savedFoodId: "a", conceptIds: ["beef"] }),
         mealItem({ savedFoodId: "b", name: "Rice", conceptIds: ["rice"] }),
+        mealItem({ savedFoodId: "c", name: "Pasta", conceptIds: ["pasta"] }),
       ],
       inventory: [
         invRow({ id: "i1", name: "Sirloin", conceptIds: ["beef"], daysLeft: 2 }),
         invRow({ id: "i2", name: "Sticky Rice", conceptIds: ["rice"], daysLeft: 5 }),
+        // Matched but non-qualifying (already expired), visited AFTER the
+        // winner above — pins that a skip does not reset the running minimum.
+        invRow({ id: "i3", name: "Stale Pasta", conceptIds: ["pasta"], daysLeft: -3 }),
       ],
     });
     expect(r.expiringItemName).toBe("Sirloin");
@@ -1423,6 +1427,7 @@ Task 2 landed spec-compliant on first pass (byte-identical to the plan's Step 1/
 - **The inclusive `EXPIRING_SOON_DAYS` boundary was unpinned — mutant SURVIVED.** `> EXPIRING_SOON_DAYS` → `>= EXPIRING_SOON_DAYS` passed all 21 tests: the only "beyond window" test used `EXPIRING_SOON_DAYS + 1`, never the boundary value itself. Real behavior includes day 7 (matching `projectItemStock`'s own `<= EXPIRING_SOON_DAYS → "soon"` band). **Fix:** new test pins `daysLeft: EXPIRING_SOON_DAYS` as still-expiring. **Verified:** `>` mutated to `>=`, run against `npm test -- stockState` → the new boundary test failed (`expiringItemName` received `null`, expected `"Boost, Very High Calorie"`); reverted, suite green.
 - **The tie-break's strict `<` was unpinned — mutant SURVIVED.** `<` → `<=` in `d < expiringDays` also passed all 21 tests: no test put two matched rows at the same `daysLeft`. Two rows tied on `daysLeft` resolve to whichever the loop visits first — which, since `matches` (and therefore `new Set(matches.values())`) preserves meal-item insertion order, means the earlier meal item's resolution wins. That was already the real behavior; it just wasn't a decision anyone could point to. **Fix:** new test ties two rows at `daysLeft: 3` and pins the first item's row as the winner; a comment at the tie-break site now states the intent explicitly. **Verified:** `<` mutated to `<=`, run against `npm test -- stockState` → the new tie-order test failed (`expiringItemName` received `"Sticky Rice"`, expected `"Sirloin"`); reverted, suite green.
 - **The `(expiring.daysLeft as number)` cast was an escape hatch, not a necessity.** It was safe at the time (the code guarantees non-null at that point) but is exactly the kind of cast that would have silently absorbed a future loosening of the null/range guard above it — and in fact, the FIX-2 mutant above was killable only because the *guard's own* `row.daysLeft` was left type-checked; the cast on the comparison side would not itself have caught anything. **Fix:** replaced the `expiring: AssemblabilityInventoryRow | null` + cast pattern with two parallel locals (`expiringItemName: string | null`, `expiringDays: number | null`) populated only inside the already-narrowed branch, so no cast is needed anywhere in the function; `tsc --noEmit` remains 0 errors. Behavior is unchanged — this is a pure "delete the escape hatch" refactor.
+- **The skip branch's non-mutation of the running minimum was untested — mutant SURVIVED.** Resetting `expiringItemName`/`expiringDays` to `null` inside the skip branch (`if (... ) { expiringItemName = null; expiringDays = null; continue; }`) passed all 25 tests, because no test had a qualifying matched row followed by a non-qualifying matched row in the same `assessAssemblability` call — the multi-row tests had every row qualify, and every skip-only test had a single row. **Fix:** extended "reports the most urgent expiring in-stock item the meal uses" with a third meal item resolving to a matched-but-expired row (`daysLeft: -3`), positioned after the winning row in match order, still asserting `Sirloin`/`2`. **Verified:** the reset-on-skip mutant applied to `stockState.ts`, run against `npm test -- stockState` → the extended test failed (`expiringItemName` received `null`, expected `"Sirloin"`); reverted, suite green.
 
 Not in scope for this amendment, confirmed rather than assumed: the `new Set(matches.values())` dedup is not itself a coverage hole. Mutating it away (iterating `matches.values()` directly, without the `Set`) is a provably **equivalent** mutant here — revisiting the same inventory row a second time re-evaluates `d < expiringDays` with `d` equal to the already-recorded `expiringDays`, which is `false`, so the second visit is a no-op and the result is byte-identical either way. No test should be written to try to kill it.
 
