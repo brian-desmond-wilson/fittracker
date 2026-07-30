@@ -44,7 +44,11 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "@/src/lib/colors";
-import { eatNextStockBadge, type EatNextResult } from "@/src/lib/eatNext";
+import {
+  eatNextStockBadge,
+  eatNextExpiringLine,
+  type EatNextResult,
+} from "@/src/lib/eatNext";
 
 interface EatNextRowProps {
   result: EatNextResult | null;
@@ -66,6 +70,18 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
         // correct rendering of "we don't know"; anything else would claim
         // more than the ranking did.
         const badge = eatNextStockBadge(rec.stock);
+        // Spec §10's "names an expiring ingredient", on this surface too.
+        // JUDGEMENT (the denser-surface call the review asked for): it fits,
+        // and it ships here rather than being left to the Home card. The chip
+        // is already a full-width stacked block precisely because a name plus
+        // a stats line does not fit a half-width pill (see the geometry note
+        // on `styles`), so there is horizontal room for a third line; the line
+        // is `null` for every meal with no expiring ingredient, so in the
+        // common case the strip is byte-identical to before; and at most two
+        // chips render. The alternative — Home card only — would put the two
+        // Eat Next surfaces back in the state this task exists to fix, one
+        // naming the rescue and one silently not.
+        const expiringLine = eatNextExpiringLine(rec.stock);
         return (
           <TouchableOpacity
             key={rec.mealId}
@@ -99,6 +115,11 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
             <Text style={styles.chipStats} numberOfLines={1}>
               {rec.calories} cal · {rec.prepMinutes} min
             </Text>
+            {expiringLine && (
+              <Text style={styles.chipExpiring} numberOfLines={1}>
+                {expiringLine}
+              </Text>
+            )}
           </TouchableOpacity>
         );
       })}
@@ -157,4 +178,11 @@ const styles = StyleSheet.create({
   stockBadgeInText: { color: "#22C55E" },
   stockBadgeMissing: { backgroundColor: "rgba(245,158,11,0.15)" },
   stockBadgeMissingText: { color: "#F59E0B" },
+  // Same amber as the Home card's expiring line and the same unfilled
+  // treatment `MealDetail` gives the identical string — one size smaller, and
+  // `numberOfLines={1}` rather than 2, because this is the dense surface and
+  // two chips stack here under the pace lines. A truncated rescue line still
+  // reads as a rescue and the full text is one tap away in MealDetail; a
+  // wrapping one would push the second chip off the fold.
+  chipExpiring: { fontSize: 11, color: "#F59E0B", marginTop: 2 },
 });

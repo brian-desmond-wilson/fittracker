@@ -2,6 +2,7 @@ import {
   recommendEatNext,
   buildStockByMealId,
   eatNextStockBadge,
+  eatNextExpiringLine,
   nudgeFireDate,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
@@ -1625,6 +1626,12 @@ describe("eatNextStockBadge", () => {
       .toEqual({ assemblable: false, label: "Missing 1" });
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 7 })))
       .toEqual({ assemblable: false, label: "Missing 7" });
+    // Two digits. Without this the count was pinned only at {0,1,3,7}, so a
+    // "cap the count at 10" edit survived all 270 tests — the badge is the
+    // one place a meal's shortfall is quantified, and a silently clamped
+    // number is worse than none.
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 12 })))
+      .toEqual({ assemblable: false, label: "Missing 12" });
   });
 
   it("expiring info never changes the badge — that signal belongs to the reasons, not here", () => {
@@ -1648,5 +1655,128 @@ describe("eatNextStockBadge", () => {
     // Still AMBER, not green: the verdict is what decides the color, and a
     // count we can't state does not become "you can make it".
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 }))!.assemblable).toBe(false);
+  });
+});
+
+// ── Task 14 round 2: spec §10's "names an expiring ingredient" ─────────────
+// Round 1 put `expiringItemName`/`expiringDaysLeft` on every recommendation
+// and then rendered neither — the exact "computed but never displayed" state
+// round 1's own amendment names as this task's finding, reintroduced one field
+// over. `MealDetail.tsx:120-125` was the whole app's only renderer of these
+// two fields, one tap and one surface away inside the Meal Library modal.
+//
+// The copy below is MealDetail's, to the character. That is the point: a
+// second phrasing of one fact is the drift class this task closes, so these
+// assertions are deliberately exact strings rather than regexes — a regex on
+// /expires/ would pass for a rewording, which is precisely what must not be
+// allowed to happen silently.
+describe("eatNextExpiringLine", () => {
+  const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
+    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+  });
+
+  it("names the ingredient and the days left, in MealDetail's exact words", () => {
+    expect(eatNextExpiringLine(info({ expiringItemName: "Kefir", expiringDaysLeft: 4 })))
+      .toBe("Uses Kefir — expires in 4d");
+    // Capital "Uses" and an EM DASH (—), not a hyphen: this is a standalone
+    // line, matching `MealDetail`. The lowercase `uses …` in `stockReasons`
+    // is the same sentence as a fragment in a reason list, not a rival
+    // phrasing — both take their tail from the shared `expiryClause`.
+    expect(eatNextExpiringLine(info({ expiringItemName: "Kefir", expiringDaysLeft: 4 })))
+      .not.toBe("uses Kefir — expires in 4d");
+  });
+
+  it("day 0 reads 'expires today', never 'expires in 0d' — the most urgent value", () => {
+    // `0` is both the most urgent day the projection can return and a falsy
+    // number. A gate on the truthiness of `expiringDaysLeft` renders NOTHING
+    // here (the Task 2 forward caution), and the plain template renders the
+    // most urgent day in the least urgent-sounding words.
+    expect(eatNextExpiringLine(info({ expiringItemName: "Sirloin", expiringDaysLeft: 0 })))
+      .toBe("Uses Sirloin — expires today");
+  });
+
+  it("says nothing when there is no expiring ingredient, and nothing when stock is unknown", () => {
+    expect(eatNextExpiringLine(info())).toBeNull();
+    expect(eatNextExpiringLine(undefined)).toBeNull();
+    // The common case by far: a known, fully-stocked meal with nothing in the
+    // 0–7 day window. This line is a rescue notice, not a status field.
+    expect(eatNextExpiringLine(info({ assemblable: true }))).toBeNull();
+  });
+
+  it("is independent of `assemblable` — a rescue is named on an unmakeable meal too", () => {
+    // Task 8's DECISION, re-adopted by Task 9 FIX 3: the expiring item is one
+    // the user ALREADY OWNS, which is *more* actionable when the meal can't be
+    // made ("buying the two missing items also saves the one about to spoil").
+    // `expiringRank` is likewise unconditioned on `assemblable`, so gating the
+    // line here would put the UI back to ranking on a signal it never states.
+    expect(eatNextExpiringLine(info({
+      assemblable: false, missingCount: 2, expiringItemName: "Kefir", expiringDaysLeft: 1,
+    }))).toBe("Uses Kefir — expires in 1d");
+  });
+
+  it("gates on the NAME, not the truthiness of either field — empty string still renders", () => {
+    // Deliberately matching `MealDetail` and `expiringRank`: an empty-string
+    // name still earns `expiringRank: 0`, so a truthiness gate would rank the
+    // meal as a rescue while silently declining to say so. Odd-looking output
+    // is the correct trade against a silent divergence, and the state is
+    // unreachable from `assessAssemblability` (the name is an inventory row's
+    // display name) — recorded here so it reads as chosen, not overlooked.
+    expect(eatNextExpiringLine(info({ expiringItemName: "", expiringDaysLeft: 2 })))
+      .toBe("Uses  — expires in 2d");
+  });
+
+  it("both renderings of the expiring fact share one day-0 rule (the extraction is load-bearing)", () => {
+    // `stockReasons`' fragment and this line are the only two producers of
+    // this sentence, and after the `expiryClause` extraction a change to the
+    // day-0 rule must move BOTH or neither. Asserted together, in one test,
+    // so a mutant to that clause cannot die in one place and survive in the
+    // other unnoticed.
+    const m = scored({ category: "dinner" });
+    const r = recommendEatNext({
+      ...input({}, [m]),
+      stockByMealId: new Map([[m.meal.id, info({ expiringItemName: "Sirloin", expiringDaysLeft: 0 })]]),
+    });
+    expect(r.recommendations[0].reasons).toContain("uses Sirloin — expires today");
+    expect(eatNextExpiringLine(r.recommendations[0].stock)).toBe("Uses Sirloin — expires today");
+  });
+
+  it("reads the same fields the engine ranked the rescue on, end to end", () => {
+    // Driven through the real builder rather than a hand-written map, so this
+    // also pins that `buildStockByMealId` → `candidate()` → `toRecs` carries
+    // BOTH expiring fields intact to the surface that renders them.
+    const rescue = scored({ category: "dinner", score: 60 });
+    const plain = scored({ category: "dinner", score: 95 });
+    const stockByMealId = buildStockByMealId({
+      meals: [
+        { id: rescue.meal.id, items: [{ saved_food_id: "sf-kefir", savedFood: { name: "Kefir", barcode: null } }] },
+        { id: plain.meal.id, items: [{ saved_food_id: "sf-oats", savedFood: { name: "Oats", barcode: null } }] },
+      ],
+      conceptIdsBySavedFoodId: new Map([["sf-kefir", ["c-kefir"]], ["sf-oats", ["c-oats"]]]),
+      inventory: [
+        { id: "i1", name: "Kefir", barcode: null, totalQuantity: 1, conceptIds: ["c-kefir"], daysLeft: 3 },
+        { id: "i2", name: "Oats", barcode: null, totalQuantity: 1, conceptIds: ["c-oats"], daysLeft: null },
+      ],
+    });
+    const r = recommendEatNext({ ...input({}, [plain, rescue]), stockByMealId });
+    // The rescue outranks a 35-point raw deficit (spec §9) AND names itself.
+    expect(r.recommendations[0].mealId).toBe(rescue.meal.id);
+    expect(eatNextExpiringLine(r.recommendations[0].stock)).toBe("Uses Kefir — expires in 3d");
+    expect(eatNextExpiringLine(r.recommendations[1].stock)).toBeNull();
+  });
+});
+
+// The `== null` guard on both helpers. `strict` cannot deliver a `null` here
+// today, so this is a defensive-parity test, not a live path: `stockReasons`
+// guards the same input with the loose `if (!info)` and these two should not
+// be the one place a `null` reaches a property read. The cast is what makes
+// the guard observable at all — without it the mutant `=== undefined` is
+// unkillable and the guard is decoration.
+describe("stock helpers tolerate a null the type system forbids", () => {
+  const asStock = null as unknown as EatNextStockInfo | undefined;
+  it("eatNextStockBadge(null) is null, not a crash", () => {
+    expect(eatNextStockBadge(asStock)).toBeNull();
+  });
+  it("eatNextExpiringLine(null) is null, not a crash", () => {
+    expect(eatNextExpiringLine(asStock)).toBeNull();
   });
 });

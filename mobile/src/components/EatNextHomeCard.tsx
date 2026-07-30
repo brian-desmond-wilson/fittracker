@@ -15,7 +15,11 @@ import { syncEatNudge } from "@/src/services/eatNudgeService";
 // green/amber split (see its doc comment) — this file never re-derives
 // "In stock" / "Missing N" from `stock.assemblable`/`stock.missingCount`
 // itself, and never reads `reasons` for it.
-import { EMPTY_LIBRARY_MESSAGE, eatNextStockBadge } from "@/src/lib/eatNext";
+import {
+  EMPTY_LIBRARY_MESSAGE,
+  eatNextStockBadge,
+  eatNextExpiringLine,
+} from "@/src/lib/eatNext";
 // `scoreBand` is the ONE decision point for the chip's band (spec §6's
 // thresholds); this file never re-declares the cutoff numbers locally. Only
 // the function is needed — the raw `SCORE_BAND_CORE_MIN`/`SCORE_BAND_MID_MIN`
@@ -145,6 +149,12 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // the TYPED field; `top.reasons` is a flat array whose stock entry has no
   // fixed index, which is precisely why this card used to show none of it.
   const stockBadge = eatNextStockBadge(top.stock);
+  // Spec §10: "Eat Next … names an expiring ingredient". `null` whenever this
+  // meal has no expiring ingredient (the common case) — and note it is
+  // deliberately independent of the badge above: a rescue is worth naming
+  // whether or not the meal is assemblable, because the user already owns the
+  // item that is about to spoil (Task 8's DECISION, Task 9 FIX 3).
+  const expiringLine = eatNextExpiringLine(top.stock);
 
   return (
     <TouchableOpacity
@@ -186,6 +196,11 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       <Text style={styles.reason} numberOfLines={2}>
         {top.reasons[0]}
       </Text>
+      {expiringLine && (
+        <Text style={styles.expiringText} numberOfLines={2}>
+          {expiringLine}
+        </Text>
+      )}
       <View style={styles.statsRow}>
         <Text style={styles.statsText} numberOfLines={1}>
           {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
@@ -268,6 +283,14 @@ const styles = StyleSheet.create({
   stockBadgeInText: { color: "#22C55E" },
   stockBadgeMissing: { backgroundColor: "rgba(245,158,11,0.15)" },
   stockBadgeMissingText: { color: "#F59E0B" },
+  // The expiring-rescue line. Amber-on-nothing rather than a filled badge:
+  // it is a full sentence, not a two-word verdict, and it is the same
+  // treatment `MealDetail` gives the identical string (`lib.smallMuted` +
+  // `lib.warnText`, i.e. small text in #F59E0B with no fill). `numberOfLines`
+  // is 2, not 1 — an item name plus the clause can exceed one line at large
+  // Dynamic Type sizes, and truncating an ingredient name to "Uses Chicken
+  // Th…" defeats the point of naming it.
+  expiringText: { fontSize: 12, color: "#F59E0B", marginTop: 4 },
 });
 
 const SCORE_CHIP_STYLE_BY_BAND: Record<ScoreBand, object> = {

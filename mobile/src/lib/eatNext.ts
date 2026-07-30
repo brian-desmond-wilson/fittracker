@@ -217,7 +217,17 @@ export interface EatNextRecommendation {
    *  engine produced was invisible on device and the Home card recommended
    *  meals the user could not assemble with no indication of it. Surfaces
    *  must branch on THIS field, never on a position in `reasons` or a
-   *  substring match against it. */
+   *  substring match against it.
+   *
+   *  ⚠️ **This ALIASES the caller's map entry — it is not a copy.** The same
+   *  object is reachable from `stockByMealId`, from `Candidate.stock`, and
+   *  from every recommendation for that meal, deliberately: one lookup means
+   *  the badge and the ranking tier cannot disagree. It is read-only in
+   *  practice (nothing in this file or either surface mutates it), but the
+   *  same hazard `nudgeFireDate` documents for `sourceDay` applies — a
+   *  consumer that "normalizes" a field in place would corrupt the map its
+   *  caller is still holding, as a side effect of what looks like a pure
+   *  read. Treat it as frozen; copy before mutating. */
   stock?: EatNextStockInfo;
 }
 
@@ -252,12 +262,65 @@ export interface EatNextStockBadge {
 export function eatNextStockBadge(
   stock: EatNextStockInfo | undefined,
 ): EatNextStockBadge | null {
-  if (stock === undefined) return null;
+  // `== null`, not `=== undefined`: `undefined` is the only value `strict` can
+  // deliver here today, but `stockReasons` two functions down guards the same
+  // input with the loose `if (!info)` and this should not be the one place
+  // that lets a `null` through to a property read. Free, and matches the
+  // neighbour.
+  if (stock == null) return null;
   if (stock.assemblable) return { assemblable: true, label: "In stock" };
   return {
     assemblable: false,
     label: stock.missingCount > 0 ? `Missing ${stock.missingCount}` : "Missing items",
   };
+}
+
+/** The tail of every expiring-rescue string this app renders, in ALL THREE
+ *  places that render one: `stockReasons`' reason fragment below,
+ *  `eatNextExpiringLine` just under this, and — by matching copy, not by
+ *  import — `MealDetail.tsx`. Day 0 gets its own words rather than
+ *  "expires in 0d", which would make the MOST urgent value read as the least
+ *  urgent-sounding copy (Task 8's DECISION for the same field).
+ *
+ *  Extracted (Task 14) purely so the day-0 rule and the `Nd` suffix have ONE
+ *  definition instead of two identical ternaries eleven lines apart. Both
+ *  callers' output is byte-identical to what shipped before — the existing
+ *  exact-reason-array test pins that — and the capitalisation difference
+ *  between the two callers is the only thing that stayed per-caller, because
+ *  it is the only thing that genuinely differs (see `eatNextExpiringLine`). */
+function expiryClause(daysLeft: number | null): string {
+  return daysLeft === 0 ? "expires today" : `expires in ${daysLeft}d`;
+}
+
+/**
+ * The expiring-rescue line for a recommendation — spec §10's on-device
+ * requirement that Eat Next "names an expiring ingredient", which Task 14's
+ * first commit left unshipped.
+ *
+ * **The copy is `MealDetail.tsx:120-125`'s, to the character** (`Uses X —
+ * expires today` / `Uses X — expires in Nd`, em dash). That file was the only
+ * renderer of these two fields in the whole app; a second phrasing of one fact
+ * is exactly the drift this task exists to close, so this states it the same
+ * way rather than better. The lowercase `uses …` in `stockReasons` is NOT a
+ * third phrasing — it is the same sentence as a fragment inside a reason list,
+ * and both take their tail from `expiryClause` above so the day-0 rule cannot
+ * diverge between them.
+ *
+ * **Gated on `expiringItemName != null`, never on the truthiness of
+ * `expiringDaysLeft`** — `0` means "expires today", the most urgent value
+ * `assessAssemblability` produces, and `0` is falsy (the Task 2 forward
+ * caution; the mutant that gets this wrong is E1 in the Task 14 amendment).
+ * `!= null` on the NAME rather than truthiness for the reason MealDetail
+ * documents: an empty-string name still earns `expiringRank: 0`, so a
+ * truthiness gate would rank on a signal the UI silently declines to state.
+ *
+ * `null` = render nothing. Unknown stock, and a known meal with no expiring
+ * ingredient, are both correctly silent — this line is a rescue notice, not a
+ * status field.
+ */
+export function eatNextExpiringLine(stock: EatNextStockInfo | undefined): string | null {
+  if (stock == null || stock.expiringItemName == null) return null;
+  return `Uses ${stock.expiringItemName} — ${expiryClause(stock.expiringDaysLeft)}`;
 }
 
 export interface EatNextNudge {
@@ -372,13 +435,14 @@ function stockReasons(info: EatNextStockInfo | undefined): string[] {
   // already-expired rows never reach here) — and `0` is falsy. See the Task 2
   // execution amendment's forward note.
   if (info.expiringItemName != null) {
-    // Day 0 gets its own string rather than "expires in 0d", matching the
-    // treatment Task 8 shipped in MealDetail for the same value: the most
-    // urgent day would otherwise read as the least urgent-sounding copy.
+    // Day 0 gets its own string rather than "expires in 0d" — the rule now
+    // lives in `expiryClause`, shared with `eatNextExpiringLine` so the two
+    // renderings of this fact cannot drift. The string below is byte-identical
+    // to what shipped before the extraction (pinned by the exact-reason-array
+    // test); only the lowercase `uses` is local, because this is a fragment in
+    // a reason list rather than a standalone line.
     out.push(
-      info.expiringDaysLeft === 0
-        ? `uses ${info.expiringItemName} — expires today`
-        : `uses ${info.expiringItemName} — expires in ${info.expiringDaysLeft}d`,
+      `uses ${info.expiringItemName} — ${expiryClause(info.expiringDaysLeft)}`,
     );
   }
   return out;
