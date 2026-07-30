@@ -441,6 +441,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
             .update({ eat_nudges_enabled: false })
             .eq("id", user.id);
           setEatNudges(false);
+          return;
         }
       } else {
         await cancelAllEatNudges(); // off = no pending nudge survives
