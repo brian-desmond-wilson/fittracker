@@ -42,9 +42,15 @@ export async function findInventoryMatchByBarcode(
     }
     if (!data) return null;
     // `Omit<…, "quantity">` rather than the whole interface: the select above
-    // deliberately does NOT fetch the legacy column, so a cast claiming it is
-    // present would be a lie, and would let a future field added to
-    // InventoryMatchSummary go missing from the select without tsc noticing.
+    // deliberately does NOT fetch the legacy column, so a cast naming it would
+    // assert a field that is not there. Narrow but real payoff — it makes the
+    // projection below load-bearing: delete the `quantity:` line and this stops
+    // compiling (TS2741), whereas the un-Omitted cast would happily ship a row
+    // whose `quantity` is `undefined`. It buys nothing against a field ADDED to
+    // InventoryMatchSummary but forgotten in the select string: `Omit` would
+    // include it, the cast would assert it, and it would compile. A type
+    // assertion cannot police an opaque query string, and against an untyped
+    // supabase client nothing in tsc can — grep supabase/migrations/ instead.
     const { locations, ...rest } = data as Omit<
       InventoryMatchSummary,
       "quantity"
