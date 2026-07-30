@@ -22,6 +22,7 @@ import {
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
 import { supabase } from "@/src/lib/supabase";
+import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
 import { styles } from "./edit-food/styles";
@@ -111,9 +112,13 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   const [sugars, setSugars] = useState(item.sugars?.toString() || "");
   const [servingSize, setServingSize] = useState(item.serving_size || "");
 
-  // Expiration
+  // Expiration. `parseLocalDate`, not `new Date(str)`: the bare constructor
+  // reads a YYYY-MM-DD DATE column as UTC midnight, so the picker's label
+  // rendered a day early west of Greenwich — and disagreed with the grid and
+  // the detail screen, which both go through `parseLocalDate`. The noon anchor
+  // also keeps the write below (`getLocalDateString`) on the intended day.
   const [expirationDate, setExpirationDate] = useState<Date | null>(
-    item.expiration_date ? new Date(item.expiration_date) : null
+    item.expiration_date ? parseLocalDate(item.expiration_date) : null
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -509,13 +514,27 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     // 20250209_extend_food_inventory.sql:19; the two multi-location
     // thresholds 20250217000003:57-58), so `parseQuantityInput`'s
     // integer + range test is exactly the right acceptance rule.
-    const optionalIntFields: Array<[string, string, SectionKey, string]> = [
-      ["restockThreshold", restockThreshold, "storage", "Restock threshold"],
-      ["fridgeRestockThreshold", fridgeRestockThreshold, "storage", "Fridge restock threshold"],
-      ["totalRestockThreshold", totalRestockThreshold, "storage", "Total restock threshold"],
+    //
+    // Scoped to the fields the ACTIVE storage type actually renders. The
+    // threshold inputs are mutually exclusive on screen — "Restock Threshold"
+    // is single-location only, "Ready"/"Total" are multi-location only — so
+    // validating all four unconditionally could reject a value the user cannot
+    // see or reach: type garbage into "Ready Threshold", flip to
+    // single-location, and the save dead-ends on an alert pointing at a
+    // section that no longer contains the field. You can only be blocked by
+    // what you can edit; correspondingly, the write below leaves the inactive
+    // pair at the item's stored value instead of re-parsing hidden text.
+    const isSingle = storageType === 'single-location';
+    const visibleIntFields: Array<[string, string, SectionKey, string]> = [
+      ...(isSingle
+        ? ([["restockThreshold", restockThreshold, "storage", "Restock Threshold"]] as Array<[string, string, SectionKey, string]>)
+        : ([
+            ["fridgeRestockThreshold", fridgeRestockThreshold, "storage", "Ready Threshold"],
+            ["totalRestockThreshold", totalRestockThreshold, "storage", "Total Threshold"],
+          ] as Array<[string, string, SectionKey, string]>)),
       ["calories", calories, "nutrition", "Calories"],
     ];
-    for (const [key, raw, section, label] of optionalIntFields) {
+    for (const [key, raw, section, label] of visibleIntFields) {
       // Empty means "not set" and stays null — only a non-empty value has to parse.
       if (raw.trim() !== "" && parseQuantityInput(raw) === null) {
         errors.add(key);
@@ -570,19 +589,31 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // the cache and the location rows tell two different stories.
         unit: unit,
         location: storageType === 'single-location' ? singleLocation : null,
-        // Validated above with this same parser; empty -> null, and
-        // restock_threshold keeps its historical 0 default for "not set".
-        restock_threshold: parseQuantityInput(restockThreshold) ?? 0,
+        // Validated above with this same parser, and written only for the
+        // storage type that renders them — the inactive pair carries the
+        // item's stored value through untouched, so a save can never change a
+        // threshold the user could not see. (`restock_threshold` keeps its
+        // historical 0 for "not set"; unlike its three nullable siblings the
+        // column is `INTEGER DEFAULT 1` with no CHECK and the TS type is
+        // non-null, so 0 rather than null is the consistent "unset" here —
+        // a whitespace-only entry now writes 0 where it used to write null.)
+        restock_threshold: isSingle ? (parseQuantityInput(restockThreshold) ?? 0) : item.restock_threshold,
         requires_refrigeration: requiresRefrigeration,
-        fridge_restock_threshold: parseQuantityInput(fridgeRestockThreshold),
-        total_restock_threshold: parseQuantityInput(totalRestockThreshold),
+        fridge_restock_threshold: isSingle ? item.fridge_restock_threshold : parseQuantityInput(fridgeRestockThreshold),
+        total_restock_threshold: isSingle ? item.total_restock_threshold : parseQuantityInput(totalRestockThreshold),
         calories: parseQuantityInput(calories),
         protein: protein ? parseFloat(protein) : null,
         carbs: carbs ? parseFloat(carbs) : null,
         fats: fats ? parseFloat(fats) : null,
         sugars: sugars ? parseFloat(sugars) : null,
         serving_size: servingSize.trim() || null,
-        expiration_date: expirationDate ? expirationDate.toISOString().split("T")[0] : null,
+        // `getLocalDateString`, not `.toISOString().split("T")[0]`: the picker
+        // returns the chosen date carrying a TIME component (iOS spinner keeps
+        // it from `value`, which is `new Date()` on a first pick), and a
+        // local-afternoon time converts to the NEXT UTC day — so picking Aug 15
+        // at 17:00 local wrote "2026-08-16". Formatting the local calendar
+        // fields makes the write independent of the time component entirely.
+        expiration_date: expirationDate ? getLocalDateString(expirationDate) : null,
         notes: notes.trim() || null,
         image_primary_url: primaryUrl,
         image_front_url: frontUrl,
@@ -980,7 +1011,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               title="Quantity & Storage"
               sectionKey="storage"
               isExpanded={expandedSection === "storage"}
-              hasError={validationErrors.has("quantity") || validationErrors.has("locationEntries")}
+              hasError={validationErrors.has("quantity") || validationErrors.has("locationEntries")
+                || validationErrors.has("restockThreshold") || validationErrors.has("fridgeRestockThreshold")
+                || validationErrors.has("totalRestockThreshold")}
               onPress={() => toggleSection("storage")}
             />
 
@@ -1079,7 +1112,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <View style={styles.field}>
                       <Text style={styles.label}>Restock Threshold</Text>
                       <TextInput
-                        style={styles.input}
+                        style={[styles.input, validationErrors.has("restockThreshold") && styles.inputError]}
                         placeholder="Notify when quantity reaches..."
                         placeholderTextColor="#9CA3AF"
                         value={restockThreshold}
@@ -1260,7 +1293,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       <View style={[styles.field, styles.fieldHalf]}>
                         <Text style={styles.label}>Ready Threshold</Text>
                         <TextInput
-                          style={styles.input}
+                          style={[styles.input, validationErrors.has("fridgeRestockThreshold") && styles.inputError]}
                           placeholder="Min ready qty"
                           placeholderTextColor="#9CA3AF"
                           value={fridgeRestockThreshold}
@@ -1275,7 +1308,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       <View style={[styles.field, styles.fieldHalf]}>
                         <Text style={styles.label}>Total Threshold</Text>
                         <TextInput
-                          style={styles.input}
+                          style={[styles.input, validationErrors.has("totalRestockThreshold") && styles.inputError]}
                           placeholder="Min total qty"
                           placeholderTextColor="#9CA3AF"
                           value={totalRestockThreshold}
@@ -1299,7 +1332,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               title="Nutritional Information"
               sectionKey="nutrition"
               isExpanded={expandedSection === "nutrition"}
-              hasError={false}
+              hasError={validationErrors.has("calories")}
               onPress={() => toggleSection("nutrition")}
             />
 
@@ -1309,7 +1342,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Calories</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, validationErrors.has("calories") && styles.inputError]}
                       placeholder="0"
                       placeholderTextColor="#9CA3AF"
                       value={calories}
