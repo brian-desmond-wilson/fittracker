@@ -1,5 +1,6 @@
 import {
   recommendEatNext,
+  buildStockByMealId,
   nudgeFireDate,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
@@ -14,7 +15,9 @@ import {
   EMERGENCY_CHECK_BEFORE_END_MIN,
   type EatNextInput,
   type ScoredMeal,
+  type StockAssessmentMeal,
 } from "../eatNext";
+import type { AssemblabilityInventoryRow } from "../stockState";
 import { EMPTY_TOTALS } from "../mealMacros";
 import type { MealCategory, MealRole } from "@/src/types/meal-library";
 
@@ -1158,5 +1161,169 @@ describe("stock awareness — key, precedence, and copy pinning", () => {
     expect(r.recommendations.map((x) => x.mealId)).toEqual([high.meal.id, low.meal.id]);
     expect(r.recommendations.flatMap((x) => x.reasons)).toEqual(["next: dinner", "next: dinner"]);
     expect(recommendEatNext({ ...input({}, [low, high]), stockByMealId: new Map() })).toEqual(r);
+  });
+});
+
+// ── Task 10: the stock-map builder, and the seam it sits on ────────────────
+// `buildStockByMealId` is the WRITE half of the lookup-key seam whose READ
+// half (`candidate()`'s `.get(m.meal.id)`) Task 9 round 2 found unpinned.
+// Both halves fail silently: a wrong key on either side makes every meal read
+// unknown-stock, which is Phase 3 ordering with no stock reasons and no
+// availability-aware nudge — and not one pre-existing assertion notices. The
+// tests below drive the builder's real output into `recommendEatNext` rather
+// than hand-writing a map, so they exercise both halves against each other.
+describe("buildStockByMealId", () => {
+  const invRow = (o: Partial<AssemblabilityInventoryRow> = {}): AssemblabilityInventoryRow => ({
+    id: "inv1",
+    name: "Boost Very High Calorie",
+    barcode: null,
+    totalQuantity: 1,
+    conceptIds: [],
+    daysLeft: null,
+    ...o,
+  });
+  /** Saved-food ids are deliberately unlike the meal ids (`m{n}`), so keying
+   *  the map by `items[0].saved_food_id` cannot pass by coincidence — the
+   *  same fixture-collision that let `.get(m.meal.slug)` survive 81 tests. */
+  const libMeal = (
+    id: string,
+    items: Array<{ sf: string; name: string; concepts?: string[] }>,
+  ): StockAssessmentMeal => ({
+    id,
+    items: items.map((it) => ({
+      saved_food_id: `sf-${it.sf}`,
+      savedFood: { name: it.name, barcode: null },
+    })),
+  });
+  const conceptsFor = (entries: Array<[string, string[]]>) =>
+    new Map(entries.map(([sf, ids]) => [`sf-${sf}`, ids]));
+
+  it("keys by meal.id, and that key is the one recommendEatNext reads (the seam)", () => {
+    // The out-of-stock meal has the STRICTLY HIGHER raw score, so Phase 3
+    // ordering puts it first. Only a working map can invert that — which is
+    // precisely what breaks, invisibly, if either side keys by anything else.
+    const inStock = scored({ category: "dinner", score: 60 });
+    const outOfStock = scored({ category: "dinner", score: 95 });
+    const stockByMealId = buildStockByMealId({
+      meals: [
+        libMeal(inStock.meal.id, [{ sf: "boost", name: "Boost" }]),
+        libMeal(outOfStock.meal.id, [{ sf: "sauce", name: "Korean BBQ Sauce" }]),
+      ],
+      conceptIdsBySavedFoodId: conceptsFor([["boost", ["boost"]], ["sauce", ["sauce"]]]),
+      inventory: [invRow({ conceptIds: ["boost"] })],
+    });
+    expect([...stockByMealId.keys()]).toEqual([inStock.meal.id, outOfStock.meal.id]);
+    const r = recommendEatNext({
+      ...input({}, [outOfStock, inStock]),
+      stockByMealId,
+    });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      inStock.meal.id,
+      outOfStock.meal.id,
+    ]);
+    expect(r.recommendations[0].reasons).toContain("in stock");
+    expect(r.recommendations[1].reasons).toContain("missing 1 ingredient");
+  });
+
+  it("maps every field of the verdict through, including the expiring rescue", () => {
+    const m = scored({ category: "dinner" });
+    const stockByMealId = buildStockByMealId({
+      meals: [libMeal(m.meal.id, [
+        { sf: "boost", name: "Boost" },
+        { sf: "sauce", name: "Korean BBQ Sauce" },
+        { sf: "rice", name: "Rice" },
+      ])],
+      conceptIdsBySavedFoodId: conceptsFor([
+        ["boost", ["boost"]], ["sauce", ["sauce"]], ["rice", ["rice"]],
+      ]),
+      // Only `boost` resolves: two of the three items are missing, and the one
+      // that DOES resolve is expiring — the reachable
+      // `{assemblable: false, expiringItemName: "…"}` state Task 9 documented.
+      inventory: [invRow({ id: "inv1", name: "Kefir", conceptIds: ["boost"], daysLeft: 4 })],
+    });
+    expect(stockByMealId.get(m.meal.id)).toEqual({
+      assemblable: false,
+      missingCount: 2,
+      expiringItemName: "Kefir",
+      expiringDaysLeft: 4,
+    });
+  });
+
+  // 🚩 THE DECISION Task 9 handed to Task 10. `assessAssemblability` returns
+  // `{assemblable: false, missing: []}` for an item-less meal — the one input
+  // where "not assemblable" and "nothing missing" are both true. Left as-is it
+  // would rank `stockRank: 2` (known-missing) and render the nonsense copy
+  // "missing 0 ingredients". Ranking it 2 asserts we established the user
+  // can't make it; we established nothing, because there was nothing to check.
+  // The builder therefore OMITS it, which is `stockRank: 1` (unknown) — the
+  // literal epistemic state, using the map's existing "no entry = unknown"
+  // semantics rather than a new field. Item-less meals are live state:
+  // `updateMeal`'s delete-then-reinsert is non-atomic (mealLibrary.ts:310-313).
+  // Kills two mutants that survive every other test in this file: dropping the
+  // `items.length === 0` skip, and deriving `stockRank` from `missingCount`
+  // instead of `assemblable` (equivalent for every OTHER input).
+  it("item-less meal is omitted → ranks unknown-stock, and claims nothing about stock", () => {
+    const inStock = scored({ category: "dinner", score: 50 });
+    const itemLess = scored({ category: "dinner", score: 70 });
+    const knownMissing = scored({ category: "dinner", score: 99 });
+    const stockByMealId = buildStockByMealId({
+      meals: [
+        libMeal(inStock.meal.id, [{ sf: "boost", name: "Boost" }]),
+        libMeal(itemLess.meal.id, []),
+        libMeal(knownMissing.meal.id, [{ sf: "sauce", name: "Korean BBQ Sauce" }]),
+      ],
+      conceptIdsBySavedFoodId: conceptsFor([["boost", ["boost"]], ["sauce", ["sauce"]]]),
+      inventory: [invRow({ conceptIds: ["boost"] })],
+    });
+    // Absent from the map entirely — not present-and-false.
+    expect(stockByMealId.has(itemLess.meal.id)).toBe(false);
+    expect([...stockByMealId.keys()]).toEqual([inStock.meal.id, knownMissing.meal.id]);
+
+    const r = recommendEatNext({
+      ...input({}, [knownMissing, itemLess, inStock]),
+      stockByMealId,
+    });
+    // Between in-stock and known-missing, despite `knownMissing` holding the
+    // highest raw score of the three.
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      inStock.meal.id, itemLess.meal.id, knownMissing.meal.id,
+    ]);
+    // Exact array, not a substring probe: pins that NO stock reason is added,
+    // including the "missing 0 ingredients" the un-skipped path would render.
+    expect(r.recommendations[1].reasons).toEqual(["next: dinner"]);
+  });
+});
+
+// The OTHER half of Task 10's hand-off. `EatNextStockInfo` is an exported,
+// optional public input, so `{assemblable: false, missingCount: 0}` remains a
+// constructible value even though `buildStockByMealId` now refuses to produce
+// one. This characterises what the recommender does when handed it — which is
+// the whole reason the builder refuses: rank 2 ("we established you can't make
+// this") plus the self-contradicting copy "missing 0 ingredients". Read it as
+// the counterfactual the DECISION above avoids, not as endorsed behavior.
+// Kills two mutants Task 9's round-2 amendment recorded as surviving its whole
+// suite: deriving `stockRank` from `missingCount === 0` instead of
+// `assemblable`, and widening the pluralization ternary to `missingCount <= 1`.
+describe("stock awareness — the {assemblable: false, missingCount: 0} counterfactual", () => {
+  it("stockRank derives from the `assemblable` verdict, never from missingCount", () => {
+    const inStock = scored({ category: "dinner", score: 50 });
+    const phantom = scored({ category: "dinner", score: 99 });
+    const r = recommendEatNext({
+      ...input({}, [phantom, inStock]),
+      stockByMealId: new Map([
+        [inStock.meal.id, {
+          assemblable: true, missingCount: 0,
+          expiringItemName: null, expiringDaysLeft: null,
+        }],
+        [phantom.meal.id, {
+          assemblable: false, missingCount: 0,
+          expiringItemName: null, expiringDaysLeft: null,
+        }],
+      ]),
+    });
+    // Rank 2 beats the higher raw score: derived from the verdict, not the count.
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([inStock.meal.id, phantom.meal.id]);
+    // Plural at zero — `missingCount === 1 ? "" : "s"`, not `<= 1`.
+    expect(r.recommendations[1].reasons).toContain("missing 0 ingredients");
   });
 });

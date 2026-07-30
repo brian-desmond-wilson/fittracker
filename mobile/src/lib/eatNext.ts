@@ -7,6 +7,10 @@
 import type { MealPaceState } from "./mealPace";
 import type { BrianScoreResult } from "./mealScore";
 import type { MacroGoals, MacroTotals } from "./mealMacros";
+import {
+  assessAssemblability,
+  type AssemblabilityInventoryRow,
+} from "./stockState";
 import type { MealCategory, MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
 
 export const POST_WORKOUT_WINDOW_MIN = 180;
@@ -67,6 +71,89 @@ export interface EatNextStockInfo {
   missingCount: number;
   expiringItemName: string | null;
   expiringDaysLeft: number | null;
+}
+
+/** The `meals` shape `buildStockByMealId` reads: a structural subset of
+ *  `MealWithItems` (assignable with no cast), narrowed to the four fields
+ *  `assessAssemblability` actually consumes so this module doesn't take on
+ *  the whole meal-library surface — and so a test fixture is three fields,
+ *  not a full `Meal` plus a full `SavedFood`. */
+export interface StockAssessmentMeal {
+  id: string;
+  items: Array<{
+    saved_food_id: string;
+    savedFood: { name: string; barcode: string | null };
+  }>;
+}
+
+/**
+ * Builds the optional `stockByMealId` above out of what `fetchMealLibrary`
+ * already returns.
+ *
+ * **Lives here, next to its only reader** (`candidate()`'s
+ * `stockByMealId?.get(m.meal.id)`, further down this file), so both halves of the
+ * lookup-key seam sit in one file and are pinned by one test file. That seam
+ * is silent when broken: Task 9 round 2 showed a wrong key on the read side
+ * degenerates ranking to Phase 3 — no stock reasons, no availability-aware
+ * nudge — with 81/81 tests still green. The write side has the same property.
+ * The plan (Task 10 Step 1) inlined this block in `useEatNext.ts`; that file
+ * is a React hook and this repo's Jest run covers pure libs only, so inlining
+ * would have left both the key AND the decision below unpinnable. Recorded in
+ * "⚠️ Execution amendments → Task 10".
+ *
+ * **DECISION (Task 10) — an ITEM-LESS meal is OMITTED from the map**, so it
+ * ranks `stockRank: 1` (unknown) and carries no stock reason at all, instead
+ * of the `stockRank: 2` + `"missing 0 ingredients"` that `assessAssemblability`
+ * would otherwise yield (`assemblable = items.length > 0 && missing.length === 0`,
+ * `stockState.ts`). Item-less meals are live state, not hypothetical:
+ * `updateMeal` deletes then re-inserts items non-atomically and says so in its
+ * own comment (`mealLibrary.ts:310-313`). The argument:
+ *   - Rank 2 asserts "we established you can't make this". For a meal with no
+ *     recorded ingredients we established nothing — `missing` is empty because
+ *     there was nothing to check, not because nothing is missing. That is a
+ *     positive claim with no evidence behind it, and it mislabels the tier for
+ *     every other member of it.
+ *   - Rank 0 is the opposite over-claim: it would say "in stock" about a meal
+ *     we cannot verify and promote a corrupt record ABOVE meals we positively
+ *     confirmed the user can assemble. Strictly the worst option.
+ *   - Rank 1 is the literal epistemic state, and it is exactly what this map's
+ *     existing "no entry = unknown" semantics already mean — so it needs no new
+ *     field and creates no second way to be unknown.
+ * Omitting also drops the reason string for free rather than special-casing a
+ * formatter, which keeps this in step with Task 8's `MealDetail` fix (gate on
+ * the missing LIST, not on the `assemblable` verdict) instead of inventing a
+ * third rendering of the same state. The user-visible effect is that a broken
+ * meal surfaces plainly, with nothing claimed about its stock — and surfacing
+ * is the recovery path, since `updateMeal`'s comment notes item-less meals are
+ * "recoverable by re-editing".
+ */
+export function buildStockByMealId(library: {
+  meals: StockAssessmentMeal[];
+  conceptIdsBySavedFoodId: Map<string, string[]>;
+  inventory: AssemblabilityInventoryRow[];
+}): Map<string, EatNextStockInfo> {
+  const map = new Map<string, EatNextStockInfo>();
+  for (const meal of library.meals) {
+    if (meal.items.length === 0) continue; // see DECISION above
+    const a = assessAssemblability({
+      items: meal.items.map((it) => ({
+        savedFoodId: it.saved_food_id,
+        name: it.savedFood.name,
+        barcode: it.savedFood.barcode,
+        conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+      })),
+      inventory: library.inventory,
+    });
+    // Keyed by `meal.id`, which MUST stay in lockstep with `candidate()`'s
+    // `.get(m.meal.id)`. Pinned from both sides in eatNext.test.ts.
+    map.set(meal.id, {
+      assemblable: a.assemblable,
+      missingCount: a.missing.length,
+      expiringItemName: a.expiringItemName,
+      expiringDaysLeft: a.expiringDaysLeft,
+    });
+  }
+  return map;
 }
 
 export interface EatNextRecommendation {

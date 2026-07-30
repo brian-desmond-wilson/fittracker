@@ -8,6 +8,7 @@ import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { computeMealPace, type MealPaceState } from "@/src/lib/mealPace";
 import { sumNutrition, type MacroGoals } from "@/src/lib/mealMacros";
 import {
+  buildStockByMealId,
   recommendEatNext,
   type EatNextResult,
   type ScoredMeal,
@@ -281,6 +282,34 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
         ),
       }));
 
+      // Live stock signals (spec §9). `library` already carries everything
+      // this needs — `fetchMealLibrary` selects `food_inventory` with its
+      // location rows and Task 8 projected them into
+      // `AssemblabilityInventoryRow[]` — so this adds ZERO round trips and
+      // recomputes at exactly the fetch's cadence: once per `load`, i.e. per
+      // mount, per `refreshKey` bump, per focus and per meal write. It is
+      // deliberately inside `load` rather than a `useMemo`: the inputs are
+      // the response we just awaited, so anything coarser would rank fresh
+      // meals against stale inventory. Cost is ~50 meals × ~10 items × ~25
+      // inventory rows of pure array work — sub-millisecond, and dwarfed by
+      // the network round trip that produced its inputs.
+      //
+      // The builder is a pure export of `eatNext.ts`, not inlined here as the
+      // plan's Task 10 fence had it: this file is a hook and gets no Jest
+      // coverage, and both the `meal.id` lookup key and the item-less-meal
+      // decision are seams that fail silently. See that module's doc comment
+      // and "⚠️ Execution amendments → Task 10".
+      //
+      // `MealLibraryModal` computes its own `assemblabilityById` over the same
+      // predicate. NOT shared, and that is correct: it holds `MealAssemblability`
+      // (it renders the `missing` NAMES and filters on the verdict), this holds
+      // the four-field `EatNextStockInfo`; it is a `useMemo` keyed on a modal's
+      // own `data` with a modal's lifetime, this is a per-fetch local in a hook
+      // whose consumers include the background nudge scheduler. Hoisting to a
+      // shared cache would couple two independent fetch lifetimes to save
+      // arithmetic that is already free at this scale.
+      const stockByMealId = buildStockByMealId(library);
+
       // Minutes since LOCAL midnight, the coordinate system the engine
       // compares against `nowMinutes`. Safe without a day check because the
       // query above can only return a completion inside today's local range.
@@ -311,6 +340,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
             ?.max_prep_minutes ?? DEFAULT_MAX_PREP_MINUTES,
         workoutCompletedAtMinutes,
         nudgesEnabled: p.eat_nudges_enabled,
+        stockByMealId,
       });
       if (runId !== runIdRef.current) return;
       // Clearing the error HERE, not at the top of `load`: `loading` stays

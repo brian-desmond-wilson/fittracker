@@ -268,3 +268,28 @@ describe("assessAssemblability", () => {
     expect(assessAssemblability({ items: [], inventory: [invRow()] }).assemblable).toBe(false);
   });
 });
+
+// The premise Task 10's map builder rests on. `assemblable` is
+// `items.length > 0 && missing.length === 0`, so an item-less meal is the one
+// input for which `assemblable === false` and `missing.length === 0` hold at
+// the same time — i.e. `missingCount` is 0 not because nothing is missing but
+// because nothing was checked. Every consumer that renders or ranks off this
+// verdict has to handle that separately (MealDetail gates on the LIST, Task
+// 8's FIX 1; `buildStockByMealId` omits the meal, Task 10's DECISION).
+// Pinned as a whole-object assertion so a future change to any of the four
+// fields for this input surfaces here rather than silently downstream.
+describe("assessAssemblability — the item-less verdict (Task 10 premise)", () => {
+  it("item-less meal: not assemblable AND nothing missing, with no expiring signal", () => {
+    expect(
+      assessAssemblability({
+        items: [],
+        inventory: [invRow({ conceptIds: ["boost"], daysLeft: 1 })],
+      }),
+    ).toEqual({
+      assemblable: false,
+      missing: [],
+      expiringItemName: null,
+      expiringDaysLeft: null,
+    });
+  });
+});
