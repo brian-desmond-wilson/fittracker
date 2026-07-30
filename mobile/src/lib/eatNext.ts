@@ -202,6 +202,62 @@ export interface EatNextRecommendation {
    *  Spec §5.5: ranking reads `raw`; "UI surfaces still display `score`/100."
    *  This field is the UI-facing one — do not swap it for `raw`. */
   score: number;
+  /** The stock verdict this recommendation was ranked with, carried as a
+   *  TYPED field rather than left only in `reasons`.
+   *
+   *  `undefined` = **unknown**, matching `stockByMealId`'s existing "absent
+   *  entry = unknown" semantics exactly (no map at all, no entry for this
+   *  meal, or — per `buildStockByMealId`'s DECISION — an item-less meal).
+   *  There is deliberately no second way to be unknown.
+   *
+   *  Why this exists (Task 14): `reasons` is a flat `string[]` built as
+   *  `[contextReason, ...prepReason, ...stockReasons]`, so the stock copy is
+   *  never at a fixed index — `prepReason` is conditional. Both Eat Next
+   *  surfaces rendered `reasons[0]` or nothing, so every stock string the
+   *  engine produced was invisible on device and the Home card recommended
+   *  meals the user could not assemble with no indication of it. Surfaces
+   *  must branch on THIS field, never on a position in `reasons` or a
+   *  substring match against it. */
+  stock?: EatNextStockInfo;
+}
+
+/** What a surface renders for `EatNextRecommendation.stock`. */
+export interface EatNextStockBadge {
+  /** `true` → the green "can make it now" treatment; `false` → the amber
+   *  "you're short something" one. A boolean, not a color: the two surfaces
+   *  own their own palettes (Home card vs. the denser Meals chip). */
+  assemblable: boolean;
+  label: string;
+}
+
+/**
+ * The ONE definition of Eat Next's stock badge copy, shared by
+ * `EatNextHomeCard` (§7.1) and `EatNextRow` (§7.2) so the two surfaces cannot
+ * drift apart on the wording of the same verdict — the failure this task
+ * exists to fix was one surface under-reporting stock and the other reporting
+ * nothing, and two hand-rolled ternaries would be the same shape of bug.
+ * Lives here rather than in a component because it is pure and this file's
+ * test run is the only one that covers either half.
+ *
+ * `null` = unknown → render NOTHING. Silence is the correct rendering of "we
+ * don't know": a badge saying anything at all would be a claim the ranking did
+ * not make (`stockRank: 1`).
+ *
+ * `missingCount === 0` on a non-assemblable meal is not producible by
+ * `buildStockByMealId` — its item-less DECISION removed the one input that
+ * yielded it — but `EatNextStockInfo` is an exported public input, so the
+ * value stays CONSTRUCTIBLE. "Missing 0" would read as a rendering bug, so it
+ * degrades to a countless "Missing items" rather than printing the zero.
+ */
+export function eatNextStockBadge(
+  stock: EatNextStockInfo | undefined,
+): EatNextStockBadge | null {
+  if (stock === undefined) return null;
+  if (stock.assemblable) return { assemblable: true, label: "In stock" };
+  return {
+    assemblable: false,
+    label: stock.missingCount > 0 ? `Missing ${stock.missingCount}` : "Missing items",
+  };
 }
 
 export interface EatNextNudge {
@@ -288,6 +344,12 @@ interface Candidate extends ScoredMeal {
   stockRank: number;
   // 0 = uses an expiring in-stock item (a rescue), 1 = otherwise.
   expiringRank: number;
+  // The looked-up info the two ranks above were DERIVED from, carried rather
+  // than discarded so `toRecs` can project it onto the recommendation without
+  // a second `stockByMealId.get(...)` — one lookup, one source, so the badge
+  // a surface renders and the tier the comparator used can never disagree.
+  // `undefined` = unknown, same as the ranks' `info === undefined` branch.
+  stock?: EatNextStockInfo;
 }
 
 /** Spec §9's stock reason strings. Availability is never a hard filter —
@@ -362,6 +424,7 @@ function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): 
     protein: Math.round(c.totals.protein),
     prepMinutes: c.meal.prep_minutes,
     score: c.score.score,
+    stock: c.stock,
   }));
 }
 
@@ -378,6 +441,7 @@ function candidate(
   return {
     ...m,
     extraReasons: [...prepReason(m, maxPrepMinutes), ...stockReasons(info)],
+    stock: info,
     roleRank: roleMatch || categoryMatch ? 0 : 1,
     // No map, or no entry for this meal → 1 (unknown), which sorts after
     // in-stock and before known-missing. An absent map therefore leaves
@@ -472,6 +536,17 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             protein: Math.round(top.totals.protein),
             prepMinutes: top.meal.prep_minutes,
             score: top.score.score,
+            // This site builds its recommendation inline (terminal, single
+            // pick, sorted by protein desc) and so bypasses `candidate()` and
+            // `toRecs` — which is exactly why Task 9 recorded it as the one
+            // context carrying no stock REASONS. The typed field is still
+            // populated here, from the same map every other context reads, so
+            // every context that produces a recommendation at all produces one
+            // the surfaces can badge, and this site cannot be the one that
+            // silently shows nothing. It does NOT add reason
+            // strings: that gap is Task 9's, unchanged, and closing it means
+            // unifying this site with `toRecs`, not patching a formatter.
+            stock: stockByMealId?.get(top.meal.id),
           }],
           nudge: null,
         };

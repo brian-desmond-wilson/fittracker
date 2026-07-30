@@ -1,6 +1,7 @@
 import {
   recommendEatNext,
   buildStockByMealId,
+  eatNextStockBadge,
   nudgeFireDate,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
@@ -1427,5 +1428,225 @@ describe("stock awareness — the {assemblable: false, missingCount: 0} counterf
     expect(r.recommendations.map((x) => x.mealId)).toEqual([inStock.meal.id, phantom.meal.id]);
     // Plural at zero — `missingCount === 1 ? "" : "s"`, not `<= 1`.
     expect(r.recommendations[1].reasons).toContain("missing 0 ingredients");
+  });
+});
+
+// ── Task 14: the stock verdict as a TYPED field on the recommendation ──────
+// WHY THIS EXISTS. Tasks 9 and 10 made the engine produce "in stock" /
+// "missing N ingredients" / "uses X — expires in Nd" and proved, by mutation,
+// that it produces them. Neither task checked that anything RENDERS them.
+// `EatNextHomeCard` drew `reasons[0]` only — always the context reason, since
+// `reasons` is `[contextReason, ...prepReason, ...stockReasons]` — and
+// `EatNextRow` drew no reasons at all, so on device the Home card recommended
+// meals the owner could not assemble with nothing saying so.
+//
+// The fix is a typed field, NOT a smarter index into `reasons`: that array is
+// flat and its stock entry has no fixed position (`prepReason` is
+// conditional), so any position- or substring-based read is one conditional
+// away from silently wrong. These tests therefore pin the FIELD — its presence
+// at both construction sites, and the two ways it is `undefined` — plus the
+// shared copy helper both surfaces call. The React components themselves
+// cannot be tested here (`jest.config.js` is `testEnvironment: "node"` with no
+// React testing deps), so this file is the whole coverage story and the field
+// is deliberately the only thing a surface has to get right.
+describe("recommendation.stock — the typed verdict the surfaces render", () => {
+  const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
+    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+  });
+  const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
+    new Map(entries.map(([id, o]) => [id, info(o)]));
+
+  it("carries the FULL verdict for an assemblable meal, not just the ranking tier", () => {
+    const m = scored({ category: "dinner" });
+    const r = recommendEatNext({
+      ...input({}, [m]),
+      stockByMealId: stock([[m.meal.id, { expiringItemName: "Kefir", expiringDaysLeft: 4 }]]),
+    });
+    // All four fields, `toEqual` rather than a spot-check: a surface that only
+    // ever needs `assemblable` today is exactly how the next field quietly
+    // stops being projected.
+    expect(r.recommendations[0].stock).toEqual({
+      assemblable: true, missingCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 4,
+    });
+  });
+
+  it("carries the verdict for a NON-assemblable meal — the case the owner hit on device", () => {
+    // The live shape of the defect: one meal, unassemblable, still recommended
+    // (spec §9 — availability is never a hard filter), previously with nothing
+    // on screen to say so.
+    const only = scored({ category: "dinner" });
+    const r = recommendEatNext({
+      ...input({}, [only]),
+      stockByMealId: stock([[only.meal.id, { assemblable: false, missingCount: 3 }]]),
+    });
+    expect(r.recommendations).toHaveLength(1);
+    expect(r.recommendations[0].stock).toEqual({
+      assemblable: false, missingCount: 3, expiringItemName: null, expiringDaysLeft: null,
+    });
+    // And the badge the surfaces derive from it.
+    expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({
+      assemblable: false, label: "Missing 3",
+    });
+  });
+
+  it("is undefined with NO map at all (unknown, on every recommendation)", () => {
+    const meals = [scored({ category: "dinner", score: 95 }), scored({ category: "dinner", score: 60 })];
+    const r = recommendEatNext(input({}, meals));
+    expect(r.recommendations).toHaveLength(2);
+    for (const rec of r.recommendations) expect(rec.stock).toBeUndefined();
+  });
+
+  it("is undefined for a meal ABSENT from a PRESENT map — the map's own 'no entry = unknown'", () => {
+    // The distinction that makes `undefined` safe to render as silence: a
+    // present map does not mean every meal in it is known.
+    const known = scored({ category: "dinner", score: 60 });
+    const unknown = scored({ category: "dinner", score: 95 });
+    const r = recommendEatNext({
+      ...input({}, [unknown, known]),
+      stockByMealId: stock([[known.meal.id, {}]]),
+    });
+    const byId = new Map(r.recommendations.map((x) => [x.mealId, x]));
+    expect(byId.get(known.meal.id)!.stock).toEqual(info());
+    expect(byId.get(unknown.meal.id)!.stock).toBeUndefined();
+    // Both are recommended — this is a rendering distinction, not a filter.
+    expect(r.recommendations).toHaveLength(2);
+  });
+
+  it("goal_hit's INLINE construction site carries it too (it bypasses candidate()/toRecs)", () => {
+    // The protein-short pick builds its recommendation by hand rather than
+    // through `toRecs`. A missed site here renders no badge in that context
+    // and nothing else in this file would notice: the goal_hit tests assert
+    // ids and numbers, and every stock test drives a non-terminal context.
+    const bridgeSmall = scored({ role: "bridge", calories: 290, protein: 25 });
+    const r = recommendEatNext({
+      ...input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 140 } },
+        [bridgeSmall],
+      ),
+      stockByMealId: stock([[bridgeSmall.meal.id, { assemblable: false, missingCount: 2 }]]),
+    });
+    expect(r.context).toBe("goal_hit");
+    expect(r.recommendations[0].stock).toEqual({
+      assemblable: false, missingCount: 2, expiringItemName: null, expiringDaysLeft: null,
+    });
+    // Task 9's recorded gap is UNCHANGED and pinned as such: this site still
+    // carries no stock REASON strings. The badge is the fix; unifying this
+    // site with `toRecs` is not this task's job, and if a future task does it
+    // this assertion is the one to update deliberately.
+    expect(r.recommendations[0].reasons.join(" ")).not.toMatch(/missing|in stock/i);
+  });
+
+  it("goal_hit's inline site is undefined when that meal is absent from the map", () => {
+    const bridgeSmall = scored({ role: "bridge", calories: 290, protein: 25 });
+    const other = scored({ category: "dinner" });
+    const r = recommendEatNext({
+      ...input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 140 } },
+        [bridgeSmall],
+      ),
+      // A present map that knows about a DIFFERENT meal — so a site that
+      // hardcoded a lookup, or read the map's first entry, would fail here.
+      stockByMealId: stock([[other.meal.id, {}]]),
+    });
+    expect(r.context).toBe("goal_hit");
+    expect(r.recommendations[0].stock).toBeUndefined();
+  });
+
+  it("the field is the SAME verdict the comparator ranked on — one lookup, not two", () => {
+    // Drives the real builder end-to-end, then asserts every recommendation's
+    // `stock` matches the map entry `candidate()` looked up. This is the
+    // property that makes the badge trustworthy: a surface can never show
+    // "In stock" on a meal the engine sank into the known-missing tier.
+    const inStock = scored({ category: "dinner", score: 60 });
+    const missing = scored({ category: "dinner", score: 99 });
+    const stockByMealId = buildStockByMealId({
+      meals: [
+        { id: inStock.meal.id, items: [{ saved_food_id: "sf-oats", savedFood: { name: "Oats", barcode: null } }] },
+        { id: missing.meal.id, items: [{ saved_food_id: "sf-beef", savedFood: { name: "Beef", barcode: null } }] },
+      ],
+      conceptIdsBySavedFoodId: new Map([["sf-oats", ["c-oats"]], ["sf-beef", ["c-beef"]]]),
+      inventory: [
+        { id: "inv-oats", name: "Oats", barcode: null, totalQuantity: 2, conceptIds: ["c-oats"], daysLeft: null },
+      ],
+    });
+    const r = recommendEatNext({ ...input({}, [missing, inStock]), stockByMealId });
+    // In-stock wins despite a 39-point raw deficit — proof the same verdict
+    // reached the comparator.
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([inStock.meal.id, missing.meal.id]);
+    for (const rec of r.recommendations) {
+      expect(rec.stock).toEqual(stockByMealId.get(rec.mealId));
+    }
+    expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({ assemblable: true, label: "In stock" });
+    expect(eatNextStockBadge(r.recommendations[1].stock)).toEqual({ assemblable: false, label: "Missing 1" });
+  });
+
+  it("an item-less meal stays unknown all the way to the field (the Task 10 DECISION, end to end)", () => {
+    // `buildStockByMealId` omits item-less meals so they rank unknown rather
+    // than claiming "missing 0". That decision is worth nothing if the
+    // recommendation then carries a verdict anyway — the badge would be the
+    // third rendering of a state Task 8 and Task 10 both chose to say nothing
+    // about.
+    const itemLess = scored({ category: "dinner" });
+    const stockByMealId = buildStockByMealId({
+      meals: [{ id: itemLess.meal.id, items: [] }],
+      conceptIdsBySavedFoodId: new Map(),
+      inventory: [],
+    });
+    expect(stockByMealId.size).toBe(0);
+    const r = recommendEatNext({ ...input({}, [itemLess]), stockByMealId });
+    expect(r.recommendations[0].stock).toBeUndefined();
+    expect(eatNextStockBadge(r.recommendations[0].stock)).toBeNull();
+  });
+});
+
+// The shared copy definition both Eat Next surfaces call. Tested directly
+// because the components cannot be: `EatNextHomeCard` and `EatNextRow` each
+// reduce to `eatNextStockBadge(rec.stock)` plus a style lookup, so everything
+// below is the entirety of what those two files decide.
+describe("eatNextStockBadge", () => {
+  const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
+    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+  });
+
+  it("unknown renders NOTHING — null, not a badge that guesses", () => {
+    expect(eatNextStockBadge(undefined)).toBeNull();
+  });
+
+  it("assemblable → the green 'In stock' badge", () => {
+    expect(eatNextStockBadge(info())).toEqual({ assemblable: true, label: "In stock" });
+    // Pinned as an exact string, not a regex: this is the same copy
+    // `MealRow` already shows in the Meal Library, and the two are supposed
+    // to read identically.
+    expect(eatNextStockBadge(info())!.label).toBe("In stock");
+  });
+
+  it("not assemblable → the amber 'Missing N' badge, with the real count", () => {
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 1 })))
+      .toEqual({ assemblable: false, label: "Missing 1" });
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 7 })))
+      .toEqual({ assemblable: false, label: "Missing 7" });
+  });
+
+  it("expiring info never changes the badge — that signal belongs to the reasons, not here", () => {
+    // Both verdicts, both with a rescue attached. The badge answers exactly
+    // one question ("can I make this now?"); the expiring line is separate
+    // copy the reason strings already carry.
+    expect(eatNextStockBadge(info({ expiringItemName: "Kefir", expiringDaysLeft: 0 })))
+      .toEqual({ assemblable: true, label: "In stock" });
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 2, expiringItemName: "Kefir", expiringDaysLeft: 0 })))
+      .toEqual({ assemblable: false, label: "Missing 2" });
+  });
+
+  it("never renders 'Missing 0' — the unproducible-but-constructible counterfactual", () => {
+    // `buildStockByMealId`'s item-less DECISION removed the one input that
+    // yields `{assemblable: false, missingCount: 0}`, but `EatNextStockInfo`
+    // is an exported public input so the value stays constructible — same
+    // reasoning as the `{assemblable: false, missingCount: 0}` counterfactual
+    // above. "Missing 0" reads as a rendering bug; degrade, don't print it.
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 })))
+      .toEqual({ assemblable: false, label: "Missing items" });
+    // Still AMBER, not green: the verdict is what decides the color, and a
+    // count we can't state does not become "you can make it".
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 }))!.assemblable).toBe(false);
   });
 });

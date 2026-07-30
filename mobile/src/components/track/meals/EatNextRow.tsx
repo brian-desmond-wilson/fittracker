@@ -33,10 +33,18 @@
 // lines can briefly disagree on screen. (This reasoning is specific to this
 // surface — `EatNextHomeCard` has no pace lines beside it and correctly does
 // render `message`.)
+//
+// STOCK BADGE (Task 14): the one thing on the chip that is NOT one of the
+// numbers argued about above. It reads `rec.stock` — the typed verdict —
+// never `rec.reasons`, whose stock entry sits at no fixed index (that read is
+// exactly what made the engine's stock copy invisible on both surfaces). Copy
+// and the green/amber split come from `eatNextStockBadge` so this chip and
+// the Home card state the same verdict in the same words; only the geometry
+// is local, because this surface is denser than the Home card.
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "@/src/lib/colors";
-import type { EatNextResult } from "@/src/lib/eatNext";
+import { eatNextStockBadge, type EatNextResult } from "@/src/lib/eatNext";
 
 interface EatNextRowProps {
   result: EatNextResult | null;
@@ -53,19 +61,47 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Suggested now</Text>
-      {result.recommendations.slice(0, 2).map((rec) => (
-        <TouchableOpacity
-          key={rec.mealId}
-          style={styles.chip}
-          activeOpacity={0.7}
-          onPress={() => onMealPress(rec.mealId)}
-        >
-          <Text style={styles.chipName} numberOfLines={1}>{rec.name}</Text>
-          <Text style={styles.chipStats} numberOfLines={1}>
-            {rec.calories} cal · {rec.prepMinutes} min
-          </Text>
-        </TouchableOpacity>
-      ))}
+      {result.recommendations.slice(0, 2).map((rec) => {
+        // `null` = unknown stock → no badge at all. Saying nothing is the
+        // correct rendering of "we don't know"; anything else would claim
+        // more than the ranking did.
+        const badge = eatNextStockBadge(rec.stock);
+        return (
+          <TouchableOpacity
+            key={rec.mealId}
+            style={styles.chip}
+            activeOpacity={0.7}
+            onPress={() => onMealPress(rec.mealId)}
+          >
+            <View style={styles.chipHeader}>
+              <Text style={styles.chipName} numberOfLines={1}>{rec.name}</Text>
+              {badge && (
+                <View
+                  style={[
+                    styles.stockBadge,
+                    badge.assemblable ? styles.stockBadgeIn : styles.stockBadgeMissing,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.stockBadgeText,
+                      badge.assemblable
+                        ? styles.stockBadgeInText
+                        : styles.stockBadgeMissingText,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {badge.label}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.chipStats} numberOfLines={1}>
+              {rec.calories} cal · {rec.prepMinutes} min
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -98,6 +134,27 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginBottom: 6,
   },
-  chipName: { fontSize: 14, fontWeight: "600", color: colors.foreground },
+  // The name and its badge share one row; `flexShrink: 1` + `numberOfLines={1}`
+  // on the name means a long meal name truncates instead of pushing the badge
+  // out of the chip. The badge keeps RN's default `flexShrink: 0` — stated
+  // explicitly below for the same reason it is on the Home card.
+  chipHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+  chipName: { fontSize: 14, fontWeight: "600", color: colors.foreground, flexShrink: 1 },
   chipStats: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
+  // One notch tighter than the Home card's badge (11pt text in a 6/2 box):
+  // this strip stacks two chips directly under `MealsPaceLines`, so the badge
+  // has to read as an annotation on the name rather than a second element
+  // competing with it. Colors are deliberately identical to the Home card's —
+  // same verdict, same green/amber — only the geometry is denser.
+  stockBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+    flexShrink: 0,
+  },
+  stockBadgeText: { fontSize: 10, fontWeight: "600" },
+  stockBadgeIn: { backgroundColor: "rgba(34,197,94,0.15)" },
+  stockBadgeInText: { color: "#22C55E" },
+  stockBadgeMissing: { backgroundColor: "rgba(245,158,11,0.15)" },
+  stockBadgeMissingText: { color: "#F59E0B" },
 });

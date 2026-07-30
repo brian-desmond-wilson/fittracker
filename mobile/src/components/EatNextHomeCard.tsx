@@ -11,7 +11,11 @@ import { router, useFocusEffect } from "expo-router";
 import { UtensilsCrossed } from "lucide-react-native";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
-import { EMPTY_LIBRARY_MESSAGE } from "@/src/lib/eatNext";
+// `eatNextStockBadge` is the ONE decision point for the badge's copy and its
+// green/amber split (see its doc comment) — this file never re-derives
+// "In stock" / "Missing N" from `stock.assemblable`/`stock.missingCount`
+// itself, and never reads `reasons` for it.
+import { EMPTY_LIBRARY_MESSAGE, eatNextStockBadge } from "@/src/lib/eatNext";
 // `scoreBand` is the ONE decision point for the chip's band (spec §6's
 // thresholds); this file never re-declares the cutoff numbers locally. Only
 // the function is needed — the raw `SCORE_BAND_CORE_MIN`/`SCORE_BAND_MID_MIN`
@@ -136,6 +140,11 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // literal — but this name reads as a boolean and its type should be one.
   const showMessage = !!result.message && !emergency;
   const band: ScoreBand = scoreBand(top.score);
+  // `null` when the engine knows nothing about this meal's stock (no map, no
+  // entry, or an item-less meal) — render nothing rather than guess. Read off
+  // the TYPED field; `top.reasons` is a flat array whose stock entry has no
+  // fixed index, which is precisely why this card used to show none of it.
+  const stockBadge = eatNextStockBadge(top.stock);
 
   return (
     <TouchableOpacity
@@ -153,6 +162,26 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         <Text style={[styles.title, emergency && styles.titleEmergency]} numberOfLines={1}>
           {top.name}
         </Text>
+        {stockBadge && (
+          <View
+            style={[
+              styles.stockBadge,
+              stockBadge.assemblable ? styles.stockBadgeIn : styles.stockBadgeMissing,
+            ]}
+          >
+            <Text
+              style={[
+                styles.stockBadgeText,
+                stockBadge.assemblable
+                  ? styles.stockBadgeInText
+                  : styles.stockBadgeMissingText,
+              ]}
+              numberOfLines={1}
+            >
+              {stockBadge.label}
+            </Text>
+          </View>
+        )}
       </View>
       <Text style={styles.reason} numberOfLines={2}>
         {top.reasons[0]}
@@ -214,6 +243,31 @@ const styles = StyleSheet.create({
   scoreChipCore: { backgroundColor: "rgba(34,197,94,0.18)" },
   scoreChipMid: { backgroundColor: "#1F2937" },
   scoreChipLow: { backgroundColor: "rgba(107,114,128,0.25)" },
+  // Stock badge (Task 14). Geometry and the green treatment are lifted from
+  // `track/meals/library/styles.ts`'s `badge`/`inStockBadge` so the same
+  // verdict looks the same in the Meal Library and here; the amber pair
+  // extends that idiom (0.15-alpha fill, solid text) with the #F59E0B that
+  // file already uses for `warnText` and `FoodInventoryScreen` uses for its
+  // expiry copy. Held here rather than imported: same call the score chip
+  // above already made — presentation is per-surface, the DECISION (what the
+  // badge says, and green vs amber) lives in `eatNextStockBadge`.
+  stockBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    // `flexShrink: 0` is RN's default for a View, but it is stated because
+    // this badge's whole job is to be visible: it sits in a `row` next to a
+    // `flexShrink: 1` title, and a long meal name must truncate (the title
+    // already has `numberOfLines={1}`) rather than squeeze the badge toward
+    // zero width. A future `flexShrink: 1` added here would silently undo
+    // this task.
+    flexShrink: 0,
+  },
+  stockBadgeText: { fontSize: 11, fontWeight: "600" },
+  stockBadgeIn: { backgroundColor: "rgba(34,197,94,0.15)" },
+  stockBadgeInText: { color: "#22C55E" },
+  stockBadgeMissing: { backgroundColor: "rgba(245,158,11,0.15)" },
+  stockBadgeMissingText: { color: "#F59E0B" },
 });
 
 const SCORE_CHIP_STYLE_BY_BAND: Record<ScoreBand, object> = {
