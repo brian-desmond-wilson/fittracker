@@ -34,13 +34,26 @@ const EAT_NUDGE_TYPE = "eat-nudge";
  * the minimal fix: each queued operation awaits the previous one's
  * completion (success OR failure) before running, so at any instant at most
  * one cancel-then-maybe-schedule sequence is in flight. `mealReminderService`
- * has the identical structural race and does NOT do this — that is not an
- * oversight to copy here, because that family carries no stated 1-slot
- * budget; this one does.
+ * has the identical structural race and does NOT do this. That is not an
+ * oversight to copy here: `syncWaterReminders`/`syncMealReminders` are only
+ * ever invoked from persist handlers already gated by a `saving`/`mealSaving`
+ * flag that disables the triggering control, so an overlapping call there
+ * requires defeating a UI guard first. This family's callers are automatic —
+ * every Home-card load, every meal-log write, no gesture in between — so
+ * there is no equivalent guard to lean on. Read the other direction: if
+ * either sibling ever grows an automatic (gesture-free) resync point, that
+ * is the moment it needs this same queue.
  */
 let queue: Promise<void> = Promise.resolve();
 
 function serialize<T>(op: () => Promise<T>): Promise<T> {
+  // Same handler for both outcomes: run `op` regardless of how the PREVIOUS
+  // queued operation settled, so one failure can't wedge every call after
+  // it. (`queue` is also re-normalized below to a promise that never
+  // rejects, so in today's code the rejection branch is a defensive
+  // no-op rather than a reachable path — kept because that invariant lives
+  // three lines away and is exactly the kind of thing a future edit here
+  // could break without this being the redundant-looking guard against it.)
   const run = queue.then(op, op);
   queue = run.then(
     () => undefined,
@@ -93,6 +106,10 @@ async function syncEatNudgeCore(
   // prevent. Bail rather than guess — the next resync (Home card's next
   // load, or MealsScreen's next write) gets another chance.
   if (!cancelled) return;
+  // Unguarded await: a rejection here propagates to this op's caller (and,
+  // via `serialize`, is swallowed into the queue's own normalization so the
+  // NEXT queued op still runs) rather than being caught locally.
+  // `syncMealReminders` has the identical shape — not treated as a gap.
   const granted = await requestPermissions();
   if (!granted) return;
 
@@ -154,7 +171,17 @@ export function syncEatNudge(
   return serialize(() => syncEatNudgeCore(decision, sourceDay));
 }
 
-/** One-off test fire (Notifications screen), mirroring the other families. */
+/**
+ * One-off test fire (Notifications screen), mirroring the other families.
+ * Deliberately OUTSIDE the `serialize` queue: for the ~1s life of its
+ * TIME_INTERVAL trigger, there can transiently be two `eat-nudge`-tagged
+ * pendings (this test one plus a real one, if any), and a resync landing in
+ * that window would cancel the test before it fires. Accepted rather than
+ * queued because the user is inside the Notifications modal when they tap
+ * this button, where neither of this family's two resync points (Home-card
+ * load, MealsScreen meal-log write) is active — so the overlap this could
+ * theoretically cause has no real trigger.
+ */
 export async function sendTestEatNudge(): Promise<{
   ok: boolean;
   permissionDenied?: boolean;
