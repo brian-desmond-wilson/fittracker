@@ -764,6 +764,7 @@ import type {
   FoodCategory,
   FoodInventoryItem,
   FoodInventoryLocation,
+  FoodLocation,
   FoodSubcategory,
 } from "@/src/types/track";
 
@@ -841,30 +842,71 @@ export async function transferInventoryUnits(
  * Replace an item's location rows and resync the legacy cache — the
  * invariant-keeping save used by EditFoodScreen for BOTH storage types
  * (single-location = exactly one row). Client-side sequence (delete →
- * insert → cache update); a mid-sequence failure is visible in the UI and
- * fixed by re-saving; the reconcile assertion also catches drift.
+ * insert → cache update), and it is NOT atomic: there is no transaction
+ * around it, and — this is the part that matters — nothing re-checks the
+ * invariant afterwards. The migration's assertion D lives inside a one-shot
+ * `do $$` block that runs once at apply time; there is no CHECK, no
+ * trigger, and no scheduled job behind it. A mid-sequence failure is
+ * therefore permanent until the item is re-saved.
+ *
+ * What bounds the damage is the failure-path resync below: the cache is
+ * driven to the true Σ locations on BOTH paths, so all three readers agree
+ * the item is out of stock rather than the location rows and the legacy
+ * column telling two different stories.
  */
 export async function replaceItemLocations(
   userId: string,
   itemId: string,
-  rows: Array<{ location: string; quantity: number; is_ready_to_consume: boolean; notes?: string | null }>,
+  rows: Array<{ location: FoodLocation; quantity: number; is_ready_to_consume: boolean; notes?: string | null }>,
 ): Promise<void> {
+  // Zero rows would satisfy the cache invariant (0 = 0) while breaking the
+  // migration's other post-condition — §6.1(4), every item keeps >= 1
+  // location row. This module owns that invariant, so it refuses here
+  // instead of trusting each caller's own validation.
+  if (rows.length === 0) throw new Error("replaceItemLocations: an item must keep at least one location row");
+
   const { error: delError } = await supabase
     .from("food_inventory_locations")
     .delete()
     .eq("food_inventory_id", itemId);
   if (delError) throw delError;
-  if (rows.length > 0) {
-    const { error: insError } = await supabase.from("food_inventory_locations").insert(
-      rows.map((r) => ({ ...r, food_inventory_id: itemId, user_id: userId })),
-    );
-    if (insError) throw insError;
-  }
-  const total = rows.reduce((s, r) => s + r.quantity, 0);
+
+  const { error: insError } = await supabase.from("food_inventory_locations").insert(
+    // Fields are listed rather than spread: `rows` elements are structurally
+    // compatible with full FoodInventoryLocation rows, and a spread would
+    // forward their `id`/`created_at`/`updated_at` into the insert — so a
+    // "duplicate this item's locations" caller would insert with the source
+    // rows' primary keys.
+    rows.map((r) => ({
+      food_inventory_id: itemId,
+      user_id: userId,
+      location: r.location,
+      quantity: r.quantity,
+      is_ready_to_consume: r.is_ready_to_consume,
+      notes: r.notes ?? null,
+    })),
+  );
+
+  // The delete has already committed, so Σ locations is 0 if the insert
+  // failed and `total` if it succeeded — resync to whichever actually holds.
+  // Writing `total` on the failure path would just swap one divergence for
+  // another: the cache would claim stock no location row backs, which is
+  // precisely what re-arms mealLibrary's `locations.length > 0 ? … : quantity`
+  // fallback and the consume RPC's legacy branch. Zero is the honest answer.
+  const total = insError ? 0 : rows.reduce((s, r) => s + r.quantity, 0);
   const { error: cacheError } = await supabase
     .from("food_inventory")
     .update({ quantity: total })
     .eq("id", itemId);
+
+  // The insert error is the one the caller has to see; a failed best-effort
+  // resync must not mask it.
+  if (insError) {
+    if (cacheError) {
+      console.error("replaceItemLocations: cache resync after failed insert also failed:", cacheError);
+    }
+    throw insError;
+  }
   if (cacheError) throw cacheError;
 }
 ```
@@ -994,6 +1036,8 @@ git commit -m "refactor(nutrition-os): inventory screens read the one stock proj
 
 **Files:**
 - Modify: `mobile/src/components/track/EditFoodScreen.tsx` (save flow ~`:435-655`)
+
+**Caution (Task 4 amendment carry-forward) — REQUIRED change, not optional:** `EditFoodScreen.tsx:59` seeds the editable quantity from `useState((item.quantity ?? 0).toString())` — the legacy **cache**, not the projection. Once Task 5 feeds this screen an `InventoryItemWithState`, change it to read `item.state.totalQuantity`. On the one path where the two diverge, the current code shows the stale cache and the "fixed by re-saving" mitigation then writes that stale number back as canonical truth — laundering drift into the location rows and inverting the very mitigation `replaceItemLocations` relies on. Also note that Task 4's `replaceItemLocations` now **throws on an empty `rows` array**, so the multi-location branch must keep its existing empty-`locationEntries` guard (`:416-422`) as the user-facing message; the module-side throw is a backstop, not a substitute.
 
 - [ ] **Step 1: Single-location save** — after the item insert/update (which keeps writing `quantity` and `location` as today, `:467-526`/`:563-597`), replace any location-row handling for the single-location branch with:
 
@@ -1614,5 +1658,20 @@ A second code-quality review then found that the abort condition added above was
 Explicitly checked and left alone: the `%rowtype` + `if v_to.id is null` no-rows idiom is valid — plpgsql assigns NULL to *all* fields of a record target when `select into` returns no row, and `id` is the PK (`NOT NULL`), so a found row always has a non-null `id`. `found` would be more idiomatic but is exactly equivalent here.
 
 Verification performed (all static, no DB): a dollar-quote-aware parser over the final file reports paren depth 0 at EOF, no unterminated string literals, and 4 `$$` tokens forming 2 correct pairs (DO block, function body, no nesting); every NOT NULL column without a default on `food_inventory_locations` (`20250217000003:11-22`) is supplied by both INSERTs, and `notes` is nullable; there is no unique constraint on `(food_inventory_id, location)` for section A's delete-then-insert to violate — verified **repo-wide**, not just in the defining migration: a case-insensitive `unique` grep across all of `supabase/migrations/` (covering both the `UNIQUE(...)` and lowercase `unique (...)` spellings, and `alter table ... add constraint`) returns no hit mentioning `food_inventory_locations` at all; the nearest neighbours are `food_categories(user_id, name)` (`20250209_extend_food_inventory.sql:47`), `food_inventory_category_map(food_inventory_id, category_id)` and `food_inventory_subcategory_map(food_inventory_id, subcategory_id)` (`20251018014408_food_category_system_fixed.sql:66,76`), and `food_concept_links(concept_id, food_inventory_id)` (`20260728100000_nutrition_preference_schema.sql:29`); the `location` CHECK admits `fridge|freezer|pantry|cabinet` on **both** tables (widened identically by `20250217000004`), so `coalesce(r.location, 'pantry')` always satisfies the target constraint; `storage_type` is `NOT NULL` with a two-value CHECK, making sections A and B exhaustive (a hypothetical third value falls through both and is caught by D); `grep -rn "transfer_inventory_units"` across `*.sql`/`*.ts`/`*.tsx` matches only the new migration (no collision); none of the five dropped views is referenced by any app code, function, or grant — only their own historical definitions, the `20251031000001` `security_invoker` ALTERs, and COMMENTs — so the adopt-or-drop premise holds; and `20260730100000` sorts last among all migration filenames, with Phase 3's `20260729110000` present in the tree.
+### Task 4
 
+Task 4 landed byte-identical to the plan's Step 1 block (SHA-matched, and the schema verification behind it was independently re-derived) and was committed as `9f6a4e1`. Since this module does I/O it gets no unit tests — `tsc` plus column-by-column verification against `supabase/migrations/` was the gate, and no database-connecting command was run at any point. A follow-up code-quality review returned "With fixes": no spec drift, but one important defect in the plan's own code plus three narrower ones and a false claim in the plan's own docstring. All five are fixed below and in the Step 1 block above, in the same commit as this amendment.
+
+- **🚨 A partial `replaceItemLocations` failure re-armed the exact legacy-fallback divergence this phase exists to eliminate.** Concrete trace through the plan's original sequence: the delete succeeds → the insert fails → `throw insError` → **the cache update never runs**. Prod is then left with **zero location rows** while `food_inventory.quantity` still holds its old value (say 60), and the three readers disagree: `fetchInventoryWithState` projects over zero rows and reports `isOut: true` (renders **out of stock**); `fetchMealLibrary` (`mealLibrary.ts:105-108`) takes its `r.locations.length > 0 ? … : r.quantity` fallback and reads **60**, leaving "Use from pantry" enabled; and `consume_inventory_units` (`20260729100100:41,64-70`) finds `if exists (location rows)` now **false**, takes the `else` branch, and decrements the legacy column. Spec §3 calls that RPC's legacy branch "a dead-code safety net" — one failed insert makes it live again. The failure does not announce itself either: the UI shows a plausible "out of stock" rather than an obvious error. **Fix:** the cache resync now runs on the failure path too, and — the load-bearing nuance — writes **0**, not `total`. Because the delete has already committed, the true Σ locations after a failed insert *is* 0; writing `total` would swap one divergence for another, leaving the cache claiming stock that no location row backs, which is precisely what re-arms the two legacy readers above. A zeroed item is honest: all three readers agree it is out of stock, the consume RPC's legacy branch reads 0 rather than phantom stock, and the user re-saves. The original insert error is still rethrown, and a secondary failure of the best-effort resync is logged rather than allowed to mask it. Rationale is recorded in-line at both the `const total = insError ? 0 : …` site and the rethrow.
+- **Deliberately not fixed — the real fix is an atomic RPC, and it is out of scope here.** Moving delete+insert+resync server-side into a single `security invoker` function would make the whole sequence transactional and retire this entire failure class. It is not done now because it would mean either editing an already-reviewed, owner-gated migration (`20260730100000`) or adding a second one, and both would require re-gating Task 12 — a much larger blast radius than the defect. Recorded here so a future reader knows the client-side resync is a damage bound, not a cure. Noted for completeness, since it is the same class: the **insert-succeeds / cache-write-fails** path also leaves a stale cache, but it is benign by comparison — the location rows are correct, so `fetchInventoryWithState`, `fetchMealLibrary` and the consume RPC all read locations and all agree. The only reader that sees the stale value on that path is `EditFoodScreen.tsx:59`, which is the carry-forward recorded at the bottom of this amendment.
+- **The docstring's mitigation claim was false, and it was the justification for accepting the non-atomic sequence in the first place.** The plan's docstring read "a mid-sequence failure is visible in the UI and fixed by re-saving; the reconcile assertion also catches drift." It does not. Assertion D lives inside a one-shot `do $$` block in `20260730100000_inventory_locations_truth.sql:90-101`, and migrations run **once**; Task 12 Step 4 re-runs the equivalent query by hand, once, at apply time. There is no CHECK, no trigger, no scheduled job, and nothing in Task 13. **After Task 12 the invariant has no ongoing enforcement at all** — drift introduced on day 3 is permanent and silent. **Fix:** the docstring now states that plainly (one-shot assertion, nothing re-checks afterwards, a failure persists until the item is re-saved) and points at the failure-path resync as what actually bounds the damage. This is a correction to the plan's stated accepted-risk rationale, not just wording: the risk was accepted on the strength of a backstop that does not exist.
+- **`location: string` was a type hole that fed directly into the failure mode above.** The `rows` param typed `location` as `string`, but the column carries `CHECK (location IN ('fridge','freezer','pantry','cabinet'))` (`20250217000003:15`, widened by `20250217000004:21`). The repo already had the right type — `FoodLocation` at `mobile/src/types/track.ts:2`. A `location: "garage"` compiled clean and became a runtime `23514` **after the delete had committed**, i.e. straight into the zero-rows/stale-cache state. **Fix:** `location: string` → `location: FoodLocation`, imported alongside the other four types. Costs nothing — Task 6's callers are already `FoodLocation`. **Verified:** a throwaway module passing `location: "garage"` was compiled before deleting it; `tsc` now rejects it with `src/lib/__probe_fix3.ts(3,5): error TS2322: Type '"garage"' is not assignable to type 'FoodLocation'.`, and the same probe with `location: "pantry"` compiles clean.
+- **No empty-`rows` guard.** `rows: []` satisfies the cache invariant (0 = 0) while violating the migration's §6.1(4) post-condition that every item keeps **≥1 location row** — and per the correction above there is no downstream backstop to catch it. Caller-side validation does exist (`EditFoodScreen.tsx:416-422` blocks empty `locationEntries` with a specific alert, so Task 6 inherits a good message), but `replaceItemLocations` is the stated owner of this invariant and was not enforcing its half. **Fix:** `if (rows.length === 0) throw new Error("replaceItemLocations: an item must keep at least one location row");` at the top. **The plan's `if (rows.length > 0)` wrapper around the insert was dropped rather than kept** — with the guard above it, that branch can never be false, and a `rows.length > 0` test three lines after a `rows.length === 0` throw actively misleads a reader into thinking the empty case is supported. One statement now owns the question of what an empty array means.
+- **The `{ ...r, … }` spread forwarded more than intended.** Excess-property checking only fires on fresh object literals, so passing existing `FoodInventoryLocation` rows type-checks, and the spread would forward their `id`, `created_at` and `updated_at` into the insert — a "duplicate this item's locations" caller would insert with the *source* rows' primary keys. **Fix:** the four intended fields are listed explicitly (`location`, `quantity`, `is_ready_to_consume`, `notes`), with `notes: r.notes ?? null` normalizing the optional param's `undefined` to the nullable column's `NULL`.
+
+Assessed and deliberately left alone, so a future reader does not "fix" them: `throw errors[0]` with `errors.slice(1)` logged (`PostgrestError extends Error`, the predicate narrows correctly, `.error` is never `undefined` — every error surfaces somewhere); `InventoryItemWithState extends FoodInventoryItem` re-exposing `quantity` (**keep it** — it is what makes Task 5's drop-in assignability compile); the three `total_quantity`/`ready_quantity`/`storage_quantity` mirrors (assigned from `state.*` one line apart, cannot drift by construction — Task 11 cleanup); and the auth-check UX delta, the missing `.order()`, and the O(n·m) per-item filtering.
+
+**Verified after the fixes:** the Step 1 fence above was updated in place and confirmed byte-identical to the landed file by extracting the fence and `diff`-ing it, not by eye (`diff` exit 0). The Task 5 drop-in property was re-proved after FIX 3/5 touched the module's types — a throwaway `(x: InventoryItemWithState): FoodInventoryItemWithCategories => x` compiles clean, then deleted. Both probes left no residue. Final state: `tsc --noEmit` 0 errors, 9 Jest suites / 231 tests passing (unchanged — this module has no unit tests by design).
+
+**Carry-forward, required in Task 6 (see the caution added to that section):** `EditFoodScreen.tsx:59` seeds its editable quantity from `useState((item.quantity ?? 0).toString())` — the legacy cache, not the projection. Once Task 5 feeds it an `InventoryItemWithState`, the truth is `item.state.totalQuantity`. On the one path where they diverge, the edit screen shows the stale cache and "fixed by re-saving" then writes that stale number back as canonical truth, laundering drift into the location rows and inverting the mitigation this module depends on.
 
