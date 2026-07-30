@@ -645,31 +645,6 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
         foodItemId = item.id;
 
-        // Unconditional, not multi-location-only: the old code left a
-        // single-location save's rows untouched, so a stale row survived every
-        // edit and a multi -> single flip orphaned every row it used to have.
-        //
-        // NO rollback wrapper here, unlike the create path: this item
-        // pre-existed the save, so deleting it would destroy the user's data
-        // rather than clean up after ourselves.
-        //
-        // A failure here is not "the save didn't happen" — the item UPDATE
-        // above already committed, and replaceItemLocations drives the stock to
-        // 0 on its failure path so that every reader agrees. That recovery
-        // story only works if the user is told to re-save, so this failure gets
-        // its own message instead of the generic one below, and the screen
-        // stays open with the typed quantity intact so re-saving is one tap.
-        try {
-          await replaceItemLocations(user.id, foodItemId, locationRows);
-        } catch (locationError) {
-          console.error("Error saving location rows:", locationError);
-          Alert.alert(
-            "Stock Not Saved",
-            "The item's details were saved, but its stock could not be written and now reads 0. Tap Save again to restore the quantity.",
-          );
-          return;
-        }
-
         // Handle category and subcategory mappings
         // Delete existing category mappings
         const { error: deleteCategoryError } = await supabase
@@ -715,6 +690,48 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
             .insert(subcategoryMappings);
 
           if (subcategoryInsertError) throw subcategoryInsertError;
+        }
+
+        // Deliberately LAST on the update path. Two reasons, both about what a
+        // failure leaves behind:
+        //
+        // 1. It makes the alert below honest. This handler cannot roll back
+        //    what it has already committed, so the only way to truthfully say
+        //    "everything except the stock was saved" is for the stock write to
+        //    be the final step. When the mapping writes ran after it, a mapping
+        //    failure discarded the user's tag edits while the message claimed
+        //    the details were saved.
+        // 2. Every earlier failure now leaves the stock completely untouched,
+        //    because nothing before this line writes a location row.
+        //
+        // Unconditional, not multi-location-only: the old code left a
+        // single-location save's rows untouched, so a stale row survived every
+        // edit and a multi -> single flip orphaned every row it used to have.
+        //
+        // NO rollback wrapper here, unlike the create path: this item
+        // pre-existed the save, so deleting it would destroy the user's data
+        // rather than clean up after ourselves.
+        //
+        // A failure here is not "the save didn't happen" — the item UPDATE
+        // above already committed. replaceItemLocations can fail three ways
+        // that differ in what survives (the delete failing leaves the stock
+        // fully intact; the insert failing zeroes it; the cache resync failing
+        // leaves correct rows and a stale cache), and this handler cannot tell
+        // them apart, so the copy hedges on the diagnosis. It does NOT hedge on
+        // the action: re-saving is idempotent and repairs all three, including
+        // the stale-cache case that would otherwise block Task 12's reconcile.
+        // That recovery only works if the user is told to re-save, so this gets
+        // its own message instead of the generic one below, and the screen
+        // stays open with the typed quantity intact so re-saving is one tap.
+        try {
+          await replaceItemLocations(user.id, foodItemId, locationRows);
+        } catch (locationError) {
+          console.error("Error saving location rows:", locationError);
+          Alert.alert(
+            "Stock Not Saved",
+            "The item's other details were saved, but its stock may not have been saved and may now read 0. Tap Save again to restore the quantity.",
+          );
+          return;
         }
 
         Alert.alert("Success", "Item updated successfully");
