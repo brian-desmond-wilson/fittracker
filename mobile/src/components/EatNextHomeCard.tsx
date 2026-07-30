@@ -12,6 +12,12 @@ import { UtensilsCrossed } from "lucide-react-native";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 import { EMPTY_LIBRARY_MESSAGE } from "@/src/lib/eatNext";
+// `scoreBand` is the ONE decision point for the chip's band (spec §6's
+// thresholds); this file never re-declares the cutoff numbers locally. Only
+// the function is needed — the raw `SCORE_BAND_CORE_MIN`/`SCORE_BAND_MID_MIN`
+// constants themselves aren't read anywhere in this file, `scoreBand` already
+// resolves them into the band this card actually branches on.
+import { scoreBand, type ScoreBand } from "@/src/lib/mealScore";
 
 interface EatNextHomeCardProps {
   refreshKey?: number;
@@ -78,6 +84,13 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       </TouchableOpacity>
     );
   }
+  // Unreachable given the hook's contract (Task 5's `setError(null)`
+  // relocation made `{loading: false, result: null, error: null}`
+  // structurally impossible past the first resolution — see the Task 8
+  // amendment, Verification 5). Kept because TS can't see across
+  // `useState`/`setState` call sites to know that, so `result` doesn't
+  // narrow to non-null below without this — same reasoning as the
+  // "defensive, currently unreachable" guards in `computeNudge`.
   if (!result) return null;
 
   const top = result.recommendations[0];
@@ -94,7 +107,9 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       >
         <View style={styles.headerRow}>
           <UtensilsCrossed size={18} color="#9CA3AF" strokeWidth={2} />
-          <Text style={styles.mutedText}>{result.message ?? "Nothing to suggest right now."}</Text>
+          <Text style={[styles.mutedText, styles.emptyMessageText]}>
+            {result.message ?? "Nothing to suggest right now."}
+          </Text>
         </View>
         {isEmptyLibrary && (
           <Text style={styles.ctaText}>Build your Meal Library in Track → Meals</Text>
@@ -109,7 +124,13 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // screen. Every other context's message is complementary, not a prefix
   // match of reasons[0] (see the Task 8 amendment for the full text
   // comparison), so only this one is suppressed.
-  const showMessage = result.message && !emergency;
+  // `!!` (not just `&&`): `result.message` is `string | null`, and RN throws
+  // ("Text strings must be rendered within a <Text> component") if a falsy
+  // *string* (e.g. `""`) ends up as a bare child of a JSX `&&`. Unreachable
+  // today — every message the engine produces is `null` or a non-empty
+  // literal — but this name reads as a boolean and its type should be one.
+  const showMessage = !!result.message && !emergency;
+  const band: ScoreBand = scoreBand(top.score);
 
   return (
     <TouchableOpacity
@@ -131,6 +152,14 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       <Text style={styles.reason} numberOfLines={2}>
         {top.reasons[0]}
       </Text>
+      <View style={styles.statsRow}>
+        <Text style={styles.statsText} numberOfLines={1}>
+          {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
+        </Text>
+        <View style={[styles.scoreChip, SCORE_CHIP_STYLE_BY_BAND[band]]}>
+          <Text style={styles.scoreChipText}>{top.score}</Text>
+        </View>
+      </View>
       {showMessage && <Text style={styles.mutedText}>{result.message}</Text>}
     </TouchableOpacity>
   );
@@ -152,4 +181,38 @@ const styles = StyleSheet.create({
   reason: { fontSize: 13, color: "#D1D5DB", marginTop: 6 },
   mutedText: { fontSize: 13, color: "#9CA3AF", marginTop: 4 },
   ctaText: { fontSize: 13, color: "#22C55E", marginTop: 6 },
+  // `flex: 1` (not `numberOfLines`): sits in a `flexDirection: "row"` beside
+  // a fixed-width icon with nothing else to stop it pushing the row wider
+  // than the card. The longest engine message is 45 chars, so this is
+  // headroom for a future longer one more than a fix for today's strings.
+  emptyMessageText: { flex: 1 },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    gap: 8,
+  },
+  statsText: { fontSize: 13, color: "#9CA3AF", flexShrink: 1 },
+  scoreChip: {
+    minWidth: 36,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  scoreChipText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  // Colors mirror `track/meals/library/styles.ts`'s `scoreChipCore/Mid/Low`
+  // for visual consistency with the score chip elsewhere in the app — a
+  // presentation choice, not a threshold, so it's fine for this file to hold
+  // its own copy (the threshold DECISION stays solely in `scoreBand`).
+  scoreChipCore: { backgroundColor: "rgba(34,197,94,0.18)" },
+  scoreChipMid: { backgroundColor: "#1F2937" },
+  scoreChipLow: { backgroundColor: "rgba(107,114,128,0.25)" },
 });
+
+const SCORE_CHIP_STYLE_BY_BAND: Record<ScoreBand, object> = {
+  core: styles.scoreChipCore,
+  mid: styles.scoreChipMid,
+  low: styles.scoreChipLow,
+};
