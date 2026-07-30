@@ -1,8 +1,10 @@
 import {
   projectItemStock,
   EXPIRING_SOON_DAYS,
+  assessAssemblability,
   type StockItemInput,
   type StockLocationRow,
+  type AssemblabilityInventoryRow,
 } from "../stockState";
 
 const item = (over: Partial<StockItemInput> = {}): StockItemInput => ({
@@ -129,5 +131,98 @@ describe("expiration banding", () => {
   });
   it("malformed date → null/null, not NaN", () => {
     expect(exp("not-a-date")).toMatchObject({ expiration: null, daysLeft: null });
+  });
+});
+
+const invRow = (o: Partial<AssemblabilityInventoryRow> = {}): AssemblabilityInventoryRow => ({
+  id: "inv1",
+  name: "Boost, Very High Calorie",
+  barcode: null,
+  totalQuantity: 1,
+  conceptIds: [],
+  daysLeft: null,
+  ...o,
+});
+const mealItem = (o: Partial<{ savedFoodId: string; name: string; barcode: string | null; conceptIds: string[] }> = {}) => ({
+  savedFoodId: "sf1",
+  name: "Boost Very High Calorie",
+  barcode: null,
+  conceptIds: [] as string[],
+  ...o,
+});
+
+describe("assessAssemblability", () => {
+  it("assemblable when every item resolves to in-stock inventory", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["boost"] })],
+      inventory: [invRow({ conceptIds: ["boost"] })],
+    });
+    expect(r.assemblable).toBe(true);
+    expect(r.missing).toEqual([]);
+  });
+  it("unresolvable item counts as missing (under-claiming is honest)", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ name: "Korean BBQ Sauce" })],
+      inventory: [invRow()],
+    });
+    expect(r.assemblable).toBe(false);
+    expect(r.missing).toEqual(["Korean BBQ Sauce"]);
+  });
+  it("barcode-terminal-but-out-of-stock is missing, NOT resolved to a concept sibling", () => {
+    // Phase 2 amendment: barcode is terminal evidence of identity.
+    const r = assessAssemblability({
+      items: [mealItem({ barcode: "123", conceptIds: ["boost"] })],
+      inventory: [
+        invRow({ barcode: "123", totalQuantity: 0 }),
+        invRow({ id: "inv2", name: "Boost Plus", conceptIds: ["boost"], totalQuantity: 6 }),
+      ],
+    });
+    expect(r.assemblable).toBe(false);
+    expect(r.missing).toEqual(["Boost Very High Calorie"]);
+  });
+  it("missing preserves item order", () => {
+    const r = assessAssemblability({
+      items: [
+        mealItem({ savedFoodId: "a", name: "A-Food" }),
+        mealItem({ savedFoodId: "b", name: "B-Food", conceptIds: ["boost"] }),
+        mealItem({ savedFoodId: "c", name: "C-Food" }),
+      ],
+      inventory: [invRow({ conceptIds: ["boost"] })],
+    });
+    expect(r.missing).toEqual(["A-Food", "C-Food"]);
+  });
+  it("two items resolving to one in-stock container are both satisfied (units are containers)", () => {
+    const r = assessAssemblability({
+      items: [
+        mealItem({ savedFoodId: "a", conceptIds: ["boost"] }),
+        mealItem({ savedFoodId: "b", name: "Other", barcode: "123" }),
+      ],
+      inventory: [invRow({ barcode: "123", conceptIds: ["boost"], totalQuantity: 1 })],
+    });
+    expect(r.assemblable).toBe(true);
+  });
+  it("reports the most urgent expiring in-stock item the meal uses", () => {
+    const r = assessAssemblability({
+      items: [
+        mealItem({ savedFoodId: "a", conceptIds: ["beef"] }),
+        mealItem({ savedFoodId: "b", name: "Rice", conceptIds: ["rice"] }),
+      ],
+      inventory: [
+        invRow({ id: "i1", name: "Sirloin", conceptIds: ["beef"], daysLeft: 2 }),
+        invRow({ id: "i2", name: "Sticky Rice", conceptIds: ["rice"], daysLeft: 5 }),
+      ],
+    });
+    expect(r.expiringItemName).toBe("Sirloin");
+    expect(r.expiringDaysLeft).toBe(2);
+  });
+  it("expiring ignores items beyond the soon window and null dates", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["beef"] })],
+      inventory: [invRow({ conceptIds: ["beef"], daysLeft: EXPIRING_SOON_DAYS + 1 })],
+    });
+    expect(r.expiringItemName).toBeNull();
+  });
+  it("empty meal is not assemblable", () => {
+    expect(assessAssemblability({ items: [], inventory: [invRow()] }).assemblable).toBe(false);
   });
 });

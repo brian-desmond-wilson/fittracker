@@ -5,6 +5,11 @@
 // survives solely as a threshold-semantics + UI presentation hint.
 // Threshold semantics are pinned to the SHIPPED UI, not the dropped views
 // (the views OR'd thresholds and ignored requires_refrigeration).
+import {
+  resolveInventoryMatches,
+  type ResolutionInventoryRow,
+} from "./inventoryResolution";
+
 export const EXPIRING_SOON_DAYS = 7;
 
 export type ExpirationBand = "expired" | "today" | "soon" | "later";
@@ -105,5 +110,50 @@ export function projectItemStock(opts: {
     needsFridgeRestock,
     expiration,
     daysLeft,
+  };
+}
+
+export interface AssemblabilityInventoryRow extends ResolutionInventoryRow {
+  name: string;
+  /** From projectItemStock().daysLeft — null when no expiration date. */
+  daysLeft: number | null;
+}
+
+export interface MealAssemblability {
+  assemblable: boolean;
+  /** Saved-food display names, in meal item order. */
+  missing: string[];
+  expiringItemName: string | null;
+  expiringDaysLeft: number | null;
+}
+
+/**
+ * "Can I make this meal right now?" — resolution reuses Phase 2's
+ * resolveInventoryMatches verbatim (barcode terminal, else unique shared
+ * concept among in-stock rows). An item that resolves to nothing counts as
+ * MISSING: under-claiming is the honest failure mode. Duplicate resolution
+ * (two items → one container) satisfies both — v1 units are containers.
+ */
+export function assessAssemblability(opts: {
+  items: Array<{ savedFoodId: string; name: string; barcode: string | null; conceptIds: string[] }>;
+  inventory: AssemblabilityInventoryRow[];
+}): MealAssemblability {
+  const { items, inventory } = opts;
+  const matches = resolveInventoryMatches(items, inventory);
+  const missing = items.filter((it) => !matches.has(it.savedFoodId)).map((it) => it.name);
+
+  const byId = new Map(inventory.map((r) => [r.id, r]));
+  let expiring: AssemblabilityInventoryRow | null = null;
+  for (const invId of new Set(matches.values())) {
+    const row = byId.get(invId);
+    if (!row || row.daysLeft === null || row.daysLeft > EXPIRING_SOON_DAYS) continue;
+    if (expiring === null || row.daysLeft < (expiring.daysLeft as number)) expiring = row;
+  }
+
+  return {
+    assemblable: items.length > 0 && missing.length === 0,
+    missing,
+    expiringItemName: expiring?.name ?? null,
+    expiringDaysLeft: expiring?.daysLeft ?? null,
   };
 }
