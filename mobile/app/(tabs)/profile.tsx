@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
 import * as SecureStore from "expo-secure-store";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,6 +37,29 @@ export default function Profile() {
   const [userId, setUserId] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeModal, setActiveModal] = useState<ModalScreen>(null);
+
+  // Deep link from RampHomeBanner (spec §7.3): ?modal=nutrition auto-opens
+  // the Nutrition Preferences modal, then clears the param so navigating
+  // back to this screen later doesn't re-open it. `router` above (from
+  // `useRouter()`) is the same singleton `expo-router`'s `router` import
+  // would resolve to, so `setParams` here needs no second import.
+  const params = useLocalSearchParams<{ modal?: string }>();
+  useEffect(() => {
+    if (params.modal === "nutrition") {
+      setActiveModal("nutrition");
+      // `undefined` (not omitting the key) is the documented way to clear a
+      // param in this expo-router version: `useLocalSearchParams` explicitly
+      // maps an `undefined` value back to `undefined` rather than leaving
+      // the stale string, per its own source comment ("React Navigation
+      // doesn't remove 'undefined' values from the params object, and you
+      // cannot remove them via navigation.setParams as it shallow merges.
+      // Hence, we hide them here" — expo-router/build/hooks.js). Confirmed
+      // this settles in one extra render, not a loop: the effect re-fires
+      // once when `params.modal` flips from "nutrition" to `undefined`,
+      // and the condition above is then false.
+      router.setParams({ modal: undefined });
+    }
+  }, [params.modal]);
 
   const [formData, setFormData] = useState({
     height_cm: "",
