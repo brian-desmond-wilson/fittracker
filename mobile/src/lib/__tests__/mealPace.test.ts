@@ -46,7 +46,9 @@ describe("linear expected-by-now", () => {
   it("ahead beyond tolerance → ahead with rounded delta", () => {
     const r = computeMealPace({ ...base, currentValue: 800, now: at(12) });
     expect(r.status).toBe("ahead");
-    expect(r.delta).toBe(Math.round(800 - (2300 * 4) / 15)); // 187
+    // Literal, not the lib's own formula re-expressed: 800 − 2300×4/15 =
+    // 186.67, and Math.round gives 187 where floor would give 186.
+    expect(r.delta).toBe(187);
   });
   it("behind: delta, catch-up aimed at next milestone (dinner)", () => {
     // 13:00: expected 2300×(780−480)/900 = 766.67; current 400 → behind 367.
@@ -158,6 +160,10 @@ describe("tolerance boundary (5% vs the per-macro floor)", () => {
     const goal = 2300;
     const expected = goal * 0.5;
     const tolerance = Math.max(goal * TOLERANCE_PCT, 100);
+    // Sanity: the 5% term must be the binding one here, or this test silently
+    // becomes a third floor-binding case and stops pinning TOLERANCE_PCT at
+    // all — this test is the sole killer of a 0.05 → 0.06 mutation.
+    expect(tolerance).toBe(goal * TOLERANCE_PCT);
     const atBoundary = computeMealPace({
       ...base, goal, currentValue: expected - tolerance, now: at(15, 30),
     });
