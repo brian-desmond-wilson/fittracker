@@ -1,5 +1,6 @@
 import {
   recommendEatNext,
+  nudgeFireDate,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
   POST_WORKOUT_WINDOW_MIN,
@@ -625,5 +626,90 @@ describe("nudge decision", () => {
     );
     expect(r.context).not.toBe("catch_up");
     expect(r.context).toBe("next_meal");
+  });
+});
+
+// `nudgeFireDate` resolves `EatNextNudge.fireAtMinutes` (see its doc comment)
+// against an explicit `sourceDay`, never a fresh clock read — extracted so
+// eatNudgeService.ts's scheduler can't reimplement the contract and drift
+// from it. Task 6 execution amendment covers the reachability analysis this
+// closes off.
+describe("nudgeFireDate", () => {
+  // Jul 29 2026, 08:00:00.000 local — same instant used as both `sourceDay`
+  // and `now` unless a test deliberately moves one of the two.
+  const DAY = new Date(2026, 6, 29, 8, 0, 0, 0);
+
+  it("resolves a same-day, still-future fireAtMinutes to that clock time on sourceDay's date", () => {
+    // 10:00 (600 min) is distinct in hour vs. minute from 08:00's own
+    // components, so a swapped hour/minute mutant cannot pass by accident.
+    const result = nudgeFireDate(600, DAY, DAY);
+    expect(result).not.toBeNull();
+    expect(result).toEqual(new Date(2026, 6, 29, 10, 0, 0, 0));
+  });
+
+  it("uses distinct hour and minute values so a swapped Math.floor(/60)/%60 pair cannot pass", () => {
+    // 135 min = 2h15m. Hour (2) and minute (15) are different numbers, so
+    // transposing them produces a visibly different (and wrong) time. `now`
+    // is set earlier than 02:15 (rather than reusing DAY's 08:00) so the
+    // strictly-after-now guard doesn't itself reject a correct result.
+    const now = new Date(2026, 6, 29, 1, 0, 0, 0);
+    const result = nudgeFireDate(135, DAY, now);
+    expect(result).toEqual(new Date(2026, 6, 29, 2, 15, 0, 0));
+  });
+
+  it("fireAtMinutes=0 (local midnight) can never be strictly after a same-day now", () => {
+    // Midnight is the earliest instant of its own day, so any valid
+    // same-day `now` is >= it — this is a real, permanent null case, not a
+    // gap in the function.
+    const now = new Date(2026, 6, 29, 0, 0, 0, 1);
+    expect(nudgeFireDate(0, DAY, now)).toBeNull();
+  });
+
+  it("resolves fireAtMinutes=1439 (23:59, the last valid minute of the day)", () => {
+    const now = new Date(2026, 6, 29, 23, 0, 0, 0);
+    expect(nudgeFireDate(1439, DAY, now)).toEqual(
+      new Date(2026, 6, 29, 23, 59, 0, 0),
+    );
+  });
+
+  it("rejects a stale decision: sourceDay and now on different local calendar days", () => {
+    // Decision computed 23:58 on the 29th; resolved 00:05 on the 30th. Any
+    // instant on an earlier calendar day is already behind any instant on a
+    // later one, so this direction is also caught by the after-now check —
+    // it documents the realistic overnight-background scenario, but does
+    // NOT by itself prove the day guard is doing independent work (see the
+    // next test, which isolates that).
+    const sourceDay = new Date(2026, 6, 29, 23, 58, 0, 0);
+    const now = new Date(2026, 6, 30, 0, 5, 0, 0);
+    expect(nudgeFireDate(1439, sourceDay, now)).toBeNull();
+  });
+
+  it("rejects a mismatched sourceDay even when the naive same-clock-time instant would be strictly after now", () => {
+    // sourceDay is a day AHEAD of now. Without the day guard, the naive
+    // instant (sourceDay's date + fireAtMinutes=0, i.e. 00:00 on the 30th)
+    // is strictly after `now` (20:00 on the 29th) and would be wrongly
+    // returned — this is the case that isolates the day guard from the
+    // after-now guard: deleting `sameLocalDay` changes this test's result,
+    // where the previous test's does not.
+    const sourceDay = new Date(2026, 6, 30, 0, 0, 0, 0);
+    const now = new Date(2026, 6, 29, 20, 0, 0, 0);
+    expect(nudgeFireDate(0, sourceDay, now)).toBeNull();
+  });
+
+  it("rejects when the resolved instant equals now exactly (not strictly after)", () => {
+    const now = new Date(2026, 6, 29, 10, 0, 0, 0);
+    expect(nudgeFireDate(600, DAY, now)).toBeNull();
+  });
+
+  it("resolves when the resolved instant is 1ms after now", () => {
+    const now = new Date(2026, 6, 29, 9, 59, 59, 999);
+    expect(nudgeFireDate(600, DAY, now)).toEqual(
+      new Date(2026, 6, 29, 10, 0, 0, 0),
+    );
+  });
+
+  it("rejects when the resolved instant is 1ms before now", () => {
+    const now = new Date(2026, 6, 29, 10, 0, 0, 1);
+    expect(nudgeFireDate(600, DAY, now)).toBeNull();
   });
 });

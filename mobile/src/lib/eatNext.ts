@@ -76,6 +76,53 @@ export interface EatNextNudge {
   body: string;
 }
 
+function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * Resolves `EatNextNudge.fireAtMinutes` (see the doc comment just above:
+ * minutes since local midnight on the SAME local day as the `nowMinutes`
+ * that produced it — "consumers must resolve it against that same day, not
+ * a fresh `new Date()`") to a concrete instant, honoring that contract by
+ * construction: `sourceDay` is a required argument, not an assumption a
+ * caller can skip. Co-located with the interface it resolves so the two
+ * cannot drift apart the way a caller-side reimplementation could.
+ *
+ * Returns `null` in either of two cases, both meaning "do not schedule
+ * this decision":
+ *  - `sourceDay` and `now` fall on different local calendar days — the
+ *    decision is stale (e.g. computed just before local midnight, resolved
+ *    just after; see the eatNudgeService.ts amendment this was extracted
+ *    to fix).
+ *  - The resolved instant is not strictly after `now` — already passed.
+ *
+ * Pure: takes `now` rather than reading the clock, so the engine stays free
+ * of I/O and tests control time directly.
+ */
+export function nudgeFireDate(
+  fireAtMinutes: number,
+  sourceDay: Date,
+  now: Date,
+): Date | null {
+  if (!sameLocalDay(sourceDay, now)) return null;
+  const fireDate = new Date(
+    sourceDay.getFullYear(),
+    sourceDay.getMonth(),
+    sourceDay.getDate(),
+    Math.floor(fireAtMinutes / 60),
+    fireAtMinutes % 60,
+    0,
+    0,
+  );
+  if (fireDate.getTime() <= now.getTime()) return null;
+  return fireDate;
+}
+
 export interface EatNextResult {
   context: EatNextContext;
   message: string | null;
