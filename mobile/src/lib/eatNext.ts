@@ -7,7 +7,7 @@
 import type { MealPaceState } from "./mealPace";
 import type { BrianScoreResult } from "./mealScore";
 import type { MacroGoals, MacroTotals } from "./mealMacros";
-import type { MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
+import type { MealCategory, MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
 
 export const POST_WORKOUT_WINDOW_MIN = 180;
 export const EMERGENCY_MIN_GAP_CAL = 400;
@@ -20,6 +20,10 @@ export const PROTEIN_SHORT_MAX_CAL = 300;
 export const POST_WORKOUT_MIN_PROTEIN_G = 25;
 export const BRIDGE_PREFER_GAP_MIN = 120;
 export const PREP_HARD_CAP_FACTOR = 2;
+/** Task 8's `EatNextHomeCard` derives its empty-library CTA from this exact
+ * string (see plan Task 8) — exported so that comparison is against one
+ * source, not a copy-pasted literal that a wording edit could silently break. */
+export const EMPTY_LIBRARY_MESSAGE = "No meals in your library yet.";
 const TOP_N = 3;
 
 export type EatNextContext =
@@ -38,6 +42,12 @@ export interface ScoredMeal {
 
 export interface EatNextInput {
   nowMinutes: number;
+  // Carried for spec §5.1 fidelity but not read by this task (nor by Task 2's
+  // planned nudge code): `windowStartMinutes` has no context that starts
+  // before the window (before_window already falls through to next_meal via
+  // caloriePace.status), and the protein-short check below reads raw
+  // `goals`/`dayTotals` instead of `proteinPace` because `MealPaceState.status`
+  // can't express "≥15 g short" — only ahead/behind/on_pace/goal_hit.
   windowStartMinutes: number;
   windowEndMinutes: number;
   mealTimesMinutes: { breakfast: number; lunch: number; dinner: number };
@@ -111,7 +121,7 @@ function candidate(
   m: ScoredMeal,
   preferredRoles: ReadonlyArray<MealRole>,
   maxPrepMinutes: number,
-  preferredCategories: ReadonlyArray<string> = [],
+  preferredCategories: ReadonlyArray<MealCategory> = [],
 ): Candidate {
   const roleMatch = m.meal.role !== null && preferredRoles.includes(m.meal.role);
   const categoryMatch = preferredCategories.includes(m.meal.category);
@@ -120,6 +130,16 @@ function candidate(
     extraReasons: prepReason(m, maxPrepMinutes),
     roleRank: roleMatch || categoryMatch ? 0 : 1,
   };
+}
+
+/** Calorie half of the goal_hit rule (spec §5.3.2): calories at/over goal,
+ * with a null/zero goal never counting as "hit" (mirrors `computeMealPace`'s
+ * `goal == null || goal <= 0` treatment in mealPace.ts). Extracted so Task 2's
+ * planned nudge code — which the plan text re-derives this same expression
+ * for — has one predicate to call instead of a second copy to drift from. */
+function calorieGoalHit(goals: MacroGoals, dayTotals: MacroTotals): boolean {
+  const calorieGoal = goals.calories;
+  return calorieGoal != null && calorieGoal > 0 && dayTotals.calories >= calorieGoal;
 }
 
 /** Next main-meal slot strictly after now, else snack (mealPace's milestone rule). */
@@ -152,11 +172,10 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   }
 
   // 2. goal_hit — terminal (protein-short exception recommends within it).
-  const calorieGoal = goals.calories;
-  if (calorieGoal != null && calorieGoal > 0 && dayTotals.calories >= calorieGoal) {
+  if (calorieGoalHit(goals, dayTotals)) {
     const proteinGoal = goals.protein;
-    const proteinShort =
-      proteinGoal != null && proteinGoal - dayTotals.protein >= PROTEIN_SHORT_G;
+    const proteinGap = proteinGoal != null ? proteinGoal - dayTotals.protein : 0;
+    const proteinShort = proteinGoal != null && proteinGap >= PROTEIN_SHORT_G;
     if (proteinShort) {
       const q = eligible
         .filter(
@@ -171,7 +190,6 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
         );
       if (q.length > 0) {
         const top = q[0];
-        const gap = Math.round((proteinGoal ?? 0) - dayTotals.protein);
         return {
           context: "goal_hit",
           message: "Calorie target hit — protein still short.",
@@ -179,7 +197,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             mealId: top.meal.id,
             name: top.meal.name,
             reasons: [
-              `protein short by ~${gap} g`,
+              `protein short by ~${Math.round(proteinGap)} g`,
               `${Math.round(top.totals.protein)} g protein in ${Math.round(top.totals.calories)} cal`,
               ...prepReason(top, maxPrepMinutes),
             ],
@@ -230,6 +248,11 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           m.meal.role === "emergency_catchup" ||
           m.meal.role === "calorie_booster",
       )
+      // `candidate()` is called only for its `extraReasons` (prep-budget
+      // copy) here — the `roleRank` it computes is deliberately unread by
+      // the calories-descending sort below (spec §5.3.4: rescue size, not
+      // role or score, decides emergency order). Do not "fix" this by
+      // routing it through `rank()`.
       .map((m) => candidate(m, ["emergency_catchup", "calorie_booster"], maxPrepMinutes))
       // Emergency ranks by rescue size, not score (spec §5.3.4).
       .sort(
@@ -268,12 +291,12 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 
   // 6. next_meal — default.
   const { slot, atMinutes } = nextSlot(nowMinutes, mealTimesMinutes);
-  const slotCategories: ReadonlyArray<string> =
+  const slotCategories: ReadonlyArray<MealCategory> =
     slot === "snack" ? ["snack", "shake"] : [slot];
   const farFromMeal =
     atMinutes !== null && atMinutes - nowMinutes >= BRIDGE_PREFER_GAP_MIN;
   const preferredRoles: ReadonlyArray<MealRole> = farFromMeal ? ["bridge"] : [];
-  const preferredCategories: ReadonlyArray<string> = farFromMeal ? ["snack"] : [];
+  const preferredCategories: ReadonlyArray<MealCategory> = farFromMeal ? ["snack"] : [];
   const pool = farFromMeal
     ? eligible.filter(
         (m) =>
@@ -289,7 +312,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
     message:
       cands.length === 0
         ? meals.length === 0
-          ? "No meals in your library yet."
+          ? EMPTY_LIBRARY_MESSAGE
           : `Nothing in the library fits ${slot} right now.`
         : null,
     recommendations: toRecs(rank(cands), () => [

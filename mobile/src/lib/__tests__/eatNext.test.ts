@@ -12,6 +12,7 @@ import {
   type ScoredMeal,
 } from "../eatNext";
 import { EMPTY_TOTALS } from "../mealMacros";
+import type { MealCategory, MealRole } from "@/src/types/meal-library";
 
 // ── fixtures ───────────────────────────────────────────────────────────────
 // Minutes: window 08:00–23:00 (480–1380); meals 08:00/12:00/18:00.
@@ -35,8 +36,8 @@ const BASE: Omit<EatNextInput, "meals"> = {
 let nextId = 0;
 function scored(over: {
   name?: string;
-  category?: string;
-  role?: string | null;
+  category?: MealCategory;
+  role?: MealRole | null;
   prep?: number;
   calories?: number;
   protein?: number;
@@ -54,8 +55,8 @@ function scored(over: {
       user_id: "u",
       name: over.name ?? id,
       slug: id,
-      category: (over.category ?? "lunch") as never,
-      role: (over.role ?? null) as never,
+      category: over.category ?? "lunch",
+      role: over.role ?? null,
       default_meal_type: null,
       prep_minutes: over.prep ?? 5,
       taste_override: null,
@@ -63,7 +64,7 @@ function scored(over: {
       created_at: "",
       updated_at: "",
       items: [],
-    } as never,
+    },
     totals: {
       calories, protein, carbs: 0, fats: 0, sugars: 0, sodium_mg: 0, fiber_g: 0,
     },
@@ -178,6 +179,22 @@ describe("terminal contexts", () => {
     expect(rUnderCap.recommendations).toHaveLength(1);
     expect(rUnderCap.recommendations[0].mealId).toBe(underCap.meal.id);
   });
+
+  it("a null calorie goal never counts as goal_hit, no matter how many calories are logged", () => {
+    const meal = scored({ category: "dinner" });
+    const r = recommendEatNext(
+      input({ goals: { ...BASE.goals, calories: null } }, [meal]),
+    );
+    expect(r.context).toBe("next_meal");
+  });
+
+  it("a zero calorie goal never counts as goal_hit, no matter how many calories are logged", () => {
+    const meal = scored({ category: "dinner" });
+    const r = recommendEatNext(
+      input({ goals: { ...BASE.goals, calories: 0 } }, [meal]),
+    );
+    expect(r.context).toBe("next_meal");
+  });
 });
 
 // ── post-workout ───────────────────────────────────────────────────────────
@@ -198,6 +215,7 @@ describe("post_workout", () => {
       input({ workoutCompletedAtMinutes: 13 * 60 - 181 }, [scored({})]),
     );
     expect(r.context).not.toBe("post_workout");
+    expect(r.context).toBe("next_meal");
   });
   it("falls through when no candidate meal qualifies", () => {
     const r = recommendEatNext(input(trained, [scored({ protein: 5 })]));
@@ -218,6 +236,7 @@ describe("post_workout", () => {
       input({ workoutCompletedAtMinutes: BASE.nowMinutes + 30 }, [pw]),
     );
     expect(r.context).not.toBe("post_workout");
+    expect(r.context).toBe("next_meal");
   });
 
   it(`post-workout protein bar: exactly ${POST_WORKOUT_MIN_PROTEIN_G}g qualifies, ${POST_WORKOUT_MIN_PROTEIN_G - 1}g does not`, () => {
@@ -229,6 +248,7 @@ describe("post_workout", () => {
     const underBar = scored({ protein: POST_WORKOUT_MIN_PROTEIN_G - 1 });
     const rUnder = recommendEatNext(input(trained, [underBar]));
     expect(rUnder.context).not.toBe("post_workout");
+    expect(rUnder.context).toBe("next_meal");
   });
 });
 
@@ -288,6 +308,16 @@ describe("emergency and catch_up", () => {
     const r = recommendEatNext(input({ ...behind(600) }, [rescue]));
     expect(r.context).not.toBe("emergency");
     expect(r.context).toBe("catch_up");
+  });
+
+  it("catch_up requires gap > 0 — a 0-calorie meal must not match a 0 gap", () => {
+    // A 0-cal meal (itemless, or a zero-cal drink — both constructible in
+    // Phase 2's builder) sits at Math.abs(0 - 0) = 0, which satisfies the
+    // ±35% band trivially. The `gap > 0` guard is what keeps a "behind" pace
+    // with nothing actually owed from surfacing it under "0 cal behind pace".
+    const zeroCal = scored({ calories: 0, category: "dinner" });
+    const r = recommendEatNext(input(behind(0), [zeroCal]));
+    expect(r.context).not.toBe("catch_up");
   });
 
   it(`catch_up band: exactly gap × ${CATCH_UP_BAND} away qualifies, one calorie further does not`, () => {
@@ -366,6 +396,17 @@ describe("next_meal", () => {
     const r = recommendEatNext(input({}, [dinner, emergencyBridge])); // 300 min out, pool expanded
     expect(r.context).toBe("next_meal");
     expect(r.recommendations.map((x) => x.mealId)).not.toContain(emergencyBridge.meal.id);
+  });
+
+  it("at exactly the lunch meal time, lunch has passed and dinner is next (spec §5.3.6: strictly after now)", () => {
+    const lunch = scored({ category: "lunch" });
+    const dinner = scored({ category: "dinner" });
+    const r = recommendEatNext(
+      input({ nowMinutes: BASE.mealTimesMinutes.lunch }, [lunch, dinner]),
+    );
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations.map((x) => x.mealId)).toContain(dinner.meal.id);
+    expect(r.recommendations.map((x) => x.mealId)).not.toContain(lunch.meal.id);
   });
 });
 
