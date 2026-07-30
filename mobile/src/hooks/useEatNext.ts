@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { computeBrianScore } from "@/src/lib/mealScore";
+import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { computeMealPace, type MealPaceState } from "@/src/lib/mealPace";
 import { sumNutrition, type MacroGoals } from "@/src/lib/mealMacros";
 import {
@@ -41,8 +42,46 @@ interface ProfileRow {
   // `nudgesEnabled: false` comment at the recommendEatNext call below.
 }
 
+/**
+ * The profiles select list, derived from `ProfileRow` rather than written out
+ * beside it. `satisfies Record<keyof ProfileRow, true>` is checked BOTH ways —
+ * a field added to `ProfileRow` and not here fails to compile ("property is
+ * missing"), and a key here that is not on `ProfileRow` fails as an excess
+ * property. Since this client is untyped (`createClient` with no `Database`
+ * generic), select-string-vs-interface drift is the one column-name error
+ * class `tsc` CAN catch, and it is exactly the mistake Task 11 Step 4 invites:
+ * add `eat_nudges_enabled` to one of the two and forget the other. Now that
+ * edit is a single change that cannot be half-done.
+ */
+const PROFILE_COLUMNS = {
+  target_calories: true,
+  target_protein_g: true,
+  target_carbs_g: true,
+  target_sodium_mg: true,
+  target_fats_g: true,
+  target_sugars_g: true,
+  target_fiber_g: true,
+  breakfast_time: true,
+  lunch_time: true,
+  dinner_time: true,
+  water_window_start: true,
+  water_window_end: true,
+} satisfies Record<keyof ProfileRow, true>;
+
+const PROFILE_SELECT = Object.keys(PROFILE_COLUMNS).join(", ");
+
 export interface UseEatNextValue {
   result: EatNextResult | null;
+  /**
+   * `true` only while there is NOTHING to show — i.e. the very first load.
+   * This hook is stale-while-revalidate: a `refetch` leaves `loading` false
+   * and keeps the previous `result` (and previous `error`) on screen until a
+   * new one supersedes it, so surfaces hold steady data instead of blanking
+   * or flashing a spinner on every screen focus and every meal write.
+   * Consequence, stated honestly: no consumer can currently distinguish
+   * "refetching" from "idle". Add a separate flag if one ever needs to —
+   * do not repurpose this one.
+   */
   loading: boolean;
   error: Error | null;
   refetch: () => void;
@@ -63,13 +102,30 @@ const toMinutes = (t: string) => {
  * `{code: "42703", message: 'column "…" does not exist'}` into
  * `Error("[object Object]")`, which is exactly the detail a surface's error
  * state needs to show. `fetchMealLibrary` re-throws raw PostgREST objects
- * too, so this normalizes both sources.
+ * too (`mealLibrary.ts:62,134,234`), so this normalizes both sources.
+ *
+ * `details` and `hint` are folded in, not just `message` + `code`: for the
+ * 42703 class this whole hook guards against, `hint` carries PostgREST's
+ * "Perhaps you meant to reference the column …", which is the single most
+ * actionable line — and the surfaced `Error` is what gets read off a screen
+ * and relayed, while the raw object only reaches a console nobody is watching.
  */
 function toError(e: unknown): Error {
   if (e instanceof Error) return e;
   if (typeof e === "object" && e !== null && "message" in e) {
-    const { message, code } = e as { message?: unknown; code?: unknown };
-    const text = typeof message === "string" ? message : String(message);
+    const { message, code, details, hint } = e as {
+      message?: unknown;
+      code?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+    const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const parts = [
+      typeof message === "string" ? message : String(message),
+      str(details),
+      str(hint),
+    ].filter((s) => s.length > 0);
+    const text = parts.join(" — ");
     return new Error(typeof code === "string" ? `${text} (${code})` : text);
   }
   return new Error(String(e));
@@ -79,12 +135,13 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
   const [result, setResult] = useState<EatNextResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  // Stale-response guard. Two loads really can overlap here: Task 8's card
-  // refetches on focus while Task 10's screen refetches after every meal
-  // write, so a focus change during a slow reload leaves two in flight and
-  // the slower one would otherwise win and publish an OLDER recommendation
-  // (with the day's totals from before the write). Only the newest run may
-  // touch state.
+  // Stale-response guard. Overlapping loads are expected by design here: per
+  // the plan (Tasks 8 and 10 — not yet written, so this is the plan's stated
+  // intent rather than verified code), the Home card refetches on focus and
+  // the Meals screen refetches after every meal write. A focus change during
+  // a slow reload then leaves two in flight, and the slower one would win and
+  // publish an OLDER recommendation — computed from the day's totals from
+  // before the write. Only the newest run may touch state.
   const runIdRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -95,8 +152,17 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
     // minute — or worse, local midnight — can compute pace against one
     // moment and contexts against another.
     const now = new Date();
+    // Today's LOCAL bounds as absolute instants, for the `completed_at`
+    // (`timestamptz`) range below. Built from local midnight, never UTC
+    // midnight: comparing a timestamptz against UTC bounds slides the window
+    // by the machine's offset, which for the user's timezone would count part
+    // of yesterday evening as today. `setDate(+1)` (rather than +24h) also
+    // keeps the upper bound at local midnight across a DST change.
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfNextDay = new Date(startOfDay);
+    startOfNextDay.setDate(startOfNextDay.getDate() + 1);
     try {
-      setError(null);
       const today = getLocalDateString(now);
       const [library, logs, profile, constraints, workout] = await Promise.all([
         fetchMealLibrary(),
@@ -107,29 +173,34 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
         // `auth.uid() = user_id` select policy, so RLS already narrows each
         // to exactly the caller's row — maybeSingle() cannot see a second
         // one. Same reasoning as `fetchMealLibrary`'s profiles read.
-        supabase
-          .from("profiles")
-          .select(
-            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g, breakfast_time, lunch_time, dinner_time, water_window_start, water_window_end",
-          )
-          .maybeSingle(),
+        supabase.from("profiles").select(PROFILE_SELECT).maybeSingle(),
         supabase
           .from("nutrition_constraints")
           .select("max_prep_minutes")
           .maybeSingle(),
+        // "Completed today" means `completed_at` inside today's local range —
+        // NOT `scheduled_date = today`, which spec §6 originally specified.
+        // Ruled by the coordinator during execution as a defective expression
+        // of spec §2's "workouts completed today", because the two come apart
+        // on a reachable path: "Save Progress" leaves a row `in_progress` /
+        // `partial` with a null `completed_at` (`app/workout/[id].tsx:1179-1185`),
+        // `getTodaysWorkout` resumes the latest incomplete instance with no
+        // constraint that its `scheduled_date` is today
+        // (`todaysWorkout.ts:65-95`), and finishing it stamps `completed_at =
+        // now` on a row still dated yesterday (`app/workout/[id].tsx:1240-1245`)
+        // — which a `scheduled_date` filter misses, silently disabling the
+        // post_workout context minutes after a real workout.
+        // The range also subsumes two guards this query used to need: a
+        // `completed_at` outside today can no longer be returned at all (so no
+        // same-local-day check is needed downstream), and NULL fails a range
+        // predicate, so DESC's NULLS-FIRST ordering can no longer float a
+        // null-`completed_at` row to the top of `limit(1)`.
         supabase
           .from("workout_instances")
           .select("completed_at")
-          .eq("scheduled_date", today)
           .eq("status", "completed")
-          // Required, not decorative: Postgres (and PostgREST) order DESC
-          // as NULLS FIRST, so a legacy `status = 'completed'` row with a
-          // null `completed_at` would win the limit(1) and silently disable
-          // the post-workout context for the whole day. Every current write
-          // path sets both together (`training.ts:611-613`,
-          // `todaysWorkout.ts:250-253`, `app/workout/[id].tsx:1240-1245`),
-          // so this only guards historical rows — and it costs nothing.
-          .not("completed_at", "is", null)
+          .gte("completed_at", startOfDay.toISOString())
+          .lt("completed_at", startOfNextDay.toISOString())
           .order("completed_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -177,49 +248,31 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
           now, // share this assembly's clock instead of sampling a new one
         });
 
-      // Duplicates the `scores` memo in `MealLibraryModal` (and the single-meal
-      // one in `MealBuilder`) — deliberate, per the plan's note. Re-checked
-      // during execution: Phase 2 extracted NO shared helper for this
-      // assembly, so there is nothing to substitute; exporting a modal's
-      // internals would be worse than the third copy.
+      // The score input assembly lives in `mealScoreInput.ts` (pure, tested).
+      // `MealLibraryModal` and `MealBuilder` still carry their own copies —
+      // migrating those two Phase 2 components is a recorded follow-up, out of
+      // scope for this task.
       const meals: ScoredMeal[] = library.meals.map((meal) => ({
         meal,
         totals: computeMealTotals(meal.items),
-        score: computeBrianScore({
-          prepMinutes: meal.prep_minutes,
-          role: meal.role,
-          tasteOverride: meal.taste_override,
-          items: meal.items.map((it) => ({
-            calories: it.savedFood.calories,
-            protein: it.savedFood.protein,
-            servings: it.servings,
-            smallPiecesOk: it.small_pieces_ok,
-            concepts: (library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
-              .map((id) => library.conceptsById.get(id))
-              .filter((c): c is NonNullable<typeof c> => !!c)
-              .map((c) => ({
-                rating: c.rating,
-                requiresSmallPieces: c.requires_small_pieces,
-                prepIntensive: c.prep_intensive,
-              })),
-          })),
-        }),
+        score: computeBrianScore(
+          brianScoreInputFor(
+            meal,
+            library.conceptIdsBySavedFoodId,
+            library.conceptsById,
+          ),
+        ),
       }));
 
+      // Minutes since LOCAL midnight, the coordinate system the engine
+      // compares against `nowMinutes`. Safe without a day check because the
+      // query above can only return a completion inside today's local range.
       let workoutCompletedAtMinutes: number | null = null;
       const completedAt = (workout.data as { completed_at: string | null } | null)
         ?.completed_at;
       if (completedAt) {
         const d = new Date(completedAt); // timestamptz → local
-        // Only a SAME-LOCAL-DAY completion can be expressed as minutes since
-        // local midnight, which is what the engine compares against
-        // `nowMinutes`. A workout scheduled for today but finished on an
-        // earlier day (the app lets you complete a future instance) would
-        // otherwise contribute yesterday's clock time as if it were today's
-        // and fake a post-workout window.
-        if (getLocalDateString(d) === today) {
-          workoutCompletedAtMinutes = d.getHours() * 60 + d.getMinutes();
-        }
+        workoutCompletedAtMinutes = d.getHours() * 60 + d.getMinutes();
       }
 
       const next = recommendEatNext({
@@ -246,28 +299,34 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
         // PostgREST rejects the ENTIRE select with 42703/HTTP 400 if any named
         // column is unknown, so naming it above would break this hook, and
         // every surface built on it, for the whole pre-migration window.
-        // (Phase 2 hit this exact failure; see its Task 1 amendment.)
+        // Phase 2 hit this exact failure for the same reason — see its Task 1
+        // amendment on `meal_logs.meal_id`
+        // (`docs/superpowers/plans/2026-07-29-nutrition-meal-library.md`).
         // `false` is both the migration's default and the correct
         // pre-migration behavior — nudges are opt-in, so nothing is lost.
         // TO WIRE UP after Task 11 applies the migration: add
-        // `eat_nudges_enabled` to the profiles select string above and to
-        // `ProfileRow` as `boolean`, then pass `p.eat_nudges_enabled` here.
+        // `eat_nudges_enabled: boolean` to `ProfileRow` (the compiler then
+        // forces the matching `PROFILE_COLUMNS` entry) and pass
+        // `p.eat_nudges_enabled` here. See Task 11 Step 4.
         nudgesEnabled: false,
       });
       if (runId !== runIdRef.current) return;
+      // Clearing the error HERE, not at the top of `load`: `loading` stays
+      // false on a refetch, so clearing it up front published
+      // `{loading: false, result: null, error: null}` for the whole retry
+      // request — a state every surface reads as "nothing to render", making
+      // the card vanish mid-retry (and the card is where the retry control
+      // lives). Same stale-while-revalidate rule already applied to `result`:
+      // the old error stands until a result or a fresh error supersedes it.
+      setError(null);
       setResult(next);
     } catch (e) {
       console.error("useEatNext:", e);
       if (runId !== runIdRef.current) return;
       setError(toError(e));
     } finally {
-      // `setLoading(true)` is deliberately absent from this function: a
-      // refetch keeps `loading` false and leaves the previous `result` in
-      // place, so Task 8's card — which shows its spinner only while
-      // `loading && !result` — renders slightly stale data instead of
-      // flashing a spinner on every focus or meal write. Only the first load
-      // shows the spinner, via the initial `useState(true)`. Intentional; do
-      // not "fix" it without revisiting that card.
+      // No `setLoading(true)` anywhere in `load` — see the `loading` doc
+      // comment on UseEatNextValue for the contract that depends on it.
       if (runId === runIdRef.current) setLoading(false);
     }
   }, []);
