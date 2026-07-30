@@ -2,24 +2,60 @@
 // "eat-nudge" local-notification family (Nutrition OS Phase 3, spec §8.1).
 // Pace-aware: the DECISION comes from recommendEatNext (pure); this service
 // only schedules/cancels it. Strict cancel-and-resync — at most ONE pending
-// nudge exists, budgeted against the shared 64-slot iOS cap.
+// nudge exists, budgeted against the shared 64-slot iOS cap. That budget is
+// a spec invariant (§8.1, §5.6), which is why this module is stricter about
+// re-entrancy and cancel-failure handling than its siblings — see the two
+// comments below.
 //
 // Mirrors mobile/src/services/mealReminderService.ts: same family-tag shape
 // (`data: { type: … }`), same cancel-by-enumeration loop, same permission-gate
 // flow via `requestPermissions`, same try/catch + console.error idiom. Not
 // unit-tested for the same reason mealReminderService/waterReminderService
-// aren't: this module imports expo-notifications, so it cannot enter this
-// repo's `testEnvironment: node`, RN-free Jest scope (jest.config.js
-// `roots: ["<rootDir>/src"]` + `testMatch` picks up pure-TS libs only).
+// aren't: this module imports expo-notifications, which fails to load under
+// this repo's `testEnvironment: node` Jest config (jest.config.js) — the
+// `roots`/`testMatch` settings alone don't exclude it (a test file placed
+// here would be matched and run); it's the failed native-module import that
+// makes it untestable, not the Jest scoping.
 import * as Notifications from "expo-notifications";
 import { requestPermissions } from "./notificationService";
-import type { EatNextNudge } from "@/src/lib/eatNext";
+import { nudgeFireDate, type EatNextNudge } from "@/src/lib/eatNext";
 
 const EAT_NUDGE_TYPE = "eat-nudge";
 
-/** Cancel this family only; other families (water-reminder, meal-reminder,
- *  weight_reminder, event_reminder) untouched. */
-export async function cancelAllEatNudges(): Promise<void> {
+/**
+ * Every exported mutation is serialized through this queue so overlapping
+ * calls can never interleave. This matters specifically because of the
+ * ≤1-pending invariant: `syncEatNudge`'s body is cancel → permission-check →
+ * schedule, with a real `await` (native-module round trip) at each arrow.
+ * Two overlapping calls — reachable in practice, since spec §8.1 defines two
+ * resync points (Home card after every load, MealsScreen after every
+ * meal-log write) — can each observe "0 pending" from their own cancel step
+ * and then both schedule, leaving 2 pending. A module-level promise chain is
+ * the minimal fix: each queued operation awaits the previous one's
+ * completion (success OR failure) before running, so at any instant at most
+ * one cancel-then-maybe-schedule sequence is in flight. `mealReminderService`
+ * has the identical structural race and does NOT do this — that is not an
+ * oversight to copy here, because that family carries no stated 1-slot
+ * budget; this one does.
+ */
+let queue: Promise<void> = Promise.resolve();
+
+function serialize<T>(op: () => Promise<T>): Promise<T> {
+  const run = queue.then(op, op);
+  queue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+/** Unserialized core of `cancelAllEatNudges`. Only ever called directly by
+ *  `syncEatNudgeCore` below (never via the exported, queue-wrapped
+ *  `cancelAllEatNudges`) — routing an already-queued operation back through
+ *  `serialize` would enqueue behind itself and deadlock. Returns whether the
+ *  cancel actually completed, so a caller can decide not to schedule on top
+ *  of an unknown pending state. */
+async function cancelAllEatNudgesCore(): Promise<boolean> {
   try {
     const all = await Notifications.getAllScheduledNotificationsAsync();
     for (const n of all) {
@@ -27,49 +63,48 @@ export async function cancelAllEatNudges(): Promise<void> {
         await Notifications.cancelScheduledNotificationAsync(n.identifier);
       }
     }
+    return true;
   } catch (error) {
     console.error("cancelAllEatNudges:", error);
+    return false;
   }
 }
 
-/**
- * Reconcile pending state with the engine's decision: null → cancel only;
- * otherwise cancel-then-schedule one DATE-trigger one-shot for today at
- * fireAtMinutes.
- *
- * Midnight caveat (assessed, not fixed here): `EatNextNudge.fireAtMinutes`
- * is documented (eatNext.ts) as minutes-since-local-midnight on the SAME
- * local day as the `nowMinutes` that produced it, and callers are told to
- * resolve it against THAT day, not a fresh `new Date()` — which is exactly
- * what this function does, on the assumption that syncEatNudge always runs
- * on the same calendar day the decision was computed. The
- * `fireDate.getTime() <= Date.now()` check below only catches "the target
- * time already passed today"; it does NOT detect "today is a different day
- * than the decision's day". If a decision were computed shortly before local
- * midnight and this function ran shortly after, `new Date()` would land on
- * the new day and could reconstruct a fireDate up to ~24h later than
- * intended, silently, with no error. This is not fixable from inside this
- * function without threading the decision's source day through, and it has
- * no reachable call site yet (useEatNext computes `now` and the decision
- * synchronously in one pass, and no Task 6-era caller persists a decision
- * across a background/foreground cycle before calling this). Task 8/10 must
- * call syncEatNudge synchronously off a freshly-computed `result`, not a
- * cached one from a prior day, or this reopens.
- */
-export async function syncEatNudge(decision: EatNextNudge | null): Promise<void> {
-  await cancelAllEatNudges();
+/** Cancel this family only; other families (water-reminder, meal-reminder,
+ *  weight_reminder, event_reminder — and the SNOOZE re-schedule at
+ *  `useNotifications.ts:61`, which copies whatever `data` the original
+ *  notification carried, so it inherits and is swept by that original
+ *  family's tag) untouched. Returns `false` if the underlying
+ *  expo-notifications calls threw, so a caller with a stricter invariant
+ *  (see `syncEatNudge`) can refuse to proceed rather than risk scheduling on
+ *  top of an unknown pending state. */
+export function cancelAllEatNudges(): Promise<boolean> {
+  return serialize(cancelAllEatNudgesCore);
+}
+
+async function syncEatNudgeCore(
+  decision: EatNextNudge | null,
+  sourceDay: Date,
+): Promise<void> {
+  const cancelled = await cancelAllEatNudgesCore();
   if (!decision) return;
+  // Cancel failed: whatever's actually pending is unknown, so scheduling on
+  // top of it risks the 2-pending outcome this whole module exists to
+  // prevent. Bail rather than guess — the next resync (Home card's next
+  // load, or MealsScreen's next write) gets another chance.
+  if (!cancelled) return;
   const granted = await requestPermissions();
   if (!granted) return;
 
-  const fireDate = new Date();
-  fireDate.setHours(
-    Math.floor(decision.fireAtMinutes / 60),
-    decision.fireAtMinutes % 60,
-    0,
-    0,
-  );
-  if (fireDate.getTime() <= Date.now()) return;
+  // `nudgeFireDate` (eatNext.ts) resolves `fireAtMinutes` against `sourceDay`
+  // — the caller-supplied day the decision was computed on — returning
+  // `null` for either an already-past instant or a `sourceDay` that isn't
+  // `now`'s local calendar day (a stale decision: see the Task 6 execution
+  // amendment for the full trace of how that can happen and why it's
+  // required, not optional, here). No local Date arithmetic in this file
+  // duplicates that contract.
+  const fireDate = nudgeFireDate(decision.fireAtMinutes, sourceDay, new Date());
+  if (!fireDate) return;
 
   try {
     await Notifications.scheduleNotificationAsync({
@@ -87,6 +122,36 @@ export async function syncEatNudge(decision: EatNextNudge | null): Promise<void>
   } catch (error) {
     console.error("syncEatNudge schedule failed:", error);
   }
+}
+
+/**
+ * Reconcile pending state with the engine's decision: null → cancel only;
+ * otherwise cancel-then-schedule one DATE-trigger one-shot at
+ * `decision.fireAtMinutes` on `sourceDay`.
+ *
+ * `sourceDay` is REQUIRED, deliberately — pass the `computedAt` that
+ * `useEatNext` returns alongside the `result` this `decision` came from, not
+ * `new Date()`. `EatNextNudge.fireAtMinutes` (eatNext.ts) is documented as
+ * minutes since local midnight on the SAME local day as the `nowMinutes`
+ * that produced it, and an optional parameter here would let a future
+ * caller quietly default to "today" at call time — which is exactly how the
+ * cross-midnight bug this signature exists to close would reappear (decision
+ * computed shortly before local midnight, `syncEatNudge` invoked shortly
+ * after; see the Task 6 execution amendment). Never call this with a
+ * `result`/`computedAt` pair that didn't come from the same `useEatNext`
+ * snapshot.
+ *
+ * Does not surface permission-denial to the caller (stays `Promise<void>`):
+ * this runs on every background resync (Home card load, MealsScreen
+ * meal-log write), with no user gesture to attach an alert to. Permission
+ * denial is instead surfaced at the toggle gesture itself — see
+ * `handleEatNudgesToggle` in `NotificationsScreen.tsx`.
+ */
+export function syncEatNudge(
+  decision: EatNextNudge | null,
+  sourceDay: Date,
+): Promise<void> {
+  return serialize(() => syncEatNudgeCore(decision, sourceDay));
 }
 
 /** One-off test fire (Notifications screen), mirroring the other families. */
