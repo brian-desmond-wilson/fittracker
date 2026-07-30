@@ -92,15 +92,12 @@ export interface UseEatNextValue {
    * two are always a matched pair (an in-flight refetch or a failed one never
    * makes `computedAt` describe a different `result` than the one on screen).
    *
-   * Exists so callers can hand `EatNextNudge.fireAtMinutes` to
-   * `eatNudgeService.ts`'s `syncEatNudge(decision, sourceDay)` — whose
-   * required `sourceDay` argument is exactly this value. `fireAtMinutes` is
-   * minutes since local midnight on the SAME local day `now` fell on (see
-   * `EatNextNudge`'s doc comment in `eatNext.ts`); resolving it against
-   * anything else — a fresh `new Date()` at call time, in particular — can
-   * silently mis-schedule by up to ~24h if the caller runs on a different
-   * calendar day than this hook computed the decision on (Task 6 execution
-   * amendment has the full trace). Pass this field, not `new Date()`.
+   * Pass this as `eatNudgeService.ts`'s `syncEatNudge(decision, sourceDay)`
+   * — its required `sourceDay` argument is exactly this value; see that
+   * function's doc comment for why it must be this and not `new Date()`.
+   * Treat it as read-only: it's the literal `Date` object held in this
+   * hook's state, so mutating it in place (e.g. `.setHours(...)`) would
+   * corrupt state as a side effect of what looks like a read.
    */
   computedAt: Date | null;
 }
