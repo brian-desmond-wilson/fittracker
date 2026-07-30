@@ -25,8 +25,9 @@ const EAT_NUDGE_TYPE = "eat-nudge";
 /**
  * Every exported mutation is serialized through this queue so overlapping
  * calls can never interleave. This matters specifically because of the
- * ≤1-pending invariant: `syncEatNudge`'s body is cancel → permission-check →
- * schedule, with a real `await` (native-module round trip) at each arrow.
+ * ≤1-pending invariant: `syncEatNudge`'s body is resolve → cancel →
+ * permission-check → schedule, with a real `await` (native-module round
+ * trip) at each of the latter three arrows.
  * Two overlapping calls — reachable in practice, since spec §8.1 defines two
  * resync points (Home card after every load, MealsScreen after every
  * meal-log write) — can each observe "0 pending" from their own cancel step
@@ -99,8 +100,26 @@ async function syncEatNudgeCore(
   decision: EatNextNudge | null,
   sourceDay: Date,
 ): Promise<void> {
+  // Resolve BEFORE cancelling, deliberately — see the Task 6 (X2) execution
+  // amendment. `nudgeFireDate` (eatNext.ts) resolves `fireAtMinutes` against
+  // `sourceDay` — the caller-supplied day the decision was computed on —
+  // returning `null` for either an already-past instant or a `sourceDay`
+  // that isn't `now`'s local calendar day (a stale decision). Resolving it
+  // first means a stale/past decision returns before the cancel call below
+  // ever runs, so it can only be a no-op, never a silent unschedule of a
+  // perfectly good pending nudge. `decision ? … : null` keeps `null` (the
+  // caller's explicit "nothing to schedule") and a stale non-null decision
+  // (a decision that used to be schedulable and no longer is) as two
+  // different reasons to reach the same `fireDate === null` value here, but
+  // they diverge below: `null` still means cancel-only; a stale non-null
+  // decision means leave pending state untouched.
+  const fireDate = decision
+    ? nudgeFireDate(decision.fireAtMinutes, sourceDay, new Date())
+    : null;
+  if (decision && !fireDate) return; // stale/past — leave pending state alone
+
   const cancelled = await cancelAllEatNudgesCore();
-  if (!decision) return;
+  if (!decision) return; // null → cancel-only, unchanged contract
   // Cancel failed: whatever's actually pending is unknown, so scheduling on
   // top of it risks the 2-pending outcome this whole module exists to
   // prevent. Bail rather than guess — the next resync (Home card's next
@@ -112,15 +131,12 @@ async function syncEatNudgeCore(
   // `syncMealReminders` has the identical shape — not treated as a gap.
   const granted = await requestPermissions();
   if (!granted) return;
-
-  // `nudgeFireDate` (eatNext.ts) resolves `fireAtMinutes` against `sourceDay`
-  // — the caller-supplied day the decision was computed on — returning
-  // `null` for either an already-past instant or a `sourceDay` that isn't
-  // `now`'s local calendar day (a stale decision: see the Task 6 execution
-  // amendment for the full trace of how that can happen and why it's
-  // required, not optional, here). No local Date arithmetic in this file
-  // duplicates that contract.
-  const fireDate = nudgeFireDate(decision.fireAtMinutes, sourceDay, new Date());
+  // Unreachable in practice — the `decision && !fireDate` guard above
+  // already returned whenever `fireDate` came out null for a non-null
+  // `decision`, and `decision` is non-null on every path that reaches here
+  // (the `!decision` guard above returned otherwise). This is here purely
+  // so `fireDate`'s type narrows to `Date` for the call below; TS can't
+  // follow the compound `decision && !fireDate` condition two guards back.
   if (!fireDate) return;
 
   try {
@@ -143,8 +159,15 @@ async function syncEatNudgeCore(
 
 /**
  * Reconcile pending state with the engine's decision: null → cancel only;
- * otherwise cancel-then-schedule one DATE-trigger one-shot at
- * `decision.fireAtMinutes` on `sourceDay`.
+ * a decision that resolves to a usable fire time → cancel-then-schedule one
+ * DATE-trigger one-shot at `decision.fireAtMinutes` on `sourceDay`; a
+ * non-null decision that resolves to NO usable fire time (stale — see
+ * `sourceDay` below — or already past) → leave pending state untouched,
+ * cancelling nothing. That third case is resolved before any cancel call
+ * runs, specifically so a stale decision can only be a no-op, never a
+ * silent unschedule of a good pending nudge (Task 6 (X2) execution
+ * amendment has the full trace of how a stale decision reaches this
+ * function in practice).
  *
  * `sourceDay` is REQUIRED, deliberately — pass the `computedAt` that
  * `useEatNext` returns alongside the `result` this `decision` came from, not

@@ -29,9 +29,14 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // `useEatNext`'s own mount effect already issues the first load — this
   // ref skips ONLY the focus callback that fires alongside that same first
   // mount, so the card doesn't double-load on every mount. Every subsequent
-  // focus (tab switch back, app foreground) still refetches normally; a
+  // NAVIGATION focus (tab switch back to Home) still refetches normally; a
   // remount resets the ref (fresh component instance) and the hook's own
   // mount effect fires again in lockstep, so that path stays correct too.
+  // NOT covered: a warm foreground return (app backgrounded, then
+  // foregrounded again with Home still the focused screen) does not refire
+  // this — `useFocusEffect` is a navigation-focus hook, not an AppState
+  // listener, and `app/_layout.tsx`'s AppState handler only logs. See the
+  // corrected spec §8.1 parenthetical for the consequence.
   const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
