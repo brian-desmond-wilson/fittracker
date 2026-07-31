@@ -58,18 +58,29 @@ describe("sources", () => {
     const soon = item({});
     const later = item({});
     const alreadyLow = item({ isLow: true, totalQuantity: 1, lowThreshold: 2 });
+    const alreadyOut = item({ isOut: true, totalQuantity: 0, lowThreshold: 2 });
     const rates = new Map<string, ConsumptionEstimate>([
       [soon.id, { ratePerDay: 1, daysUntilOut: FORECAST_LEAD_DAYS }],
       [later.id, { ratePerDay: 1, daysUntilOut: FORECAST_LEAD_DAYS + 1 }],
       [alreadyLow.id, { ratePerDay: 1, daysUntilOut: 1 }],
+      [alreadyOut.id, { ratePerDay: 1, daysUntilOut: 1 }],
     ]);
-    const got = run({ items: [soon, later, alreadyLow], rates });
+    const got = run({ items: [soon, later, alreadyLow, alreadyOut], rates });
     const forecastOnly = got.find((s) => s.foodInventoryId === soon.id)!;
     expect(forecastOnly).toMatchObject({ priority: 3, quantity: 1 });
     expect(forecastOnly.reasons[0]).toBe(`~${FORECAST_LEAD_DAYS}d left at your pace`);
     expect(got.find((s) => s.foodInventoryId === later.id)).toBeUndefined();
-    // alreadyLow appears as the LOW source (priority 2), not forecast
-    expect(got.find((s) => s.foodInventoryId === alreadyLow.id)!.priority).toBe(2);
+    // alreadyLow must appear as the LOW source ONLY. min(2,3) stays 2
+    // whether or not the forecast source also fires, so priority alone
+    // can't prove the `it.isLow` guard half — only the reasons array
+    // reveals whether a second, spurious forecast reason snuck in.
+    const lowSuggestion = got.find((s) => s.foodInventoryId === alreadyLow.id)!;
+    expect(lowSuggestion.priority).toBe(2);
+    expect(lowSuggestion.reasons).toEqual(["below threshold (1 left)"]);
+    // Same proof shape for the guard's `it.isOut` half.
+    const outSuggestion = got.find((s) => s.foodInventoryId === alreadyOut.id)!;
+    expect(outSuggestion.priority).toBe(1);
+    expect(outSuggestion.reasons).toEqual(["out of stock"]);
   });
 });
 
@@ -89,6 +100,16 @@ describe("merge + suppression", () => {
       "out of stock", "needed for Korean Beef Bowl", "needed for Taco Bowl",
     ]);
   });
+  it("cross-priority merge takes the min, not the max: a meal gap (p1) merged with the low source (p2) stays p1", () => {
+    const beef = item({ name: "Ground Beef", isLow: true, totalQuantity: 1, lowThreshold: 2 });
+    const got = run({
+      items: [beef],
+      mealGaps: [{ mealName: "Taco Bowl", missing: ["Ground Beef"] }],
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ priority: 1, quantity: 2 }); // 2−1+1
+    expect(got[0].reasons).toEqual(["needed for Taco Bowl", "below threshold (1 left)"]);
+  });
   it("suppressed by an unpurchased row matching by id", () => {
     const beef = item({ totalQuantity: 0, isOut: true });
     expect(run({
@@ -101,6 +122,25 @@ describe("merge + suppression", () => {
       mealGaps: [{ mealName: "PB&J", missing: ["Grape Jelly"] }],
       unpurchased: [{ foodInventoryId: null, name: "  grape jelly " }],
     })).toHaveLength(0);
+  });
+  it("a null-id unpurchased row still suppresses an id-carrying suggestion by name (manual entry, or an ON DELETE SET NULL orphan)", () => {
+    const beef = item({ name: "Ground Beef", totalQuantity: 0, isOut: true });
+    expect(run({
+      items: [beef],
+      unpurchased: [{ foodInventoryId: null, name: "ground beef" }],
+    })).toHaveLength(0);
+  });
+  it("suppression is per-row: an id-carrying unpurchased row does NOT suppress by name — food_inventory has no unique constraint on name, so a different item sharing the name must still surface", () => {
+    const a = item({ name: "Ground Beef", totalQuantity: 0, isOut: true });
+    const b = item({ name: "Ground Beef", totalQuantity: 0, isOut: true });
+    const got = run({
+      items: [a, b],
+      unpurchased: [{ foodInventoryId: a.id, name: "Ground Beef" }],
+    });
+    // a is suppressed by id; b is a distinct item and must not be swept up
+    // by a's name via an unfiltered name-suppression set.
+    expect(got).toHaveLength(1);
+    expect(got[0].foodInventoryId).toBe(b.id);
   });
   it("purchased rows do NOT suppress (caller passes only unpurchased)", () => {
     // Contract test: the input is named `unpurchased` — this pins that a

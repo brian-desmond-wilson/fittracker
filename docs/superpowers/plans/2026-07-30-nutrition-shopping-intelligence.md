@@ -508,18 +508,29 @@ describe("sources", () => {
     const soon = item({});
     const later = item({});
     const alreadyLow = item({ isLow: true, totalQuantity: 1, lowThreshold: 2 });
+    const alreadyOut = item({ isOut: true, totalQuantity: 0, lowThreshold: 2 });
     const rates = new Map<string, ConsumptionEstimate>([
       [soon.id, { ratePerDay: 1, daysUntilOut: FORECAST_LEAD_DAYS }],
       [later.id, { ratePerDay: 1, daysUntilOut: FORECAST_LEAD_DAYS + 1 }],
       [alreadyLow.id, { ratePerDay: 1, daysUntilOut: 1 }],
+      [alreadyOut.id, { ratePerDay: 1, daysUntilOut: 1 }],
     ]);
-    const got = run({ items: [soon, later, alreadyLow], rates });
+    const got = run({ items: [soon, later, alreadyLow, alreadyOut], rates });
     const forecastOnly = got.find((s) => s.foodInventoryId === soon.id)!;
     expect(forecastOnly).toMatchObject({ priority: 3, quantity: 1 });
     expect(forecastOnly.reasons[0]).toBe(`~${FORECAST_LEAD_DAYS}d left at your pace`);
     expect(got.find((s) => s.foodInventoryId === later.id)).toBeUndefined();
-    // alreadyLow appears as the LOW source (priority 2), not forecast
-    expect(got.find((s) => s.foodInventoryId === alreadyLow.id)!.priority).toBe(2);
+    // alreadyLow must appear as the LOW source ONLY. min(2,3) stays 2
+    // whether or not the forecast source also fires, so priority alone
+    // can't prove the `it.isLow` guard half — only the reasons array
+    // reveals whether a second, spurious forecast reason snuck in.
+    const lowSuggestion = got.find((s) => s.foodInventoryId === alreadyLow.id)!;
+    expect(lowSuggestion.priority).toBe(2);
+    expect(lowSuggestion.reasons).toEqual(["below threshold (1 left)"]);
+    // Same proof shape for the guard's `it.isOut` half.
+    const outSuggestion = got.find((s) => s.foodInventoryId === alreadyOut.id)!;
+    expect(outSuggestion.priority).toBe(1);
+    expect(outSuggestion.reasons).toEqual(["out of stock"]);
   });
 });
 
@@ -539,6 +550,16 @@ describe("merge + suppression", () => {
       "out of stock", "needed for Korean Beef Bowl", "needed for Taco Bowl",
     ]);
   });
+  it("cross-priority merge takes the min, not the max: a meal gap (p1) merged with the low source (p2) stays p1", () => {
+    const beef = item({ name: "Ground Beef", isLow: true, totalQuantity: 1, lowThreshold: 2 });
+    const got = run({
+      items: [beef],
+      mealGaps: [{ mealName: "Taco Bowl", missing: ["Ground Beef"] }],
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({ priority: 1, quantity: 2 }); // 2−1+1
+    expect(got[0].reasons).toEqual(["needed for Taco Bowl", "below threshold (1 left)"]);
+  });
   it("suppressed by an unpurchased row matching by id", () => {
     const beef = item({ totalQuantity: 0, isOut: true });
     expect(run({
@@ -551,6 +572,25 @@ describe("merge + suppression", () => {
       mealGaps: [{ mealName: "PB&J", missing: ["Grape Jelly"] }],
       unpurchased: [{ foodInventoryId: null, name: "  grape jelly " }],
     })).toHaveLength(0);
+  });
+  it("a null-id unpurchased row still suppresses an id-carrying suggestion by name (manual entry, or an ON DELETE SET NULL orphan)", () => {
+    const beef = item({ name: "Ground Beef", totalQuantity: 0, isOut: true });
+    expect(run({
+      items: [beef],
+      unpurchased: [{ foodInventoryId: null, name: "ground beef" }],
+    })).toHaveLength(0);
+  });
+  it("suppression is per-row: an id-carrying unpurchased row does NOT suppress by name — food_inventory has no unique constraint on name, so a different item sharing the name must still surface", () => {
+    const a = item({ name: "Ground Beef", totalQuantity: 0, isOut: true });
+    const b = item({ name: "Ground Beef", totalQuantity: 0, isOut: true });
+    const got = run({
+      items: [a, b],
+      unpurchased: [{ foodInventoryId: a.id, name: "Ground Beef" }],
+    });
+    // a is suppressed by id; b is a distinct item and must not be swept up
+    // by a's name via an unfiltered name-suppression set.
+    expect(got).toHaveLength(1);
+    expect(got[0].foodInventoryId).toBe(b.id);
   });
   it("purchased rows do NOT suppress (caller passes only unpurchased)", () => {
     // Contract test: the input is named `unpurchased` — this pins that a
@@ -578,9 +618,10 @@ describe("merge + suppression", () => {
 ```ts
 // mobile/src/lib/shoppingDemand.ts
 // Suggest-confirm shopping demand (Nutrition OS Phase 5, spec §6). Pure —
-// the seventh sibling lib. Four sources with fixed priorities; two dedupe
-// layers; nothing here writes anything — suggestions become shopping_list
-// rows only when the owner taps.
+// sibling of stockState/eatNext/mealScore/rampProgress/conceptMatch/
+// consumptionRate. Four sources with fixed priorities; two dedupe layers;
+// nothing here writes anything — suggestions become shopping_list rows
+// only when the owner taps.
 import type { ConsumptionEstimate } from "./consumptionRate";
 
 export const FORECAST_LEAD_DAYS = 3;
@@ -631,7 +672,11 @@ export function computeShoppingSuggestions(opts: {
   unpurchased: UnpurchasedRow[];
 }): ShoppingSuggestion[] {
   const { items, mealGaps, rates, unpurchased } = opts;
-  const byId = new Map(items.map((it) => [it.id, it]));
+  // last-wins on a folded-name collision between two inventory items: the
+  // meal-gap reason attaches to whichever came later in `items`. Defensible
+  // under the id-first merge identity (two distinct items still produce two
+  // suggestions via their own id keys) — a deliberate choice, not an
+  // oversight.
   const byName = new Map(items.map((it) => [fold(it.name), it]));
 
   // key = inventory id when known, else folded name (the merge identity).
@@ -655,12 +700,6 @@ export function computeShoppingSuggestions(opts: {
     if (thresholdQuantity && !existing.thresholdQuantity) {
       existing.quantity = quantity;
       existing.thresholdQuantity = true;
-    }
-    // A merge may also teach a name-only draft its inventory identity.
-    if (existing.foodInventoryId === null && base.foodInventoryId !== null) {
-      existing.foodInventoryId = base.foodInventoryId;
-      existing.vendorId = base.vendorId;
-      existing.unit = base.unit;
     }
   };
 
@@ -701,11 +740,20 @@ export function computeShoppingSuggestions(opts: {
     }
   }
 
-  // Suppression: anything already on the (unpurchased) list, by id or name.
+  // Suppression: anything already on the (unpurchased) list. Per row, id
+  // else name (spec §6) — a row with a known foodInventoryId suppresses by
+  // id ONLY; a row without one (typed manually, or orphaned by a deleted
+  // item via shopping_list.food_inventory_id's ON DELETE SET NULL)
+  // suppresses by case-folded name. food_inventory has no unique constraint
+  // on name, so folding every row's name into the suppression set — even
+  // id-carrying rows — would let an unpurchased row for item A silently
+  // drop a suggestion for a distinct item B that merely shares its name.
   const suppressedIds = new Set(
     unpurchased.map((r) => r.foodInventoryId).filter((x): x is string => x !== null),
   );
-  const suppressedNames = new Set(unpurchased.map((r) => fold(r.name)));
+  const suppressedNames = new Set(
+    unpurchased.filter((r) => r.foodInventoryId === null).map((r) => fold(r.name)),
+  );
 
   return [...drafts.values()]
     .filter(
@@ -1812,5 +1860,92 @@ Test Suites: 10 passed, 10 total
 Tests:       293 passed, 293 total
 ```
 (293 = the 289 left by the Task 3 commit, +3 from the first pass's Fixes 1–3, +1 from this pass's Fix 2 age-0 test; the horizon retune, the plan wiring, and the five documentation corrections added no new test cases.) The plan's Task 3 code blocks were re-diffed programmatically against `mobile/src/lib/consumptionRate.ts` and `mobile/src/lib/__tests__/consumptionRate.test.ts` after every edit in this section and found byte-identical each time, the same check used for Task 1.
+
+### Task 4 — shoppingDemand
+
+Spec review passed outright: both files as originally committed were byte-identical to this plan's Task 4 code blocks, and every §6 clause (all four sources, both dedupe layers, the quantity formula, `FORECAST_LEAD_DAYS`) and §10's coverage expectations were confirmed present. Code-quality review's mutation battery killed 21 of 27 mutations on the first pass, and separately confirmed the quantity formula is exactly right by reading it against the actual comparator it has to clear: `stockState.ts:105`'s `isLow` check is `totalQuantity > 0 && totalQuantity <= lowThreshold`, so `max(1, lowThreshold − total + 1)` produces `lowThreshold − total + 1` units above `total` — one past the boundary the `<=` compares against, not landing on it — verified by hand across seven `(total, lowThreshold)` pairs. None of that machinery needed a fix. The six survivors resolve to three distinct findings, all genuine and all in the two areas the task brief flagged as needing especially careful guarding: the dedupe rules (two separate gaps) and the forecast source's "not low/out" guard. Three further Minor items (one dead variable, one unreachable branch, one header/comment nit) were found by inspection rather than mutation. All are fixed below; each Important fix is mutation-proved with the actual observed output. Source and plan-block changes were re-diffed programmatically against the committed files after every edit in this section, the same check used for Tasks 1 and 3.
+
+**Fixed (three findings, all Important — the dedupe and forecast-guard contracts the task brief called out):**
+
+1. **Suppression over-fired: a row's case-folded name suppressed by name even when the row also carried an id.** `suppressedNames` was built from *every* unpurchased row's name, and the filter at the end ANDed it unconditionally onto every draft, including id-carrying ones. `food_inventory` has no unique constraint on `name` (verified against `supabase/migrations/20250208_complete_tracking_schema.sql:80-89`), so two distinct items can share a name — and an unpurchased row referencing item A by id would silently also suppress a live suggestion for item B, a different item that merely has the same name. Read literally, spec §6 already says "id, **else** name" — per row, not per suggestion-set — which only a row with no id can trigger. Fixed by filtering `suppressedNames` to rows where `foodInventoryId === null` before folding:
+   ```ts
+   const suppressedNames = new Set(
+     unpurchased.filter((r) => r.foodInventoryId === null).map((r) => fold(r.name)),
+   );
+   ```
+   **Pinned with two tests:** the failure case — two same-named out-of-stock items, an unpurchased row referencing only the first by id, asserting the second still surfaces (`"suppression is per-row: an id-carrying unpurchased row does NOT suppress by name…"`) — and the companion confirmation that the narrow rule still keeps the case that genuinely needs name matching: a manually-typed (or `ON DELETE SET NULL`-orphaned) null-id row still suppresses an id-carrying suggestion by name (`"a null-id unpurchased row still suppresses an id-carrying suggestion by name…"`).
+
+   **Mutation-proved** by reverting to the unfiltered `new Set(unpurchased.map((r) => fold(r.name)))` and re-running the new discriminating test:
+   ```
+   ● suppression is per-row: an id-carrying unpurchased row does NOT suppress by name …
+     expect(received).toHaveLength(expected)
+     Expected length: 1
+     Received length: 0
+     Received array:  []
+   ```
+   Restoring the filtered version and re-running confirmed it passes again. All 12 of the original commit's tests were confirmed to pass under the unfiltered (broken) version too — which is itself the finding the reviewer named: the broader, wrong behaviour was entirely unpinned by the original suite.
+
+2. **`Math.min` in the priority merge was unpinned — `Math.max` survived.** The only test exercising the merge (`"cross-source merge: min priority…"`) merges two sources that are both priority 1 (out-of-stock + two meal gaps), so `min` and `max` are indistinguishable there. The cross-priority path — a priority-1 source merging with a priority-2 source on the same item — was live and untested. No source change was needed (the code already reads `Math.min`); the gap was purely in coverage. Added a test that merges a meal gap (p1) with the low-stock source (p2) on the same item and asserts the merged priority stays 1, not 2.
+
+   **Mutation-proved** by changing `Math.min` to `Math.max` at the merge and re-running the new test:
+   ```
+   ● cross-priority merge takes the min, not the max: a meal gap (p1) merged with the low source (p2) stays p1
+     expect(received).toMatchObject(expected)
+     - Expected  - 1
+     + Received  + 1
+       Object {
+     -   "priority": 1,
+     +   "priority": 2,
+         "quantity": 2,
+       }
+   ```
+   Confirmed the pre-existing "cross-source merge" test still passes unmodified under this same mutant (both its sources are p1, so it can't see the bug) — reproducing the reviewer's exact observation. Restored `Math.min` and re-ran; both tests pass again.
+
+3. **The forecast source's "not low/out" guard (`it.isOut || it.isLow`) had both halves unpinned.** The original test's `alreadyLow` case asserted only `priority === 2`; with either half of the guard removed, the merged priority is still `min(2, 3) = 2` (a p2 source merging with a would-be p3 forecast source), so priority alone can't distinguish a correctly-suppressed forecast source from one that fired and got silently absorbed into the merge. What actually changes under the mutant is the `reasons` array, which the original test never inspected — a low (or out) item would gain a second, spurious `"~Nd left at your pace"` reason with nobody noticing. Fixed by extending the existing test (no source change — the guard `it.isOut || it.isLow` was already correct) to assert the full `reasons` array on both an already-low item and a new already-out item, each given a rates-map entry that would trigger the forecast source if either guard half were missing.
+
+   **Mutation-proved**, both halves independently. Removing `it.isLow` (guard → `!est || it.isOut`):
+   ```
+   ● forecast → priority 3 only when daysUntilOut <= 3 and not low/out
+     expect(received).toEqual(expected)
+     - Expected  - 0
+     + Received  + 1
+       Array [
+         "below threshold (1 left)",
+     +   "~1d left at your pace",
+       ]
+   ```
+   Restored, then removing `it.isOut` (guard → `!est || it.isLow`):
+   ```
+   ● forecast → priority 3 only when daysUntilOut <= 3 and not low/out
+     expect(received).toEqual(expected)
+     - Expected  - 0
+     + Received  + 1
+       Array [
+         "out of stock",
+     +   "~1d left at your pace",
+       ]
+   ```
+   Restored the full guard (`!est || it.isOut || it.isLow`) and re-ran; passes again.
+
+**Minor, also fixed (found by inspection, not mutation testing):**
+
+4. **`const byId = new Map(items.map((it) => [it.id, it]));` was dead.** Not a placeholder for later use: every item-keyed lookup in the function uses `it.id` directly from the loop variable, and the one name-keyed lookup the merge logic needs (matching a meal gap's missing-item name against inventory) is `byName`, not `byId`. Deleted.
+
+5. **The `existing.foodInventoryId === null && base.foodInventoryId !== null` merge branch was unreachable, and wrong when forced.** The reviewer tried to construct an input that reaches it and could not: a null-`foodInventoryId` draft only exists under a folded-name `drafts` key, that key shape is only ever produced by an *unmatched* meal-gap upsert (`byName.get(...)` returned nothing), and an unmatched upsert's `base` always carries `foodInventoryId: null` too — so `base.foodInventoryId !== null` can never be true for a draft that got there via a name key. The only way in is a key-namespace collision between the two "keys share one Map" schemes (`drafts` keys are inventory UUIDs *or* folded names) — a saved food literally named to match a `food_inventory.id` (a `uuid primary key default gen_random_uuid()`). And when artificially forced to fire, the output is actively wrong, not merely dead: an unrelated item's id/vendor/unit gets grafted onto a name-only suggestion whose name doesn't match that item. The spec's actual stated outcome — a missing-for-meal name adopting a matching item's id/vendor/unit — is fully achieved elsewhere, at upsert-creation time via the `match ? itemBase(match) : …` lookup in the meal-gap loop, which is tested and passing independent of this branch. Deleted the branch and its comment; kept the creation-time lookup, which is the real mechanism.
+
+6. **Header ordinal and an unmarked tiebreak.** The header called this "the seventh sibling lib" — spec §6 calls it the "Sixth pure lib," and neither count survives a literal file tally; no sibling lib (`stockState`, `eatNext`, `mealScore`, `rampProgress`, `conceptMatch`, `inventoryResolution`, `consumptionRate`) numbers itself at all. Dropped the ordinal, kept the rest of the header (it was accurate) and reworded to name siblings the way `eatNext.ts`/`mealScore.ts` already do ("sibling of …"), so nothing is left to rot the next time a lib is added or removed. Separately, `byName` is last-wins on a folded-name collision between two inventory items sharing a name — defensible (the id-first merge identity still produces two suggestions for two distinct items via their own id keys) but arbitrary, and previously unmarked as a choice. Added a one-line comment at the `byName` construction site saying so.
+
+**Considered, no change:**
+
+- **`!existing.thresholdQuantity` in the merge is a dead condition, but an equivalent mutant, not a coverage gap.** Mutating it to bare `thresholdQuantity` survives the full suite, because the only two threshold-quantity sources — out-of-stock and low-stock — are mutually exclusive on any single item (`isOut` requires `totalQuantity === 0`; `isLow` requires `totalQuantity > 0`) and both call the same `exitLowQty(it)` formula on the same item's current fields, so even in a hypothetical world where both fired for one item the computed quantity would be identical either way. Left as written — it's the plan's original defensive structure and it's harmless — but recorded so a future reviewer doesn't re-chase this survivor.
+- **`Math.max(1, …)` in `exitLowQty` is unreachable for any input that can actually trigger it, but spec-mandated, so it stays.** The floor only binds when `totalQuantity > lowThreshold`, which contradicts both flags that call `exitLowQty` (`isOut` ⇒ `totalQuantity === 0`; `isLow` ⇒ `totalQuantity <= lowThreshold` per `stockState.ts:105`), and both threshold columns carry `CHECK (… >= 0)` with `lowThresholdFor` coalescing `null` to `0` — so a negative formula result is not constructible from real data. Spec §6 states the formula with the `max` explicitly, so it stays regardless. The existing test named "threshold 0 out-of-stock still suggests quantity 1" pins the `lowThreshold: 0` case (`0 − 0 + 1 = 1`), which passes identically with or without the floor — it is not evidence the floor itself is exercised, and no test was added that could be, since the floor has no reachable input.
+- **Cross-task, verified rather than re-flagged:** `ShoppingSuggestion.unit` is `string | null`, while `shopping_list.unit` is `TEXT NOT NULL` (`supabase/migrations/20250209_extend_food_inventory.sql:79`), and this plan's Phase 5 migration (Task 1) doesn't relax that constraint. Read Task 6's `addSuggestions` (this plan, ~:960-978): `unit: s.unit ?? "item"` already covers the null case before the insert. Confirmed here, not fixed here — recorded so Task 6's own reviewer can verify the coverage exists rather than rediscover the question from scratch.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 11 passed, 11 total
+Tests:       308 passed, 308 total
+```
+(308 = the 305 left by the Task 4 commit, +3 new tests from this round — the cross-priority merge case, and the two per-row suppression cases; the forecast test's expanded assertions and the three Minor fixes added no additional test cases.) The plan's Task 4 code blocks were re-diffed programmatically against `mobile/src/lib/shoppingDemand.ts` and `mobile/src/lib/__tests__/shoppingDemand.test.ts` after every edit in this section and found byte-identical (module the code fence's own banner-comment line and trailing newline, the same convention used for Tasks 1 and 3).
 
 
