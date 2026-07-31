@@ -1552,7 +1552,7 @@ git commit -m "feat(nutrition-os): vendor name/URL editing + tappable links (Pha
 
 ## ⚠️ Execution amendments
 
-None yet. Record every review-driven deviation here, per task, as execution proceeds.
+Record every review-driven deviation here, per task, as execution proceeds.
 
 ### Task 1 — the migration
 
