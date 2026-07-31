@@ -2532,3 +2532,28 @@ Test Suites: 11 passed, 11 total
 Tests:       317 passed, 317 total
 ```
 (317 = unchanged both before and after the refactor — this task, like Tasks 7 and 8, adds no test surface; `VendorsSection.tsx`/`NutritionPreferencesScreen.tsx` are React Native components outside `jest.config.js`'s pure-TypeScript-lib scope.) Unlike Task 8, this task's Step 1 block **is** a byte-identical source mirror, re-diffed programmatically against the shipped `VendorsSection.tsx` after both the refactor and this round's Item 1/2 follow-ups (same discipline as Tasks 3, 4, 6, and 7) — confirmed identical both times. Step 2's `handleVendorPatch` block is likewise byte-identical (modulo the plan's own leading-indentation convention) to the shipped `NutritionPreferencesScreen.tsx` handler.
+
+### Task 10 — the owner-gated apply
+
+**Pre-flight (read-only), 2026-07-30:** `npx supabase migration list` showed exactly one pending migration, `20260731100000`; every prior migration through `20260730100000` (Phase 4) was already applied both locally and remotely. `shopping_list` was **completely empty** — `total_rows = 0`, `count(category) = 0`. The drop guard could not fire. All four `nutrition_vendors` rows present and active: Amazon Fresh (order 1, has URL), Costco (Instacart) (2, has URL), Gus's Community Market (3, **no** URL), Thistle (4, has URL). Note Gus's lacking an `app_url` is the natural on-device test case for a vendor section header rendering *without* the "Open ↗" affordance. Object state matched the migration's expectations exactly: `shopping_list.category` present; `food_inventory.preferred_vendor_id`, `shopping_list.vendor_id`, and `replace_item_locations` all absent; `transfer_inventory_units(p_item_id, p_from_location_id, p_to_location_id, p_quantity)` present with the signature the client calls.
+
+**Apply:** `npx supabase db push --yes` applied cleanly with no guard exception. The migration emitted the `raise notice` added during Task 1's review:
+
+```
+NOTICE (00000): shopping_list.category guard: 0 non-null rows found — safe to drop
+```
+
+Worth noting explicitly that this notice was itself a Task 1 review addition (spec §5 names `raise notice` counts as house style, and the plan's original SQL omitted it) — it did exactly the job it was added for, giving visible confirmation at the gate.
+
+**Post-verify (read-only), all confirmed:** `food_inventory.preferred_vendor_id` and `shopping_list.vendor_id` both exist as `uuid`, both with a foreign key to `nutrition_vendors(id)` **on delete SET NULL**. `shopping_list.category` is gone. `replace_item_locations` exists with `prosecdef = false` — i.e. security **invoker**, as specified — and `search_path=""`. EXECUTE is granted to `authenticated`, `postgres`, and `service_role` only. **`anon` and `public` are absent**, confirming both revokes took effect. RLS remains enabled with 4 policies each on `shopping_list`, `food_inventory`, and `food_inventory_locations` — unchanged by the migration.
+
+**Owner rulings taken at the gate**, all four attributed to the owner:
+
+1. **Apply approved** and executed.
+2. **The ABBA deadlock against `transfer_inventory_units` is accepted as recorded** — no follow-up migration. Cross-reference Task 1's amendment where the mechanism, the deterministic repro, and the declined remedy are documented.
+3. **Approved design specs are append-only during execution.** Implementers may not edit approved spec text in place; deviations go in a dated deviations note. See below.
+4. **The forecast display string stays `~{n}d left`** as spec §7 specifies — the `≤` alternative (Task 8's amendment, "Declined, recorded for the owner") was considered and declined.
+
+**On ruling 3 — the Task 7 in-place spec edit, reverted and re-recorded.** During Task 7, the implementer edited the *approved* `docs/superpowers/specs/2026-07-30-nutrition-shopping-intelligence-design.md` in place: §9.2's heading was changed from listing "memo rows" among the house container patterns to omitting it plus a pointer back to this plan's Task 7 amendment (see that amendment's "Deferred, not fixed" entry for the underlying rationale, which is unchanged by any of this). At the Task 10 gate the owner ruled that approved specs are append-only during execution — a real deviation from what was approved must not read as though it was the plan all along. Per that ruling, §9.2's heading has been reverted to its original approved text (recovered from `git show e3fb0a8^:docs/superpowers/specs/2026-07-30-nutrition-shopping-intelligence-design.md`, byte-for-byte, not retyped), and the deviation is now recorded instead in a new `## Execution deviations` section appended at the end of the spec, pointing back at this Task 7 entry. This convention — approved spec text is never edited in place; execution-time divergences are appended, dated, with a pointer into this plan's amendments — now applies to Phases 6+.
+
+Task 11's automated checks were run at this point and were clean: `tsc` 0 errors, **11 suites / 317 tests** green (baseline at branch start was 9 suites / 279 tests); no `category` reference in `mobile/src/types/track.ts`; no surviving `replaceItemLocations(user…)` call signature; **zero** `src/lib/**` → `src/components/**` layering edges; `MAX_DISPLAY_DAYS` genuinely consumed at `FoodInventoryScreen.tsx:591`. The only `from("shopping_list")` sites outside `shopping.ts` are the legacy delete in `handleDeleteItem` (expected to remain — deleting an inventory item still clears its demand) and Task 8's new unpurchased-only existence check, whose scoping comment correctly cites the demand engine's own suppression rule.

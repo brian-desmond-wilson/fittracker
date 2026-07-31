@@ -115,7 +115,7 @@ Sixth pure lib; options-object input assembled by the query module; exported pol
 
 `"shopping"` joins the `TrackingCategory` closed union; fourth nutrition card (`ShoppingCart` icon — imported unused since Feb, finally consumed) fills the grid's odd-count spacer slot; route in the track `_layout`; thin `app/(tabs)/track/shopping/index.tsx` → `ShoppingListScreen`.
 
-### 9.2 `ShoppingListScreen` (house container patterns: SectionList root, `loadFailed` → Retry, alert idiom, `useSafeAreaInsets`; memoized rows deliberately deferred — see the implementation plan's Task 7 amendment for why)
+### 9.2 `ShoppingListScreen` (house container patterns: SectionList root, memo rows, `loadFailed` → Retry, alert idiom, `useSafeAreaInsets`)
 
 1. **Suggested** — pinned first, hidden when empty. Rows: name · quantity · reasons; ＋ per row; "Add all" header action. Adding stamps the vendor snapshot.
 2. **The list, grouped by vendor** — one section per vendor in `display_order`; unassigned rows under **"Anywhere"**, last. Vendor headers show a tappable deep link (`Linking.openURL(app_url)`) when set. Rows: checkbox (→ purchased + §8 restock offer), name, quantity, and a per-row vendor chip opening a small picker (active vendors + Anywhere) that writes the row's `vendor_id` only.
@@ -142,3 +142,9 @@ The long-press "Add to Shopping List" is rewired through the module (correct thr
 - **No execution gate — Phase 4 is merged**; execution branches off current `main` (`nutrition-os/shopping` suggested) whenever the owner starts it.
 - Phase 4 pins (verified at design time, 2026-07-30): `ItemStockState`/`projectItemStock`/`assessAssemblability`/`AssemblabilityInventoryRow`/`MealAssemblability` shapes; `InventoryItemWithState.state` as the only quantity read; `transferInventoryUnits(itemId, null, …)` "from store" semantics; `fetchMealLibrary()`'s `MealLibraryData` (meals + `conceptIdsBySavedFoodId` + `inventory`); the `missing.length > 0` vs `!assemblable` distinction; Phase 4's three-copies-of-assemblability doc comment (`eatNext.ts:88-161`) — the shopping module's per-meal computation is a sanctioned fourth *call site*, not a fourth definition.
 - The plan must carry the standard preconditions block (baseline test count check, amendments-recording protocol) and reconcile against any post-design commits to `main` before execution starts.
+
+## Execution deviations (appended during implementation — the approved text above is unchanged)
+
+Convention: the approved text above is never edited in place. Execution-time divergences are appended here, dated, with a pointer into the implementation plan's `## ⚠️ Execution amendments`.
+
+**2026-07-30 — §9.2, memoized rows not implemented.** `ShoppingListScreen` does not memoize its rows. At this list's realistic size (a single user's shopping list — tens of rows at the outside) the gain is unmeasurable, and extracting a row component from a 365-line screen that could not be exercised against real data until Task 10's migration applied carried more regression risk than the gain justified. Full rationale: the implementation plan's `### Task 7` amendment, "Deferred, not fixed — the 'memo rows' house-pattern claim was unmet."
