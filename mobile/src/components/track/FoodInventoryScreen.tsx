@@ -31,7 +31,9 @@ import {
   transferInventoryUnits,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
-import { projectItemStock } from "@/src/lib/stockState";
+import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shopping";
+import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
+import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
 import { CategoryTabs } from "./CategoryTabs";
@@ -65,6 +67,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  // Consumption-forecast map ("~Nd left"); decoration only — a failed fetch
+  // leaves this empty rather than blocking the inventory render (see
+  // fetchInventory below).
+  const [ratesById, setRatesById] = useState<Map<string, ConsumptionEstimate>>(new Map());
 
   // Restock modal state
   const [showRestockModal, setShowRestockModal] = useState(false);
@@ -106,8 +113,22 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const items = await fetchInventoryWithState(getLocalDateString());
+      const todayLocalDate = getLocalDateString();
+      const items = await fetchInventoryWithState(todayLocalDate);
       setItems(items);
+
+      // Rates depend on totalsById, which is only available once `items` has
+      // resolved, so this can't run concurrently with the fetch above — but
+      // it's wrapped in its own try/catch so a failure here (bad network,
+      // etc.) can never take down the inventory render that just succeeded.
+      // The forecast line is decoration; the grid is not.
+      try {
+        const totalsById = new Map(items.map((it) => [it.id, it.state.totalQuantity]));
+        const rates = await fetchConsumptionRates(todayLocalDate, totalsById);
+        setRatesById(rates);
+      } catch (ratesError) {
+        console.error("Error fetching consumption rates:", ratesError);
+      }
     } catch (error) {
       console.error("Error fetching inventory:", error);
       Alert.alert("Error", "Failed to load inventory");
@@ -175,18 +196,25 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
       if (!user) return;
 
-      const { error } = await supabase.from("shopping_list").insert([
+      // Routed through the shopping module rather than a direct insert, so
+      // this shares the one quantity formula (threshold-exit, not the old
+      // storage-type-blind `restock_threshold || 1`) and vendor-stamping
+      // logic with every other add path (spec §9.3). `?? null`, not a bare
+      // read: `preferred_vendor_id` comes back `undefined` (not `null`) on
+      // rows fetched before the column-adding migration lands, since the
+      // untyped client casts through `as FoodInventoryItem[]` regardless of
+      // what the row actually has.
+      await addSuggestions(user.id, [
         {
-          user_id: user.id,
-          food_inventory_id: item.id,
           name: item.name,
-          quantity: item.restock_threshold || 1,
+          foodInventoryId: item.id,
+          vendorId: item.preferred_vendor_id ?? null,
+          quantity: Math.max(1, lowThresholdFor(item) - item.state.totalQuantity + 1),
           unit: item.unit,
-          priority: 2,
+          priority: item.state.isOut ? 1 : 2,
+          reasons: ["added from inventory"],
         },
       ]);
-
-      if (error) throw error;
 
       Alert.alert("Success", `${item.name} added to shopping list`);
     } catch (error: any) {
@@ -196,7 +224,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleLongPress = (item: InventoryItemWithState) => {
-    const isOutOfStock = item.state.isOut;
     const needsRestockFridge = item.state.needsFridgeRestock;
 
     // Build action sheet options dynamically
@@ -216,16 +243,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       }
     ];
 
-    // Add "Add to Shopping List" if out of stock (insert at position 2, after "Edit Details")
-    if (isOutOfStock) {
-      options.splice(2, 0, 'Add to Shopping List');
-      actions.splice(2, 0, () => handleAddToShoppingList(item));
-    }
+    // "Add to Shopping List" (insert at position 2, after "Edit Details") —
+    // un-gated (spec §9.3): every item can be topped up, not just ones
+    // already at zero, now that the quantity is threshold-exit rather than
+    // the old out-of-stock-only restock_threshold read.
+    options.splice(2, 0, 'Add to Shopping List');
+    actions.splice(2, 0, () => handleAddToShoppingList(item));
 
-    // Add "Restock Fridge" if multi-location and needs restock
+    // Add "Restock Fridge" if multi-location and needs restock (always after
+    // "Add to Shopping List", which is now unconditional).
     if (needsRestockFridge) {
-      options.splice(isOutOfStock ? 3 : 2, 0, 'Restock Fridge');
-      actions.splice(isOutOfStock ? 3 : 2, 0, () => {
+      options.splice(3, 0, 'Restock Fridge');
+      actions.splice(3, 0, () => {
         setRestockingItem(item);
         setShowRestockModal(true);
       });
@@ -494,6 +523,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               <Text style={styles.gridItemQuantityDetail}> ({item.state.readyQuantity} Ready)</Text>
             )}
           </Text>
+          {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
+            <Text style={styles.forecastText}>
+              ~{ratesById.get(item.id)!.daysUntilOut}d left
+            </Text>
+          )}
           {expiration && (
             <Text style={[styles.gridItemExpiration, { color: expiration.color }]}>
               {expiration.text}
@@ -935,4 +969,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginTop: 2,
   },
+  forecastText: { fontSize: 11, color: "#14B8A6" },
 });

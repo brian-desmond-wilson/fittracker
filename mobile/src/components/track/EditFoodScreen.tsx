@@ -21,6 +21,7 @@ import {
   replaceItemLocations,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
+import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -150,6 +151,17 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   // Notes
   const [notes, setNotes] = useState(item.notes || "");
 
+  // Preferred vendor. `?? null`, not a bare read: `item.preferred_vendor_id`
+  // comes back `undefined` (not `null`) on rows fetched before the
+  // column-adding migration lands — the untyped client casts through
+  // `as FoodInventoryItem[]` regardless of what the row actually has — and
+  // the add path's synthetic literal (add.tsx/preview.tsx) already sets it
+  // to `null`, so this seeds correctly on both the add and edit paths.
+  const [preferredVendorId, setPreferredVendorId] = useState<string | null>(
+    item.preferred_vendor_id ?? null,
+  );
+  const [vendors, setVendors] = useState<NutritionVendor[]>([]);
+
   // Images (state + camera/library picker live in a hook)
   const {
     imagePrimary,
@@ -182,6 +194,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       fetchLocationEntries(item.id);
     }
   }, [item.id]);
+
+  useEffect(() => {
+    supabase.from("nutrition_vendors").select("*").order("display_order")
+      .then(({ data, error }) => {
+        if (error) console.error("vendors fetch:", error);
+        else setVendors((data ?? []) as NutritionVendor[]);
+      });
+  }, []);
 
   const fetchCategoriesAndSubcategories = async () => {
     try {
@@ -675,6 +695,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // fields makes the write independent of the time component entirely.
         expiration_date: expirationDate ? getLocalDateString(expirationDate) : null,
         notes: notes.trim() || null,
+        preferred_vendor_id: preferredVendorId,
         image_primary_url: primaryUrl,
         image_front_url: frontUrl,
         image_back_url: backUrl,
@@ -1617,6 +1638,26 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   numberOfLines={4}
                   textAlignVertical="top"
                 />
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Preferred vendor</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {[...vendors.filter((v) => v.is_active), null].map((v) => {
+                      const selected = (v?.id ?? null) === preferredVendorId;
+                      return (
+                        <TouchableOpacity
+                          key={v?.id ?? "none"}
+                          style={[styles.locationButton, selected && styles.locationButtonActive]}
+                          onPress={() => setPreferredVendorId(v?.id ?? null)}
+                        >
+                          <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
+                            {v?.name ?? "None"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
               </View>
             )}
           </View>
