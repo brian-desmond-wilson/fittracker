@@ -21,6 +21,7 @@ import {
   replaceItemLocations,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
+import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -150,6 +151,17 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   // Notes
   const [notes, setNotes] = useState(item.notes || "");
 
+  // Preferred vendor. `?? null`, not a bare read: `item.preferred_vendor_id`
+  // comes back `undefined` (not `null`) on rows fetched before the
+  // column-adding migration lands — the untyped client casts through
+  // `as FoodInventoryItem[]` regardless of what the row actually has — and
+  // the add path's synthetic literal (add.tsx/preview.tsx) already sets it
+  // to `null`, so this seeds correctly on both the add and edit paths.
+  const [preferredVendorId, setPreferredVendorId] = useState<string | null>(
+    item.preferred_vendor_id ?? null,
+  );
+  const [vendors, setVendors] = useState<NutritionVendor[]>([]);
+
   // Images (state + camera/library picker live in a hook)
   const {
     imagePrimary,
@@ -182,6 +194,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       fetchLocationEntries(item.id);
     }
   }, [item.id]);
+
+  useEffect(() => {
+    fetchVendors();
+  }, []);
 
   const fetchCategoriesAndSubcategories = async () => {
     try {
@@ -232,6 +248,23 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     }
   };
 
+  // A failure here is benign — the picker just falls back to rendering only
+  // "None" and stays functional — but wrapped for consistency with every
+  // other fetch in this file (this was the one exception).
+  const fetchVendors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("nutrition_vendors")
+        .select("*")
+        .order("display_order");
+
+      if (error) throw error;
+
+      setVendors((data ?? []) as NutritionVendor[]);
+    } catch (error) {
+      console.error("Error fetching vendors:", error);
+    }
+  };
 
   const handleBarcodeScanned = async (scannedBarcode: string) => {
     setBarcode(scannedBarcode);
@@ -675,6 +708,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // fields makes the write independent of the time component entirely.
         expiration_date: expirationDate ? getLocalDateString(expirationDate) : null,
         notes: notes.trim() || null,
+        preferred_vendor_id: preferredVendorId,
         image_primary_url: primaryUrl,
         image_front_url: frontUrl,
         image_back_url: backUrl,
@@ -690,9 +724,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           // `quantity` is dropped from itemData above, but the column is
           // INTEGER NOT NULL with no default (20250206_tracking_tables.sql:14),
           // so the INSERT still has to supply one. 0 is the only honest seed:
-          // if the replaceItemLocations call below fails, a 0 cache alongside 0
-          // location rows is what every reader agrees on — the same damage
-          // bound replaceItemLocations applies on its own failure path.
+          // the replaceItemLocations RPC below is atomic, so a failure there
+          // rolls back with zero location rows written — a 0 cache alongside
+          // 0 location rows is what every reader agrees on.
           .insert({
             // `itemData` omits the thresholds the active storage type does not
             // render, so an UPDATE cannot disturb them. An INSERT has to supply
@@ -718,22 +752,21 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         //
         // ⚠️ CREATE PATH ONLY — the rollback below DELETES the item row. That
         // is correct here and only here, because this code created it moments
-        // ago: creating is no longer one atomic INSERT but insert -> delete ->
-        // insert -> update, and a failure past the first step would strand an
-        // item with zero location rows and a 0 cache, which the grid renders as
-        // a real out-of-stock product and which every retry would duplicate.
+        // ago: creating is the item-row INSERT above followed by the atomic
+        // replaceItemLocations RPC, and a failure in that RPC would strand the
+        // item row with zero location rows, which the grid renders as a real
+        // out-of-stock product and which every retry would duplicate.
         // The update path's equivalent call is deliberately NOT wrapped in
         // this — see the comment there.
         try {
-          await replaceItemLocations(user.id, foodItemId, locationRows);
+          await replaceItemLocations(foodItemId, locationRows);
         } catch (locationError) {
           const { error: rollbackError } = await supabase
             .from("food_inventory")
             .delete()
             .eq("id", foodItemId);
           // Logged, never rethrown: the location failure is the one the user
-          // has to see, and a failed rollback must not mask it. Same precedent
-          // as replaceItemLocations' own failed cache-resync handling.
+          // has to see, and a failed rollback must not mask it.
           if (rollbackError) {
             console.error("Failed to roll back orphaned item after location write failed:", rollbackError);
           }
@@ -852,24 +885,31 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // rather than clean up after ourselves.
         //
         // A failure here is not "the save didn't happen" — the item UPDATE
-        // above already committed. replaceItemLocations can fail three ways
-        // that differ in what survives (the delete failing leaves the stock
-        // fully intact; the insert failing zeroes it; the cache resync failing
-        // leaves correct rows and a stale cache), and this handler cannot tell
-        // them apart, so the copy hedges on the diagnosis. It does NOT hedge on
-        // the action: re-saving is idempotent and repairs all three, including
-        // the stale-cache case, which is the one that leaves the item's two
-        // quantity sources disagreeing until someone re-saves it.
+        // above already committed, independent of the stock write below.
+        // That UPDATE can carry storage_type/location changes: a single ->
+        // multi flip that then fails leaves storage_type flipped against
+        // surviving single-location rows, which skews lowThresholdFor
+        // (stockState.ts:81) until the next successful save — a real,
+        // narrow residual the alert below does not mention, because it
+        // speaks only to the stock.
+        //
+        // What the failure DOES leave untouched: replaceItemLocations is
+        // now the atomic replace_item_locations RPC, so a failure rolls the
+        // location-row writes and the cache resync back together, leaving
+        // both exactly as they were before this save — the item's PREVIOUS
+        // quantity, never a fabricated 0. The copy below states that
+        // plainly rather than hedging: re-saving is idempotent and repairs
+        // both the stock and the storage_type residual regardless.
         // That recovery only works if the user is told to re-save, so this gets
         // its own message instead of the generic one below, and the screen
         // stays open with the typed quantity intact so re-saving is one tap.
         try {
-          await replaceItemLocations(user.id, foodItemId, locationRows);
+          await replaceItemLocations(foodItemId, locationRows);
         } catch (locationError) {
           console.error("Error saving location rows:", locationError);
           Alert.alert(
             "Stock Not Saved",
-            "The item's other details were saved, but its stock may not have been saved and may now read 0. Tap Save again to restore the quantity.",
+            "The item's other details were saved, but its stock was not — it still shows the previous quantity. Tap Save again to retry.",
           );
           return;
         }
@@ -1395,6 +1435,42 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     </View>
                   </>
                 )}
+
+                {/* Preferred vendor — filed here rather than under Notes
+                    (where the plan's literal text placed it): it drives the
+                    quantity/vendor math this whole section already owns
+                    (lowThresholdFor, the restock thresholds above, the
+                    "~Nd left" forecast) and both other consumers of this
+                    value (the manual add and the shopping-demand engine, see
+                    lib/supabase/shopping.ts) are restock-flow code, not
+                    notes. Rendered once, outside the single/multi-location
+                    branches above, since it applies to both storage types. */}
+                <View style={styles.field}>
+                  <Text style={styles.label}>Preferred vendor</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {/* The currently-selected vendor is kept in the list even
+                        if it's since gone inactive (Task 9 adds the toggle to
+                        turn one off) — otherwise a deactivated vendor has no
+                        chip AND doesn't match `null`, so nothing highlights
+                        and the field silently reads as unset even though the
+                        value is untouched. Labelled so that state is legible
+                        rather than just mysteriously present. */}
+                    {[...vendors.filter((v) => v.is_active || v.id === preferredVendorId), null].map((v) => {
+                      const selected = (v?.id ?? null) === preferredVendorId;
+                      return (
+                        <TouchableOpacity
+                          key={v?.id ?? "none"}
+                          style={[styles.locationButton, selected && styles.locationButtonActive]}
+                          onPress={() => setPreferredVendorId(v?.id ?? null)}
+                        >
+                          <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
+                            {v?.name ?? "None"}{v && !v.is_active ? " (inactive)" : ""}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
               </View>
             )}
           </View>

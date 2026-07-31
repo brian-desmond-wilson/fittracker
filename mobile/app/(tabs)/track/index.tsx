@@ -10,6 +10,7 @@ import {
   Ruler,
   Camera,
   Dumbbell,
+  ShoppingCart,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
 import { colors } from "@/src/lib/colors";
@@ -43,6 +44,14 @@ export default function Track() {
       icon: "Package",
       iconColor: "#8B5CF6",
       backgroundColor: "rgba(139, 92, 246, 0.15)",
+      section: "nutrition",
+    },
+    {
+      id: "shopping",
+      title: "Shopping List",
+      icon: "ShoppingCart",
+      iconColor: "#14B8A6",
+      backgroundColor: "rgba(20, 184, 166, 0.15)",
       section: "nutrition",
     },
     // Body & Measurements Section
@@ -89,6 +98,7 @@ export default function Track() {
     Ruler,
     Camera,
     Dumbbell,
+    ShoppingCart,
   };
 
   const handleCardPress = (categoryId: TrackingCategory) => {

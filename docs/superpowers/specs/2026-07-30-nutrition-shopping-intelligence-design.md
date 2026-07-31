@@ -142,3 +142,9 @@ The long-press "Add to Shopping List" is rewired through the module (correct thr
 - **No execution gate — Phase 4 is merged**; execution branches off current `main` (`nutrition-os/shopping` suggested) whenever the owner starts it.
 - Phase 4 pins (verified at design time, 2026-07-30): `ItemStockState`/`projectItemStock`/`assessAssemblability`/`AssemblabilityInventoryRow`/`MealAssemblability` shapes; `InventoryItemWithState.state` as the only quantity read; `transferInventoryUnits(itemId, null, …)` "from store" semantics; `fetchMealLibrary()`'s `MealLibraryData` (meals + `conceptIdsBySavedFoodId` + `inventory`); the `missing.length > 0` vs `!assemblable` distinction; Phase 4's three-copies-of-assemblability doc comment (`eatNext.ts:88-161`) — the shopping module's per-meal computation is a sanctioned fourth *call site*, not a fourth definition.
 - The plan must carry the standard preconditions block (baseline test count check, amendments-recording protocol) and reconcile against any post-design commits to `main` before execution starts.
+
+## Execution deviations (appended during implementation — the approved text above is unchanged)
+
+Convention: the approved text above is never edited in place. Execution-time divergences are appended here, dated, with a pointer into the implementation plan's `## ⚠️ Execution amendments`.
+
+**2026-07-30 — §9.2, memoized rows not implemented.** `ShoppingListScreen` does not memoize its rows. At this list's realistic size (a single user's shopping list — tens of rows at the outside) the gain is unmeasurable, and extracting a row component from a 365-line screen that could not be exercised against real data until Task 10's migration applied carried more regression risk than the gain justified. Full rationale: the implementation plan's `### Task 7` amendment, "Deferred, not fixed — the 'memo rows' house-pattern claim was unmet."

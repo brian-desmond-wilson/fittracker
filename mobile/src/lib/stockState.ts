@@ -75,6 +75,14 @@ export function daysBetweenLocalDates(a: string, b: string): number {
   return Math.round((db - da) / 86_400_000);
 }
 
+/** The threshold `isLow` compares against — exported for the demand engine's
+ *  restock-quantity math (spec §6). One definition; projectItemStock uses it. */
+export function lowThresholdFor(item: StockItemInput): number {
+  return item.storage_type === "single-location"
+    ? item.restock_threshold ?? 0
+    : item.total_restock_threshold ?? 0;
+}
+
 export function projectItemStock(opts: {
   item: StockItemInput;
   locations: ReadonlyArray<StockQuantityRow>;
@@ -93,9 +101,7 @@ export function projectItemStock(opts: {
   // Task 8's assemblability inputs) can pass null; that's intentional here,
   // not an oversight.
   const single = item.storage_type === "single-location";
-  const lowThreshold = single
-    ? item.restock_threshold ?? 0
-    : item.total_restock_threshold ?? 0;
+  const lowThreshold = lowThresholdFor(item);
   const isLow = totalQuantity > 0 && totalQuantity <= lowThreshold;
 
   const needsFridgeRestock =

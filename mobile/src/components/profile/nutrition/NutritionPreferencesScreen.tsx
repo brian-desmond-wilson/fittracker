@@ -36,7 +36,7 @@ import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
 import { colors } from "@/src/lib/colors";
 import { RampCard } from "./RampCard";
 import { ConstraintsSection } from "./ConstraintsSection";
-import { VendorsSection } from "./VendorsSection";
+import { VendorsSection, type VendorPatch } from "./VendorsSection";
 import { ConceptRow } from "./ConceptRow";
 import { FoodMatchingScreen } from "./FoodMatchingScreen";
 import { nutritionStyles as s } from "./styles";
@@ -155,6 +155,13 @@ export function NutritionPreferencesScreen({
       run("Failed to save vendor", () =>
         updateVendor(vendor.id, { is_active: isActive })
       );
+    },
+    [run]
+  );
+
+  const handleVendorPatch = useCallback(
+    (vendor: NutritionVendor, patch: VendorPatch) => {
+      run("Failed to save vendor", () => updateVendor(vendor.id, patch));
     },
     [run]
   );
@@ -288,6 +295,7 @@ export function NutritionPreferencesScreen({
             <VendorsSection
               vendors={data.vendors}
               onToggleActive={handleVendorToggle}
+              onPatch={handleVendorPatch}
             />
             <TouchableOpacity
               style={[s.card, s.row]}
