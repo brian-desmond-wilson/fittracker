@@ -129,6 +129,12 @@ export function computeShoppingSuggestions(opts: {
   // on name, so folding every row's name into the suppression set — even
   // id-carrying rows — would let an unpurchased row for item A silently
   // drop a suggestion for a distinct item B that merely shares its name.
+  // Accepted residual, the other direction: if an item is renamed after its
+  // list row was created, that row's now-stale `name` won't id-match a
+  // fresh name-only suggestion for the same item (e.g. a meal gap citing
+  // the item's current display name) — a visible duplicate the owner can
+  // decline in this suggest-confirm UI, not a silent drop. See the Task 4
+  // amendment.
   const suppressedIds = new Set(
     unpurchased.map((r) => r.foodInventoryId).filter((x): x is string => x !== null),
   );

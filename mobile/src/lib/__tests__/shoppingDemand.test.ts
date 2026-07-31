@@ -54,6 +54,16 @@ describe("sources", () => {
     expect(s.vendorId).toBe("v1");
     expect(s.unit).toBe("bottle");
   });
+  it("byName's folded-name lookup is last-wins on a collision between two inventory items: the meal-gap reason attaches to whichever came later in `items` (deliberate, per the comment at the byName construction site — not an oversight)", () => {
+    const first = item({ name: "Ground Beef" });
+    const second = item({ name: "Ground Beef" });
+    const got = run({
+      items: [first, second],
+      mealGaps: [{ mealName: "Taco Bowl", missing: ["Ground Beef"] }],
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].foodInventoryId).toBe(second.id);
+  });
   it(`forecast → priority 3 only when daysUntilOut <= ${FORECAST_LEAD_DAYS} and not low/out`, () => {
     const soon = item({});
     const later = item({});
