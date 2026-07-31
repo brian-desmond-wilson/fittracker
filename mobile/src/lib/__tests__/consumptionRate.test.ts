@@ -101,4 +101,13 @@ describe("estimateConsumption", () => {
     const events: DecrementEvent[] = [ev("a", -11), ev("a", 10), ev("a", 25)];
     expect(run(events).has("a")).toBe(false);
   });
+
+  it("counts a same-day (age 0) event toward the window, not just strictly-past ones", () => {
+    // Ages [0, 14, 20]: age 0 is a meal logged today. If the future-date
+    // guard were age <= 0 instead of age < 0, this event would be dropped,
+    // leaving only 2 in-window units (< MIN_UNITS) and no estimate at all —
+    // a real day's log shouldn't be invisible for the rest of that day.
+    const r = run([ev("a", 0), ev("a", 14), ev("a", 20)]);
+    expect(r.get("a")).toEqual({ ratePerDay: 3 / RATE_WINDOW_DAYS, daysUntilOut: 94 });
+  });
 });

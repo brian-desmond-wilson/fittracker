@@ -22,15 +22,23 @@ export const RATE_WINDOW_DAYS = 28;
 export const MIN_UNITS = 3;
 export const MIN_SPAN_DAYS = 14;
 
-// Beyond roughly two months out, a daysUntilOut estimate carries no useful
-// information: at the minimum passing rate (MIN_UNITS over RATE_WINDOW_DAYS),
-// a single high-count item projects hundreds of days from as few as three
-// data points. The lib still returns the true value below — daysUntilOut is
+// Expressed as a multiple of RATE_WINDOW_DAYS, not a bare literal, because
+// that relationship is what makes the value defensible — retuning the
+// window keeps the horizon at the same implied error bar instead of
+// silently becoming some other fraction of a window. The bar itself: since
+// spanDays is always >= MIN_SPAN_DAYS and the divisor is RATE_WINDOW_DAYS,
+// every displayed daysUntilOut = n carries an implicit interval of
+// [n/2, n] (the bias-3 note above, worst case 2x). At n = MAX_DISPLAY_DAYS
+// (= 60 today) that's a 30-day band — already at the edge of actionable.
+// Left unbounded, at n = 934 (a real measured case for a 100-count item on
+// 3 logs) the interval is [467, 934]: three-digit precision the gates can't
+// stand behind. Two windows is exactly where the error bar swamps the
+// resolution. The lib still returns the true value below — daysUntilOut is
 // NOT capped here, because the demand engine (spec §6) needs the real number
 // and capping it in the lib would corrupt that input. This constant governs
 // rendering only: surfaces should omit the "~Nd left" line rather than print
 // a number the honesty gates can't actually stand behind.
-export const MAX_DISPLAY_DAYS = 60;
+export const MAX_DISPLAY_DAYS = RATE_WINDOW_DAYS * 2;
 
 export interface DecrementEvent {
   inventoryId: string;

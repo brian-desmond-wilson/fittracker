@@ -322,6 +322,15 @@ describe("estimateConsumption", () => {
     const events: DecrementEvent[] = [ev("a", -11), ev("a", 10), ev("a", 25)];
     expect(run(events).has("a")).toBe(false);
   });
+
+  it("counts a same-day (age 0) event toward the window, not just strictly-past ones", () => {
+    // Ages [0, 14, 20]: age 0 is a meal logged today. If the future-date
+    // guard were age <= 0 instead of age < 0, this event would be dropped,
+    // leaving only 2 in-window units (< MIN_UNITS) and no estimate at all —
+    // a real day's log shouldn't be invisible for the rest of that day.
+    const r = run([ev("a", 0), ev("a", 14), ev("a", 20)]);
+    expect(r.get("a")).toEqual({ ratePerDay: 3 / RATE_WINDOW_DAYS, daysUntilOut: 94 });
+  });
 });
 ```
 
@@ -355,15 +364,23 @@ export const RATE_WINDOW_DAYS = 28;
 export const MIN_UNITS = 3;
 export const MIN_SPAN_DAYS = 14;
 
-// Beyond roughly two months out, a daysUntilOut estimate carries no useful
-// information: at the minimum passing rate (MIN_UNITS over RATE_WINDOW_DAYS),
-// a single high-count item projects hundreds of days from as few as three
-// data points. The lib still returns the true value below — daysUntilOut is
+// Expressed as a multiple of RATE_WINDOW_DAYS, not a bare literal, because
+// that relationship is what makes the value defensible — retuning the
+// window keeps the horizon at the same implied error bar instead of
+// silently becoming some other fraction of a window. The bar itself: since
+// spanDays is always >= MIN_SPAN_DAYS and the divisor is RATE_WINDOW_DAYS,
+// every displayed daysUntilOut = n carries an implicit interval of
+// [n/2, n] (the bias-3 note above, worst case 2x). At n = MAX_DISPLAY_DAYS
+// (= 60 today) that's a 30-day band — already at the edge of actionable.
+// Left unbounded, at n = 934 (a real measured case for a 100-count item on
+// 3 logs) the interval is [467, 934]: three-digit precision the gates can't
+// stand behind. Two windows is exactly where the error bar swamps the
+// resolution. The lib still returns the true value below — daysUntilOut is
 // NOT capped here, because the demand engine (spec §6) needs the real number
 // and capping it in the lib would corrupt that input. This constant governs
 // rendering only: surfaces should omit the "~Nd left" line rather than print
 // a number the honesty gates can't actually stand behind.
-export const MAX_DISPLAY_DAYS = 60;
+export const MAX_DISPLAY_DAYS = RATE_WINDOW_DAYS * 2;
 
 export interface DecrementEvent {
   inventoryId: string;
@@ -1398,10 +1415,10 @@ git commit -m "feat(nutrition-os): Shopping List screen + Track hub card"
 
 (Use a top-level import of `addSuggestions` from `@/src/lib/supabase/shopping` and `lowThresholdFor` from `@/src/lib/stockState` — the dynamic-import line above is illustrative of *what*, not *how*.) Un-gate the action-sheet entry: the `if (isOutOfStock)` splice (~:219-222) becomes unconditional (the option always appears). Keep the success/failure alerts.
 
-- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside (`meal_logs` query + `estimateConsumption`, same shape as `fetchShoppingData`'s — extract a small `fetchConsumptionRates(todayLocalDate, totalsById)` helper into `mobile/src/lib/supabase/shopping.ts` and call it from both places rather than duplicating the events expansion). Render, next to the existing quantity text on each grid card:
+- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside (`meal_logs` query + `estimateConsumption`, same shape as `fetchShoppingData`'s — extract a small `fetchConsumptionRates(todayLocalDate, totalsById)` helper into `mobile/src/lib/supabase/shopping.ts` and call it from both places rather than duplicating the events expansion). Import `MAX_DISPLAY_DAYS` alongside `estimateConsumption` from `@/src/lib/consumptionRate` and gate the render on it — beyond that horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count. Render, next to the existing quantity text on each grid card:
 
 ```tsx
-              {ratesById.get(item.id) && (
+              {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
                 <Text style={styles.forecastText}>
                   ~{ratesById.get(item.id)!.daysUntilOut}d left
                 </Text>
@@ -1596,7 +1613,7 @@ git commit -m "feat(nutrition-os): vendor name/URL editing + tappable links (Pha
 
 - [ ] **Step 1:** `cd mobile && npx tsc --noEmit && npm test` — all suites green (shoppingDemand + consumptionRate + stockState additions + all prior; expect ~300+ tests).
 - [ ] **Step 2:** Greps: `grep -rn "\"category\"" mobile/src/types/track.ts` → no shopping reference; `grep -rn "replaceItemLocations(user" mobile/` → nothing (old signature gone); `grep -rn "from(\"shopping_list\")" mobile/src` → only `shopping.ts` and the legacy delete in `FoodInventoryScreen.tsx`'s `handleDeleteItem` (which stays — deleting an item still clears its demand).
-- [ ] **Step 3 (owner, on device — Metro reload, free `--port`):** hub shows the Shopping List card filling the grid slot; suggestions appear with correct reasons/quantities (verify the threshold-exit quantity on a low item); ＋ and Add all move rows into vendor groups; Instacart deep link opens; per-row vendor swap moves the row's group and does NOT change the product default; purchase → restock offer → inventory quantity rises (check in Food Inventory); un-check restores a purchased row; Clear purchased empties the section; "~Nd left" shows on a well-logged item and is absent on sparse ones; long-press add from inventory works on an in-stock item now; vendor rename + URL edit stick and the URL opens; EditFoodScreen vendor picker persists.
+- [ ] **Step 3 (owner, on device — Metro reload, free `--port`):** hub shows the Shopping List card filling the grid slot; suggestions appear with correct reasons/quantities (verify the threshold-exit quantity on a low item); ＋ and Add all move rows into vendor groups; Instacart deep link opens; per-row vendor swap moves the row's group and does NOT change the product default; purchase → restock offer → inventory quantity rises (check in Food Inventory); un-check restores a purchased row; Clear purchased empties the section; "~Nd left" shows on a well-logged item, is absent on sparse ones, and is also absent on a high-count item with thin history (e.g. a 100-count item logged only 3 times — the raw estimate lands well past `MAX_DISPLAY_DAYS`, so the line must not render it); long-press add from inventory works on an in-stock item now; vendor rename + URL edit stick and the URL opens; EditFoodScreen vendor picker persists.
 - [ ] **Step 4:** Stop. Merge/push are the owner's calls — after this merge, the Nutrition OS loop is closed.
 
 ---
@@ -1694,9 +1711,15 @@ Live impact today is nil, which is why this was a Minor finding rather than a de
 
 ### Task 3 — consumptionRate
 
-Spec review passed outright. Code-quality review mutation-tested the module empirically and confirmed the honesty gates and window logic were already well covered: 6/6 constant-value mutations and 4/4 core gate-logic mutations (`<`→`<=` in the window filter, `<`→`<=` in both the `MIN_UNITS` and `MIN_SPAN_DAYS` gates, `||`→`&&` joining the two gates) were killed by the plan's original tests. Every survivor sat in the arithmetic *after* the gates — four findings, one of them a real hole in the honesty contract the header itself promises. All four are fixed in this commit, in both the source and this plan's Task 3 code blocks; the two blocks were re-diffed programmatically against the committed files after the edit and found byte-identical, the same check used for Task 1.
+Spec review passed outright. Code-quality review mutation-tested the module and confirmed the honesty gates and window logic were already well covered: 6/6 constant-value mutations and 4/4 core gate-logic mutations (`<`→`<=` in the window filter, `<`→`<=` in both the `MIN_UNITS` and `MIN_SPAN_DAYS` gates, `||`→`&&` joining the two gates) were killed by the plan's original tests — none of that machinery needed a fix.
 
-**Fixed (four defects, all Important/Minor per the review, none Critical):**
+The same mutation pass against the surrounding code surfaced 4 surviving mutations, which resolve to only 3 distinct code-location findings: `Math.ceil`'s two mutants (→`floor`, →`round`) are one finding; the future-date guard's outright deletion is a second; `total <= 0` → `total < 0` is a third and is *not* a defect (see "Considered, no change" below — it survives only because the one test that probes it uses the value where both comparators agree). These three are not uniformly "after the gates," contrary to how a first pass of this section described them: `Math.ceil` is post-gate arithmetic, but the future-date guard sits earlier, in the events loop that filters and collects `ages` *before* any per-item gate runs.
+
+A fourth, and the most significant, finding did not come from the mutation battery at all — a malformed `dateLocal` was never one of the mutants tried. It came from tracing NaN propagation through the span gate by hand: `daysBetweenLocalDates` can return `NaN`, and `NaN` is falsy in every comparison the gate relies on, so it silently defeats the gate instead of tripping it. A fifth and separate line of inquiry — direct measurement of `daysUntilOut` at a range of totals, again not mutation testing — surfaced an unbounded-display hazard, which is a rendering-design gap rather than a code defect and was resolved as a recorded decision rather than a bug fix.
+
+Four items are fixed as of this round: NaN and the future-date guard (found and fixed on the first pass), `Math.ceil` (found and fixed on the first pass), and the display horizon — added as a constant on the first pass, but only genuinely *landed* this second round, once the render gate was wired into the plan's own Task 8 and Task 11 blocks (below) rather than resting on a verbal instruction to a future implementer. The `total <= 0` survivor remains the sole accepted, unfixed mutation. Source and plan-block changes are re-diffed programmatically against the committed files after every edit in this section, the same check used for Task 1.
+
+**Fixed (four items, three discovery methods — mutation testing, manual NaN-propagation tracing, and direct measurement):**
 
 1. **`NaN` silently bypassed the `MIN_SPAN_DAYS` honesty gate.** `daysBetweenLocalDates("", today)` returns `NaN` (malformed/empty `dateLocal`). The original guard was `if (age < 0) continue;` — `NaN < 0` is `false`, so the event was kept, not dropped, and `NaN` landed in `ages`. Then `Math.max(...ages)` became `NaN`, and the gate check `spanDays < MIN_SPAN_DAYS` — `NaN < 14` — is *also* `false`, so the gate that exists specifically to suppress an estimate instead let it through. Reviewer's empirical repro: events at `["", today, today−1, today−2]` — a real span of 2 days, nowhere near `MIN_SPAN_DAYS` — produced `{ratePerDay: 0.107, daysUntilOut: 94}` on the unpatched code. That is precisely the "confident wrong number" the module's own header (:5-6) says cannot happen. Flagged as a regression against the sibling: `stockState.ts:117` guards the identical `daysBetweenLocalDates` call with `if (Number.isFinite(rawDaysLeft))`, and its comment at :125-129 names this exact hazard — "NaN is silently false in every band/filter comparison." Fixed at the same call site (`consumptionRate.ts`, the age-computation loop) by folding the NaN check into the existing guard: `if (!Number.isFinite(age) || age < 0) continue;`, with a comment citing the sibling file and line. This rejects NaN and keeps rejecting negatives in one explicit condition, matching house style rather than inventing a new one.
 
@@ -1743,7 +1766,7 @@ Spec review passed outright. Code-quality review mutation-tested the module empi
    ```
    Restored the full guard and re-ran; passes again.
 
-4. **Unbounded `daysUntilOut` was a rendering hazard, not a lib defect — resolved by adding a display-only constant, not by capping the lib's output.** `ratePerDay` floors at `MIN_UNITS / RATE_WINDOW_DAYS = 3/28 ≈ 0.107/day`, so `daysUntilOut ≈ total × 9.33` with no ceiling: measured at total 12 → ~112d, total 30 → ~280d, total 100 → ~934d. Spec §6's forecast trigger is unaffected (it only fires at `≤ FORECAST_LEAD_DAYS`), but plan Task 8 Step 2 renders `~{daysUntilOut}d left` on every inventory grid card with a map entry, with no ceiling — a three-digit day count derived from as few as three data points, in an accent colour, asserting a precision the module's own header disclaims. Decision (the reviewer's, recorded as a decision rather than applied unilaterally, so the owner can override): keep `estimateConsumption` pure and honest — it still returns the true `daysUntilOut`, because the demand engine (spec §6) consumes the real number and capping it inside the lib would corrupt that input. Bound the *display* instead. Added `export const MAX_DISPLAY_DAYS = 60;` to `consumptionRate.ts`, in the same exported-constant house style as `RATE_WINDOW_DAYS`/`MIN_UNITS`/`MIN_SPAN_DAYS`, with a comment explaining the two-months-carries-no-information rationale and stating explicitly that it governs rendering only. Per instruction, Task 8 itself was **not** touched — its implementer is to gate the render on `daysUntilOut <= MAX_DISPLAY_DAYS`, verified at that task's review.
+4. **Unbounded `daysUntilOut` was a rendering hazard, not a lib defect — resolved by adding a display-only constant, not by capping the lib's output.** `ratePerDay` floors at `MIN_UNITS / RATE_WINDOW_DAYS = 3/28 ≈ 0.107/day`, so `daysUntilOut ≈ total × 9.33` with no ceiling: measured at total 12 → ~112d, total 30 → ~280d, total 100 → ~934d. Spec §6's forecast trigger is unaffected (it only fires at `≤ FORECAST_LEAD_DAYS`), but plan Task 8 Step 2 renders `~{daysUntilOut}d left` on every inventory grid card with a map entry, with no ceiling — a three-digit day count derived from as few as three data points, in an accent colour, asserting a precision the module's own header disclaims. Decision (the reviewer's, recorded as a decision rather than applied unilaterally, so the owner can override): keep `estimateConsumption` pure and honest — it still returns the true `daysUntilOut`, because the demand engine (spec §6) consumes the real number and capping it inside the lib would corrupt that input. Bound the *display* instead. Added `export const MAX_DISPLAY_DAYS = RATE_WINDOW_DAYS * 2;` to `consumptionRate.ts` (retuned from a bare `60` literal on the second pass — see Fix 3 in the re-review below), in the same exported-constant house style as `RATE_WINDOW_DAYS`/`MIN_UNITS`/`MIN_SPAN_DAYS`, with a comment deriving the bound from the same `RATE_WINDOW_DAYS`/`MIN_SPAN_DAYS` relationship as bias (3) above, and stating explicitly that it governs rendering only. On the first pass Task 8 itself was deliberately **not** touched, since that task hadn't run yet — but a constant with zero consumers and only a verbal instruction to a future implementer is a decision recorded, not a fix landed. The second pass (below) closes that gap by wiring the gate into the plan's own Task 8 Step 2 code block and Task 11 Step 3 checklist, so the durable artifact — not just this amendment — carries the bound forward.
 
 **Minor, also fixed:**
 
@@ -1756,16 +1779,38 @@ Spec review passed outright. Code-quality review mutation-tested the module empi
 - **`total <= 0` → `total < 0`** also survives the suite, because the "already out" test uses `total = 0`, where `Math.ceil(0 / ratePerDay)` is `0` under either comparator — the guard is behaviourally invisible at exactly the value the test probes. It's only load-bearing for `total < 0`, which the review confirmed is unreachable: `food_inventory_locations.quantity` is `INTEGER NOT NULL CHECK (quantity >= 0)` (`supabase/migrations/20250217000003_add_multi_location_inventory.sql:16`), and `totalsById`'s values are a plain sum of those. The code is correct and `0` is the right answer at that boundary; no test was added.
 - **`Math.max(...ages)` on an empty array** would be `-Infinity`, but the review (and my own read at implementation time) confirmed `ages` can never be empty at that call site: `byItem` is only ever populated by pushing at least one age per key inside the events loop, so every array iterated in `for (const [inventoryId, ages] of byItem)` has length >= 1 by construction.
 
-**Spec-text inaccuracies noted, no code change — the code is correct, the spec prose is wrong:**
+**Spec-text inaccuracies noted, no code change — the code is correct, the spec prose is wrong or, in one case, stale:**
 
 - Design spec §7 says "All four constants exported," but only three (`RATE_WINDOW_DAYS`, `MIN_UNITS`, `MIN_SPAN_DAYS`) belong in this lib — `FORECAST_LEAD_DAYS` lives in `shoppingDemand.ts` per §6. The spec's count is wrong; this lib correctly exports three (plus, as of this amendment, the display-only `MAX_DISPLAY_DAYS` — four total now, coincidentally, but for a different reason than the spec's original miscount).
-- Spec §10's illustrative example ("event at day 29 doesn't count toward units") is off by one against its own math: the boundary condition is `age < RATE_WINDOW_DAYS`, so day 28, not day 29, is the first excluded day. The plan's actual tests were unaffected by this — they use day 30 for the qualitative "outside the window" case and the exact `RATE_WINDOW_DAYS − 1` / `RATE_WINDOW_DAYS` pair for the boundary case — so coverage was always correct; only the spec's illustrative number was wrong.
+- Spec §10's illustrative example ("event at day 29 doesn't count toward units") is true but imprecise, not wrong: day 29 genuinely doesn't count (`29 >= RATE_WINDOW_DAYS`), so the spec's statement holds. It just isn't the tightest boundary — day 28, not day 29, is the first excluded day (`age < RATE_WINDOW_DAYS`). The plan's actual tests were unaffected either way — they use day 30 for the qualitative "outside the window" case and the exact `RATE_WINDOW_DAYS − 1` / `RATE_WINDOW_DAYS` pair for the tight boundary case — so coverage was always correct; only the spec's illustrative example picked a looser day than necessary.
+- **Stale as of this commit, not wrong when written:** design spec §7 (`design.md:102`) also says "the lib header documents the two known bias sources." That was true through the first pass of this amendment; Minor fix 5 above added a third numbered bias (the window/span divergence), so the header now documents three and this spec line needs updating to match. No code change — the code and this amendment are both correct; the spec prose is what's now behind.
 
-**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+**Re-review (second pass) — four more items, all cheap:**
+
+Re-review confirmed the first-pass source fix as correct and complete: 6/6 constant mutations and 4/4 gate-logic mutations re-verified killed, each of the three new tests confirmed to fail for the *right* reason and to pin the guard's two halves (NaN, negative) independently, and `Math.ceil` finally discriminated from `floor`/`round`. Four residual items remained, addressed here:
+
+1. **The display horizon had zero consumers — landed in the plan's Task 8 and Task 11 blocks, not just the lib.** `MAX_DISPLAY_DAYS` existed but nothing read it, and the plan's own Task 8 Step 2 code block (an implementer's actual checklist, not this amendment) still specified the unbounded render. Fixed by editing that block directly: imported `MAX_DISPLAY_DAYS` alongside `estimateConsumption` and gated the `~Nd left` render on `ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS`, matching the block's existing repeated-`.get()` style rather than introducing a new pattern. Also added a clause to Task 11 Step 3's on-device checklist: the "~Nd left" line must be absent not only on sparse items but also "on a high-count item with thin history (e.g. a 100-count item logged only 3 times — the raw estimate lands well past `MAX_DISPLAY_DAYS`, so the line must not render it)." No Task 8 *source* was written — that task hasn't run; only the plan's own text changed, exactly as instructed.
+
+2. **Age 0 (a same-day log) was untested at the future-date-guard boundary.** `age < 0` → `age <= 0` survives the suite: the existing NaN test contains an `ev("a", 0)` event, but asserts `false` regardless of which comparator is used, so it doesn't discriminate. Verified discriminator: ages `[0, 14, 20]` with `total: 10` — kept, 3 in-window units → `{ratePerDay: 3/28, daysUntilOut: 94}`; dropped, only 2 in-window units → no entry at all. A meal logged today is load-bearing at the `MIN_UNITS` boundary, so silently dropping age-0 events would suppress an otherwise-valid estimate for the rest of that day. Added the assertion (`"counts a same-day (age 0) event toward the window, not just strictly-past ones"`), using the same `[0, 14, 20]` ages and asserting the full `{ratePerDay, daysUntilOut}` shape.
+
+   **Mutation-proved** by changing the guard from `age < 0` to `age <= 0` and re-running just the new test:
+   ```
+   ● estimateConsumption › counts a same-day (age 0) event toward the window, not just strictly-past ones
+     expect(received).toEqual(expected) // deep equality
+     Expected: {"daysUntilOut": 94, "ratePerDay": 0.10714285714285714}
+     Received: undefined
+   ```
+   Restored `age < 0` and re-ran; passes again. A byte-diff against a pre-mutation backup confirmed the restored source matched the intended fix exactly, with no mutation residue.
+
+3. **`MAX_DISPLAY_DAYS` was a bare `60` literal with a comment that argued from human attention span, not from the module's own math.** Retuning `RATE_WINDOW_DAYS` would have silently detached the horizon from the relationship that actually justifies it. Changed the declaration to `RATE_WINDOW_DAYS * 2` (name and effective value unchanged — still `60` today) and replaced the comment with the real derivation: since `spanDays` is always `>= MIN_SPAN_DAYS` and the divisor is `RATE_WINDOW_DAYS`, every displayed `daysUntilOut = n` carries an implicit interval of `[n/2, n]` (the same 2x bound as bias (3) in the header). At `n = MAX_DISPLAY_DAYS` (60) that's a 30-day band, already at the edge of actionable; left unbounded, at the measured `n = 934` case the interval is `[467, 934]` — three-digit precision the gates can't stand behind. The existing "governs rendering only; the lib still returns the true value" clause was kept verbatim. Mirrored into the plan's Task 3 implementation code block and re-diffed (see Verification below) — both stayed byte-identical to source.
+
+4. **Five corrections to this amendment's own text**, per the re-review's independent re-verification of every citation and measured figure (all held; only the framing needed correction): (a) the claim that every survivor sat in post-gate arithmetic was false — the future-date guard survivor is in the pre-gate events loop — corrected in the opening paragraph above; (b) the ambiguous "four" was disambiguated into 4 surviving mutations / 3 distinct code-location findings / 4 fixed items, three different counts that had been conflated; (c) the NaN finding is now correctly attributed to manual code-tracing, not the mutation battery, since it was never one of the mutants tried; (d) "all four are fixed" is corrected to state plainly that the horizon item was a decision recorded on the first pass and only genuinely landed once this second pass wired it into Tasks 8 and 11; (e) the spec-inaccuracy list gained the stale "two known bias sources" citation this commit itself caused, and the day-29 entry was downgraded from "off by one / wrong" to "true but imprecise," since day 29 does not count and the spec's statement is correct, just not the tightest possible illustration.
+
+**Verification:** re-review re-ran the full 14-mutation battery (6 constant + 4 gate-logic + the 4 post-gate/pre-gate arithmetic mutations from the first pass, now including age's `<`→`<=`) against the fixed source with no regressions; `total <= 0` → `total < 0` remains the sole accepted, unfixed survivor. `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
 ```
 Test Suites: 10 passed, 10 total
-Tests:       292 passed, 292 total
+Tests:       293 passed, 293 total
 ```
-(292 = the 289 left by the Task 3 commit, +3 from Fixes 1–3 above; Fixes 4–6 added a constant, a header comment, and a test-helper refactor, none of which add or remove test cases.)
+(293 = the 289 left by the Task 3 commit, +3 from the first pass's Fixes 1–3, +1 from this pass's Fix 2 age-0 test; the horizon retune, the plan wiring, and the five documentation corrections added no new test cases.) The plan's Task 3 code blocks were re-diffed programmatically against `mobile/src/lib/consumptionRate.ts` and `mobile/src/lib/__tests__/consumptionRate.test.ts` after every edit in this section and found byte-identical each time, the same check used for Task 1.
 
 
