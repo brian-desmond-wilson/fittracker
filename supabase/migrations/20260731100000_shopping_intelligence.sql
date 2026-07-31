@@ -30,6 +30,7 @@ begin
   if v_nonnull > 0 then
     raise exception 'shopping_list.category has % non-null rows — refusing to drop', v_nonnull;
   end if;
+  raise notice 'shopping_list.category guard: % non-null rows found — safe to drop', v_nonnull;
 end $$;
 
 alter table public.shopping_list drop column if exists category;
@@ -55,13 +56,13 @@ begin
 
   -- security invoker: RLS on food_inventory scopes this read, so a caller
   -- can only resolve (and therefore only rewrite) their own items.
-  select fi.user_id into v_user_id from public.food_inventory fi where fi.id = p_item_id;
+  select fi.user_id into v_user_id from public.food_inventory fi where fi.id = p_item_id for update;
   if v_user_id is null then
     raise exception 'inventory item % not found', p_item_id;
   end if;
 
-  -- Validate every row BEFORE any write, so a bad element can't leave a
-  -- partially-applied array (the whole point of moving this server-side).
+  -- Validate every row up front, so a bad element raises this message
+  -- rather than a raw constraint violation once the insert reaches it.
   for r in select * from jsonb_array_elements(p_rows) loop
     if (r->>'location') is null
        or (r->>'location') not in ('fridge','freezer','pantry','cabinet') then
@@ -71,7 +72,7 @@ begin
     if v_qty is null or v_qty < 0 then
       raise exception 'quantity must be a non-negative integer';
     end if;
-    if jsonb_typeof(r->'is_ready_to_consume') <> 'boolean' then
+    if jsonb_typeof(r->'is_ready_to_consume') is distinct from 'boolean' then
       raise exception 'is_ready_to_consume must be a boolean';
     end if;
   end loop;

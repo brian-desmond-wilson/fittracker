@@ -80,6 +80,7 @@ begin
   if v_nonnull > 0 then
     raise exception 'shopping_list.category has % non-null rows — refusing to drop', v_nonnull;
   end if;
+  raise notice 'shopping_list.category guard: % non-null rows found — safe to drop', v_nonnull;
 end $$;
 
 alter table public.shopping_list drop column if exists category;
@@ -105,13 +106,13 @@ begin
 
   -- security invoker: RLS on food_inventory scopes this read, so a caller
   -- can only resolve (and therefore only rewrite) their own items.
-  select fi.user_id into v_user_id from public.food_inventory fi where fi.id = p_item_id;
+  select fi.user_id into v_user_id from public.food_inventory fi where fi.id = p_item_id for update;
   if v_user_id is null then
     raise exception 'inventory item % not found', p_item_id;
   end if;
 
-  -- Validate every row BEFORE any write, so a bad element can't leave a
-  -- partially-applied array (the whole point of moving this server-side).
+  -- Validate every row up front, so a bad element raises this message
+  -- rather than a raw constraint violation once the insert reaches it.
   for r in select * from jsonb_array_elements(p_rows) loop
     if (r->>'location') is null
        or (r->>'location') not in ('fridge','freezer','pantry','cabinet') then
@@ -121,7 +122,7 @@ begin
     if v_qty is null or v_qty < 0 then
       raise exception 'quantity must be a non-negative integer';
     end if;
-    if jsonb_typeof(r->'is_ready_to_consume') <> 'boolean' then
+    if jsonb_typeof(r->'is_ready_to_consume') is distinct from 'boolean' then
       raise exception 'is_ready_to_consume must be a boolean';
     end if;
   end loop;
@@ -1552,5 +1553,27 @@ git commit -m "feat(nutrition-os): vendor name/URL editing + tappable links (Pha
 ## ⚠️ Execution amendments
 
 None yet. Record every review-driven deviation here, per task, as execution proceeds.
+
+### Task 1 — the migration
+
+Code-quality review of the Task 1 commit found two genuine defects in this plan's SQL, reproduced faithfully by the implementer. Both are fixed in the migration and in the code block above. Facts below were empirically proven in a throwaway PostgreSQL 17.8 cluster (since destroyed).
+
+**Fixed:**
+
+1. **`is_ready_to_consume` validation was a no-op for absent keys.** `jsonb_typeof(r->'is_ready_to_consume')` on a missing key evaluates to SQL NULL, not the string `'null'` or any type name. `NULL <> 'boolean'` is itself NULL, and plpgsql's `if` treats a NULL condition as not-taken — so the `raise exception` was skipped and validation silently passed. The neighbouring `location` and `quantity` checks each carry an explicit `is null` arm; this one didn't, which is what let the gap through. Fixed by replacing `<>` with `is distinct from`, which is NULL-aware. Mutation-proved: broken and fixed variants were generated programmatically from the committed file (not retyped) and run across a nine-case matrix — JSON null, `true`, `false`, string `"yes"`, absent key, bad location, empty array, negative quantity, float quantity. The two variants differed in exactly one case, the absent key: broken returned `RAISED[23502]: null value in column "is_ready_to_consume" ... violates not-null constraint` (validation passed, and the row died at the insert instead); fixed returned `RAISED[P0001]: is_ready_to_consume must be a boolean` before any write. The other eight cases were byte-identical between variants, confirming the fix changes exactly the null arm and nothing else.
+
+2. **No row lock — concurrent calls could duplicate rows and desync the cache.** Without a lock, under READ COMMITTED two concurrent calls for the same item can interleave so that T2's `delete` blocks on T1's uncommitted delete, then on T1's commit re-evaluates its snapshot and finds T1's *old* rows already gone (so it deletes nothing) while T1's newly inserted rows sit outside T2's snapshot (so T2 doesn't see them to delete either). T2 then appends its own rows on top, leaving T1's rows plus T2's rows on the table with `food_inventory.quantity` holding only T2's total — a locations-as-truth violation, which is exactly the invariant this RPC exists to enforce. Fixed by adding `for update` to the initial `select ... from food_inventory`, matching the idiom `transfer_inventory_units` already establishes (`supabase/migrations/20260730100000_inventory_locations_truth.sql` lines 129-131). Proved: with one session holding `for update` on the item row, a second session's `for update nowait` failed with `ERROR: could not obtain lock on row in relation "food_inventory"`. Practically bounded in a single-user app whose Save button disables while saving, but the RPC's mandate is ongoing enforcement, not probabilistic safety.
+
+3. **`raise notice` added to the guard's success path.** Spec §5 names "idempotent, `public.`-qualified, `raise notice` counts" as house style; the guard computed `v_nonnull` but reported nothing. Added a `raise notice` reporting the count (0, by construction of the preceding check) so Task 10's owner gate gets visible confirmation at apply time.
+
+Also reworded the pre-write validation comment: it previously credited the two-pass loop with a guarantee the surrounding transaction already provides unconditionally (rollback holds even on paths that skip validation entirely — verified). The loop's actual value is producing a legible error before Postgres produces an illegible one, which is precisely what defect 1 forfeited. Reworded to say that.
+
+**Considered and declined:**
+
+- **Non-integer `quantity` raises a raw cast error rather than the validation message**, because the `::integer` cast precedes the check. Verified: `"quantity": 2.5` yields `RAISED[22P02]: invalid input syntax for type integer: "2.5"`. Behaviour-identical to the PostgREST client path it replaces, still atomic, still a refusal — not a defect, and the typed client is the only caller. Left as-is.
+- **The `do $$` guard is not re-runnable** (after the drop, `where category is not null` references a missing column). Identical in shape to the cited `meal_template_id` precedent in `20260729100300_drop_meal_templates.sql`; Supabase records applied migrations and never re-runs them, and a `db reset` replays from a schema where the column still exists. Non-issue.
+- **`comment on column` for the two new FKs** (neighbours in `20250217000003` carry them). Not named by the spec; skipped as scope creep.
+
+**Verified, no change needed** (the review's negative space): the insert supplies every NOT NULL column; there is no unique constraint on `(food_inventory_id, location)`, so multi-row-same-location payloads are legal; the location allowlist matches the live CHECK exactly; `food_inventory.user_id` is NOT NULL, so the `v_user_id is null` check cannot conflate "not found" with "null owner"; the `updated_at` BEFORE UPDATE trigger never fires on the insert path and is search_path-safe; every in-body reference is `public.`-qualified so `search_path = ''` holds; RLS's `auth.uid() = user_id` passes for all three statements because `v_user_id` comes from an RLS-filtered read. Atomicity was directly confirmed: after a mid-array failure the pre-existing rows and cache were untouched (`fridge:5, pantry:3, cache=8`), and a successful replace swapped both rows and resynced the cache to the new sum (`freezer:4, cabinet:6, cache=10`).
 
 
