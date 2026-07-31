@@ -3,8 +3,8 @@
 // by vendor with deep links, and the purchased lifecycle with restock-back.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, Linking, SectionList, StatusBar, StyleSheet,
-  Text, TouchableOpacity, View,
+  ActivityIndicator, Alert, Linking, RefreshControl, SectionList, StatusBar,
+  StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, ShoppingCart } from "lucide-react-native";
@@ -33,8 +33,14 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<ShoppingData | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showPurchased, setShowPurchased] = useState(false);
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
+  // Gates every mutating control while a run() is in flight. fetchShoppingData
+  // is 13 Supabase round trips plus two engine passes (~0.5-2s on device), and
+  // nothing else marks a row as "in progress" — without this a second tap
+  // before the reload lands double-fires the mutation (see amendment Fix 2).
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
@@ -52,14 +58,28 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
     load();
   }, [load]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
+  // Returns whether fn() succeeded, so callers can gate follow-on work (e.g.
+  // the restock offer) on an actual success rather than "we attempted it and
+  // ate the error" (see amendment Fix 1).
   const run = useCallback(
-    async (title: string, fn: () => Promise<void>) => {
+    async (title: string, fn: () => Promise<void>): Promise<boolean> => {
+      setBusy(true);
       try {
         await fn();
         await load();
+        return true;
       } catch (e) {
         Alert.alert(title, e instanceof Error ? e.message : "Unknown error");
         await load({ silent: true });
+        return false;
+      } finally {
+        setBusy(false);
       }
     },
     [load],
@@ -79,7 +99,8 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
 
   const handlePurchase = useCallback(
     async (item: ShoppingListItem) => {
-      await run("Failed to mark purchased", () => markPurchased(item.id));
+      const purchasedOk = await run("Failed to mark purchased", () => markPurchased(item.id));
+      if (!purchasedOk) return;
       const targetLocationId = item.food_inventory_id
         ? data?.restockTargetByItemId.get(item.food_inventory_id)
         : undefined;
@@ -151,7 +172,11 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
               </Text>
               <Text style={styles.rowReason} numberOfLines={2}>{s.reasons.join(" · ")}</Text>
             </View>
-            <TouchableOpacity style={styles.addButton} onPress={() => handleAdd([s])}>
+            <TouchableOpacity
+              style={[styles.addButton, busy && styles.controlDisabled]}
+              onPress={() => handleAdd([s])}
+              disabled={busy}
+            >
               <Text style={styles.addButtonText}>＋</Text>
             </TouchableOpacity>
           </View>
@@ -160,63 +185,75 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
       const item = row.item;
       const purchased = row.kind === "purchased";
       return (
-        <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.checkbox, purchased && styles.checkboxChecked]}
-            onPress={() =>
-              purchased
-                ? run("Failed to restore", () => unmarkPurchased(item.id))
-                : handlePurchase(item)
-            }
-          >
-            {purchased && <Text style={styles.checkmark}>✓</Text>}
-          </TouchableOpacity>
-          <View style={styles.rowMain}>
-            <Text style={[styles.rowName, purchased && styles.rowNamePurchased]} numberOfLines={1}>
-              {item.name} <Text style={styles.rowQty}>×{item.quantity} {item.unit}</Text>
-            </Text>
-            {item.notes ? <Text style={styles.rowReason} numberOfLines={1}>{item.notes}</Text> : null}
-            {vendorPickerFor === item.id && data && (
-              <View style={styles.vendorPicker}>
-                {[...data.vendors.filter((v) => v.is_active), null].map((v) => (
+        <View>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={[styles.checkbox, purchased && styles.checkboxChecked, busy && styles.controlDisabled]}
+              onPress={() =>
+                purchased
+                  ? run("Failed to restore", () => unmarkPurchased(item.id))
+                  : handlePurchase(item)
+              }
+              disabled={busy}
+            >
+              {purchased && <Text style={styles.checkmark}>✓</Text>}
+            </TouchableOpacity>
+            <View style={styles.rowMain}>
+              <Text style={[styles.rowName, purchased && styles.rowNamePurchased]} numberOfLines={1}>
+                {item.name} <Text style={styles.rowQty}>×{item.quantity} {item.unit}</Text>
+              </Text>
+              {item.notes ? <Text style={styles.rowReason} numberOfLines={1}>{item.notes}</Text> : null}
+            </View>
+            {!purchased && (
+              <TouchableOpacity
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => setVendorPickerFor((p) => (p === item.id ? null : item.id))}
+              >
+                <Text style={styles.vendorAction}>⇄</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() =>
+                Alert.alert("Remove", `Remove "${item.name}" from the list?`, [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Remove", style: "destructive",
+                    onPress: () => run("Failed to remove", () => deleteListItem(item.id)) },
+                ])
+              }
+              disabled={busy}
+            >
+              <Text style={[styles.deleteAction, busy && styles.controlDisabled]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {vendorPickerFor === item.id && data && (
+            <View style={styles.vendorPicker}>
+              {[...data.vendors.filter((v) => v.is_active), null].map((v) => {
+                const selected = (v?.id ?? null) === item.vendor_id;
+                return (
                   <TouchableOpacity
                     key={v?.id ?? ANYWHERE}
-                    style={styles.vendorChip}
+                    style={[styles.vendorChip, selected && styles.vendorChipSelected, busy && styles.controlDisabled]}
                     onPress={() => {
                       setVendorPickerFor(null);
                       run("Failed to set vendor", () =>
                         updateListItem(item.id, { vendor_id: v?.id ?? null }),
                       );
                     }}
+                    disabled={busy}
                   >
-                    <Text style={styles.vendorChipText}>{v?.name ?? "Anywhere"}</Text>
+                    <Text style={[styles.vendorChipText, selected && styles.vendorChipTextSelected]}>
+                      {v?.name ?? "Anywhere"}
+                    </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-          {!purchased && (
-            <TouchableOpacity
-              onPress={() => setVendorPickerFor((p) => (p === item.id ? null : item.id))}
-            >
-              <Text style={styles.vendorAction}>⇄</Text>
-            </TouchableOpacity>
+                );
+              })}
+            </View>
           )}
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert("Remove", `Remove "${item.name}" from the list?`, [
-                { text: "Cancel", style: "cancel" },
-                { text: "Remove", style: "destructive",
-                  onPress: () => run("Failed to remove", () => deleteListItem(item.id)) },
-              ])
-            }
-          >
-            <Text style={styles.deleteAction}>✕</Text>
-          </TouchableOpacity>
         </View>
       );
     },
-    [data, vendorPickerFor, handleAdd, handlePurchase, run],
+    [data, vendorPickerFor, handleAdd, handlePurchase, run, busy],
   );
 
   let body: React.ReactNode;
@@ -244,23 +281,40 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
             ? `s:${row.suggestion.foodInventoryId ?? row.suggestion.name}`
             : row.item.id
         }
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24, flexGrow: 1 }}
         renderItem={renderRow}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#14B8A6"
+            colors={["#14B8A6"]}
+            title="Pull to refresh"
+            titleColor="#9CA3AF"
+          />
+        }
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <TouchableOpacity
-              disabled={section.key !== "purchased"}
-              onPress={() => setShowPurchased((p) => !p)}
-            >
+            {section.key === "purchased" ? (
+              <TouchableOpacity onPress={() => setShowPurchased((p) => !p)}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+              </TouchableOpacity>
+            ) : (
               <Text style={styles.sectionTitle}>{section.title}</Text>
-            </TouchableOpacity>
+            )}
             {section.key === "suggested" && (
-              <TouchableOpacity onPress={() => handleAdd(data!.suggestions)}>
-                <Text style={styles.headerAction}>Add all</Text>
+              <TouchableOpacity onPress={() => handleAdd(data!.suggestions)} disabled={busy}>
+                <Text style={[styles.headerAction, busy && styles.controlDisabled]}>Add all</Text>
               </TouchableOpacity>
             )}
             {section.url && (
-              <TouchableOpacity onPress={() => Linking.openURL(section.url!)}>
+              <TouchableOpacity
+                onPress={() =>
+                  Linking.openURL(section.url!).catch((e) =>
+                    Alert.alert("Failed to open link", e instanceof Error ? e.message : "Unknown error"),
+                  )
+                }
+              >
                 <Text style={styles.headerAction}>Open ↗</Text>
               </TouchableOpacity>
             )}
@@ -273,8 +327,9 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
                       onPress: () => run("Failed to clear", () => clearPurchased()) },
                   ])
                 }
+                disabled={busy}
               >
-                <Text style={styles.deleteAction}>Clear</Text>
+                <Text style={[styles.deleteAction, busy && styles.controlDisabled]}>Clear</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -349,12 +404,18 @@ const styles = StyleSheet.create({
   checkmark: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   vendorAction: { fontSize: 16, color: "#9CA3AF", paddingHorizontal: 4 },
   deleteAction: { fontSize: 14, color: "#F87171", paddingHorizontal: 4 },
-  vendorPicker: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  controlDisabled: { opacity: 0.5 },
+  vendorPicker: {
+    flexDirection: "row", flexWrap: "wrap", gap: 6,
+    marginHorizontal: 16, marginTop: -4, marginBottom: 8,
+  },
   vendorChip: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
     borderWidth: 1, borderColor: "#374151",
   },
+  vendorChipSelected: { backgroundColor: "rgba(20,184,166,0.15)", borderColor: "#14B8A6" },
   vendorChipText: { fontSize: 12, color: "#D1D5DB" },
+  vendorChipTextSelected: { color: "#14B8A6", fontWeight: "600" },
   centerFill: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   mutedText: { fontSize: 14, color: "#9CA3AF", textAlign: "center" },
   retryButton: {

@@ -115,7 +115,7 @@ Sixth pure lib; options-object input assembled by the query module; exported pol
 
 `"shopping"` joins the `TrackingCategory` closed union; fourth nutrition card (`ShoppingCart` icon — imported unused since Feb, finally consumed) fills the grid's odd-count spacer slot; route in the track `_layout`; thin `app/(tabs)/track/shopping/index.tsx` → `ShoppingListScreen`.
 
-### 9.2 `ShoppingListScreen` (house container patterns: SectionList root, memo rows, `loadFailed` → Retry, alert idiom, `useSafeAreaInsets`)
+### 9.2 `ShoppingListScreen` (house container patterns: SectionList root, `loadFailed` → Retry, alert idiom, `useSafeAreaInsets`; memoized rows deliberately deferred — see the implementation plan's Task 7 amendment for why)
 
 1. **Suggested** — pinned first, hidden when empty. Rows: name · quantity · reasons; ＋ per row; "Add all" header action. Adding stamps the vendor snapshot.
 2. **The list, grouped by vendor** — one section per vendor in `display_order`; unassigned rows under **"Anywhere"**, last. Vendor headers show a tappable deep link (`Linking.openURL(app_url)`) when set. Rows: checkbox (→ purchased + §8 restock offer), name, quantity, and a per-row vendor chip opening a small picker (active vendors + Anywhere) that writes the row's `vendor_id` only.

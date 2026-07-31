@@ -1122,6 +1122,8 @@ git commit -m "feat(nutrition-os): shopping query module (fetch, engines, lifecy
 
 ### Task 7: Track hub card + route + `ShoppingListScreen`
 
+Design spec §9.2 names "memo rows" among this screen's house container patterns. That was not implemented — `renderRow` is a `useCallback`, which buys nothing without a `React.memo` row-component boundary, and the code block below has none. See the Task 7 amendment for the deliberate-deferral rationale; the spec heading has been corrected to say so.
+
 **Files:**
 - Modify: `mobile/app/(tabs)/track/index.tsx` (~:22-92 `trackingCategories` + `iconMap`)
 - Modify: `mobile/app/(tabs)/track/_layout.tsx` (route declaration)
@@ -1166,8 +1168,8 @@ export default function ShoppingRoute() {
 // by vendor with deep links, and the purchased lifecycle with restock-back.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, Linking, SectionList, StatusBar, StyleSheet,
-  Text, TouchableOpacity, View,
+  ActivityIndicator, Alert, Linking, RefreshControl, SectionList, StatusBar,
+  StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, ShoppingCart } from "lucide-react-native";
@@ -1196,8 +1198,14 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<ShoppingData | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showPurchased, setShowPurchased] = useState(false);
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
+  // Gates every mutating control while a run() is in flight. fetchShoppingData
+  // is 13 Supabase round trips plus two engine passes (~0.5-2s on device), and
+  // nothing else marks a row as "in progress" — without this a second tap
+  // before the reload lands double-fires the mutation (see amendment Fix 2).
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
@@ -1215,14 +1223,28 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
     load();
   }, [load]);
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }, [load]);
+
+  // Returns whether fn() succeeded, so callers can gate follow-on work (e.g.
+  // the restock offer) on an actual success rather than "we attempted it and
+  // ate the error" (see amendment Fix 1).
   const run = useCallback(
-    async (title: string, fn: () => Promise<void>) => {
+    async (title: string, fn: () => Promise<void>): Promise<boolean> => {
+      setBusy(true);
       try {
         await fn();
         await load();
+        return true;
       } catch (e) {
         Alert.alert(title, e instanceof Error ? e.message : "Unknown error");
         await load({ silent: true });
+        return false;
+      } finally {
+        setBusy(false);
       }
     },
     [load],
@@ -1242,7 +1264,8 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
 
   const handlePurchase = useCallback(
     async (item: ShoppingListItem) => {
-      await run("Failed to mark purchased", () => markPurchased(item.id));
+      const purchasedOk = await run("Failed to mark purchased", () => markPurchased(item.id));
+      if (!purchasedOk) return;
       const targetLocationId = item.food_inventory_id
         ? data?.restockTargetByItemId.get(item.food_inventory_id)
         : undefined;
@@ -1314,7 +1337,11 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
               </Text>
               <Text style={styles.rowReason} numberOfLines={2}>{s.reasons.join(" · ")}</Text>
             </View>
-            <TouchableOpacity style={styles.addButton} onPress={() => handleAdd([s])}>
+            <TouchableOpacity
+              style={[styles.addButton, busy && styles.controlDisabled]}
+              onPress={() => handleAdd([s])}
+              disabled={busy}
+            >
               <Text style={styles.addButtonText}>＋</Text>
             </TouchableOpacity>
           </View>
@@ -1323,63 +1350,75 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
       const item = row.item;
       const purchased = row.kind === "purchased";
       return (
-        <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.checkbox, purchased && styles.checkboxChecked]}
-            onPress={() =>
-              purchased
-                ? run("Failed to restore", () => unmarkPurchased(item.id))
-                : handlePurchase(item)
-            }
-          >
-            {purchased && <Text style={styles.checkmark}>✓</Text>}
-          </TouchableOpacity>
-          <View style={styles.rowMain}>
-            <Text style={[styles.rowName, purchased && styles.rowNamePurchased]} numberOfLines={1}>
-              {item.name} <Text style={styles.rowQty}>×{item.quantity} {item.unit}</Text>
-            </Text>
-            {item.notes ? <Text style={styles.rowReason} numberOfLines={1}>{item.notes}</Text> : null}
-            {vendorPickerFor === item.id && data && (
-              <View style={styles.vendorPicker}>
-                {[...data.vendors.filter((v) => v.is_active), null].map((v) => (
+        <View>
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={[styles.checkbox, purchased && styles.checkboxChecked, busy && styles.controlDisabled]}
+              onPress={() =>
+                purchased
+                  ? run("Failed to restore", () => unmarkPurchased(item.id))
+                  : handlePurchase(item)
+              }
+              disabled={busy}
+            >
+              {purchased && <Text style={styles.checkmark}>✓</Text>}
+            </TouchableOpacity>
+            <View style={styles.rowMain}>
+              <Text style={[styles.rowName, purchased && styles.rowNamePurchased]} numberOfLines={1}>
+                {item.name} <Text style={styles.rowQty}>×{item.quantity} {item.unit}</Text>
+              </Text>
+              {item.notes ? <Text style={styles.rowReason} numberOfLines={1}>{item.notes}</Text> : null}
+            </View>
+            {!purchased && (
+              <TouchableOpacity
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => setVendorPickerFor((p) => (p === item.id ? null : item.id))}
+              >
+                <Text style={styles.vendorAction}>⇄</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() =>
+                Alert.alert("Remove", `Remove "${item.name}" from the list?`, [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Remove", style: "destructive",
+                    onPress: () => run("Failed to remove", () => deleteListItem(item.id)) },
+                ])
+              }
+              disabled={busy}
+            >
+              <Text style={[styles.deleteAction, busy && styles.controlDisabled]}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {vendorPickerFor === item.id && data && (
+            <View style={styles.vendorPicker}>
+              {[...data.vendors.filter((v) => v.is_active), null].map((v) => {
+                const selected = (v?.id ?? null) === item.vendor_id;
+                return (
                   <TouchableOpacity
                     key={v?.id ?? ANYWHERE}
-                    style={styles.vendorChip}
+                    style={[styles.vendorChip, selected && styles.vendorChipSelected, busy && styles.controlDisabled]}
                     onPress={() => {
                       setVendorPickerFor(null);
                       run("Failed to set vendor", () =>
                         updateListItem(item.id, { vendor_id: v?.id ?? null }),
                       );
                     }}
+                    disabled={busy}
                   >
-                    <Text style={styles.vendorChipText}>{v?.name ?? "Anywhere"}</Text>
+                    <Text style={[styles.vendorChipText, selected && styles.vendorChipTextSelected]}>
+                      {v?.name ?? "Anywhere"}
+                    </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-          {!purchased && (
-            <TouchableOpacity
-              onPress={() => setVendorPickerFor((p) => (p === item.id ? null : item.id))}
-            >
-              <Text style={styles.vendorAction}>⇄</Text>
-            </TouchableOpacity>
+                );
+              })}
+            </View>
           )}
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert("Remove", `Remove "${item.name}" from the list?`, [
-                { text: "Cancel", style: "cancel" },
-                { text: "Remove", style: "destructive",
-                  onPress: () => run("Failed to remove", () => deleteListItem(item.id)) },
-              ])
-            }
-          >
-            <Text style={styles.deleteAction}>✕</Text>
-          </TouchableOpacity>
         </View>
       );
     },
-    [data, vendorPickerFor, handleAdd, handlePurchase, run],
+    [data, vendorPickerFor, handleAdd, handlePurchase, run, busy],
   );
 
   let body: React.ReactNode;
@@ -1407,23 +1446,40 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
             ? `s:${row.suggestion.foodInventoryId ?? row.suggestion.name}`
             : row.item.id
         }
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24, flexGrow: 1 }}
         renderItem={renderRow}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#14B8A6"
+            colors={["#14B8A6"]}
+            title="Pull to refresh"
+            titleColor="#9CA3AF"
+          />
+        }
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <TouchableOpacity
-              disabled={section.key !== "purchased"}
-              onPress={() => setShowPurchased((p) => !p)}
-            >
+            {section.key === "purchased" ? (
+              <TouchableOpacity onPress={() => setShowPurchased((p) => !p)}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+              </TouchableOpacity>
+            ) : (
               <Text style={styles.sectionTitle}>{section.title}</Text>
-            </TouchableOpacity>
+            )}
             {section.key === "suggested" && (
-              <TouchableOpacity onPress={() => handleAdd(data!.suggestions)}>
-                <Text style={styles.headerAction}>Add all</Text>
+              <TouchableOpacity onPress={() => handleAdd(data!.suggestions)} disabled={busy}>
+                <Text style={[styles.headerAction, busy && styles.controlDisabled]}>Add all</Text>
               </TouchableOpacity>
             )}
             {section.url && (
-              <TouchableOpacity onPress={() => Linking.openURL(section.url!)}>
+              <TouchableOpacity
+                onPress={() =>
+                  Linking.openURL(section.url!).catch((e) =>
+                    Alert.alert("Failed to open link", e instanceof Error ? e.message : "Unknown error"),
+                  )
+                }
+              >
                 <Text style={styles.headerAction}>Open ↗</Text>
               </TouchableOpacity>
             )}
@@ -1436,8 +1492,9 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
                       onPress: () => run("Failed to clear", () => clearPurchased()) },
                   ])
                 }
+                disabled={busy}
               >
-                <Text style={styles.deleteAction}>Clear</Text>
+                <Text style={[styles.deleteAction, busy && styles.controlDisabled]}>Clear</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1512,12 +1569,18 @@ const styles = StyleSheet.create({
   checkmark: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   vendorAction: { fontSize: 16, color: "#9CA3AF", paddingHorizontal: 4 },
   deleteAction: { fontSize: 14, color: "#F87171", paddingHorizontal: 4 },
-  vendorPicker: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  controlDisabled: { opacity: 0.5 },
+  vendorPicker: {
+    flexDirection: "row", flexWrap: "wrap", gap: 6,
+    marginHorizontal: 16, marginTop: -4, marginBottom: 8,
+  },
   vendorChip: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
     borderWidth: 1, borderColor: "#374151",
   },
+  vendorChipSelected: { backgroundColor: "rgba(20,184,166,0.15)", borderColor: "#14B8A6" },
   vendorChipText: { fontSize: 12, color: "#D1D5DB" },
+  vendorChipTextSelected: { color: "#14B8A6", fontWeight: "600" },
   centerFill: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   mutedText: { fontSize: 14, color: "#9CA3AF", textAlign: "center" },
   retryButton: {
@@ -2177,5 +2240,46 @@ Test Suites: 11 passed, 11 total
 Tests:       317 passed, 317 total
 ```
 (317 = 309 + the 8 new `expandDecrementEvents` cases; no other suite's count moved.) The plan's Task 3 and Task 6 code blocks were both re-diffed programmatically against their now-updated source files (`consumptionRate.ts` gained the moved function; `shopping.ts` lost it and gained the `expandDecrementEvents` import plus the two-vs-three comment fix) and both remain byte-identical to source, modulo the banner line.
+
+### Task 7 — the Shopping List screen
+
+Spec review passed with no findings. Code-quality review of the Task 7 commit found one Critical defect and several worth taking, all reproduced faithfully by the implementer from this plan's own Step 2 code block — these are plan defects, not implementation slips. One Critical, two Important, and two Minor fixes are below, plus one deliberate deferral resolved as a documentation correction rather than a code change, plus the review's negative space, which is substantial and preserved here so a future reader doesn't re-chase any of it. Line numbers below (`:NN`) refer to the pre-fix commit unless stated otherwise.
+
+**Fix 1 (Critical) — a failed `markPurchased` still offered the restock, and accepting it corrupted stock.** `run` (`:55-66`) caught its own error, alerted, reloaded, and returned `Promise<void>` — no success signal. `handlePurchase` (`:80-100`) did `await run("Failed to mark purchased", ...)` and fell straight through to the restock-offer block on *any* outcome, success or failure, because there was nothing in the return value to branch on. Verified reachable: drop the connection on a checkbox tap → "Failed to mark purchased" alert fires, reload runs silently → the restock `Alert.alert` then stacks on top of it (each `Alert.alert` call allocates its own `UIWindow` above the previous one, so both are independently dismissable and the second is not gated on the first). Tap "Add to stock" and `transferInventoryUnits` succeeds on its own terms — the item's on-hand quantity rises for a row whose `is_purchased` is still `false`. That inflated total feeds `projectItemStock` → `isLow`/`isOut` → `computeShoppingSuggestions`, so the item silently stops being suggested while the unpurchased row still sits on the list, and there is no user-visible sign anything went wrong beyond the first alert, which reads as fully resolved. Spec §8 sanctions the offer *after* `markPurchased`; the plan's code offered it after merely *attempting* it.
+
+Fixed by making `run` return `Promise<boolean>` — `true` on the try path (after `fn()` and the reload both succeed), `false` in the catch, with `setBusy`'s bracketing (Fix 2) moved into a `finally` so the flag clears on every exit. `handlePurchase` now does `const purchasedOk = await run(...); if (!purchasedOk) return;` before ever reading `data?.restockTargetByItemId`. Every other `run(...)` call site (`handleAdd`, the checkbox's `unmarkPurchased` branch, the vendor-chip `updateListItem`, the remove confirm, the restock offer itself, "Clear purchased") already discarded the return value with no sequencing after it, so the signature change is additive — none of those call sites needed a companion change, and `tsc` would have caught it if one had.
+
+**Fix 2 (Important) — no in-flight guard, and the refetch was invisible, which made two separate double-write bugs reachable.** `fetchShoppingData` is 13 Supabase round trips (1 `shopping_list` + 4 from `fetchInventoryWithState` + 6 from `fetchMealLibrary` + 1 vendors + 1 `meal_logs`) plus two engine passes — plausibly 0.5–2s on a phone. During that window the plan's code changed nothing on screen: `data` stayed non-null so the list kept rendering pre-mutation state, no spinner, no disabled control. A tapped checkbox stayed visibly unchecked through the whole round trip, which invites a second tap. Two concrete double-write paths were confirmed reachable: double-tapping a checkbox runs `handlePurchase` twice, surfacing two restock offers whose acceptance adds `2 × quantity` to stock; double-tapping "Add all" or a suggestion's ＋ inserts the same suggestion rows twice, since suppression only applies on the *next* load, after the duplicate rows already exist server-side — the plan's own "Known accepted risks" note about manual-add duplicates does not cover this path, which fires within a single load cycle. Overlapping `load()` calls could also resolve out of order and leave a stale snapshot rendered over a newer one.
+
+Fixed with a single `busy` boolean, set `true` at the top of `run` and cleared in a `finally` (so it clears on the success path, the alert-and-reload catch path, and — trivially — if `fn()` throws synchronously). Every mutating control reads it: the checkbox, the suggestion's ＋, "Add all", each vendor chip, the row's remove ✕, and "Clear purchased" all pass `disabled={busy}`, matching the sibling `saving`/`disabled` idiom used throughout `src/components/track/*Modal.tsx` (`WaterGoalEditorModal.tsx:68,95,102`, `QuickAdjustmentModal.tsx:113,189,200`) rather than inventing a new one. Visual feedback reuses the same siblings' `opacity: 0.5` dimming pattern (`QuickAdjustmentModal.tsx:300`'s `buttonDisabled`) via a new shared `controlDisabled` style, applied alongside `disabled` on each of those same controls. The vendor-picker toggle (⇄) and the "Open ↗" deep link are intentionally left ungated — neither calls `run`, so neither can double-fire a mutation.
+
+**Fix 3 (Important) — a failed reload was unrecoverable after the first successful load, and there was no pull-to-refresh.** `loadFailed` was effectively write-only: the Retry affordance was gated on `!data && loadFailed`, but `data` is never set back to `null` on a later failure, so after one successful load, a subsequent failed `load()` sets `loadFailed` and nothing ever reads it again — one alert, then stale rows with no way to re-fetch short of leaving and re-entering the screen. Confirmed this also compounds the empty state: `ListEmptyComponent` ("Nothing to buy — stock looks good.") renders whenever `sections.length === 0`, so in the failed-reload case it would confidently assert an empty list based on the last *successful* load rather than the failed one. The reviewer confirmed no track-tab container uses `useFocusEffect` and this screen has no forward navigation of its own, so it remounts on every re-entry from the hub — a focus-refetch was checked and correctly judged unnecessary, not added.
+
+Fixed with a `RefreshControl` on the `SectionList`, matching `FoodInventoryScreen.tsx:669-676`'s existing pull-to-refresh (`tintColor`/`colors` `#14B8A6`, `title="Pull to refresh"`, `titleColor="#9CA3AF"`) — a new `refreshing` boolean, set `true` before `load()` and `false` after it resolves (`load` never throws out of its own try/catch, so the `false` always runs). This is the real recovery path the empty-state risk above needed; the empty state's rendering logic itself was left alone per Fix 5's scope note, since a correct pull-to-refresh removes the actual gap (being stuck on a stale snapshot) without needing to distinguish "empty because failed" from "empty because actually empty" in the render branch itself.
+
+**Fix 4 (Minor) — four one-liners:**
+- **The empty state wasn't centered.** `styles.centerFill` (`flex: 1`) has no height to fill inside the `SectionList`'s content container when the section list is empty, so it collapsed to content height and sat under the header instead of centering, unlike the loading/error branches (direct children of the `flex: 1` screen `View`). Fixed by adding `flexGrow: 1` to `contentContainerStyle`.
+- **`Linking.openURL(section.url!)` was unguarded.** `nutrition_vendors.app_url` is free text the owner types into a `TextInput` (Task 9), so a malformed URL or an uninstalled scheme rejects the promise with no handler — an unhandled rejection, and to the user the "Open ↗" tap silently does nothing. The repo's other two `openURL` call sites are also unguarded, but neither of those URLs is user-authored, so they weren't touched. Fixed with a `.catch` that alerts, using the same `title, e instanceof Error ? e.message : "Unknown error"` idiom `run` already uses elsewhere in this file.
+- **The section-title `TouchableOpacity` was `disabled` for every non-purchased header.** Visually identical either way, but `disabled` sets `accessibilityState.disabled`, so VoiceOver announced "Suggested (4), dimmed button" on every header that isn't actually a button. Fixed by rendering a plain `Text` for the "Suggested" and per-vendor/"Anywhere" headers, and wrapping only the "Purchased" header's title in the collapse-toggle `TouchableOpacity`.
+- **The ⇄ and ✕ row controls had touch targets well under the 44pt guideline** — bare `Text` with `paddingHorizontal: 4`, roughly 19pt tall, ~18pt apart, destructive control on the right. Fixed with `hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}` on both.
+
+**Fix 5 (Minor) — the vendor picker moved the toggle control out from under the finger.** The picker rendered inside `rowMain`, which sits in `styles.row` (`alignItems: "center"`) alongside the checkbox and the ⇄ toggle. Growing `rowMain`'s height by opening the picker re-centered the whole cross-axis, so the ⇄ toggle shifted down by roughly half the picker's height the instant it was tapped — sliding it partly out from under the finger — and every row below jumped as the list reflowed. Fixed structurally: the row's `View` and the (conditionally rendered) picker `View` are now siblings inside an outer wrapping `View`, with the picker below the row rather than nested inside its `alignItems: center` cross-axis, so opening it no longer moves the toggle that opened it. `vendorPicker`'s style gained `marginHorizontal: 16` to align with the row's own edges now that it's no longer inheriting `rowMain`'s indentation, and `marginTop` changed from `8` to `-4` to sit visually attached to the row above it rather than doubling up with the row's own `marginBottom: 8`. While restructuring, added the current-value feedback a picker implies but didn't have: the chip matching the row's `vendor_id` (or the `null`/"Anywhere" chip when `vendor_id` is `null`) now renders with a `vendorChipSelected`/`vendorChipTextSelected` style (the same teal-on-dark treatment used for `checkboxChecked` elsewhere in this file), so the picker shows which vendor is currently set rather than presenting six identical-looking options.
+
+**Deferred, not fixed — the "memo rows" house-pattern claim was unmet, and is resolved as a documentation correction.** `renderRow` is a `useCallback`, but that buys nothing without a `React.memo` boundary around the row component it returns: rows are inline JSX with no memo, and RN's list-cell renderer (`CellRenderer`) has no `shouldComponentUpdate` of its own, so every parent re-render re-renders every mounted row regardless of whether that row's own data changed. The house pattern for this really is a memoized row component, e.g. `src/components/track/meals/library/MealRow.tsx`. The reviewer was explicit, though, that at this list's realistic size (a single user's shopping list — tens of rows at the outside) the re-render cost is unmeasurable, and extracting a row component from a screen that cannot be exercised against real data until Task 10 applies the (owner-gated) migration carries more regression risk right now than the unmeasurable gain is worth. Resolved by correcting the claim instead of the code: design spec §9.2's heading no longer lists "memo rows" among this screen's house container patterns, and a note was added directly above Task 7 in this plan pointing here. This is a recorded, deliberate deferral, not an oversight — a future reader should not conclude a memo boundary exists here when it doesn't, and should not conclude one was owed and missed without this rationale attached.
+
+**Considered, no change — recorded so a future reviewer doesn't re-chase any of it:**
+- *`keyExtractor` uniqueness holds.* `computeShoppingSuggestions`'s internal `drafts` Map keys each suggestion by inventory id or folded name, so post-merge every suggestion carries either a distinct UUID or a distinct folded name — `s:${foodInventoryId ?? name}` cannot collide within the Suggested section. `VirtualizedSectionList` additionally namespaces cell keys by section internally, so even an identical key string reused across two different sections (Suggested vs. a vendor section, say) could not collide structurally.
+- *The collapsed "Purchased" section still renders its header when `showPurchased` is `false`.* Verified in RN source rather than assumed: `VirtualizedSectionList`'s `getItemCount` adds 2 per section unconditionally (header + footer slots), and `_subExtractor` returns the header item at `itemIndex === -1` before it ever reaches the branch that inspects the section's (possibly empty) `data` array — so an empty `data: []` collapses the rows, not the header.
+- *Restock-alert string interpolation (`Add ${item.quantity} ${item.unit} to stock?`) is null-safe.* `shopping_list.quantity` is `INTEGER NOT NULL CHECK (quantity > 0)` and `.unit` is `TEXT NOT NULL` at the schema level, so neither interpolation slot can render `"undefined"` or `"null"`.
+- *Rows whose `vendor_id` points at an inactive vendor correctly fall through to "Anywhere."* The `sections` builder's `ANYWHERE` predicate is `r.vendor_id === null || !data.vendors.some((v) => v.id === r.vendor_id && v.is_active)` — a row pointed at a vendor that still exists but was deactivated is not filtered out of every section (which would silently vanish it from the list); it's caught by the second disjunct and lands under "Anywhere" instead.
+- *The stale `data` read inside `handlePurchase` is safe.* `restockTargetByItemId` derives from inventory *locations*, which `markPurchased` (a `shopping_list` mutation) cannot alter, so reading the pre-reload `data` snapshot to compute `targetLocationId` is correct, not a race. The only staleness window is a concurrent cross-device edit to that item's locations between this render and the restock tap — which, if it happened, would surface as a "Failed to restock" alert from the RPC (a stale target location id), not a wrong write.
+- *All `useCallback` dependency arrays are complete*, including the one addition this round (`renderRow` gained `busy`), checked against every free variable each callback body actually closes over.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 11 passed, 11 total
+Tests:       317 passed, 317 total
+```
+(317 = unchanged — this task adds no test surface; `ShoppingListScreen.tsx` is a React Native component and, per `jest.config.js`'s own scoping to pure-TypeScript libs, is not and has never been covered by this suite.) The plan's Task 7 code block was re-diffed programmatically against `mobile/src/components/track/ShoppingListScreen.tsx` (the `run`/`busy`/`refreshing` rewrite, the row-structure change for Fix 5, and all Minor fixes) and found byte-identical, modulo the banner line — same discipline as the Task 3 and Task 6 amendments.
 
 
