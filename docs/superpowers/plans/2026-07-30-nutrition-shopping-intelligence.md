@@ -357,7 +357,18 @@ describe("estimateConsumption", () => {
 // rate is RATE_WINDOW_DAYS / MIN_SPAN_DAYS = 2x), and it's biased in the
 // conservative direction for suggest-confirm: rate reads low, daysUntilOut
 // reads high, so the failure mode is a missed suggestion, never a spurious
-// one. This is a heuristic, not calibrated science.
+// one. (1)-(3) are all UNDER-count sources. (4) is not: the caller's events
+// come from meal_logs.inventory_items, which records what a meal log CLAIMED
+// against inventory, not what the consume RPC actually took
+// (lib/supabase/mealLibrary.ts:417-422) — a failed decrement
+// (MealLoggedButDecrementFailed, deliberately not cleaned up) or a
+// resolve/consume stale-read race can leave a row claiming a unit that was
+// never really removed from stock. Phantom claimed units inflate ratePerDay
+// and deflate daysUntilOut, and near the MIN_UNITS boundary can manufacture
+// an estimate — and a spurious forecast suggestion — for an item that wasn't
+// actually being drawn down that fast. No cheap fix: actual decrements
+// aren't persisted anywhere this lib could read instead, so this bias is
+// carried, not corrected. This is a heuristic, not calibrated science.
 import { daysBetweenLocalDates } from "./stockState";
 
 export const RATE_WINDOW_DAYS = 28;
@@ -872,7 +883,11 @@ import { fetchInventoryWithState } from "./inventory";
 import { fetchMealLibrary } from "./mealLibrary";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import type { InventoryUsage, ShoppingListItem } from "@/src/types/track";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+// `src/lib/**` must not import from `src/components/**` — see the rule at
+// `lib/dates.ts:1-9` (this module's own home, and the one prior edge that
+// rule closed). Import the definition directly rather than through the
+// components-tree re-export `mealsHelpers.ts` carries for its own callers.
+import { getLocalDateString } from "../dates";
 
 export interface ShoppingData {
   listRows: ShoppingListItem[];
@@ -883,21 +898,82 @@ export interface ShoppingData {
   restockTargetByItemId: Map<string, string>;
 }
 
-export async function fetchShoppingData(todayLocalDate: string): Promise<ShoppingData> {
+// A row's `inventory_items` is unvalidated JSONB (no DB-side shape check), so
+// the expansion below is defensive: a non-array value must not throw out of
+// `for…of` and take the whole screen load down with it, and a malformed
+// `quantity` (huge, negative, or fractional) must not grow `events` without
+// bound. This is hardening, not a bug fix — every writer, current and
+// historical, hardcodes `quantity: 1` (`mealLibrary.ts:423`,
+// `MealsScreen.tsx:568-570`, and no other writer exists anywhere in the
+// repo's history), so the inner loop below is currently dead generality.
+const MAX_CLAIMED_UNITS_PER_ROW = 1000;
+
+/**
+ * One `DecrementEvent` per unit a `meal_logs` row CLAIMS against an inventory
+ * item — not a confirmed decrement. `inventory_items` records intent, not
+ * outcome (`mealLibrary.ts:417-422`): a row can claim a unit that was never
+ * actually taken, e.g. a failed `consume_inventory_units` call
+ * (`mealLibrary.ts:441-453`, deliberately not cleaned up) or a stale-read
+ * race in `resolveInventoryMatches`. See the 4th bias in
+ * `consumptionRate.ts`'s header for what that costs the estimate. Pure and
+ * exported so the expansion is unit-testable independent of the fetch.
+ */
+export function expandDecrementEvents(
+  rows: Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+): DecrementEvent[] {
+  const events: DecrementEvent[] = [];
+  for (const log of rows) {
+    if (!Array.isArray(log.inventory_items)) continue; // malformed JSONB — never throw the screen load over it
+    for (const u of log.inventory_items) {
+      const claimed = Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW);
+      for (let i = 0; i < claimed; i++) {
+        events.push({ inventoryId: u.id, dateLocal: log.date });
+      }
+    }
+  }
+  return events;
+}
+
+/** The trailing meal_logs window expanded to one DecrementEvent per claimed unit. */
+export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   const since = new Date();
   since.setDate(since.getDate() - (RATE_WINDOW_DAYS + 7)); // small slack for span
-  const [listRes, inventory, library, vendorsRes, logsRes] = await Promise.all([
+  const { data, error } = await supabase
+    .from("meal_logs")
+    .select("date, inventory_items")
+    .eq("uses_inventory", true)
+    .gte("date", getLocalDateString(since));
+  if (error) throw error;
+  return expandDecrementEvents((data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>);
+}
+
+/**
+ * Task 8's entry point (the "~Nd left" line on `FoodInventoryScreen`) — one
+ * round trip, rates only. Not folded into `fetchShoppingData` because that
+ * caller also needs `totalsById` derived from a concurrently-fetched
+ * `inventory`; this one lets a caller who already has its own totals skip
+ * the rest of `fetchShoppingData`'s work entirely.
+ */
+export async function fetchConsumptionRates(
+  todayLocalDate: string,
+  totalsById: Map<string, number>,
+): Promise<Map<string, ConsumptionEstimate>> {
+  return estimateConsumption({ events: await fetchDecrementEvents(), totalsById, todayLocalDate });
+}
+
+export async function fetchShoppingData(todayLocalDate: string): Promise<ShoppingData> {
+  const [listRes, inventory, library, vendorsRes, events] = await Promise.all([
     supabase.from("shopping_list").select("*").order("created_at"),
     fetchInventoryWithState(todayLocalDate),
     fetchMealLibrary(),
     supabase.from("nutrition_vendors").select("*").order("display_order"),
-    supabase
-      .from("meal_logs")
-      .select("date, inventory_items")
-      .eq("uses_inventory", true)
-      .gte("date", getLocalDateString(since)),
+    fetchDecrementEvents(),
   ]);
-  const errors = [listRes.error, vendorsRes.error, logsRes.error].filter((e) => e !== null);
+  // `fetchInventoryWithState` and `fetchMealLibrary` throw on their own
+  // errors before returning (see each module's own Promise.all), so only the
+  // three raw-query results here carry a `.error` to check; `events` is
+  // already resolved data, having thrown internally if its own query failed.
+  const errors = [listRes.error, vendorsRes.error].filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchShoppingData:", e));
     throw errors[0];
@@ -905,15 +981,6 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
 
   const listRows = (listRes.data ?? []) as ShoppingListItem[];
 
-  // Decrement events: one per unit, dated by the log's local date.
-  const events: DecrementEvent[] = [];
-  for (const log of (logsRes.data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>) {
-    for (const u of log.inventory_items ?? []) {
-      for (let i = 0; i < u.quantity; i++) {
-        events.push({ inventoryId: u.id, dateLocal: log.date });
-      }
-    }
-  }
   const ratesById = estimateConsumption({
     events,
     totalsById: new Map(inventory.map((it) => [it.id, it.state.totalQuantity])),
@@ -958,8 +1025,14 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
 
   const restockTargetByItemId = new Map<string, string>();
   for (const it of inventory) {
+    // `fetchInventoryWithState`'s locations select has no `.order()`
+    // (inventory.ts:40), so "first location" is otherwise whichever row the
+    // DB happens to return first — not stable across loads. Sort by id for a
+    // deterministic pick (spec §8 sanctions "else its first location"; this
+    // just defines "first").
+    const sortedLocations = [...it.locations].sort((a, b) => a.id.localeCompare(b.id));
     const target =
-      it.locations.find((l) => l.is_ready_to_consume) ?? it.locations[0];
+      sortedLocations.find((l) => l.is_ready_to_consume) ?? sortedLocations[0];
     if (target) restockTargetByItemId.set(it.id, target.id);
   }
 
@@ -1480,7 +1553,7 @@ git commit -m "feat(nutrition-os): Shopping List screen + Track hub card"
 
 (Use a top-level import of `addSuggestions` from `@/src/lib/supabase/shopping` and `lowThresholdFor` from `@/src/lib/stockState` — the dynamic-import line above is illustrative of *what*, not *how*.) Un-gate the action-sheet entry: the `if (isOutOfStock)` splice (~:219-222) becomes unconditional (the option always appears). Keep the success/failure alerts.
 
-- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside (`meal_logs` query + `estimateConsumption`, same shape as `fetchShoppingData`'s — extract a small `fetchConsumptionRates(todayLocalDate, totalsById)` helper into `mobile/src/lib/supabase/shopping.ts` and call it from both places rather than duplicating the events expansion). Import `MAX_DISPLAY_DAYS` alongside `estimateConsumption` from `@/src/lib/consumptionRate` and gate the render on it — beyond that horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count. Render, next to the existing quantity text on each grid card:
+- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside by calling `fetchConsumptionRates(todayLocalDate, totalsById)`, already exported from `mobile/src/lib/supabase/shopping.ts` (Task 6 built it precisely for this call site — it wraps `fetchDecrementEvents()` + `estimateConsumption()` in one round trip, so there is no events-expansion code to duplicate or lift here). Build `totalsById` the same way `fetchShoppingData` does: `new Map(items.map((it) => [it.id, it.state.totalQuantity]))` over the screen's own fetched inventory. Import `MAX_DISPLAY_DAYS` alongside `estimateConsumption`'s type from `@/src/lib/consumptionRate` and gate the render on it — beyond that horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count. Render, next to the existing quantity text on each grid card:
 
 ```tsx
               {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
@@ -1687,7 +1760,7 @@ git commit -m "feat(nutrition-os): vendor name/URL editing + tappable links (Pha
 
 - Spec coverage: §5.1-5.2 → Task 1; §5.3 → Task 5; §5.4 → Tasks 1/5; §6 → Task 4 (+Task 2 threshold export); §7 → Task 3; §8 → Task 6 (+restock in Task 7's `handlePurchase`); §9.1-9.2 → Task 7; §9.3 → Task 8; §9.4 → Task 9; §10 → Tasks 3/4/10/11. No gaps.
 - Type consistency: `DemandInventoryItem`/`computeShoppingSuggestions` (4→6), `ConsumptionEstimate`/`estimateConsumption` (3→6/8), `lowThresholdFor` (2→6/8), `ShoppingSuggestion` (4→6/7/8), `ShoppingData`/`fetchShoppingData` (6→7), `addSuggestions(userId, s[])` (6→7/8), `transferInventoryUnits(itemId, null, target, qty)` (Phase 4 API, used in 7), `replaceItemLocations(itemId, rows)` new signature (5→EditFoodScreen call sites).
-- Known accepted risks: `handleAddToShoppingList` bypasses suggestion dedupe (a manual add can duplicate a pending suggestion — suppressed on next screen load since the row now exists); Task 8's rates helper extraction (`fetchConsumptionRates`) is specified by shape, not full code — implementer lifts the events-expansion block from Task 6 verbatim; screen `keyExtractor` for name-only suggestions uses the name (unique post-merge by construction).
+- Known accepted risks: `handleAddToShoppingList` bypasses suggestion dedupe (a manual add can duplicate a pending suggestion — suppressed on next screen load since the row now exists); screen `keyExtractor` for name-only suggestions uses the name (unique post-merge by construction). (Task 8's rates helper is no longer a risk: Task 6 now exports `fetchConsumptionRates(todayLocalDate, totalsById)` fully implemented — see the Task 6 amendment — so Task 8 Step 2 calls it directly and there is no events-expansion code left to duplicate or lift.)
 
 ## ⚠️ Execution amendments
 
@@ -2031,5 +2104,38 @@ Test Suites: 11 passed, 11 total
 Tests:       309 passed, 309 total
 ```
 (309 = unchanged across both rounds — the initial task added no new tests, since it is a type/wrapper change with no new pure-lib logic to pin, and this round's fixes are copy/comment-only with no behaviour to pin either; the existing suite's silence on `replaceItemLocations` was expected and confirmed by grep — nothing in `mobile/src/lib/__tests__` references it.) The plan's Task 5 code block (the wrapper) was re-diffed programmatically against `mobile/src/lib/supabase/inventory.ts` and found byte-identical, the same check used for Tasks 1, 3, and 4; this round's `EditFoodScreen.tsx` changes were confirmed by direct diff to touch only comment lines and the one `Alert.alert` string — zero lines of `try`/`catch`/`return` control flow changed.
+
+### Task 6 — the shopping query module
+
+Spec review independently re-derived the full table/column checklist and confirmed it against the migrations; verified RLS sound on every table and verb touched by this module, including `clearPurchased` (`DELETE ... WHERE is_purchased = true`, running under the RLS policy at `20250209_extend_food_inventory.sql:106-108`, so the effective predicate is `is_purchased = true AND auth.uid() = user_id` — a caller can only ever clear their own purchased rows); confirmed `transferInventoryUnits`'s argument order (`itemId, fromLocationId, toLocationId, quantity` — `inventory.ts:75-88`) against both the client wrapper and the `transfer_inventory_units` RPC's plpgsql (`20260730100000_inventory_locations_truth.sql:107`), so the purchased→restock offer in Task 7 moves stock the right direction; confirmed the error-handling asymmetry between the three raw queries and the two fetcher calls was correct, not a gap; and confirmed no off-by-one in `errors.slice(1)`. Five findings came back, three Important and two Minor, plus four items explicitly checked and accepted with no change. All are addressed in this round.
+
+**Fix 1 (Important) — restored the `src/lib` → `src/components` layering invariant.** The original commit imported `getLocalDateString` from `@/src/components/track/meals/mealsHelpers`. `mobile/src/lib/dates.ts:1-9` states the rule this module's own home exists to enforce: `src/lib/**` must not import from `src/components/**`, and `lib/supabase/mealLibrary.ts` importing `getLocalDateString` from the components tree was the app's only such edge — closed by moving the definition to `lib/dates.ts` and leaving `mealsHelpers.ts` as a re-export for its own (components-tree) callers. The Task 6 commit put that edge back. Fixed: `import { getLocalDateString } from "../dates";`, matching the sibling `mealLibrary.ts:6`'s form exactly. Confirmed with the same grep the rule's own comment prescribes: `grep -rn 'from "@/src/components' mobile/src/lib/` returned the one hit (this line) before the fix and zero after.
+
+**Fix 2 (Important) — restructured the module so Task 8's extraction is possible without a serialized round trip; this is a deliberate structural deviation from the plan's original verbatim Task 6 code block.** Plan Task 8 Step 2 told its implementer to extract `fetchConsumptionRates(todayLocalDate, totalsById)` into this file "rather than duplicating the events expansion." But as originally written, `totalsById` derives from `inventory`, which itself only resolves *inside* the same `Promise.all` as the raw `meal_logs` query — so a helper taking `totalsById` as a parameter could only be called *after* that `Promise.all` settled, turning what should be one parallel round trip into a sixth, sequential one on the shopping screen's cold load. The plan's own Task 5 risk list then quietly waved this through as "implementer lifts the events-expansion block verbatim" — i.e., exactly the duplication Step 2's own instruction forbade. The plan contradicted itself between what Task 6 built and what Task 8 Step 2 told its implementer to do with it; resolved here rather than carried forward for Task 8 to discover.
+
+Restructured into three pieces: `expandDecrementEvents(rows)` — pure, exported, the row→events expansion in isolation, unit-testable independent of any fetch; `fetchDecrementEvents()` — the trailing-window `meal_logs` query (same `RATE_WINDOW_DAYS + 7` slack and its "slack for the span gate" comment, unchanged) piped through the expansion, throwing on its own query error; and `fetchConsumptionRates(todayLocalDate, totalsById)` — Task 8's entry point, `estimateConsumption({ events: await fetchDecrementEvents(), totalsById, todayLocalDate })`, one round trip, rates only. `fetchShoppingData` now puts `fetchDecrementEvents()` directly into the `Promise.all` slot the raw query occupied, and calls `estimateConsumption` after the whole batch settles — restoring the parallelism Task 8's naive extraction would have cost. The `errors` array shrank from `[listRes.error, vendorsRes.error, logsRes.error]` to `[listRes.error, vendorsRes.error]`, with a new comment explaining why: `fetchInventoryWithState` and `fetchMealLibrary` already throw on their own internal errors before returning (verified by reading both — `inventory.ts:44-49` and `mealLibrary.ts:72-77` each collect their own parallel-call errors and throw the first), and `fetchDecrementEvents` now does the same, so `events` at the `Promise.all` destructure is already-resolved, already-validated data with nothing left to check. `slice(1)`-log-then-throw-first is preserved unchanged for the two that remain.
+
+**Both plan sections were updated to agree, not just the source.** Task 6's code block above now matches the restructured source exactly (re-diffed, see Verification). Task 8 Step 2's instruction was rewritten from "extract a helper … rather than duplicating the events expansion" to a direct call — `fetchConsumptionRates(todayLocalDate, totalsById)` is already fully built and exported by Task 6, so Task 8 has no extraction left to perform and no events-expansion code to lift, verbatim or otherwise. The Task 5 risk-list bullet describing the lift was removed and replaced with a note that Task 6 already closed it.
+
+**Fix 3 (Important) — stopped asserting a fidelity the source data doesn't have.** The original comment above the events loop read "Decrement events: one per unit" — stated as fact. But `mealLibrary.ts:417-422`, directly above the only current writer of `inventory_items`, says the opposite in its own words: *"this records INTENT, not outcome. These rows are written before the consume RPC runs below, so a row can claim {id, quantity: 1} for a unit that was never taken … No current code path treats it as truth … Read consumed > 0, not this."* `fetchShoppingData` (via `fetchDecrementEvents`/`expandDecrementEvents`) is now that code path, and two reachable routes make it an over-count, not merely an approximation: (a) `mealLibrary.ts:441-453` — a failed `consume_inventory_units` call throws `MealLoggedButDecrementFailed` and *deliberately does not delete* the just-inserted log row, so the phantom claimed unit has no cleanup path and persists indefinitely; (b) a stale-read race in `resolveInventoryMatches` where the snapshot used to build `inventory_items` and the live state the consume RPC reads have already diverged, so the RPC decrements 0 while the log row still claims 1. Near `MIN_UNITS = 3`, two such phantom units in a month is the difference between "no estimate" and an estimate built mostly from units never actually eaten — inflating `ratePerDay`, deflating `daysUntilOut`, and capable of firing a spurious priority-3 forecast suggestion with a wrong "~Nd left" line.
+
+There is no cheap code fix — actual decrements aren't persisted anywhere this lib could read instead — so this is documented, not patched. Added a fourth bias to `consumptionRate.ts`'s header, explicit that it's unlike the first three: bias (1)-(3) are all *under*-counts (containers-not-servings, the Phase 4 pre-apply gap, and the `RATE_WINDOW_DAYS`-vs-`MIN_SPAN_DAYS` divisor slack), and omitting an over-count source would have made that list read as exhaustive when it isn't. Mirrored into the plan's Task 3 code block and re-diffed (see Verification — both stayed in sync, same discipline as the Task 3 amendment's `MAX_DISPLAY_DAYS` change). `shopping.ts`'s own comment was rewritten from the flat "one per unit" claim to name what the events actually are — *claimed* units, cross-referencing `mealLibrary.ts:417-422` and the writer-side failure modes by line number — on `expandDecrementEvents`'s doc comment, the function that now owns the expansion.
+
+**Fix 4 (Minor) — made the restock-target tiebreak deterministic.** `it.locations[0]` as the "else its first location" fallback (spec §8 sanctions this fallback explicitly; only "first" was undefined) was non-deterministic: `fetchInventoryWithState`'s locations select carries no `.order()` (`inventory.ts:40`), so for a multi-location item with no ready-to-consume row, which row Postgres/PostgREST hands back first can differ between requests — the same purchase could land in the pantry today and the freezer tomorrow with no code change in between. Fixed by sorting a copy of `it.locations` by `id` before either the `find` or the `[0]` fallback, with a one-line comment naming both the cause (`inventory.ts:40` has no `.order()`) and the fix's contract (spec §8 sanctions the fallback; this defines "first" as stable).
+
+**Fix 5 (Minor) — hardened the expansion against unvalidated JSONB while already rewriting the block for Fix 2.** `inventory_items` is JSONB with no DB-side shape constraint. Traced two reachable failure modes if a row is malformed: a non-array value (e.g. a stray object) sent `for…of` into `TypeError: not iterable`, escaping `fetchShoppingData` entirely and failing the **whole screen load**, not just the forecast section; and an unbounded or fractional `quantity` could grow `events` without limit (heap exhaustion) or silently mis-loop. Guarded with `Array.isArray(log.inventory_items)` (skip, don't throw, on a non-array row) and clamped the per-row claimed-unit count to `Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW)` (truncated, non-negative, capped at 1000). **Recorded explicitly as hardening, not a bug fix**: every writer of `inventory_items`, current and historical, hardcodes `quantity: 1` (`mealLibrary.ts:423`, `MealsScreen.tsx:568-570`, and grep confirms no other writer exists anywhere in the repo's history) — so as of this commit the inner loop's guard is dead generality, defending against a shape the app has never actually produced, not one observed in the wild.
+
+**Considered, no change — recorded so a future reviewer doesn't re-chase any of it:**
+- *Silent zero-row updates.* `update(...).eq("id", id)` matching no row resolves with `error: null` — the mutation reports success and the change simply doesn't show up. Reachable only via a concurrently-deleted row, in a single-user app whose ids all come from the RLS-scoped select in the same fetch cycle; the re-fetch self-corrects on the next load and nothing looks visibly wrong in between. Adding `.select("id")` existence assertions to every mutation would diverge from the pattern every other mutation module in `src/lib/supabase/` already follows. Accepted as-is.
+- *`addSuggestions`'s explicit `userId` parameter is justified, not a smell — even though Task 5's `replaceItemLocations` just dropped its own `userId` parameter in the opposite direction.* `shopping_list.user_id` is `NOT NULL` with `WITH CHECK (auth.uid() = user_id)`, so a direct PostgREST `.insert()` has no server-side identity to fall back on and must supply `user_id` client-side. Task 5's RPC could drop `userId` only because a plpgsql function reads `auth.uid()` server-side; an `.insert()` through PostgREST has no equivalent — there is no RPC boundary here to resolve identity behind. The other five mutations in this file all target existing rows by `id`, where RLS alone (no explicit `user_id` needed in the call) already scopes the operation to the caller's own rows.
+- *`food_inventory` is read three times per `fetchShoppingData` call* (`fetchInventoryWithState`, and twice inside `fetchMealLibrary` — once for its own resolution inventory, once transitively for assemblability), but all three sit inside the same top-level `Promise.all`, so it costs one round trip of wall clock, not three sequential ones. The two shapes genuinely differ and aren't a slip: `assessAssemblability` needs `AssemblabilityInventoryRow`, which carries a top-level `daysLeft` that only `fetchMealLibrary`'s query produces — so `library.inventory` feeding `mealGaps` while `inventory` (from `fetchInventoryWithState`) separately feeds `suggestions` is the correct shape match, not redundancy to collapse. A write interleaving between the two concurrent reads could in principle make `mealGaps` and `suggestions` disagree by one unit for a single render; benign in a single-user app that re-fetches on every screen focus.
+- *`.filter((e) => e !== null)` lacks a type predicate*, so `errors[0]` is statically `PostgrestError | null` even though the runtime guarantee is stronger. Identical in both sibling modules (`inventory.ts`, `mealLibrary.ts`) and never actually null at the point it's thrown (the length check above it guards that). Left alone for consistency with the established pattern.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 11 passed, 11 total
+Tests:       309 passed, 309 total
+```
+(309 = unchanged — no new test file was added for the now-pure, now-exported `expandDecrementEvents`; the fixes are a layering correction, a structural extraction with no behavior change to the numbers `estimateConsumption` already had test coverage for via `consumptionRate.test.ts`, a comment/documentation change, and two small guards with no currently-reachable input that exercises them, per Fix 5's own dead-generality note.) The plan's Task 6 code block was re-diffed programmatically against `mobile/src/lib/supabase/shopping.ts` and found byte-identical (modulo the banner line, the established convention since Task 3); the plan's Task 3 code block was independently re-diffed against `mobile/src/lib/consumptionRate.ts` for the 4th-bias header addition and also found byte-identical.
 
 

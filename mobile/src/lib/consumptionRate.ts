@@ -15,7 +15,18 @@
 // rate is RATE_WINDOW_DAYS / MIN_SPAN_DAYS = 2x), and it's biased in the
 // conservative direction for suggest-confirm: rate reads low, daysUntilOut
 // reads high, so the failure mode is a missed suggestion, never a spurious
-// one. This is a heuristic, not calibrated science.
+// one. (1)-(3) are all UNDER-count sources. (4) is not: the caller's events
+// come from meal_logs.inventory_items, which records what a meal log CLAIMED
+// against inventory, not what the consume RPC actually took
+// (lib/supabase/mealLibrary.ts:417-422) — a failed decrement
+// (MealLoggedButDecrementFailed, deliberately not cleaned up) or a
+// resolve/consume stale-read race can leave a row claiming a unit that was
+// never really removed from stock. Phantom claimed units inflate ratePerDay
+// and deflate daysUntilOut, and near the MIN_UNITS boundary can manufacture
+// an estimate — and a spurious forecast suggestion — for an item that wasn't
+// actually being drawn down that fast. No cheap fix: actual decrements
+// aren't persisted anywhere this lib could read instead, so this bias is
+// carried, not corrected. This is a heuristic, not calibrated science.
 import { daysBetweenLocalDates } from "./stockState";
 
 export const RATE_WINDOW_DAYS = 28;
