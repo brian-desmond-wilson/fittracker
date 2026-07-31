@@ -1756,7 +1756,7 @@ git commit -m "feat(nutrition-os): inventory tie-ins — rewired add-to-list, fo
 
 ```tsx
 // mobile/src/components/profile/nutrition/VendorsSection.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Linking, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import { colors } from "@/src/lib/colors";
@@ -1787,7 +1787,7 @@ function normalizeUrl(raw: string): string {
 interface VendorRowProps {
   vendor: NutritionVendor;
   expanded: boolean;
-  onToggleExpand: () => void;
+  onToggleExpand: (id: string) => void;
   onToggleActive: (vendor: NutritionVendor, isActive: boolean) => void;
   onPatch: (vendor: NutritionVendor, patch: VendorPatch) => void;
 }
@@ -1849,7 +1849,7 @@ const VendorRow = React.memo(function VendorRow({
       <View style={s.row}>
         <TouchableOpacity
           style={s.flexShrinkColumn}
-          onPress={onToggleExpand}
+          onPress={() => onToggleExpand(vendor.id)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text style={s.rowLabel}>{vendor.name}</Text>
@@ -1910,6 +1910,14 @@ const VendorRow = React.memo(function VendorRow({
 export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // One stable function shared by every row (matches NutritionPreferencesScreen's
+  // handleToggleExpand/ConceptRow precedent) rather than a fresh closure per row
+  // per render — otherwise VendorRow's React.memo would never bail, since this
+  // was the one non-useCallback prop reaching it.
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
+
   return (
     <View style={s.card}>
       <Text style={s.sectionTitle}>Vendors</Text>
@@ -1918,7 +1926,7 @@ export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSect
           key={v.id}
           vendor={v}
           expanded={expandedId === v.id}
-          onToggleExpand={() => setExpandedId((prev) => (prev === v.id ? null : v.id))}
+          onToggleExpand={toggleExpanded}
           onToggleActive={onToggleActive}
           onPatch={onPatch}
         />
@@ -1933,7 +1941,7 @@ export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSect
 
 ```tsx
   const handleVendorPatch = useCallback(
-    (vendor: NutritionVendor, patch: { name?: string; app_url?: string | null }) => {
+    (vendor: NutritionVendor, patch: VendorPatch) => {
       run("Failed to save vendor", () => updateVendor(vendor.id, patch));
     },
     [run]
@@ -2477,7 +2485,7 @@ Spec review passed outright: the shipped Step 1 block was byte-identical to this
 **Code-quality review adjudicated three flags raised during implementation, plus one it found independently:**
 
 - **Lost edit on vendor switch** — confirmed correct as traced: expanding vendor A, editing, then tapping vendor B's header calls `startEdit(B)` (in the original shared-state design), which overwrites the shared `name`/`url` state before any commit against B could run — so A's edit is discarded, never misapplied to B. Corruption was genuinely unreachable, for a precise reason: `commit(v)` was only ever called from handlers rendered under `editingId === v.id`, and the discard and any later commit were separate touch events with a React flush in between. But per the refactor below, this was reclassified from "an acceptable UX gap" to "a symptom of the actual defect" — shared editor state across all rows — and fixed structurally rather than accepted.
-- **Double-commit via `onEndEditing` + the row's `onPress`** — the flagged mechanism (both handlers firing off stale closures that still read `editingId === v.id`) does **not reach production**: `NutritionPreferencesScreen.tsx`'s `FlatList` sets `keyboardShouldPersistTaps="handled"`, which (per `ScrollView.js`'s responder-release logic) only returns true in the bubble phase — so a row tap lets the child touchable win the responder negotiation and the ScrollView's own `_handleResponderRelease` (the sole caller of `blurTextInput`) never runs. A row tap therefore does not blur a focused sibling `TextInput`, so `onEndEditing` does not fire alongside `onPress` for that gesture — one gesture, one commit path, no double-fire, no guard needed. The original write-up's fallback reasoning — "harmless because the second patch would be empty" — was also incorrect, in a way that didn't end up mattering: had the double-fire been reachable, both calls would have read the *same* stale, un-refetched vendor object and the *same* edited text, so the second patch would have been an exact duplicate of the first (not empty) — idempotent at the database level, hence still harmless, but not for the reason originally given. Recorded here so neither the mechanism nor the reasoning gets re-chased.
+- **Double-commit via `onEndEditing` + the row's `onPress`** — the flagged mechanism (both handlers firing off stale closures that still read `editingId === v.id`) does **not reach production**: `NutritionPreferencesScreen.tsx`'s `FlatList` sets `keyboardShouldPersistTaps="handled"`, which (per `ScrollView.js`'s `_handleStartShouldSetResponder`, `:1434-1450`) only returns true in the bubble phase — so a row tap lets the child touchable win the responder negotiation and `ScrollView.js`'s `_handleResponderRelease` (`:1363-1375`) never runs. A row tap therefore does not blur a focused sibling `TextInput`, so `onEndEditing` does not fire alongside `onPress` for that gesture — one gesture, one commit path, no double-fire, no guard needed. (Precise attribution, corrected on re-review: the first draft of this finding conflated the two `ScrollView.js` functions under one citation.) `_handleResponderRelease` is the relevant caller of `blurTextInput` **for this configuration** — `keyboardShouldPersistTaps="handled"` — but not the only one in the file: `_handleTouchEnd` (`:1577-1580`) calls it too, gated on `keyboardShouldPersistTaps` being falsy or `'never'`, so it stays inert here. Recorded so a future reader who changes that prop away from `'handled'` doesn't trust an absolute that was never one. The original write-up's fallback reasoning — "harmless because the second patch would be empty" — was also incorrect, in a way that didn't end up mattering: had the double-fire been reachable, both calls would have read the *same* stale, un-refetched vendor object and the *same* edited text, so the second patch would have been an exact duplicate of the first (not empty) — idempotent at the database level, hence still harmless, but not for the reason originally given. Recorded here so neither the mechanism nor the reasoning gets re-chased.
 - **Empty name silently kept the old name** — kept, and elevated: `nutrition_vendors.name` is `not null` with no other check constraint, so shipping the original "just don't patch" behavior unmodified would have been fine at the DB layer, but the refactor's `flush` now also snaps the input back to the last-saved name so the rejection is visible instead of merely harmless.
 - **Nested touchable (URL `Text.onPress` inside the row `TouchableOpacity`)** — confirmed against RN's renderer, not just inferred from convention: `Text` with an `onPress` prop supplies its own `onStartShouldSetResponder`, and the touch-responder dispatch walks the view tree bubble-phase and stops at the first listener that returns true; `Text` is the deeper (more specific) node, so it wins the negotiation and tapping the URL opens the link rather than toggling the row. One side effect worth keeping in mind: because the URL `Text` claims the responder, the URL line is not itself an edit affordance (there's no way to tap *into* editing the link from that line — the row header must be tapped instead), and while a row is expanded the URL line still shows `vendor.app_url` (the last-saved value), not whatever is currently typed in the URL `TextInput` below it.
 
@@ -2501,9 +2509,26 @@ Spec review passed outright: the shipped Step 1 block was byte-identical to this
 - `commit`/`flush` never diffs against a stale vendor object: `latest.current` is reassigned unconditionally on every render (`latest.current = { vendor, onPatch, name, url }`), so any call into `flush()` — whether from `onEndEditing` or the unmount/collapse cleanup — always reads the just-rendered `vendor` prop, never a captured-at-mount snapshot.
 - Nothing in `src/` reads a vendor's `.slug` outside of `nutritionPreferences.ts`'s own fetch/insert paths (confirmed by grep), so a rename leaving `slug` stale is cosmetic only — the `unique (user_id, slug)` constraint keys off the value set at creation time, which this task never touches.
 
+**Re-review of the refactor: approved, adversarially.** The reviewer re-tested all three of the above mechanisms rather than taking the first pass's word for them, and each held for a structural reason rather than luck. Two are worth recording as invariants, since they're what makes the design provably correct rather than merely observed-correct-so-far:
+
+- **`dirtyRef` can only be set true while `expanded === true`.** `onChangeText` is `dirtyRef.current = true`'s only writer, and both `TextInput`s render solely under `{expanded && …}` — so at any `expanded` false→true edge, `dirtyRef.current` is provably `false` (nothing could have set it since the last time it was read/reset). This is why no "did I just re-expand into leftover dirty state" guard is needed anywhere.
+- **`flush`'s correctness does not depend on `React.memo` being defeated.** Before this round's fix, `VendorRow`'s `memo` never bailed (see below) — but that was a wasted-render problem, not a correctness one: `expanded` genuinely changes value on an A→B switch (it's derived from `expandedId`, not from a prop identity), so the effect's `[expanded]` dependency fires correctly regardless of whether `memo` was doing anything. A later `useCallback` fix to make `memo` real (this round's Item 1, below) therefore could not have broken the flush logic, because the two were never coupled.
+- Also confirmed: `dirtyRef.current = false` executes *before* `patchObj` is computed, so it resets even on a flush that ends up empty (e.g. `onEndEditing` firing on a field that was touched but round-tripped back to its original value) — there's no window where a no-op flush leaves `dirtyRef` stuck true. And `patch(v, patchObj)` is `NutritionPreferencesScreen`'s `run()`, an async function that never throws synchronously (its `try`/`catch` is internal to the `async` body) — so no exception path out of `flush()` can leave `dirtyRef` stuck true either.
+- `normalizeUrl` was tested against 19 inputs by the reviewer, all idempotent (`normalizeUrl(normalizeUrl(x)) === normalizeUrl(x)`), including two adversarial ones chosen to probe the scheme regex against colons that aren't scheme separators: `"my file:name"` (a colon inside what should read as a bare, if odd, host/path — no scheme match, `https://` prefixed) and `"x.com?a=b:c"` (a colon inside a query string, not at the start — no scheme match, `https://` prefixed). Both behave as intended: `HAS_SCHEME` only matches a scheme anchored at the very start of the string (`^[a-z][a-z0-9+.-]*:`), so a colon appearing later, for any reason, cannot false-positive as a scheme.
+
+**Four small follow-ups from the re-review, one commit, no behaviour changes beyond the first:**
+
+1. **Made `React.memo` real.** `onToggleExpand` was previously passed to `VendorRow` as an inline arrow created fresh inside `vendors.map()` on every `VendorsSection` render (`onToggleExpand={() => setExpandedId((prev) => (prev === v.id ? null : v.id))}`) — a new function identity every time, so `VendorRow`'s shallow-compare `memo` never bailed on an unrelated re-render (`onToggleActive`/`onPatch` were already stable via the parent's own `useCallback`s, so this one prop was the entire problem). `NutritionPreferencesScreen.tsx:198-211` carries an explicit comment about stabilizing callbacks "so ConceptRow's React.memo actually bails" — the codebase already knew the fix pattern one file over. Changed `VendorRowProps.onToggleExpand` to `(id: string) => void` and hoisted a single `toggleExpanded = useCallback((id) => setExpandedId((prev) => (prev === id ? null : id)), [])` in `VendorsSection`, passed identically to every row (`onToggleExpand={toggleExpanded}`); each `VendorRow` now builds its own `onPress={() => onToggleExpand(vendor.id)}` inside its own render body — an inline closure again, but this time *internal* to the memoized component rather than a prop reaching it, so it doesn't affect the parent-to-child prop comparison `memo` performs. This mirrors `NutritionPreferencesScreen`'s own `handleToggleExpand`/`ConceptRow` precedent exactly (single id-taking callback prop; the id-specific closure built inside the child). Irrelevant for performance at ~4 vendors; the point is that `memo` now means what it claims rather than reading as a guarantee it didn't provide.
+2. **Used the exported `VendorPatch` type at its call site.** `NutritionPreferencesScreen.tsx`'s `handleVendorPatch` restated the patch shape inline (`{ name?: string; app_url?: string | null }`) even though `VendorsSection.tsx` already exports `VendorPatch` for exactly this shape — structurally compatible, so `tsc` never flagged it, but two sources of truth for one type. Imported the alias (`import { VendorsSection, type VendorPatch } from "./VendorsSection"`) and used it in the handler's signature, closing the loop. The plan's Step 1 and Step 2 blocks above reflect both this and Item 1.
+3. **Tightened two citations in this amendment** — see the corrected `_handleStartShouldSetResponder`/`_handleResponderRelease`/`_handleTouchEnd` attribution folded into the double-commit bullet above; not repeated here.
+4. **Three residuals recorded, no code changes:**
+   - **A failed write leaves the editor visually divergent, with no retry.** `onPatch` returns `void`, so `flush` clears `dirtyRef` before the write's outcome is known. If `updateVendor` rejects, the user sees `run()`'s "Failed to save vendor" alert, but the row's local `name` state still holds the typed (unsaved) value while the *header* re-renders from the stale `vendor.name` prop — and re-collapsing the row never retries the write, since `dirtyRef` is already `false`. `ConceptRow.tsx` has the identical shape for its own `form_note` field. This is a **shared house-pattern gap**, not something Task 9 introduced or should fix in isolation — recorded here so a future pass at either row (or a shared retry affordance) addresses both together.
+   - **The unmount-flush can now fire a write after the screen is already gone — which is the fix doing its job, but it is new behaviour worth naming.** Before this refactor, tapping Done while mid-edit silently lost the edit; after, the effect cleanup's `flush()` call fires during teardown and its `onPatch` → `run()` → `updateVendor(...)` promise outlives the unmounted screen. Two side effects follow: `run()`'s `load()` → `setData` call lands on an unmounted `NutritionPreferencesScreen` (a silent no-op under React 18, not a crash or warning); and on failure, the "Failed to save vendor" `Alert` pops up over whatever screen the user has since navigated to, with no context connecting it back to the vendor they were editing. Both are strictly better than the silent data loss they replaced, but they are a genuine change in when/where a write and its feedback can surface, not a no-op refactor.
+   - **`hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}` brings the row's tap target to roughly 34pt** for a vendor with no `app_url` (an 8pt hitSlop on each side of a single ~18pt text line) — still under iOS's 44pt minimum-target guidance, but it matches `ShoppingListScreen.tsx:209`'s exact values, so it's house-consistent rather than under-fixed relative to the rest of the app. Fine as shipped; a uniform bump to a larger `hitSlop` across all of these sites (if ever done) belongs to that convention, not to this one row.
+
 **Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
 ```
 Test Suites: 11 passed, 11 total
 Tests:       317 passed, 317 total
 ```
-(317 = unchanged both before and after the refactor — this task, like Tasks 7 and 8, adds no test surface; `VendorsSection.tsx`/`NutritionPreferencesScreen.tsx` are React Native components outside `jest.config.js`'s pure-TypeScript-lib scope.) Unlike Task 8, this task's Step 1 block **is** a byte-identical source mirror, re-diffed programmatically against the shipped `VendorsSection.tsx` after the refactor (same discipline as Tasks 3, 4, 6, and 7) — confirmed identical. Step 2's `handleVendorPatch` block is likewise byte-identical (modulo the plan's own leading-indentation convention) to the shipped `NutritionPreferencesScreen.tsx` handler.
+(317 = unchanged both before and after the refactor — this task, like Tasks 7 and 8, adds no test surface; `VendorsSection.tsx`/`NutritionPreferencesScreen.tsx` are React Native components outside `jest.config.js`'s pure-TypeScript-lib scope.) Unlike Task 8, this task's Step 1 block **is** a byte-identical source mirror, re-diffed programmatically against the shipped `VendorsSection.tsx` after both the refactor and this round's Item 1/2 follow-ups (same discipline as Tasks 3, 4, 6, and 7) — confirmed identical both times. Step 2's `handleVendorPatch` block is likewise byte-identical (modulo the plan's own leading-indentation convention) to the shipped `NutritionPreferencesScreen.tsx` handler.

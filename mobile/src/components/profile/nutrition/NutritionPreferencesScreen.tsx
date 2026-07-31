@@ -36,7 +36,7 @@ import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
 import { colors } from "@/src/lib/colors";
 import { RampCard } from "./RampCard";
 import { ConstraintsSection } from "./ConstraintsSection";
-import { VendorsSection } from "./VendorsSection";
+import { VendorsSection, type VendorPatch } from "./VendorsSection";
 import { ConceptRow } from "./ConceptRow";
 import { FoodMatchingScreen } from "./FoodMatchingScreen";
 import { nutritionStyles as s } from "./styles";
@@ -160,7 +160,7 @@ export function NutritionPreferencesScreen({
   );
 
   const handleVendorPatch = useCallback(
-    (vendor: NutritionVendor, patch: { name?: string; app_url?: string | null }) => {
+    (vendor: NutritionVendor, patch: VendorPatch) => {
       run("Failed to save vendor", () => updateVendor(vendor.id, patch));
     },
     [run]

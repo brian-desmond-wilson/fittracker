@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Linking, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import { colors } from "@/src/lib/colors";
@@ -29,7 +29,7 @@ function normalizeUrl(raw: string): string {
 interface VendorRowProps {
   vendor: NutritionVendor;
   expanded: boolean;
-  onToggleExpand: () => void;
+  onToggleExpand: (id: string) => void;
   onToggleActive: (vendor: NutritionVendor, isActive: boolean) => void;
   onPatch: (vendor: NutritionVendor, patch: VendorPatch) => void;
 }
@@ -91,7 +91,7 @@ const VendorRow = React.memo(function VendorRow({
       <View style={s.row}>
         <TouchableOpacity
           style={s.flexShrinkColumn}
-          onPress={onToggleExpand}
+          onPress={() => onToggleExpand(vendor.id)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text style={s.rowLabel}>{vendor.name}</Text>
@@ -152,6 +152,14 @@ const VendorRow = React.memo(function VendorRow({
 export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // One stable function shared by every row (matches NutritionPreferencesScreen's
+  // handleToggleExpand/ConceptRow precedent) rather than a fresh closure per row
+  // per render — otherwise VendorRow's React.memo would never bail, since this
+  // was the one non-useCallback prop reaching it.
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
+
   return (
     <View style={s.card}>
       <Text style={s.sectionTitle}>Vendors</Text>
@@ -160,7 +168,7 @@ export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSect
           key={v.id}
           vendor={v}
           expanded={expandedId === v.id}
-          onToggleExpand={() => setExpandedId((prev) => (prev === v.id ? null : v.id))}
+          onToggleExpand={toggleExpanded}
           onToggleActive={onToggleActive}
           onPatch={onPatch}
         />
