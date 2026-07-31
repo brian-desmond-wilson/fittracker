@@ -1,5 +1,7 @@
 import {
   estimateConsumption,
+  expandDecrementEvents,
+  MAX_CLAIMED_UNITS_PER_ROW,
   RATE_WINDOW_DAYS,
   MIN_UNITS,
   MIN_SPAN_DAYS,
@@ -109,5 +111,90 @@ describe("estimateConsumption", () => {
     // a real day's log shouldn't be invisible for the rest of that day.
     const r = run([ev("a", 0), ev("a", 14), ev("a", 20)]);
     expect(r.get("a")).toEqual({ ratePerDay: 3 / RATE_WINDOW_DAYS, daysUntilOut: 94 });
+  });
+});
+
+describe("expandDecrementEvents", () => {
+  // Every real writer of meal_logs.inventory_items hardcodes `quantity: 1`
+  // (mealLibrary.ts:423, MealsScreen.tsx:568-570) — these hardening branches
+  // exist for JSONB the app has never actually produced, which is exactly
+  // why they need pinned coverage: nothing else will ever reach them.
+
+  it("happy path: two rows, quantity 1 each, → 2 events with correct inventoryId/dateLocal pairing", () => {
+    const rows = [
+      { date: "2026-07-01", inventory_items: [{ id: "a", quantity: 1 }] },
+      { date: "2026-07-02", inventory_items: [{ id: "b", quantity: 1 }] },
+    ];
+    expect(expandDecrementEvents(rows)).toEqual([
+      { inventoryId: "a", dateLocal: "2026-07-01" },
+      { inventoryId: "b", dateLocal: "2026-07-02" },
+    ]);
+  });
+
+  it("quantity 3 → 3 events, all carrying that row's date", () => {
+    const rows = [{ date: "2026-07-10", inventory_items: [{ id: "a", quantity: 3 }] }];
+    expect(expandDecrementEvents(rows)).toEqual([
+      { inventoryId: "a", dateLocal: "2026-07-10" },
+      { inventoryId: "a", dateLocal: "2026-07-10" },
+      { inventoryId: "a", dateLocal: "2026-07-10" },
+    ]);
+  });
+
+  it("inventory_items: null → skipped, no throw", () => {
+    const rows = [{ date: "2026-07-10", inventory_items: null }];
+    expect(expandDecrementEvents(rows)).toEqual([]);
+  });
+
+  it("inventory_items as a JSON object {} (not an array) → skipped, no throw — this is the case that would otherwise fail the ENTIRE screen load, not just the forecast", () => {
+    // `inventory_items` is unvalidated JSONB; a malformed row can carry any
+    // shape, so this test deliberately bypasses the parameter's own type to
+    // exercise what the guard defends against at runtime.
+    const rows: Array<{ date: string; inventory_items: unknown }> = [
+      { date: "2026-07-10", inventory_items: {} },
+      { date: "2026-07-11", inventory_items: [{ id: "a", quantity: 1 }] },
+    ];
+    expect(expandDecrementEvents(rows as Parameters<typeof expandDecrementEvents>[0])).toEqual([
+      { inventoryId: "a", dateLocal: "2026-07-11" },
+    ]);
+  });
+
+  it("quantity 0 and quantity -5 → 0 events", () => {
+    const rows = [
+      { date: "2026-07-10", inventory_items: [{ id: "a", quantity: 0 }] },
+      { date: "2026-07-11", inventory_items: [{ id: "b", quantity: -5 }] },
+    ];
+    expect(expandDecrementEvents(rows)).toEqual([]);
+  });
+
+  it("quantity 1e9 → exactly MAX_CLAIMED_UNITS_PER_ROW events (pins the cap and proves termination)", () => {
+    const rows = [{ date: "2026-07-10", inventory_items: [{ id: "a", quantity: 1e9 }] }];
+    const events = expandDecrementEvents(rows);
+    expect(events).toHaveLength(MAX_CLAIMED_UNITS_PER_ROW);
+    expect(events.every((e) => e.inventoryId === "a" && e.dateLocal === "2026-07-10")).toBe(true);
+  });
+
+  it("quantity NaN / missing → 0 events (proves no infinite loop)", () => {
+    const rows: Array<{ date: string; inventory_items: unknown }> = [
+      { date: "2026-07-10", inventory_items: [{ id: "a", quantity: NaN }] },
+      { date: "2026-07-11", inventory_items: [{ id: "b" }] }, // quantity missing entirely
+    ];
+    expect(expandDecrementEvents(rows as Parameters<typeof expandDecrementEvents>[0])).toEqual([]);
+  });
+
+  it("an entry missing id → an event with undefined inventoryId, which estimateConsumption drops via totalsById.get(...) === undefined", () => {
+    const rows: Array<{ date: string; inventory_items: unknown }> = [
+      { date: "2026-07-10", inventory_items: [{ quantity: 1 }] }, // id missing entirely
+    ];
+    const events = expandDecrementEvents(rows as Parameters<typeof expandDecrementEvents>[0]);
+    expect(events).toEqual([{ inventoryId: undefined, dateLocal: "2026-07-10" }]);
+    // The pair's contract: estimateConsumption must not crash or fabricate an
+    // estimate for the undefined key — totalsById never has an `undefined`
+    // entry, so the event is silently and harmlessly dropped.
+    const result = estimateConsumption({
+      events,
+      totalsById: new Map([["a", 10]]),
+      todayLocalDate: "2026-07-30",
+    });
+    expect(result.size).toBe(0);
   });
 });

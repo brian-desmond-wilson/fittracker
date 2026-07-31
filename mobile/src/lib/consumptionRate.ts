@@ -28,6 +28,7 @@
 // aren't persisted anywhere this lib could read instead, so this bias is
 // carried, not corrected. This is a heuristic, not calibrated science.
 import { daysBetweenLocalDates } from "./stockState";
+import type { InventoryUsage } from "@/src/types/track";
 
 export const RATE_WINDOW_DAYS = 28;
 export const MIN_UNITS = 3;
@@ -59,6 +60,48 @@ export interface DecrementEvent {
 export interface ConsumptionEstimate {
   ratePerDay: number;
   daysUntilOut: number;
+}
+
+// A `meal_logs` row's `inventory_items` is unvalidated JSONB (no DB-side
+// shape check), so the expansion below is defensive: a non-array value must
+// not throw out of `for…of` and take the whole caller down with it, and a
+// malformed `quantity` (huge, negative, or fractional) must not grow the
+// output without bound. This is hardening, not a bug fix — every writer,
+// current and historical, hardcodes `quantity: 1`
+// (`lib/supabase/mealLibrary.ts:423`, `components/track/MealsScreen.tsx:568-570`,
+// and no other writer exists anywhere in the repo's history), so the inner
+// loop below is currently dead generality.
+export const MAX_CLAIMED_UNITS_PER_ROW = 1000;
+
+/**
+ * One `DecrementEvent` per unit a `meal_logs` row CLAIMS against an inventory
+ * item — not a confirmed decrement. `inventory_items` records intent, not
+ * outcome (`lib/supabase/mealLibrary.ts:417-422`): a row can claim a unit
+ * that was never actually taken, e.g. a failed `consume_inventory_units`
+ * call (`mealLibrary.ts:441-453`, deliberately not cleaned up) or a
+ * stale-read race in `resolveInventoryMatches`. See the 4th bias in this
+ * file's header for what that costs the estimate below. Pure, so it lives
+ * here (not in `lib/supabase/shopping.ts`, its only caller) — this is the
+ * one file in the pure-lib layer that owns `DecrementEvent`, and keeping the
+ * adapter beside the type it produces is what makes it reachable by Jest
+ * (`jest.config.js` scopes suites to pure TypeScript libs with no React
+ * Native imports; `shopping.ts` pulls in `../supabase` → `expo-secure-store`
+ * at module load, which is exactly what that scope excludes).
+ */
+export function expandDecrementEvents(
+  rows: Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+): DecrementEvent[] {
+  const events: DecrementEvent[] = [];
+  for (const log of rows) {
+    if (!Array.isArray(log.inventory_items)) continue; // malformed JSONB — never throw the caller down over it
+    for (const u of log.inventory_items) {
+      const claimed = Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW);
+      for (let i = 0; i < claimed; i++) {
+        events.push({ inventoryId: u.id, dateLocal: log.date });
+      }
+    }
+  }
+  return events;
 }
 
 export function estimateConsumption(opts: {

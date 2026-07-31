@@ -370,6 +370,7 @@ describe("estimateConsumption", () => {
 // aren't persisted anywhere this lib could read instead, so this bias is
 // carried, not corrected. This is a heuristic, not calibrated science.
 import { daysBetweenLocalDates } from "./stockState";
+import type { InventoryUsage } from "@/src/types/track";
 
 export const RATE_WINDOW_DAYS = 28;
 export const MIN_UNITS = 3;
@@ -401,6 +402,48 @@ export interface DecrementEvent {
 export interface ConsumptionEstimate {
   ratePerDay: number;
   daysUntilOut: number;
+}
+
+// A `meal_logs` row's `inventory_items` is unvalidated JSONB (no DB-side
+// shape check), so the expansion below is defensive: a non-array value must
+// not throw out of `for…of` and take the whole caller down with it, and a
+// malformed `quantity` (huge, negative, or fractional) must not grow the
+// output without bound. This is hardening, not a bug fix — every writer,
+// current and historical, hardcodes `quantity: 1`
+// (`lib/supabase/mealLibrary.ts:423`, `components/track/MealsScreen.tsx:568-570`,
+// and no other writer exists anywhere in the repo's history), so the inner
+// loop below is currently dead generality.
+export const MAX_CLAIMED_UNITS_PER_ROW = 1000;
+
+/**
+ * One `DecrementEvent` per unit a `meal_logs` row CLAIMS against an inventory
+ * item — not a confirmed decrement. `inventory_items` records intent, not
+ * outcome (`lib/supabase/mealLibrary.ts:417-422`): a row can claim a unit
+ * that was never actually taken, e.g. a failed `consume_inventory_units`
+ * call (`mealLibrary.ts:441-453`, deliberately not cleaned up) or a
+ * stale-read race in `resolveInventoryMatches`. See the 4th bias in this
+ * file's header for what that costs the estimate below. Pure, so it lives
+ * here (not in `lib/supabase/shopping.ts`, its only caller) — this is the
+ * one file in the pure-lib layer that owns `DecrementEvent`, and keeping the
+ * adapter beside the type it produces is what makes it reachable by Jest
+ * (`jest.config.js` scopes suites to pure TypeScript libs with no React
+ * Native imports; `shopping.ts` pulls in `../supabase` → `expo-secure-store`
+ * at module load, which is exactly what that scope excludes).
+ */
+export function expandDecrementEvents(
+  rows: Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+): DecrementEvent[] {
+  const events: DecrementEvent[] = [];
+  for (const log of rows) {
+    if (!Array.isArray(log.inventory_items)) continue; // malformed JSONB — never throw the caller down over it
+    for (const u of log.inventory_items) {
+      const claimed = Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW);
+      for (let i = 0; i < claimed; i++) {
+        events.push({ inventoryId: u.id, dateLocal: log.date });
+      }
+    }
+  }
+  return events;
 }
 
 export function estimateConsumption(opts: {
@@ -871,6 +914,7 @@ import {
 } from "../stockState";
 import {
   estimateConsumption,
+  expandDecrementEvents,
   RATE_WINDOW_DAYS,
   type ConsumptionEstimate,
   type DecrementEvent,
@@ -896,42 +940,6 @@ export interface ShoppingData {
   ratesById: Map<string, ConsumptionEstimate>;
   /** For the purchased→restock offer: itemId → target location id. */
   restockTargetByItemId: Map<string, string>;
-}
-
-// A row's `inventory_items` is unvalidated JSONB (no DB-side shape check), so
-// the expansion below is defensive: a non-array value must not throw out of
-// `for…of` and take the whole screen load down with it, and a malformed
-// `quantity` (huge, negative, or fractional) must not grow `events` without
-// bound. This is hardening, not a bug fix — every writer, current and
-// historical, hardcodes `quantity: 1` (`mealLibrary.ts:423`,
-// `MealsScreen.tsx:568-570`, and no other writer exists anywhere in the
-// repo's history), so the inner loop below is currently dead generality.
-const MAX_CLAIMED_UNITS_PER_ROW = 1000;
-
-/**
- * One `DecrementEvent` per unit a `meal_logs` row CLAIMS against an inventory
- * item — not a confirmed decrement. `inventory_items` records intent, not
- * outcome (`mealLibrary.ts:417-422`): a row can claim a unit that was never
- * actually taken, e.g. a failed `consume_inventory_units` call
- * (`mealLibrary.ts:441-453`, deliberately not cleaned up) or a stale-read
- * race in `resolveInventoryMatches`. See the 4th bias in
- * `consumptionRate.ts`'s header for what that costs the estimate. Pure and
- * exported so the expansion is unit-testable independent of the fetch.
- */
-export function expandDecrementEvents(
-  rows: Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
-): DecrementEvent[] {
-  const events: DecrementEvent[] = [];
-  for (const log of rows) {
-    if (!Array.isArray(log.inventory_items)) continue; // malformed JSONB — never throw the screen load over it
-    for (const u of log.inventory_items) {
-      const claimed = Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW);
-      for (let i = 0; i < claimed; i++) {
-        events.push({ inventoryId: u.id, dateLocal: log.date });
-      }
-    }
-  }
-  return events;
 }
 
 /** The trailing meal_logs window expanded to one DecrementEvent per claimed unit. */
@@ -971,7 +979,7 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
   ]);
   // `fetchInventoryWithState` and `fetchMealLibrary` throw on their own
   // errors before returning (see each module's own Promise.all), so only the
-  // three raw-query results here carry a `.error` to check; `events` is
+  // two raw-query results here carry a `.error` to check; `events` is
   // already resolved data, having thrown internally if its own query failed.
   const errors = [listRes.error, vendorsRes.error].filter((e) => e !== null);
   if (errors.length > 0) {
@@ -1553,7 +1561,7 @@ git commit -m "feat(nutrition-os): Shopping List screen + Track hub card"
 
 (Use a top-level import of `addSuggestions` from `@/src/lib/supabase/shopping` and `lowThresholdFor` from `@/src/lib/stockState` — the dynamic-import line above is illustrative of *what*, not *how*.) Un-gate the action-sheet entry: the `if (isOutOfStock)` splice (~:219-222) becomes unconditional (the option always appears). Keep the success/failure alerts.
 
-- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside by calling `fetchConsumptionRates(todayLocalDate, totalsById)`, already exported from `mobile/src/lib/supabase/shopping.ts` (Task 6 built it precisely for this call site — it wraps `fetchDecrementEvents()` + `estimateConsumption()` in one round trip, so there is no events-expansion code to duplicate or lift here). Build `totalsById` the same way `fetchShoppingData` does: `new Map(items.map((it) => [it.id, it.state.totalQuantity]))` over the screen's own fetched inventory. Import `MAX_DISPLAY_DAYS` alongside `estimateConsumption`'s type from `@/src/lib/consumptionRate` and gate the render on it — beyond that horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count. Render, next to the existing quantity text on each grid card:
+- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside by calling `fetchConsumptionRates(todayLocalDate, totalsById)`, already exported from `mobile/src/lib/supabase/shopping.ts` (Task 6 built it precisely for this call site — it wraps `fetchDecrementEvents()` + `estimateConsumption()` in one round trip, so there is no events-expansion code to duplicate or lift here). Build `totalsById` the same way `fetchShoppingData` does: `new Map(items.map((it) => [it.id, it.state.totalQuantity]))` over the screen's own fetched inventory. Import `MAX_DISPLAY_DAYS` (and `type ConsumptionEstimate`, for the state) from `@/src/lib/consumptionRate`, and `fetchConsumptionRates` from `@/src/lib/supabase/shopping`. Store the result as `ratesById`. Gate the render on `MAX_DISPLAY_DAYS` — beyond that horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count. Render, next to the existing quantity text on each grid card:
 
 ```tsx
               {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
@@ -2137,5 +2145,37 @@ Test Suites: 11 passed, 11 total
 Tests:       309 passed, 309 total
 ```
 (309 = unchanged — no new test file was added for the now-pure, now-exported `expandDecrementEvents`; the fixes are a layering correction, a structural extraction with no behavior change to the numbers `estimateConsumption` already had test coverage for via `consumptionRate.test.ts`, a comment/documentation change, and two small guards with no currently-reachable input that exercises them, per Fix 5's own dead-generality note.) The plan's Task 6 code block was re-diffed programmatically against `mobile/src/lib/supabase/shopping.ts` and found byte-identical (modulo the banner line, the established convention since Task 3); the plan's Task 3 code block was independently re-diffed against `mobile/src/lib/consumptionRate.ts` for the 4th-bias header addition and also found byte-identical.
+
+**Re-review (second round).** Behaviour-preservation of the round-one restructure was independently verified: the `Promise.all` destructuring alignment was checked slot by slot against the pre-restructure commit (`0547d20`) — the 5th slot (raw `meal_logs` query) was replaced in place by `fetchDecrementEvents()`, no positional shift into `listRes`/`inventory`/`library`/`vendorsRes`; `estimateConsumption`'s three arguments (`events`, `totalsById`, `todayLocalDate`) were confirmed unchanged in both call sites; `ratesById` was confirmed still reaching both its consumers (`ShoppingData.ratesById` and `computeShoppingSuggestions`'s `rates`); and parallelism was confirmed genuinely preserved — no `await` sits before the `Promise.all` batch. The clamp in `expandDecrementEvents` was run against every input class the reviewer could construct — `NaN`, `Infinity`, negative, float, string, `null`, `[]` — and every path was confirmed to terminate; `Infinity` clamping to `MAX_CLAIMED_UNITS_PER_ROW` was flagged as the sharpest catch, since the pre-Fix-5 loop (`i < u.quantity`) would have hung forever on that input. The restock-target sort (Fix 4, prior round) was independently confirmed non-mutating (`[...it.locations].sort(...)`, not `it.locations.sort(...)`), which matters because `it.locations` is the same array reference the `inventory` the caller reads elsewhere in the function holds — an in-place sort would have been a silent side effect on shared state. Three further findings came back from this round, addressed below, plus one behaviour change explicitly judged benign rather than a defect.
+
+**Fix 1 (Important) — `expandDecrementEvents` moved into `consumptionRate.ts`; the earlier "exported so it's unit-testable" claim was wrong, and now it actually is.** Round one exported the function from `shopping.ts` on the theory that exporting makes a pure function testable. It doesn't, and `mobile/jest.config.js` explains why in its own opening comment: *"Jest is scoped to pure TypeScript libs only (no React Native imports)"* — `ts-jest`, `testEnvironment: "node"`, no RN preset, no setup file. A `shopping.test.ts` importing `shopping.ts` would transitively pull in `../supabase` (`createClient(...)`) and `./largeSecureStore` (`expo-secure-store`) at module load — exactly the class of import the config exists to keep out of the suite, and exactly why, before this fix, zero of the 11 suites covered anything under `src/lib/supabase/` despite that directory existing since Phase 2. The convention isn't "only some libs get test coverage" — it's "only modules that don't drag the Supabase client into their import graph," and `expandDecrementEvents` was pure logic sitting on the wrong side of that line.
+
+Moved to `consumptionRate.ts`, which already owns `DecrementEvent` (the type the function produces) and imports only `./stockState` (pure). Added one new import, `type { InventoryUsage } from "@/src/types/track"` — checked for a cycle risk before adding: `types/track.ts` has zero imports of its own (confirmed by reading the file's first lines), so it's a types-only leaf and the import is safe. `shopping.ts` now imports `expandDecrementEvents` alongside `estimateConsumption` from `../consumptionRate` instead of defining it locally; `fetchDecrementEvents` and `fetchConsumptionRates` stayed in `shopping.ts`, since both genuinely need the Supabase client and have no reason to move.
+
+Pinned with eight new cases in `consumptionRate.test.ts`'s new `describe("expandDecrementEvents", ...)` block — the hardening branches are the entire point of the coverage, since every real writer of `inventory_items` hardcodes `quantity: 1` (`mealLibrary.ts:423`, `MealsScreen.tsx:568-570`) and nothing else will ever reach them on device:
+
+1. Happy path (two rows, `quantity: 1` each) → 2 events, correct `inventoryId`/`dateLocal` pairing.
+2. `quantity: 3` on one row → 3 events, all carrying that row's `date`.
+3. `inventory_items: null` → skipped, no throw.
+4. `inventory_items` as a JSON object `{}` (not an array) → skipped, no throw — the case that would otherwise fail the entire screen load, not just the forecast section.
+5. `quantity: 0` and `quantity: -5` → 0 events.
+6. `quantity: 1e9` → exactly `MAX_CLAIMED_UNITS_PER_ROW` events, asserted against the exported constant rather than a re-typed literal — pins the cap and proves the loop terminates.
+7. `quantity: NaN` and `quantity` missing entirely → 0 events — proves no infinite loop on either malformed shape.
+8. An entry missing `id` → an event with `inventoryId: undefined`, then fed through `estimateConsumption` to assert the pair's contract holds: `totalsById.get(undefined)` is `undefined`, so the phantom event is silently dropped rather than crashing or fabricating an estimate.
+
+All eight pass (see Verification below); `MAX_CLAIMED_UNITS_PER_ROW` was already exported (round one), so case 6 needed no further change to reference it directly.
+
+**Fix 2 (Important) — corrected a stale "three raw-query results" comment that had drifted from its own `errors` array.** `shopping.ts`'s comment above `fetchShoppingData`'s error check read "only the three raw-query results here carry a `.error` to check," written when the array was `[listRes.error, vendorsRes.error, logsRes.error]`. Round one's own restructure shrank that array to two elements (`[listRes.error, vendorsRes.error]`) two lines below but left the prose unchanged — a self-contradiction sitting in the same ten lines. Because the plan's Task 6 code block is kept byte-identical to source, the same wrong word was sitting in the plan too, and would have been copied forward verbatim by anyone re-deriving the module from the doc rather than reading the live file. Fixed in both places: "three" → "two." (The amendment prose above, in the Fix 2 entry for the *first* round, deliberately still says "the three raw queries and the two fetcher calls" — that describes the pre-restructure commit under review at the time and remains correct as a historical description; only the source comment and the plan's mirrored code block needed the correction.)
+
+**Fix 3 (Important) — Task 8 Step 2's import sentence was stale and would not have compiled.** The rewritten Step 2 (this file's own prior-round fix) correctly told the implementer to call `fetchConsumptionRates(todayLocalDate, totalsById)` directly, and the re-review confirmed the prescribed `totalsById` construction — `new Map(items.map((it) => [it.id, it.state.totalQuantity]))` — works verbatim against `FoodInventoryScreen.tsx`'s actual `items` variable (`:63`, `:109`), and that `getLocalDateString()` is already imported there (`:35`), so neither needed a companion fix. But one retained sentence, held over from before the rewrite, still read: *"Import `MAX_DISPLAY_DAYS` alongside `estimateConsumption`'s type from `@/src/lib/consumptionRate`"* — stale, since Task 8 no longer calls `estimateConsumption` at all after the rewrite, so "`estimateConsumption`'s type" has no referent, and an implementer following it literally would write `import { MAX_DISPLAY_DAYS, type estimateConsumption }`, which is not valid TypeScript as a type-only import target. Replaced with a sentence that names the actual imports needed (`MAX_DISPLAY_DAYS`, `type ConsumptionEstimate` for the rates-map type, and `fetchConsumptionRates` from `@/src/lib/supabase/shopping`) and explicitly names the result `ratesById` — the missing piece that mattered, since the step's own render block references `ratesById` but no prior sentence had introduced that name.
+
+**One behaviour change judged benign, recorded rather than silently accepted.** If `meal_logs` and `shopping_list` both error on the same `fetchShoppingData` call, `fetchDecrementEvents()` — being one of the five `Promise.all` slots and throw-style rather than result-style — now rejects the whole `Promise.all` as soon as its own error surfaces, so the `meal_logs` error is what propagates and the `shopping_list` error (sitting in `listRes.error`, never inspected because the destructure itself never completes) is not the one the caller sees. This is not new in kind: `fetchInventoryWithState` and `fetchMealLibrary` were already two of five throw-style slots mixed into the same result-style `Promise.all` before this round's restructure ever touched the file — round two just adds a third throw-style slot alongside them, changing which of several possible simultaneous failures wins the race, not whether the failure surfaces at all. The user still gets an accurate, real error either way; which one, when two fire in the same request, was already non-deterministic before this commit and remains so after it.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 11 passed, 11 total
+Tests:       317 passed, 317 total
+```
+(317 = 309 + the 8 new `expandDecrementEvents` cases; no other suite's count moved.) The plan's Task 3 and Task 6 code blocks were both re-diffed programmatically against their now-updated source files (`consumptionRate.ts` gained the moved function; `shopping.ts` lost it and gained the `expandDecrementEvents` import plus the two-vs-three comment fix) and both remain byte-identical to source, modulo the banner line.
 
 

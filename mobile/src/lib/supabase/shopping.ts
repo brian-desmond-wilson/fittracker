@@ -7,6 +7,7 @@ import {
 } from "../stockState";
 import {
   estimateConsumption,
+  expandDecrementEvents,
   RATE_WINDOW_DAYS,
   type ConsumptionEstimate,
   type DecrementEvent,
@@ -32,42 +33,6 @@ export interface ShoppingData {
   ratesById: Map<string, ConsumptionEstimate>;
   /** For the purchased→restock offer: itemId → target location id. */
   restockTargetByItemId: Map<string, string>;
-}
-
-// A row's `inventory_items` is unvalidated JSONB (no DB-side shape check), so
-// the expansion below is defensive: a non-array value must not throw out of
-// `for…of` and take the whole screen load down with it, and a malformed
-// `quantity` (huge, negative, or fractional) must not grow `events` without
-// bound. This is hardening, not a bug fix — every writer, current and
-// historical, hardcodes `quantity: 1` (`mealLibrary.ts:423`,
-// `MealsScreen.tsx:568-570`, and no other writer exists anywhere in the
-// repo's history), so the inner loop below is currently dead generality.
-const MAX_CLAIMED_UNITS_PER_ROW = 1000;
-
-/**
- * One `DecrementEvent` per unit a `meal_logs` row CLAIMS against an inventory
- * item — not a confirmed decrement. `inventory_items` records intent, not
- * outcome (`mealLibrary.ts:417-422`): a row can claim a unit that was never
- * actually taken, e.g. a failed `consume_inventory_units` call
- * (`mealLibrary.ts:441-453`, deliberately not cleaned up) or a stale-read
- * race in `resolveInventoryMatches`. See the 4th bias in
- * `consumptionRate.ts`'s header for what that costs the estimate. Pure and
- * exported so the expansion is unit-testable independent of the fetch.
- */
-export function expandDecrementEvents(
-  rows: Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
-): DecrementEvent[] {
-  const events: DecrementEvent[] = [];
-  for (const log of rows) {
-    if (!Array.isArray(log.inventory_items)) continue; // malformed JSONB — never throw the screen load over it
-    for (const u of log.inventory_items) {
-      const claimed = Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW);
-      for (let i = 0; i < claimed; i++) {
-        events.push({ inventoryId: u.id, dateLocal: log.date });
-      }
-    }
-  }
-  return events;
 }
 
 /** The trailing meal_logs window expanded to one DecrementEvent per claimed unit. */
@@ -107,7 +72,7 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
   ]);
   // `fetchInventoryWithState` and `fetchMealLibrary` throw on their own
   // errors before returning (see each module's own Promise.all), so only the
-  // three raw-query results here carry a `.error` to check; `events` is
+  // two raw-query results here carry a `.error` to check; `events` is
   // already resolved data, having thrown internally if its own query failed.
   const errors = [listRes.error, vendorsRes.error].filter((e) => e !== null);
   if (errors.length > 0) {
