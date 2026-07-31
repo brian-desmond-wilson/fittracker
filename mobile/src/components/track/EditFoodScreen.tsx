@@ -851,13 +851,21 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // rather than clean up after ourselves.
         //
         // A failure here is not "the save didn't happen" — the item UPDATE
-        // above already committed. replaceItemLocations is now the atomic
-        // replace_item_locations RPC: a failure rolls the whole transaction
-        // back, so the stock is left exactly as it was before this save. The
-        // copy still hedges rather than promising that, since this handler
-        // only sees "it failed," not the RPC's internal state. It does NOT
-        // hedge on the action: re-saving is idempotent and repairs any
-        // lingering drift regardless.
+        // above already committed, independent of the stock write below.
+        // That UPDATE can carry storage_type/location changes: a single ->
+        // multi flip that then fails leaves storage_type flipped against
+        // surviving single-location rows, which skews lowThresholdFor
+        // (stockState.ts:81) until the next successful save — a real,
+        // narrow residual the alert below does not mention, because it
+        // speaks only to the stock.
+        //
+        // What the failure DOES leave untouched: replaceItemLocations is
+        // now the atomic replace_item_locations RPC, so a failure rolls the
+        // location-row writes and the cache resync back together, leaving
+        // both exactly as they were before this save — the item's PREVIOUS
+        // quantity, never a fabricated 0. The copy below states that
+        // plainly rather than hedging: re-saving is idempotent and repairs
+        // both the stock and the storage_type residual regardless.
         // That recovery only works if the user is told to re-save, so this gets
         // its own message instead of the generic one below, and the screen
         // stays open with the typed quantity intact so re-saving is one tap.
@@ -867,7 +875,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           console.error("Error saving location rows:", locationError);
           Alert.alert(
             "Stock Not Saved",
-            "The item's other details were saved, but its stock may not have been saved and may now read 0. Tap Save again to restore the quantity.",
+            "The item's other details were saved, but its stock was not — it still shows the previous quantity. Tap Save again to retry.",
           );
           return;
         }
