@@ -2,6 +2,7 @@ import {
   projectItemStock,
   EXPIRING_SOON_DAYS,
   assessAssemblability,
+  lowThresholdFor,
   type StockItemInput,
   type StockLocationRow,
   type AssemblabilityInventoryRow,
@@ -291,5 +292,16 @@ describe("assessAssemblability — the item-less verdict (Task 10 premise)", () 
       expiringItemName: null,
       expiringDaysLeft: null,
     });
+  });
+});
+
+describe("lowThresholdFor", () => {
+  it("single-location → restock_threshold", () => {
+    expect(lowThresholdFor(item({ storage_type: "single-location", restock_threshold: 4 }))).toBe(4);
+  });
+  it("multi-location → total_restock_threshold; nulls → 0", () => {
+    expect(lowThresholdFor(item({ total_restock_threshold: 6 }))).toBe(6);
+    expect(lowThresholdFor(item({ total_restock_threshold: null }))).toBe(0);
+    expect(lowThresholdFor(item({ storage_type: "single-location", restock_threshold: null }))).toBe(0);
   });
 });
