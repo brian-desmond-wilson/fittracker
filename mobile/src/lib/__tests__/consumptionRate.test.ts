@@ -8,10 +8,15 @@ import {
 
 const TODAY = "2026-07-30";
 // dateLocal N days before TODAY (local-date arithmetic, matching the lib's).
+// Derived from TODAY itself (not a second hardcoded literal) so there is one
+// source of truth for the anchor every assertion in this file hangs off; the
+// noon anchor and the independence from the lib's own daysBetweenLocalDates
+// implementation are both intentional and preserved.
 const daysAgo = (n: number): string => {
-  const d = new Date(2026, 6, 30, 12);
-  d.setDate(d.getDate() - n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [y, m, d] = TODAY.split("-").map((s) => parseInt(s, 10));
+  const dt = new Date(y, m - 1, d, 12);
+  dt.setDate(dt.getDate() - n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 };
 const ev = (inventoryId: string, n: number): DecrementEvent => ({ inventoryId, dateLocal: daysAgo(n) });
 
@@ -65,5 +70,35 @@ describe("estimateConsumption", () => {
       todayLocalDate: TODAY,
     });
     expect(r.size).toBe(0);
+  });
+
+  it("rejects a non-finite event age instead of letting it silently clear the span gate", () => {
+    // A malformed/empty dateLocal makes daysBetweenLocalDates return NaN.
+    // Unguarded, NaN < 0 is false (so the event isn't dropped) and
+    // Math.max(...ages) becomes NaN, and NaN < MIN_SPAN_DAYS is ALSO false —
+    // so the span gate silently passes. The real span here (day 0 to day 2)
+    // is only 2 days, well under MIN_SPAN_DAYS, so this must NOT estimate.
+    const events: DecrementEvent[] = [
+      { inventoryId: "a", dateLocal: "" },
+      ev("a", 0),
+      ev("a", 1),
+      ev("a", 2),
+    ];
+    expect(run(events).has("a")).toBe(false);
+  });
+
+  it("rounds daysUntilOut up (ceil), not down or to nearest", () => {
+    // 3 in-window units (span 18, clears both gates) → rate 3/28;
+    // total 10 → 10 / (3/28) = 93.33... → ceil is 94, floor would be 93.
+    const r = run([ev("a", 20), ev("a", 15), ev("a", 2)]);
+    expect(r.get("a")!.daysUntilOut).toBe(94);
+  });
+
+  it("rejects future-dated events (never fabricates demand from a clock/timezone skew)", () => {
+    // Ages [-11, 10, 25]: with the guard, only 10 and 25 are legitimate
+    // in-window units (2 < MIN_UNITS) → no estimate. Without the guard, the
+    // future-dated event would count as a third in-window unit and produce one.
+    const events: DecrementEvent[] = [ev("a", -11), ev("a", 10), ev("a", 25)];
+    expect(run(events).has("a")).toBe(false);
   });
 });

@@ -229,10 +229,15 @@ import {
 
 const TODAY = "2026-07-30";
 // dateLocal N days before TODAY (local-date arithmetic, matching the lib's).
+// Derived from TODAY itself (not a second hardcoded literal) so there is one
+// source of truth for the anchor every assertion in this file hangs off; the
+// noon anchor and the independence from the lib's own daysBetweenLocalDates
+// implementation are both intentional and preserved.
 const daysAgo = (n: number): string => {
-  const d = new Date(2026, 6, 30, 12);
-  d.setDate(d.getDate() - n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [y, m, d] = TODAY.split("-").map((s) => parseInt(s, 10));
+  const dt = new Date(y, m - 1, d, 12);
+  dt.setDate(dt.getDate() - n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 };
 const ev = (inventoryId: string, n: number): DecrementEvent => ({ inventoryId, dateLocal: daysAgo(n) });
 
@@ -287,6 +292,36 @@ describe("estimateConsumption", () => {
     });
     expect(r.size).toBe(0);
   });
+
+  it("rejects a non-finite event age instead of letting it silently clear the span gate", () => {
+    // A malformed/empty dateLocal makes daysBetweenLocalDates return NaN.
+    // Unguarded, NaN < 0 is false (so the event isn't dropped) and
+    // Math.max(...ages) becomes NaN, and NaN < MIN_SPAN_DAYS is ALSO false —
+    // so the span gate silently passes. The real span here (day 0 to day 2)
+    // is only 2 days, well under MIN_SPAN_DAYS, so this must NOT estimate.
+    const events: DecrementEvent[] = [
+      { inventoryId: "a", dateLocal: "" },
+      ev("a", 0),
+      ev("a", 1),
+      ev("a", 2),
+    ];
+    expect(run(events).has("a")).toBe(false);
+  });
+
+  it("rounds daysUntilOut up (ceil), not down or to nearest", () => {
+    // 3 in-window units (span 18, clears both gates) → rate 3/28;
+    // total 10 → 10 / (3/28) = 93.33... → ceil is 94, floor would be 93.
+    const r = run([ev("a", 20), ev("a", 15), ev("a", 2)]);
+    expect(r.get("a")!.daysUntilOut).toBe(94);
+  });
+
+  it("rejects future-dated events (never fabricates demand from a clock/timezone skew)", () => {
+    // Ages [-11, 10, 25]: with the guard, only 10 and 25 are legitimate
+    // in-window units (2 < MIN_UNITS) → no estimate. Without the guard, the
+    // future-dated event would count as a third in-window unit and produce one.
+    const events: DecrementEvent[] = [ev("a", -11), ev("a", 10), ev("a", 25)];
+    expect(run(events).has("a")).toBe(false);
+  });
 });
 ```
 
@@ -306,12 +341,29 @@ describe("estimateConsumption", () => {
 // Known bias, documented not hidden: (1) units are CONTAINERS, not servings —
 // half-finishing a bottle counts the same as finishing it; (2) the Phase 4
 // pre-apply gap window (zero-location items logged without decrements)
-// undercounts. This is a heuristic, not calibrated science.
+// undercounts; (3) ratePerDay divides unitsInWindow by the FULL
+// RATE_WINDOW_DAYS even when the item's actual history is shorter — the
+// MIN_SPAN_DAYS gate bounds this to a known factor (span >= MIN_SPAN_DAYS,
+// window = RATE_WINDOW_DAYS, so the worst-case underestimate of the true
+// rate is RATE_WINDOW_DAYS / MIN_SPAN_DAYS = 2x), and it's biased in the
+// conservative direction for suggest-confirm: rate reads low, daysUntilOut
+// reads high, so the failure mode is a missed suggestion, never a spurious
+// one. This is a heuristic, not calibrated science.
 import { daysBetweenLocalDates } from "./stockState";
 
 export const RATE_WINDOW_DAYS = 28;
 export const MIN_UNITS = 3;
 export const MIN_SPAN_DAYS = 14;
+
+// Beyond roughly two months out, a daysUntilOut estimate carries no useful
+// information: at the minimum passing rate (MIN_UNITS over RATE_WINDOW_DAYS),
+// a single high-count item projects hundreds of days from as few as three
+// data points. The lib still returns the true value below — daysUntilOut is
+// NOT capped here, because the demand engine (spec §6) needs the real number
+// and capping it in the lib would corrupt that input. This constant governs
+// rendering only: surfaces should omit the "~Nd left" line rather than print
+// a number the honesty gates can't actually stand behind.
+export const MAX_DISPLAY_DAYS = 60;
 
 export interface DecrementEvent {
   inventoryId: string;
@@ -332,7 +384,12 @@ export function estimateConsumption(opts: {
   const byItem = new Map<string, number[]>(); // ages in days
   for (const e of events) {
     const age = daysBetweenLocalDates(e.dateLocal, todayLocalDate);
-    if (age < 0) continue; // future-dated logs never count
+    // Reject non-finite ages (a malformed/empty dateLocal makes
+    // daysBetweenLocalDates return NaN, which is falsy in every comparison —
+    // NaN < 0 is false, and unguarded it would silently clear the
+    // MIN_SPAN_DAYS gate below; see stockState.ts:125-129 for the sibling
+    // hazard) together with future-dated logs, which never count either.
+    if (!Number.isFinite(age) || age < 0) continue;
     const arr = byItem.get(e.inventoryId) ?? [];
     arr.push(age);
     byItem.set(e.inventoryId, arr);
@@ -1634,5 +1691,81 @@ Live impact today is nil, which is why this was a Minor finding rather than a de
 **Recorded, no action needed:** the reviewer also checked whether a `??` → `||` mutation on either fallback (`item.restock_threshold ?? 0`, `item.total_restock_threshold ?? 0`) exposes a further gap, and concluded it doesn't — it's an *equivalent* mutant, not a coverage gap. Both fields are typed `number | null`; with a `0` fallback, `??` and `||` diverge only on a falsy-but-not-nullish operand, and the only candidate for a `number | null` is `0` itself, where both operators yield `0` regardless. The sole value where `??` and `||` truly diverge is `NaN` (falsy, not nullish), which an `integer` column can never produce. No test can distinguish the two operators here without a value the type can't carry, so no assertion for it was added. Recorded so a future reviewer doesn't re-chase this.
 
 **Noted, already scheduled — not a defect here:** `mobile/src/components/track/FoodInventoryScreen.tsx:183` computes `quantity: item.restock_threshold || 1`, a third and *divergent* reading of "this item's threshold" — it is storage-type-blind (a multi-location item gets `restock_threshold`, not `total_restock_threshold`) and uses `||` instead of `??`. This doesn't undermine Task 2's "one definition" premise — `lowThresholdFor` is the one definition of the `isLow` threshold; this call site is answering a different question (a restock quantity default) with a rule the design spec already flags as wrong. Plan Task 8 is scoped to rewire this exact line to `Math.max(1, lowThresholdFor(item) - item.state.totalQuantity + 1)`. Recorded here so Task 8's reviewer can confirm that rewiring actually happens.
+
+### Task 3 — consumptionRate
+
+Spec review passed outright. Code-quality review mutation-tested the module empirically and confirmed the honesty gates and window logic were already well covered: 6/6 constant-value mutations and 4/4 core gate-logic mutations (`<`→`<=` in the window filter, `<`→`<=` in both the `MIN_UNITS` and `MIN_SPAN_DAYS` gates, `||`→`&&` joining the two gates) were killed by the plan's original tests. Every survivor sat in the arithmetic *after* the gates — four findings, one of them a real hole in the honesty contract the header itself promises. All four are fixed in this commit, in both the source and this plan's Task 3 code blocks; the two blocks were re-diffed programmatically against the committed files after the edit and found byte-identical, the same check used for Task 1.
+
+**Fixed (four defects, all Important/Minor per the review, none Critical):**
+
+1. **`NaN` silently bypassed the `MIN_SPAN_DAYS` honesty gate.** `daysBetweenLocalDates("", today)` returns `NaN` (malformed/empty `dateLocal`). The original guard was `if (age < 0) continue;` — `NaN < 0` is `false`, so the event was kept, not dropped, and `NaN` landed in `ages`. Then `Math.max(...ages)` became `NaN`, and the gate check `spanDays < MIN_SPAN_DAYS` — `NaN < 14` — is *also* `false`, so the gate that exists specifically to suppress an estimate instead let it through. Reviewer's empirical repro: events at `["", today, today−1, today−2]` — a real span of 2 days, nowhere near `MIN_SPAN_DAYS` — produced `{ratePerDay: 0.107, daysUntilOut: 94}` on the unpatched code. That is precisely the "confident wrong number" the module's own header (:5-6) says cannot happen. Flagged as a regression against the sibling: `stockState.ts:117` guards the identical `daysBetweenLocalDates` call with `if (Number.isFinite(rawDaysLeft))`, and its comment at :125-129 names this exact hazard — "NaN is silently false in every band/filter comparison." Fixed at the same call site (`consumptionRate.ts`, the age-computation loop) by folding the NaN check into the existing guard: `if (!Number.isFinite(age) || age < 0) continue;`, with a comment citing the sibling file and line. This rejects NaN and keeps rejecting negatives in one explicit condition, matching house style rather than inventing a new one.
+
+   **Reachability:** not currently reachable via the Task 6 path — `meal_logs.date` is `DATE NOT NULL` (`supabase/migrations/20250208_complete_tracking_schema.sql:109`), so every `dateLocal` this lib receives today is a real, always-serialized `YYYY-MM-DD`, never an empty string. This is a latent contract hole on an exported, typed lib (`dateLocal: string` accepts anything, including `""`), not a live bug — and it gains a second caller in Task 8, so leaving it live would have compounded the risk rather than merely inheriting it.
+
+   **Pinned with a test**, `consumptionRate.test.ts` — "rejects a non-finite event age instead of letting it silently clear the span gate":
+   ```ts
+   const events: DecrementEvent[] = [
+     { inventoryId: "a", dateLocal: "" },
+     ev("a", 0),
+     ev("a", 1),
+     ev("a", 2),
+   ];
+   expect(run(events).has("a")).toBe(false);
+   ```
+   **Mutation-proved** by reverting the guard to `if (age < 0) continue;`, re-running just this test, and confirming it fails for the predicted reason:
+   ```
+   ● estimateConsumption › rejects a non-finite event age instead of letting it silently clear the span gate
+     expect(received).toBe(expected) // Object.is equality
+     Expected: false
+     Received: true
+   ```
+   Restoring the guard and re-running the same test confirmed it passes again; the full suite (below) confirms nothing else broke.
+
+2. **`Math.ceil` was unpinned — `Math.floor` and `Math.round` both survived the suite.** The only pre-existing test asserting a non-zero `daysUntilOut` (`consumptionRate.test.ts:31-35`, "computes rate over the window and ceil(total/rate)") used an exactly-divisible case — 4 units → rate 1/7, total 10 → exactly `70.0` — where `ceil`, `floor`, and `round` all agree, so the test's own name asserted a property its value couldn't distinguish. Spec §10 requires `daysUntilOut` to be `ceil` (plus already-out `0`), so this was an unsatisfied spec clause, not a stylistic nit. Added a second, non-divisible case: 3 in-window units → rate 3/28, total 10 → `10 / (3/28) = 93.33...` → `ceil` is `94`, `floor` would be `93`. Left the original exactly-divisible test in place unmodified (it's still a valid basic-arithmetic check) and added the discriminating one alongside it.
+
+   **Mutation-proved** by changing `Math.ceil` to `Math.floor` in the source and re-running the new test:
+   ```
+   ● estimateConsumption › rounds daysUntilOut up (ceil), not down or to nearest
+     expect(received).toBe(expected) // Object.is equality
+     Expected: 94
+     Received: 93
+   ```
+   Restored `Math.ceil` and re-ran; passes again.
+
+3. **The future-date guard (`age < 0`) had zero coverage of its own — deleting it entirely also survived.** No existing test exercised a future-dated event. Reviewer's discriminator: ages `[-11, 10, 25]` with `total: 10` — with the guard, only `10` and `25` are legitimate in-window units (`2 < MIN_UNITS`) → no estimate; without it, all three count → `3/28` → an entry, i.e. a future log fabricates a whole unit of demand. Added the assertion (`"rejects future-dated events (never fabricates demand from a clock/timezone skew)"`) using the same `[-11, 10, 25]` ages. Reachability is low but non-zero, per the review: `MealAddForm.tsx:88` sets `maximumDate={new Date()}`, which prevents deliberately future-dated entry from the picker, but doesn't prevent `todayLocalDate` (the caller's "now") from landing *behind* an already-stored `date` after a timezone crossing — logging a meal in Tokyo, then flying east before the estimate is computed.
+
+   **Mutation-proved** by removing the `age < 0` half of the guard entirely (leaving only the `Number.isFinite` check from Fix 1) and re-running the new test:
+   ```
+   ● estimateConsumption › rejects future-dated events (never fabricates demand from a clock/timezone skew)
+     expect(received).toBe(expected) // Object.is equality
+     Expected: false
+     Received: true
+   ```
+   Restored the full guard and re-ran; passes again.
+
+4. **Unbounded `daysUntilOut` was a rendering hazard, not a lib defect — resolved by adding a display-only constant, not by capping the lib's output.** `ratePerDay` floors at `MIN_UNITS / RATE_WINDOW_DAYS = 3/28 ≈ 0.107/day`, so `daysUntilOut ≈ total × 9.33` with no ceiling: measured at total 12 → ~112d, total 30 → ~280d, total 100 → ~934d. Spec §6's forecast trigger is unaffected (it only fires at `≤ FORECAST_LEAD_DAYS`), but plan Task 8 Step 2 renders `~{daysUntilOut}d left` on every inventory grid card with a map entry, with no ceiling — a three-digit day count derived from as few as three data points, in an accent colour, asserting a precision the module's own header disclaims. Decision (the reviewer's, recorded as a decision rather than applied unilaterally, so the owner can override): keep `estimateConsumption` pure and honest — it still returns the true `daysUntilOut`, because the demand engine (spec §6) consumes the real number and capping it inside the lib would corrupt that input. Bound the *display* instead. Added `export const MAX_DISPLAY_DAYS = 60;` to `consumptionRate.ts`, in the same exported-constant house style as `RATE_WINDOW_DAYS`/`MIN_UNITS`/`MIN_SPAN_DAYS`, with a comment explaining the two-months-carries-no-information rationale and stating explicitly that it governs rendering only. Per instruction, Task 8 itself was **not** touched — its implementer is to gate the render on `daysUntilOut <= MAX_DISPLAY_DAYS`, verified at that task's review.
+
+**Minor, also fixed:**
+
+5. **The header's "Known bias, documented not hidden" list claimed two sources and omitted the largest one.** `ratePerDay = unitsInWindow / RATE_WINDOW_DAYS` divides by the full 28-day window even when the item's actual history is shorter than that — a structural, quantifiable bias the header's enumerated list read as exhaustive without covering. The `MIN_SPAN_DAYS = 14` gate bounds it cleanly: since span is always `>= MIN_SPAN_DAYS` and the window is `RATE_WINDOW_DAYS`, the worst-case underestimate of the true rate is exactly `RATE_WINDOW_DAYS / MIN_SPAN_DAYS = 2x`. Verified at the boundary: span exactly 14, 3 units, total 4 → the lib returns `daysUntilOut: 38`, where the observed-history rate (`3/14`) would give `19` — a 2x gap, as predicted. Added as a third numbered bias in the header, stating the mechanism, the 2x bound, and the direction (rate reads low, `daysUntilOut` reads high — optimistic, meaning the real out-of-stock date arrives *sooner* than the estimate implies). Per the review, the underlying simplification itself is not being changed and is not a defect: the window average is the honest definition of "units per day over the trailing 28 days," the error direction is the conservative one for a suggest-confirm UI (a missed suggestion, never a spurious one), and design spec §4's decisions table already blesses this exact choice as "a known biased-low window." The only defect was the header claiming completeness it didn't have.
+
+6. **The test file's date anchor existed in two representations that had to be kept in sync by hand.** `TODAY = "2026-07-30"` and a separately-hardcoded `new Date(2026, 6, 30, 12)` inside `daysAgo` were two sources of truth for the same value — every assertion in the file hangs off this anchor, and changing one without the other would silently shift every computed age while the suite kept passing under different semantics. Fixed by deriving the `Date` inside `daysAgo` from `TODAY` itself (`TODAY.split("-").map(...)`), leaving the noon-anchoring and the test's independence from the lib's own `daysBetweenLocalDates` implementation both intact, per instruction — the test does not call the lib's date-diff function to compute its fixtures.
+
+**Considered, no change — recorded so a future reviewer doesn't re-chase it:**
+
+- **`total <= 0` → `total < 0`** also survives the suite, because the "already out" test uses `total = 0`, where `Math.ceil(0 / ratePerDay)` is `0` under either comparator — the guard is behaviourally invisible at exactly the value the test probes. It's only load-bearing for `total < 0`, which the review confirmed is unreachable: `food_inventory_locations.quantity` is `INTEGER NOT NULL CHECK (quantity >= 0)` (`supabase/migrations/20250217000003_add_multi_location_inventory.sql:16`), and `totalsById`'s values are a plain sum of those. The code is correct and `0` is the right answer at that boundary; no test was added.
+- **`Math.max(...ages)` on an empty array** would be `-Infinity`, but the review (and my own read at implementation time) confirmed `ages` can never be empty at that call site: `byItem` is only ever populated by pushing at least one age per key inside the events loop, so every array iterated in `for (const [inventoryId, ages] of byItem)` has length >= 1 by construction.
+
+**Spec-text inaccuracies noted, no code change — the code is correct, the spec prose is wrong:**
+
+- Design spec §7 says "All four constants exported," but only three (`RATE_WINDOW_DAYS`, `MIN_UNITS`, `MIN_SPAN_DAYS`) belong in this lib — `FORECAST_LEAD_DAYS` lives in `shoppingDemand.ts` per §6. The spec's count is wrong; this lib correctly exports three (plus, as of this amendment, the display-only `MAX_DISPLAY_DAYS` — four total now, coincidentally, but for a different reason than the spec's original miscount).
+- Spec §10's illustrative example ("event at day 29 doesn't count toward units") is off by one against its own math: the boundary condition is `age < RATE_WINDOW_DAYS`, so day 28, not day 29, is the first excluded day. The plan's actual tests were unaffected by this — they use day 30 for the qualitative "outside the window" case and the exact `RATE_WINDOW_DAYS − 1` / `RATE_WINDOW_DAYS` pair for the boundary case — so coverage was always correct; only the spec's illustrative number was wrong.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 10 passed, 10 total
+Tests:       292 passed, 292 total
+```
+(292 = the 289 left by the Task 3 commit, +3 from Fixes 1–3 above; Fixes 4–6 added a constant, a header comment, and a test-helper refactor, none of which add or remove test cases.)
 
 
