@@ -88,73 +88,26 @@ export async function transferInventoryUnits(
 }
 
 /**
- * Replace an item's location rows and resync the legacy cache — the
- * invariant-keeping save used by EditFoodScreen for BOTH storage types
- * (single-location = exactly one row). Client-side sequence (delete →
- * insert → cache update), and it is NOT atomic: there is no transaction
- * around it, and — this is the part that matters — nothing re-checks the
- * invariant afterwards. The migration's assertion D lives inside a one-shot
- * `do $$` block that runs once at apply time; there is no CHECK, no
- * trigger, and no scheduled job behind it. A mid-sequence failure is
- * therefore permanent until the item is re-saved.
- *
- * What bounds the damage is the failure-path resync below: the cache is
- * driven to the true Σ locations on BOTH paths, so all three readers agree
- * the item is out of stock rather than the location rows and the legacy
- * column telling two different stories.
+ * Replace an item's location rows and resync the legacy cache — atomically,
+ * via the replace_item_locations RPC (Phase 5; scheduled by Phase 4's Task 4
+ * amendment). One transaction: the partial-failure divergence the previous
+ * client-side delete→insert→resync sequence could produce is now impossible,
+ * and the locations-as-truth invariant has ongoing server-side enforcement.
+ * The RPC refuses empty arrays (an item must keep >= 1 location row) and
+ * validates every row before any write.
  */
 export async function replaceItemLocations(
-  userId: string,
   itemId: string,
   rows: Array<{ location: FoodLocation; quantity: number; is_ready_to_consume: boolean; notes?: string | null }>,
 ): Promise<void> {
-  // Zero rows would satisfy the cache invariant (0 = 0) while breaking the
-  // migration's other post-condition — §6.1(4), every item keeps >= 1
-  // location row. This module owns that invariant, so it refuses here
-  // instead of trusting each caller's own validation.
-  if (rows.length === 0) throw new Error("replaceItemLocations: an item must keep at least one location row");
-
-  const { error: delError } = await supabase
-    .from("food_inventory_locations")
-    .delete()
-    .eq("food_inventory_id", itemId);
-  if (delError) throw delError;
-
-  const { error: insError } = await supabase.from("food_inventory_locations").insert(
-    // Fields are listed rather than spread: `rows` elements are structurally
-    // compatible with full FoodInventoryLocation rows, and a spread would
-    // forward their `id`/`created_at`/`updated_at` into the insert — so a
-    // "duplicate this item's locations" caller would insert with the source
-    // rows' primary keys.
-    rows.map((r) => ({
-      food_inventory_id: itemId,
-      user_id: userId,
+  const { error } = await supabase.rpc("replace_item_locations", {
+    p_item_id: itemId,
+    p_rows: rows.map((r) => ({
       location: r.location,
       quantity: r.quantity,
       is_ready_to_consume: r.is_ready_to_consume,
       notes: r.notes ?? null,
     })),
-  );
-
-  // The delete has already committed, so Σ locations is 0 if the insert
-  // failed and `total` if it succeeded — resync to whichever actually holds.
-  // Writing `total` on the failure path would just swap one divergence for
-  // another: the cache would claim stock no location row backs, which is
-  // precisely what re-arms mealLibrary's `locations.length > 0 ? … : quantity`
-  // fallback and the consume RPC's legacy branch. Zero is the honest answer.
-  const total = insError ? 0 : rows.reduce((s, r) => s + r.quantity, 0);
-  const { error: cacheError } = await supabase
-    .from("food_inventory")
-    .update({ quantity: total })
-    .eq("id", itemId);
-
-  // The insert error is the one the caller has to see; a failed best-effort
-  // resync must not mask it.
-  if (insError) {
-    if (cacheError) {
-      console.error("replaceItemLocations: cache resync after failed insert also failed:", cacheError);
-    }
-    throw insError;
-  }
-  if (cacheError) throw cacheError;
+  });
+  if (error) throw error;
 }

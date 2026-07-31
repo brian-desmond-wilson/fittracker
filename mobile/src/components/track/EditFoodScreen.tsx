@@ -690,9 +690,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           // `quantity` is dropped from itemData above, but the column is
           // INTEGER NOT NULL with no default (20250206_tracking_tables.sql:14),
           // so the INSERT still has to supply one. 0 is the only honest seed:
-          // if the replaceItemLocations call below fails, a 0 cache alongside 0
-          // location rows is what every reader agrees on — the same damage
-          // bound replaceItemLocations applies on its own failure path.
+          // the replaceItemLocations RPC below is atomic, so a failure there
+          // rolls back with zero location rows written — a 0 cache alongside
+          // 0 location rows is what every reader agrees on.
           .insert({
             // `itemData` omits the thresholds the active storage type does not
             // render, so an UPDATE cannot disturb them. An INSERT has to supply
@@ -718,22 +718,21 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         //
         // ⚠️ CREATE PATH ONLY — the rollback below DELETES the item row. That
         // is correct here and only here, because this code created it moments
-        // ago: creating is no longer one atomic INSERT but insert -> delete ->
-        // insert -> update, and a failure past the first step would strand an
-        // item with zero location rows and a 0 cache, which the grid renders as
-        // a real out-of-stock product and which every retry would duplicate.
+        // ago: creating is the item-row INSERT above followed by the atomic
+        // replaceItemLocations RPC, and a failure in that RPC would strand the
+        // item row with zero location rows, which the grid renders as a real
+        // out-of-stock product and which every retry would duplicate.
         // The update path's equivalent call is deliberately NOT wrapped in
         // this — see the comment there.
         try {
-          await replaceItemLocations(user.id, foodItemId, locationRows);
+          await replaceItemLocations(foodItemId, locationRows);
         } catch (locationError) {
           const { error: rollbackError } = await supabase
             .from("food_inventory")
             .delete()
             .eq("id", foodItemId);
           // Logged, never rethrown: the location failure is the one the user
-          // has to see, and a failed rollback must not mask it. Same precedent
-          // as replaceItemLocations' own failed cache-resync handling.
+          // has to see, and a failed rollback must not mask it.
           if (rollbackError) {
             console.error("Failed to roll back orphaned item after location write failed:", rollbackError);
           }
@@ -852,19 +851,18 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // rather than clean up after ourselves.
         //
         // A failure here is not "the save didn't happen" — the item UPDATE
-        // above already committed. replaceItemLocations can fail three ways
-        // that differ in what survives (the delete failing leaves the stock
-        // fully intact; the insert failing zeroes it; the cache resync failing
-        // leaves correct rows and a stale cache), and this handler cannot tell
-        // them apart, so the copy hedges on the diagnosis. It does NOT hedge on
-        // the action: re-saving is idempotent and repairs all three, including
-        // the stale-cache case, which is the one that leaves the item's two
-        // quantity sources disagreeing until someone re-saves it.
+        // above already committed. replaceItemLocations is now the atomic
+        // replace_item_locations RPC: a failure rolls the whole transaction
+        // back, so the stock is left exactly as it was before this save. The
+        // copy still hedges rather than promising that, since this handler
+        // only sees "it failed," not the RPC's internal state. It does NOT
+        // hedge on the action: re-saving is idempotent and repairs any
+        // lingering drift regardless.
         // That recovery only works if the user is told to re-save, so this gets
         // its own message instead of the generic one below, and the screen
         // stays open with the typed quantity intact so re-saving is one tap.
         try {
-          await replaceItemLocations(user.id, foodItemId, locationRows);
+          await replaceItemLocations(foodItemId, locationRows);
         } catch (locationError) {
           console.error("Error saving location rows:", locationError);
           Alert.alert(

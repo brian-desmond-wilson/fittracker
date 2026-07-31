@@ -51,6 +51,7 @@ export default function AddFoodItemPage() {
     image_side_url: null,
     expiration_date: null,
     notes: null,
+    preferred_vendor_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     locations: [],

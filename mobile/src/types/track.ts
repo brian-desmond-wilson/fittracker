@@ -25,6 +25,7 @@ export interface FoodInventoryItem {
   image_back_url: string | null;
   image_side_url: string | null;
   notes: string | null;
+  preferred_vendor_id: string | null;
   storage_type: StorageType;
   requires_refrigeration: boolean;
   fridge_restock_threshold: number | null;
@@ -77,6 +78,7 @@ export interface ShoppingListItem {
   id: string;
   user_id: string;
   food_inventory_id: string | null;
+  vendor_id: string | null;
   name: string;
   quantity: number;
   unit: string;
@@ -234,7 +236,8 @@ export type TrackingCategory =
   | "weight"
   | "measurements"
   | "photos"
-  | "workouts";
+  | "workouts"
+  | "shopping";
 
 export interface TrackingCategoryConfig {
   id: TrackingCategory;
