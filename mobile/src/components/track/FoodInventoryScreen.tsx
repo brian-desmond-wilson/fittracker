@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -73,6 +73,22 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // fetchInventory below).
   const [ratesById, setRatesById] = useState<Map<string, ConsumptionEstimate>>(new Map());
 
+  // `fetchInventory` is called from four places (mount, pull-to-refresh, the
+  // delete-failure revert, the restock-failure revert) with no cancellation.
+  // A ref, not state, incremented once per call: a fetch only applies its
+  // result if it's still the most recent call by the time it resolves.
+  // Without this, a slow in-flight fetch can resolve AFTER a newer one
+  // already reflects a since-completed mutation and silently overwrite it —
+  // e.g. a slow mount fetch racing an optimistic delete: the delete commits,
+  // the mount fetch resolves late, and `setItems` would resurrect the row
+  // the user just removed.
+  const fetchGenerationRef = useRef(0);
+
+  // In-flight guard for the manual "Add to Shopping List" action (see
+  // handleAddToShoppingList below) — keyed by item id so concurrent adds for
+  // different items aren't blocked by each other.
+  const addingToShoppingListIds = useRef<Set<string>>(new Set());
+
   // Restock modal state
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [restockingItem, setRestockingItem] = useState<InventoryItemWithState | null>(null);
@@ -111,30 +127,47 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
 
   const fetchInventory = async () => {
-    try {
-      setLoading(true);
-      const todayLocalDate = getLocalDateString();
-      const items = await fetchInventoryWithState(todayLocalDate);
-      setItems(items);
+    const generation = ++fetchGenerationRef.current;
+    const todayLocalDate = getLocalDateString();
+    setLoading(true);
 
-      // Rates depend on totalsById, which is only available once `items` has
-      // resolved, so this can't run concurrently with the fetch above — but
-      // it's wrapped in its own try/catch so a failure here (bad network,
-      // etc.) can never take down the inventory render that just succeeded.
-      // The forecast line is decoration; the grid is not.
-      try {
-        const totalsById = new Map(items.map((it) => [it.id, it.state.totalQuantity]));
-        const rates = await fetchConsumptionRates(todayLocalDate, totalsById);
-        setRatesById(rates);
-      } catch (ratesError) {
-        console.error("Error fetching consumption rates:", ratesError);
-      }
+    let items: InventoryItemWithState[];
+    try {
+      items = await fetchInventoryWithState(todayLocalDate);
     } catch (error) {
-      console.error("Error fetching inventory:", error);
-      Alert.alert("Error", "Failed to load inventory");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      // A superseded call's failure must not clobber whatever the winning
+      // call already rendered (or is about to render).
+      if (generation === fetchGenerationRef.current) {
+        console.error("Error fetching inventory:", error);
+        Alert.alert("Error", "Failed to load inventory");
+        setLoading(false);
+        setRefreshing(false);
+      }
+      return;
+    }
+
+    if (generation !== fetchGenerationRef.current) return; // a later call already landed; this result is stale
+
+    // Flipped here, right after the grid has data, rather than in a shared
+    // `finally` — the rates round trip below is decoration and must not
+    // hold the pull-to-refresh spinner (or the first-run "Loading…"
+    // placeholder) up for one extra RTT.
+    setItems(items);
+    setLoading(false);
+    setRefreshing(false);
+
+    // Rates depend on totalsById, which is only available once `items` has
+    // resolved, so this can't run concurrently with the fetch above — but
+    // it's wrapped in its own try/catch so a failure here (bad network,
+    // etc.) can never take down the inventory render that just succeeded.
+    // The forecast line is decoration; the grid is not.
+    try {
+      const totalsById = new Map(items.map((it) => [it.id, it.state.totalQuantity]));
+      const rates = await fetchConsumptionRates(todayLocalDate, totalsById);
+      if (generation !== fetchGenerationRef.current) return; // stale — a later call superseded this one
+      setRatesById(rates);
+    } catch (ratesError) {
+      console.error("Error fetching consumption rates:", ratesError);
     }
   };
 
@@ -189,12 +222,42 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleAddToShoppingList = async (item: InventoryItemWithState) => {
+    // In-flight guard: the success alert only fires once the insert returns,
+    // so on a slow connection a user who gets no feedback yet can long-press
+    // the same item and tap "Add to Shopping List" again before the first
+    // request lands. There's no unique constraint on `shopping_list`
+    // (20260731100000_shopping_intelligence.sql) to stop two identical rows
+    // from landing, and un-gating this action sheet entry (Task 8) put it on
+    // every item instead of only out-of-stock ones — widening exposure to
+    // exactly this. Keyed by item id, not a single screen-wide flag, so
+    // adding two different items concurrently isn't blocked by each other.
+    if (addingToShoppingListIds.current.has(item.id)) return;
+    addingToShoppingListIds.current.add(item.id);
+
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (!user) return;
+
+      // Belt-and-suspenders alongside the in-flight guard above: even with
+      // instant feedback, a deliberate second add always duplicates without
+      // this, because nothing else consults existing rows before inserting.
+      // Scoped to unpurchased rows only — a purchased row for this item
+      // doesn't mean one is already pending, matching the demand engine's
+      // own suppression rule (spec §6).
+      const { data: existing, error: existingError } = await supabase
+        .from("shopping_list")
+        .select("id")
+        .eq("food_inventory_id", item.id)
+        .eq("is_purchased", false)
+        .limit(1);
+      if (existingError) throw existingError;
+      if (existing && existing.length > 0) {
+        Alert.alert("Already on your list", `${item.name} is already on your shopping list.`);
+        return;
+      }
 
       // Routed through the shopping module rather than a direct insert, so
       // this shares the one quantity formula (threshold-exit, not the old
@@ -220,6 +283,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     } catch (error: any) {
       console.error("Error adding to shopping list:", error);
       Alert.alert("Error", "Failed to add to shopping list");
+    } finally {
+      addingToShoppingListIds.current.delete(item.id);
     }
   };
 
@@ -523,7 +588,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               <Text style={styles.gridItemQuantityDetail}> ({item.state.readyQuantity} Ready)</Text>
             )}
           </Text>
-          {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
+          {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut > 0 && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
             <Text style={styles.forecastText}>
               ~{ratesById.get(item.id)!.daysUntilOut}d left
             </Text>

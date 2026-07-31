@@ -1607,27 +1607,61 @@ git commit -m "feat(nutrition-os): Shopping List screen + Track hub card"
 - Modify: `mobile/src/components/track/FoodInventoryScreen.tsx` (`handleAddToShoppingList` ~:170-196; action sheet ~:219-222; grid row quantity line)
 - Modify: `mobile/src/components/track/EditFoodScreen.tsx` (preferred-vendor picker)
 
-- [ ] **Step 1: Rewire the long-press add** — replace `handleAddToShoppingList`'s insert body with a call through the module, correct quantity, vendor stamped:
+- [ ] **Step 1: Rewire the long-press add** — replace `handleAddToShoppingList`'s insert body with a call through the module, correct quantity, vendor stamped, guarded against duplicating itself (see the Task 8 amendment's Fix 1 for why the guard is load-bearing, not decoration):
 
 ```ts
-      const { lowThresholdFor } = await import("@/src/lib/stockState"); // or top-level import
+    // In-flight guard, keyed by item id: the success alert only fires after
+    // the insert returns, so a slow connection can leave a user with no
+    // feedback long enough to long-press and tap "Add to Shopping List"
+    // again before the first request lands. No unique constraint on
+    // shopping_list stops two identical rows from landing, and un-gating
+    // this action sheet entry below widens exposure to every item instead
+    // of only out-of-stock ones.
+    if (addingToShoppingListIds.current.has(item.id)) return;
+    addingToShoppingListIds.current.add(item.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Belt-and-suspenders alongside the in-flight guard: a deliberate
+      // second add always duplicates without this. Unpurchased rows only —
+      // a purchased row doesn't mean one is already pending (spec §6).
+      const { data: existing, error: existingError } = await supabase
+        .from("shopping_list")
+        .select("id")
+        .eq("food_inventory_id", item.id)
+        .eq("is_purchased", false)
+        .limit(1);
+      if (existingError) throw existingError;
+      if (existing && existing.length > 0) {
+        Alert.alert("Already on your list", `${item.name} is already on your shopping list.`);
+        return;
+      }
+
       await addSuggestions(user.id, [{
         name: item.name,
         foodInventoryId: item.id,
-        vendorId: item.preferred_vendor_id,
+        vendorId: item.preferred_vendor_id ?? null,
         quantity: Math.max(1, lowThresholdFor(item) - item.state.totalQuantity + 1),
         unit: item.unit,
         priority: item.state.isOut ? 1 : 2,
         reasons: ["added from inventory"],
       }]);
+      Alert.alert("Success", `${item.name} added to shopping list`);
+    } catch (error: any) {
+      console.error("Error adding to shopping list:", error);
+      Alert.alert("Error", "Failed to add to shopping list");
+    } finally {
+      addingToShoppingListIds.current.delete(item.id);
+    }
 ```
 
-(Use a top-level import of `addSuggestions` from `@/src/lib/supabase/shopping` and `lowThresholdFor` from `@/src/lib/stockState` — the dynamic-import line above is illustrative of *what*, not *how*.) Un-gate the action-sheet entry: the `if (isOutOfStock)` splice (~:219-222) becomes unconditional (the option always appears). Keep the success/failure alerts.
+(Top-level imports: `addSuggestions` from `@/src/lib/supabase/shopping`, `lowThresholdFor` from `@/src/lib/stockState`. `addingToShoppingListIds` is a `useRef<Set<string>>(new Set())` alongside the screen's other refs/state — a ref, not state, since nothing renders off it. `?? null` on `vendorId`, not a bare read: `preferred_vendor_id` comes back `undefined`, not `null`, on rows fetched before the column-adding migration lands, since the untyped client casts through `as FoodInventoryItem[]` regardless of what the row actually has.) Un-gate the action-sheet entry: the `if (isOutOfStock)` splice (~:219-222) becomes unconditional (the option always appears) — and update the "Restock Fridge" insertion index that used to branch on `isOutOfStock ? 3 : 2`, now always `3`, since "Add to Shopping List" always occupies position 2. Keep the success/failure alerts.
 
-- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside by calling `fetchConsumptionRates(todayLocalDate, totalsById)`, already exported from `mobile/src/lib/supabase/shopping.ts` (Task 6 built it precisely for this call site — it wraps `fetchDecrementEvents()` + `estimateConsumption()` in one round trip, so there is no events-expansion code to duplicate or lift here). Build `totalsById` the same way `fetchShoppingData` does: `new Map(items.map((it) => [it.id, it.state.totalQuantity]))` over the screen's own fetched inventory. Import `MAX_DISPLAY_DAYS` (and `type ConsumptionEstimate`, for the state) from `@/src/lib/consumptionRate`, and `fetchConsumptionRates` from `@/src/lib/supabase/shopping`. Store the result as `ratesById`. Gate the render on `MAX_DISPLAY_DAYS` — beyond that horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count. Render, next to the existing quantity text on each grid card:
+- [ ] **Step 2: "~Nd left" line** — `FoodInventoryScreen` already fetches via `fetchInventoryWithState`; add a lightweight rates fetch alongside by calling `fetchConsumptionRates(todayLocalDate, totalsById)`, already exported from `mobile/src/lib/supabase/shopping.ts` (Task 6 built it precisely for this call site — it wraps `fetchDecrementEvents()` + `estimateConsumption()` in one round trip, so there is no events-expansion code to duplicate or lift here). Build `totalsById` the same way `fetchShoppingData` does: `new Map(items.map((it) => [it.id, it.state.totalQuantity]))` over the screen's own fetched inventory. Import `MAX_DISPLAY_DAYS` (and `type ConsumptionEstimate`, for the state) from `@/src/lib/consumptionRate`, and `fetchConsumptionRates` from `@/src/lib/supabase/shopping`. Store the result as `ratesById`. Gate the render on `MAX_DISPLAY_DAYS` **and** `daysUntilOut > 0` — beyond the horizon the estimate's error bar swamps its resolution (see the constant's comment in `consumptionRate.ts`), so the line must be omitted, not printed with a three-digit day count; at exactly 0 (an out-of-stock item can still carry an estimate) `~0d left` is technically correct but adds nothing next to `Qty: 0`, so it's suppressed too. Render, next to the existing quantity text on each grid card:
 
 ```tsx
-              {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
+              {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut > 0 && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
                 <Text style={styles.forecastText}>
                   ~{ratesById.get(item.id)!.daysUntilOut}d left
                 </Text>
@@ -1636,45 +1670,71 @@ git commit -m "feat(nutrition-os): Shopping List screen + Track hub card"
 
 with `forecastText: { fontSize: 11, color: "#14B8A6" }`.
 
-- [ ] **Step 3: Preferred-vendor picker in EditFoodScreen** — add state + fetch:
+`fetchInventory` is called from four places (mount, pull-to-refresh, the delete-failure revert, the restock-failure revert) with no cancellation between them, and this step makes it stay in flight one round trip longer (the rates fetch, sequenced after `items` since it needs `totalsById`). Guard it with a generation counter — a `useRef(0)` incremented once per call — and have both `setItems`/`setRatesById` no-op when their own call's generation has since been superseded by a newer one; see the Task 8 amendment's Fix 2 for the concrete clobber this closes (a slow mount fetch resolving after an optimistic delete, resurrecting the deleted row). While in there, flip `setLoading(false)`/`setRefreshing(false)` immediately after `setItems` succeeds rather than in a shared `finally` after the rates fetch, so the spinner clears the moment the grid has data instead of waiting on the decoration.
+
+- [ ] **Step 3: Preferred-vendor picker in EditFoodScreen** — add state + fetch. The component's prop is `item`, not `foodItem` (see the Task 8 amendment — an earlier draft of this step used `foodItem` before that was checked against the actual signature):
 
 ```tsx
   const [preferredVendorId, setPreferredVendorId] = useState<string | null>(
-    foodItem?.preferred_vendor_id ?? null,
+    item.preferred_vendor_id ?? null,
   );
   const [vendors, setVendors] = useState<NutritionVendor[]>([]);
   useEffect(() => {
-    supabase.from("nutrition_vendors").select("*").order("display_order")
-      .then(({ data, error }) => {
-        if (error) console.error("vendors fetch:", error);
-        else setVendors((data ?? []) as NutritionVendor[]);
-      });
+    fetchVendors();
   }, []);
 ```
 
-(import `NutritionVendor` from `@/src/types/nutrition-preferences`; match the screen's existing seeding pattern for edit-vs-add). Render in the details section, after the notes field, reusing the screen's existing location-button styles for the chips:
+with `fetchVendors` defined alongside the screen's other small fetchers (next to `fetchLocationEntries`), wrapped in `try`/`catch` like every other fetch in this file — a failure here is benign (the picker just falls back to rendering only "None"), but leaving it as the file's one unwrapped fetch was a consistency gap, not a live bug (supabase-js v2 resolves rather than rejects on fetch failure):
 
 ```tsx
-        <Text style={styles.fieldLabel}>Preferred vendor</Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {[...vendors.filter((v) => v.is_active), null].map((v) => {
-            const selected = (v?.id ?? null) === preferredVendorId;
-            return (
-              <TouchableOpacity
-                key={v?.id ?? "none"}
-                style={[styles.locationButton, selected && styles.locationButtonActive]}
-                onPress={() => setPreferredVendorId(v?.id ?? null)}
-              >
-                <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
-                  {v?.name ?? "None"}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+  const fetchVendors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("nutrition_vendors")
+        .select("*")
+        .order("display_order");
+      if (error) throw error;
+      setVendors((data ?? []) as NutritionVendor[]);
+    } catch (error) {
+      console.error("Error fetching vendors:", error);
+    }
+  };
 ```
 
-(`fieldLabel`/`locationButton*` are the screen's existing style names — verify the exact names at the location-buttons block and reuse them; if they differ, use the actual names, do not invent new styles.) Finally, include `preferred_vendor_id: preferredVendorId` in the save's `itemData` object.
+(import `NutritionVendor` from `@/src/types/nutrition-preferences`; match the screen's existing seeding pattern for edit-vs-add — `item.preferred_vendor_id ?? null`, not a bare read, since the column comes back `undefined` rather than `null` on rows fetched before the migration lands).
+
+Render in the **Quantity & Storage** section (`sectionKey="storage"`), after the Ready/Total Threshold fields and outside the single-location/multi-location branches (so it renders once, for both storage types) — **not** under Notes, where this step's first draft put it by following the adjacency clause ("after the notes field") literally. Notes is its own collapsed accordion, and burying the sole editor for a value three other surfaces read (the manual add, the demand engine, this same screen's own threshold math) inside it made the field hard to find. Storage is where the value's actual siblings live: `lowThresholdFor`, the restock thresholds immediately above it, and — once Step 2 lands — the "~Nd left" forecast that reads the same item. Reuse the screen's existing location-button styles for the chips — `styles.label` for the field label (the screen has no `styles.fieldLabel`; that name doesn't exist, see the amendment) and `styles.locationButton`/`locationButtonActive`/`locationButtonText`/`locationButtonTextActive` for the chips themselves:
+
+```tsx
+                <View style={styles.field}>
+                  <Text style={styles.label}>Preferred vendor</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {/* Keep the current vendor in the list even if it's since
+                        gone inactive (Task 9 adds the deactivate toggle) —
+                        otherwise a deactivated vendor has no chip AND
+                        doesn't match `null`, so nothing highlights and the
+                        field silently reads as unset even though the value
+                        is untouched. Labelled "(inactive)" so the state is
+                        legible rather than just mysteriously present. */}
+                    {[...vendors.filter((v) => v.is_active || v.id === preferredVendorId), null].map((v) => {
+                      const selected = (v?.id ?? null) === preferredVendorId;
+                      return (
+                        <TouchableOpacity
+                          key={v?.id ?? "none"}
+                          style={[styles.locationButton, selected && styles.locationButtonActive]}
+                          onPress={() => setPreferredVendorId(v?.id ?? null)}
+                        >
+                          <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
+                            {v?.name ?? "None"}{v && !v.is_active ? " (inactive)" : ""}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+```
+
+Finally, include `preferred_vendor_id: preferredVendorId` in the save's `itemData` object — it flows into both the create and update branches, since both spread/pass `itemData` as-is. This writes only `food_inventory.preferred_vendor_id` (the product default); it does not touch `shopping_list.vendor_id` (the per-row snapshot §9.2's vendor chip writes).
 
 - [ ] **Step 4: Verify + commit**
 
@@ -2283,3 +2343,41 @@ Tests:       317 passed, 317 total
 (317 = unchanged — this task adds no test surface; `ShoppingListScreen.tsx` is a React Native component and, per `jest.config.js`'s own scoping to pure-TypeScript libs, is not and has never been covered by this suite.) The plan's Task 7 code block was re-diffed programmatically against `mobile/src/components/track/ShoppingListScreen.tsx` (the `run`/`busy`/`refreshing` rewrite, the row-structure change for Fix 5, and all Minor fixes) and found byte-identical, modulo the banner line — same discipline as the Task 3 and Task 6 amendments.
 
 
+
+### Task 8 — Inventory tie-ins
+
+This entry was missing from the original dispatch — an omission on the plan side, not the implementer's. Spec review passed with no findings on the first pass, and separately confirmed two plan-snippet inaccuracies the implementer had already worked around under the plan's own escape hatch. Code-quality review then found two Important issues and four Minor ones, all reproduced faithfully from this plan's own Step 1–3 text — plan defects, not implementation slips, same as Tasks 1 and 7. Two Important, four Minor, one declined-with-reasoning, and the review's negative space are below.
+
+**Two plan-snippet inaccuracies, worked around under the plan's own escape hatch.** Step 3's code block referenced `styles.fieldLabel`, which does not exist in `mobile/src/components/track/edit-food/styles.ts` — the real name is `styles.label` (`edit-food/styles.ts:81`). The same block also destructured a `foodItem` prop; the component's actual prop is `item` (`EditFoodScreen.tsx:90`). Both were handled under Step 3's own instruction ("if they differ, use the actual names, do not invent new styles") rather than treated as blockers. This plan's Step 3 text has been corrected in place to use `styles.label` and `item` throughout, so a future reader doesn't have to rediscover and re-work-around the same two mismatches.
+
+**Fix 1 (Important) — the manual add had no in-flight guard and no dedupe.** `handleAddToShoppingList` only surfaced feedback after the `addSuggestions` call returned. On a slow connection a user who sees nothing yet can long-press the same item and tap "Add to Shopping List" again before the first request lands — two inserts in flight, two identical `shopping_list` rows (same `food_inventory_id`, `name`, `quantity`, `vendor_id`, `notes`). Confirmed no unique constraint exists on `shopping_list` in `20260731100000_shopping_intelligence.sql`, so both rows land and both render. Even with instant feedback, a *deliberate* second add always duplicated, because nothing consulted existing rows before inserting. This plan's own "Known accepted risks" note covers a manual add duplicating a pending *engine suggestion*; it does not cover a manual add duplicating **itself** — a distinct gap. And Step 1's own un-gating (correct per spec §9.3) put "Add to Shopping List" on every item's action sheet instead of only out-of-stock ones, which widened exposure to this gap rather than narrowing it.
+
+Fixed with two additions to `handleAddToShoppingList`, keyed by item id: (1) an in-flight guard — a `useRef<Set<string>>(new Set())` checked at entry and populated for the call's duration, cleared in a `finally` — so a second invocation for the same item while the first is still in flight is a silent no-op; (2) a pre-insert existence check — `select id from shopping_list where food_inventory_id = item.id and is_purchased = false limit 1` — that turns a genuine repeat into an "Already on your list" alert instead of a second row. Scoped to unpurchased rows only, matching the demand engine's own suppression rule (spec §6): a purchased row for this item doesn't mean one is already pending. Existing success/failure alerts kept as-is. The plan's Step 1 code block above has been updated to match.
+
+**Fix 2 (Important) — the rates fetch widened a pre-existing race in `fetchInventory`.** Step 2's `finally`-style `setLoading(false)`/`setRefreshing(false)` sat after the rates round trip, not after `items` landed — visibly, the pull-to-refresh spinner and the first-run "Loading…" placeholder both outlived the data being on screen by one extra RTT. The real cost was structural: `fetchInventory` now stays in flight one round trip longer, with no generation token and no cancellation, and it's called from four places — the mount effect, `handleRefresh`, the delete-failure revert, and the restock-failure revert. Concrete failure traced: a slow mount fetch is in flight; the user long-press-deletes an item; the optimistic drop and the DB delete both succeed; the late mount fetch resolves and its `setItems` call **restores the deleted row into the grid**. Pre-existing for `items` before this task; `ratesById` now joins it as a second clobberable target, and the added RTT lengthens the window in which any of the four callers can race each other.
+
+Fixed with a generation counter — `fetchGenerationRef`, a `useRef(0)` incremented once at the top of every `fetchInventory` call — checked before each of `setItems`, the loading-flag flips, and `setRatesById`; a result whose generation no longer matches `fetchGenerationRef.current` by the time it resolves is dropped rather than applied. Also hoisted `setLoading(false)`/`setRefreshing(false)` to immediately after `setItems` succeeds, ahead of the rates fetch, so the spinner clears the moment the grid has data rather than waiting on decoration. Unmount-during-fetch was checked and correctly judged not a problem — React 18 makes a post-unmount `setState` call a silent no-op — so no cleanup was added for that case; the generation token exists solely for the cross-call clobber, not for unmount safety. The plan's Step 2 text above now describes this guard.
+
+**Fix 3 (Minor) — an inactive preferred vendor was invisible in the picker.** With `preferred_vendor_id = X` where X has since gone inactive, the original filter `vendors.filter(v => v.is_active)` dropped X's chip entirely, and `null !== X` meant "None" didn't highlight either — no chip selected, field reads as unset. Saving without touching the picker does not clear the value (state is untouched, so no silent data loss), but the user has no way to see what's actually set, and once they tap any chip they can't get back to X from this screen without leaving and re-entering with knowledge of the id. Unreachable until Task 9 ships the deactivate toggle; reachable the moment it does. Fixed by keeping the current vendor in the option list even when inactive — `[...vendors.filter(v => v.is_active || v.id === preferredVendorId), null]` — and labelling it `"{name} (inactive)"` so the state stays legible instead of just mysteriously present.
+
+**Fix 4 (Minor) — `~0d left` rendered for out-of-stock items.** The dangerous half was already unreachable: for `total > 0`, `estimateConsumption`'s `daysUntilOut` is always `>= 1` (`Math.ceil` of a positive numerator), so a genuinely *stocked* item could never show `~0d left`. But the zero case (`total <= 0`) is reachable and visible — the "Out of Stock" tab and every category tab render `isOut` items, so a just-finished staple with enough logged history to clear the honesty gates showed `Qty: 0 … ~0d left`, which states the obvious without adding anything. Fixed by adding `daysUntilOut > 0` to the render gate, alongside the existing `<= MAX_DISPLAY_DAYS` check. The plan's Step 2 render snippet above reflects both conditions.
+
+**Fix 5 (Minor) — the vendor fetch was the file's one unwrapped fetch.** Every other data fetch in this 1700+-line file — categories/subcategories, location entries, image uploads — runs inside its own `try`/`catch`; Step 3's vendor fetch, as originally written, was a bare `.then()` with only the `{ error }` destructure checked, no `try`/`catch` around it. Its failure mode was already benign (a failure leaves `vendors: []`, so the picker renders just "None" and stays functional) and supabase-js v2 resolves rather than rejects on fetch failure, so this was a consistency gap, not a live bug. Fixed by extracting a named `fetchVendors` function, matching the shape of its neighbour `fetchLocationEntries` (`try`/`catch`, `console.error` only, no `Alert` — the same "log and move on" idiom used for other non-critical background fetches in this file), called from the mount effect. The plan's Step 3 text above shows the wrapped version.
+
+**Fix 6 (Minor) — the picker was filed under the collapsed Notes accordion, which is hard to find.** Step 3's placement text said "the details section, after the notes field," and the implementation followed that adjacency literally — reasonably, since the plan was written without accounting for Notes being its own collapsed accordion (`sectionKey="notes"`), separate from every other section. A shopping field buried inside a notes accordion is not discoverable, and this is the sole editor for a value three other surfaces read (the manual add in `FoodInventoryScreen.tsx`, the demand engine in `lib/shoppingDemand.ts` via `lib/supabase/shopping.ts`, and this same screen's own restock-threshold math). Moved to the **Quantity & Storage** section (`sectionKey="storage"`), rendered once after the Ready/Total Threshold fields and outside the single-location/multi-location conditionals so it appears regardless of which storage type is active. Storage is where the value's actual siblings already live — `lowThresholdFor`, the restock thresholds immediately above it, and the "~Nd left" forecast Step 2 adds to the same screen's sibling `FoodInventoryScreen` — rather than a field about restocking sitting beside a free-text notes box. This plan's Step 3 text and file-list comment above have been updated to describe the storage-section placement rather than the notes-section one.
+
+**Declined, recorded for the owner:** `"~{n}d left"` is an upper bound dressed as an approximation — the lib's rate reads low by design (see `consumptionRate.ts`'s header), so the true remaining days lie in `[n/2, n]`; `~60d left` may mean 30. `~` reads as "give or take," which understates how one-sided the error actually is; `≤60d left` would say the true thing. Declined here: design spec §7 explicitly specifies the display string as `"~{n}d left"`, the owner approved that string, and the 2× bound is already documented in the lib's own header comment for anyone who goes looking. Recorded as a one-line change (`~` → `≤` in the template literal) the owner may want, to be surfaced at the Task 10 gate rather than changed unilaterally against an approved spec string.
+
+**The review's negative space, preserved so a future reader doesn't re-chase any of it:**
+- The grid paints before the rates land — `setItems` (and the now-hoisted loading-flag flips) precede the `await fetchConsumptionRates(...)` — so the forecast line fills in after the screen is already usable rather than delaying it.
+- The added network cost is **one** extra round trip, not five: `fetchInventoryWithState`'s four internal queries are already `Promise.all`'d, and `fetchConsumptionRates` wraps its own `fetchDecrementEvents()` + `estimateConsumption()` as a single additional round trip on top of that.
+- `MAX_DISPLAY_DAYS` (`= 60`) caps the rendered string at two digits, so `~60d left` (roughly 50pt wide at `fontSize: 11` against a roughly 104pt-wide grid card) cannot wrap or clip within the card.
+- The silent `console.error` on a rates-fetch failure (no `Alert`) is correct, not an oversight: the forecast line's absence on a failed fetch is indistinguishable from the honesty gates in `consumptionRate.ts` legitimately suppressing it for insufficient history, and surfacing an alert for a decorative line that's *routinely* absent would just train the user to dismiss alerts.
+- `ShoppingCart` remains imported-but-unused at `FoodInventoryScreen.tsx:22` (pre-existing since February) — this task's changes never render it, and it's a distinct, unrelated import from the `ShoppingCart` Task 7 already consumed in `app/(tabs)/track/index.tsx`. Left untouched, out of scope.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 11 passed, 11 total
+Tests:       317 passed, 317 total
+```
+(317 = unchanged — this task, like Task 7, adds no test surface; both files touched are React Native components outside `jest.config.js`'s pure-TypeScript-lib scope.) The plan's Task 8 Step 1–3 code blocks were updated in place to match the shipped `FoodInventoryScreen.tsx`/`EditFoodScreen.tsx` — same discipline as the Task 1 and Task 7 amendments.

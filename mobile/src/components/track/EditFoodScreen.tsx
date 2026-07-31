@@ -196,11 +196,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   }, [item.id]);
 
   useEffect(() => {
-    supabase.from("nutrition_vendors").select("*").order("display_order")
-      .then(({ data, error }) => {
-        if (error) console.error("vendors fetch:", error);
-        else setVendors((data ?? []) as NutritionVendor[]);
-      });
+    fetchVendors();
   }, []);
 
   const fetchCategoriesAndSubcategories = async () => {
@@ -252,6 +248,23 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     }
   };
 
+  // A failure here is benign — the picker just falls back to rendering only
+  // "None" and stays functional — but wrapped for consistency with every
+  // other fetch in this file (this was the one exception).
+  const fetchVendors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("nutrition_vendors")
+        .select("*")
+        .order("display_order");
+
+      if (error) throw error;
+
+      setVendors((data ?? []) as NutritionVendor[]);
+    } catch (error) {
+      console.error("Error fetching vendors:", error);
+    }
+  };
 
   const handleBarcodeScanned = async (scannedBarcode: string) => {
     setBarcode(scannedBarcode);
@@ -1422,6 +1435,42 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     </View>
                   </>
                 )}
+
+                {/* Preferred vendor — filed here rather than under Notes
+                    (where the plan's literal text placed it): it drives the
+                    quantity/vendor math this whole section already owns
+                    (lowThresholdFor, the restock thresholds above, the
+                    "~Nd left" forecast) and both other consumers of this
+                    value (the manual add and the shopping-demand engine, see
+                    lib/supabase/shopping.ts) are restock-flow code, not
+                    notes. Rendered once, outside the single/multi-location
+                    branches above, since it applies to both storage types. */}
+                <View style={styles.field}>
+                  <Text style={styles.label}>Preferred vendor</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {/* The currently-selected vendor is kept in the list even
+                        if it's since gone inactive (Task 9 adds the toggle to
+                        turn one off) — otherwise a deactivated vendor has no
+                        chip AND doesn't match `null`, so nothing highlights
+                        and the field silently reads as unset even though the
+                        value is untouched. Labelled so that state is legible
+                        rather than just mysteriously present. */}
+                    {[...vendors.filter((v) => v.is_active || v.id === preferredVendorId), null].map((v) => {
+                      const selected = (v?.id ?? null) === preferredVendorId;
+                      return (
+                        <TouchableOpacity
+                          key={v?.id ?? "none"}
+                          style={[styles.locationButton, selected && styles.locationButtonActive]}
+                          onPress={() => setPreferredVendorId(v?.id ?? null)}
+                        >
+                          <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
+                            {v?.name ?? "None"}{v && !v.is_active ? " (inactive)" : ""}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
               </View>
             )}
           </View>
@@ -1638,26 +1687,6 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   numberOfLines={4}
                   textAlignVertical="top"
                 />
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Preferred vendor</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                    {[...vendors.filter((v) => v.is_active), null].map((v) => {
-                      const selected = (v?.id ?? null) === preferredVendorId;
-                      return (
-                        <TouchableOpacity
-                          key={v?.id ?? "none"}
-                          style={[styles.locationButton, selected && styles.locationButtonActive]}
-                          onPress={() => setPreferredVendorId(v?.id ?? null)}
-                        >
-                          <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
-                            {v?.name ?? "None"}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
               </View>
             )}
           </View>
