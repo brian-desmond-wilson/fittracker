@@ -1596,4 +1596,43 @@ The remedy is deliberately deferred to the owner: hoisting `select … from publ
 
 **Verified, no change needed** (the review's negative space): the insert supplies every NOT NULL column; there is no unique constraint on `(food_inventory_id, location)`, so multi-row-same-location payloads are legal; the location allowlist matches the live CHECK exactly; `food_inventory.user_id` is NOT NULL, so the `v_user_id is null` check cannot conflate "not found" with "null owner"; the `updated_at` BEFORE UPDATE trigger never fires on the insert path and is search_path-safe; every in-body reference is `public.`-qualified so `search_path = ''` holds; RLS's `auth.uid() = user_id` passes for all three statements because `v_user_id` comes from an RLS-filtered read. Atomicity was directly confirmed: after a mid-array failure the pre-existing rows and cache were untouched (`fridge:5, pantry:3, cache=8`), and a successful replace swapped both rows and resynced the cache to the new sum (`freezer:4, cabinet:6, cache=10`). One more non-obvious coupling from the re-review: `select ... for update` applies the target table's **UPDATE** policy `USING` clause, not just SELECT's — so the new `for update` on `food_inventory` passes RLS only because that table has an UPDATE policy (`"Users can update their own food inventory"`, `20250208_complete_tracking_schema.sql:103`, `USING (auth.uid() = user_id)`). The RPC's ownership read now silently depends on that policy continuing to exist.
 
+### Task 2 — lowThresholdFor
+
+**Added:** one assertion in `mobile/src/lib/__tests__/stockState.test.ts`'s `lowThresholdFor` describe block, pinning the unknown/null `storage_type` → multi-location fallback:
+
+```ts
+it("unknown/null storage_type falls back to multi-location (projectItemStock's documented contract; mealLibrary.ts passes storage_type: null)", () => {
+  expect(lowThresholdFor(item({ storage_type: null, total_restock_threshold: 6 }))).toBe(6);
+});
+```
+
+`projectItemStock`'s own comment (`stockState.ts` :90-94, unchanged by this task) documents as an explicit contract that anything other than exactly `"single-location"` — including a null/unknown `storage_type` — is treated as multi-location. This isn't hypothetical: `mobile/src/lib/supabase/mealLibrary.ts:131` really does construct a synthetic item with `storage_type: null` on every call. But neither the two tests this task's plan specified nor the pre-existing suite exercised that branch — both new tests, and every existing `projectItemStock` test, only ever pass the two literal values (`"single-location"` or the `item()` factory's `"multi-location"` default). Code-quality review confirmed the extraction itself was behaviour-preserving, then grepped the suite and found this specific gap.
+
+Consequence: mutating the comparison from `=== "single-location"` to `!== "multi-location"` swaps which branch a null/unknown `storage_type` lands in, but is otherwise behaviourally identical for the two literal values — so it passed both new tests and the entire pre-existing suite untouched. Under that mutant, an item with `storage_type: null`, `restock_threshold: 3`, `total_restock_threshold: 10` returns `3` instead of `10`; fed into the demand engine's planned restock-quantity math (`Math.max(1, lowThresholdFor(item) - item.state.totalQuantity + 1)`, spec §6, Task 4/8), that under-reads the threshold and would size the restock suggestion too small — a silent under-ordering bug, not a crash.
+
+Mutation-test evidence: with `lowThresholdFor` temporarily mutated to `item.storage_type !== "multi-location"`, `npx jest src/lib/__tests__/stockState.test.ts -t "lowThresholdFor"` produced:
+
+```
+✓ single-location → restock_threshold (1 ms)
+✓ multi-location → total_restock_threshold; nulls → 0
+✕ unknown/null storage_type falls back to multi-location (projectItemStock's documented contract; mealLibrary.ts passes storage_type: null) (1 ms)
+
+  ● lowThresholdFor › unknown/null storage_type falls back to multi-location ...
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 6
+    Received: 1
+```
+
+confirming the new assertion — and only the new assertion — is load-bearing against this mutant. Reverting the mutation and re-running the full suite produced `Test Suites: 9 passed, 9 total / Tests: 282 passed, 282 total` (9 suites, +1 test over the 281 the Task 2 commit left at).
+
+`StockItemInput.storage_type` is already typed `string | null` (`stockState.ts` :25), so `mealLibrary.ts:131` needs no cast and neither did this test — the null case was always type-legal, just untested.
+
+Live impact today is nil, which is why this was a Minor finding rather than a defect: `food_inventory.storage_type` is a NOT NULL column with a two-value CHECK, so no real row can ever carry a null `storage_type` to trigger the mutant branch-swap in production; and `mealLibrary.ts`'s synthetic item — the one real caller that does pass `storage_type: null` — sets every threshold field to `null` too, so both branches of the (correct or mutant) comparison return `0` regardless. The gap was purely latent: real coverage of a documented contract, with zero present-day consequence, but load-bearing the moment the demand engine (Task 4) starts calling `lowThresholdFor` against real threshold values.
+
+**Recorded, no action needed:** the reviewer also checked whether a `??` → `||` mutation on either fallback (`item.restock_threshold ?? 0`, `item.total_restock_threshold ?? 0`) exposes a further gap, and concluded it doesn't — it's an *equivalent* mutant, not a coverage gap. Both fields are typed `number | null`; with a `0` fallback, `??` and `||` diverge only on a falsy-but-not-nullish operand, and the only candidate for a `number | null` is `0` itself, where both operators yield `0` regardless. The sole value where `??` and `||` truly diverge is `NaN` (falsy, not nullish), which an `integer` column can never produce. No test can distinguish the two operators here without a value the type can't carry, so no assertion for it was added. Recorded so a future reviewer doesn't re-chase this.
+
+**Noted, already scheduled — not a defect here:** `mobile/src/components/track/FoodInventoryScreen.tsx:183` computes `quantity: item.restock_threshold || 1`, a third and *divergent* reading of "this item's threshold" — it is storage-type-blind (a multi-location item gets `restock_threshold`, not `total_restock_threshold`) and uses `||` instead of `??`. This doesn't undermine Task 2's "one definition" premise — `lowThresholdFor` is the one definition of the `isLow` threshold; this call site is answering a different question (a restock quantity default) with a rule the design spec already flags as wrong. Plan Task 8 is scoped to rewire this exact line to `Math.max(1, lowThresholdFor(item) - item.state.totalQuantity + 1)`. Recorded here so Task 8's reviewer can confirm that rewiring actually happens.
+
 

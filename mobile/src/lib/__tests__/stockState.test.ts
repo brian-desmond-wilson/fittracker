@@ -304,4 +304,7 @@ describe("lowThresholdFor", () => {
     expect(lowThresholdFor(item({ total_restock_threshold: null }))).toBe(0);
     expect(lowThresholdFor(item({ storage_type: "single-location", restock_threshold: null }))).toBe(0);
   });
+  it("unknown/null storage_type falls back to multi-location (projectItemStock's documented contract; mealLibrary.ts passes storage_type: null)", () => {
+    expect(lowThresholdFor(item({ storage_type: null, total_restock_threshold: 6 }))).toBe(6);
+  });
 });
