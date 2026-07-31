@@ -159,6 +159,13 @@ export function NutritionPreferencesScreen({
     [run]
   );
 
+  const handleVendorPatch = useCallback(
+    (vendor: NutritionVendor, patch: { name?: string; app_url?: string | null }) => {
+      run("Failed to save vendor", () => updateVendor(vendor.id, patch));
+    },
+    [run]
+  );
+
   const handleConceptPatch = useCallback(
     (concept: FoodConcept, patch: ConceptPatch) => {
       run("Failed to save food", () => updateConcept(concept.id, patch));
@@ -288,6 +295,7 @@ export function NutritionPreferencesScreen({
             <VendorsSection
               vendors={data.vendors}
               onToggleActive={handleVendorToggle}
+              onPatch={handleVendorPatch}
             />
             <TouchableOpacity
               style={[s.card, s.row]}
