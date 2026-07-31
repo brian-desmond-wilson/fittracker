@@ -1756,86 +1756,172 @@ git commit -m "feat(nutrition-os): inventory tie-ins — rewired add-to-list, fo
 
 ```tsx
 // mobile/src/components/profile/nutrition/VendorsSection.tsx
-import React, { useState } from "react";
-import { Linking, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Alert, Linking, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import { colors } from "@/src/lib/colors";
 import { nutritionStyles as s } from "./styles";
 
+export type VendorPatch = { name?: string; app_url?: string | null };
+
 interface VendorsSectionProps {
   vendors: NutritionVendor[];
   onToggleActive: (vendor: NutritionVendor, isActive: boolean) => void;
-  onPatch: (vendor: NutritionVendor, patch: { name?: string; app_url?: string | null }) => void;
+  onPatch: (vendor: NutritionVendor, patch: VendorPatch) => void;
 }
 
-export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSectionProps) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+// Matches a URI scheme prefix per RFC 3986 §3.1 (a letter, then any run of
+// letters/digits/+/-/.), followed by ":" — e.g. "https:" or "instacart:".
+// A bare host/path like "instacart.com" has no match and gets "https://"
+// prefixed on save; a deep link like "instacart://" already has one and
+// passes through untouched. This field is explicitly "App / web URL", so
+// app schemes are a first-class case, not an edge case to strip.
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
-  const startEdit = (v: NutritionVendor) => {
-    setEditingId(v.id);
-    setName(v.name);
-    setUrl(v.app_url ?? "");
+function normalizeUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  return HAS_SCHEME.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+interface VendorRowProps {
+  vendor: NutritionVendor;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onToggleActive: (vendor: NutritionVendor, isActive: boolean) => void;
+  onPatch: (vendor: NutritionVendor, patch: VendorPatch) => void;
+}
+
+const VendorRow = React.memo(function VendorRow({
+  vendor,
+  expanded,
+  onToggleExpand,
+  onToggleActive,
+  onPatch,
+}: VendorRowProps) {
+  const [name, setName] = useState(vendor.name);
+  const [url, setUrl] = useState(vendor.app_url ?? "");
+
+  // Same hazard ConceptRow.tsx documents for its form-note field: modal
+  // teardown (Done button, Android back) unmounts this row without a
+  // guaranteed native blur, and switching to another vendor row collapses
+  // this one the same way — so onEndEditing alone can silently drop an
+  // in-progress edit. This effect's cleanup is guaranteed to run on unmount
+  // (and on every collapse, since it's keyed on `expanded`), giving one code
+  // path that flushes a dirty edit regardless of how the row goes away.
+  // `dirtyRef` avoids re-sending an edit onEndEditing already saved, and the
+  // value comparison avoids sending a no-op patch for an edit that
+  // round-tripped back to the original values. Crucially, `flush` never
+  // collapses the row itself — closing is the header tap's job alone — so
+  // moving focus between the Name and URL fields (both call `flush` on
+  // blur) can't collapse the editor out from under the user.
+  const dirtyRef = useRef(false);
+  const latest = useRef({ vendor, onPatch, name, url });
+  latest.current = { vendor, onPatch, name, url };
+
+  const flush = () => {
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    const { vendor: v, onPatch: patch, name: n, url: u } = latest.current;
+    const trimmedName = n.trim();
+    const normalizedUrl = normalizeUrl(u);
+    const patchObj: VendorPatch = {};
+    if (trimmedName) {
+      if (trimmedName !== v.name) patchObj.name = trimmedName;
+    } else {
+      // An empty name is never persisted (nutrition_vendors.name is NOT
+      // NULL with no other guard) — reject it visibly by snapping the field
+      // back to the last-saved name rather than silently discarding it.
+      setName(v.name);
+    }
+    if (normalizedUrl !== u) setUrl(normalizedUrl);
+    if ((normalizedUrl || null) !== v.app_url) patchObj.app_url = normalizedUrl || null;
+    if (Object.keys(patchObj).length > 0) patch(v, patchObj);
   };
-  const commit = (v: NutritionVendor) => {
-    setEditingId(null);
-    const trimmedName = name.trim();
-    const trimmedUrl = url.trim();
-    const patch: { name?: string; app_url?: string | null } = {};
-    if (trimmedName && trimmedName !== v.name) patch.name = trimmedName;
-    if ((trimmedUrl || null) !== v.app_url) patch.app_url = trimmedUrl || null;
-    if (Object.keys(patch).length > 0) onPatch(v, patch);
-  };
+
+  useEffect(() => {
+    return () => flush();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
+  return (
+    <View>
+      <View style={s.row}>
+        <TouchableOpacity
+          style={s.flexShrinkColumn}
+          onPress={onToggleExpand}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={s.rowLabel}>{vendor.name}</Text>
+          {vendor.app_url ? (
+            <Text
+              style={[s.mutedText, { color: colors.primary }]}
+              onPress={() =>
+                Linking.openURL(vendor.app_url!).catch((e) =>
+                  Alert.alert("Failed to open link", e instanceof Error ? e.message : "Unknown error")
+                )
+              }
+            >
+              {vendor.app_url} ↗
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+        <Switch
+          value={vendor.is_active}
+          onValueChange={(val) => onToggleActive(vendor, val)}
+          trackColor={{ true: colors.primary, false: colors.border }}
+        />
+      </View>
+      {expanded && (
+        <View style={{ marginBottom: 8 }}>
+          <TextInput
+            style={s.input}
+            value={name}
+            onChangeText={(text) => {
+              setName(text);
+              dirtyRef.current = true;
+            }}
+            onEndEditing={flush}
+            placeholder="Vendor name"
+            placeholderTextColor={colors.mutedForeground}
+          />
+          <TextInput
+            style={s.input}
+            value={url}
+            onChangeText={(text) => {
+              setUrl(text);
+              dirtyRef.current = true;
+            }}
+            onEndEditing={flush}
+            placeholder="App / web URL (optional)"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            textContentType="URL"
+            keyboardType="url"
+          />
+        </View>
+      )}
+    </View>
+  );
+});
+
+export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSectionProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
     <View style={s.card}>
       <Text style={s.sectionTitle}>Vendors</Text>
       {vendors.map((v) => (
-        <View key={v.id}>
-          <View style={s.row}>
-            <TouchableOpacity
-              style={s.flexShrinkColumn}
-              onPress={() => (editingId === v.id ? commit(v) : startEdit(v))}
-            >
-              <Text style={s.rowLabel}>{v.name}</Text>
-              {v.app_url ? (
-                <Text
-                  style={[s.mutedText, { color: colors.primary }]}
-                  onPress={() => Linking.openURL(v.app_url!)}
-                >
-                  {v.app_url} ↗
-                </Text>
-              ) : null}
-            </TouchableOpacity>
-            <Switch
-              value={v.is_active}
-              onValueChange={(val) => onToggleActive(v, val)}
-              trackColor={{ true: colors.primary, false: colors.border }}
-            />
-          </View>
-          {editingId === v.id && (
-            <View style={{ marginBottom: 8 }}>
-              <TextInput
-                style={s.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Vendor name"
-                placeholderTextColor={colors.mutedForeground}
-              />
-              <TextInput
-                style={s.input}
-                value={url}
-                onChangeText={setUrl}
-                placeholder="App / web URL (optional)"
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                keyboardType="url"
-                onEndEditing={() => commit(v)}
-              />
-            </View>
-          )}
-        </View>
+        <VendorRow
+          key={v.id}
+          vendor={v}
+          expanded={expandedId === v.id}
+          onToggleExpand={() => setExpandedId((prev) => (prev === v.id ? null : v.id))}
+          onToggleActive={onToggleActive}
+          onPatch={onPatch}
+        />
       ))}
       <Text style={s.mutedText}>Tap a vendor to edit its name or link.</Text>
     </View>
@@ -2381,3 +2467,43 @@ Test Suites: 11 passed, 11 total
 Tests:       317 passed, 317 total
 ```
 (317 = unchanged — this task, like Task 7, adds no test surface; both files touched are React Native components outside `jest.config.js`'s pure-TypeScript-lib scope.) The plan's Task 8 Step 1–3 code blocks were updated in place to match the shipped `FoodInventoryScreen.tsx`/`EditFoodScreen.tsx` **behaviour**. Unlike Tasks 3, 4, 6 and 7 — whose blocks are byte-identical source mirrors, re-diffed programmatically each round — Task 8's blocks were always illustrative snippets by design (Step 1 said so explicitly), so no byte-identity claim is made or possible: the shipped code differs in comment wording, blank lines, and the `supabase.auth.getUser()` destructure's line breaks. Read them as intent, not as source of truth.
+
+### Task 9 — vendor editors
+
+Spec review passed outright: the shipped Step 1 block was byte-identical to this plan's own snippet, every style/prop it used (`s.card`, `s.sectionTitle`, `s.row`, `s.flexShrinkColumn`, `s.rowLabel`, `s.mutedText`, `s.input`) and every import (`colors.primary`/`border`/`mutedForeground`, `NutritionVendor.app_url: string | null`, `updateVendor`'s `Partial<Pick<…, "name"|"app_url"|"is_active">>` signature) checked out against the real files — the first task in this plan whose UI snippet needed no correction. The migration-safety premise held too: `20260731100000_shopping_intelligence.sql` only adds FK columns to *other* tables that reference `nutrition_vendors(id)`; it never alters `nutrition_vendors` itself, so this is the one Phase 5 surface that works against the current, unmigrated schema.
+
+**One sanctioned deviation, kept:** a `.catch` on `Linking.openURL`, matching the pattern `ShoppingListScreen.tsx:313-315` already established for Task 7. `app_url` is user-authored free text on both surfaces, but here is where the text is *authored* — a missing scheme (`instacart.com` typed with no `https://`) is the expected failure on this screen, not an exotic one, so the guard earns its keep more here than anywhere else it's used.
+
+**Code-quality review adjudicated three flags raised during implementation, plus one it found independently:**
+
+- **Lost edit on vendor switch** — confirmed correct as traced: expanding vendor A, editing, then tapping vendor B's header calls `startEdit(B)` (in the original shared-state design), which overwrites the shared `name`/`url` state before any commit against B could run — so A's edit is discarded, never misapplied to B. Corruption was genuinely unreachable, for a precise reason: `commit(v)` was only ever called from handlers rendered under `editingId === v.id`, and the discard and any later commit were separate touch events with a React flush in between. But per the refactor below, this was reclassified from "an acceptable UX gap" to "a symptom of the actual defect" — shared editor state across all rows — and fixed structurally rather than accepted.
+- **Double-commit via `onEndEditing` + the row's `onPress`** — the flagged mechanism (both handlers firing off stale closures that still read `editingId === v.id`) does **not reach production**: `NutritionPreferencesScreen.tsx`'s `FlatList` sets `keyboardShouldPersistTaps="handled"`, which (per `ScrollView.js`'s responder-release logic) only returns true in the bubble phase — so a row tap lets the child touchable win the responder negotiation and the ScrollView's own `_handleResponderRelease` (the sole caller of `blurTextInput`) never runs. A row tap therefore does not blur a focused sibling `TextInput`, so `onEndEditing` does not fire alongside `onPress` for that gesture — one gesture, one commit path, no double-fire, no guard needed. The original write-up's fallback reasoning — "harmless because the second patch would be empty" — was also incorrect, in a way that didn't end up mattering: had the double-fire been reachable, both calls would have read the *same* stale, un-refetched vendor object and the *same* edited text, so the second patch would have been an exact duplicate of the first (not empty) — idempotent at the database level, hence still harmless, but not for the reason originally given. Recorded here so neither the mechanism nor the reasoning gets re-chased.
+- **Empty name silently kept the old name** — kept, and elevated: `nutrition_vendors.name` is `not null` with no other check constraint, so shipping the original "just don't patch" behavior unmodified would have been fine at the DB layer, but the refactor's `flush` now also snaps the input back to the last-saved name so the rejection is visible instead of merely harmless.
+- **Nested touchable (URL `Text.onPress` inside the row `TouchableOpacity`)** — confirmed against RN's renderer, not just inferred from convention: `Text` with an `onPress` prop supplies its own `onStartShouldSetResponder`, and the touch-responder dispatch walks the view tree bubble-phase and stops at the first listener that returns true; `Text` is the deeper (more specific) node, so it wins the negotiation and tapping the URL opens the link rather than toggling the row. One side effect worth keeping in mind: because the URL `Text` claims the responder, the URL line is not itself an edit affordance (there's no way to tap *into* editing the link from that line — the row header must be tapped instead), and while a row is expanded the URL line still shows `vendor.app_url` (the last-saved value), not whatever is currently typed in the URL `TextInput` below it.
+
+**The main change — a four-symptom, one-cause refactor, adopting `ConceptRow.tsx`'s already-established pattern.** The originally-shipped `VendorsSection` used one editor's worth of `name`/`url` state shared across every row (`editingId` selecting which vendor it currently applied to) and closed the editor as a side effect of its own blur handler (`commit` called both `setEditingId(null)` and the patch). `ConceptRow.tsx:52-73` — same directory, same problem shape (an inline editable field inside a modal that can be torn down by the Done button) — had already solved this with per-row state, a `dirtyRef`, and a `useEffect` cleanup that flushes on unmount *or* collapse, documented in a comment describing the exact failure mode this plan's Task 9 snippet re-introduced. That comment is echoed (adapted for two fields instead of one) in the shipped `VendorRow`'s own cleanup-rationale comment above. Four symptoms, one root cause:
+
+1. Tapping the header **Done** button silently discarded any in-progress edit — `onClose()` unmounts the whole modal; the native field resigns first responder during teardown after the JS handler is already detached, so `onEndEditing` never reaches React. Only a cleanup effect guaranteed to run on unmount (not a blur handler) can catch this.
+2. A name-only edit had no blur-commit path at all — only the URL field carried `onEndEditing` in the original snippet. Tapping empty space collapsed nothing (`keyboardShouldPersistTaps="handled"` again — the ScrollView *does* still blur on an actual empty-space tap, since that tap has no more-specific responder to lose to), so the keyboard would drop with the edit un-saved and the row left open, and the only advertised save path (re-tapping the header) was never mentioned by the helper text.
+3. Moving focus from the URL field to the Name field within the same row collapsed the whole editor — the URL field's blur fired `onEndEditing` → `commit(v)` → `setEditingId(null)`, unmounting the very Name field the user had just tapped into. `commit` conflated "save" with "close." Fixed by splitting them: `flush()` (renamed from `commit`) now only ever saves; closing is exclusively the header tap's job (`onToggleExpand`, which the row's `TouchableOpacity` calls directly, no longer routed through the save function).
+4. All three of the above traced back to one cause: state shared across every rendered row. The refactor's `VendorRow` (`React.memo`, keyed per-vendor by `vendors.map`) gives each row its own `name`/`url`/`dirtyRef`, making the discard in (A) structurally impossible — switching from vendor A to vendor B now flips `expanded` on both rows in the same state update, running A's cleanup (flushing A's edit) while B mounts its own untouched state seeded from `vendor.name`/`vendor.app_url` — rather than something that has to be reasoned about per-interaction.
+
+**Also folded in, all per the review:**
+- `autoCorrect={false}`, `spellCheck={false}`, `textContentType="URL"` added to the URL `TextInput`, alongside the pre-existing `autoCapitalize="none"`/`keyboardType="url"` — iOS autocorrect was otherwise free to mangle a typed hostname at commit time. `ParentMovementSearch.tsx:136` is the only prior site in the codebase setting `autoCorrect={false}`; this field needs the full set more than that one does, since it's the one place in the app where a wrong keystroke silently breaks a stored deep link.
+- `hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}` added to the row `TouchableOpacity`, matching the established convention (`ShoppingListScreen.tsx:209`, `TodaysWorkoutCard.tsx:228`, and others). The touchable carries only `s.flexShrinkColumn` (`{flexShrink: 1}`); `s.row`'s `paddingVertical: 10` lives on the parent `View`, outside the touchable's own bounds — so a vendor with no `app_url` (a single line of text) had a tap target well under iOS's 44pt guidance before this.
+- URL scheme normalization on save — `normalizeUrl()` prefixes `https://` onto a bare host/path (`instacart.com` → `https://instacart.com`) so a typo-free hostname doesn't fail silently at open-time with "Failed to open link" the first time it's tapped, while explicitly **not** touching a value that already has a scheme, tested via `/^[a-z][a-z0-9+.-]*:/i` (RFC 3986 §3.1's scheme grammar) rather than a narrower `https?` check — `instacart://` (a first-class case, since the field is labelled "App / web URL", not just "web URL") matches the regex and passes through untouched; `https://instacart.com` matches and passes through untouched; `instacart.com` does not match and gets `https://` prepended. If the normalized value differs from what's currently in the field, the visible input is updated to match what was actually saved (`if (normalizedUrl !== u) setUrl(normalizedUrl)`), so the field never silently disagrees with the link it renders after collapsing.
+- Empty-name feedback — `flush()` now calls `setName(v.name)` when the trimmed name is empty (instead of just skipping the `name` key in the patch, as the original `commit` did), so clearing the field and blurring visibly snaps back to the last-saved name rather than leaving the rejection undiscoverable.
+
+**Not doing, recorded instead:** accessibility roles (`accessibilityRole="button"` on the row, `"link"` on the URL text, and the literal `↗` glyph being read by VoiceOver as "north east arrow"). Flagged low-priority by the review because the codebase carries roughly a dozen accessibility props total across all screens — adding them to just this one row would be an inconsistency, not a correction. Left as a known gap for whenever the app takes on accessibility as its own pass, not folded into Task 9.
+
+**Negative space, checked and confirmed clean:**
+- The write-then-refetch cycle (`run()` → `load()` → `setData`) never clobbers in-progress typing: it replaces the `vendors` prop passed down to `VendorsSection`, but `VendorRow`'s own `name`/`url` state is seeded once at mount from `useState(vendor.name)`/`useState(vendor.app_url ?? "")` and is never resynced from props afterward — matching `ConceptRow.tsx`'s `formNote` precedent exactly.
+- `commit`/`flush` never diffs against a stale vendor object: `latest.current` is reassigned unconditionally on every render (`latest.current = { vendor, onPatch, name, url }`), so any call into `flush()` — whether from `onEndEditing` or the unmount/collapse cleanup — always reads the just-rendered `vendor` prop, never a captured-at-mount snapshot.
+- Nothing in `src/` reads a vendor's `.slug` outside of `nutritionPreferences.ts`'s own fetch/insert paths (confirmed by grep), so a rename leaving `slug` stale is cosmetic only — the `unique (user_id, slug)` constraint keys off the value set at creation time, which this task never touches.
+
+**Verification:** `cd mobile && npx tsc --noEmit` → exit 0. `npm test`:
+```
+Test Suites: 11 passed, 11 total
+Tests:       317 passed, 317 total
+```
+(317 = unchanged both before and after the refactor — this task, like Tasks 7 and 8, adds no test surface; `VendorsSection.tsx`/`NutritionPreferencesScreen.tsx` are React Native components outside `jest.config.js`'s pure-TypeScript-lib scope.) Unlike Task 8, this task's Step 1 block **is** a byte-identical source mirror, re-diffed programmatically against the shipped `VendorsSection.tsx` after the refactor (same discipline as Tasks 3, 4, 6, and 7) — confirmed identical. Step 2's `handleVendorPatch` block is likewise byte-identical (modulo the plan's own leading-indentation convention) to the shipped `NutritionPreferencesScreen.tsx` handler.
