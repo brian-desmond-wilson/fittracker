@@ -1423,3 +1423,9 @@ So `useLoopHub` faces precisely the condition `toError` exists for, and the simp
 Everything else in Task 4 landed as the (superseded-header) snippet specified: fetch composition unchanged, runId stale-guard unchanged, pace/profile handling unchanged, `eatNextRef` render-phase sync unchanged. Applied on top: the collapsed `meals` array (one `.map`, replacing `meals` + `mealScores`) and the removal of `todayLocalDate` from the `computeLoopStatus` call — `today` is still resolved for the three fetchers that take it.
 
 **No infinite-loop risk from `[load, eatNext]`**, checked explicitly: `load` is `useCallback(…, [])` and therefore stable, and nothing in this hook writes `eatNext` — it is owned by the caller's `useEatNext`. The effect re-runs only when that hook publishes a new result.
+
+### Task 5 — `Connector` label font size (plan governs, recorded for completeness)
+
+Spec §6 describes the connector label as mono, `typography.caption`-sized; `typography.caption` is `fontSize: 12` (`tokens.ts:103`). The shipped label uses `fontSize: 11`, which is the plan's own value (plan:884). **Plan governs, code unchanged** — 11 sits deliberately below caption so the connector reads as subordinate to the station rows it links, and there is no smaller type token to name it with. Recorded only because every other divergence this run carries an entry in both documents and this one had none.
+
+Not a divergence: §6's prose orders the connector "tick + ▾ + label" while the code renders `{label} ▾`. The plan's snippet matches the code and the approved mockup is the visual authority, so that is prose ordering, not a layout requirement.

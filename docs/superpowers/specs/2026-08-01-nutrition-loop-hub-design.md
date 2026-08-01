@@ -177,3 +177,7 @@ Forecast name resolution: `rates` is keyed by inventory id; the engine resolves 
 **2026-08-01 — Tasks 1–2, quality re-review close-out.**
 
 - **§4.1's `todayLocalDate` input is removed.** It was declared and never read. Every date-relative quantity the stations render is already resolved upstream (`ItemStockState.daysLeft`/`.expiration`, `ConsumptionEstimate.daysUntilOut`, `MealPaceState`); a station needing today's date would have to derive a date-relative fact itself, which §4.1's own no-derivation rule forbids — so that need would signal the computation belongs upstream, not that the field should return. `useLoopHub` still resolves `today` for the fetchers, just not for `computeLoopStatus`. See the plan's "`todayLocalDate` removed from `LoopStatusInputs`".
+
+**2026-08-01 — Task 5 (`Connector`).**
+
+- **§6's connector label is `fontSize: 11`, not `typography.caption`'s 12.** The plan specified 11 (plan:884) and governs; 11 keeps the connector subordinate to the station rows it links, and no smaller type token exists to name it. See the plan's "Task 5 — `Connector` label font size".
