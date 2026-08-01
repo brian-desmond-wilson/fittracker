@@ -12,6 +12,7 @@ import {
 } from "@/src/lib/supabase/nutritionPreferences";
 import { assessRampProgress } from "@/src/lib/rampProgress";
 import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 
 // Must match NutritionPreferencesScreen.tsx's own TREND_WINDOW_DAYS — both
 // feed the same assessRampProgress() call, and a mismatch here would let
@@ -84,7 +85,7 @@ export function RampHomeBanner({ refreshKey }: RampHomeBannerProps) {
         router.push({ pathname: "/(tabs)/profile", params: { modal: "nutrition" } })
       }
     >
-      <TrendingUp size={18} color="#22C55E" strokeWidth={2} />
+      <TrendingUp size={icons.md} color={colors.success} strokeWidth={icons.strokeWidth} />
       <Text style={styles.text}>
         Ready for Level {nextLevel.number} — {nextLevel.name}. Tap to review.
       </Text>
@@ -93,17 +94,20 @@ export function RampHomeBanner({ refreshKey }: RampHomeBannerProps) {
 }
 
 const styles = StyleSheet.create({
+  // Banner recipe (spec §5.7): tint fill, 0.3 tint border, 14/600 heading —
+  // the success variant of the treatment `FoodInventoryScreen`'s expiring-soon
+  // banner ships in `warning`.
   banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    backgroundColor: "rgba(34,197,94,0.12)",
-    borderColor: "rgba(34,197,94,0.4)",
+    gap: spacing.md,
+    backgroundColor: tint(colors.success),
+    borderColor: tint(colors.success, 0.3),
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
+    borderRadius: radii.row,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
   },
-  text: { fontSize: 14, fontWeight: "600", color: "#22C55E", flexShrink: 1 },
+  // 14/600 per the banner recipe — `typography.buttonSm` is exactly that.
+  text: { ...typography.buttonSm, color: colors.success, flexShrink: 1 },
 });

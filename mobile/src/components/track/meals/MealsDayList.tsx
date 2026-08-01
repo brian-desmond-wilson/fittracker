@@ -1,7 +1,7 @@
 import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text } from "react-native";
 import { Utensils, Trash2 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import { MealLog, MealType } from "@/src/types/track";
 import { styles } from "./mealsScreenStyles";
 import {
@@ -31,15 +31,13 @@ export function MealsDayList({
   return (
     <View style={styles.mealsSection}>
       {loadingDay ? (
-        <Text style={styles.loadingText}>Loading...</Text>
+        <LoadingState />
       ) : dayMeals.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Utensils size={48} color={colors.mutedForeground} />
-          <Text style={styles.emptyStateText}>No meals logged yet</Text>
-          <Text style={styles.emptyStateSubtext}>
-            Scan a barcode or tap + to add one
-          </Text>
-        </View>
+        <EmptyState
+          icon={Utensils}
+          title="No meals logged yet"
+          body="Scan a barcode or tap + to add one"
+        />
       ) : (
         MEAL_TYPE_ORDER.map((mealType) => {
           const mealsOfType = groupedMealsByType[mealType];
@@ -60,23 +58,23 @@ export function MealsDayList({
                 </View>
               </View>
               {mealsOfType.map((meal) => (
-                <TouchableOpacity
+                <Card
                   key={meal.id}
-                  style={styles.mealCard}
+                  variant="row"
+                  style={styles.mealCardSpacing}
                   onPress={() => onEditMeal(meal)}
-                  activeOpacity={0.7}
                 >
                   <View style={styles.mealCardHeader}>
                     <Text style={styles.mealTime}>
                       {formatLoggedTime(meal.logged_at)}
                     </Text>
-                    <TouchableOpacity
+                    <IconButton
+                      icon={Trash2}
+                      variant="circle"
+                      tone="danger"
                       onPress={() => onDeleteMeal(meal.id)}
-                      style={styles.deleteButton}
-                      activeOpacity={0.7}
-                    >
-                      <Trash2 size={18} color={colors.mutedForeground} />
-                    </TouchableOpacity>
+                      accessibilityLabel={`Delete ${meal.name}`}
+                    />
                   </View>
                   <Text style={styles.mealName}>{meal.name}</Text>
                   {(meal.calories || meal.protein || meal.carbs || meal.fats) && (
@@ -95,7 +93,7 @@ export function MealsDayList({
                       )}
                     </View>
                   )}
-                </TouchableOpacity>
+                </Card>
               ))}
             </View>
           );

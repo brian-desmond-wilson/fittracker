@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import {
   MacroKey,
   macroLabel,
@@ -40,31 +40,32 @@ export function MacroBar({ macro, value, goal }: MacroBarProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    marginBottom: 10,
+    marginBottom: spacing.md,
   },
   labelRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
   },
   value: {
-    fontSize: 12,
-    color: colors.mutedForeground,
+    ...typography.caption,
   },
+  // Unfilled meter groove — `surface2`, per the standing rule. It used to be a
+  // translucent white, which composited brown rather than neutral over this
+  // card's `tint(accents.meals)` fill.
   track: {
     height: 6,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 3,
+    backgroundColor: colors.surface2,
+    borderRadius: radii.pill,
     overflow: "hidden",
   },
   fill: {
     height: 6,
-    borderRadius: 3,
+    borderRadius: radii.pill,
   },
 });

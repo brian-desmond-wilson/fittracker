@@ -1,19 +1,15 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  Platform,
-} from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { colors } from "@/src/lib/colors";
+import { View, StyleSheet, Modal, Platform } from "react-native";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import { colors, spacing } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 
 interface WaterCalendarModalProps {
   visible: boolean;
   initialDate: Date;
-  onChange: (event: any, picked?: Date) => void;
+  onChange: (event: DateTimePickerEvent, picked?: Date) => void;
   onClose: () => void;
 }
 
@@ -44,23 +40,18 @@ export function WaterCalendarModal({
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <Card variant="panel" style={styles.card}>
           <DateTimePicker
             value={initialDate}
             mode="date"
             display="spinner"
             maximumDate={new Date()}
             onChange={onChange}
-            textColor="#FFFFFF"
+            textColor={colors.text}
           />
-          <TouchableOpacity
-            style={styles.doneButton}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.doneButtonText}>Done</Text>
-          </TouchableOpacity>
-        </View>
+          {/* The card is a column, so `fluid` stretches Done to full width. */}
+          <Button label="Done" onPress={onClose} fluid />
+        </Card>
       </View>
     </Modal>
   );
@@ -69,31 +60,20 @@ export function WaterCalendarModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /**
+   * The centred-sheet recipe's backdrop / `Card panel` / footer parts, minus
+   * the form parts: a native spinner picker is not a form, so there is no
+   * title, no scroller, and no Cancel — dismissing the picker IS confirming
+   * the date it already committed through `onChange`.
+   */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 12,
-  },
-  doneButton: {
-    backgroundColor: "#3B82F6",
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  doneButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "700",
+    maxHeight: "100%",
+    gap: spacing.md,
   },
 });

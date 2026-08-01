@@ -1,7 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Pencil } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import { WaterProgressRing } from "./WaterProgressRing";
 import { PaceState } from "@/src/lib/waterStats";
 import {
@@ -65,7 +66,7 @@ export function WaterRingCard({
   onOpenGoalEditor,
 }: WaterRingCardProps) {
   return (
-    <View style={styles.ringCard}>
+    <Card variant="panel" style={styles.ringCard}>
       <WaterProgressRing
         current={currentOz}
         goal={effectiveGoalOz}
@@ -77,9 +78,7 @@ export function WaterRingCard({
           Logging to: <Text style={styles.loggingToValue}>{selectedDateLabel}</Text>
         </Text>
         {!isViewingToday && (
-          <TouchableOpacity onPress={onGoToToday} activeOpacity={0.7}>
-            <Text style={styles.todayLink}>Today</Text>
-          </TouchableOpacity>
+          <Button variant="ghost" size="sm" label="Today" onPress={onGoToToday} />
         )}
       </View>
       <TouchableOpacity
@@ -96,75 +95,69 @@ export function WaterRingCard({
             </Text>
           )}
         </Text>
-        <Pencil size={14} color={colors.mutedForeground} />
+        <Pencil size={icons.sm} color={colors.textMuted} />
       </TouchableOpacity>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  // Placement the `Card` primitive cannot express; the panel recipe owns
+  // surface, radius, padding and border.
   ringCard: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 20,
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(59, 130, 246, 0.3)",
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.lg,
     alignItems: "center",
   },
   loggingToRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginTop: 16,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
   loggingToText: {
-    fontSize: 14,
-    color: colors.mutedForeground,
+    ...typography.body,
+    color: colors.textMuted,
   },
   loggingToValue: {
-    color: colors.foreground,
-    fontWeight: "600",
-  },
-  todayLink: {
-    fontSize: 14,
-    color: "#3B82F6",
+    color: colors.text,
     fontWeight: "600",
   },
   goalRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 8,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   goalText: {
-    fontSize: 13,
-    color: colors.mutedForeground,
+    ...typography.body,
+    color: colors.textMuted,
   },
   goalBonusText: {
-    color: "#22C55E",
+    color: colors.success,
     fontWeight: "600",
   },
 });
 
+// Pace is status TEXT, not a control — the same three-way split
+// `WaterIntakeHomeCard` already ships on Home.
 const paceStyles = StyleSheet.create({
   text: {
-    fontSize: 13,
-    marginTop: 12,
+    ...typography.body,
+    marginTop: spacing.md,
     textAlign: "center",
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
   },
   neutral: {
-    color: "#3B82F6",
+    color: colors.accents.water,
     fontWeight: "600",
   },
   good: {
-    color: "#22C55E",
+    color: colors.success,
     fontWeight: "600",
   },
   behind: {
-    color: "#F59E0B",
+    color: colors.warning,
     fontWeight: "600",
   },
 });

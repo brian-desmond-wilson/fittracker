@@ -8,10 +8,11 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase";
 import { User } from "lucide-react-native";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import MorningRoutineBanner from "@/src/components/morning/MorningRoutineBanner";
 import MorningRoutineWizard from "@/src/components/morning/MorningRoutineWizard";
 import { TodaysWorkoutCard } from "@/src/components/TodaysWorkoutCard";
@@ -22,6 +23,7 @@ import { RampHomeBanner } from "@/src/components/RampHomeBanner";
 
 export default function Home() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -83,7 +85,7 @@ export default function Home() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#22C55E" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </SafeAreaView>
     );
   }
@@ -96,19 +98,22 @@ export default function Home() {
           onPress={() => router.push("/profile")}
           style={styles.iconButton}
         >
-          <User size={24} color="#9CA3AF" strokeWidth={2} />
+          <User size={icons.lg} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
         </TouchableOpacity>
       </View>
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + spacing.xxl },
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#22C55E"
-            colors={["#22C55E"]}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
           />
         }
       >
@@ -152,7 +157,7 @@ export default function Home() {
       {/* Sticky Refresh Indicator */}
       {refreshing && (
         <View style={styles.refreshingContainer}>
-          <ActivityIndicator size="large" color="#22C55E" />
+          <ActivityIndicator size="large" color={colors.brand} />
           <Text style={styles.refreshingText}>Refreshing...</Text>
         </View>
       )}
@@ -173,139 +178,78 @@ export default function Home() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   refreshingContainer: {
     position: "absolute",
+    // Positional offset, not spacing: parks the sticky indicator just below
+    // the top bar. No spacing step lands there and it is not padding on a
+    // control, so it stays a literal.
     top: 100,
     left: 0,
     right: 0,
     alignItems: "center",
-    paddingVertical: 20,
-    backgroundColor: "#0A0F1E",
+    paddingVertical: spacing.xl,
+    backgroundColor: colors.bg,
     zIndex: 10,
   },
   refreshingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#9CA3AF",
+    ...typography.body,
+    color: colors.textMuted,
+    marginTop: spacing.md,
   },
   topBar: {
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#0A0F1E",
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: "#1E293B",
+    borderBottomColor: colors.border,
   },
   iconButton: {
-    padding: 8,
-    borderRadius: 8,
+    padding: spacing.sm,
+    borderRadius: radii.control,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 100,
+    padding: spacing.screenGutter,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: spacing.xxl,
   },
   welcomeText: {
-    fontSize: 16,
-    color: "#9CA3AF",
-    marginBottom: 4,
+    ...typography.body,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
   },
   userName: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#FFFFFF",
+    ...typography.titleRoot,
+    color: colors.text,
   },
+  // Home's section headers stay screen-owned 20/600 text (they are the
+  // scroll body's own landmarks, not the 13/700 uppercase `typography.section`
+  // rail) — recolored via tokens only, per the plan.
   sectionTitle: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#FFFFFF",
-    marginBottom: 16,
-    marginTop: 8,
+    color: colors.text,
+    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
   },
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 16,
-    marginBottom: 24,
-  },
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#1F2937",
-    width: "47%",
-    minWidth: 160,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    fontWeight: "500",
-    flex: 1,
-  },
-  iconContainer: {
-    backgroundColor: "rgba(249, 115, 22, 0.2)",
-    borderRadius: 8,
-    padding: 6,
-  },
-  iconGreen: {
-    backgroundColor: "rgba(34, 197, 94, 0.2)",
-  },
-  iconBlue: {
-    backgroundColor: "rgba(59, 130, 246, 0.2)",
-  },
-  cardValue: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    marginBottom: 4,
-  },
-  cardSubtext: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  emptyState: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 40,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#1F2937",
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    textAlign: "center",
+    gap: spacing.lg,
+    marginBottom: spacing.xxl,
   },
 });

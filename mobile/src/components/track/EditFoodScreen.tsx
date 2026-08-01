@@ -9,12 +9,13 @@ import {
   Platform,
   Modal,
   Image,
-  ActivityIndicator,
   LayoutAnimation,
   StatusBar,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Camera, Barcode, Trash2, Plus, ChevronDown, Circle, CheckCircle } from "lucide-react-native";
+import { colors, icons } from "@/src/theme/tokens";
+import { Button } from "@/src/components/ui";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
 import {
@@ -932,7 +933,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
+            <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{isNew ? "Add Product" : "Edit Product"}</Text>
@@ -940,7 +941,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         </View>
 
         {/* Form */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* `handled`: this scroller holds both the text fields and the controls
+            (accordion headers, Scan, the location add/remove actions), so
+            without it the first tap on any of them only dismisses the keyboard. */}
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Basic Information Section */}
           <View style={styles.section}>
             <SectionHeader
@@ -963,7 +971,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       validationErrors.has("name") && styles.inputError,
                     ]}
                     placeholder="e.g., Greek Yogurt"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textFaint}
                     value={name}
                     onChangeText={setName}
                   />
@@ -974,7 +982,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., Chobani"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textFaint}
                     value={brand}
                     onChangeText={setBrand}
                   />
@@ -985,7 +993,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., Vanilla, Strawberry"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textFaint}
                     value={flavor}
                     onChangeText={setFlavor}
                   />
@@ -1020,9 +1028,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                                 onPress={() => toggleCategorySelection(category.id)}
                               >
                                 {isCategorySelected ? (
-                                  <CheckCircle size={24} color="#8B5CF6" />
+                                  <CheckCircle size={icons.lg} color={colors.brand} />
                                 ) : (
-                                  <Circle size={24} color="#9CA3AF" />
+                                  <Circle size={icons.lg} color={colors.textMuted} />
                                 )}
                                 <Text style={[
                                   styles.categoryName,
@@ -1039,7 +1047,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                                 >
                                   <ChevronDown
                                     size={20}
-                                    color="#9CA3AF"
+                                    color={colors.textMuted}
                                     style={{
                                       transform: [{ rotate: isCategoryExpanded ? '180deg' : '0deg' }]
                                     }}
@@ -1061,9 +1069,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                                       onPress={() => toggleSubcategorySelection(subcategory.id, category.id)}
                                     >
                                       {isSubSelected ? (
-                                        <CheckCircle size={20} color="#10B981" />
+                                        <CheckCircle size={icons.md} color={colors.brand} />
                                       ) : (
-                                        <Circle size={20} color="#9CA3AF" />
+                                        <Circle size={icons.md} color={colors.textMuted} />
                                       )}
                                       <Text style={[
                                         styles.subcategoryName,
@@ -1086,25 +1094,20 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                 <View style={styles.field}>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Barcode</Text>
-                    <TouchableOpacity
-                      style={styles.scanButton}
+                    <Button
+                      label="Scan"
                       onPress={() => setShowBarcodeScanner(true)}
+                      variant="secondary"
+                      size="sm"
+                      icon={Barcode}
+                      loading={loadingProductData}
                       disabled={loadingProductData}
-                    >
-                      {loadingProductData ? (
-                        <ActivityIndicator size="small" color="#111827" />
-                      ) : (
-                        <>
-                          <Barcode size={16} color="#111827" />
-                          <Text style={styles.scanButtonText}>Scan</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
+                    />
                   </View>
                   <TextInput
                     style={styles.input}
                     placeholder="Enter or scan barcode"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textFaint}
                     value={barcode}
                     onChangeText={setBarcode}
                     keyboardType="numeric"
@@ -1185,7 +1188,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                             validationErrors.has("quantity") && styles.inputError,
                           ]}
                           placeholder="0"
-                          placeholderTextColor="#9CA3AF"
+                          placeholderTextColor={colors.textFaint}
                           value={quantity}
                           onChangeText={setQuantity}
                           keyboardType="numeric"
@@ -1227,7 +1230,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       <TextInput
                         style={[styles.input, validationErrors.has("restockThreshold") && styles.inputError]}
                         placeholder="Notify when quantity reaches..."
-                        placeholderTextColor="#9CA3AF"
+                        placeholderTextColor={colors.textFaint}
                         value={restockThreshold}
                         onChangeText={setRestockThreshold}
                         keyboardType="numeric"
@@ -1278,13 +1281,12 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                         <Text style={styles.label}>
                           Locations <Text style={styles.required}>*</Text>
                         </Text>
-                        <TouchableOpacity
-                          style={styles.addLocationButton}
+                        <Button
+                          label="Add"
                           onPress={addLocationEntry}
-                        >
-                          <Plus size={16} color="#FFFFFF" />
-                          <Text style={styles.addLocationButtonText}>Add</Text>
-                        </TouchableOpacity>
+                          size="sm"
+                          icon={Plus}
+                        />
                       </View>
 
                       {locationEntries.length === 0 && (
@@ -1331,7 +1333,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                               style={styles.removeLocationButton}
                               onPress={() => removeLocationEntry(entry.id)}
                             >
-                              <Trash2 size={18} color="#EF4444" />
+                              <Trash2 size={icons.md} color={colors.danger} />
                             </TouchableOpacity>
                           </View>
 
@@ -1341,7 +1343,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                               <TextInput
                                 style={styles.locationEntryInput}
                                 placeholder="0"
-                                placeholderTextColor="#9CA3AF"
+                                placeholderTextColor={colors.textFaint}
                                 value={entry.quantity}
                                 onChangeText={(value) => updateLocationEntry(entry.id, { quantity: value })}
                                 keyboardType="numeric"
@@ -1392,7 +1394,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                             <TextInput
                               style={styles.locationEntryInput}
                               placeholder="e.g., Bottom shelf, left side"
-                              placeholderTextColor="#9CA3AF"
+                              placeholderTextColor={colors.textFaint}
                               value={entry.notes}
                               onChangeText={(value) => updateLocationEntry(entry.id, { notes: value })}
                             />
@@ -1408,7 +1410,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                         <TextInput
                           style={[styles.input, validationErrors.has("fridgeRestockThreshold") && styles.inputError]}
                           placeholder="Min ready qty"
-                          placeholderTextColor="#9CA3AF"
+                          placeholderTextColor={colors.textFaint}
                           value={fridgeRestockThreshold}
                           onChangeText={setFridgeRestockThreshold}
                           keyboardType="numeric"
@@ -1423,7 +1425,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                         <TextInput
                           style={[styles.input, validationErrors.has("totalRestockThreshold") && styles.inputError]}
                           placeholder="Min total qty"
-                          placeholderTextColor="#9CA3AF"
+                          placeholderTextColor={colors.textFaint}
                           value={totalRestockThreshold}
                           onChangeText={setTotalRestockThreshold}
                           keyboardType="numeric"
@@ -1495,7 +1497,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <TextInput
                       style={[styles.input, validationErrors.has("calories") && styles.inputError]}
                       placeholder="0"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textFaint}
                       value={calories}
                       onChangeText={setCalories}
                       keyboardType="numeric"
@@ -1507,7 +1509,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <TextInput
                       style={styles.input}
                       placeholder="e.g., 1 cup"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textFaint}
                       value={servingSize}
                       onChangeText={setServingSize}
                     />
@@ -1520,7 +1522,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <TextInput
                       style={[styles.input, validationErrors.has("protein") && styles.inputError]}
                       placeholder="0"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textFaint}
                       value={protein}
                       onChangeText={setProtein}
                       keyboardType="decimal-pad"
@@ -1532,7 +1534,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <TextInput
                       style={[styles.input, validationErrors.has("carbs") && styles.inputError]}
                       placeholder="0"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textFaint}
                       value={carbs}
                       onChangeText={setCarbs}
                       keyboardType="decimal-pad"
@@ -1546,7 +1548,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <TextInput
                       style={[styles.input, validationErrors.has("fats") && styles.inputError]}
                       placeholder="0"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textFaint}
                       value={fats}
                       onChangeText={setFats}
                       keyboardType="decimal-pad"
@@ -1558,7 +1560,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     <TextInput
                       style={[styles.input, validationErrors.has("sugars") && styles.inputError]}
                       placeholder="0"
-                      placeholderTextColor="#9CA3AF"
+                      placeholderTextColor={colors.textFaint}
                       value={sugars}
                       onChangeText={setSugars}
                       keyboardType="decimal-pad"
@@ -1640,7 +1642,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                           <Image source={{ uri: image }} style={styles.productImage} />
                         ) : (
                           <>
-                            <Camera size={32} color="#9CA3AF" />
+                            <Camera size={32} color={colors.textFaint} />
                             <Text style={styles.imagePlaceholderText}>{label}</Text>
                           </>
                         )}
@@ -1655,7 +1657,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                             else if (type === "side") setImageSide(null);
                           }}
                         >
-                          <Trash2 size={16} color="#FFFFFF" />
+                          <Trash2 size={icons.sm} color={colors.text} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1680,7 +1682,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                 <TextInput
                   style={[styles.input, styles.textArea]}
                   placeholder="Additional notes..."
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textFaint}
                   value={notes}
                   onChangeText={setNotes}
                   multiline
@@ -1696,20 +1698,12 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
         {/* Footer Buttons */}
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.button, styles.buttonSecondary]}
-            onPress={onClose}
-            disabled={saving}
-          >
-            <Text style={styles.buttonSecondaryText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.button, styles.buttonPrimary, saving && styles.buttonDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            <Text style={styles.buttonPrimaryText}>{saving ? "Saving..." : "Save"}</Text>
-          </TouchableOpacity>
+          <View style={styles.footerButton}>
+            <Button label="Cancel" onPress={onClose} variant="secondary" disabled={saving} fluid />
+          </View>
+          <View style={styles.footerButton}>
+            <Button label="Save" onPress={handleSave} loading={saving} disabled={saving} fluid />
+          </View>
         </View>
 
         {/* Unit Picker Modal */}
@@ -1764,7 +1758,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   value={expirationDate || new Date()}
                   mode="date"
                   display="spinner"
-                  textColor="#000000"
+                  textColor={colors.text}
                   onChange={(event, selectedDate) => {
                     if (selectedDate) {
                       setExpirationDate(selectedDate);

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Pressable,
   StatusBar,
   Alert,
   TextInput,
@@ -20,7 +19,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
+import type { BadgeTone } from "@/src/components/ui";
 import {
   FoodCategory,
   FoodSubcategory,
@@ -46,8 +47,8 @@ interface FoodInventoryScreenProps {
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const GRID_PADDING = 20;
-const GRID_GAP = 12;
+const GRID_PADDING = spacing.screenGutter;
+const GRID_GAP = spacing.md;
 const NUM_COLUMNS = 3;
 const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
@@ -503,20 +504,23 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       return ad - bd;
     });
 
-  // Bands and day counts come from the projection; this only picks copy/colour.
-  const formatExpirationDate = (item: InventoryItemWithState) => {
+  // Bands and day counts come from the projection; this only picks copy/tone.
+  // A non-null `tone` renders as a Badge; `null` is the plain muted date line.
+  const formatExpirationDate = (
+    item: InventoryItemWithState,
+  ): { text: string; tone: BadgeTone | null } | null => {
     const { expiration, daysLeft } = item.state;
     if (!item.expiration_date || expiration === null) return null;
-    if (expiration === "expired") return { text: "Expired", color: "#EF4444" };
-    if (expiration === "today") return { text: "Expires today", color: "#F59E0B" };
-    if (expiration === "soon") return { text: `Exp: ${daysLeft}d left`, color: "#F59E0B" };
+    if (expiration === "expired") return { text: "Expired", tone: "danger" };
+    if (expiration === "today") return { text: "Expires today", tone: "warning" };
+    if (expiration === "soon") return { text: `Exp: ${daysLeft}d left`, tone: "warning" };
     // `parseLocalDate`, not `new Date(str)`: the bare constructor reads a
     // YYYY-MM-DD literal as UTC midnight, and toLocaleDateString then renders
     // the PREVIOUS calendar day everywhere west of Greenwich — so an item
     // stored as Aug 15 displayed "Aug 14" for this user.
     return {
       text: `Exp: ${parseLocalDate(item.expiration_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
-      color: colors.mutedForeground,
+      tone: null,
     };
   };
 
@@ -531,12 +535,16 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     const hasNoCategories = item.categories.length === 0;
 
     return (
-      <Pressable
+      // Both gestures live on the Card itself: the whole tile — including the
+      // 12pt padding ring — is the tap target, and press feedback matches every
+      // other Card in the app.
+      <Card
+        variant="row"
         style={styles.gridItem}
         onPress={() => handleViewItem(item)}
         onLongPress={() => handleLongPress(item)}
       >
-        {/* Product Image with Badges Overlay */}
+        {/* Product Image */}
         <View style={styles.gridImageContainer}>
           {item.image_primary_url ? (
             <Image
@@ -546,28 +554,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             />
           ) : (
             <View style={styles.gridImagePlaceholder}>
-              <Package size={40} color={colors.mutedForeground} />
+              <Package size={40} color={colors.textFaint} />
             </View>
           )}
-
-          {/* Badges overlayed on top-right of image */}
-          <View style={styles.badgeContainer}>
-            {needsRestockFridge && (
-              <View style={styles.restockFridgeBadgeOverlay}>
-                <Text style={styles.badgeOverlayText}>Restock Fridge</Text>
-              </View>
-            )}
-            {isLowTotalStock && (
-              <View style={styles.lowStockBadgeOverlay}>
-                <Text style={styles.badgeOverlayText}>Low Stock</Text>
-              </View>
-            )}
-          </View>
 
           {/* Uncategorized icon overlay on bottom-left */}
           {hasNoCategories && (
             <View style={styles.uncategorizedIconContainer}>
-              <Tag size={18} color="#8B5CF6" strokeWidth={2.5} />
+              <Tag size={icons.sm} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
             </View>
           )}
         </View>
@@ -593,13 +587,21 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               ~{ratesById.get(item.id)!.daysUntilOut}d left
             </Text>
           )}
-          {expiration && (
-            <Text style={[styles.gridItemExpiration, { color: expiration.color }]}>
-              {expiration.text}
-            </Text>
+          {/* Stock/expiry chips live BELOW the photo, not over it: a Badge is a
+              15%-alpha tint fill, which is unreadable on the white image well. */}
+          {(needsRestockFridge || isLowTotalStock || expiration) && (
+            <View style={styles.gridBadges}>
+              {needsRestockFridge && <Badge tone="inventory" label="Restock Fridge" />}
+              {isLowTotalStock && <Badge tone="warning" label="Low" />}
+              {expiration && (expiration.tone ? (
+                <Badge tone={expiration.tone} label={expiration.text} />
+              ) : (
+                <Text style={styles.gridItemExpiration}>{expiration.text}</Text>
+              ))}
+            </View>
           )}
         </View>
-      </Pressable>
+      </Card>
     );
   };
 
@@ -611,14 +613,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           {/* Header with Back, Search, and Add Button */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
-              <ChevronLeft size={24} color="#FFFFFF" />
+              <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
             </TouchableOpacity>
             <View style={styles.searchBar}>
-              <Search size={20} color={colors.mutedForeground} />
+              <Search size={icons.md} color={colors.textFaint} />
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search items..."
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textFaint}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
               />
@@ -628,7 +630,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                   activeOpacity={0.7}
                   style={styles.searchActionButton}
                 >
-                  <X size={20} color={colors.mutedForeground} />
+                  <X size={icons.md} color={colors.textFaint} />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
@@ -636,23 +638,17 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                   activeOpacity={0.7}
                   style={styles.searchActionButton}
                 >
-                  <ScanBarcode size={20} color={colors.mutedForeground} />
+                  <ScanBarcode size={icons.md} color={colors.textFaint} />
                 </TouchableOpacity>
               )}
             </View>
-            <TouchableOpacity
-              style={styles.headerAddButton}
-              onPress={handleAddItem}
-              activeOpacity={0.7}
-            >
-              <Plus size={20} color="#FFFFFF" />
-            </TouchableOpacity>
+            <IconButton icon={Plus} onPress={handleAddItem} accessibilityLabel="Add food" />
           </View>
 
           {/* Title */}
           <View style={styles.titleContainer}>
             <View style={styles.titleRow}>
-              <Package size={28} color="#8B5CF6" strokeWidth={2} />
+              <Package size={26} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
               <Text style={styles.pageTitle}>Food Inventory</Text>
             </View>
           </View>
@@ -742,11 +738,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                   {expiring.map((it) => (
                     <TouchableOpacity key={it.id} onPress={() => handleViewItem(it)} style={styles.expiringRow}>
                       <Text style={styles.expiringName} numberOfLines={1}>{it.name}</Text>
-                      <Text style={[styles.expiringWhen, it.state.expiration === "expired" && { color: "#EF4444" }]}>
-                        {it.state.expiration === "expired" ? "Expired"
-                          : it.state.expiration === "today" ? "Today"
-                          : `${it.state.daysLeft}d left`}
-                      </Text>
+                      {it.state.expiration === "expired" ? (
+                        <Badge tone="danger" label="Expired" />
+                      ) : (
+                        <Badge
+                          tone="warning"
+                          label={it.state.expiration === "today" ? "Today" : `${it.state.daysLeft}d left`}
+                        />
+                      )}
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -761,50 +760,48 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           keyExtractor={(item) => item.id}
           numColumns={NUM_COLUMNS}
           style={styles.flatList}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[
+            styles.gridContainer,
+            { paddingBottom: insets.bottom + spacing.xxl },
+          ]}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
+              tintColor={colors.brand}
+              colors={[colors.brand]}
               title="Pull to refresh"
-              titleColor={colors.mutedForeground}
+              titleColor={colors.textMuted}
             />
           }
           ListEmptyComponent={
             loading ? (
-              <Text style={styles.emptyText}>Loading...</Text>
+              <LoadingState />
             ) : (
-              <View style={styles.emptyState}>
-                <Package size={64} color={colors.mutedForeground} strokeWidth={1.5} />
-                <Text style={styles.emptyText}>
-                  {(() => {
-                    const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-                    if (selectedCategory?.slug === "out-of-stock") {
-                      return "No out of stock items";
-                    }
-                    return "No items found";
-                  })()}
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  {(() => {
-                    const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-                    if (selectedCategory?.slug === "out-of-stock") {
-                      return "Items with zero quantity will appear here";
-                    }
-                    if (selectedCategory?.slug === "all-products") {
-                      return "Add items to start tracking your inventory";
-                    }
-                    return "Try adjusting your filters or add items to this category";
-                  })()}
-                </Text>
-              </View>
+              <EmptyState
+                icon={Package}
+                title={(() => {
+                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+                  if (selectedCategory?.slug === "out-of-stock") {
+                    return "No out of stock items";
+                  }
+                  return "No items found";
+                })()}
+                body={(() => {
+                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
+                  if (selectedCategory?.slug === "out-of-stock") {
+                    return "Items with zero quantity will appear here";
+                  }
+                  if (selectedCategory?.slug === "all-products") {
+                    return "Add items to start tracking your inventory";
+                  }
+                  return "Try adjusting your filters or add items to this category";
+                })()}
+              />
             )
           }
-          ListFooterComponent={<View style={{ height: 40 }} />}
         />
 
         {/* Restock Modal */}
@@ -833,206 +830,160 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   backButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   titleContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "#FFFFFF",
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.bg,
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: spacing.md,
   },
   pageTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#111827",
-  },
-  headerAddButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: "#8B5CF6",
-    alignItems: "center",
-    justifyContent: "center",
+    ...typography.titleRoot,
+    color: colors.text,
   },
   searchBar: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: colors.card,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: radii.control,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   searchActionButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginTop: 16,
-    textAlign: "center",
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-    marginTop: 8,
-    textAlign: "center",
-  },
+  // Banner recipe (spec §5.7): tint fill, 0.3 tint border, warning heading.
   expiringSection: {
-    backgroundColor: "rgba(245,158,11,0.08)", borderColor: "rgba(245,158,11,0.35)",
-    borderWidth: 1, borderRadius: 12, marginHorizontal: 16, marginBottom: 12, padding: 12,
+    backgroundColor: tint(colors.warning), borderColor: tint(colors.warning, 0.3),
+    borderWidth: 1, borderRadius: radii.row,
+    marginHorizontal: spacing.screenGutter, marginBottom: spacing.md, padding: spacing.md,
   },
-  expiringTitle: { fontSize: 13, fontWeight: "700", color: "#F59E0B", marginBottom: 6 },
+  // 14/600 per the banner recipe — `typography.buttonSm` is exactly that.
+  expiringTitle: { ...typography.buttonSm, color: colors.warning, marginBottom: spacing.xs },
   // ~5 rows (26px each); past that the list scrolls instead of growing.
   expiringList: { maxHeight: 130 },
-  expiringRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
-  expiringName: { color: "#D1D5DB", fontSize: 14, flexShrink: 1 },
-  expiringWhen: { color: "#F59E0B", fontSize: 13, fontWeight: "600" },
+  expiringRow: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", paddingVertical: spacing.xs,
+  },
+  expiringName: { ...typography.body, color: colors.text, flexShrink: 1 },
   // Grid Layout Styles
   flatList: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.bg,
   },
   gridContainer: {
+    // flexGrow lets the empty/loading states (which are `flex: 1`, i.e.
+    // flexBasis 0) actually fill and center in the viewport instead of
+    // collapsing to their own padding. Inert once rows exist.
+    flexGrow: 1,
     paddingHorizontal: GRID_PADDING,
-    paddingTop: 16,
-    backgroundColor: "#FFFFFF",
+    paddingTop: spacing.lg,
+    backgroundColor: colors.bg,
   },
   gridRow: {
     justifyContent: "flex-start",
     gap: GRID_GAP,
     marginBottom: GRID_GAP,
   },
+  // Fill/radius/border all come from `Card variant="row"`; the tile only sets width.
   gridItem: {
     width: ITEM_WIDTH,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    overflow: "hidden",
   },
   gridImageContainer: {
-    width: ITEM_WIDTH,
-    height: ITEM_WIDTH,
+    width: "100%",
+    aspectRatio: 1,
     position: "relative",
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 8,
+    backgroundColor: colors.imageWell,
+    borderRadius: radii.control,
+    overflow: "hidden",
   },
   gridImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 8,
+    borderRadius: radii.control,
   },
   gridImagePlaceholder: {
     width: "100%",
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F9FAFB",
-  },
-  badgeContainer: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    gap: 4,
-  },
-  lowStockBadgeOverlay: {
-    backgroundColor: "rgba(239, 68, 68, 0.9)",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  restockFridgeBadgeOverlay: {
-    backgroundColor: "rgba(59, 130, 246, 0.9)",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  badgeOverlayText: {
-    fontSize: 9,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
+    backgroundColor: colors.imageWell,
   },
   uncategorizedIconContainer: {
     position: "absolute",
-    bottom: 4,
-    left: 4,
+    bottom: spacing.xs,
+    left: spacing.xs,
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
   },
   gridItemInfo: {
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: spacing.sm,
   },
   gridItemName: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#111827",
+    color: colors.text,
     marginBottom: 2,
     lineHeight: 16,
   },
   gridItemBrand: {
     fontSize: 11,
-    color: "#6B7280",
-    marginBottom: 4,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
     lineHeight: 14,
   },
   gridItemQuantity: {
     fontSize: 11,
     fontWeight: "500",
-    color: "#374151",
+    color: colors.textMuted,
     marginBottom: 2,
   },
   gridItemQuantityDetail: {
     fontSize: 10,
     fontWeight: "400",
-    color: "#6B7280",
+    color: colors.textFaint,
   },
   gridItemExpiration: {
     fontSize: 10,
-    marginTop: 2,
+    color: colors.textMuted,
+    alignSelf: "center",
   },
-  forecastText: { fontSize: 11, color: "#14B8A6" },
+  forecastText: { fontSize: 11, color: colors.accents.shopping },
+  gridBadges: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
 });

@@ -1,17 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
   type ListRenderItemInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ChevronRight } from "lucide-react-native";
 import type {
   CalorieRampLevel,
   ConceptRating,
@@ -33,13 +32,20 @@ import {
 } from "@/src/lib/supabase/nutritionPreferences";
 import { assessRampProgress, type RampAssessment } from "@/src/lib/rampProgress";
 import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import {
+  Button,
+  Card,
+  EmptyState,
+  LoadingState,
+  Screen,
+  SectionHeader,
+} from "@/src/components/ui";
 import { RampCard } from "./RampCard";
 import { ConstraintsSection } from "./ConstraintsSection";
 import { VendorsSection, type VendorPatch } from "./VendorsSection";
 import { ConceptRow } from "./ConceptRow";
 import { FoodMatchingScreen } from "./FoodMatchingScreen";
-import { nutritionStyles as s } from "./styles";
 
 const TREND_WINDOW_DAYS = 42; // 6 weeks of weigh-ins for the ramp assessment
 
@@ -233,7 +239,7 @@ export function NutritionPreferencesScreen({
     return (
       <>
         <StatusBar barStyle="light-content" />
-        <View style={[s.screen, { paddingTop: insets.top }]}>
+        <View style={[styles.screen, { paddingTop: insets.top }]}>
           <FoodMatchingScreen
             userId={userId}
             onBack={() => {
@@ -256,29 +262,25 @@ export function NutritionPreferencesScreen({
   let body: React.ReactNode;
   if (!data && loadFailed) {
     body = (
-      <View style={[styles.centerFill, { paddingHorizontal: 24 }]}>
-        <Text style={s.mutedText}>Couldn&apos;t load your nutrition preferences.</Text>
-        <TouchableOpacity
-          style={[s.primaryButton, styles.retryButton]}
-          onPress={() => load()}
-        >
-          <Text style={s.primaryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState
+        title="Couldn't load your nutrition preferences."
+        action={{ label: "Retry", onPress: () => load() }}
+      />
     );
   } else if (!data) {
-    body = (
-      <View style={styles.centerFill}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    body = <LoadingState />;
   } else {
     body = (
       <FlatList
         data={filteredConcepts}
         keyExtractor={(c) => c.id}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        // `Screen scroll={false}` applies neither the horizontal gutter nor
+        // the bottom inset — the list owns both.
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + spacing.xxl },
+        ]}
         ListHeaderComponent={
           <View>
             <RampCard
@@ -297,48 +299,50 @@ export function NutritionPreferencesScreen({
               onToggleActive={handleVendorToggle}
               onPatch={handleVendorPatch}
             />
-            <TouchableOpacity
-              style={[s.card, s.row]}
+            <Card
+              variant="row"
+              style={styles.navRow}
               onPress={() => setShowMatching(true)}
             >
-              <View style={s.flexShrinkColumn}>
-                <Text style={s.sectionTitle}>Food Matching</Text>
-                <Text style={s.mutedText}>
+              <View style={styles.flexShrinkColumn}>
+                <Text style={styles.rowTitle}>Food Matching</Text>
+                <Text style={styles.mutedText}>
                   Link products to rated concepts — powers meal scoring &amp;
                   stock tracking
                 </Text>
               </View>
-              <Text style={s.headerAction}>›</Text>
-            </TouchableOpacity>
-            <View style={s.card}>
-              <Text style={s.sectionTitle}>Food Ratings</Text>
-              <Text style={s.mutedText}>
+              <ChevronRight
+                size={icons.md}
+                color={colors.textMuted}
+                strokeWidth={icons.strokeWidth}
+              />
+            </Card>
+            <Card variant="panel" style={styles.cardSpacing}>
+              <View style={styles.sectionHeaderWrap}>
+                <SectionHeader title="Food Ratings" />
+              </View>
+              <Text style={styles.mutedText}>
                 ✂︎ small pieces · ⏱ prep-intensive
               </Text>
               <TextInput
-                style={s.input}
+                style={[styles.input, styles.searchInput]}
                 placeholder="Search foods..."
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={search}
                 onChangeText={setSearch}
               />
-              <View style={[s.row, { gap: 8 }]}>
+              <View style={styles.addRow}>
                 <TextInput
-                  style={[s.input, { flex: 1 }]}
+                  style={[styles.input, styles.addInput]}
                   placeholder="Add a food (e.g. Pickles)"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   value={newConceptName}
                   onChangeText={setNewConceptName}
                   onSubmitEditing={handleAddConcept}
                 />
-                <TouchableOpacity
-                  style={[s.primaryButton, { paddingHorizontal: 16 }]}
-                  onPress={handleAddConcept}
-                >
-                  <Text style={s.primaryButtonText}>Add</Text>
-                </TouchableOpacity>
+                <Button label="Add" onPress={handleAddConcept} />
               </View>
-            </View>
+            </Card>
           </View>
         }
         renderItem={renderItem}
@@ -347,22 +351,56 @@ export function NutritionPreferencesScreen({
   }
 
   return (
-    <>
-      <StatusBar barStyle="light-content" />
-      <View style={[s.screen, { paddingTop: insets.top }]}>
-        <View style={s.header}>
-          <Text style={s.headerTitle}>Nutrition Preferences</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={s.headerAction}>Done</Text>
-          </TouchableOpacity>
-        </View>
-        {body}
-      </View>
-    </>
+    <Screen
+      variant="detail"
+      title="Nutrition Preferences"
+      scroll={false}
+      headerRight={
+        <Button variant="ghost" size="sm" label="Done" onPress={onClose} />
+      }
+    >
+      {body}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  centerFill: { flex: 1, justifyContent: "center", alignItems: "center" },
-  retryButton: { marginTop: 16, paddingHorizontal: 24 },
+  // Only the FoodMatching view switch needs this — the main branch is wrapped
+  // by `Screen`, which owns the background, StatusBar and top inset.
+  screen: { flex: 1, backgroundColor: colors.bg },
+  listContent: {
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.lg,
+  },
+  cardSpacing: { marginBottom: spacing.lg },
+  // `SectionHeader` takes no style prop, so the gap below it lives on a wrapper.
+  sectionHeaderWrap: { marginBottom: spacing.md },
+  navRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  flexShrinkColumn: { flexShrink: 1 },
+  rowTitle: { ...typography.rowTitle, color: colors.text },
+  mutedText: { ...typography.body, color: colors.textMuted },
+  input: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
+  },
+  searchInput: { marginTop: spacing.md },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  addInput: { flex: 1 },
 });

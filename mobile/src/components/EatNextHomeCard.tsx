@@ -4,13 +4,13 @@
 // changes), loading / error+retry / contextual-empty states. Also the
 // app-open resync point for the eat-nudge family.
 import React, { useCallback, useEffect, useRef } from "react";
-import {
-  ActivityIndicator, StyleSheet, Text, TouchableOpacity, View,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { UtensilsCrossed } from "lucide-react-native";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
+import { Badge, Card } from "@/src/components/ui";
+import { colors, icons, spacing, tint, typography } from "@/src/theme/tokens";
 // `eatNextStockBadge` is the ONE decision point for the badge's copy and its
 // green/amber split (see its doc comment) — this file never re-derives
 // "In stock" / "Missing N" from `stock.assemblable`/`stock.missingCount`
@@ -20,12 +20,12 @@ import {
   eatNextStockBadge,
   eatNextExpiringLine,
 } from "@/src/lib/eatNext";
-// `scoreBand` is the ONE decision point for the chip's band (spec §6's
-// thresholds); this file never re-declares the cutoff numbers locally. Only
-// the function is needed — the raw `SCORE_BAND_CORE_MIN`/`SCORE_BAND_MID_MIN`
-// constants themselves aren't read anywhere in this file, `scoreBand` already
-// resolves them into the band this card actually branches on.
-import { scoreBand, type ScoreBand } from "@/src/lib/mealScore";
+// `scoreTone` is the ONE band → Badge-tone lookup (it resolves spec §6's
+// thresholds through `scoreBand`, whose cutoffs this file never re-declares).
+// Imported rather than mirrored so the same score renders the same chip color
+// here and in the Meal Library — which is exactly what the copy-pasted local
+// palette this import replaced could not guarantee.
+import { scoreTone } from "@/src/components/track/meals/library/styles";
 
 interface EatNextHomeCardProps {
   refreshKey?: number;
@@ -84,17 +84,20 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   }, [result, computedAt]);
 
   if (loading && !result) {
+    // In-card loading is a bare brand `ActivityIndicator`, not `LoadingState`
+    // — that primitive is full-bleed (`flex: 1` + opaque `bg`) and hardcodes a
+    // "Loading..." label, neither of which belongs inside a `Card`.
     return (
-      <View style={styles.card}>
-        <ActivityIndicator color="#22C55E" />
-      </View>
+      <Card variant="panel" style={styles.cardSpacing}>
+        <ActivityIndicator color={colors.brand} />
+      </Card>
     );
   }
   if (error && !result) {
     return (
-      <TouchableOpacity style={styles.card} onPress={refetch} activeOpacity={0.7}>
+      <Card variant="panel" style={styles.cardSpacing} onPress={refetch}>
         <Text style={styles.mutedText}>Couldn&apos;t load a suggestion — tap to retry.</Text>
-      </TouchableOpacity>
+      </Card>
     );
   }
   // Unreachable given the hook's contract (Task 5's `setError(null)`
@@ -113,13 +116,13 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
     // Contextual empty: goal_hit / after_window / empty library message.
     const isEmptyLibrary = result.message === EMPTY_LIBRARY_MESSAGE;
     return (
-      <TouchableOpacity
-        style={styles.card}
-        activeOpacity={0.7}
+      <Card
+        variant="panel"
+        style={styles.cardSpacing}
         onPress={() => router.push("/(tabs)/track/meals")}
       >
         <View style={styles.headerRow}>
-          <UtensilsCrossed size={18} color="#9CA3AF" strokeWidth={2} />
+          <UtensilsCrossed size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
           <Text style={[styles.mutedText, styles.emptyMessageText]}>
             {result.message ?? "Nothing to suggest right now."}
           </Text>
@@ -127,7 +130,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         {isEmptyLibrary && (
           <Text style={styles.ctaText}>Build your Meal Library in Track → Meals</Text>
         )}
-      </TouchableOpacity>
+      </Card>
     );
   }
 
@@ -143,7 +146,6 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // today — every message the engine produces is `null` or a non-empty
   // literal — but this name reads as a boolean and its type should be one.
   const showMessage = !!result.message && !emergency;
-  const band: ScoreBand = scoreBand(top.score);
   // `null` when the engine knows nothing about this meal's stock (no map, no
   // entry, or an item-less meal) — render nothing rather than guess. Read off
   // the TYPED field; `top.reasons` is a flat array whose stock entry has no
@@ -157,9 +159,9 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   const expiringLine = eatNextExpiringLine(top.stock);
 
   return (
-    <TouchableOpacity
-      style={[styles.card, emergency && styles.cardEmergency]}
-      activeOpacity={0.7}
+    <Card
+      variant="panel"
+      style={[styles.cardSpacing, emergency && styles.cardEmergency]}
       onPress={() =>
         router.push({
           pathname: "/(tabs)/track/meals",
@@ -168,29 +170,19 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       }
     >
       <View style={styles.headerRow}>
-        <UtensilsCrossed size={18} color={emergency ? "#F87171" : "#22C55E"} strokeWidth={2} />
+        <UtensilsCrossed
+          size={icons.md}
+          color={emergency ? colors.danger : colors.brand}
+          strokeWidth={icons.strokeWidth}
+        />
         <Text style={[styles.title, emergency && styles.titleEmergency]} numberOfLines={1}>
           {top.name}
         </Text>
         {stockBadge && (
-          <View
-            style={[
-              styles.stockBadge,
-              stockBadge.assemblable ? styles.stockBadgeIn : styles.stockBadgeMissing,
-            ]}
-          >
-            <Text
-              style={[
-                styles.stockBadgeText,
-                stockBadge.assemblable
-                  ? styles.stockBadgeInText
-                  : styles.stockBadgeMissingText,
-              ]}
-              numberOfLines={1}
-            >
-              {stockBadge.label}
-            </Text>
-          </View>
+          <Badge
+            label={stockBadge.label}
+            tone={stockBadge.assemblable ? "success" : "warning"}
+          />
         )}
       </View>
       <Text style={styles.reason} numberOfLines={2}>
@@ -205,31 +197,24 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         <Text style={styles.statsText} numberOfLines={1}>
           {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
         </Text>
-        <View style={[styles.scoreChip, SCORE_CHIP_STYLE_BY_BAND[band]]}>
-          <Text style={styles.scoreChipText}>{top.score}</Text>
-        </View>
+        <Badge label={String(top.score)} tone={scoreTone(top.score)} />
       </View>
       {showMessage && <Text style={styles.mutedText}>{result.message}</Text>}
-    </TouchableOpacity>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#1F2937",
-    padding: 20,
-    marginBottom: 8,
-  },
-  cardEmergency: { borderColor: "rgba(248,113,113,0.5)" },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  title: { fontSize: 16, fontWeight: "700", color: "#FFFFFF", flexShrink: 1 },
-  titleEmergency: { color: "#F87171" },
-  reason: { fontSize: 13, color: "#D1D5DB", marginTop: 6 },
-  mutedText: { fontSize: 13, color: "#9CA3AF", marginTop: 4 },
-  ctaText: { fontSize: 13, color: "#22C55E", marginTop: 6 },
+  // `Card variant="panel"` owns surface/radius/padding/border; only the
+  // placement the old bespoke `card` style also carried lives here.
+  cardSpacing: { marginBottom: spacing.sm },
+  cardEmergency: { borderColor: tint(colors.danger, 0.3) },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  title: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
+  titleEmergency: { color: colors.danger },
+  reason: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm },
+  mutedText: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
+  ctaText: { ...typography.body, color: colors.brand, marginTop: spacing.sm },
   // `flex: 1` (not `numberOfLines`): sits in a `flexDirection: "row"` beside
   // a fixed-width icon with nothing else to stop it pushing the row wider
   // than the card. The longest engine message is 45 chars, so this is
@@ -239,62 +224,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 8,
-    gap: 8,
+    marginTop: spacing.sm,
+    gap: spacing.sm,
   },
-  statsText: { fontSize: 13, color: "#9CA3AF", flexShrink: 1 },
-  scoreChip: {
-    minWidth: 36,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  scoreChipText: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
-  // Colors mirror `track/meals/library/styles.ts`'s `scoreChipCore/Mid/Low`
-  // for visual consistency with the score chip elsewhere in the app — a
-  // presentation choice, not a threshold, so it's fine for this file to hold
-  // its own copy (the threshold DECISION stays solely in `scoreBand`).
-  scoreChipCore: { backgroundColor: "rgba(34,197,94,0.18)" },
-  scoreChipMid: { backgroundColor: "#1F2937" },
-  scoreChipLow: { backgroundColor: "rgba(107,114,128,0.25)" },
-  // Stock badge (Task 14). Geometry and the green treatment are lifted from
-  // `track/meals/library/styles.ts`'s `badge`/`inStockBadge` so the same
-  // verdict looks the same in the Meal Library and here; the amber pair
-  // extends that idiom (0.15-alpha fill, solid text) with the #F59E0B that
-  // file already uses for `warnText` and `FoodInventoryScreen` uses for its
-  // expiry copy. Held here rather than imported: same call the score chip
-  // above already made — presentation is per-surface, the DECISION (what the
-  // badge says, and green vs amber) lives in `eatNextStockBadge`.
-  stockBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    // `flexShrink: 0` is RN's default for a View, but it is stated because
-    // this badge's whole job is to be visible: it sits in a `row` next to a
-    // `flexShrink: 1` title, and a long meal name must truncate (the title
-    // already has `numberOfLines={1}`) rather than squeeze the badge toward
-    // zero width. A future `flexShrink: 1` added here would silently undo
-    // this task.
-    flexShrink: 0,
-  },
-  stockBadgeText: { fontSize: 11, fontWeight: "600" },
-  stockBadgeIn: { backgroundColor: "rgba(34,197,94,0.15)" },
-  stockBadgeInText: { color: "#22C55E" },
-  stockBadgeMissing: { backgroundColor: "rgba(245,158,11,0.15)" },
-  stockBadgeMissingText: { color: "#F59E0B" },
-  // The expiring-rescue line. Amber-on-nothing rather than a filled badge:
+  statsText: { ...typography.body, color: colors.textMuted, flexShrink: 1 },
+  // The score chip and the stock badge are both `Badge` now. The DECISIONS
+  // still live where they always did — the band in `scoreBand`/`scoreTone`,
+  // the badge's copy and its green/amber split in `eatNextStockBadge` — but
+  // the presentation no longer has a local copy to drift from.
+  //
+  // The expiring-rescue line. Amber-on-nothing rather than a filled `Badge`:
   // it is a full sentence, not a two-word verdict, and it is the same
   // treatment `MealDetail` gives the identical string (`lib.smallMuted` +
-  // `lib.warnText`, i.e. small text in #F59E0B with no fill). `numberOfLines`
-  // is 2, not 1 — an item name plus the clause can exceed one line at large
-  // Dynamic Type sizes, and truncating an ingredient name to "Uses Chicken
-  // Th…" defeats the point of naming it.
-  expiringText: { fontSize: 12, color: "#F59E0B", marginTop: 4 },
+  // `lib.warnText`, i.e. caption text in `colors.warning` with no fill).
+  // `numberOfLines` is 2, not 1 — an item name plus the clause can exceed one
+  // line at large Dynamic Type sizes, and truncating an ingredient name to
+  // "Uses Chicken Th…" defeats the point of naming it.
+  expiringText: { ...typography.caption, color: colors.warning, marginTop: spacing.xs },
 });
-
-const SCORE_CHIP_STYLE_BY_BAND: Record<ScoreBand, object> = {
-  core: styles.scoreChipCore,
-  mid: styles.scoreChipMid,
-  low: styles.scoreChipLow,
-};

@@ -3,17 +3,20 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   TouchableOpacity,
   TextInput,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import {
   WaterUnit,
   BEVERAGE_TYPES,
   BeverageType,
   beverageLabel,
-  beverageColor,
 } from "@/src/lib/waterUnits";
 
 interface WaterLogEditorModalProps {
@@ -46,64 +49,70 @@ export function WaterLogEditorModal({
       transparent
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Log</Text>
-          <View style={styles.chipsRow}>
-            {BEVERAGE_TYPES.map((t) => {
-              const active = draftType === t;
-              return (
-                <TouchableOpacity
-                  key={t}
-                  onPress={() => onChangeType(t)}
-                  disabled={saving}
-                  style={[
-                    styles.chip,
-                    active && {
-                      backgroundColor: beverageColor(t),
-                      borderColor: beverageColor(t),
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[styles.chipText, active && styles.chipTextActive]}
+
+          {/*
+            `handled` is mandatory, not cosmetic: this sheet `autoFocus`es its
+            input, so the keyboard is up the instant it opens, and RN's default
+            `"never"` would spend the first tap on a chip dismissing the
+            keyboard instead of firing its handler.
+          */}
+          <ScrollView
+            style={styles.sheetScroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.chipsRow}>
+              {BEVERAGE_TYPES.map((t) => {
+                const active = draftType === t;
+                return (
+                  <TouchableOpacity
+                    key={t}
+                    onPress={() => onChangeType(t)}
+                    disabled={saving}
+                    style={[styles.chip, active && styles.chipActive]}
                   >
-                    {beverageLabel(t)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <TextInput
-            style={styles.input}
-            value={draftAmount}
-            onChangeText={onChangeAmount}
-            keyboardType="decimal-pad"
-            placeholder={`Amount (${displayUnit})`}
-            placeholderTextColor={colors.mutedForeground}
-            autoFocus
-            editable={!saving}
-          />
+                    <Text
+                      style={[styles.chipText, active && styles.chipTextActive]}
+                    >
+                      {beverageLabel(t)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TextInput
+              style={styles.input}
+              value={draftAmount}
+              onChangeText={onChangeAmount}
+              keyboardType="decimal-pad"
+              placeholder={`Amount (${displayUnit})`}
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+              editable={!saving}
+            />
+          </ScrollView>
+
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonPrimary]}
-              onPress={onSave}
-              disabled={saving}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Save"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button label="Save" onPress={onSave} loading={saving} fluid />
+            </View>
           </View>
-        </View>
-      </View>
+        </Card>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -111,84 +120,71 @@ export function WaterLogEditorModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /**
+   * `maxHeight: "100%"` resolves against the backdrop's content box (screen
+   * minus its padding), so the sheet can never exceed the screen on any
+   * device. Never a fixed pixel cap — it cannot adapt.
+   */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 16,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 12,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#374151",
-    backgroundColor: "#1F2937",
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+  },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  chipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   chipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#D1D5DB",
+    color: colors.textMuted,
   },
   chipTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 18,
-    color: "#FFFFFF",
-    marginBottom: 20,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
   },
   actions: {
     flexDirection: "row",
-    gap: 12,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: {
-    backgroundColor: "#3B82F6",
-  },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  buttonSecondaryText: {
-    color: colors.foreground,
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

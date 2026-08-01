@@ -3,19 +3,23 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   TouchableOpacity,
   TextInput,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import { MealType } from "@/src/types/track";
 
-const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
-  { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { value: "lunch", label: "Lunch", color: "#10B981" },
-  { value: "dinner", label: "Dinner", color: "#3B82F6" },
-  { value: "snack", label: "Snack", color: "#8B5CF6" },
-  { value: "dessert", label: "Dessert", color: "#EC4899" },
+const MEAL_TYPES: { value: MealType; label: string }[] = [
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+  { value: "dessert", label: "Dessert" },
 ];
 
 interface QuickAdjustmentModalProps {
@@ -85,127 +89,134 @@ export function QuickAdjustmentModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Quick Adjustment</Text>
           <Text style={styles.subtitle}>
             Add calories without picking a saved food. Macros are optional.
           </Text>
 
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Quick adjustment"
-            placeholderTextColor={colors.mutedForeground}
-            editable={!saving}
-          />
+          {/* `handled` is mandatory in the sheet recipe: a scroller between a
+              live keyboard and a control eats the first tap on that control.
+              LIVE case, not latent — Calories below carries `autoFocus`, so the
+              keyboard is up on open and the meal-type chips needed two taps. */}
+          <ScrollView style={styles.sheetScroll} keyboardShouldPersistTaps="handled">
+            <Text style={styles.label}>Name</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Quick adjustment"
+              placeholderTextColor={colors.textMuted}
+              editable={!saving}
+            />
 
-          <Text style={styles.label}>Meal Type</Text>
-          <View style={styles.chipsRow}>
-            {MEAL_TYPES.map((t) => {
-              const active = mealType === t.value;
-              return (
-                <TouchableOpacity
-                  key={t.value}
-                  onPress={() => setMealType(t.value)}
-                  disabled={saving}
-                  style={[
-                    styles.chip,
-                    active && { backgroundColor: t.color, borderColor: t.color },
-                  ]}
-                >
-                  <Text
-                    style={[styles.chipText, active && styles.chipTextActive]}
+            <Text style={styles.label}>Meal Type</Text>
+            <View style={styles.chipsRow}>
+              {MEAL_TYPES.map((t) => {
+                const active = mealType === t.value;
+                return (
+                  <TouchableOpacity
+                    key={t.value}
+                    onPress={() => setMealType(t.value)}
+                    disabled={saving}
+                    style={[
+                      styles.chip,
+                      active && styles.chipActive,
+                    ]}
                   >
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                    <Text
+                      style={[styles.chipText, active && styles.chipTextActive]}
+                    >
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-          <Text style={styles.label}>
-            Calories <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={calories}
-            onChangeText={setCalories}
-            keyboardType="decimal-pad"
-            placeholder="100"
-            placeholderTextColor={colors.mutedForeground}
-            editable={!saving}
-            autoFocus
-          />
+            <Text style={styles.label}>
+              Calories <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={calories}
+              onChangeText={setCalories}
+              keyboardType="decimal-pad"
+              placeholder="100"
+              placeholderTextColor={colors.textMuted}
+              editable={!saving}
+              autoFocus
+            />
 
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Protein (g)</Text>
-              <TextInput
-                style={styles.input}
-                value={protein}
-                onChangeText={setProtein}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
-                editable={!saving}
-              />
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Protein (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={protein}
+                  onChangeText={setProtein}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Carbs (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={carbs}
+                  onChangeText={setCarbs}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
             </View>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Carbs (g)</Text>
-              <TextInput
-                style={styles.input}
-                value={carbs}
-                onChangeText={setCarbs}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
-                editable={!saving}
-              />
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Fats (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={fats}
+                  onChangeText={setFats}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField} />
             </View>
-          </View>
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Fats (g)</Text>
-              <TextInput
-                style={styles.input}
-                value={fats}
-                onChangeText={setFats}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
-                editable={!saving}
-              />
-            </View>
-            <View style={styles.halfField} />
-          </View>
+          </ScrollView>
 
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonPrimary,
-                !canSave && styles.buttonDisabled,
-              ]}
-              onPress={handleSave}
-              disabled={saving || !canSave}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Log"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button
+                label="Log"
+                onPress={handleSave}
+                loading={saving}
+                disabled={!canSave}
+                fluid
+              />
+            </View>
           </View>
-        </View>
-      </View>
+        </Card>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -213,91 +224,84 @@ export function QuickAdjustmentModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /**
+   * Width + a cap the sheet can never exceed. `maxHeight: "100%"` resolves
+   * against the backdrop's content box (screen minus its `spacing.xl` padding),
+   * which replaces the hand-picked `maxHeight: 460`/`500` those numbers could
+   * not adapt: on a 568pt device the chrome alone (title, actions, padding)
+   * eats ~146pt, so a 460pt scroller still pushed the footer off-screen.
+   */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 4,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginBottom: 16,
+    ...typography.caption,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    marginTop: 8,
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    ...typography.section,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   required: {
-    color: "#EF4444",
+    color: colors.danger,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     fontSize: 16,
-    color: "#FFFFFF",
+    color: colors.text,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: spacing.sm,
   },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#374151",
-    backgroundColor: "#1F2937",
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+  },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  chipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   chipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#D1D5DB",
+    color: colors.textMuted,
   },
-  chipTextActive: { color: "#FFFFFF" },
-  row: { flexDirection: "row", gap: 10 },
+  chipTextActive: { color: colors.onBrand },
+  row: { flexDirection: "row", gap: spacing.md },
   halfField: { flex: 1 },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: { backgroundColor: "#F97316" },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonPrimaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-  buttonSecondaryText: { color: colors.foreground, fontSize: 16, fontWeight: "600" },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

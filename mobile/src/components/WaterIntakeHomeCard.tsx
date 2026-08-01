@@ -1,9 +1,11 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { Droplet } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
+import { Card } from "@/src/components/ui";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { computePace, PaceState } from "@/src/lib/waterStats";
 import {
   WaterUnit,
@@ -118,18 +120,18 @@ export function WaterIntakeHomeCard({ refreshKey }: WaterIntakeHomeCardProps) {
   const statusInfo = ((): { text: string; color: string } | null => {
     switch (pace.status) {
       case "goal_hit":
-        return { text: "goal hit ✓", color: "#22C55E" };
+        return { text: "goal hit ✓", color: colors.success };
       case "on_pace":
-        return { text: "on pace", color: "#3B82F6" };
+        return { text: "on pace", color: colors.accents.water };
       case "ahead":
         return {
           text: `${formatAmount(pace.ozAhead ?? 0, settings.displayUnit)} ahead`,
-          color: "#22C55E",
+          color: colors.success,
         };
       case "behind":
         return {
           text: `${formatAmount(pace.ozBehind ?? 0, settings.displayUnit)} behind`,
-          color: "#F59E0B",
+          color: colors.warning,
         };
       case "before_window":
       case "after_window":
@@ -139,18 +141,18 @@ export function WaterIntakeHomeCard({ refreshKey }: WaterIntakeHomeCardProps) {
   })();
 
   return (
-    <TouchableOpacity
-      style={styles.card}
+    <Card
+      variant="panel"
+      style={styles.cardSizing}
       onPress={() => router.push("/(tabs)/track/water")}
-      activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>Water Intake</Text>
         <View style={[styles.iconContainer, isHit && styles.iconContainerHit]}>
           <Droplet
-            size={20}
-            color={isHit ? "#22C55E" : "#3B82F6"}
-            strokeWidth={2}
+            size={icons.md}
+            color={isHit ? colors.success : colors.accents.water}
+            strokeWidth={icons.strokeWidth}
           />
         </View>
       </View>
@@ -177,66 +179,70 @@ export function WaterIntakeHomeCard({ refreshKey }: WaterIntakeHomeCardProps) {
           ]}
         />
       </View>
-    </TouchableOpacity>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#1F2937",
-    width: "47%",
-    minWidth: 160,
+  // `Card variant="panel"` owns surface/radius/padding/border; the grid sizing
+  // the old bespoke `card` style also carried lives here. `flex: 1` rather
+  // than the old `width: "47%"`: Home's grid supplies a `spacing.lg` gap, so a
+  // percentage double-counts the separation and leaves the row short of the
+  // gutter. Flex lets the gap own it exactly, at any device width.
+  cardSizing: {
+    flex: 1,
   },
+  // `spacing.md`, matching `MealsHomeCard`'s header — the two sit side by side
+  // in one grid row with identical `Card panel` padding, so the 4pt they
+  // differed by before reads as a bug now that everything else lines up.
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   cardTitle: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    fontWeight: "500",
+    ...typography.body,
+    color: colors.textMuted,
     flex: 1,
   },
   iconContainer: {
-    backgroundColor: "rgba(59, 130, 246, 0.2)",
-    borderRadius: 8,
-    padding: 6,
+    backgroundColor: tint(colors.accents.water),
+    borderRadius: radii.control,
+    padding: spacing.sm,
   },
   iconContainerHit: {
-    backgroundColor: "rgba(34, 197, 94, 0.2)",
+    backgroundColor: tint(colors.success),
   },
+  // 22 is between `titleRoot` (28) and `rowTitle` (16) with no token in
+  // between; kept, since shrinking the card's headline number to 16 or growing
+  // it to 28 in a half-width tile is a layout change, not a restyle. `"bold"`
+  // is spec-banned outside `titleRoot`, so the weight converges to "700".
   cardValue: {
     fontSize: 22,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    marginBottom: 4,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   cardValueHit: {
-    color: "#22C55E",
+    color: colors.success,
   },
   cardSubtext: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    marginBottom: 10,
+    ...typography.caption,
+    marginBottom: spacing.md,
   },
   progressTrack: {
     height: 4,
-    backgroundColor: "rgba(59, 130, 246, 0.15)",
-    borderRadius: 2,
+    backgroundColor: colors.surface2,
+    borderRadius: radii.pill,
     overflow: "hidden",
   },
   progressFill: {
     height: 4,
-    backgroundColor: "#3B82F6",
-    borderRadius: 2,
+    backgroundColor: colors.accents.water,
+    borderRadius: radii.pill,
   },
   progressFillHit: {
-    backgroundColor: "#22C55E",
+    backgroundColor: colors.success,
   },
 });

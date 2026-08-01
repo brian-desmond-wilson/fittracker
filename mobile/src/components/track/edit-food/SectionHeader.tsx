@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from "react";
 import { TouchableOpacity, Text, Animated } from "react-native";
 import { ChevronDown } from "lucide-react-native";
+import { colors, icons } from "@/src/theme/tokens";
 import { styles } from "./styles";
 import { SectionKey } from "./constants";
 
@@ -37,7 +38,7 @@ export function SectionHeader({ title, isExpanded, hasError, onPress }: SectionH
     >
       <Text style={[styles.sectionTitle, hasError && styles.sectionTitleError]}>{title}</Text>
       <Animated.View style={{ transform: [{ rotate }] }}>
-        <ChevronDown size={20} color={hasError ? "#EF4444" : "#111827"} />
+        <ChevronDown size={icons.md} color={hasError ? colors.danger : colors.text} />
       </Animated.View>
     </TouchableOpacity>
   );

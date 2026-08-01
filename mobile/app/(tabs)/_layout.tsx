@@ -1,6 +1,7 @@
 import { Tabs } from "expo-router";
 import { Home, Calendar, Plus, Dumbbell } from "lucide-react-native";
 import { TabBarIcon } from "@/src/components/TabBarIcon";
+import { colors, spacing } from "@/src/theme/tokens";
 
 export default function TabLayout() {
   return (
@@ -8,24 +9,28 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: "hsl(217.2, 32.6%, 17.5%)",
+          backgroundColor: colors.surface2,
           borderTopWidth: 1,
-          borderTopColor: "#64748B",
-          paddingBottom: 24,
-          paddingTop: 12,
+          borderTopColor: colors.border,
+          paddingBottom: spacing.xxl,
+          paddingTop: spacing.md,
+          // Fixed bar height; the bar is not absolutely positioned, so screens
+          // clear it without extra padding (verified in Task 7).
           height: 88,
-          shadowColor: "#64748B",
-          shadowOffset: { width: 0, height: -1 },
-          shadowOpacity: 0.3,
-          shadowRadius: 0,
+          // No shadow: the token system has no elevation scale (deliberately
+          // flat), and the border above already separates the bar. `elevation:
+          // 0` is retained to keep Android's default tab-bar shadow suppressed.
           elevation: 0,
         },
-        tabBarActiveTintColor: "hsl(142, 76%, 36%)",
-        tabBarInactiveTintColor: "hsl(215, 20.2%, 65.1%)",
+        tabBarActiveTintColor: colors.brand,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
+          // 12/500 held: `typography.caption` carries `color: textMuted`, which
+          // would override the active/inactive tint props above. See the
+          // `typography.label` proposal in docs/STYLE_GUIDE.md.
           fontSize: 12,
           fontWeight: "500",
-          marginBottom: 4,
+          marginBottom: spacing.xs,
         },
       }}
     >

@@ -12,16 +12,17 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { Check, X } from "lucide-react-native";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Button } from "@/src/components/ui";
 import { MealType } from "@/src/types/track";
 
-const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
-  { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { value: "lunch", label: "Lunch", color: "#10B981" },
-  { value: "dinner", label: "Dinner", color: "#3B82F6" },
-  { value: "snack", label: "Snack", color: "#8B5CF6" },
-  { value: "dessert", label: "Dessert", color: "#EC4899" },
+const MEAL_TYPES: { value: MealType; label: string }[] = [
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+  { value: "dessert", label: "Dessert" },
 ];
 
 interface ManualFoodData {
@@ -117,7 +118,7 @@ export function ManualFoodEntryModal({
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <X size={24} color={colors.foreground} />
+              <X size={icons.lg} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Add Food Manually</Text>
             <View style={styles.placeholder} />
@@ -148,7 +149,7 @@ export function ManualFoodEntryModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., Protein Bar"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={name}
                 onChangeText={setName}
               />
@@ -160,7 +161,7 @@ export function ManualFoodEntryModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., Quest"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={brand}
                 onChangeText={setBrand}
               />
@@ -172,7 +173,7 @@ export function ManualFoodEntryModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., 1 bar (60g)"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={servingSize}
                 onChangeText={setServingSize}
               />
@@ -183,22 +184,22 @@ export function ManualFoodEntryModal({
 
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Calories</Text>
+                <Text style={styles.label}>Calories</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="numeric"
                   value={calories}
                   onChangeText={setCalories}
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Protein (g)</Text>
+                <Text style={styles.label}>Protein (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={protein}
                   onChangeText={setProtein}
@@ -208,22 +209,22 @@ export function ManualFoodEntryModal({
 
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Carbs (g)</Text>
+                <Text style={styles.label}>Carbs (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={carbs}
                   onChangeText={setCarbs}
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Fats (g)</Text>
+                <Text style={styles.label}>Fats (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
                   value={fats}
                   onChangeText={setFats}
@@ -232,11 +233,11 @@ export function ManualFoodEntryModal({
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.inputLabel}>Sugars (g)</Text>
+              <Text style={styles.label}>Sugars (g)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 keyboardType="decimal-pad"
                 value={sugars}
                 onChangeText={setSugars}
@@ -251,10 +252,7 @@ export function ManualFoodEntryModal({
                   key={type.value}
                   style={[
                     styles.mealTypeButton,
-                    selectedMealType === type.value && {
-                      backgroundColor: type.color,
-                      borderColor: type.color,
-                    },
+                    selectedMealType === type.value && styles.mealTypeButtonActive,
                   ]}
                   onPress={() => setSelectedMealType(type.value)}
                   activeOpacity={0.7}
@@ -284,7 +282,13 @@ export function ManualFoodEntryModal({
                   saveToLibrary && styles.checkboxChecked,
                 ]}
               >
-                {saveToLibrary && <Text style={styles.checkmark}>✓</Text>}
+                {saveToLibrary && (
+                  <Check
+                    size={icons.sm}
+                    color={colors.onBrand}
+                    strokeWidth={icons.strokeWidth}
+                  />
+                )}
               </View>
               <Text style={styles.checkboxLabel}>
                 Save to my food library for quick access
@@ -293,20 +297,13 @@ export function ManualFoodEntryModal({
           </ScrollView>
 
           {/* Action Button */}
-          <View style={[styles.actions, { paddingBottom: insets.bottom + 16 }]}>
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                !name.trim() && styles.primaryButtonDisabled,
-              ]}
+          <View style={[styles.actions, { paddingBottom: insets.bottom + spacing.lg }]}>
+            <Button
+              label={saveToLibrary ? "Save & Log Meal" : "Log Meal"}
               onPress={handleSaveAndLog}
-              activeOpacity={0.7}
               disabled={!name.trim()}
-            >
-              <Text style={styles.primaryButtonText}>
-                {saveToLibrary ? "Save & Log Meal" : "Log Meal"}
-              </Text>
-            </TouchableOpacity>
+              fluid
+            />
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -320,24 +317,23 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   closeButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.titleBar,
+    color: colors.text,
   },
   placeholder: {
     width: 32,
@@ -346,144 +342,121 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: spacing.screenGutter,
   },
+  // Sanctioned surviving orange: a `tint(accents.meals)` info fill.
   barcodeInfo: {
-    backgroundColor: "rgba(249, 115, 22, 0.1)",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+    backgroundColor: tint(colors.accents.meals),
+    borderRadius: radii.row,
+    padding: spacing.lg,
+    marginBottom: spacing.xl,
     borderWidth: 1,
-    borderColor: "rgba(249, 115, 22, 0.3)",
+    borderColor: tint(colors.accents.meals, 0.3),
   },
   barcodeLabel: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginBottom: 4,
+    ...typography.caption,
+    marginBottom: spacing.xs,
   },
   barcodeValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.rowTitle,
+    color: colors.text,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   notFoundText: {
-    fontSize: 14,
-    color: "#F97316",
+    ...typography.body,
+    color: colors.text,
   },
   field: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   halfField: {
     flex: 1,
   },
   row: {
     flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
+    gap: spacing.md,
+    marginBottom: spacing.lg,
   },
+  // The one form-label token (see `mealsScreenStyles`): `inputLabel` was a
+  // byte-identical twin used interchangeably in the same component.
   label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 8,
+    ...typography.section,
+    marginBottom: spacing.sm,
   },
   required: {
-    color: "#EF4444",
+    color: colors.danger,
   },
   input: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 12,
-    marginTop: 8,
+    ...typography.section,
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
   },
   mealTypeButtons: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 20,
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
   },
   mealTypeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: colors.card,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radii.control,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  mealTypeButtonActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
   mealTypeButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
   },
   mealTypeButtonTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   checkboxRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 20,
+    gap: spacing.md,
+    marginBottom: spacing.xl,
   },
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 6,
+    borderRadius: radii.control,
     borderWidth: 2,
-    borderColor: colors.border,
+    // The outline IS the affordance here, so `textFaint` rather than `border`.
+    borderColor: colors.textFaint,
     alignItems: "center",
     justifyContent: "center",
   },
   checkboxChecked: {
-    backgroundColor: "#F97316",
-    borderColor: "#F97316",
-  },
-  checkmark: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "bold",
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   checkboxLabel: {
-    fontSize: 14,
-    color: colors.foreground,
+    ...typography.body,
+    color: colors.text,
     flex: 1,
   },
   actions: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
-  primaryButton: {
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: "#F97316",
-    alignItems: "center",
-  },
-  primaryButtonDisabled: {
-    backgroundColor: colors.muted,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
   },
 });

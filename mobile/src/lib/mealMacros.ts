@@ -1,3 +1,8 @@
+// Relative, not the `@/` alias: this module is covered by the Jest suite
+// (via `eatNext.test.ts`) and `jest.config.js` declares no `moduleNameMapper`.
+// Every other `src/lib` cross-import is relative for the same reason.
+import { colors, tint } from "../theme/tokens";
+
 // Priority tiers for the user's macros (calories + protein > carbs + sodium > fats + sugars + fiber)
 export type MacroKey =
   | "calories"
@@ -134,15 +139,18 @@ export function macroColor(
 ): string {
   // Cap-type macros: hitting the goal is fine, exceeding is a warning.
   const isCap = m === "sodium" || m === "sugars";
-  if (!goal || goal <= 0) return "#3B82F6";
+  if (!goal || goal <= 0) return colors.macros.under;
   const ratio = value / goal;
   if (isCap) {
-    if (ratio >= 1.1) return "#EF4444"; // over by >10%: red
-    if (ratio >= 1.0) return "#F59E0B"; // at cap: amber
-    if (ratio >= 0.8) return "#3B82F6"; // approaching
-    return "rgba(59, 130, 246, 0.7)";
+    if (ratio >= 1.1) return colors.macros.overCap; // over by >10%: red
+    if (ratio >= 1.0) return colors.macros.atCap; // at cap: amber
+    if (ratio >= 0.8) return colors.macros.under; // approaching
+    // Comfortably under a cap: the same blue, dimmed. `tint()` at 0.7 rather
+    // than the system's 0.15/0.3 because this is a meter fill, not a tinted
+    // surface — it has to stay a legible mark on `surface2`.
+    return tint(colors.macros.under, 0.7);
   }
-  return ratio >= 1.0 ? "#22C55E" : "#3B82F6";
+  return ratio >= 1.0 ? colors.macros.met : colors.macros.under;
 }
 
 /**

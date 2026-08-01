@@ -1,3 +1,5 @@
+import type { AccentKey } from "@/src/theme/tokens";
+
 // Food Inventory Types
 export type FoodLocation = "fridge" | "freezer" | "pantry" | "cabinet";
 export type StorageType = "single-location" | "multi-location";
@@ -243,7 +245,7 @@ export interface TrackingCategoryConfig {
   id: TrackingCategory;
   title: string;
   icon: string; // Lucide icon name
-  iconColor: string;
-  backgroundColor: string;
+  /** Identity accent key — supplies both the tile's tint fill and its glyph color. */
+  accent: AccentKey;
   section: "nutrition" | "body" | "activity";
 }

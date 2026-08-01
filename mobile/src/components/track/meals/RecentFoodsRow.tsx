@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -8,8 +9,13 @@ import {
   Image,
 } from "react-native";
 import { Star, Utensils } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import { SavedFood, RecentFoodItem } from "@/src/types/track";
+
+// Badge-fitted glyph size. `icons.sm` (16) would fill an 18pt badge edge to
+// edge; the badge in turn cannot grow without dominating a 70pt thumbnail.
+// Same class of held value as `MacroRing`'s ring-fitted label sizes.
+const BADGE_GLYPH = 10;
 
 interface RecentFoodsRowProps {
   recentFoods: RecentFoodItem[];
@@ -51,7 +57,9 @@ export function RecentFoodsRow({
       <View style={styles.container}>
         <Text style={styles.sectionTitle}>Quick Add</Text>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
+          {/* Inline region inside the screen's scroller, not a full list
+              region — a bare spinner, per the standing loading rule. */}
+          <ActivityIndicator color={colors.brand} />
         </View>
       </View>
     );
@@ -79,13 +87,13 @@ export function RecentFoodsRow({
           />
         ) : (
           <View style={styles.imagePlaceholder}>
-            <Utensils size={20} color={colors.mutedForeground} />
+            <Utensils size={icons.md} color={colors.textMuted} />
           </View>
         )}
         {/* Favorite Star Badge */}
         {item.is_favorite && (
           <View style={styles.favoriteBadge}>
-            <Star size={10} color="#FFFFFF" fill="#FFFFFF" />
+            <Star size={BADGE_GLYPH} color={colors.onBrand} fill={colors.onBrand} />
           </View>
         )}
       </View>
@@ -118,28 +126,22 @@ export function RecentFoodsRow({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    ...typography.section,
+    paddingHorizontal: spacing.screenGutter,
+    marginBottom: spacing.md,
   },
   listContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.screenGutter,
   },
   separator: {
-    width: 12,
+    width: spacing.md,
   },
   loadingContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: colors.mutedForeground,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.xl,
   },
   foodItem: {
     width: 90,
@@ -148,9 +150,9 @@ const styles = StyleSheet.create({
   imageContainer: {
     width: 70,
     height: 70,
-    borderRadius: 12,
+    borderRadius: radii.row,
     overflow: "hidden",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
     position: "relative",
   },
   foodImage: {
@@ -160,34 +162,36 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: "100%",
     height: "100%",
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radii.row,
     alignItems: "center",
     justifyContent: "center",
   },
+  // A conditional state indicator overlaid on the thumbnail, NOT a control:
+  // the long-press toggle belongs to the whole tile and this badge is not its
+  // hit target. Amber matches the favourite star in `FoodPreviewModal`.
   favoriteBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
+    top: spacing.xs,
+    right: spacing.xs,
     width: 18,
     height: 18,
-    borderRadius: 9,
-    backgroundColor: "#F59E0B",
+    borderRadius: radii.pill,
+    backgroundColor: colors.warning,
     alignItems: "center",
     justifyContent: "center",
   },
   foodName: {
-    fontSize: 12,
+    ...typography.caption,
     fontWeight: "500",
-    color: colors.foreground,
+    color: colors.text,
     textAlign: "center",
     lineHeight: 16,
   },
   foodCalories: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
   },
 });

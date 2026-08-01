@@ -6,12 +6,13 @@ import {
   Modal,
   TouchableOpacity,
   StatusBar,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { X, Zap, ZapOff } from "lucide-react-native";
+import { colors, icons, spacing, tint, typography } from "@/src/theme/tokens";
+import { Button } from "@/src/components/ui";
 
 interface BarcodeScannerModalProps {
   visible: boolean;
@@ -60,7 +61,7 @@ export function BarcodeScannerModal({
         <View style={[styles.container, { paddingTop: insets.top }]}>
           <StatusBar barStyle="light-content" />
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FFFFFF" />
+            <ActivityIndicator size="large" color={colors.brand} />
             <Text style={styles.loadingText}>Loading camera...</Text>
           </View>
         </View>
@@ -75,7 +76,7 @@ export function BarcodeScannerModal({
           <StatusBar barStyle="light-content" />
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color="#FFFFFF" />
+              <X size={icons.lg} color={colors.text} />
             </TouchableOpacity>
           </View>
           <View style={styles.permissionDeniedContainer}>
@@ -85,12 +86,7 @@ export function BarcodeScannerModal({
             <Text style={styles.permissionDeniedSubtext}>
               Please enable camera access in your device settings
             </Text>
-            <TouchableOpacity
-              style={styles.requestPermissionButton}
-              onPress={requestPermission}
-            >
-              <Text style={styles.requestPermissionButtonText}>Grant Permission</Text>
-            </TouchableOpacity>
+            <Button label="Grant Permission" onPress={requestPermission} />
           </View>
         </View>
       </Modal>
@@ -107,16 +103,16 @@ export function BarcodeScannerModal({
       <StatusBar barStyle="light-content" />
       <View style={styles.container}>
         {/* Header with close button */}
-        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <X size={24} color="#FFFFFF" />
+            <X size={icons.lg} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Scan Barcode</Text>
           <TouchableOpacity onPress={toggleTorch} style={styles.torchButton}>
             {torchEnabled ? (
-              <Zap size={24} color="#FACC15" />
+              <Zap size={icons.lg} color={colors.brand} />
             ) : (
-              <ZapOff size={24} color="#FFFFFF" />
+              <ZapOff size={icons.lg} color={colors.text} />
             )}
           </TouchableOpacity>
         </View>
@@ -174,30 +170,34 @@ export function BarcodeScannerModal({
   );
 }
 
+// Camera chrome only — nothing here touches the scanner or the permission
+// flow. The viewfinder masks keep their own alphas rather than collapsing onto
+// `colors.scrim` (0.5): their darkness is functional, not decorative — it is
+// what keeps white chrome legible over an arbitrarily bright live image — so
+// they are expressed as `tint()` over `colors.bg` instead of raw black.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    paddingHorizontal: spacing.screenGutter,
+    paddingBottom: spacing.md,
+    backgroundColor: tint(colors.bg, 0.8),
     zIndex: 1,
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    ...typography.titleBar,
+    color: colors.text,
   },
   closeButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   torchButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   camera: {
     flex: 1,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   },
   overlayTop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: tint(colors.bg, 0.6),
   },
   overlayMiddle: {
     flexDirection: "row",
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   },
   overlaySide: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: tint(colors.bg, 0.6),
   },
   scanArea: {
     width: 280,
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 30,
     height: 30,
-    borderColor: "#22C55E",
+    borderColor: colors.brand,
     borderWidth: 3,
   },
   cornerTopLeft: {
@@ -255,21 +255,20 @@ const styles = StyleSheet.create({
   },
   overlayBottom: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: tint(colors.bg, 0.6),
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.xl,
   },
   instructionText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    ...typography.rowTitle,
+    color: colors.text,
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   instructionSubtext: {
-    fontSize: 14,
-    color: "#9CA3AF",
+    ...typography.body,
+    color: colors.textMuted,
     textAlign: "center",
   },
   loadingContainer: {
@@ -278,38 +277,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingText: {
-    fontSize: 16,
-    color: "#FFFFFF",
-    marginTop: 16,
+    ...typography.rowTitle,
+    fontWeight: "400",
+    color: colors.text,
+    marginTop: spacing.lg,
   },
   permissionDeniedContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 40,
+    paddingHorizontal: spacing.xxxl,
   },
   permissionDeniedText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    ...typography.rowTitle,
+    color: colors.text,
     textAlign: "center",
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   permissionDeniedSubtext: {
-    fontSize: 14,
-    color: "#9CA3AF",
+    ...typography.body,
+    color: colors.textMuted,
     textAlign: "center",
-    marginBottom: 24,
-  },
-  requestPermissionButton: {
-    backgroundColor: "#8B5CF6",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  requestPermissionButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    marginBottom: spacing.xxl,
   },
 });

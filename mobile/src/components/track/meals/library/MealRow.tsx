@@ -1,11 +1,13 @@
 // mobile/src/components/track/meals/library/MealRow.tsx
 import React from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { Text, View } from "react-native";
 import type { MealTotals, MealWithItems } from "@/src/types/meal-library";
 import { ROLE_LABELS } from "@/src/types/meal-library";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import type { MealAssemblability } from "@/src/lib/stockState";
-import { lib, scoreChipStyle } from "./styles";
+import { spacing } from "@/src/theme/tokens";
+import { Badge, Card } from "@/src/components/ui";
+import { lib, scoreTone } from "./styles";
 
 interface MealRowProps {
   meal: MealWithItems;
@@ -26,30 +28,20 @@ export const MealRow = React.memo(function MealRow({
   onPress,
 }: MealRowProps) {
   return (
-    <TouchableOpacity style={lib.card} onPress={() => onPress(meal)} activeOpacity={0.7}>
+    <Card variant="row" style={lib.cardSpacing} onPress={() => onPress(meal)}>
       <View style={lib.rowBetween}>
         <Text style={lib.mealName} numberOfLines={1}>{meal.name}</Text>
-        <View style={[lib.scoreChip, scoreChipStyle(score.score)]}>
-          <Text style={lib.scoreChipText}>{score.score}</Text>
-        </View>
+        <Badge label={String(score.score)} tone={scoreTone(score.score)} />
       </View>
-      <View style={[lib.row, { marginTop: 6, gap: 8, flexWrap: "wrap" }]}>
+      <View style={[lib.row, { marginTop: spacing.sm, gap: spacing.sm, flexWrap: "wrap" }]}>
         <Text style={lib.mutedText}>
           {Math.round(totals.calories)} cal · {Math.round(totals.protein)}g protein · {meal.prep_minutes} min
         </Text>
-        {score.approved && (
-          <View style={lib.badge}>
-            <Text style={lib.badgeText}>Brian Approved</Text>
-          </View>
-        )}
-        {assemblability?.assemblable && (
-          <View style={[lib.badge, lib.inStockBadge]}>
-            <Text style={[lib.badgeText, lib.inStockBadgeText]}>In stock</Text>
-          </View>
-        )}
+        {score.approved && <Badge label="Brian Approved" tone="success" />}
+        {assemblability?.assemblable && <Badge label="In stock" tone="success" />}
         {meal.role && <Text style={lib.smallMuted}>{ROLE_LABELS[meal.role]}</Text>}
         {score.containsNever && <Text style={lib.neverFlag}>contains a never food</Text>}
       </View>
-    </TouchableOpacity>
+    </Card>
   );
 });

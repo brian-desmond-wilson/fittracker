@@ -1,7 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Sliders } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Card, IconButton, SectionHeader } from "@/src/components/ui";
 import {
   WaterUnit,
   formatAmount,
@@ -27,16 +28,19 @@ export function WaterQuickAddCard({
   onOpenEditor,
 }: WaterQuickAddCardProps) {
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <Text style={styles.label}>Quick Add</Text>
-        <TouchableOpacity
-          onPress={onOpenEditor}
-          style={styles.gearButton}
-          activeOpacity={0.7}
-        >
-          <Sliders size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
+    <Card variant="panel" style={styles.card}>
+      <View style={styles.sectionHeader}>
+        <SectionHeader
+          title="Quick Add"
+          action={
+            <IconButton
+              icon={Sliders}
+              variant="circle"
+              onPress={onOpenEditor}
+              accessibilityLabel="Customize quick-add buttons"
+            />
+          }
+        />
       </View>
       <View style={styles.buttons}>
         {amounts.map((amount, i) => {
@@ -69,54 +73,41 @@ export function WaterQuickAddCard({
           );
         })}
       </View>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  // Placement only — `Card variant="panel"` owns surface, radius and padding.
   card: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.lg,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  label: {
-    fontSize: 14,
-    color: colors.mutedForeground,
-  },
-  gearButton: {
-    padding: 4,
+  // `SectionHeader` takes no style prop; the wrapper owns its spacing.
+  sectionHeader: {
+    marginBottom: spacing.md,
   },
   buttons: {
     flexDirection: "row",
-    gap: 8,
+    gap: spacing.sm,
   },
+  // Neutral chrome, not an accent control: a two-line label (name + amount) is
+  // something `Button` cannot express, so the pill stays bespoke and tokenized.
   button: {
     flex: 1,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: spacing.md,
+    borderRadius: radii.control,
     alignItems: "center",
   },
   buttonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
   },
   buttonSubText: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
   },
 });

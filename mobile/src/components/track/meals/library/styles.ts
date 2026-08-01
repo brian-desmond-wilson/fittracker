@@ -1,45 +1,40 @@
 // mobile/src/components/track/meals/library/styles.ts
 import { StyleSheet } from "react-native";
-import { scoreBand } from "@/src/lib/mealScore";
+import { scoreBand, type ScoreBand } from "@/src/lib/mealScore";
+import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import type { BadgeTone } from "@/src/components/ui";
 
 export const lib = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#0A0F1E" },
+  screen: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
+    borderBottomColor: colors.border,
   },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: "#FFFFFF" },
-  headerAction: { fontSize: 17, color: "#3B82F6" },
+  // `flexShrink: 1` so a long meal name ellipsizes instead of pushing the
+  // flanking header buttons off the bar — same guard `Screen`'s `barTitle` has.
+  headerTitle: { ...typography.titleBar, color: colors.text, flexShrink: 1 },
   sectionHeader: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#9CA3AF",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 8,
+    ...typography.section,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
   },
-  emergencyHeader: { color: "#F87171" },
+  emergencyHeader: { color: colors.danger },
   emergencySub: {
-    fontSize: 13,
-    color: "#FCA5A5",
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    ...typography.caption,
+    color: colors.danger,
+    paddingHorizontal: spacing.screenGutter,
+    paddingBottom: spacing.sm,
   },
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#1F2937",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    padding: 12,
+  /** Placement for the `Card variant="row"` blocks these screens stack. */
+  cardSpacing: {
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.sm,
   },
   row: { flexDirection: "row", alignItems: "center" },
   rowBetween: {
@@ -47,92 +42,72 @@ export const lib = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  mealName: { fontSize: 16, fontWeight: "600", color: "#FFFFFF", flexShrink: 1 },
-  mutedText: { fontSize: 13, color: "#9CA3AF" },
-  smallMuted: { fontSize: 12, color: "#6B7280" },
-  scoreChip: {
-    minWidth: 40,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  scoreChipCore: { backgroundColor: "rgba(34,197,94,0.18)" },
-  scoreChipMid: { backgroundColor: "#1F2937" },
-  scoreChipLow: { backgroundColor: "rgba(107,114,128,0.25)" },
-  scoreChipText: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
-  badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: "rgba(59,130,246,0.15)",
-  },
-  badgeText: { fontSize: 11, fontWeight: "600", color: "#60A5FA" },
+  mealName: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
+  mutedText: { ...typography.body, color: colors.textMuted },
+  smallMuted: { ...typography.caption, color: colors.textFaint },
+  bodyText: { ...typography.body, color: colors.text },
+  approvedNote: { ...typography.caption, fontWeight: "600", color: colors.success },
   // Availability surfaces (Phase 4 Task 8). Green = in stock, amber = a
   // caveat you can still act on (missing item / expiring soon).
-  inStockBadge: { backgroundColor: "rgba(34,197,94,0.15)" },
-  inStockBadgeText: { color: "#22C55E" },
-  warnText: { color: "#F59E0B" },
-  availableDot: { fontSize: 12, color: "#22C55E" },
-  unavailableDot: { fontSize: 12, color: "#6B7280" },
+  warnText: { color: colors.warning },
+  availableDot: { ...typography.caption, color: colors.success },
+  unavailableDot: { ...typography.caption, color: colors.textFaint },
   filterBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.md,
   },
-  neverFlag: { fontSize: 11, fontWeight: "700", color: "#F87171" },
+  neverFlag: { ...typography.caption, fontWeight: "700", color: colors.danger },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#374151",
-    marginRight: 8,
-    marginBottom: 8,
+    borderColor: colors.border,
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  chipActive: { backgroundColor: "#2563EB", borderColor: "#2563EB" },
-  chipText: { fontSize: 13, color: "#D1D5DB" },
-  chipTextActive: { color: "#FFFFFF", fontWeight: "600" },
-  primaryButton: {
-    backgroundColor: "#2563EB",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  primaryButtonText: { fontSize: 16, fontWeight: "600", color: "#FFFFFF" },
-  destructiveText: { fontSize: 15, color: "#F87171", fontWeight: "600" },
+  // Active state of a GROUPED, mutually-exclusive selector (category, role,
+  // taste override, meal type) — solid brand fill, `onBrand` label (spec §6).
+  chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  chipText: { ...typography.body, color: colors.textMuted },
+  chipTextActive: { color: colors.onBrand, fontWeight: "600" },
+  // Active state of a STANDALONE filter/toggle chip (no shared track) — the
+  // calmer tint treatment, per the standing active-chip rule.
+  chipFilterActive: { backgroundColor: tint(colors.brand), borderColor: colors.brand },
+  chipFilterTextActive: { color: colors.brand, fontWeight: "600" },
   input: {
-    backgroundColor: "#0F172A",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: "#FFFFFF",
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    color: colors.text,
     fontSize: 15,
-    marginTop: 8,
+    marginTop: spacing.sm,
   },
   barTrack: {
     height: 6,
-    borderRadius: 3,
-    backgroundColor: "#1F2937",
+    borderRadius: radii.pill,
+    backgroundColor: colors.border,
     flex: 1,
-    marginLeft: 8,
+    marginLeft: spacing.sm,
     overflow: "hidden",
   },
-  barFill: { height: 6, borderRadius: 3, backgroundColor: "#3B82F6" },
+  barFill: { height: 6, borderRadius: radii.pill, backgroundColor: colors.brand },
 });
 
-const CHIP_BY_BAND = {
-  core: lib.scoreChipCore,
-  mid: lib.scoreChipMid,
-  low: lib.scoreChipLow,
+const TONE_BY_BAND: Record<ScoreBand, BadgeTone> = {
+  core: "success",
+  mid: "warning",
+  low: "danger",
 } as const;
 
-/** Pure band → style lookup. The band DECISION (spec §6's thresholds) lives in
- * `mealScore.ts` next to the constants, where Jest can reach it — this file
+/** Pure band → Badge tone lookup. The band DECISION (spec §6's thresholds) lives
+ * in `mealScore.ts` next to the constants, where Jest can reach it — this file
  * imports `react-native` and can never be loaded under the node test scope. */
-export function scoreChipStyle(score: number) {
-  return CHIP_BY_BAND[scoreBand(score)];
+export function scoreTone(score: number): BadgeTone {
+  return TONE_BY_BAND[scoreBand(score)];
 }

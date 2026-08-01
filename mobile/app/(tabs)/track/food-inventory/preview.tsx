@@ -4,6 +4,8 @@ import { View, Text, TouchableOpacity, StatusBar, StyleSheet } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import { ViewFoodDetailsScreen } from "@/src/components/track/ViewFoodDetailsScreen";
+import { colors, icons, spacing } from "@/src/theme/tokens";
+import { EmptyState } from "@/src/components/ui";
 import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { projectItemStock } from "@/src/lib/stockState";
 import { getLocalDateString } from "@/src/lib/dates";
@@ -21,13 +23,11 @@ export default function FoodProductPreviewPage() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.replace("/(tabs)/track/food-inventory")} style={styles.backButton}>
-              <ChevronLeft size={24} color="#FFFFFF" />
+              <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.errorContent}>
-            <Text style={styles.errorText}>Missing product data</Text>
-          </View>
+          <EmptyState title="Missing product data" />
         </View>
       </>
     );
@@ -106,32 +106,21 @@ export default function FoodProductPreviewPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
+    borderBottomColor: colors.border,
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
   },
   backText: {
     fontSize: 17,
-    color: "#FFFFFF",
-  },
-  errorContent: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  errorText: {
-    fontSize: 16,
-    color: "#6B7280",
+    color: colors.text,
   },
 });

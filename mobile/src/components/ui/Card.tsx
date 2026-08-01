@@ -1,0 +1,56 @@
+// mobile/src/components/ui/Card.tsx
+import React from "react";
+import { StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
+import { AccentKey, colors, radii, spacing, tint } from "@/src/theme/tokens";
+
+interface CardProps {
+  variant: "row" | "panel" | "tile";
+  /** tile only: identity fill + glyph color source */
+  accent?: AccentKey;
+  onPress?: () => void;
+  /** Long-press action (e.g. a row's context action sheet). May be used alone. */
+  onLongPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}
+
+export function Card({ variant, accent, onPress, onLongPress, style, children }: CardProps) {
+  const base: StyleProp<ViewStyle>[] = [
+    variant === "row" ? styles.row : variant === "panel" ? styles.panel : styles.tile,
+  ];
+  if (variant === "tile") {
+    base.push({ backgroundColor: tint(colors.accents[accent ?? "brand"]) });
+  }
+  if (style) base.push(style);
+  // Either handler makes the card interactive — a long-press-only card is valid.
+  if (onPress || onLongPress) {
+    return (
+      <TouchableOpacity
+        style={base}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+      >
+        {children}
+      </TouchableOpacity>
+    );
+  }
+  return <View style={base}>{children}</View>;
+}
+
+const styles = StyleSheet.create({
+  row: {
+    backgroundColor: colors.surface, borderRadius: radii.row,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
+  },
+  panel: {
+    backgroundColor: colors.surface, borderRadius: radii.panel,
+    padding: spacing.lg, borderWidth: 1, borderColor: colors.border,
+  },
+  tile: {
+    borderRadius: radii.panel, padding: spacing.lg,
+    aspectRatio: 1, minHeight: 140, maxHeight: 180,
+    justifyContent: "space-between",
+  },
+});

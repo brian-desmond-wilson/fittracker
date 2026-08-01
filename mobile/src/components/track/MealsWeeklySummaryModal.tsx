@@ -9,7 +9,8 @@ import {
 } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { Card } from "@/src/components/ui";
 import { MealLog } from "@/src/types/track";
 import { MacroGoals, MacroTotals, EMPTY_TOTALS, sumNutrition } from "@/src/lib/mealMacros";
 import { computeMacroSplit } from "@/src/lib/mealStats";
@@ -101,7 +102,7 @@ export function MealsWeeklySummaryModal({
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
+            <ChevronLeft size={icons.lg} color={colors.text} />
             <Text style={styles.backText}>Meals</Text>
           </TouchableOpacity>
         </View>
@@ -112,26 +113,28 @@ export function MealsWeeklySummaryModal({
 
           {/* Top-line totals */}
           <View style={styles.statsRow}>
-            <View style={styles.statCell}>
+            <Card variant="row" style={styles.statCell}>
               <Text style={styles.statValue}>{Math.round(weekTotals.calories)}</Text>
               <Text style={styles.statLabel}>Total cal</Text>
-            </View>
-            <View style={styles.statCell}>
+            </Card>
+            <Card variant="row" style={styles.statCell}>
               <Text style={styles.statValue}>{Math.round(avgCals)}</Text>
               <Text style={styles.statLabel}>Avg cal/day</Text>
-            </View>
-            <View style={styles.statCell}>
+            </Card>
+          </View>
+          <View style={styles.statsRow}>
+            <Card variant="row" style={styles.statCell}>
               <Text style={styles.statValue}>{Math.round(weekTotals.protein)}</Text>
               <Text style={styles.statLabel}>Total protein</Text>
-            </View>
-            <View style={styles.statCell}>
+            </Card>
+            <Card variant="row" style={styles.statCell}>
               <Text style={styles.statValue}>{Math.round(avgProtein)}</Text>
               <Text style={styles.statLabel}>Avg protein/day</Text>
-            </View>
+            </Card>
           </View>
 
           {/* Goal hit rates */}
-          <View style={styles.card}>
+          <Card variant="row" style={styles.cardSpacing}>
             <Text style={styles.cardTitle}>Goal hits</Text>
             <View style={styles.hitRow}>
               <Text style={styles.hitLabel}>Calories</Text>
@@ -145,10 +148,10 @@ export function MealsWeeklySummaryModal({
                 {proGoal > 0 ? `${proDaysHit} / 7 days` : "No goal set"}
               </Text>
             </View>
-          </View>
+          </Card>
 
           {/* Highlights */}
-          <View style={styles.card}>
+          <Card variant="row" style={styles.cardSpacing}>
             <Text style={styles.cardTitle}>Highlights</Text>
             <View style={styles.hitRow}>
               <Text style={styles.hitLabel}>Best protein day</Text>
@@ -166,53 +169,35 @@ export function MealsWeeklySummaryModal({
                   : "—"}
               </Text>
             </View>
-          </View>
+          </Card>
 
           {/* Macro split over the whole week */}
           {weekTotals.calories > 0 && (
-            <View style={styles.card}>
+            <Card variant="row" style={styles.cardSpacing}>
               <Text style={styles.cardTitle}>Macro split (week)</Text>
               <View style={styles.splitBar}>
-                <View
-                  style={{
-                    flex: weekSplit.protein,
-                    backgroundColor: "#22C55E",
-                    height: 8,
-                  }}
-                />
-                <View
-                  style={{
-                    flex: weekSplit.carbs,
-                    backgroundColor: "#F59E0B",
-                    height: 8,
-                  }}
-                />
-                <View
-                  style={{
-                    flex: weekSplit.fats,
-                    backgroundColor: "#3B82F6",
-                    height: 8,
-                  }}
-                />
+                <View style={[styles.splitSegment, { flex: weekSplit.protein }]} />
+                <View style={[styles.splitSegment, styles.splitCarbs, { flex: weekSplit.carbs }]} />
+                <View style={[styles.splitSegment, styles.splitFats, { flex: weekSplit.fats }]} />
               </View>
               <Text style={styles.splitLabel}>
-                <Text style={{ color: "#22C55E" }}>
+                <Text style={styles.splitProteinText}>
                   Protein {Math.round(weekSplit.protein * 100)}%
                 </Text>
-                <Text style={{ color: colors.mutedForeground }}> · </Text>
-                <Text style={{ color: "#F59E0B" }}>
+                <Text style={styles.splitSeparator}> · </Text>
+                <Text style={styles.splitCarbsText}>
                   Carbs {Math.round(weekSplit.carbs * 100)}%
                 </Text>
-                <Text style={{ color: colors.mutedForeground }}> · </Text>
-                <Text style={{ color: "#3B82F6" }}>
+                <Text style={styles.splitSeparator}> · </Text>
+                <Text style={styles.splitFatsText}>
                   Fats {Math.round(weekSplit.fats * 100)}%
                 </Text>
               </Text>
-            </View>
+            </Card>
           )}
 
           {/* Per-day calorie sparkline-ish */}
-          <View style={styles.card}>
+          <Card variant="row" style={styles.cardSpacing}>
             <Text style={styles.cardTitle}>Daily calories</Text>
             <View style={styles.daysRow}>
               {dailyTotals.map((d) => {
@@ -225,10 +210,8 @@ export function MealsWeeklySummaryModal({
                       <View
                         style={[
                           styles.dayBarFill,
-                          {
-                            height: `${ratio * 100}%`,
-                            backgroundColor: hit ? "#22C55E" : "#F97316",
-                          },
+                          { height: `${ratio * 100}%` },
+                          hit ? styles.dayBarFillHit : styles.dayBarFillShort,
                         ]}
                       />
                     </View>
@@ -240,7 +223,7 @@ export function MealsWeeklySummaryModal({
                 );
               })}
             </View>
-          </View>
+          </Card>
         </ScrollView>
       </View>
     </Modal>
@@ -248,99 +231,101 @@ export function MealsWeeklySummaryModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
   },
-  backText: { fontSize: 17, color: colors.foreground },
+  backText: { ...typography.titleBar, fontWeight: "400", color: colors.text },
   content: { flex: 1 },
-  contentInner: { padding: 20, paddingBottom: 60 },
+  contentInner: {
+    padding: spacing.screenGutter,
+    paddingBottom: spacing.xxxl,
+  },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: colors.foreground,
+    ...typography.titleRoot,
+    color: colors.text,
   },
   subtitle: {
-    fontSize: 13,
-    color: colors.mutedForeground,
-    marginBottom: 16,
+    ...typography.body,
+    color: colors.textMuted,
+    marginBottom: spacing.lg,
   },
   statsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 12,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
+  // Equal columns from `flex: 1` + the row `gap` — never percentage widths,
+  // which double-count the gap and leave the pair short of the gutter.
   statCell: {
-    width: "47%",
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
+    flex: 1,
     alignItems: "center",
   },
+  // Standing stat-cell token (see amendments): `rowTitle` at 700. Not
+  // `titleRoot` — that is this modal's own H1 two lines above, and matching it
+  // flattened the hierarchy.
   statValue: {
-    fontSize: 22,
+    ...typography.rowTitle,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
   },
   statLabel: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    marginBottom: 12,
+  /** Placement the `Card row` primitive can't express. */
+  cardSpacing: {
+    marginBottom: spacing.md,
   },
   cardTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.mutedForeground,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
+    ...typography.section,
+    marginBottom: spacing.md,
   },
   hitRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 4,
+    paddingVertical: spacing.xs,
   },
-  hitLabel: { fontSize: 13, color: colors.foreground },
-  hitValue: { fontSize: 13, color: colors.mutedForeground, fontWeight: "600" },
+  hitLabel: { ...typography.body, color: colors.text },
+  hitValue: { ...typography.buttonSm, color: colors.textMuted },
   splitBar: {
     flexDirection: "row",
-    height: 8,
-    borderRadius: 4,
+    height: spacing.sm,
+    borderRadius: radii.pill,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: colors.surface2,
   },
+  // Data-series marks from the tokenized macro palette (spec §8 stage 6
+  // sanctions macro fills); `under`/`met`/`atCap` here read as P/C/F, which is
+  // the same three hues this bar has always used.
+  splitSegment: { height: spacing.sm, backgroundColor: colors.macros.met },
+  splitCarbs: { backgroundColor: colors.macros.atCap },
+  splitFats: { backgroundColor: colors.macros.under },
   splitLabel: {
-    fontSize: 11,
+    ...typography.caption,
     fontWeight: "600",
-    marginTop: 6,
+    marginTop: spacing.sm,
     textAlign: "center",
   },
+  splitProteinText: { color: colors.macros.met },
+  splitCarbsText: { color: colors.macros.atCap },
+  splitFatsText: { color: colors.macros.under },
+  splitSeparator: { color: colors.textMuted },
   daysRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    gap: 6,
+    gap: spacing.sm,
     height: 110,
   },
   dayCol: {
@@ -350,24 +335,36 @@ const styles = StyleSheet.create({
   dayBarTrack: {
     width: "60%",
     height: 70,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 4,
+    // Unfilled meter track (standing rule), not a faint outline.
+    backgroundColor: colors.surface2,
+    borderRadius: radii.control,
     overflow: "hidden",
     justifyContent: "flex-end",
   },
   dayBarFill: {
     width: "100%",
-    borderRadius: 4,
+    borderRadius: radii.control,
   },
+  dayBarFillHit: { backgroundColor: colors.macros.met },
+  // Short of goal keeps the Meals identity orange — a bar fill, which spec §8
+  // stage 6 sanctions.
+  dayBarFillShort: { backgroundColor: colors.accents.meals },
   dayLabel: {
-    fontSize: 11,
-    color: colors.foreground,
-    marginTop: 4,
+    ...typography.caption,
+    color: colors.text,
     fontWeight: "600",
+    marginTop: spacing.xs,
   },
+  // Held at 9 rather than converged to `caption` (12). Seven `flex: 1` columns
+  // inside this card leave ~31pt each on a 320pt device; a 4-digit calorie
+  // total at 12pt needs ~29pt, and this `Text` has no `numberOfLines`, so it
+  // would WRAP — and `daysRow` is a fixed 110pt with `alignItems: "flex-end"`,
+  // so the second line would overflow the row. At 9pt the same value needs
+  // ~22pt, leaving real headroom. `dayLabel` above is a single character, so
+  // it converges to `caption` safely.
   dayValue: {
     fontSize: 9,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
 });
