@@ -1,6 +1,6 @@
 // mobile/src/components/ui/Card.tsx
 import React from "react";
-import { StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
+import { StyleProp, StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native";
 import { AccentKey, colors, radii, spacing, tint } from "@/src/theme/tokens";
 
 interface CardProps {
@@ -10,12 +10,12 @@ interface CardProps {
   onPress?: () => void;
   /** Long-press action (e.g. a row's context action sheet). May be used alone. */
   onLongPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
 }
 
 export function Card({ variant, accent, onPress, onLongPress, style, children }: CardProps) {
-  const base: ViewStyle[] = [
+  const base: StyleProp<ViewStyle>[] = [
     variant === "row" ? styles.row : variant === "panel" ? styles.panel : styles.tile,
   ];
   if (variant === "tile") {

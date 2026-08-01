@@ -40,7 +40,9 @@ export function Button({
   return (
     <TouchableOpacity
       style={[
-        styles.base, styles[variant], size === "sm" && styles.sm,
+        // `sm` before the variant on purpose: `sm` carries only padding, and
+        // `ghost`'s tighter horizontal padding (spec §5.1) has to win over it.
+        styles.base, size === "sm" && styles.sm, styles[variant],
         fluid && styles.fluid, disabled && styles.disabled, { minWidth },
       ]}
       onPress={onPress}
@@ -57,7 +59,13 @@ export function Button({
         />
       ) : (
         <>
-          {Icon ? <Icon size={icons.md} color={labelColor} strokeWidth={icons.strokeWidth} /> : null}
+          {Icon ? (
+            <Icon
+              size={size === "sm" ? icons.sm : icons.md}
+              color={labelColor}
+              strokeWidth={icons.strokeWidth}
+            />
+          ) : null}
           <Text style={[size === "sm" ? typography.buttonSm : typography.button, { color: labelColor }]}>
             {label}
           </Text>

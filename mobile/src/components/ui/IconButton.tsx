@@ -8,17 +8,31 @@ interface IconButtonProps {
   icon: LucideIcon;
   onPress: () => void;
   variant?: "square" | "circle";
+  /**
+   * `danger` marks a destructive action. `danger` is a semantic token, not one
+   * of the four domain accents the "every control is brand" rule governs, and
+   * spec §5.1 makes it the legitimate color for destructive controls. An
+   * icon-only delete has no label to carry that meaning, so it needs the color.
+   * Both variants keep the calm `tint()` treatment — never a filled red.
+   */
+  tone?: "default" | "danger";
   accessibilityLabel: string;
   disabled?: boolean;
 }
 
 export function IconButton({
-  icon: Icon, onPress, variant = "square", accessibilityLabel, disabled = false,
+  icon: Icon, onPress, variant = "square", tone = "default",
+  accessibilityLabel, disabled = false,
 }: IconButtonProps) {
   const circle = variant === "circle";
+  const danger = tone === "danger";
   return (
     <TouchableOpacity
-      style={[circle ? styles.circle : styles.square, disabled && styles.disabled]}
+      style={[
+        circle ? styles.circle : styles.square,
+        danger && (circle ? styles.circleDanger : styles.squareDanger),
+        disabled && styles.disabled,
+      ]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
@@ -30,7 +44,7 @@ export function IconButton({
     >
       <Icon
         size={circle ? icons.sm : icons.md}
-        color={circle ? colors.brand : colors.onBrand}
+        color={danger ? colors.danger : circle ? colors.brand : colors.onBrand}
         strokeWidth={icons.strokeWidth}
       />
     </TouchableOpacity>
@@ -46,5 +60,7 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: radii.pill,
     backgroundColor: tint(colors.brand), alignItems: "center", justifyContent: "center",
   },
+  squareDanger: { backgroundColor: tint(colors.danger) },
+  circleDanger: { backgroundColor: tint(colors.danger) },
   disabled: { opacity: 0.5 },
 });
