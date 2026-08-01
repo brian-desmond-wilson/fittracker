@@ -28,7 +28,7 @@ export function LoadingState({ label = "Loading..." }: { label?: string }) {
   return (
     <View style={styles.wrap}>
       <ActivityIndicator size="large" color={colors.brand} />
-      <Text style={styles.body}>{label}</Text>
+      <Text style={styles.caption}>{label}</Text>
     </View>
   );
 }
@@ -40,4 +40,5 @@ const styles = StyleSheet.create({
   },
   title: { ...typography.rowTitle, color: colors.text, textAlign: "center" },
   body: { ...typography.body, color: colors.textMuted, textAlign: "center" },
+  caption: { ...typography.caption, textAlign: "center" },
 });
