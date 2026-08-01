@@ -1408,3 +1408,18 @@ Pace unit-pairing (no fixture had ever set `paceProtein` behind, so the Task 2 s
 The field was declared and never read — flagged after Tasks 1–2, again after the first review round, and raised a third time before being ruled on. Removed rather than retained "in case a station needs it", for the same reason the `meals`/`mealScores` collapse landed: **this engine is a projection over already-resolved data.** Every date-relative quantity a station renders is computed upstream — `ItemStockState.daysLeft` and `.expiration` (banded against today by `projectItemStock`), `ConsumptionEstimate.daysUntilOut`, `MealPaceState`. For a station to need `todayLocalDate` it would have to derive a date-relative fact *itself*, which this file's header comment explicitly forbids. So the speculative case isn't merely unlikely: if it ever arrived, needing the date here would be the signal that the computation belongs upstream in an engine that already has tests for it.
 
 Meanwhile the field obliged `useLoopHub` to thread a value with no consumer. Task 4's assembly drops the `todayLocalDate: today` line; `today` is still needed there for the fetchers (`fetchInventoryWithState(today)`, `fetchShoppingData(today)`, the `meal_logs` date filter), just not for `computeLoopStatus`.
+
+### Task 4 — `toError` lifted verbatim (plan note (d) was wrong on the facts)
+
+Task 4's implementation note (d) offered a simplified error normalization, justified as "acceptable because `fetchInventoryWithState`/`fetchShoppingData` already throw real errors". **They do not.** Verified against the shipped code:
+
+- `fetchInventoryWithState` → `throw errors[0]` (`inventory.ts:48`) — a raw PostgREST error object.
+- `fetchShoppingData` → `throw errors[0]` (`shopping.ts:80`) — same.
+- `fetchMealLibrary` re-throws raw PostgREST objects too, which is exactly what `useEatNext`'s own `toError` doc comment already documented (`useEatNext.ts:120-122`, citing `mealLibrary.ts:62,134,234`).
+- The `logs.error` / `profile.error` values thrown by this hook's own guard are the same kind of object.
+
+So `useLoopHub` faces precisely the condition `toError` exists for, and the simplified form would have discarded `details`, `hint` and `code`. For the 42703 column-name class these hooks guard against, `hint` carries PostgREST's "Perhaps you meant to reference the column …" — the most actionable line available. Per the plan's own fallback in note (d), `toError` is lifted **verbatim** from `useEatNext.ts:130` with attribution, and both copies are marked "change both or neither" (verified byte-identical at commit time).
+
+Everything else in Task 4 landed as the (superseded-header) snippet specified: fetch composition unchanged, runId stale-guard unchanged, pace/profile handling unchanged, `eatNextRef` render-phase sync unchanged. Applied on top: the collapsed `meals` array (one `.map`, replacing `meals` + `mealScores`) and the removal of `todayLocalDate` from the `computeLoopStatus` call — `today` is still resolved for the three fetchers that take it.
+
+**No infinite-loop risk from `[load, eatNext]`**, checked explicitly: `load` is `useCallback(…, [])` and therefore stable, and nothing in this hook writes `eatNext` — it is owned by the caller's `useEatNext`. The effect re-runs only when that hook publishes a new result.
