@@ -1,15 +1,19 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+// mobile/src/components/profile/ProfileMenu.tsx
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
-  User,
-  Target,
-  Calendar,
   Bell,
-  Info,
-  Wrench,
+  Calendar,
   ChevronRight,
-  ShieldCheck,
+  Info,
   Salad,
-} from 'lucide-react-native';
+  ShieldCheck,
+  SlidersHorizontal,
+  Target,
+  User,
+  Wrench,
+} from "lucide-react-native";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Button } from "@/src/components/ui";
 
 interface MenuItem {
   id: string;
@@ -23,6 +27,7 @@ interface ProfileMenuProps {
   onProfilePress: () => void;
   onGoalsPress: () => void;
   onNutritionPress: () => void;
+  onTrackingSettingsPress: () => void;
   onRoutinesPress: () => void;
   onNotificationsPress: () => void;
   onAboutPress: () => void;
@@ -35,193 +40,139 @@ export function ProfileMenu({
   onProfilePress,
   onGoalsPress,
   onNutritionPress,
+  onTrackingSettingsPress,
   onRoutinesPress,
   onNotificationsPress,
   onAboutPress,
   onDevTasksPress,
   onSignOut,
 }: ProfileMenuProps) {
+  const menuIcon = (Icon: typeof User) => (
+    <Icon size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+  );
+
   const userMenuItems: MenuItem[] = [
+    { id: "profile", label: "Profile", icon: menuIcon(User), onPress: onProfilePress },
+    { id: "goals", label: "Goals", icon: menuIcon(Target), onPress: onGoalsPress },
     {
-      id: 'profile',
-      label: 'Profile',
-      icon: <User size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onProfilePress,
-    },
-    {
-      id: 'goals',
-      label: 'Goals',
-      icon: <Target size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onGoalsPress,
-    },
-    {
-      id: 'nutrition',
-      label: 'Nutrition Preferences',
-      icon: <Salad size={22} color="#9CA3AF" strokeWidth={2} />,
+      id: "nutrition",
+      label: "Nutrition Preferences",
+      icon: menuIcon(Salad),
       onPress: onNutritionPress,
     },
     {
-      id: 'routines',
-      label: 'Routines',
-      icon: <Calendar size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onRoutinesPress,
+      id: "tracking-settings",
+      label: "Tracking Settings",
+      icon: menuIcon(SlidersHorizontal),
+      onPress: onTrackingSettingsPress,
     },
+    { id: "routines", label: "Routines", icon: menuIcon(Calendar), onPress: onRoutinesPress },
     {
-      id: 'notifications',
-      label: 'Notifications',
-      icon: <Bell size={22} color="#9CA3AF" strokeWidth={2} />,
+      id: "notifications",
+      label: "Notifications",
+      icon: menuIcon(Bell),
       onPress: onNotificationsPress,
     },
-    {
-      id: 'about',
-      label: 'About',
-      icon: <Info size={22} color="#9CA3AF" strokeWidth={2} />,
-      onPress: onAboutPress,
-    },
+    { id: "about", label: "About", icon: menuIcon(Info), onPress: onAboutPress },
   ];
 
   const adminMenuItems: MenuItem[] = [
     {
-      id: 'dev-tasks',
-      label: 'Development Tasks',
-      icon: <Wrench size={22} color="#9CA3AF" strokeWidth={2} />,
+      id: "dev-tasks",
+      label: "Development Tasks",
+      icon: menuIcon(Wrench),
       onPress: onDevTasksPress,
     },
   ];
+
+  const renderSection = (items: MenuItem[]) => (
+    <View style={styles.menuSection}>
+      {items.map((item) => (
+        <TouchableOpacity
+          key={item.id}
+          style={styles.menuItem}
+          onPress={item.onPress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={item.label}
+        >
+          <View style={styles.menuItemLeft}>
+            <View style={styles.iconContainer}>{item.icon}</View>
+            <Text style={styles.menuItemText}>{item.label}</Text>
+          </View>
+          <ChevronRight size={icons.md} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <Text style={styles.pageTitle}>Profile</Text>
 
-      {/* User Menu Items */}
-      <View style={styles.menuSection}>
-        {userMenuItems.map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={styles.menuItem}
-            onPress={item.onPress}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuItemLeft}>
-              <View style={styles.iconContainer}>{item.icon}</View>
-              <Text style={styles.menuItemText}>{item.label}</Text>
-            </View>
-            <ChevronRight size={20} color="#6B7280" strokeWidth={2} />
-          </TouchableOpacity>
-        ))}
-      </View>
+      {renderSection(userMenuItems)}
 
-      {/* Admin Section */}
       {isAdmin && (
         <>
           <View style={styles.adminBadgeContainer}>
-            <ShieldCheck size={16} color="#22C55E" />
+            <ShieldCheck size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
             <Text style={styles.adminBadgeText}>Administrator Access</Text>
           </View>
-
-          <View style={styles.menuSection}>
-            {adminMenuItems.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.menuItem}
-                onPress={item.onPress}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={styles.iconContainer}>{item.icon}</View>
-                  <Text style={styles.menuItemText}>{item.label}</Text>
-                </View>
-                <ChevronRight size={20} color="#6B7280" strokeWidth={2} />
-              </TouchableOpacity>
-            ))}
-          </View>
+          {renderSection(adminMenuItems)}
         </>
       )}
 
-      {/* Sign Out Button */}
-      <TouchableOpacity style={styles.signOutButton} onPress={onSignOut}>
-        <Text style={styles.signOutButtonText}>Sign Out</Text>
-      </TouchableOpacity>
+      <Button variant="destructive" label="Sign Out" onPress={onSignOut} fluid />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 100,
+    padding: spacing.screenGutter,
+    paddingBottom: 100, // matches pre-migration reserve above the tab bar
   },
-  pageTitle: {
-    fontSize: 34,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 24,
-  },
+  pageTitle: { ...typography.titleRoot, color: colors.text, marginBottom: spacing.xxl },
   menuSection: {
-    backgroundColor: '#111827',
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radii.panel,
     borderWidth: 1,
-    borderColor: '#1F2937',
-    marginBottom: 16,
-    overflow: 'hidden',
+    borderColor: colors.border,
+    marginBottom: spacing.lg,
+    overflow: "hidden",
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#1F2937',
+    borderBottomColor: colors.border,
   },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
+  menuItemLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
   iconContainer: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: '#1F2937',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    borderRadius: radii.control,
+    backgroundColor: colors.surface2,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: spacing.md,
   },
-  menuItemText: {
-    fontSize: 17,
-    color: '#FFFFFF',
-    fontWeight: '400',
-  },
+  // Rule 20: a tappable disclosure row is a control — rowTitle, not section.
+  menuItemText: { ...typography.rowTitle, color: colors.text },
   adminBadgeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: tint(colors.brand),
     borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.3)',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 12,
+    borderColor: tint(colors.brand, 0.3),
+    borderRadius: radii.control,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
   },
-  adminBadgeText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#22C55E',
-  },
-  signOutButton: {
-    backgroundColor: '#7F1D1D',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  signOutButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
-  },
+  adminBadgeText: { ...typography.buttonSm, color: colors.brand },
 });
