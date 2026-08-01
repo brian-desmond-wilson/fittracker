@@ -35,8 +35,32 @@ interface PaceProfileRow {
   water_window_start: string;
   water_window_end: string;
 }
-const PACE_PROFILE_SELECT =
-  "target_calories, target_protein_g, breakfast_time, lunch_time, dinner_time, water_window_start, water_window_end";
+/**
+ * Derived from `PaceProfileRow` rather than written out beside it — the same
+ * guard as `useEatNext.ts:45`, mirrored rather than varied.
+ * `satisfies Record<keyof PaceProfileRow, true>` is checked BOTH ways: a field
+ * added to the interface and not here fails to compile ("property is
+ * missing"), and a key here that is not on the interface fails as an excess
+ * property.
+ *
+ * This matters more than it looks: the client is untyped (`createClient` with
+ * no `Database` generic), so `tsc` validates no table or column name anywhere
+ * in this file — a green typecheck proves nothing about schema correctness.
+ * Select-string-vs-interface drift is the one column-name error class `tsc`
+ * CAN catch, and only when the two are tied together like this. Editing the
+ * profile columns is now a single change that cannot be half-done.
+ */
+const PACE_PROFILE_COLUMNS = {
+  target_calories: true,
+  target_protein_g: true,
+  breakfast_time: true,
+  lunch_time: true,
+  dinner_time: true,
+  water_window_start: true,
+  water_window_end: true,
+} satisfies Record<keyof PaceProfileRow, true>;
+
+const PACE_PROFILE_SELECT = Object.keys(PACE_PROFILE_COLUMNS).join(", ");
 
 const hhmm = (t: string) => t.slice(0, 5);
 
@@ -89,12 +113,31 @@ export interface UseLoopHubValue {
   loading: boolean;
   error: Error | null;
   refetch: () => void;
+  /**
+   * The single clock (`load`'s local `now`) this `status` was computed
+   * against — `null` before the first successful load. It is also the `now`
+   * the pace states inside `status` were computed from, so the two describe
+   * the same instant by construction.
+   *
+   * Stale-while-revalidate like `status`: it updates only alongside a
+   * successful `setStatus`, inside the same `runId` guard, so the pair is
+   * always matched — an in-flight or failed refetch never leaves `computedAt`
+   * describing a different `status` than the one on screen. Consumers must
+   * read this rather than calling `new Date()` at render, which would be a
+   * second, unmatched clock.
+   *
+   * Treat it as read-only: it is the literal `Date` object held in this
+   * hook's state, so mutating it in place (e.g. `.setHours(...)`) would
+   * corrupt state as a side effect of what looks like a read.
+   */
+  computedAt: Date | null;
 }
 
 export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
   const [status, setStatus] = useState<LoopStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [computedAt, setComputedAt] = useState<Date | null>(null);
   // Stale-response guard, same contract as `useEatNext`: overlapping loads are
   // expected (screen focus during a slow reload), and without this the SLOWER
   // one would win and publish a status computed from older data.
@@ -162,6 +205,9 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
       if (runId !== runIdRef.current) return;
       setError(null);
       setStatus(next);
+      // Inside the same runId guard as `setStatus`, never outside it: the
+      // timestamp and the status it describes must publish as a matched pair.
+      setComputedAt(now);
     } catch (e) {
       console.error("useLoopHub:", e);
       if (runId !== runIdRef.current) return;
@@ -177,5 +223,5 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
   // writes `eatNext`, which is owned by the caller's `useEatNext`.
   useEffect(() => { load(); }, [load, eatNext]);
 
-  return { status, loading, error, refetch: load };
+  return { status, loading, error, refetch: load, computedAt };
 }
