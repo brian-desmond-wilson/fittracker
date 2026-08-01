@@ -67,7 +67,26 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
   );
 
   const firstLoading = (hub.loading || eatNext.loading) && hub.status === null;
-  const failed = !firstLoading && hub.status === null && (hub.error ?? eatNext.error);
+  // BOTH conditions are required, and each rules out a different bug.
+  //
+  // `error !== null` alone would blank a screen that already has good data the
+  // moment a REFRESH fails — precisely what stale-while-revalidate (spec §8)
+  // exists to prevent, and the hooks keep the previous `result` on a failed
+  // refetch exactly so the user keeps seeing it. `result === null` alone is not
+  // an error at all: it is also the cold-start state.
+  //
+  // Together they mean "Eat Next has failed and has NOTHING to fall back on".
+  const eatNextDead = eatNext.error !== null && eatNext.result === null;
+  // Gating on `hub.status === null` alone would let an Eat Next failure render
+  // as a quiet station 3 ("—", no badge) on an otherwise healthy six-station
+  // screen — no error, no Retry. That is reachable, not theoretical:
+  // `useEatNext` reads `nutrition_constraints` and `workout_instances`
+  // (useEatNext.ts:195-224), two tables `useLoopHub` never touches, so an RLS
+  // or schema fault on either fails Eat Next while the hub loads fine. The
+  // engine then correctly reads `eatNext: null` as "not loaded yet" and stays
+  // quiet — right for the engine, wrong for the screen, since nothing else
+  // surfaces it. Spec §6 is all-or-nothing: no per-station degradation.
+  const failed = !firstLoading && (hub.status === null || eatNextDead) && (hub.error ?? eatNext.error);
 
   return (
     <Screen
