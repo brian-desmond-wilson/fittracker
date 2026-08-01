@@ -4,7 +4,7 @@ import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
-import { AccentKey, colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { AccentKey, colors, icons, spacing, typography } from "@/src/theme/tokens";
 
 interface ScreenProps {
   variant: "root" | "detail";
@@ -96,9 +96,9 @@ const styles = StyleSheet.create({
   chromeBordered: { borderBottomWidth: 1, borderBottomColor: colors.border },
   back: { width: 32, alignItems: "flex-start", justifyContent: "center" },
   center: { flex: 1 },
-  flank: { flex: 1, alignItems: "flex-start" },
+  flank: { flex: 1, minWidth: 32, alignItems: "flex-start" },
   flankRight: { alignItems: "flex-end" },
-  barTitle: { textAlign: "center", color: colors.text },
+  barTitle: { flexShrink: 1, textAlign: "center", color: colors.text },
   titleRow: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
     marginBottom: spacing.lg,
