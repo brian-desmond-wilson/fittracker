@@ -1429,3 +1429,20 @@ Everything else in Task 4 landed as the (superseded-header) snippet specified: f
 Spec §6 describes the connector label as mono, `typography.caption`-sized; `typography.caption` is `fontSize: 12` (`tokens.ts:103`). The shipped label uses `fontSize: 11`, which is the plan's own value (plan:884). **Plan governs, code unchanged** — 11 sits deliberately below caption so the connector reads as subordinate to the station rows it links, and there is no smaller type token to name it with. Recorded only because every other divergence this run carries an entry in both documents and this one had none.
 
 Not a divergence: §6's prose orders the connector "tick + ▾ + label" while the code renders `{label} ▾`. The plan's snippet matches the code and the approved mockup is the visual authority, so that is prose ordering, not a layout requirement.
+
+### Task 7 — the plan's "sanctioned container" note was wrong (correction, fixed in code)
+
+The plan's Task 7 design points asserted that `LoadingState`/`EmptyState` "are full-bleed and are direct children of `Screen`'s scroll body here — that is their sanctioned container." **That is the opposite of the truth, and it shipped in a comment that would have stopped the next reader from fixing it.**
+
+Both primitives are `flex: 1` (`flexBasis: 0`, `EmptyState.tsx:39`), so they never size to their own content. `Screen`'s scrolling body puts them in an auto-height parent: `scrollContent` is `{ paddingHorizontal, gap }` (`Screen.tsx:117`) with **no `flexGrow: 1`**. Style guide rule 25 names this exact trap in these words — "dropped into an auto-height parent they collapse onto their padding and spill" — so the state boxes collapsed onto their `spacing.xxxl` padding and spilled.
+
+Fix: `firstLoading || failed` now early-returns a **non-scrolling** `Screen`. Rule 25's third bullet carves this out — "Neither is needed when a `flex: 1` ancestor already supplies it directly (e.g. `Screen scroll={false}`'s container)" — and `Screen.tsx:91-92` confirms that container is `flex: 1`. Same shape as `ShoppingListScreen.tsx:380`, which renders both of its states under `scroll={false}`. Not a fourth variant of the fix; the same rule-25 bullet, reached by early return because the happy path still needs the scroller and its `refreshControl`.
+
+The happy path was unaffected, which is why the device pass looked clean — the defect lived only in the loading and error states, i.e. exactly the path the preceding commit (`ccb23c2`) had been written to make visible.
+
+Two internal refinements landed in the same commit:
+
+- **Failure decision split from failure payload.** `(hub.error ?? eatNext.error)` had served as both the truthiness gate and the message source, making `failed` a `false | null | Error` that silently depended on an unenforced cross-hook invariant (that whenever the stations aren't showable, some error is non-null). If it ever broke, render fell through to the trailing `: null` and the screen went blank with no Retry — the same bug class as `ccb23c2` by another route. Now `stationsShowable` / `failure` / `failed` are three named values, and `body` carries a total fallback message so no path can render nothing. A seventh station needs no change here; a third hook adds one `&& !thirdDead` and one `??`.
+- **Open station derived, not snapshotted.** `openStation` held a `StationStatus` captured at tap time. Rows render as soon as the first hub load lands while `eatNext` is still resolving, so tapping station 3 in that window captured the `eatNext: null` payload (headline `"—"`); the row behind updated on the second load, the open sheet did not. State is now the `StationKey`, with the station re-found from `hub.status` each render. `hub.status` never returns to null once populated, so it cannot flicker, and the sheet's `lastRef` still covers the dismissal animation.
+
+**Logged as a follow-up, deliberately not done on this branch:** the Track hub entry card is the third copy of the 34pt tinted accent circle (with `StationRow` and `StationDetailSheet`), which meets the extraction threshold for an `AccentGlyph` primitive. Out of scope here.

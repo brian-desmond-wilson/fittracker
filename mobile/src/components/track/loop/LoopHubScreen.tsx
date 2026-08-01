@@ -10,7 +10,7 @@ import { colors } from "@/src/theme/tokens";
 import { EmptyState, LoadingState, Screen } from "@/src/components/ui";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { useLoopHub } from "@/src/hooks/useLoopHub";
-import type { StationStatus } from "@/src/lib/loopStatus";
+import type { StationKey, StationStatus } from "@/src/lib/loopStatus";
 import { Connector } from "./Connector";
 import { StationRow } from "./StationRow";
 import { StationDetailSheet } from "./StationDetailSheet";
@@ -19,8 +19,18 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
   const router = useRouter();
   const eatNext = useEatNext();
   const hub = useLoopHub(eatNext.result);
-  const [openStation, setOpenStation] = useState<StationStatus | null>(null);
+  // The open station is DERIVED from `hub.status`, not snapshotted into state.
+  // Holding a `StationStatus` here would go stale in one reachable window: the
+  // rows render as soon as the FIRST hub load lands, while `eatNext` is still
+  // loading, so tapping station 3 in those seconds would capture the payload
+  // computed with `eatNext: null` (headline "—"). The row behind would update
+  // when Eat Next resolved; the open sheet would not, until closed and
+  // reopened. Keying by `StationKey` and re-finding makes that impossible.
+  // `hub.status` is never set back to null once populated, so this cannot
+  // flicker, and the sheet's own `lastRef` still covers the dismissal slide.
+  const [openKey, setOpenKey] = useState<StationKey | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const openStation = hub.status?.stations.find((s) => s.key === openKey) ?? null;
 
   // BOTH refetches, always — never `eatNext.refetch()` alone.
   //
@@ -60,7 +70,7 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
 
   const openDestination = useCallback(
     (station: StationStatus) => {
-      setOpenStation(null);
+      setOpenKey(null);
       router.push(station.destination);
     },
     [router],
@@ -77,16 +87,48 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
   //
   // Together they mean "Eat Next has failed and has NOTHING to fall back on".
   const eatNextDead = eatNext.error !== null && eatNext.result === null;
-  // Gating on `hub.status === null` alone would let an Eat Next failure render
-  // as a quiet station 3 ("—", no badge) on an otherwise healthy six-station
-  // screen — no error, no Retry. That is reachable, not theoretical:
-  // `useEatNext` reads `nutrition_constraints` and `workout_instances`
-  // (useEatNext.ts:195-224), two tables `useLoopHub` never touches, so an RLS
-  // or schema fault on either fails Eat Next while the hub loads fine. The
-  // engine then correctly reads `eatNext: null` as "not loaded yet" and stays
-  // quiet — right for the engine, wrong for the screen, since nothing else
-  // surfaces it. Spec §6 is all-or-nothing: no per-station degradation.
-  const failed = !firstLoading && (hub.status === null || eatNextDead) && (hub.error ?? eatNext.error);
+  // An Eat Next failure is a LOOP failure. Gating only on `hub.status === null`
+  // would render it as a quiet station 3 ("—", no badge) on an otherwise
+  // healthy six-station screen — no error, no Retry. Reachable, not
+  // theoretical: `useEatNext` reads `nutrition_constraints` and
+  // `workout_instances` (useEatNext.ts:195-224), two tables `useLoopHub` never
+  // touches. Spec §6 is all-or-nothing: no per-station degradation.
+  const stationsShowable = hub.status !== null && !eatNextDead;
+  // The DECISION and the PAYLOAD are separate on purpose. Folding them into one
+  // `false | null | Error` would silently depend on a cross-hook invariant
+  // nothing enforces — that whenever the stations aren't showable, some error
+  // is non-null. It holds today; the day it doesn't, the old form evaluated to
+  // `null`, fell through to the trailing `: null`, and rendered a BLANK screen
+  // with no Retry — the same bug class as above by another route. With a total
+  // fallback message below, no path can render nothing.
+  const failure = hub.error ?? eatNext.error;
+  const failed = !firstLoading && !stationsShowable;
+
+  // STYLE GUIDE RULE 25 — these two states get their own NON-scrolling Screen.
+  // `EmptyState`/`LoadingState` are `flex: 1` (`flexBasis: 0`), so they never
+  // size to their own content; in an auto-height parent they collapse onto
+  // their `spacing.xxxl` padding and spill. `Screen`'s SCROLL body is exactly
+  // such a parent — `scrollContent` (Screen.tsx:117) has no `flexGrow: 1` — so
+  // rendering them there is the trap rule 25 names. `scroll={false}` renders
+  // `styles.scroll` (`flex: 1`) instead, which is rule 25's third bullet: a
+  // `flex: 1` ancestor supplying a definite height directly. Same shape as
+  // `ShoppingListScreen`. Losing pull-to-refresh here is fine — the error state
+  // carries an explicit Retry. Do NOT move these back under the scroller.
+  if (firstLoading || failed) {
+    return (
+      <Screen variant="detail" title="Nutrition Loop" onBack={onBack} scroll={false}>
+        {firstLoading ? (
+          <LoadingState />
+        ) : (
+          <EmptyState
+            title="Couldn't load the loop"
+            body={failure?.message ?? "Something went wrong."}
+            action={{ label: "Retry", onPress: refetchBoth }}
+          />
+        )}
+      </Screen>
+    );
+  }
 
   return (
     <Screen
@@ -104,18 +146,7 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
         />
       }
     >
-      {/* `LoadingState` / `EmptyState` are full-bleed (flex: 1 + opaque bg) and
-          are direct children of `Screen`'s scroll body here — its sanctioned
-          container. Do not wrap either in a Card. */}
-      {firstLoading ? (
-        <LoadingState />
-      ) : failed ? (
-        <EmptyState
-          title="Couldn't load the loop"
-          body={failed.message}
-          action={{ label: "Retry", onPress: refetchBoth }}
-        />
-      ) : hub.status ? (
+      {hub.status ? (
         <>
           {/* EVERY station renders a trailing `Connector` — all six. Station
               6's label ("purchased → restock ↺ inventory") is the loop
@@ -124,7 +155,7 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
             <React.Fragment key={station.key}>
               <StationRow
                 station={station}
-                onPressBody={() => setOpenStation(station)}
+                onPressBody={() => setOpenKey(station.key)}
                 onPressChevron={() => router.push(station.destination)}
               />
               <Connector label={station.connector} />
@@ -132,7 +163,7 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
           ))}
           <StationDetailSheet
             station={openStation}
-            onClose={() => setOpenStation(null)}
+            onClose={() => setOpenKey(null)}
             onOpenDestination={() => openStation && openDestination(openStation)}
           />
         </>

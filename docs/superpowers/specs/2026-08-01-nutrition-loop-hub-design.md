@@ -181,3 +181,9 @@ Forecast name resolution: `rates` is keyed by inventory id; the engine resolves 
 **2026-08-01 — Task 5 (`Connector`).**
 
 - **§6's connector label is `fontSize: 11`, not `typography.caption`'s 12.** The plan specified 11 (plan:884) and governs; 11 keeps the connector subordinate to the station rows it links, and no smaller type token exists to name it. See the plan's "Task 5 — `Connector` label font size".
+
+**2026-08-01 — Task 7 (`LoopHubScreen`), code-quality review round.**
+
+- **§8's loading and error states need a definite-height parent.** The plan asserted they were correctly placed as direct children of `Screen`'s scroll body; they were not. Both primitives are `flex: 1`, and that scroll container has no `flexGrow: 1`, so under style guide rule 25 they collapsed onto their padding and spilled. Both states now early-return a non-scrolling `Screen` (rule 25's third bullet, matching `ShoppingListScreen`); the station list keeps its scroller and pull-to-refresh. The happy path was never affected, so device verification did not surface it. See plan → "Task 7 — the plan's 'sanctioned container' note was wrong".
+- **§8's combined error state is now total.** The failure decision (`stationsShowable`) is separated from the failure payload (`failure`), and the error body carries a fallback message, so no combination of hook states can render a blank screen with no Retry. Refinement of the `ccb23c2` fix, same bug class. See the same plan entry.
+- **§6's detail sheet reads a live station, not a snapshot.** The open station is keyed by `StationKey` and re-found from `hub.status` each render, so a sheet opened before Eat Next resolves updates in place instead of holding station 3's not-loaded-yet `"—"`. See the same plan entry.
