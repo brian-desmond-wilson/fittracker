@@ -184,17 +184,22 @@ export function WaterIntakeHomeCard({ refreshKey }: WaterIntakeHomeCardProps) {
 }
 
 const styles = StyleSheet.create({
-  // `Card variant="panel"` owns surface/radius/padding/border; the half-width
-  // grid sizing the old bespoke `card` style also carried lives here.
+  // `Card variant="panel"` owns surface/radius/padding/border; the grid sizing
+  // the old bespoke `card` style also carried lives here. `flex: 1` rather
+  // than the old `width: "47%"`: Home's grid supplies a `spacing.lg` gap, so a
+  // percentage double-counts the separation and leaves the row short of the
+  // gutter. Flex lets the gap own it exactly, at any device width.
   cardSizing: {
-    width: "47%",
-    minWidth: 160,
+    flex: 1,
   },
+  // `spacing.md`, matching `MealsHomeCard`'s header — the two sit side by side
+  // in one grid row with identical `Card panel` padding, so the 4pt they
+  // differed by before reads as a bug now that everything else lines up.
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   cardTitle: {
     ...typography.body,
@@ -228,7 +233,7 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     height: 4,
-    backgroundColor: colors.textFaint,
+    backgroundColor: colors.surface2,
     borderRadius: radii.pill,
     overflow: "hidden",
   },

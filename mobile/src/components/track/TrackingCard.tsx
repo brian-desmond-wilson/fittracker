@@ -14,7 +14,7 @@ interface TrackingCardProps {
 export function TrackingCard({ title, icon: Icon, accent, onPress }: TrackingCardProps) {
   return (
     <Card variant="tile" accent={accent} onPress={onPress} style={styles.grow}>
-      <Icon size={32} color={colors.accents[accent]} strokeWidth={icons.strokeWidth} />
+      <Icon size={icons.xl} color={colors.accents[accent]} strokeWidth={icons.strokeWidth} />
       <Text style={styles.title}>{title}</Text>
     </Card>
   );

@@ -147,7 +147,7 @@ function MiniRing({
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
       <Svg width={size} height={size}>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.textFaint} strokeWidth={strokeWidth} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.surface2} strokeWidth={strokeWidth} fill="none" />
         <Circle
           cx={size / 2}
           cy={size / 2}
@@ -203,11 +203,13 @@ function MacroLine({
 }
 
 const styles = StyleSheet.create({
-  // `Card variant="panel"` owns surface/radius/padding/border; the half-width
-  // grid sizing the old bespoke `card` style also carried lives here.
+  // `Card variant="panel"` owns surface/radius/padding/border; the grid sizing
+  // the old bespoke `card` style also carried lives here. `flex: 1` rather
+  // than the old `width: "47%"`: Home's grid supplies a `spacing.lg` gap, so a
+  // percentage double-counts the separation and leaves the row short of the
+  // gutter. Flex lets the gap own it exactly, at any device width.
   cardSizing: {
-    width: "47%",
-    minWidth: 160,
+    flex: 1,
   },
   cardHeader: {
     flexDirection: "row",
@@ -268,7 +270,7 @@ const lineStyles = StyleSheet.create({
   },
   track: {
     height: 3,
-    backgroundColor: colors.textFaint,
+    backgroundColor: colors.surface2,
     borderRadius: radii.pill,
     overflow: "hidden",
     marginTop: 3,

@@ -84,6 +84,9 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   }, [result, computedAt]);
 
   if (loading && !result) {
+    // In-card loading is a bare brand `ActivityIndicator`, not `LoadingState`
+    // — that primitive is full-bleed (`flex: 1` + opaque `bg`) and hardcodes a
+    // "Loading..." label, neither of which belongs inside a `Card`.
     return (
       <Card variant="panel" style={styles.cardSpacing}>
         <ActivityIndicator color={colors.brand} />

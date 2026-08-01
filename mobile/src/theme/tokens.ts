@@ -70,4 +70,4 @@ export const typography = {
   buttonSm: { fontSize: 14, fontWeight: "600" } satisfies TextStyle,
 } as const;
 
-export const icons = { sm: 16, md: 20, lg: 24, strokeWidth: 2 } as const;
+export const icons = { sm: 16, md: 20, lg: 24, xl: 32, strokeWidth: 2 } as const;
