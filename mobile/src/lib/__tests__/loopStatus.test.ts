@@ -5,6 +5,8 @@ import {
 } from "../loopStatus";
 import type { ItemStockState } from "../stockState";
 import type { EatNextStockInfo } from "../eatNext";
+import { MAX_DISPLAY_DAYS } from "../consumptionRate";
+import { FORECAST_LEAD_DAYS } from "../shoppingDemand";
 
 const state = (over: Partial<ItemStockState> = {}): ItemStockState => ({
   totalQuantity: 3, readyQuantity: 3, storageQuantity: 0,
@@ -130,6 +132,17 @@ describe("station 2: library", () => {
     expect(empty.headline).toBe("0 meals — build your library");
     expect(empty.attention).toBe(false);
   });
+  // An absent `stockByMealId` entry is UNKNOWN, not missing — the same
+  // semantics station 3 honors by rendering no badge at all. "missing ?"
+  // would assert a verdict over data we never had.
+  it("a meal absent from stockByMealId gets a neutral 'unknown' chip, never 'missing ?'", () => {
+    const inp = baseInputs();
+    inp.stockByMealId = new Map([["m2", stock()]]); // m1 deliberately absent
+    const chips = computeLoopStatus(inp).stations[1].detail.chips;
+    expect(chips).toContainEqual({ label: "Korean Beef Bowl: ready", tone: "success" });
+    expect(chips).toContainEqual({ label: "Banana + PB: unknown", tone: "neutral" });
+    expect(chips.some((c) => c.label.includes("?"))).toBe(false);
+  });
 });
 
 describe("station 3: eat next", () => {
@@ -140,7 +153,10 @@ describe("station 3: eat next", () => {
     expect(s.attention).toBe(false);
     expect(s.detail.footnote).toBe("Runner-up: Banana + PB · 295 cal · Missing 2");
   });
-  it("warning badge + missing-name chips when the pick is missing items", () => {
+  // Title states only what this asserts: badge + attention. The sheet chip
+  // carries a COUNT, never ingredient names — `EatNextStockInfo` has no names
+  // to carry (see `eatNextStation`'s comment).
+  it("warning badge and attention when the pick is missing items", () => {
     const inp = baseInputs();
     inp.eatNext!.recommendations = [inp.eatNext!.recommendations[1]];
     const s = computeLoopStatus(inp).stations[2];
@@ -180,6 +196,37 @@ describe("station 3: eat next", () => {
     expect(s.badge).toEqual({ label: "Missing items", tone: "warning" });
     expect(s.detail.chips).toContainEqual({ label: "Missing items", tone: "warning" });
   });
+  // Contract #2's other half: the expiring line is the shipped
+  // `eatNextExpiringLine`'s output verbatim, and it must actually reach the
+  // detail sheet — a computed-but-never-displayed value is the Phase 4 Task 14
+  // failure this station exists to avoid.
+  it("surfaces eatNextExpiringLine's rescue notice as an 'Expiring' detail line", () => {
+    const inp = baseInputs();
+    inp.eatNext!.recommendations = [
+      {
+        ...inp.eatNext!.recommendations[0],
+        stock: stock({ expiringItemName: "Spinach", expiringDaysLeft: 2 }),
+      },
+    ];
+    expect(computeLoopStatus(inp).stations[2].detail.lines).toContainEqual({
+      label: "Expiring", value: "Uses Spinach — expires in 2d",
+    });
+  });
+  // `expiringDaysLeft: 0` is the MOST urgent value and it is FALSY — a
+  // truthiness gate anywhere on this path drops the line exactly when it
+  // matters most (the trap `eatNext.ts`'s own doc comment warns about).
+  it("day-zero expiry still renders, as 'expires today'", () => {
+    const inp = baseInputs();
+    inp.eatNext!.recommendations = [
+      {
+        ...inp.eatNext!.recommendations[0],
+        stock: stock({ expiringItemName: "Spinach", expiringDaysLeft: 0 }),
+      },
+    ];
+    expect(computeLoopStatus(inp).stations[2].detail.lines).toContainEqual({
+      label: "Expiring", value: "Uses Spinach — expires today",
+    });
+  });
 });
 
 describe("station 4: pace", () => {
@@ -205,6 +252,23 @@ describe("station 4: pace", () => {
     const inp = baseInputs();
     inp.goals = { calories: null, protein: null };
     expect(computeLoopStatus(inp).stations[3].headline).toBe("900 / — cal · 60 / —g protein");
+  });
+  // The other side of the neutral window branch: only `before_window` was
+  // pinned, so the "Day done" label had no coverage at all.
+  it("after_window is the other neutral window state: 'Day done'", () => {
+    const inp = baseInputs();
+    inp.paceCalories = { status: "after_window" };
+    inp.paceProtein = { status: "after_window" };
+    const s = computeLoopStatus(inp).stations[3];
+    expect(s.badge).toEqual({ label: "Day done", tone: "neutral" });
+    expect(s.attention).toBe(false);
+  });
+  it("thousands separators apply to protein as well as calories", () => {
+    const inp = baseInputs();
+    inp.totals = { calories: 3200, protein: 1200 };
+    inp.goals = { calories: 3400, protein: 1600 };
+    expect(computeLoopStatus(inp).stations[3].headline)
+      .toBe("3,200 / 3,400 cal · 1,200 / 1,600g protein");
   });
 });
 
@@ -233,6 +297,25 @@ describe("station 5: forecast", () => {
     const s = computeLoopStatus(inp).stations[4];
     expect(s.headline).toBe("1 item tracked");        // ghost skipped, 200d > cap → no "~Nd" lead
     expect(s.detail.lines.find((l) => l.label === "Eggs")).toBeUndefined();
+  });
+  // BOUNDARY: the gate is `<=`, so an item due in exactly FORECAST_LEAD_DAYS
+  // is urgent. Flipping `<=` to `<` must turn this test red.
+  it("FORECAST_LEAD_DAYS is inclusive — an item due exactly at the lead is urgent", () => {
+    const inp = baseInputs();
+    inp.rates = new Map([["i1", { ratePerDay: 1, daysUntilOut: FORECAST_LEAD_DAYS }]]);
+    const s = computeLoopStatus(inp).stations[4];
+    expect(s.badge).toEqual({ label: "1 urgent", tone: "shopping" });
+    expect(s.attention).toBe(true);
+  });
+  // BOUNDARY: the display cap is `<=`, so an item at exactly MAX_DISPLAY_DAYS
+  // still earns its "~Nd left" in both the headline and the detail line.
+  it("MAX_DISPLAY_DAYS is inclusive — an item at the cap still shows '~Nd left'", () => {
+    const inp = baseInputs();
+    inp.rates = new Map([["i1", { ratePerDay: 0.05, daysUntilOut: MAX_DISPLAY_DAYS }]]);
+    const s = computeLoopStatus(inp).stations[4];
+    expect(s.headline).toBe(`Eggs ~${MAX_DISPLAY_DAYS}d left · 1 item tracked`);
+    expect(s.detail.lines).toContainEqual({ label: "Eggs", value: `~${MAX_DISPLAY_DAYS}d left` });
+    expect(s.badge).toBeNull();
   });
 });
 
@@ -273,6 +356,46 @@ describe("station 6: shopping + assembly", () => {
     const chips = computeLoopStatus(inp).stations[0].detail.chips;
     expect(chips).toHaveLength(DETAIL_MAX_ROWS + 1);
     expect(chips[DETAIL_MAX_ROWS]).toEqual({ label: "+3 more", tone: "neutral" });
+  });
+  // LINE lists cap differently from CHIP lists: they truncate at
+  // DETAIL_MAX_ROWS and account for the remainder in the footnote rather than
+  // appending a "+N more" chip. All three line-bearing stations, so a footnote
+  // wired to the wrong station's overflow count cannot hide.
+  it("expiring lines cap at DETAIL_MAX_ROWS with a '+N more expiring' footnote", () => {
+    const inp = baseInputs();
+    inp.inventory = Array.from({ length: 8 }, (_, i) => ({
+      id: `x${i}`, name: `Item ${i}`,
+      state: state({ expiration: "soon", daysLeft: i + 1 }),
+    }));
+    const d = computeLoopStatus(inp).stations[0].detail;
+    expect(d.lines).toHaveLength(DETAIL_MAX_ROWS);
+    expect(d.lines[0]).toEqual({ label: "Item 0", value: "1d left" });
+    expect(d.footnote).toBe("+3 more expiring");
+  });
+  it("tracked lines cap at DETAIL_MAX_ROWS with a '+N more tracked' footnote", () => {
+    const inp = baseInputs();
+    inp.inventory = Array.from({ length: 8 }, (_, i) => ({
+      id: `x${i}`, name: `Item ${i}`, state: state(),
+    }));
+    inp.rates = new Map(
+      Array.from({ length: 8 }, (_, i) => [`x${i}`, { ratePerDay: 1, daysUntilOut: i + 1 }]),
+    );
+    const d = computeLoopStatus(inp).stations[4].detail;
+    expect(d.lines).toHaveLength(DETAIL_MAX_ROWS);
+    expect(d.footnote).toBe("+3 more tracked");
+  });
+  // Also pins plan:659's "overflow wins": the count REPLACES the decorative
+  // "restock returns units to Inventory ↺" footnote when both apply.
+  it("suggestion lines cap with a '+N more suggested' footnote that displaces the restock line", () => {
+    const inp = baseInputs();
+    inp.suggestions = Array.from({ length: 8 }, (_, i) => ({
+      name: `Sug ${i}`, priority: 1 as const, reasons: [`reason ${i}`],
+    }));
+    const d = computeLoopStatus(inp).stations[5].detail;
+    expect(d.lines).toHaveLength(DETAIL_MAX_ROWS);
+    expect(d.footnote).toBe("+3 more suggested");
+    expect(computeLoopStatus(baseInputs()).stations[5].detail.footnote)
+      .toBe("restock returns units to Inventory ↺");
   });
   // Contract: SIX stations, SIX connectors. Station 6's connector is the loop
   // CLOSING ("purchased → restock ↺ inventory"), not an off-by-one to be

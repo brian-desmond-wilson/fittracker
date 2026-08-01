@@ -138,9 +138,19 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
       lines: topThree.map((m) => ({ label: m.name, value: `${m.display} / 100` })),
       chips: capChips(topThree.map((m) => {
         const s = inp.stockByMealId.get(m.mealId);
-        return s?.assemblable
+        // An ABSENT entry is UNKNOWN, not missing. `buildStockByMealId` skips
+        // item-less meals by design, so absence is a routine live state, and
+        // station 3 already honors it (`eatNextStockBadge(undefined)` → null →
+        // no badge). A warning-toned "missing ?" would be a verdict on data we
+        // never had — the fabrication §4.1 forbids. Neutral keeps the row
+        // present (a dropped chip leaves an unexplained gap in a 3-row list)
+        // while "unknown" states exactly what we know.
+        if (s === undefined) {
+          return { label: `${m.name}: unknown`, tone: "neutral" as const };
+        }
+        return s.assemblable
           ? { label: `${m.name}: ready`, tone: "success" as const }
-          : { label: `${m.name}: missing ${s?.missingCount ?? "?"}`, tone: "warning" as const };
+          : { label: `${m.name}: missing ${s.missingCount}`, tone: "warning" as const };
       })),
       footnote: null,
     },
@@ -214,7 +224,7 @@ function paceStation(inp: LoopStatusInputs): StationStatus {
   const goalStr = (g: number | null) => (g === null ? "—" : fmt(g));
   const lines: StationDetailLine[] = [
     { label: "Calories", value: `${fmt(inp.totals.calories)} / ${goalStr(inp.goals.calories)} · ${pc.status}` },
-    { label: "Protein", value: `${inp.totals.protein}g / ${goalStr(inp.goals.protein)}g · ${pp.status}` },
+    { label: "Protein", value: `${fmt(inp.totals.protein)}g / ${goalStr(inp.goals.protein)}g · ${pp.status}` },
   ];
   // Unit travels with its state as a pair rather than being recovered by an
   // identity check against `pc` — a caller passing ONE state object for both
@@ -230,7 +240,7 @@ function paceStation(inp: LoopStatusInputs): StationStatus {
   return {
     key: "pace",
     title: "Today's Pace",
-    headline: `${fmt(inp.totals.calories)} / ${goalStr(inp.goals.calories)} cal · ${inp.totals.protein} / ${goalStr(inp.goals.protein)}g protein`,
+    headline: `${fmt(inp.totals.calories)} / ${goalStr(inp.goals.calories)} cal · ${fmt(inp.totals.protein)} / ${goalStr(inp.goals.protein)}g protein`,
     badge,
     attention: behind,
     connector: "meal_logs → consumption rates",

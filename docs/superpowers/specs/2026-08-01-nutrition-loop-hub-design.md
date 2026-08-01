@@ -155,3 +155,16 @@ Forecast name resolution: `rates` is keyed by inventory id; the engine resolves 
 - `computeMealPace(opts) → MealPaceState { status, delta?, catchUpAmount?, catchUpLabel? }` — `src/lib/mealPace.ts:86`.
 - `fetchMealLibrary` → `MealLibraryData` — `src/lib/supabase/mealLibrary.ts:38`; `computeMealTotals` (:182).
 - ui primitives as shipped (post-amendment contracts): `Screen` has no `headerLeft`; `scroll={false}` supplies no gutter/insets; `Card` has `onPress`/`onLongPress`; `SectionHeader.action` is a slot; `EmptyState` is full-bleed only.
+
+## Execution deviations
+
+**2026-08-01 — Tasks 1–2 (`loopStatus` engine).** Per the append-only rule in the preamble: each bullet points into the plan's "⚠️ Execution amendments" section (`docs/superpowers/plans/2026-08-01-nutrition-loop-hub.md`), which holds the full reasoning. Nothing above this heading was edited.
+
+- **Step 0 field-name verifications.** `ShoppingListItem` uses `is_purchased`, not `purchased`; `computeBrianScore`'s `{ raw, score }` and `eatNextExpiringLine`'s single-param signature were as specified. See plan → Task 1 Step 0, items 1–4.
+- **`eatNextStockBadge` usage corrected.** The plan's draft hand-rolled station 3's badge string; it now calls the shipped helper, which renders `"Missing items"` (not `"Missing 0"`) for a known-unassemblable meal with an unresolved count. See plan → Task 1 Step 0, item 3.
+- **Station 3 attention ruling.** A LOADED Eat Next result with no recommendations and a non-empty library sets `attention: true` (§5's second clause); `eatNext === null` means "not loaded yet" and stays quiet. See plan → "Related ruling (spec §5 vs. plan code, station 3 attention)".
+- **`paceStation` catch-up unit walk.** Unit travels with its pace state as a tuple instead of being recovered by an identity check against `paceCalories`. See plan → Task 2 deviation.
+- **Station 2's unknown-stock chip (D-adjacent, fixed in code).** A meal absent from `stockByMealId` yields a neutral `"{name}: unknown"` chip rather than a warning-toned `"missing ?"`, matching §4.1's no-fabrication rule and station 3's existing treatment of unknown stock. See plan → Tasks 1–2 review outcomes.
+- **§5 row 3 headline omits `{context label}`.** Deliberate: the row is single-line and the meal name must survive truncation; the label appears as the detail sheet's first line instead. See plan → review outcome D.
+- **§5 line-list overflow uses a footnote, not a `+N more` chip.** Chip lists cap as specified; line lists truncate and report the remainder in the footnote, which at station 6 replaces the decorative restock line. See plan → review outcome E.
+- **§4.1 "all label templates … are exported constants" not taken literally.** Only `DETAIL_MAX_ROWS` and `CONTEXT_LABELS` are exported; the remaining literals are inline and pinned by tests. See plan → review outcome F.
