@@ -1540,7 +1540,7 @@ Re-ran gates after this follow-up: `npx tsc --noEmit` → 0 errors; `npm test` �
 
 One commit had produced three answers to the same widget: `MealsWeeklySummaryModal.statValue` → `typography.titleRoot` (28/bold), `MealsInsightsCard.statValue` → `rowTitle` + 700 (16), `MealsNutritionCard.compactValue` → `typography.body` + 600 (14). All three now use the rule. `titleRoot` was the worst of the three specifically: that modal renders its own "Weekly Summary" H1 two lines above the stat grid, so matching it flattened the hierarchy the H1 exists to create. `titleRoot` stays reserved for one title per surface.
 
-**Task 9's ring centre and day-strip totals take this token and must not re-litigate it.**
+~~**Task 9's ring centre and day-strip totals take this token and must not re-litigate it.**~~ — **SUPERSEDED. This rule was stated too broadly and the ring centre was the wrong call site; see "Task 9 (coordinator override) — the stat-cell rule is scoped to grids; a hero value takes `titleRoot`" at the bottom of this section for the corrected, authoritative text.**
 
 One consequence to watch, recorded rather than hidden: `MealsNutritionCard`'s `compactValue` renders value + inline goal ("12.5g / 65.0g") in a three-across row. At the new 16pt, on a 320pt device the cell is ~85pt against ~92pt of glyphs, so it wraps to two lines. `compactRow` has no fixed height, so it grows gracefully rather than clipping — but it does wrap, where the pre-Task-8 13pt did not. Accepted as the cost of one token; if it reads badly on device the fix is a narrower goal string, not a fourth size.
 
@@ -1777,3 +1777,41 @@ Left alone deliberately, and this one is *harder* than `macroColor` was: the swe
 Reviewed hunk by hunk across all fourteen files: no handler, state setter, data fetch, effect dependency, modal open/close path, `Alert` flow, CSV export path or undo timer changed. `showUndoFor`'s 5000ms `setTimeout`, `dismissUndo`'s clear, and the `undoTimerRef` lifecycle are byte-identical. The three structural edits are layout-only and were verified to preserve the rendered result: folding the 40pt spacer into `contentContainerStyle`, replacing the day strip's per-cell margin with a container `gap`, and collapsing `TouchableOpacity` + `disabled` onto `Card`'s handler-presence branch.
 
 Gates: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests passing; both greps clean on all fourteen files; zero orphaned style keys and zero unused imports.
+
+### Task 9 (coordinator override) — the stat-cell rule is scoped to grids; a hero value takes `titleRoot`
+
+The Task 9 screenshot of `track/water` confirmed the concern the first pass flagged: at 16pt inside a 180pt ring the centre value read as body copy rather than as the hero number the ring exists to display, and because the "oz" line (14) and the "of 68 oz" line (12) sit within a few points of it, the whole centre stack was typographically flat. 36 → 16 was too far. The coordinator overruled the standing rule rather than special-casing the file — this being the **second** time a rule stated too broadly produced a wrong application (Task 7's `textFaint`-on-progress-tracks was the first, corrected by the `surface2` amendment).
+
+**The corrected rule, superseding the "Standing rule (Tasks 9-10) — the stat-cell value token" text above and authoritative from here:**
+
+> **Stat-cell values** — the repeated value cells in a stats grid or row (insight cards, weekly summary, day-strip totals) — use `{ ...typography.rowTitle, fontWeight: "700" }`.
+>
+> **A hero value** — the single dominant number a card is built around, such as a progress-ring centre — uses `typography.titleRoot`. It is not a stat cell.
+>
+> Ring-fitted sizes with no token between these two (e.g. `MacroRing`'s 20/10/10 sub-captions inside a 110pt ring) are held as documented literals rather than forced onto either token.
+
+That third clause is what makes the three ring treatments in this cycle coherent instead of contradictory: Task 8 deliberately **held** `MacroRing`'s ring-fitted sizes while Task 9 was told to force the water ring's centre onto a token, and nothing written down explained why those were both right. Now they are: `MacroRing`'s 20/10/10 are fitted sub-captions with no applicable token, and `WaterProgressRing`'s centre is a hero value with one.
+
+**Recorded widening of spec §4.5.** The spec calls `titleRoot` "the only sanctioned use of `bold`" and scopes it to the root-screen title in the scroll body. Using it for a progress-ring centre widens that beyond screen titles. This is deliberate and recorded rather than silent: a hero number is in the same typographic weight class as a screen title, and the alternative — a fifth hand-picked size — is exactly the drift this cycle exists to remove. Note the practical consequence on this screen: `WaterScreen`'s `pageTitle` and the ring centre are now both 28/bold, roughly 150pt apart vertically. That is acceptable because the ring's number is a *value*, not a competing title; the "one `titleRoot` title per surface" constraint recorded in the superseded rule still governs **titles**.
+
+**Call sites checked under the corrected rule — only one changed:**
+
+| Call site | Classification | Token | Changed? |
+|---|---|---|---|
+| `WaterProgressRing.amount` | hero value (180pt ring centre) | `typography.titleRoot` + `colors.text` | **yes**, `rowTitle`/700 → `titleRoot` |
+| `WaterInsightsCard.statValue` (×4) | stat cells in a four-across grid | `rowTitle` + `"700"` | no — already correct |
+| `WaterHistoryList.dayTotal` | the repeated per-day total in a list header row | `rowTitle` + `"700"` | no — already correct |
+| `WaterDayStrip.dayNumber` | neither: a day *number*, not a total | `typography.body` + `"500"` | no — the token never applied here |
+
+`amountComplete` keeps `colors.success` for the goal-met state, so the ring centre still turns green on completion. The dropped `lineHeight: 40` and the unit's `marginTop: -2` stay dropped: both existed to manage the old 36pt headline's metrics, and 28 needs neither.
+
+To restate the Task 9 amendment's own note now that it is resolved: the `WaterDayStrip` entry above is why that amendment recorded "the day strip has no stat cells" — the corrected rule's parenthetical "day-strip totals" refers to the per-day totals in the history list, which is where the token is actually applied.
+
+### Task 9 (coordinator review) — accepted as shipped, recorded only
+
+Four judgement calls from the first pass were reviewed and accepted without change:
+
+- **`WaterRingCard` losing its blue tint** — consistency with every other `Card panel` in the app beats a one-off tinted surface, and the ring fill itself carries the water identity. The reading of the plan's exhaustive survivor list was correct.
+- **`WaterUndoSnackbar` losing its drop shadow** — no elevation scale exists in the token system and inventing one is out of scope for a cosmetic cycle. **Recorded for a future elevation token: adding one would restore this shadow, and the snackbar is the call site that would justify it.**
+- **The three remaining hue changes** — the history row delete going to `IconButton tone="danger"`, the quick-add gear becoming a `tint(brand)` `IconButton circle`, and the beverage badge moving to a tinted fill with a full-strength label — are all correct applications of the standing destructive / control / `Badge`-recipe rules.
+- **`waterUnits.ts`'s `beverageColor()` deferred to Task 11** — agreed, and agreed that it is harder than `macroColor` was, since two of its five values have no token anywhere and a `colors.beverages` group is a naming decision rather than a side effect of a control sweep.

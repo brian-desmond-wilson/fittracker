@@ -78,12 +78,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // The stat-cell value token. The old 36/bold headline also carried a
-  // `lineHeight: 40` and a `-2` nudge on the unit below it; both existed only
-  // to manage that headline's metrics and go with it.
+  // A HERO value — the single dominant number this card is built around — so
+  // it takes `typography.titleRoot`, not the stat-cell token. The old 36/bold
+  // headline also carried a `lineHeight: 40` and a `-2` nudge on the unit
+  // below it; both existed only to manage that headline's metrics and go
+  // with it, since 28 needs neither.
   amount: {
-    ...typography.rowTitle,
-    fontWeight: "700",
+    ...typography.titleRoot,
     color: colors.text,
   },
   amountComplete: {
