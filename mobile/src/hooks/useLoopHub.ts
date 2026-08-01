@@ -144,8 +144,9 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
   const runIdRef = useRef(0);
   // The engine needs the CURRENT eatNext result at compute time, including
   // recomputes triggered by a data refetch that eatNext didn't participate in.
+  // Seeded from the first render's value; kept in sync by the effect below
+  // rather than by a write in the render body (see there).
   const eatNextRef = useRef(eatNext);
-  eatNextRef.current = eatNext;
 
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
@@ -217,11 +218,33 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
     }
   }, []);
 
+  // Ref sync as an effect, not a render-body write: writing a ref during
+  // render is a side effect in render.
+  //
+  // DECLARATION ORDER IS LOAD-BEARING — this effect MUST stay above the one
+  // below. Effects run in declaration order within a commit, so on the commit
+  // where `eatNext` changes, this writes the ref first and the load effect
+  // then sees the new value in the same commit. Reversing the two would make
+  // `load()` compute against the PREVIOUS eatNext result.
+  useEffect(() => { eatNextRef.current = eatNext; });
+
   // Recompute when the eatNext result lands/changes (cheap: refetches too, by
   // design — the eatNext result usually changes because data changed).
   // No loop risk: `load` is stable (`useCallback(…, [])`) and nothing here
   // writes `eatNext`, which is owned by the caller's `useEatNext`.
-  useEffect(() => { load(); }, [load, eatNext]);
+  useEffect(() => {
+    load();
+    // `eatNext` is a dep of the EFFECT but is not read by `load` — it reaches
+    // the computation through `eatNextRef` — so exhaustive-deps flags it as
+    // unnecessary. That is what this disable suppresses, and the dep is the
+    // whole point: it is what makes a newly-resolved Eat Next result recompute
+    // the hub. Deleting it to satisfy the rule would silently strand station 3
+    // on its not-loaded-yet "—". Same situation as `useEatNext`'s `refreshKey`
+    // (useEatNext.ts:354-365). No react-hooks plugin is installed today —
+    // `eslint.config.js` registers a no-op stub so directives resolve — so
+    // this is documentation until one is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, eatNext]);
 
   return { status, loading, error, refetch: load, computedAt };
 }
