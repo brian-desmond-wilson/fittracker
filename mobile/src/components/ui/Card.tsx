@@ -22,7 +22,7 @@ export function Card({ variant, accent, onPress, style, children }: CardProps) {
   if (style) base.push(style);
   if (onPress) {
     return (
-      <TouchableOpacity style={base} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity style={base} onPress={onPress} activeOpacity={0.7} accessibilityRole="button">
         {children}
       </TouchableOpacity>
     );

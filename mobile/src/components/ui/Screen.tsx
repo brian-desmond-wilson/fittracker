@@ -18,7 +18,13 @@ interface ScreenProps {
   headerCenter?: React.ReactNode;
   /** both: right slot (IconButton, ghost action, etc.) */
   headerRight?: React.ReactNode;
-  /** default true; pass false when the screen owns a FlatList/SectionList */
+  /**
+   * default true; pass false when the screen owns a FlatList/SectionList.
+   * The header-only path applies neither the horizontal gutter nor the bottom
+   * inset that the scrolling path gets for free — when false, the screen's own
+   * list must supply both itself: `paddingHorizontal: spacing.screenGutter`
+   * and `paddingBottom: insets.bottom + spacing.xxl` in its `contentContainerStyle`.
+   */
   scroll?: boolean;
   children: React.ReactNode;
 }
@@ -29,6 +35,12 @@ export function Screen({
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const titleGlyphColor = colors.accents[accent ?? "brand"];
+  const backButton = onBack ? (
+    <TouchableOpacity onPress={onBack} style={styles.back} activeOpacity={0.7}
+      accessibilityRole="button" accessibilityLabel="Back">
+      <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
+    </TouchableOpacity>
+  ) : null;
   const body = variant === "root" ? (
     <>
       <View style={styles.titleRow}>
@@ -45,20 +57,19 @@ export function Screen({
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={[styles.chrome, variant === "detail" && styles.chromeBordered]}>
-          {onBack ? (
-            <TouchableOpacity onPress={onBack} style={styles.back} activeOpacity={0.7}
-              accessibilityRole="button" accessibilityLabel="Back">
-              <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
-            </TouchableOpacity>
-          ) : variant === "detail" ? (
-            <View style={styles.back} />
-          ) : null}
           {variant === "detail" ? (
-            <Text style={[typography.titleBar, styles.barTitle]} numberOfLines={1}>{title}</Text>
+            <>
+              <View style={styles.flank}>{backButton}</View>
+              <Text style={[typography.titleBar, styles.barTitle]} numberOfLines={1}>{title}</Text>
+              <View style={[styles.flank, styles.flankRight]}>{headerRight}</View>
+            </>
           ) : (
-            <View style={styles.center}>{headerCenter}</View>
+            <>
+              {backButton}
+              <View style={styles.center}>{headerCenter}</View>
+              {headerRight}
+            </>
           )}
-          {headerRight ?? (variant === "detail" ? <View style={styles.back} /> : null)}
         </View>
         {scroll ? (
           <ScrollView
@@ -85,7 +96,9 @@ const styles = StyleSheet.create({
   chromeBordered: { borderBottomWidth: 1, borderBottomColor: colors.border },
   back: { width: 32, alignItems: "flex-start", justifyContent: "center" },
   center: { flex: 1 },
-  barTitle: { flex: 1, textAlign: "center", color: colors.text },
+  flank: { flex: 1, alignItems: "flex-start" },
+  flankRight: { alignItems: "flex-end" },
+  barTitle: { textAlign: "center", color: colors.text },
   titleRow: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
     marginBottom: spacing.lg,

@@ -12,6 +12,7 @@ interface EmptyStateProps {
   action?: { label: string; onPress: () => void };
 }
 
+/** Full-bleed only — fills a screen-level container (`flex: 1` + opaque `bg`). Do not nest inside a `Card`. */
 export function EmptyState({ icon: Icon, title, body, action }: EmptyStateProps) {
   return (
     <View style={styles.wrap}>
