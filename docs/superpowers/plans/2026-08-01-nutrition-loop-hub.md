@@ -1299,3 +1299,30 @@ grep -rn 'from "@/src/lib/colors"' $FILES
 ## ⚠️ Execution amendments
 
 *(Record every deviation here, per task, in the same commit as the fix — including the Task 1 Step 0 field-name verifications if any assumption differed.)*
+
+### Task 1 — Step 0 field-name verification (one amendment covering the set)
+
+Baseline recorded before any change: `npx tsc --noEmit` → 0 errors; `npm test` → **12 suites / 321 tests**, all green.
+
+Four names the plan could not pin, verified against `main@7abe149`:
+
+1. **`computeBrianScore` return — plan was RIGHT.** `BrianScoreResult` (`src/lib/mealScore.ts:99`) exposes `raw: number` (max 95) and `score: number` (raw renormalized to /100). `useLoopHub`'s `{ raw: s.raw, display: s.score }` mapping stands unchanged. Note `EatNextRecommendation.score` is already the /100 value (`eatNext.ts:201` warns against swapping it for `raw`), so station 3's `{score}/100` line is correct as written.
+
+2. **`ShoppingListItem` purchased flag — plan was WRONG.** The field is **`is_purchased: boolean`** (`src/types/track.ts:88`), not `purchased`. Changes:
+   - `LoopStatusInputs.listRows` → `Array<{ vendor_id: string | null; is_purchased: boolean }>`
+   - `shoppingStation`'s filter → `inp.listRows.filter((r) => !r.is_purchased)`
+   - all `listRows` test fixtures in Tasks 1–2 use `is_purchased`.
+   The structural-subset input still accepts a real `ShoppingListItem[]` with no cast, which is the point of the §4.2 refinement.
+
+3. **`eatNextStockBadge` params — plan's signature assumption was right, its USAGE was wrong.** The helper is `eatNextStockBadge(stock: EatNextStockInfo | undefined): { assemblable: boolean; label: string } | null` (`src/lib/eatNext.ts:262`); it tolerates `undefined`, so `pick.stock` needs no guard. But the plan's `eatNextStation` hand-rolls the badge label inline, which is exactly the re-derivation spec §4.1/§5 forbids ("Eat Next stock display goes through the shipped `eatNextStockBadge` / `eatNextExpiringLine` helpers"). Station 3's badge and its missing-chip now **call the helper** and use its `label` verbatim, mapping `assemblable → "success"` / `!assemblable → "warning"` for tone.
+   *Behavioral delta this corrects:* the helper renders **`"Missing items"`** when `missingCount === 0` (a known-unassemblable meal with an unresolved count); the plan's inline string would have rendered `"Missing 0"`. A test pins the helper's output for that case.
+
+4. **`eatNextExpiringLine` param shape — plan was RIGHT.** Single param `(stock: EatNextStockInfo | undefined) => string | null` (`src/lib/eatNext.ts:321`), returning `"Uses {name} — {expiry clause}"`. `eatNextExpiringLine(pick.stock)` stands unchanged.
+
+**Related ruling (spec §5 vs. plan code, station 3 attention).** Spec §5 sets station 3's attention rule as "badge is warning ∨ no pick with meals>0"; the plan's code implements only the first clause. Resolution: where the plan pins behavior with an explicit test it governs (`eatNext === null` → `attention: false`, because null means *not loaded yet*, not *no pick*); where the plan is merely silent, spec §5 fills the gap. So a loaded result with `recommendations: []` and `meals.length > 0` sets `attention: true`. Both cases are tested.
+
+### Task 2 — one implementation deviation (no behavioral change to any asserted output)
+
+**`paceStation`'s catch-up unit no longer comes from an identity check.** The plan's draft recovered the unit with `p === pc ? "cal" : "g"` while iterating a filtered `[pc, pp]`. That is correct only while `paceCalories` and `paceProtein` are distinct objects; a caller passing the SAME `MealPaceState` object for both macros (two identical literals hoisted to a shared const — cheap and legal, since the type is a plain record) would render both catch-up lines as "cal". Replaced with a `[[pc, "cal"], [pp, "g"]] as const` walk so the unit travels with its state by construction. Output is byte-identical for distinct inputs, which is every case the tests cover.
+
+**Forward constraint this task discovered, for Task 3 (`useLoopHub`).** `libraryStation`'s headline branches on `inp.meals.length` but reads the top entry out of `inp.mealScores` (`top!`). The two arrays are therefore a **paired invariant**: `mealScores` must be non-empty whenever `meals` is. `useLoopHub` must derive `mealScores` from the same `meals` array it passes through, never from a separately-fetched or separately-filtered source — a non-empty library with an empty score list is a runtime crash, not a degraded row. Deliberately left un-guarded here rather than papered over: this engine is a projection, and inventing a headline for an inconsistent input would be exactly the fabrication §4.1 forbids.
