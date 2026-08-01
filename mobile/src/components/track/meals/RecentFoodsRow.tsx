@@ -164,8 +164,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // The star marks a favourite the user set — the "on" state of the row's
-  // long-press toggle, so brand rather than the amber it used to carry.
+  // A conditional state indicator overlaid on the thumbnail, NOT a control:
+  // the long-press toggle belongs to the whole tile and this badge is not its
+  // hit target. Amber matches the favourite star in `FoodPreviewModal`.
   favoriteBadge: {
     position: "absolute",
     top: spacing.xs,
@@ -173,7 +174,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: radii.pill,
-    backgroundColor: colors.brand,
+    backgroundColor: colors.warning,
     alignItems: "center",
     justifyContent: "center",
   },

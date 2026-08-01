@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { colors } from "@/src/lib/colors";
+import { colors, spacing } from "@/src/theme/tokens";
 import {
   MacroKey,
   macroLabel,
@@ -42,7 +42,8 @@ export function MacroRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="rgba(255,255,255,0.08)"
+          // Unfilled meter groove — `surface2`, per the standing rule.
+          stroke={colors.surface2}
           strokeWidth={strokeWidth}
           fill="none"
         />
@@ -84,21 +85,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Sizes are held deliberately: this block is centred inside a 110pt ring and
+  // there is no type token between `rowTitle` (16) and `titleRoot` (28), nor
+  // any below `caption` (12). Same call Task 7 recorded for `MealsHomeCard`'s
+  // ring sub-captions. Only the banned `"bold"` is converged, to `"700"`.
   value: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "700",
     lineHeight: 22,
   },
   goalText: {
     fontSize: 10,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
   },
   macroLabelText: {
     fontSize: 10,
     fontWeight: "600",
-    color: colors.foreground,
-    marginTop: 2,
+    color: colors.text,
+    marginTop: spacing.xs,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

@@ -351,8 +351,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: spacing.xs,
   },
+  // Held at 9 rather than converged to `caption` (12). Seven `flex: 1` columns
+  // inside this card leave ~31pt each on a 320pt device; a 4-digit calorie
+  // total at 12pt needs ~29pt, and this `Text` has no `numberOfLines`, so it
+  // would WRAP — and `daysRow` is a fixed 110pt with `alignItems: "flex-end"`,
+  // so the second line would overflow the row. At 9pt the same value needs
+  // ~22pt, leaving real headroom. `dayLabel` above is a single character, so
+  // it converges to `caption` safely.
   dayValue: {
-    ...typography.caption,
+    fontSize: 9,
+    color: colors.textMuted,
     marginTop: spacing.xs,
   },
 });

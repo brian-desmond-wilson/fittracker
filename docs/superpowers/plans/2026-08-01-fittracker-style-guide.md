@@ -1482,3 +1482,54 @@ It was left alone deliberately rather than swept in: the file is not in the plan
 Reviewed hunk by hunk: no handler, data fetch, effect dependency, modal open/close path, navigation call, camera or permission flow changed. The two structural edits — folding the `<View style={{ height: 40 }} />` spacer into `contentContainerStyle` as `insets.bottom + spacing.xxl` (the Task 7 precedent), and splitting the weekly summary's wrapped four-cell row into two rows of two — are layout-only and were verified to preserve the rendered result.
 
 Gates: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests passing; both greps clean on all seventeen files.
+
+### Task 8 (review follow-up) — `MacroBar`/`MacroRing` were missed; the grooves were the visible defect
+
+The standing `surface2` rule says verbatim that it is "**Binding on Task 8's macro bars**". `mobile/src/components/track/MacroBar.tsx` and `MacroRing.tsx` *are* those bars, and the first pass shipped without them: `MacroBar`'s track was still `rgba(255,255,255,0.06)`, `MacroRing`'s backing circle still `stroke="rgba(255,255,255,0.08)"`, and both still imported the `lib/colors` shim, so they failed both grep gates. Review's simulator screenshot of `track/meals` shows the consequence plainly — a translucent-white groove sitting on `MealsNutritionCard`'s `tint(accents.meals)` fill composites to a muddy brown instead of reading as a neutral track, which is exactly the failure mode the `surface2` rule exists to prevent. This was a real visual defect, not a bookkeeping miss.
+
+Both are now migrated and belong to this task's "extra files pulled in" set (bringing the task to nineteen files touched, eighteen of them grep-gated — `theme/tokens.ts` is excepted by spec §9 as the token module). Their only consumer is `MealsNutritionCard.tsx`, which was already in scope for precisely this reason, so the justification is the same one — only stronger, since the rule names them.
+
+- `MacroBar`: `track`/`fill` → `colors.surface2` groove, `borderRadius: 3 → radii.pill` (identical rendering on a 6pt bar, the Task 6 `lib.barTrack` precedent); `label` 13/600 → `typography.buttonSm`, `value` 12 → `typography.caption`; `marginBottom: 10 → spacing.md` (tie rounds up).
+- `MacroRing`: backing `Circle` stroke → `colors.surface2`; `goalText`/`macroLabelText` colors → `textMuted`/`text`.
+- **`MacroRing`'s three font sizes are deliberately held** (`value` 20, `goalText` 10, `macroLabelText` 10). That block is absolutely positioned inside a fixed 110pt ring, spec §4.5 defines no token between `rowTitle` (16) and `titleRoot` (28) nor anything below `caption` (12), and resizing it would push the label stack outside the circle. Same call Task 7 recorded for `MealsHomeCard`'s ring sub-captions. The one convergence applied is `value`'s banned `fontWeight: "bold" → "700"`, which changes no metrics.
+
+The fill colors were already correct — they come from `macroColor()`, which this task tokenized.
+
+### Task 8 (review follow-up) — the favourite amber is restored; the torch green stands
+
+The first pass sent three amber affordances to brand on the reading that §3 decision 3 governs any control's on-state. Review overruled two of the three, and the narrower reading is the right one: **the accent policy exists to stop the four DOMAIN accents (meals orange, water blue, inventory violet, shopping teal) leaking into controls.** Amber was never one of them, and a filled gold star is one of the strongest cross-platform conventions there is — a solid green star reads "verified", not "favourited".
+
+- `FoodPreviewModal`'s favourite `Star` → `colors.warning` for the filled state (`colors.textMuted` unfilled, unchanged).
+- `RecentFoodsRow`'s `favoriteBadge` circle → `colors.warning`. Re-classified on the code: it renders under `{item.is_favorite && …}` as an indicator overlaid on the thumbnail, and the long-press toggle belongs to the **whole tile** — the badge is not a hit target, so it is not a control and the policy never reached it. (Its inner `Star` glyph stays `colors.onBrand`; it sits on a filled circle.)
+- `BarcodeScannerModal`'s torch-on `Zap` **stays `colors.brand`**. That glyph genuinely *is* the button — it is the only content of the torch `TouchableOpacity` — so its lit state is a textbook control on-state.
+
+This does conflate a semantic token (`warning`) with an identity use (`favourite`), which is the confusion Task 7 refused when it created `accents.photos`/`accents.workouts` rather than aliasing `warning`/`danger`. Recorded knowingly: **the honest fix is a `colors.favorite` token, and if a third favourite surface appears it should be added.** Two call sites in one feature do not justify a token today.
+
+### Task 8 (review follow-up) — weekly-summary day chart: `dayValue` held at 9pt
+
+Review flagged `dayValue` 9 → `typography.caption` (12) as an overflow risk in the densest widget in the task and asked for the layout math. It does not fit, so it is reverted.
+
+Available width per column = `deviceWidth − 2×16` (the modal's `contentInner` gutter) `− 2×12` (`Card row` padding) `− 6×8` (`daysRow`'s six `spacing.sm` gaps), ÷ 7 columns:
+
+| Device | Column | 4-digit at 9pt | 4-digit at 12pt |
+|---|---|---|---|
+| 320pt (SE 1st gen) | 30.9pt | 21.6pt — 9.3pt slack | 28.8pt — **2.1pt slack** |
+| 375pt (SE 2/3, mini) | 38.7pt | 21.6pt | 28.8pt — 9.9pt |
+| 390pt / 402pt | 40.9 / 42.6pt | 21.6pt | 28.8pt — 12.1 / 13.8pt |
+
+(SF digits run ~0.58–0.60em; the table uses the pessimistic 0.60.)
+
+At 320pt a four-digit calorie total at 12pt has ~2pt of slack, and the failure mode is worse than truncation: `dayValue` carries **no `numberOfLines`**, so it wraps — and `daysRow` is a fixed `height: 110` with `alignItems: "flex-end"`, so the wrapped second line overflows the row and collides with the bars.
+
+**Decision: keep `dayLabel` on `typography.caption` (12) and hold `dayValue` at `fontSize: 9`,** with the math recorded in a comment at the call site. Reasons, in order: `dayLabel` renders `d.weekday[0]`, a single character ~7pt wide, so its 11 → 12 convergence is free; `dayValue` is a ring/chart-fitted size of exactly the kind spec §4.5 has no token for and Task 7 already sanctioned holding; and reverting it to its pre-Task-8 value means the widget renders byte-identically to before on a screen neither review nor I can reach with a screenshot. The rejected alternatives were shrinking `daysRow`'s gap (buys ~7pt but tightens a 7-bar chart to fix a text problem) and adding `numberOfLines`/`adjustsFontSizeToFit` (new props, and per-glyph autoscaling across seven columns renders at seven different sizes).
+
+### Task 8 (review follow-up) — value shifts that the first pass left unitemized
+
+Every other value change in the commit was listed; these four were not, and one count was wrong.
+
+- `MealsWeeklySummaryModal` `contentInner` `paddingBottom: 60 → spacing.xxxl` (32). The scroller sits inside a `presentationStyle="fullScreen"` modal with no tab bar beneath it, so the extra 28pt was slack, not clearance.
+- `mealsScreenStyles` `mealTypeBadgeText` `#FFFFFF → colors.text`, and `chipText` `#D1D5DB → colors.textMuted` in `MealLogEditorModal` and `QuickAdjustmentModal`. `#D1D5DB` had no token; `textMuted` (`#9CA3AF`) is the nearest and is what every other inactive chip label in the app uses.
+- `BarcodeScannerModal`'s "Loading camera..." spinner `#FFFFFF → colors.brand`, per §5.7's single loading treatment.
+- **Correction: the sheet ends at 60 keys, not 62** (85 → 60). The earlier figure was miscounted; the ten dead keys and the seventeen retired into primitives are listed correctly.
+
+Re-ran gates after this follow-up: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests; both greps clean on all eighteen gated files, `MacroBar.tsx` and `MacroRing.tsx` now included.

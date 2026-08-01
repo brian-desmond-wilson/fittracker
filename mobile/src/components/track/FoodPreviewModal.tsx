@@ -197,10 +197,13 @@ export function FoodPreviewModal({
               onPress={handleToggleFavorite}
               style={styles.favoriteButton}
             >
+              {/* Amber, not brand: a filled gold star is the platform-wide
+                  "favourite" convention, and amber was never one of the four
+                  domain accents the every-control-is-brand rule governs. */}
               <Star
                 size={icons.lg}
-                color={isFavorite ? colors.brand : colors.textMuted}
-                fill={isFavorite ? colors.brand : "transparent"}
+                color={isFavorite ? colors.warning : colors.textMuted}
+                fill={isFavorite ? colors.warning : "transparent"}
               />
             </TouchableOpacity>
           )}
