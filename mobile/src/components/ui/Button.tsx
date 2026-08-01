@@ -25,6 +25,8 @@ export function Button({
   loading = false, disabled = false, fluid = false, icon: Icon,
 }: ButtonProps) {
   // Capture rendered width so swapping the label for a spinner doesn't reflow.
+  // Assumes first layout happens with the label visible — mounting with
+  // loading={true} would capture the spinner's width instead.
   const [minWidth, setMinWidth] = useState<number | undefined>(undefined);
   const onLayout = (e: LayoutChangeEvent) => {
     if (minWidth === undefined) setMinWidth(e.nativeEvent.layout.width);
@@ -75,7 +77,7 @@ const styles = StyleSheet.create({
   secondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border },
   destructive: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.danger },
   ghost: { backgroundColor: "transparent", paddingHorizontal: spacing.sm },
-  sm: { paddingVertical: spacing.sm, paddingHorizontal: spacing.lg - 2 },
+  sm: { paddingVertical: spacing.sm, paddingHorizontal: spacing.lg },
   fluid: { alignSelf: "stretch" },
   disabled: { opacity: 0.5 },
 });

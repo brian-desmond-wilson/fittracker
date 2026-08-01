@@ -977,3 +977,11 @@ Fix: extended `testMatch` to `["**/__tests__/**/*.test.ts", "**/theme/**/*.test.
 The plan's Task 3 `IconButton.tsx` source rendered the square variant's icon as `size={circle ? icons.sm : 22}` — a plan authoring bug. Spec §5.2 states the square variant renders its icon at size `md`, and `icons.md` is 20 in `mobile/src/theme/tokens.ts`. The plan is authoritative on mechanics but the spec is authoritative on values, so the spec wins here; `22` was also an untokenized magic number with no spec basis, in the exact primitive the whole style guide exists to keep tokenized.
 
 Fix: changed the expression to `size={circle ? icons.sm : icons.md}` in `mobile/src/components/ui/IconButton.tsx`. Nothing else in the file changed. Re-ran gates: `npx tsc --noEmit` clean; `npm test` still 12 suites / 321 tests passing.
+
+### Task 3 — `Button` `sm` padding was off-grid (`spacing.lg - 2`)
+
+The plan's Task 3 `Button.tsx` source set `sm: { paddingVertical: spacing.sm, paddingHorizontal: spacing.lg - 2 }`. `spacing.lg - 2` evaluates to 14, and spec §4.3 states verbatim: "Off-grid values (10, 14, 18, 22, 38…) are banned; nearest step wins." Nothing in §5.1 sanctions 14 — this was the same class of plan-authoring bug as the Task 3 `IconButton` `22` fixed above.
+
+Fix: changed the expression to `sm: { paddingVertical: spacing.sm, paddingHorizontal: spacing.lg }` in `mobile/src/components/ui/Button.tsx` — dropping the `± n` arithmetic adjustment and keeping the plan's own base token, rather than substituting a different rounding. This resolution — **drop the ± adjustment, keep the base token** — is adopted as the standing rule for every remaining off-grid `token ± n` expression elsewhere in this plan; later tasks that hit the same pattern are covered by this amendment and do not need a fresh one. Re-ran gates: `npx tsc --noEmit` clean; `npm test` still 12 suites / 321 tests passing.
+
+Also, per code-quality review, extended the comment above `Button`'s `minWidth` `useState` to document an existing (unchanged) assumption: the width capture assumes first layout happens with the label visible, so a call site that mounts with `loading={true}` would capture the spinner's width instead and the control would grow when loading later clears. This is documentation only — no logic changed.
