@@ -8,7 +8,8 @@ import {
   TextInput,
   ScrollView,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import { MealLog, MealType } from "@/src/types/track";
 
 interface MealLogEditorModalProps {
@@ -29,12 +30,12 @@ interface MealLogEditorModalProps {
   }) => void;
 }
 
-const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
-  { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { value: "lunch", label: "Lunch", color: "#10B981" },
-  { value: "dinner", label: "Dinner", color: "#3B82F6" },
-  { value: "snack", label: "Snack", color: "#8B5CF6" },
-  { value: "dessert", label: "Dessert", color: "#EC4899" },
+const MEAL_TYPES: { value: MealType; label: string }[] = [
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+  { value: "dessert", label: "Dessert" },
 ];
 
 function numOrNull(s: string): number | null {
@@ -96,7 +97,7 @@ export function MealLogEditorModal({
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Meal</Text>
           <ScrollView style={{ maxHeight: 500 }}>
             <View style={styles.field}>
@@ -106,7 +107,7 @@ export function MealLogEditorModal({
                 value={name}
                 onChangeText={setName}
                 placeholder="Meal name"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 editable={!saving}
               />
             </View>
@@ -122,7 +123,7 @@ export function MealLogEditorModal({
                       onPress={() => setMealType(t.value)}
                       style={[
                         styles.chip,
-                        active && { backgroundColor: t.color, borderColor: t.color },
+                        active && styles.chipActive,
                       ]}
                       disabled={saving}
                     >
@@ -145,7 +146,7 @@ export function MealLogEditorModal({
                 onChangeText={setCalories}
                 keyboardType="decimal-pad"
                 placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 editable={!saving}
               />
             </View>
@@ -159,7 +160,7 @@ export function MealLogEditorModal({
                   onChangeText={setProtein}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -171,7 +172,7 @@ export function MealLogEditorModal({
                   onChangeText={setCarbs}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -186,7 +187,7 @@ export function MealLogEditorModal({
                   onChangeText={setSodiumMg}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -198,7 +199,7 @@ export function MealLogEditorModal({
                   onChangeText={setFats}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -213,7 +214,7 @@ export function MealLogEditorModal({
                   onChangeText={setSugars}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -225,7 +226,7 @@ export function MealLogEditorModal({
                   onChangeText={setFiberG}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -233,24 +234,26 @@ export function MealLogEditorModal({
           </ScrollView>
 
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonPrimary]}
-              onPress={handleSave}
-              disabled={saving || name.trim() === ""}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Save"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button
+                label="Save"
+                onPress={handleSave}
+                loading={saving}
+                disabled={name.trim() === ""}
+                fluid
+              />
+            </View>
           </View>
-        </View>
+        </Card>
       </View>
     </Modal>
   );
@@ -259,82 +262,66 @@ export function MealLogEditorModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /** Width only — `Card panel` owns surface, radius, padding and border. */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 12,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
-  field: { marginBottom: 12 },
-  row: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  field: { marginBottom: spacing.md },
+  row: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.md },
   halfField: { flex: 1 },
   label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    ...typography.section,
+    marginBottom: spacing.xs,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     fontSize: 16,
-    color: "#FFFFFF",
+    color: colors.text,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: spacing.sm,
   },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#374151",
-    backgroundColor: "#1F2937",
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+  },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  chipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   chipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#D1D5DB",
+    color: colors.textMuted,
   },
-  chipTextActive: { color: "#FFFFFF" },
+  chipTextActive: { color: colors.onBrand },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 12,
+    gap: spacing.md,
+    marginTop: spacing.md,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: { backgroundColor: "#3B82F6" },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPrimaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-  buttonSecondaryText: { color: colors.foreground, fontSize: 16, fontWeight: "600" },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

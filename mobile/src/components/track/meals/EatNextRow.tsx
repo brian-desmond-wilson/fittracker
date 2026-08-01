@@ -39,11 +39,12 @@
 // never `rec.reasons`, whose stock entry sits at no fixed index (that read is
 // exactly what made the engine's stock copy invisible on both surfaces). Copy
 // and the green/amber split come from `eatNextStockBadge` so this chip and
-// the Home card state the same verdict in the same words; only the geometry
-// is local, because this surface is denser than the Home card.
+// the Home card state the same verdict in the same words; the geometry now
+// comes from the `Badge` primitive, which both surfaces share.
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { StyleSheet, Text, View } from "react-native";
+import { colors, spacing, typography } from "@/src/theme/tokens";
+import { Badge, Card } from "@/src/components/ui";
 import {
   eatNextStockBadge,
   eatNextExpiringLine,
@@ -83,33 +84,19 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
         // naming the rescue and one silently not.
         const expiringLine = eatNextExpiringLine(rec.stock);
         return (
-          <TouchableOpacity
+          <Card
             key={rec.mealId}
+            variant="row"
             style={styles.chip}
-            activeOpacity={0.7}
             onPress={() => onMealPress(rec.mealId)}
           >
             <View style={styles.chipHeader}>
               <Text style={styles.chipName} numberOfLines={1}>{rec.name}</Text>
               {badge && (
-                <View
-                  style={[
-                    styles.stockBadge,
-                    badge.assemblable ? styles.stockBadgeIn : styles.stockBadgeMissing,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.stockBadgeText,
-                      badge.assemblable
-                        ? styles.stockBadgeInText
-                        : styles.stockBadgeMissingText,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {badge.label}
-                  </Text>
-                </View>
+                <Badge
+                  label={badge.label}
+                  tone={badge.assemblable ? "success" : "warning"}
+                />
               )}
             </View>
             <Text style={styles.chipStats} numberOfLines={1}>
@@ -120,7 +107,7 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
                 {expiringLine}
               </Text>
             )}
-          </TouchableOpacity>
+          </Card>
         );
       })}
     </View>
@@ -129,60 +116,37 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
 
 // Local `StyleSheet` rather than the shared `mealsScreenStyles`, matching how
 // `MealsPaceLines` and `RecentFoodChips` scope their own small-widget styles.
-// Colors come from `colors` for the same reason `RecentFoodChips.tsx:90-115`
-// does: these two chip rows can be on screen together, and hardcoded hex had
-// them rendering different backgrounds (`#111827` against `colors.card`'s
-// `#1E293B`). Geometry deliberately differs from that peer — full-width
-// stacked blocks at `borderRadius: 10` rather than its `maxWidth: "48%"`
-// pills — because a meal name plus a stats line does not fit a half-width
-// pill without truncating the name to uselessness.
+// Only placement/typography lives here now: the chip surface is `Card row` and
+// the stock verdict is the `Badge` primitive, so the copy-pasted green/amber
+// pair this file used to carry (mirroring `EatNextHomeCard`'s) is gone — the
+// two surfaces now provably render the same verdict in the same treatment.
 const styles = StyleSheet.create({
-  container: { marginTop: 8, marginBottom: 4 },
+  container: { marginTop: spacing.sm, marginBottom: spacing.xs },
   label: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.mutedForeground,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    ...typography.section,
+    marginBottom: spacing.sm,
   },
-  chip: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 6,
-  },
+  /** Placement only — `Card row` owns surface, radius, padding and border. */
+  chip: { marginBottom: spacing.sm },
   // The name and its badge share one row; `flexShrink: 1` + `numberOfLines={1}`
   // on the name means a long meal name truncates instead of pushing the badge
-  // out of the chip. The badge keeps RN's default `flexShrink: 0` — stated
-  // explicitly below for the same reason it is on the Home card.
-  chipHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-  chipName: { fontSize: 14, fontWeight: "600", color: colors.foreground, flexShrink: 1 },
-  chipStats: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
-  // One notch tighter than the Home card's badge (11pt text in a 6/2 box):
-  // this strip stacks two chips directly under `MealsPaceLines`, so the badge
-  // has to read as an annotation on the name rather than a second element
-  // competing with it. Colors are deliberately identical to the Home card's —
-  // same verdict, same green/amber — only the geometry is denser.
-  stockBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 5,
-    flexShrink: 0,
+  // out of the chip. `Badge` keeps RN's default `flexShrink: 0`.
+  chipHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  chipName: {
+    ...typography.buttonSm,
+    color: colors.text,
+    flexShrink: 1,
   },
-  stockBadgeText: { fontSize: 10, fontWeight: "600" },
-  stockBadgeIn: { backgroundColor: "rgba(34,197,94,0.15)" },
-  stockBadgeInText: { color: "#22C55E" },
-  stockBadgeMissing: { backgroundColor: "rgba(245,158,11,0.15)" },
-  stockBadgeMissingText: { color: "#F59E0B" },
+  chipStats: { ...typography.caption, marginTop: spacing.xs },
   // Same amber as the Home card's expiring line and the same unfilled
-  // treatment `MealDetail` gives the identical string — one size smaller, and
-  // `numberOfLines={1}` rather than 2, because this is the dense surface and
+  // treatment `MealDetail` gives the identical string, with
+  // `numberOfLines={1}` rather than 2 because this is the dense surface and
   // two chips stack here under the pace lines. A truncated rescue line still
   // reads as a rescue and the full text is one tap away in MealDetail; a
   // wrapping one would push the second chip off the fold.
-  chipExpiring: { fontSize: 11, color: "#F59E0B", marginTop: 2 },
+  chipExpiring: {
+    ...typography.caption,
+    color: colors.warning,
+    marginTop: spacing.xs,
+  },
 });

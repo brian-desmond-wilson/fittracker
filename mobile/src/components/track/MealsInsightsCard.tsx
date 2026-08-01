@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, spacing, typography } from "@/src/theme/tokens";
+import { Card } from "@/src/components/ui";
 import { MealsSeriesEntry } from "@/src/lib/mealStats";
 import { MealsCalorieChart } from "./MealsCalorieChart";
 import { MealsMacroChart } from "./MealsMacroChart";
@@ -32,7 +33,7 @@ export function MealsInsightsCard({
   calorieGoal,
 }: MealsInsightsCardProps) {
   return (
-    <View style={styles.card}>
+    <Card variant="row" style={styles.cardSpacing}>
       <Text style={styles.title}>Insights · Last 7 days</Text>
 
       <View style={styles.statsRow}>
@@ -62,67 +63,59 @@ export function MealsInsightsCard({
       <Text style={styles.chartLabel}>Last 14 days · Calories</Text>
       <MealsCalorieChart series={series14} referenceGoalCal={calorieGoal} />
 
-      <Text style={[styles.chartLabel, { marginTop: 12 }]}>
+      <Text style={[styles.chartLabel, styles.chartLabelSpaced]}>
         Last 14 days · Macro split
       </Text>
       <MealsMacroChart series={series14} />
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+  /** Placement the `Card row` primitive can't express. */
+  cardSpacing: {
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.lg,
   },
   title: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 12,
+    ...typography.section,
+    marginBottom: spacing.md,
   },
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   statCell: {
     flex: 1,
     alignItems: "center",
   },
   statValue: {
-    fontSize: 22,
+    ...typography.rowTitle,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
   },
   statValueSub: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: "500",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   statLabel: {
-    fontSize: 10,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
     textAlign: "center",
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
   statSub: {
-    fontSize: 10,
-    color: colors.mutedForeground,
-    marginTop: 1,
+    ...typography.caption,
+    marginTop: spacing.xs,
   },
   chartLabel: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginBottom: 6,
+    ...typography.caption,
+    marginBottom: spacing.sm,
+  },
+  chartLabelSpaced: {
+    marginTop: spacing.md,
   },
 });

@@ -7,15 +7,16 @@ import {
   TouchableOpacity,
   TextInput,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import { MealType } from "@/src/types/track";
 
-const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
-  { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { value: "lunch", label: "Lunch", color: "#10B981" },
-  { value: "dinner", label: "Dinner", color: "#3B82F6" },
-  { value: "snack", label: "Snack", color: "#8B5CF6" },
-  { value: "dessert", label: "Dessert", color: "#EC4899" },
+const MEAL_TYPES: { value: MealType; label: string }[] = [
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+  { value: "dessert", label: "Dessert" },
 ];
 
 interface QuickAdjustmentModalProps {
@@ -86,7 +87,7 @@ export function QuickAdjustmentModal({
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Quick Adjustment</Text>
           <Text style={styles.subtitle}>
             Add calories without picking a saved food. Macros are optional.
@@ -98,7 +99,7 @@ export function QuickAdjustmentModal({
             value={name}
             onChangeText={setName}
             placeholder="Quick adjustment"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             editable={!saving}
           />
 
@@ -113,7 +114,7 @@ export function QuickAdjustmentModal({
                   disabled={saving}
                   style={[
                     styles.chip,
-                    active && { backgroundColor: t.color, borderColor: t.color },
+                    active && styles.chipActive,
                   ]}
                 >
                   <Text
@@ -135,7 +136,7 @@ export function QuickAdjustmentModal({
             onChangeText={setCalories}
             keyboardType="decimal-pad"
             placeholder="100"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             editable={!saving}
             autoFocus
           />
@@ -149,7 +150,7 @@ export function QuickAdjustmentModal({
                 onChangeText={setProtein}
                 keyboardType="decimal-pad"
                 placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 editable={!saving}
               />
             </View>
@@ -161,7 +162,7 @@ export function QuickAdjustmentModal({
                 onChangeText={setCarbs}
                 keyboardType="decimal-pad"
                 placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 editable={!saving}
               />
             </View>
@@ -175,7 +176,7 @@ export function QuickAdjustmentModal({
                 onChangeText={setFats}
                 keyboardType="decimal-pad"
                 placeholder="0"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 editable={!saving}
               />
             </View>
@@ -183,28 +184,26 @@ export function QuickAdjustmentModal({
           </View>
 
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonPrimary,
-                !canSave && styles.buttonDisabled,
-              ]}
-              onPress={handleSave}
-              disabled={saving || !canSave}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Log"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button
+                label="Log"
+                onPress={handleSave}
+                loading={saving}
+                disabled={!canSave}
+                fluid
+              />
+            </View>
           </View>
-        </View>
+        </Card>
       </View>
     </Modal>
   );
@@ -213,91 +212,73 @@ export function QuickAdjustmentModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /** Width only — `Card panel` owns surface, radius, padding and border. */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 4,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginBottom: 16,
+    ...typography.caption,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    marginTop: 8,
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    ...typography.section,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   required: {
-    color: "#EF4444",
+    color: colors.danger,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     fontSize: 16,
-    color: "#FFFFFF",
+    color: colors.text,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: spacing.sm,
   },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#374151",
-    backgroundColor: "#1F2937",
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+  },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  chipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   chipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#D1D5DB",
+    color: colors.textMuted,
   },
-  chipTextActive: { color: "#FFFFFF" },
-  row: { flexDirection: "row", gap: 10 },
+  chipTextActive: { color: colors.onBrand },
+  row: { flexDirection: "row", gap: spacing.md },
   halfField: { flex: 1 },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: { backgroundColor: "#F97316" },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonPrimaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-  buttonSecondaryText: { color: colors.foreground, fontSize: 16, fontWeight: "600" },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

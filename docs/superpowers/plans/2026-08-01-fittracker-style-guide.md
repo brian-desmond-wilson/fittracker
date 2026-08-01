@@ -1332,3 +1332,153 @@ Three fixes from the Task 7 review, in the follow-up commit alongside the `surfa
 
 - **`track/index.tsx`'s `iconMap: Record<string, any>` is the last unsafe field in the Track hub config.** With `iconColor`/`backgroundColor` replaced by a typed `accent`, `icon: string` is the only remaining way to write a value that compiles and crashes at render: `icon: "Utensls"` type-checks, `iconMap["Utensls"]` is `undefined`, and `<undefined />` throws. The real fix is deleting the indirection — the file already imports all eight lucide components, so the config field can simply be `icon: LucideIcon` and the map disappears. That is a structural change with no styling content, so Task 7 correctly left it alone; Task 11's closeout is the place for it.
 - **Do not copy `WaterIntakeHomeCard`'s raw `fontSize: 22`.** One documented off-scale exception (recorded above, with its reason) is tolerable; a second and third would be drift dressed up as precedent. If Task 9's water screen wants a headline number, it uses a type token — and if none fits, that is an argument for adding one token, not for repeating the literal.
+
+### Task 8 — the `macroColor()` decision: a `colors.macros` group keyed by STATE, not by macro name
+
+Task 7 deferred `mobile/src/lib/mealMacros.ts`'s `macroColor()` to this task. It is now tokenized. The brief suggested `colors.macros.protein/carbs/fat/…`; reading the function shows a materially different shape, so the group ships keyed by **progress state**:
+
+| Key | Value | Meaning | Where the value came from |
+|---|---|---|---|
+| `macros.under` | `#3B82F6` | in progress toward a goal / approaching a cap | the `!goal`, `ratio >= 0.8` cap and `ratio < 1.0` branches |
+| `macros.met` | `#22C55E` | at or past a "hit this" goal | the `ratio >= 1.0` non-cap branch |
+| `macros.atCap` | `#F59E0B` | at a "do not exceed" cap | the `ratio >= 1.0` cap branch |
+| `macros.overCap` | `#EF4444` | more than 10% past a cap | the `ratio >= 1.1` cap branch |
+
+Exactly four keys, every value byte-identical to the literal it replaced, so nothing renders differently. **Why not per-macro names:** `macroColor(value, goal, m)` never colors "protein" differently from "carbs" — `m` is read only to decide whether the macro is a *cap* type (`sodium`/`sugars`). The palette is a verdict scale, and naming it `protein`/`carbs`/`fat` would have invented a mapping the code does not have.
+
+**`#3B82F6` is byte-identical to `accents.water`, and the other three to `success`/`warning`/`danger`. They are deliberately NOT deduplicated, and a future reader must not "clean this up".** These are marks on a meter — a bar fill showing 60% of a sodium cap — not a domain identity and not a semantic verdict badge. Under `macros` the blue means "in progress", it does not mean "Water"; changing the app's water accent must not repaint a carbs bar, and changing the danger red must not repaint a sodium bar. This is the same argument Task 7 recorded for keeping `accents.photos`/`accents.workouts` separate from `warning`/`danger`.
+
+The fifth return value, `"rgba(59, 130, 246, 0.7)"` (comfortably under a cap), is now `tint(colors.macros.under, 0.7)` — same rendered color, no raw literal. It keeps its 0.7 rather than collapsing onto the system's 0.15/0.3: those two alphas are for tinted *surfaces*, and this is a meter fill that has to stay a legible mark on `surface2`. (`tint()` emits `rgba(59,130,246,0.7)` without the old string's spaces — identical to the renderer.)
+
+`mealMacros.ts` imports `../theme/tokens` **relatively**, not via the `@/` alias: the module is covered by the Jest suite through `eatNext.test.ts`, and `mobile/jest.config.js` declares no `moduleNameMapper`, so the aliased form failed the suite with `Cannot find module '@/src/theme/tokens'`. Every other `src/lib` cross-import is relative for the same reason. (Config left untouched — this is the smaller fix, and the file already sat inside the tested lib.)
+
+`MealsWeeklySummaryModal`'s week macro-split bar and its three percentage labels also move onto this palette (`met`/`atCap`/`under` reading as P/C/F) — they were the same three literals, hand-typed.
+
+### Task 8 — the file list grew from eleven to seventeen, each one forced
+
+The plan names eleven files. Six more were unavoidable, and none is discretionary polish:
+
+- **`mobile/src/theme/tokens.ts`** and **`mobile/src/lib/mealMacros.ts`** — the `macroColor` work above, which this task was explicitly asked to do.
+- **`meals/MealAddForm.tsx`** — it is the only consumer of `mealsScreenStyles`' `saveButton` (`#F97316`), `cancelButton`, `button`, and `sectionTitle` (the 18/600 the plan sends to `SectionHeader`). Converting those keys without converting their one call site would have left orphans, which this task forbids.
+- **`MealsNutritionCard.tsx`** — the plan's own Step 1 names `MealsNutritionCard.tsx:87-93` as the reference `tint(accents.meals)` survivor; it was still a hand-typed `rgba(249, 115, 22, 0.08)` at a third alpha level, and it carries a 20pt gutter.
+- **`MealsInsightsCard.tsx`** and **`meals/RecentFoodsRow.tsx`** — gutter alignment. Step 2 says "gutter 20 → 16". These two render in the same column as everything the task converges, with their own `marginHorizontal: 20` / `paddingHorizontal: 20`. Converting only the eleven would have left three blocks sitting 4pt wider than their neighbours — a misalignment that does not exist today, since everything is uniformly 20. Same reasoning Task 5 used to pull in `CategoryTabs`/`SubcategoryPills`. (`MealUndoSnackbar` needed nothing: it was already pinned at `left/right: 16`.)
+
+### Task 8 — `Screen` adoption declined for the screen and for all seven modals
+
+- **`MealsScreen`** — the plan says so outright, and the blocker is the familiar one: its `ScrollView` carries a `RefreshControl`, which `ui/Screen` owns the scroller for and cannot pass through (the same reason Task 5 kept `ViewFoodDetailsScreen` off it and Task 7 kept `home.tsx` off it). The screen also owns a three-slot chrome bar (back, full-width search field with an inline barcode/clear action, add button). Header kept and retokenized.
+- **`FoodPreviewModal`, `ManualFoodEntryModal`** — `presentationStyle="pageSheet"` with a three-slot header (close ✕ / centered title / favourite star or spacer). `Screen variant="detail"` offers a back **chevron** plus `headerRight` and has no `headerLeft` (deliberately, per the Task 4 amendment), so adopting it would have replaced the ✕ with a ‹ — a navigation-affordance change, not a restyle. Both also have a bordered footer action bar outside the scroller, which `Screen` cannot express.
+- **`MealsWeeklySummaryModal`** — its back control is a chevron **plus the word "Meals"**, i.e. a labelled back affordance; `Screen`'s is chevron-only, and it renders its own 28pt title in the body rather than a bar title.
+- **`FoodCorrectionModal`, `MealLogEditorModal`, `QuickAdjustmentModal`** — centred `transparent` sheets on a scrim, not full screens. They take spec §6's modal recipe instead (`colors.scrim` backdrop + `Card variant="panel"` sheet + `Button` pair), which is what the plan asks for.
+- **`BarcodeScannerModal`** — a camera viewfinder. Chrome only, per the plan.
+
+All full-screen modals keep `mobile/CLAUDE.md`'s `useSafeAreaInsets()` + `StatusBar` pattern exactly as they had it; no safe-area handling changed anywhere.
+
+### Task 8 — modal sheets are `Card panel` (`surface`), not `surface2`; recording the spec's internal tension
+
+Spec §4.1 lists "modal sheets" under `surface2`, but spec §6 says "Modals keep **`Card variant="panel"`** sheets on `scrim` backdrops" and §5.3 defines `panel` as `surface`. The plan's Step 2 repeats §6 verbatim. §6/§5.3 win — they name the primitive, and a primitive is the more specific instruction — so the three centred sheets went from `colors.card` (`#1E293B`) to `Card panel`'s `colors.surface` (`#111827`). Their inputs are `surface2`, which is what §4.1's "raised elements: … inputs" actually buys: the sheet is now darker than the fields sitting on it, which reads correctly. Recorded because §4.1 is not wrong so much as out-voted, and Task 9's water modals will hit the identical fork.
+
+Same shift, same reason, for every `colors.card` block that became a `Card`: the meal cards in `MealsDayList`, the search-results block, `EatNextRow`'s suggestion chips, `MealsInsightsCard`, and the weekly summary's stat cells and section cards. `colors.card` was the shim's alias for `surface2`; `Card row` is `surface`.
+
+### Task 8 — the orange/blue control sweep, itemized
+
+Every one of these was an accent-colored control and is now brand:
+
+| Control | Was | Now |
+|---|---|---|
+| header 44×44 add (`mealsScreenStyles:47-54`) | `#F97316` fill | `IconButton variant="square"` (+ `accessibilityLabel` it never had) |
+| Today/Insights segment (`tabPillActive`) | `#F97316` fill | `surface2` track + `colors.brand` segment + `onBrand` label |
+| "Jump to Today" | `colors.primary` (already brand) | `Button primary` + `icon={Calendar}` |
+| "Meal Library" | `#3B82F6` label + dashed `#374151` | `Button secondary` + `icon={Utensils}` |
+| "Weekly Summary" | `#F97316` label on `rgba(249,115,22,0.06)` | `Button secondary` + `icon={BarChart3}` |
+| "Quick Adjustment" | `#F97316` label + dashed border | `Button secondary` + `icon={Zap}` |
+| `MealAddForm` Cancel/Log Meal | `colors.card` / `#F97316` | `Button secondary` + `Button primary` |
+| `FoodCorrectionModal:314-323` | `#F97316` confirm | `Button primary` (+ `secondary` cancel) |
+| `FoodPreviewModal:727-747` | `#F97316` Log Meal | `Button primary` (+ `secondary` Save to Library) |
+| `ManualFoodEntryModal:475-488` | `#F97316` CTA | `Button primary` |
+| `MealLogEditorModal:326-335` | `#3B82F6` confirm | `Button primary` (+ `secondary` cancel) |
+| `QuickAdjustmentModal` | `#F97316` confirm | `Button primary` (+ `secondary` cancel) |
+| meal-type / serving-preset selectors (×4 files) | the meal type's own hue as a solid fill | solid `colors.brand` + `onBrand` label (standing rule: grouped single-select) |
+| `ManualFoodEntryModal` "save to library" checkbox | `#F97316` fill, `✓` **text glyph** | `colors.brand` fill + lucide `Check`; unchecked outline `colors.textFaint` (affordance outline) |
+| `BarcodeScannerModal` "Grant Permission" | `#8B5CF6` fill | `Button primary` |
+| `BarcodeScannerModal` torch-on | `#FACC15` | `colors.brand` (the "on" state of a toggle) |
+| `FoodPreviewModal` favourite star | `#F59E0B` fill/stroke | `colors.brand` (ditto) |
+| `RecentFoodsRow` favourite badge | `#F59E0B` circle | `colors.brand` circle |
+
+The last three are the judgement calls worth flagging to the owner, because they are hue changes rather than pure renames and the plan does not name them: **an amber "favourite" star and an amber torch indicator are now green.** §3 decision 3 makes every interactive control brand, and the filled state of a toggle is a control state — but `colors.warning` would have been a zero-change rename of `#F59E0B`, and it was rejected only because calling a favourite "warning" is the exact semantic-vs-identity confusion Task 7 refused. Easy to revert if the owner dislikes it; nothing else depends on it.
+
+Orange survives exactly where the plan says and nowhere else: the `Utensils` title glyph (`accents.meals` at `icons.xl`), `tint(accents.meals)` info fills (`MealsNutritionCard`'s card, `FoodPreviewModal`'s nutrition panel, `ManualFoodEntryModal`'s barcode block, and an "edited" `Badge tone="meals"`), and macro/bar fills (the weekly summary's short-of-goal day bars). Blue survives nowhere as a control — only inside `colors.macros.under`, as a data mark.
+
+**Full-strength orange TEXT did not survive.** `FoodPreviewModal`'s `nutritionValue`/`servingValue` and `ManualFoodEntryModal`'s `notFoundText` were `#F97316` copy sitting inside those tinted panels; the plan's "orange survives ONLY as…" list is exhaustive and does not include text. They are `colors.text` now, which is exactly what `MealsNutritionCard` — the plan's own reference for the sanctioned tint fill — already did with its values.
+
+### Task 8 — ten dead style keys in `mealsScreenStyles.ts`, including two the plan asked to convert
+
+Auditing all 85 keys against the three files that import the sheet (`MealsScreen`, `MealAddForm`, `MealsDayList`) found ten with no consumer at all: `summaryCard`, `summaryLabel`, `summaryGrid`, `summaryItem`, `summaryValue`, `summaryItemLabel`, `addButtonContainer`, `addButton`, `addButtonText`, `mealInfo`. All deleted, as Task 7 deleted `home.tsx`'s twelve.
+
+Two of them are named in the plan's own Step 1: **the "full-width CTA `:176-189`" (`addButton`, `#F97316`) is dead code**, as is `summaryValue` (`#F97316`). They are the fossil of a summary card and an add button that `MealsNutritionCard` and the header `IconButton` replaced. There was no live full-width orange CTA on this screen to convert; deleting is the correct discharge of that instruction.
+
+The sheet ends at 62 keys, every one used. Keys retired into primitives: `headerAddButton` → `IconButton`; `jumpToTodayButton`/`Text`, `weeklySummaryButton`/`Text`, `quickAdjustButton`/`Text`, `templatesButton`/`Text` → `Button`; `button`/`cancelButton`/`cancelButtonText`/`saveButton`/`saveButtonText` → `Button`; `sectionTitle` → `SectionHeader`; `mealCard` → `Card row`; `searchResults` → `Card row`; `deleteButton` → `IconButton tone="danger"`; `loadingText` → `LoadingState`; `emptyState`/`emptyStateText`/`emptyStateSubtext` → `EmptyState`.
+
+### Task 8 — `EmptyState`/`LoadingState` needed a two-level `flexGrow` chain, not one
+
+The standing loading rule says a list region's content container must carry `flexGrow: 1` or the `flex: 1` primitives collapse onto their own padding (Task 5's `gridContainer`). Here the primitives sit one level deeper than in Tasks 5-6: `ScrollView` → `contentContainer` → `MealsDayList`'s `mealsSection` → `EmptyState`. A grow on the content container alone is not enough — `mealsSection` has auto height, which breaks the definite-height chain, and the states would still have resolved to a 64pt box with their icon and copy overflowing upward into the "Meal Library" button.
+
+Fix: `flexGrow: 1` on **both** — a new `scrollContent` style on the `ScrollView`'s `contentContainerStyle`, and `flexGrow: 1` added to `mealsSection`. Both are inert whenever the day has enough content to scroll (free space is zero or negative, so nothing stretches), and on the Insights tab `mealsSection` is not rendered at all, so the extra container height is pure slack below the last card. Worth stating as a rule for Task 9: **the grow must run all the way down to the primitive's parent, not just to the scroller.**
+
+### Task 8 — typography convergences, and the ones deliberately declined
+
+Converged:
+
+- `pageTitle` 28/`"bold"` → `typography.titleRoot` (a pure rename) with the `Utensils` glyph now `accents.meals` at `icons.xl`.
+- `dateText` 20/600 → `typography.titleBar` (17/600). It is a centred label in a navigation bar, which is exactly what §4.5 assigns `titleBar` to, and §4.5 already sanctions the identical shrink for Shopping's 20/700.
+- `sectionTitle` 18/600 → `SectionHeader` (`typography.section`, 13/700 uppercase muted), per Step 2. The modals' 16/600 "Servings" / "Log as" / "Nutrition (per serving)" headings converge to `typography.section` in place; only `FoodPreviewModal`'s "Nutrition" row uses the actual `SectionHeader` component, because it is the one that needs the `badge` and `action` slots.
+- `MealsNutritionCard`'s 14/600 card title, `MealsInsightsCard`'s 13/600, the weekly summary's 12/700 card titles and `searchResultsHeader`'s 11/600 all land on `typography.section` — five hand-rolled variants of one label style.
+- `FoodPreviewModal`'s `productName` 22/`"bold"` → `typography.titleRoot` (28/bold). This is a real size increase and the only one in the task. `"bold"` is banned outside `titleRoot`, 22 has no token, and Task 7's own note for Task 11 says the answer to "no token fits" is a type token, not a repeated literal. `servingValue` was already 28/bold, so it is a pure rename.
+- The weekly summary's `title` 24/bold → `titleRoot`, `statValue` 22/700 → `titleRoot`; `MealsInsightsCard`'s `statValue` 22/700 → `typography.rowTitle` + 700 (it sits in a four-across row inside a card, where 28 would not fit).
+
+Declined, with reasons: **input text stays `fontSize: 16`** in every form field — §4.5 defines no input token, matching Task 6's call on `lib.input`'s 15. **`getMealTypeColor`'s five meal-type hues stay** (see the flag below).
+
+### Task 8 — spacing, icon and opacity conversions worth naming
+
+- **Gutter 20 → `spacing.screenGutter` (16)** on every block: header, title row, date navigator, tabs, pace/suggested wrapper, search results, action rows, meals section, distribution wrapper, plus `MealsNutritionCard`, `MealsInsightsCard`, `RecentFoodsRow`, and the modals' `scrollContent`/`actions` padding. One gutter owner per screen, applied per-element because `MealsScreen` does not adopt `Screen`.
+- **Off-grid literals** follow the standing rules: control touch-padding rounds **up** (`searchBar`/`mealTypeButton`/`searchResultRow` `paddingVertical: 10 → spacing.md`), ties round up (`gap: 10 → spacing.md`, `marginBottom: 6 → spacing.sm`), non-control values take the nearest step. The two negative nudges (`weeklySummaryButton`'s `marginTop: -4`, `quickAdjustButton`'s `+4`) are gone with the styles that carried them; all four screen actions now share one `actionRow` spacing.
+- **`navArrowDisabled` opacity 0.3 → 0.5.** §5.1 makes 0.5 "the only dimming mechanism", and `Button`/`IconButton` both dim at 0.5 — three different disabled opacities on one screen was the drift.
+- **Icon sizes.** Chevrons go to `icons.lg` on §4.6's "back chevron always `lg`" rather than by rounding (28 is an exact tie between `lg` and `xl`, which the rounding rules do not resolve). `Share2` 22 → `icons.lg`, `Package`/`Utensils`/`Search`/`X`/`ScanBarcode` 18/20 → `icons.md`. `RecentFoodsRow`'s favourite star 10 → `icons.sm` (16), with its badge circle 18 → 24 to hold it — the one place an icon visibly grows.
+- **Radii.** 10/12/14/16/22 → `radii.control`/`row`/`pill`/`panel`. `MealLogEditorModal`/`QuickAdjustmentModal`'s meal-type chips and `MealsDayList`'s meal-type badge take `radii.pill`, matching `Badge`.
+- **Unfilled tracks → `colors.surface2`** per the standing rule: the weekly summary's `splitBar` and `dayBarTrack` (both were `rgba(255,255,255,0.04)`), and the Today/Insights segment track.
+- **Borders.** `#374151`, `rgba(255,255,255,0.04)` and `rgba(255,255,255,0.06)` all land on `colors.border`. The one exception is `ManualFoodEntryModal`'s checkbox, which takes `colors.textFaint` because that outline *is* the affordance.
+
+### Task 8 — `MealsWeeklySummaryModal`'s `width: "47%"` grid, converted as instructed
+
+`statsRow` was `flexWrap: "wrap"` + `gap: 10` with four `width: "47%"` cells, which double-counts the gap the same way Task 7's home cards did. The four cells are now two explicit `statsRow`s of two `Card variant="row"` children at `flex: 1`, separated by `gap: spacing.md`. Identical 2×2 layout, exact widths at any device width, and the cells pick up the `Card` recipe instead of re-declaring surface/radius/border. No percentage widths remain in the task's files.
+
+### Task 8 — `BarcodeScannerModal`: why the viewfinder masks are not `colors.scrim`
+
+Camera chrome only; the scanner, the permission request and the torch state are untouched. Every hex is gone, but the four dark panels (`rgba(0,0,0,0.8)` header, `rgba(0,0,0,0.6)` ×3 masks) did **not** collapse onto `colors.scrim` (`rgba(0,0,0,0.5)`). `scrim` is defined as the modal-backdrop value, and these are not backdrops: their darkness is functional — it is the only thing keeping white chrome and the instruction copy legible over an arbitrarily bright live camera image — so dropping the header from 0.8 to 0.5 would degrade a real affordance to satisfy a token whose stated purpose is different. They are `tint(colors.bg, 0.8)` / `tint(colors.bg, 0.6)` instead: alpha preserved exactly, no raw literal, and every value token-derived. The only visible consequence is that the veil is now `#0A0F1E`-based rather than pure black, i.e. a very faint navy cast at 60-80% opacity. The container's `#000000` is `colors.bg`.
+
+Also dropped a pre-existing unused `Alert` import from that file (it would trip Task 11's lint backstop).
+
+### Task 8 — smaller deviations, recorded together
+
+- **`MealsDayList`'s trash icon → `IconButton variant="circle" tone="danger"`.** It was a bare 18pt `mutedForeground` `Trash2` in a 4pt pad. The standing destructive rule sends icon-only destructive row actions to `tone="danger"`; it also gains a real 32pt+hit-slop target and an `accessibilityLabel` naming the meal. Note this delete is **unguarded** (no confirm `Alert`), which is precisely the case the Task 6 amendment argued must keep its red.
+- **`EatNextRow`'s stock chip → `Badge`.** Its five copy-pasted `stockBadge*` styles (a local mirror of `EatNextHomeCard`'s, itself mirroring the meal library's) are deleted; the chip renders `<Badge tone={assemblable ? "success" : "warning"} />`, the same pair Task 7 gave the Home card, so the two Eat Next surfaces now provably match rather than coincidentally match. The chip body is `Card variant="row"`. The badge grows from 10pt text in a 5/1 box to `Badge`'s 12pt in a 10/3 box — the "denser geometry" the file's comment defended is given up on purpose, since sharing the primitive is the point. Comments updated, not left stale.
+- **The three "secondary" screen actions lost their differentiating hues and their dashed borders.** Meal Library was blue, Weekly Summary orange-on-tint, Quick Adjustment orange-on-dashed. All three are now identical `Button secondary` rows, distinguished by label and leading icon. That is the intended outcome of "controls are not accents", but it is the most visible single change on the Insights tab.
+- **`Button` icons render leading at `md` (20pt)**, so the four converted actions show a 20pt glyph where they had 16. Fixed geometry of the Task 3 primitive; not modified, per the Task 6 precedent.
+- **`RecentFoodsRow`'s loading branch → a bare `<ActivityIndicator color={colors.brand} />`**, not `LoadingState`: it is an inline strip inside the screen's scroller, which is the second half of the standing loading rule. Its "Quick Add" heading stays.
+- **`FoodPreviewModal`'s inventory row takes the banner recipe's `success` variant** (`tint(success)` fill, `tint(success, 0.3)` border, `radii.row`) — it was `rgba(34,197,94,0.08)`/`0.3`, i.e. a fifth alpha level. The `Switch` goes `trackColor {{ surface2, brand }}` + `thumbColor colors.text` (not `onBrand`, which means "on a brand fill" — the Task 5 precedent).
+- **The three state pills in `FoodPreviewModal` → `Badge`:** "edited" `tone="meals"` (a sanctioned tint-orange info fill), "auto-scaled" `tone="neutral"` (it was `#3B82F6`, and blue has no identity role here), "per 100 g/mL" `tone="warning"` (it was `#EAB308`, a yellow with no token; `per100Hint` follows to `colors.warning`). "Edit" becomes the `SectionHeader` `action` slot as a `Button variant="ghost" size="sm"`.
+- **`FoodPreviewModal`'s serving steppers stay bespoke, tokenized in place.** They are neutral 44×44 chrome, not accent-colored, so contract 1 does not reach them; promoting them to `IconButton square` would have repainted a stepper brand-green, which is a change the plan does not ask for. Same call for the screen's date-navigation arrows and the share button.
+- **`Button` cannot flex**, only stretch, so every side-by-side pair (`formButtons`, and each modal's `actions`) wraps its buttons in a `flex: 1` `View` with `fluid` — the `footerButton` pattern Task 5 established in `EditFoodScreen`.
+- **Save/confirm buttons moved from a `"Saving…"` label swap to `Button`'s `loading` prop** in all three editor modals. Press-blocking is identical (`Button` blocks on `disabled || loading`); the compound `disabled={saving || X}` conditions are split into `loading={saving} disabled={X}`, which is the same boolean.
+- **`MEAL_TYPES`' `color` field dropped from the four local copies** in `FoodPreviewModal`, `ManualFoodEntryModal`, `MealLogEditorModal` and `QuickAdjustmentModal`, since the active chip is brand now and nothing else read it. The arrays were not consolidated onto `mealsHelpers`' copy — that is a refactor, not a restyle.
+
+### Task 8 — flagged, NOT fixed: `mealsHelpers.ts`'s five meal-type hues are still raw hex
+
+`mobile/src/components/track/meals/mealsHelpers.ts:5-11` still holds `MEAL_TYPES` with `#F59E0B`/`#10B981`/`#3B82F6`/`#8B5CF6`/`#EC4899`, which `getMealTypeColor()` feeds into `MealsDayList`'s meal-type badge fill. This is the same shape of problem `macroColor` had, and `MealsDayList.tsx` itself is grep-clean because the literals live in the helper — exactly the situation Task 7 flagged and handed to this task.
+
+It was left alone deliberately rather than swept in: the file is not in the plan's list, the badge is the *only* surviving consumer now that all four meal-type selectors are brand, and the honest fix is a five-key `colors.mealTypes` group whose members would collide with `accents.water`/`accents.inventory`/`accents.measurements` on three of five values — a naming decision worth making on purpose rather than as a side effect of a control sweep. `Badge` cannot express it either: its tone set has no per-meal-type slot. **Task 11's closeout should either add the group or decide the badge does not need five hues.**
+
+### Task 8 — no behavior bug found
+
+Reviewed hunk by hunk: no handler, data fetch, effect dependency, modal open/close path, navigation call, camera or permission flow changed. The two structural edits — folding the `<View style={{ height: 40 }} />` spacer into `contentContainerStyle` as `insets.bottom + spacing.xxl` (the Task 7 precedent), and splitting the weekly summary's wrapped four-cell row into two rows of two — are layout-only and were verified to preserve the rendered result.
+
+Gates: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests passing; both greps clean on all seventeen files.

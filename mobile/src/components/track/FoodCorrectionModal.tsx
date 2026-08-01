@@ -4,11 +4,11 @@ import {
   Text,
   StyleSheet,
   Modal,
-  TouchableOpacity,
   TextInput,
   ScrollView,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 
 export interface FoodCorrectionValues {
   name: string;
@@ -98,7 +98,7 @@ export function FoodCorrectionModal({
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Nutrition</Text>
           <Text style={styles.subtitle}>
             Values are per serving. Future scans of this food will use your
@@ -112,7 +112,7 @@ export function FoodCorrectionModal({
               value={name}
               onChangeText={setName}
               placeholder="Food name"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               editable={!saving}
             />
 
@@ -124,7 +124,7 @@ export function FoodCorrectionModal({
                   value={brand}
                   onChangeText={setBrand}
                   placeholder="Optional"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -135,7 +135,7 @@ export function FoodCorrectionModal({
                   value={servingSize}
                   onChangeText={setServingSize}
                   placeholder="e.g. 1 bottle (237 mL)"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -148,7 +148,7 @@ export function FoodCorrectionModal({
               onChangeText={setCalories}
               keyboardType="decimal-pad"
               placeholder="0"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               editable={!saving}
             />
 
@@ -161,7 +161,7 @@ export function FoodCorrectionModal({
                   onChangeText={setProtein}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -173,7 +173,7 @@ export function FoodCorrectionModal({
                   onChangeText={setCarbs}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -188,7 +188,7 @@ export function FoodCorrectionModal({
                   onChangeText={setFats}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -200,7 +200,7 @@ export function FoodCorrectionModal({
                   onChangeText={setSodiumMg}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -215,7 +215,7 @@ export function FoodCorrectionModal({
                   onChangeText={setSugars}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -227,7 +227,7 @@ export function FoodCorrectionModal({
                   onChangeText={setFiberG}
                   keyboardType="decimal-pad"
                   placeholder="0"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
               </View>
@@ -235,24 +235,20 @@ export function FoodCorrectionModal({
           </ScrollView>
 
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonPrimary]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Save"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button label="Save" onPress={handleSave} loading={saving} fluid />
+            </View>
           </View>
-        </View>
+        </Card>
       </View>
     </Modal>
   );
@@ -261,68 +257,46 @@ export function FoodCorrectionModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /** Width only — `Card panel` owns surface, radius, padding and border. */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 4,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginBottom: 16,
+    ...typography.caption,
+    marginBottom: spacing.lg,
   },
   label: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    marginTop: 8,
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    ...typography.section,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     fontSize: 16,
-    color: "#FFFFFF",
+    color: colors.text,
   },
-  row: { flexDirection: "row", gap: 10 },
+  row: { flexDirection: "row", gap: spacing.md },
   halfField: { flex: 1 },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: { backgroundColor: "#F97316" },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPrimaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-  buttonSecondaryText: { color: colors.foreground, fontSize: 16, fontWeight: "600" },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

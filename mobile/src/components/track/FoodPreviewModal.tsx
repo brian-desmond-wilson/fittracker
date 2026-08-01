@@ -12,7 +12,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X, Star, Minus, Plus, Package, Pencil } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Badge, Button, SectionHeader } from "@/src/components/ui";
 import { SavedFood, MealType } from "@/src/types/track";
 import { ProductData } from "@/src/services/openFoodFactsApi";
 import { InventoryMatchSummary } from "@/src/services/foodInventoryMatchService";
@@ -21,12 +22,12 @@ import {
   FoodCorrectionValues,
 } from "./FoodCorrectionModal";
 
-const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
-  { value: "breakfast", label: "Breakfast", color: "#F59E0B" },
-  { value: "lunch", label: "Lunch", color: "#10B981" },
-  { value: "dinner", label: "Dinner", color: "#3B82F6" },
-  { value: "snack", label: "Snack", color: "#8B5CF6" },
-  { value: "dessert", label: "Dessert", color: "#EC4899" },
+const MEAL_TYPES: { value: MealType; label: string }[] = [
+  { value: "breakfast", label: "Breakfast" },
+  { value: "lunch", label: "Lunch" },
+  { value: "dinner", label: "Dinner" },
+  { value: "snack", label: "Snack" },
+  { value: "dessert", label: "Dessert" },
 ];
 
 const SERVING_PRESETS = [0.5, 1, 1.5, 2];
@@ -188,7 +189,7 @@ export function FoodPreviewModal({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <X size={24} color={colors.foreground} />
+            <X size={icons.lg} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Food Details</Text>
           {source === "saved" && onToggleFavorite && (
@@ -197,9 +198,9 @@ export function FoodPreviewModal({
               style={styles.favoriteButton}
             >
               <Star
-                size={24}
-                color={isFavorite ? "#F59E0B" : colors.mutedForeground}
-                fill={isFavorite ? "#F59E0B" : "transparent"}
+                size={icons.lg}
+                color={isFavorite ? colors.brand : colors.textMuted}
+                fill={isFavorite ? colors.brand : "transparent"}
               />
             </TouchableOpacity>
           )}
@@ -240,7 +241,7 @@ export function FoodPreviewModal({
                 style={styles.servingButton}
                 activeOpacity={0.7}
               >
-                <Minus size={20} color={colors.foreground} />
+                <Minus size={icons.md} color={colors.text} />
               </TouchableOpacity>
               <Text style={styles.servingValue}>{servings}</Text>
               <TouchableOpacity
@@ -248,7 +249,7 @@ export function FoodPreviewModal({
                 style={styles.servingButton}
                 activeOpacity={0.7}
               >
-                <Plus size={20} color={colors.foreground} />
+                <Plus size={icons.md} color={colors.text} />
               </TouchableOpacity>
             </View>
             <View style={styles.servingPresets}>
@@ -278,34 +279,31 @@ export function FoodPreviewModal({
           {/* Nutrition Info (scaled) */}
           <View style={styles.nutritionSection}>
             <View style={styles.nutritionHeader}>
-              <View style={styles.nutritionTitleRow}>
-                <Text style={styles.sectionTitle}>Nutrition</Text>
-                {wasAutoScaled && !wasUserCorrected && (
-                  <View style={styles.autoScaledPill}>
-                    <Text style={styles.autoScaledPillText}>auto-scaled</Text>
-                  </View>
-                )}
-                {isPer100Only && (
-                  <View style={styles.per100Pill}>
-                    <Text style={styles.per100PillText}>per 100 g/mL</Text>
-                  </View>
-                )}
-                {wasUserCorrected && (
-                  <View style={styles.editedPill}>
-                    <Text style={styles.editedPillText}>edited</Text>
-                  </View>
-                )}
-              </View>
-              {onEditFood && (
-                <TouchableOpacity
-                  onPress={handleOpenCorrection}
-                  style={styles.editButton}
-                  activeOpacity={0.7}
-                >
-                  <Pencil size={14} color="#F97316" />
-                  <Text style={styles.editButtonText}>Edit</Text>
-                </TouchableOpacity>
-              )}
+              <SectionHeader
+                title="Nutrition"
+                badge={
+                  <>
+                    {wasAutoScaled && !wasUserCorrected && (
+                      <Badge label="auto-scaled" tone="neutral" />
+                    )}
+                    {isPer100Only && (
+                      <Badge label="per 100 g/mL" tone="warning" />
+                    )}
+                    {wasUserCorrected && <Badge label="edited" tone="meals" />}
+                  </>
+                }
+                action={
+                  onEditFood ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      label="Edit"
+                      icon={Pencil}
+                      onPress={handleOpenCorrection}
+                    />
+                  ) : undefined
+                }
+              />
             </View>
             <View style={styles.nutritionGrid}>
               <View style={styles.nutritionItem}>
@@ -352,10 +350,7 @@ export function FoodPreviewModal({
                   key={type.value}
                   style={[
                     styles.mealTypeButton,
-                    selectedMealType === type.value && {
-                      backgroundColor: type.color,
-                      borderColor: type.color,
-                    },
+                    selectedMealType === type.value && styles.mealTypeButtonActive,
                   ]}
                   onPress={() => setSelectedMealType(type.value)}
                   activeOpacity={0.7}
@@ -378,8 +373,8 @@ export function FoodPreviewModal({
         {/* Inventory match (only shown when this food matches an inventory item) */}
         {inventoryMatch && (
           <View style={styles.inventoryRow}>
-            <Package size={18} color={colors.foreground} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
+            <Package size={icons.md} color={colors.text} />
+            <View style={styles.inventoryText}>
               <Text style={styles.inventoryTitle}>
                 Use from pantry
               </Text>
@@ -391,34 +386,33 @@ export function FoodPreviewModal({
             <Switch
               value={useInventory}
               onValueChange={setUseInventory}
-              trackColor={{ false: "#374151", true: "#22C55E" }}
-              thumbColor="#FFFFFF"
+              trackColor={{ false: colors.surface2, true: colors.brand }}
+              thumbColor={colors.text}
               disabled={inventoryMatch.quantity <= 0}
             />
           </View>
         )}
 
         {/* Action Buttons */}
-        <View style={[styles.actions, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={[styles.actions, { paddingBottom: insets.bottom + spacing.lg }]}>
           {source === "api" && onSaveToLibrary && (
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={handleSaveToLibrary}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.secondaryButtonText}>Save to Library</Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Save to Library"
+                onPress={handleSaveToLibrary}
+                fluid
+              />
+            </View>
           )}
-          <TouchableOpacity
+          <View
             style={[
-              styles.primaryButton,
-              source === "saved" && styles.primaryButtonFull,
+              styles.actionButton,
+              source === "saved" && styles.actionButtonFull,
             ]}
-            onPress={handleLogMeal}
-            activeOpacity={0.7}
           >
-            <Text style={styles.primaryButtonText}>Log Meal</Text>
-          </TouchableOpacity>
+            <Button label="Log Meal" onPress={handleLogMeal} fluid />
+          </View>
         </View>
 
         {/* Nutrition correction modal (per-serving) */}
@@ -447,121 +441,60 @@ export function FoodPreviewModal({
 
 const styles = StyleSheet.create({
   nutritionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  nutritionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  editedPill: {
-    backgroundColor: "rgba(249, 115, 22, 0.18)",
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  editedPillText: {
-    color: "#F97316",
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  autoScaledPill: {
-    backgroundColor: "rgba(59, 130, 246, 0.18)",
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  autoScaledPillText: {
-    color: "#3B82F6",
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  per100Pill: {
-    backgroundColor: "rgba(234, 179, 8, 0.18)",
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  per100PillText: {
-    color: "#EAB308",
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    marginBottom: spacing.md,
   },
   per100Hint: {
-    fontSize: 12,
-    color: "#EAB308",
-    marginTop: 8,
+    ...typography.caption,
+    color: colors.warning,
+    marginTop: spacing.sm,
     fontStyle: "italic",
   },
-  editButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(249, 115, 22, 0.4)",
-  },
-  editButtonText: {
-    color: "#F97316",
-    fontSize: 12,
-    fontWeight: "700",
-  },
+  // Positive/in-stock banner: the `success` variant of the banner recipe.
   inventoryRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    backgroundColor: "rgba(34, 197, 94, 0.08)",
-    borderColor: "rgba(34, 197, 94, 0.3)",
+    padding: spacing.md,
+    marginHorizontal: spacing.screenGutter,
+    backgroundColor: tint(colors.success),
+    borderColor: tint(colors.success, 0.3),
     borderWidth: 1,
-    borderRadius: 10,
-    marginBottom: 12,
+    borderRadius: radii.row,
+    marginBottom: spacing.md,
+  },
+  inventoryText: {
+    flex: 1,
+    marginLeft: spacing.md,
   },
   inventoryTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
   },
   inventorySub: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
   },
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   closeButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.titleBar,
+    color: colors.text,
   },
   favoriteButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   placeholder: {
     width: 32,
@@ -570,103 +503,103 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: spacing.screenGutter,
   },
   imageContainer: {
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
   productImage: {
     width: 200,
     height: 200,
-    borderRadius: 12,
-    backgroundColor: colors.card,
+    borderRadius: radii.row,
+    backgroundColor: colors.surface2,
   },
   productInfo: {
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: spacing.xxl,
   },
   productName: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: colors.foreground,
+    ...typography.titleRoot,
+    color: colors.text,
     textAlign: "center",
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   productBrand: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    marginBottom: 4,
+    ...typography.rowTitle,
+    fontWeight: "400",
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
   },
   servingSize: {
-    fontSize: 14,
-    color: colors.mutedForeground,
+    ...typography.body,
+    color: colors.textMuted,
   },
   servingSection: {
-    marginBottom: 24,
+    marginBottom: spacing.xxl,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 12,
+    ...typography.section,
+    marginBottom: spacing.md,
   },
   servingControls: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 24,
-    marginBottom: 16,
+    gap: spacing.xxl,
+    marginBottom: spacing.lg,
   },
+  // Neutral chrome, not an accent-colored control: tokenized in place rather
+  // than promoted to `IconButton`, which would repaint a stepper brand-green.
   servingButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.card,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   servingValue: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#F97316",
+    ...typography.titleRoot,
+    color: colors.text,
     minWidth: 60,
     textAlign: "center",
   },
   servingPresets: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 12,
+    gap: spacing.md,
   },
   presetButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: colors.card,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.control,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
   presetButtonActive: {
-    backgroundColor: "#F97316",
-    borderColor: "#F97316",
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   presetButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
   },
   presetButtonTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
+  // Sanctioned surviving orange: a `tint(accents.meals)` info fill.
   nutritionSection: {
-    marginBottom: 24,
-    padding: 16,
-    backgroundColor: "rgba(249, 115, 22, 0.1)",
-    borderRadius: 12,
+    marginBottom: spacing.xxl,
+    padding: spacing.lg,
+    backgroundColor: tint(colors.accents.meals),
+    borderRadius: radii.row,
     borderWidth: 1,
-    borderColor: "rgba(249, 115, 22, 0.3)",
+    borderColor: tint(colors.accents.meals, 0.3),
   },
   nutritionGrid: {
     flexDirection: "row",
@@ -677,80 +610,56 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   nutritionValue: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#F97316",
-    marginBottom: 4,
+    ...typography.rowTitle,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   nutritionLabel: {
-    fontSize: 12,
-    color: colors.mutedForeground,
+    ...typography.caption,
   },
   sugarsText: {
-    fontSize: 14,
-    color: colors.mutedForeground,
+    ...typography.body,
+    color: colors.textMuted,
     textAlign: "center",
-    marginTop: 12,
+    marginTop: spacing.md,
   },
   mealTypeSection: {
-    marginBottom: 24,
+    marginBottom: spacing.xxl,
   },
   mealTypeButtons: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: spacing.sm,
   },
   mealTypeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: colors.card,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radii.control,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  mealTypeButtonActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
   mealTypeButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
   },
   mealTypeButtonTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    gap: spacing.md,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  secondaryButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  primaryButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: "#F97316",
-    alignItems: "center",
-  },
-  primaryButtonFull: {
-    flex: 2,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
+  actionButtonFull: { flex: 2 },
 });

@@ -35,7 +35,8 @@ import {
   ScanBarcode,
   X,
 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, spacing } from "@/src/theme/tokens";
+import { Button, Card, IconButton } from "@/src/components/ui";
 import { MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import {
@@ -1340,14 +1341,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         {/* Header — back, search (with barcode), add — mirrors Food Inventory */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
+            <ChevronLeft size={icons.lg} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.searchBar}>
-            <Search size={20} color={colors.mutedForeground} />
+            <Search size={icons.md} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search foods..."
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               returnKeyType="search"
@@ -1358,7 +1359,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 activeOpacity={0.7}
                 style={styles.searchActionButton}
               >
-                <X size={20} color={colors.mutedForeground} />
+                <X size={icons.md} color={colors.textMuted} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -1366,30 +1367,36 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 activeOpacity={0.7}
                 style={styles.searchActionButton}
               >
-                <ScanBarcode size={20} color={colors.mutedForeground} />
+                <ScanBarcode size={icons.md} color={colors.textMuted} />
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity
-            style={styles.headerAddButton}
+          <IconButton
+            icon={Plus}
             onPress={handleOpenAddForm}
-            activeOpacity={0.7}
             disabled={showAddForm}
-          >
-            <Plus size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+            accessibilityLabel="Log a meal"
+          />
         </View>
 
         {/* Fixed Refresh Indicator */}
         {refreshing && (
           <View style={styles.refreshIndicator}>
-            <ActivityIndicator size="small" color={colors.primary} />
+            <ActivityIndicator size="small" color={colors.brand} />
           </View>
         )}
 
         <ScrollView
           style={styles.content}
           showsVerticalScrollIndicator={false}
+          // `flexGrow: 1` (with the matching grow on `mealsSection`) is what
+          // lets `MealsDayList`'s `EmptyState`/`LoadingState` — both `flex: 1`
+          // — resolve to a real height instead of collapsing onto their own
+          // padding. Inert once the day has enough content to scroll.
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: insets.bottom + spacing.xxl },
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1401,7 +1408,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         >
           {/* Title (Share moved here from header) */}
           <View style={styles.titleContainer}>
-            <Utensils size={32} color="#F97316" strokeWidth={2} />
+            <Utensils
+              size={icons.xl}
+              color={colors.accents.meals}
+              strokeWidth={icons.strokeWidth}
+            />
             <Text style={styles.pageTitle}>Meals & Snacks</Text>
             <TouchableOpacity
               onPress={handleExportCsv}
@@ -1410,8 +1421,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               activeOpacity={0.7}
             >
               <Share2
-                size={22}
-                color={exporting ? colors.mutedForeground : colors.foreground}
+                size={icons.lg}
+                color={exporting ? colors.textMuted : colors.text}
               />
             </TouchableOpacity>
           </View>
@@ -1427,7 +1438,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 style={styles.navArrow}
                 activeOpacity={0.7}
               >
-                <ChevronLeft size={28} color={colors.foreground} />
+                <ChevronLeft size={icons.lg} color={colors.text} />
               </TouchableOpacity>
 
               <Text style={styles.dateText}>{formatViewingDate(viewingDate)}</Text>
@@ -1439,8 +1450,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 disabled={!canGoForward()}
               >
                 <ChevronRight
-                  size={28}
-                  color={canGoForward() ? colors.foreground : colors.mutedForeground}
+                  size={icons.lg}
+                  color={canGoForward() ? colors.text : colors.textMuted}
                 />
               </TouchableOpacity>
             </View>
@@ -1448,14 +1459,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
             {/* Jump to Today Button */}
             {!isViewingToday() && (
-              <TouchableOpacity
-                style={styles.jumpToTodayButton}
-                onPress={goToToday}
-                activeOpacity={0.7}
-              >
-                <Calendar size={16} color="#FFFFFF" />
-                <Text style={styles.jumpToTodayText}>Jump to Today</Text>
-              </TouchableOpacity>
+              <View style={styles.actionRow}>
+                <Button
+                  label="Jump to Today"
+                  icon={Calendar}
+                  onPress={goToToday}
+                  fluid
+                />
+              </View>
             )}
 
             {/* Tab pills: Today / Insights. Hidden while the add form is
@@ -1513,7 +1524,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
                 {/* Pace coach (today only) */}
                 {viewingToday && (
-                  <View style={{ marginHorizontal: 20, marginBottom: 12 }}>
+                  <View style={styles.paceWrap}>
                     <MealsPaceLines
                       caloriePace={caloriePace}
                       proteinPace={proteinPace}
@@ -1533,7 +1544,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
                 {/* Search Results — from your saved foods library */}
                 {searchQuery.trim().length >= 2 && (
-                  <View style={styles.searchResults}>
+                  <Card variant="row" style={styles.searchResultsSpacing}>
                     <Text style={styles.searchResultsHeader}>
                       {searching
                         ? "Searching…"
@@ -1563,7 +1574,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                         )}
                       </TouchableOpacity>
                     ))}
-                  </View>
+                  </Card>
                 )}
 
                 {/* Recent Foods (Quick Add) — promoted above meal sections
@@ -1577,14 +1588,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 />
 
                 {/* Meal Library entry point */}
-                <TouchableOpacity
-                  onPress={() => setLibraryVisible(true)}
-                  style={styles.templatesButton}
-                  activeOpacity={0.7}
-                >
-                  <Utensils size={16} color="#3B82F6" />
-                  <Text style={styles.templatesButtonText}>Meal Library</Text>
-                </TouchableOpacity>
+                <View style={styles.actionRow}>
+                  <Button
+                    variant="secondary"
+                    label="Meal Library"
+                    icon={Utensils}
+                    onPress={() => setLibraryVisible(true)}
+                    fluid
+                  />
+                </View>
               </>
             )}
 
@@ -1610,27 +1622,25 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   </View>
                 )}
 
-                <TouchableOpacity
-                  onPress={() => setWeeklySummaryVisible(true)}
-                  style={styles.weeklySummaryButton}
-                  activeOpacity={0.7}
-                >
-                  <BarChart3 size={16} color="#F97316" />
-                  <Text style={styles.weeklySummaryButtonText}>
-                    Weekly Summary
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.actionRow}>
+                  <Button
+                    variant="secondary"
+                    label="Weekly Summary"
+                    icon={BarChart3}
+                    onPress={() => setWeeklySummaryVisible(true)}
+                    fluid
+                  />
+                </View>
 
-                <TouchableOpacity
-                  onPress={() => setQuickAdjustVisible(true)}
-                  style={styles.quickAdjustButton}
-                  activeOpacity={0.7}
-                >
-                  <Zap size={16} color="#F97316" />
-                  <Text style={styles.quickAdjustButtonText}>
-                    Quick Adjustment — calories only
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.actionRow}>
+                  <Button
+                    variant="secondary"
+                    label="Quick Adjustment — calories only"
+                    icon={Zap}
+                    onPress={() => setQuickAdjustVisible(true)}
+                    fluid
+                  />
+                </View>
               </>
             )}
 
@@ -1660,9 +1670,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 onDeleteMeal={handleDeleteMeal}
               />
             )}
-
-            {/* Bottom Spacing */}
-            <View style={{ height: 40 }} />
           </ScrollView>
       </View>
 

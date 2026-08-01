@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import {
   MacroTotals,
   MacroGoals,
@@ -84,56 +84,50 @@ export function MealsNutritionCard({
 }
 
 const styles = StyleSheet.create({
+  // Sanctioned surviving orange: a `tint(accents.meals)` info fill.
   card: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-    padding: 16,
-    backgroundColor: "rgba(249, 115, 22, 0.08)",
-    borderRadius: 12,
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.lg,
+    padding: spacing.lg,
+    backgroundColor: tint(colors.accents.meals),
+    borderRadius: radii.row,
     borderWidth: 1,
-    borderColor: "rgba(249, 115, 22, 0.3)",
+    borderColor: tint(colors.accents.meals, 0.3),
   },
   title: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 16,
+    ...typography.section,
+    marginBottom: spacing.lg,
   },
   ringsRow: {
     flexDirection: "row",
     justifyContent: "space-around",
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   barsBlock: {
-    marginBottom: 6,
+    marginBottom: spacing.sm,
   },
   compactRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingTop: 8,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.06)",
+    borderTopColor: colors.border,
   },
   compactCell: {
     flex: 1,
     alignItems: "center",
   },
   compactValue: {
-    fontSize: 13,
+    ...typography.body,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
   },
   compactGoal: {
-    fontSize: 11,
-    fontWeight: "400",
-    color: colors.mutedForeground,
+    ...typography.caption,
   },
   compactLabel: {
-    fontSize: 10,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },

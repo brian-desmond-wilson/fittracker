@@ -2,7 +2,8 @@ import React from "react";
 import { View, Text, TouchableOpacity, TextInput, Platform } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Calendar } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons } from "@/src/theme/tokens";
+import { Button, SectionHeader } from "@/src/components/ui";
 import { SavedFood, RecentFoodItem } from "@/src/types/track";
 import { RecentFoodChips } from "./RecentFoodChips";
 import { styles } from "./mealsScreenStyles";
@@ -54,7 +55,7 @@ export function MealAddForm({
 
   return (
     <View style={styles.addSection}>
-      <Text style={styles.sectionTitle}>Log Meal</Text>
+      <SectionHeader title="Log Meal" />
 
       {/* Date Selector */}
       <View style={styles.field}>
@@ -63,7 +64,7 @@ export function MealAddForm({
           style={styles.dateButton}
           onPress={() => setShowDatePicker(true)}
         >
-          <Calendar size={16} color={colors.foreground} />
+          <Calendar size={icons.sm} color={colors.text} />
           <Text style={styles.dateButtonText}>
             {selectedDate.toLocaleDateString("en-US", {
               month: "short",
@@ -98,10 +99,7 @@ export function MealAddForm({
               key={type.value}
               style={[
                 styles.mealTypeButton,
-                mealType === type.value && {
-                  backgroundColor: type.color,
-                  borderColor: type.color,
-                },
+                mealType === type.value && styles.mealTypeButtonActive,
               ]}
               onPress={() => setMealType(type.value)}
               activeOpacity={0.7}
@@ -134,7 +132,7 @@ export function MealAddForm({
         <TextInput
           style={styles.input}
           placeholder="e.g., Grilled chicken with rice"
-          placeholderTextColor={colors.mutedForeground}
+          placeholderTextColor={colors.textMuted}
           value={mealName}
           onChangeText={setMealName}
         />
@@ -149,7 +147,7 @@ export function MealAddForm({
           <TextInput
             style={styles.input}
             placeholder="0"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
             value={calories}
             onChangeText={setCalories}
@@ -160,7 +158,7 @@ export function MealAddForm({
           <TextInput
             style={styles.input}
             placeholder="0"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={protein}
             onChangeText={setProtein}
@@ -174,7 +172,7 @@ export function MealAddForm({
           <TextInput
             style={styles.input}
             placeholder="0"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={carbs}
             onChangeText={setCarbs}
@@ -185,7 +183,7 @@ export function MealAddForm({
           <TextInput
             style={styles.input}
             placeholder="0"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={fats}
             onChangeText={setFats}
@@ -199,7 +197,7 @@ export function MealAddForm({
           <TextInput
             style={styles.input}
             placeholder="0"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={sugars}
             onChangeText={setSugars}
@@ -210,7 +208,7 @@ export function MealAddForm({
           <TextInput
             style={styles.input}
             placeholder="0"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={sodiumMg}
             onChangeText={setSodiumMg}
@@ -223,7 +221,7 @@ export function MealAddForm({
         <TextInput
           style={styles.input}
           placeholder="0"
-          placeholderTextColor={colors.mutedForeground}
+          placeholderTextColor={colors.textMuted}
           keyboardType="decimal-pad"
           value={fiberG}
           onChangeText={setFiberG}
@@ -232,20 +230,12 @@ export function MealAddForm({
 
       {/* Form Buttons */}
       <View style={styles.formButtons}>
-        <TouchableOpacity
-          style={[styles.button, styles.cancelButton]}
-          onPress={onCancel}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, styles.saveButton]}
-          onPress={onSubmit}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.saveButtonText}>Log Meal</Text>
-        </TouchableOpacity>
+        <View style={styles.formButton}>
+          <Button variant="secondary" label="Cancel" onPress={onCancel} fluid />
+        </View>
+        <View style={styles.formButton}>
+          <Button label="Log Meal" onPress={onSubmit} fluid />
+        </View>
       </View>
     </View>
   );

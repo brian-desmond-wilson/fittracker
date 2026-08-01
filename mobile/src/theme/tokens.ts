@@ -34,6 +34,26 @@ export const colors = {
     photos: "#F59E0B",
     workouts: "#EF4444",
   },
+  /**
+   * Data-series palette for macro meters — the fills `macroColor()` returns
+   * into macro bars and rings (spec §8 stage 6 sanctions macro-bar fills as a
+   * surviving identity use). Keyed by PROGRESS STATE, not by macro name: the
+   * function maps (value, goal, macro) onto a verdict, it never colors
+   * "protein" differently from "carbs".
+   *
+   * `under` is byte-identical to `accents.water` and the other three to
+   * `success`/`warning`/`danger` — deliberately NOT deduplicated. These are
+   * marks on a meter, not a domain identity and not a semantic verdict badge:
+   * a bar showing 60% of a sodium cap must not repaint because the app's
+   * danger red or its water accent changed. Same reasoning Task 7 recorded
+   * for `accents.photos`/`accents.workouts`.
+   */
+  macros: {
+    under: "#3B82F6",   // in progress toward a goal / approaching a cap
+    met: "#22C55E",     // at or past a "hit this" goal
+    atCap: "#F59E0B",   // at a "do not exceed" cap
+    overCap: "#EF4444", // more than 10% past a cap
+  },
 } as const;
 
 export type AccentKey = keyof typeof colors.accents;
