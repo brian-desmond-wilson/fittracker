@@ -4,25 +4,37 @@
 // `station.key`, no re-deriving, no conditional copy. Every string and every
 // verdict was decided by `computeLoopStatus`, which is the tested surface; a
 // special case for one station belongs there, not here.
-import React from "react";
+import React, { useRef } from "react";
 import { Modal, StyleSheet, Text, TouchableWithoutFeedback, View } from "react-native";
-import type { LucideIcon } from "lucide-react-native";
-import { colors, icons, radii, spacing, tint, typography, type AccentKey } from "@/src/theme/tokens";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button } from "@/src/components/ui";
 import type { StationStatus } from "@/src/lib/loopStatus";
+import { STATION_ACCENTS, STATION_ICONS } from "./stations";
 
 interface StationDetailSheetProps {
   station: StationStatus | null;   // null = hidden
-  icon: LucideIcon | null;
-  accent: AccentKey;
   onClose: () => void;
   onOpenDestination: () => void;   // dismiss + router.push(station.destination)
 }
 
 export function StationDetailSheet({
-  station, icon: Icon, accent, onClose, onOpenDestination,
+  station, onClose, onOpenDestination,
 }: StationDetailSheetProps) {
-  const a = colors.accents[accent];
+  // Keep the LAST station rendered while the native slide-out plays. `visible`
+  // and the content were previously driven by the same value, so the panel
+  // unmounted the instant `station` went null and the dismissal read as the
+  // panel vanishing while only the scrim animated away.
+  //
+  // A render-phase ref write is sound HERE, unlike the one moved out of
+  // `useLoopHub`'s render body: this value is consumed in the SAME render that
+  // writes it, and the write is idempotent for a given `station`, so a
+  // double-render cannot observe a torn value. The hook's ref was read later by
+  // an async callback, which is where cross-render staleness actually bites.
+  const lastRef = useRef(station);
+  if (station) lastRef.current = station;
+  const s = station ?? lastRef.current;
+  const a = s ? colors.accents[STATION_ACCENTS[s.key]] : null;
+  const Icon = s ? STATION_ICONS[s.key] : null;
   return (
     <Modal visible={station !== null} transparent animationType="slide" onRequestClose={onClose}>
       {/* Sibling scrim + sheet inside RN's Modal container, which is `flex: 1`
@@ -32,11 +44,11 @@ export function StationDetailSheet({
       <TouchableWithoutFeedback onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
         <View style={styles.scrim} />
       </TouchableWithoutFeedback>
-      {station ? (
+      {s ? (
         <View style={styles.sheet}>
           <View style={styles.grabber} />
           <View style={styles.head}>
-            {Icon ? (
+            {Icon && a ? (
               <View style={[styles.iconCircle, { backgroundColor: tint(a) }]}>
                 <Icon size={18} color={a} strokeWidth={icons.strokeWidth} />
               </View>
@@ -46,35 +58,35 @@ export function StationDetailSheet({
                 them. No `numberOfLines` here: the sheet has room to wrap, and
                 truncating the detail view would defeat its purpose. */}
             <View style={styles.headText}>
-              <Text style={[typography.rowTitle, styles.title]}>{station.title}</Text>
-              <Text style={typography.caption}>{station.headline}</Text>
+              <Text style={[typography.rowTitle, styles.title]}>{s.title}</Text>
+              <Text style={typography.caption}>{s.headline}</Text>
             </View>
           </View>
           {/* Index-keyed: `label` alone is not unique (two inventory items may
               share a name) and neither is `label:value` (two "Milk" rows both
               reading "2d left"). The list is a static projection re-rendered
               whole, so a positional key is correct and collision-proof. */}
-          {station.detail.lines.map((l, i) => (
+          {s.detail.lines.map((l, i) => (
             <View key={`${i}:${l.label}`} style={styles.statLine}>
               <Text style={[typography.body, styles.statLabel]}>{l.label}</Text>
               <Text style={[typography.body, styles.statValue]}>{l.value}</Text>
             </View>
           ))}
-          {station.detail.chips.length > 0 ? (
+          {s.detail.chips.length > 0 ? (
             <View style={styles.chips}>
               {/* `tone` is a `StationTone`, a strict subset of `BadgeTone`, so
                   it assigns with NO cast — and is left uncast deliberately, as
                   in `StationRow`: a cast would suppress the one divergence
                   worth catching (a `StationTone` member `BadgeTone` lacks). */}
-              {station.detail.chips.map((c, i) => (
+              {s.detail.chips.map((c, i) => (
                 <Badge key={`${i}:${c.label}`} label={c.label} tone={c.tone} />
               ))}
             </View>
           ) : null}
-          {station.detail.footnote ? (
-            <Text style={[typography.caption, styles.footnote]}>{station.detail.footnote}</Text>
+          {s.detail.footnote ? (
+            <Text style={[typography.caption, styles.footnote]}>{s.detail.footnote}</Text>
           ) : null}
-          <Button label={station.destinationLabel} onPress={onOpenDestination} fluid />
+          <Button label={s.destinationLabel} onPress={onOpenDestination} fluid />
         </View>
       ) : null}
     </Modal>
@@ -96,8 +108,15 @@ const styles = StyleSheet.create({
   iconCircle: { width: 34, height: 34, borderRadius: radii.pill, alignItems: "center", justifyContent: "center" },
   title: { color: colors.text },
   statLine: { flexDirection: "row", justifyContent: "space-between" },
-  statLabel: { color: colors.textMuted },
-  statValue: { color: colors.text },
+  // RN defaults `flexShrink: 0`, so without this a long label/value pair
+  // overflows the row instead of reflowing — reachable with real data, since
+  // stations 1 and 5 put inventory ITEM NAMES in `detail.lines`. Shrinking the
+  // label lets it WRAP (no `numberOfLines` here, matching the head block's
+  // deliberate no-truncation intent); the value stays unshrunk and right-
+  // aligned so the number never breaks. Same ruling as
+  // `FoodInventoryScreen.expiringName` and `EatNextRow.chipName`.
+  statLabel: { color: colors.textMuted, flexShrink: 1 },
+  statValue: { color: colors.text, flexShrink: 0, textAlign: "right" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm - 2 },
   footnote: { marginTop: spacing.xs },
 });

@@ -6,25 +6,20 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
-import type { LucideIcon } from "lucide-react-native";
-import { colors, icons, radii, spacing, tint, typography, type AccentKey } from "@/src/theme/tokens";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Card } from "@/src/components/ui";
 import type { StationStatus } from "@/src/lib/loopStatus";
-
-export const STATION_ACCENTS: Record<StationStatus["key"], AccentKey> = {
-  inventory: "inventory", library: "meals", eatNext: "brand",
-  pace: "meals", forecast: "shopping", shopping: "shopping",
-};
+import { STATION_ACCENTS, STATION_ICONS } from "./stations";
 
 interface StationRowProps {
   station: StationStatus;
-  icon: LucideIcon;
   onPressBody: () => void;     // opens the detail sheet
   onPressChevron: () => void;  // deep-links to station.destination
 }
 
-export function StationRow({ station, icon: Icon, onPressBody, onPressChevron }: StationRowProps) {
+export function StationRow({ station, onPressBody, onPressChevron }: StationRowProps) {
   const accent = colors.accents[STATION_ACCENTS[station.key]];
+  const Icon = STATION_ICONS[station.key];
   return (
     <Card variant="row" onPress={onPressBody}>
       <View style={styles.line}>
@@ -44,6 +39,17 @@ export function StationRow({ station, icon: Icon, onPressBody, onPressChevron }:
         {station.badge ? (
           <Badge label={station.badge.label} tone={station.badge.tone} />
         ) : null}
+        {/* POINTER-ONLY SHORTCUT, stated plainly. `Card` renders a
+            `TouchableOpacity`, which is `accessible` by default and therefore
+            GROUPS its subtree on iOS — so this chevron is NOT an independently
+            focusable VoiceOver target, and the label below folds into the row's
+            single announcement instead of exposing a second action. The
+            screen-reader path to the same destination is: row body → sheet →
+            the sheet's CTA, which carries this same `destinationLabel`.
+            Deliberately NOT "fixed" with `accessible={false}` on the Card —
+            that would expose the chevron but strip the row body's own button
+            semantics. This is the app's only pressable `Card` with a nested
+            touchable; if a second appears, solve it in the primitive. */}
         <TouchableOpacity
           onPress={onPressChevron}
           // hitSlop brings the ~20pt glyph up to the ≥44pt target the two-target
