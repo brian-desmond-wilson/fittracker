@@ -27,12 +27,8 @@ const baseInputs = (): LoopStatusInputs => ({
     { id: "i3", name: "Milk", state: state({ expiration: "soon", daysLeft: 2 }) },
   ],
   meals: [
-    { id: "m1", name: "Banana + PB" },
-    { id: "m2", name: "Korean Beef Bowl" },
-  ],
-  mealScores: [
-    { mealId: "m1", name: "Banana + PB", raw: 80, display: 84 },
-    { mealId: "m2", name: "Korean Beef Bowl", raw: 90, display: 95 },
+    { id: "m1", name: "Banana + PB", raw: 80, display: 84 },
+    { id: "m2", name: "Korean Beef Bowl", raw: 90, display: 95 },
   ],
   stockByMealId: new Map([
     ["m1", stock({ assemblable: false, missingCount: 2 })],
@@ -109,6 +105,21 @@ describe("station 1: inventory", () => {
     expect(d.lines[0]).toEqual({ label: "Oats", value: "expired" });
     expect(d.lines[1]).toEqual({ label: "Milk", value: "2d left" });
   });
+  // Day zero is the MOST urgent value; "0d left" makes it read as the least
+  // urgent-sounding string. `expiryClause` already ruled this for station 3
+  // ("expires today"), so station 1 must not answer differently.
+  it("the 'today' band reads 'today', never '0d left'", () => {
+    const inp = baseInputs();
+    inp.inventory = [
+      { id: "a", name: "Yogurt", state: state({ expiration: "today", daysLeft: 0 }) },
+      { id: "b", name: "Milk", state: state({ expiration: "soon", daysLeft: 2 }) },
+    ];
+    const d = computeLoopStatus(inp).stations[0].detail;
+    expect(d.lines).toEqual([
+      { label: "Yogurt", value: "today" },
+      { label: "Milk", value: "2d left" },
+    ]);
+  });
 });
 
 describe("station 2: library", () => {
@@ -118,7 +129,7 @@ describe("station 2: library", () => {
     expect(s.badge).toEqual({ label: "1 ready", tone: "success" });
     expect(s.attention).toBe(false);
   });
-  it("0 ready with meals present = warning + attention; empty library = build prompt", () => {
+  it("0 ready with meals present is a warning that demands attention", () => {
     const inp = baseInputs();
     inp.stockByMealId = new Map([
       ["m1", stock({ assemblable: false, missingCount: 2 })],
@@ -127,9 +138,13 @@ describe("station 2: library", () => {
     const s = computeLoopStatus(inp).stations[1];
     expect(s.badge).toEqual({ label: "0 ready", tone: "warning" });
     expect(s.attention).toBe(true);
-    inp.meals = []; inp.mealScores = []; inp.stockByMealId = new Map();
+  });
+  it("an empty library prompts you to build one, without demanding attention", () => {
+    const inp = baseInputs();
+    inp.meals = []; inp.stockByMealId = new Map();
     const empty = computeLoopStatus(inp).stations[1];
     expect(empty.headline).toBe("0 meals — build your library");
+    expect(empty.badge).toBeNull();
     expect(empty.attention).toBe(false);
   });
   // An absent `stockByMealId` entry is UNKNOWN, not missing — the same
@@ -163,6 +178,23 @@ describe("station 2: library", () => {
     expect(computeLoopStatus(baseInputs()).stations[1].detail.chips)
       .toContainEqual({ label: "Banana + PB: missing 2", tone: "warning" });
   });
+  it("detail lines score the top meals out of 100, ranked by raw", () => {
+    expect(computeLoopStatus(baseInputs()).stations[1].detail.lines).toEqual([
+      { label: "Korean Beef Bowl", value: "95 / 100" },
+      { label: "Banana + PB", value: "84 / 100" },
+    ]);
+  });
+  // Count and content come from ONE array now, so a meal can never contribute
+  // a headline it isn't counted in.
+  it("readyCount cannot exceed the library size when the stock map holds a stale meal", () => {
+    const inp = baseInputs();
+    inp.stockByMealId = new Map([
+      ["m1", stock()], ["m2", stock()], ["deleted-meal", stock()],
+    ]);
+    const r = computeLoopStatus(inp);
+    expect(r.stations[1].badge).toEqual({ label: "2 ready", tone: "success" });
+    expect(r.stations[0].connector).toBe("assemblability → 2 of 2 meals ready");
+  });
 });
 
 describe("station 3: eat next", () => {
@@ -172,6 +204,14 @@ describe("station 3: eat next", () => {
     expect(s.badge).toEqual({ label: "In stock", tone: "success" });
     expect(s.attention).toBe(false);
     expect(s.detail.footnote).toBe("Runner-up: Banana + PB · 295 cal · Missing 2");
+  });
+  it("the detail sheet body carries context, macros and prep · score", () => {
+    expect(computeLoopStatus(baseInputs()).stations[2].detail.lines).toEqual([
+      { label: "Context", value: "next meal" },
+      { label: "Calories", value: "640" },
+      { label: "Protein", value: "45g" },
+      { label: "Prep · Score", value: "10 min · 95/100" },
+    ]);
   });
   // Title states only what this asserts: badge + attention. The sheet chip
   // carries a COUNT, never ingredient names — `EatNextStockInfo` has no names
@@ -257,16 +297,51 @@ describe("station 4: pace", () => {
     expect(s.attention).toBe(true);
     expect(s.detail.lines).toContainEqual({ label: "Catch up", value: "400 cal by dinner (6 PM)" });
   });
-  it("goal hit on both; on-pace otherwise; window states are neutral", () => {
+  it("goal hit on both macros is a success badge", () => {
     const inp = baseInputs();
     inp.paceCalories = { status: "goal_hit" }; inp.paceProtein = { status: "goal_hit" };
     expect(computeLoopStatus(inp).stations[3].badge).toEqual({ label: "Goal hit", tone: "success" });
-    inp.paceProtein = { status: "ahead", delta: 20 };
+  });
+  it("one goal hit and one ahead is 'On pace'", () => {
+    const inp = baseInputs();
+    inp.paceCalories = { status: "goal_hit" }; inp.paceProtein = { status: "ahead", delta: 20 };
     expect(computeLoopStatus(inp).stations[3].badge).toEqual({ label: "On pace", tone: "success" });
+  });
+  it("before_window on both is neutral and quiet", () => {
+    const inp = baseInputs();
     inp.paceCalories = { status: "before_window" }; inp.paceProtein = { status: "before_window" };
     const s = computeLoopStatus(inp).stations[3];
     expect(s.badge).toEqual({ label: "Before window", tone: "neutral" });
     expect(s.attention).toBe(false);
+  });
+  // `computeMealPace` returns `{ status: "on_pace" }` as its NO-GOAL sentinel,
+  // so reading status alone treats an untracked macro as a pace verdict and
+  // pins the badge to "On pace" all day — even before the window opens.
+  it("a null goal cannot manufacture 'On pace' before the window opens", () => {
+    const inp = baseInputs();
+    inp.goals = { calories: 2300, protein: null };
+    inp.paceCalories = { status: "before_window" };
+    inp.paceProtein = { status: "on_pace" }; // the no-goal sentinel, not a verdict
+    expect(computeLoopStatus(inp).stations[3].badge)
+      .toEqual({ label: "Before window", tone: "neutral" });
+  });
+  it("a null goal cannot manufacture 'On pace' after the window closes either", () => {
+    const inp = baseInputs();
+    inp.goals = { calories: 2300, protein: null };
+    inp.paceCalories = { status: "after_window" };
+    inp.paceProtein = { status: "on_pace" };
+    expect(computeLoopStatus(inp).stations[3].badge)
+      .toEqual({ label: "Day done", tone: "neutral" });
+  });
+  // The unit-pairing walk exists so a shared MealPaceState object can't label
+  // both lines "cal"; without a behind protein fixture the second iteration
+  // never runs. Asserting both lines also pins their order.
+  it("protein catch-up carries the g unit and falls back to end of day", () => {
+    const inp = baseInputs();
+    inp.paceProtein = { status: "behind", catchUpAmount: 30 };
+    const lines = computeLoopStatus(inp).stations[3].detail.lines;
+    expect(lines).toContainEqual({ label: "Catch up", value: "400 cal by dinner (6 PM)" });
+    expect(lines).toContainEqual({ label: "Catch up", value: "30 g by end of day" });
   });
   it("null goals render em-dashes", () => {
     const inp = baseInputs();
@@ -337,6 +412,26 @@ describe("station 5: forecast", () => {
     expect(s.detail.lines).toContainEqual({ label: "Eggs", value: `~${MAX_DISPLAY_DAYS}d left` });
     expect(s.badge).toBeNull();
   });
+  // Both kinds of overflow at once: 10 tracked, 7 within the display cap, 5
+  // rows shown. The footnote must account for all 5 missing items (2 capped +
+  // 3 beyond MAX_DISPLAY_DAYS), not just the 2 `capLines` could see — the
+  // headline's "10 items tracked" and the footnote name the same set.
+  it("the tracked footnote counts every item the rows omit, cap and filter alike", () => {
+    const inp = baseInputs();
+    inp.inventory = Array.from({ length: 10 }, (_, i) => ({
+      id: `x${i}`, name: `Item ${i}`, state: state(),
+    }));
+    inp.rates = new Map(
+      Array.from({ length: 10 }, (_, i) => [
+        `x${i}`,
+        { ratePerDay: 1, daysUntilOut: i < 7 ? i + 1 : MAX_DISPLAY_DAYS + 10 },
+      ]),
+    );
+    const s = computeLoopStatus(inp).stations[4];
+    expect(s.headline).toBe("Item 0 ~1d left · 10 items tracked");
+    expect(s.detail.lines).toHaveLength(DETAIL_MAX_ROWS);
+    expect(s.detail.footnote).toBe("+5 more tracked");
+  });
 });
 
 describe("station 6: shopping + assembly", () => {
@@ -347,19 +442,45 @@ describe("station 6: shopping + assembly", () => {
     expect(s.attention).toBe(true);
     expect(s.connector).toBe("purchased → restock ↺ inventory");
   });
-  it("unassigned bucket renders last; empty list says so", () => {
+  it("unassigned bucket renders last", () => {
     const inp = baseInputs();
     inp.listRows = [
       { vendor_id: null, is_purchased: false },
       { vendor_id: "v1", is_purchased: false },
     ];
     expect(computeLoopStatus(inp).stations[5].headline).toBe("2 on list · Costco 1 · unassigned 1");
+  });
+  it("an empty list with no suggestions says so and stays quiet", () => {
+    const inp = baseInputs();
     inp.listRows = [];
     inp.suggestions = [];
     const s = computeLoopStatus(inp).stations[5];
     expect(s.headline).toBe("0 on list");
     expect(s.badge).toBeNull();
     expect(s.attention).toBe(false);
+  });
+  // The most plausible real-data anomaly on this path: a row pointing at a
+  // vendor that has since been deleted. It must land in `unassigned`, not
+  // render an "undefined 1" bucket.
+  it("a row whose vendor is missing from the vendor list counts as unassigned", () => {
+    const inp = baseInputs();
+    inp.listRows = [
+      { vendor_id: "ghost-vendor", is_purchased: false },
+      { vendor_id: "v1", is_purchased: false },
+    ];
+    expect(computeLoopStatus(inp).stations[5].headline).toBe("2 on list · Costco 1 · unassigned 1");
+  });
+  // Equal counts must not order by first appearance in `listRows` — that
+  // reshuffles as rows get purchased, so the breakdown visibly reorders
+  // between refreshes with nothing having changed.
+  it("equal-count vendors break the tie by name, not by row order", () => {
+    const inp = baseInputs();
+    inp.vendors = [{ id: "v1", name: "Costco" }, { id: "v2", name: "Aldi" }];
+    inp.listRows = [
+      { vendor_id: "v1", is_purchased: false },
+      { vendor_id: "v2", is_purchased: false },
+    ];
+    expect(computeLoopStatus(inp).stations[5].headline).toBe("2 on list · Aldi 1 · Costco 1");
   });
   it("six stations in fixed order; attentionCount sums attention flags", () => {
     const r = computeLoopStatus(baseInputs());
@@ -376,6 +497,25 @@ describe("station 6: shopping + assembly", () => {
     const chips = computeLoopStatus(inp).stations[0].detail.chips;
     expect(chips).toHaveLength(DETAIL_MAX_ROWS + 1);
     expect(chips[DETAIL_MAX_ROWS]).toEqual({ label: "+3 more", tone: "neutral" });
+  });
+  // BOUNDARY: at exactly DETAIL_MAX_ROWS + 1 a summary chip would occupy the
+  // row it summarises — same chip count, one fewer name. Truncation must buy
+  // back at least one row, so this many passes through whole.
+  it("capChips leaves DETAIL_MAX_ROWS + 1 chips intact rather than wasting a slot", () => {
+    const outItems = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: `x${i}`, name: `Item ${i}`, state: state({ totalQuantity: 0, isOut: true }),
+      }));
+    const inp = baseInputs();
+    inp.inventory = outItems(DETAIL_MAX_ROWS + 1);
+    const atBoundary = computeLoopStatus(inp).stations[0].detail.chips;
+    expect(atBoundary).toHaveLength(DETAIL_MAX_ROWS + 1);
+    expect(atBoundary.some((c) => c.label.includes("more"))).toBe(false);
+    // one past the boundary, truncation finally pays for itself
+    inp.inventory = outItems(DETAIL_MAX_ROWS + 2);
+    const past = computeLoopStatus(inp).stations[0].detail.chips;
+    expect(past).toHaveLength(DETAIL_MAX_ROWS + 1);
+    expect(past[DETAIL_MAX_ROWS]).toEqual({ label: "+2 more", tone: "neutral" });
   });
   // LINE lists cap differently from CHIP lists: they truncate at
   // DETAIL_MAX_ROWS and account for the remainder in the footnote rather than
@@ -416,6 +556,25 @@ describe("station 6: shopping + assembly", () => {
     expect(d.footnote).toBe("+3 more suggested");
     expect(computeLoopStatus(baseInputs()).stations[5].detail.footnote)
       .toBe("restock returns units to Inventory ↺");
+  });
+  // All three LoopDestination values typecheck in any station, so a
+  // copy-paste error routes the user to the wrong screen with a green suite.
+  // Node-env Jest means this assertion is the only automated protection these
+  // strings will ever get.
+  it("each station deep-links to its own screen", () => {
+    expect(computeLoopStatus(baseInputs()).stations.map((s) => [s.key, s.destination])).toEqual([
+      ["inventory", "/(tabs)/track/food-inventory"], ["library", "/(tabs)/track/meals"],
+      ["eatNext", "/(tabs)/track/meals"], ["pace", "/(tabs)/track/meals"],
+      ["forecast", "/(tabs)/track/shopping"], ["shopping", "/(tabs)/track/shopping"],
+    ]);
+  });
+  it("each station carries its own title and destination label", () => {
+    expect(computeLoopStatus(baseInputs()).stations.map((s) => [s.title, s.destinationLabel]))
+      .toEqual([
+        ["Inventory", "Open Inventory"], ["Meal Library", "Open Meals"],
+        ["Eat Next", "Open Meals"], ["Today's Pace", "Open Meals"],
+        ["Forecast", "Open Shopping"], ["Shopping", "Open Shopping"],
+      ]);
   });
   // Contract: SIX stations, SIX connectors. Station 6's connector is the loop
   // CLOSING ("purchased → restock ↺ inventory"), not an off-by-one to be

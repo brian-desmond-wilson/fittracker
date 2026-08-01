@@ -47,9 +47,13 @@ export interface LoopStatus { stations: StationStatus[]; attentionCount: number 
 export interface LoopStatusInputs {
   todayLocalDate: string;
   inventory: Array<{ id: string; name: string; state: ItemStockState }>;
-  meals: Array<{ id: string; name: string }>;
-  /** ranked source for station 2; useLoopHub computes via the pure scoring trio */
-  mealScores: Array<{ mealId: string; name: string; raw: number; display: number }>;
+  /** The library AND its ranking in ONE array: `raw` ranks (spec §5.5),
+   *  `display` is the /100 UI value. `useLoopHub` fills both with the same pure
+   *  trio `useEatNext` uses. Deliberately not two parallel arrays — a separate
+   *  `mealScores` let the count come from one and the content from the other
+   *  (`meals: [a]` + `scores: [a, ghost]` → "1 meals · top: Ghost"), and an
+   *  empty-scores/non-empty-meals pair crashed all six stations. */
+  meals: Array<{ id: string; name: string; raw: number; display: number }>;
   stockByMealId: Map<string, EatNextStockInfo>;
   eatNext: EatNextResult | null;
   paceCalories: MealPaceState;
@@ -74,8 +78,11 @@ export const CONTEXT_LABELS: Record<EatNextResult["context"], string> = {
   next_meal: "next meal",
 };
 
+// `+ 1`: at exactly DETAIL_MAX_ROWS + 1 the summary chip would occupy the very
+// row it is summarising — same chip count, one fewer NAME. Truncation has to
+// buy back at least one row to be worth doing.
 const capChips = (chips: StationChip[]): StationChip[] =>
-  chips.length <= DETAIL_MAX_ROWS
+  chips.length <= DETAIL_MAX_ROWS + 1
     ? chips
     : [...chips.slice(0, DETAIL_MAX_ROWS), { label: `+${chips.length - DETAIL_MAX_ROWS} more`, tone: "neutral" }];
 
@@ -97,9 +104,16 @@ function inventoryStation(inp: LoopStatusInputs, readyCount: number): StationSta
   const expiringSorted = [...expiring].sort(
     (a, b) => (a.state.daysLeft ?? -1) - (b.state.daysLeft ?? -1),
   );
+  // "today" gets its own word rather than "0d left". `projectItemStock` bands
+  // day zero as "today" (stockState.ts:121) and `expiryClause` exists precisely
+  // so the MOST urgent value doesn't render as the least urgent-sounding string
+  // (eatNext.ts:291-293, ruled twice). Station 1 saying "0d left" while station 3
+  // says "expires today" would be two answers in one sheet stack.
   const rawLines = expiringSorted.map((i) => ({
     label: i.name,
-    value: i.state.expiration === "expired" ? "expired" : `${i.state.daysLeft}d left`,
+    value: i.state.expiration === "expired" ? "expired"
+      : i.state.expiration === "today" ? "today"
+      : `${i.state.daysLeft}d left`,
   }));
   const { lines, overflow } = capLines(rawLines);
   return {
@@ -121,14 +135,16 @@ function inventoryStation(inp: LoopStatusInputs, readyCount: number): StationSta
 
 function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatus {
   const n = inp.meals.length;
-  const ranked = [...inp.mealScores].sort((a, b) => b.raw - a.raw);
-  const top = ranked[0] ?? null;
+  const ranked = [...inp.meals].sort((a, b) => b.raw - a.raw);
+  // `undefined` ⟺ `n === 0`, by construction — count and content are now the
+  // same array, so no assertion and no paired invariant to maintain.
+  const top = ranked[0];
   const topThree = ranked.slice(0, 3);
   return {
     key: "library",
     title: "Meal Library",
-    headline: n === 0 ? "0 meals — build your library"
-      : `${n} meals · top: ${top!.name} ${top!.display}`,
+    headline: top === undefined ? "0 meals — build your library"
+      : `${n} meals · top: ${top.name} ${top.display}`,
     badge: n === 0 ? null
       : readyCount === 0 ? { label: "0 ready", tone: "warning" }
       : { label: `${readyCount} ready`, tone: "success" },
@@ -137,7 +153,7 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
     detail: {
       lines: topThree.map((m) => ({ label: m.name, value: `${m.display} / 100` })),
       chips: capChips(topThree.map((m) => {
-        const s = inp.stockByMealId.get(m.mealId);
+        const s = inp.stockByMealId.get(m.id);
         // An ABSENT entry is UNKNOWN, not missing. `buildStockByMealId` skips
         // item-less meals by design, so absence is a routine live state, and
         // station 3 already honors it (`eatNextStockBadge(undefined)` → null →
@@ -205,7 +221,10 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
     connector: "you eat → units − · log +",
     detail: {
       lines: pick ? [
-        { label: "Context", value: r ? CONTEXT_LABELS[r.context] : "—" },
+        // `r!` is sound: `pick` comes from `r?.recommendations[0]`, so a
+        // non-null `pick` implies a non-null `r`. A `r ? … : "—"` ternary here
+        // would read as a real case that can never occur.
+        { label: "Context", value: CONTEXT_LABELS[r!.context] },
         { label: "Calories", value: String(pick.calories) },
         { label: "Protein", value: `${pick.protein}g` },
         { label: "Prep · Score", value: `${pick.prepMinutes} min · ${pick.score}/100` },
@@ -231,9 +250,20 @@ const fmt = (n: number): string => n.toLocaleString("en-US");
 function paceStation(inp: LoopStatusInputs): StationStatus {
   const { paceCalories: pc, paceProtein: pp } = inp;
   const behind = pc.status === "behind" || pp.status === "behind";
-  const bothGoal = pc.status === "goal_hit" && pp.status === "goal_hit";
-  const anyPaceish = ["on_pace", "ahead", "goal_hit"].includes(pc.status)
-    || ["on_pace", "ahead", "goal_hit"].includes(pp.status);
+  // A macro with NO goal cannot speak to pace. `computeMealPace` returns
+  // `{ status: "on_pace" }` as its no-goal SENTINEL (mealPace.ts:97-99), so an
+  // ungated read of the status treats "we were never asked to track this" as
+  // "you're on pace" — pinning the badge to "On pace" all day for a user with
+  // no protein goal, even before the window opens, while calories correctly
+  // reported before_window. The status enum can't express the difference; the
+  // goal can, and the engine already has it (it em-dashes the same null below).
+  const hasGoal = (goal: number | null) => goal !== null;
+  const paceish = (p: MealPaceState, goal: number | null) =>
+    hasGoal(goal) && ["on_pace", "ahead", "goal_hit"].includes(p.status);
+  const goalHit = (p: MealPaceState, goal: number | null) =>
+    hasGoal(goal) && p.status === "goal_hit";
+  const bothGoal = goalHit(pc, inp.goals.calories) && goalHit(pp, inp.goals.protein);
+  const anyPaceish = paceish(pc, inp.goals.calories) || paceish(pp, inp.goals.protein);
   const windowLabel = pc.status === "before_window" ? "Before window" : "Day done";
   const badge: StationChip = behind ? { label: "Behind", tone: "warning" }
     : bothGoal ? { label: "Goal hit", tone: "success" }
@@ -281,11 +311,16 @@ function forecastStation(inp: LoopStatusInputs): StationStatus {
     : first!.daysUntilOut <= MAX_DISPLAY_DAYS
       ? `${first!.name} ~${first!.daysUntilOut}d left · ${tracked.length} ${itemWord(tracked.length)} tracked`
       : `${tracked.length} ${itemWord(tracked.length)} tracked`;
-  const { lines, overflow } = capLines(
+  const { lines } = capLines(
     tracked
       .filter((t) => t.daysUntilOut <= MAX_DISPLAY_DAYS)
       .map((t) => ({ label: t.name, value: `~${t.daysUntilOut}d left` })),
   );
+  // Counted against the FULL tracked set, not just the display-eligible slice
+  // `capLines` saw. The headline says "N items tracked"; if the footnote counted
+  // only the row cap, items dropped by the MAX_DISPLAY_DAYS filter would vanish
+  // unaccounted — the same noun describing two different sets, one tap apart.
+  const hiddenTracked = tracked.length - lines.length;
   return {
     key: "forecast",
     title: "Forecast",
@@ -293,7 +328,7 @@ function forecastStation(inp: LoopStatusInputs): StationStatus {
     badge: urgent.length > 0 ? { label: `${urgent.length} urgent`, tone: "shopping" } : null,
     attention: urgent.length > 0,
     connector: "gaps + forecasts → suggestions",
-    detail: { lines, chips: [], footnote: overflow > 0 ? `+${overflow} more tracked` : null },
+    detail: { lines, chips: [], footnote: hiddenTracked > 0 ? `+${hiddenTracked} more tracked` : null },
     destination: "/(tabs)/track/shopping",
     destinationLabel: "Open Shopping",
   };
@@ -308,9 +343,15 @@ function shoppingStation(inp: LoopStatusInputs): StationStatus {
     if (r.vendor_id === null || !vendorName.has(r.vendor_id)) unassigned += 1;
     else byVendor.set(r.vendor_id, (byVendor.get(r.vendor_id) ?? 0) + 1);
   }
+  // Name breaks count ties so the order is deterministic. Without it, equal-count
+  // vendors fall back to first-appearance order in `listRows`, which reshuffles
+  // as rows get purchased — the breakdown would visibly reorder between refreshes
+  // with nothing having changed. `get(id)!` is sound: `byVendor` only ever takes
+  // ids that passed the `vendorName.has(...)` check above.
   const parts = [...byVendor.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([id, n]) => `${vendorName.get(id)} ${n}`);
+    .map(([id, n]) => ({ name: vendorName.get(id)!, n }))
+    .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name))
+    .map((v) => `${v.name} ${v.n}`);
   if (unassigned > 0) parts.push(`unassigned ${unassigned}`);
   const s = inp.suggestions.length;
   const { lines, overflow } = capLines(
@@ -334,7 +375,11 @@ function shoppingStation(inp: LoopStatusInputs): StationStatus {
 }
 
 export function computeLoopStatus(inp: LoopStatusInputs): LoopStatus {
-  const readyCount = [...inp.stockByMealId.values()].filter((s) => s.assemblable).length;
+  // Counted over `inp.meals`, not over the map's values: a stale entry for a
+  // deleted meal would otherwise inflate the count past the library size
+  // ("assemblability → 3 of 2 meals ready"). Driving off `meals` makes that
+  // structurally impossible rather than merely unlikely.
+  const readyCount = inp.meals.filter((m) => inp.stockByMealId.get(m.id)?.assemblable).length;
   const stations = [
     inventoryStation(inp, readyCount),
     libraryStation(inp, readyCount),

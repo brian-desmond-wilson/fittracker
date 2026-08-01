@@ -1325,7 +1325,7 @@ Four names the plan could not pin, verified against `main@7abe149`:
 
 **`paceStation`'s catch-up unit no longer comes from an identity check.** The plan's draft recovered the unit with `p === pc ? "cal" : "g"` while iterating a filtered `[pc, pp]`. That is correct only while `paceCalories` and `paceProtein` are distinct objects; a caller passing the SAME `MealPaceState` object for both macros (two identical literals hoisted to a shared const — cheap and legal, since the type is a plain record) would render both catch-up lines as "cal". Replaced with a `[[pc, "cal"], [pp, "g"]] as const` walk so the unit travels with its state by construction. Output is byte-identical for distinct inputs, which is every case the tests cover.
 
-**Forward constraint this task discovered, for Task 3 (`useLoopHub`).** `libraryStation`'s headline branches on `inp.meals.length` but reads the top entry out of `inp.mealScores` (`top!`). The two arrays are therefore a **paired invariant**: `mealScores` must be non-empty whenever `meals` is. `useLoopHub` must derive `mealScores` from the same `meals` array it passes through, never from a separately-fetched or separately-filtered source — a non-empty library with an empty score list is a runtime crash, not a degraded row. Deliberately left un-guarded here rather than papered over: this engine is a projection, and inventing a headline for an inconsistent input would be exactly the fabrication §4.1 forbids.
+**~~Forward constraint this task discovered, for Task 3 (`useLoopHub`)~~ — WITHDRAWN, superseded by the structural fix.** This entry previously bound Task 3 to maintain a paired invariant between `meals` and `mealScores` by hand. The code-quality review round rejected documenting an invariant that could be made unrepresentable instead: the two arrays are now **one** (`meals: Array<{ id; name; raw; display }>`), so there is no pairing to maintain, no `top!`, and no crash to avoid. **Task 3 carries no obligation from this entry** — see "Tasks 1–2 — code-quality review outcomes" below for the input shape it must actually build.
 
 ### Tasks 1–2 — spec-compliance review outcomes (2026-08-01)
 
@@ -1356,3 +1356,45 @@ The plan specifies `refreshControl?: React.ReactElement;`. **That does not compi
 Shipped as `refreshControl?: React.ReactElement<RefreshControlProps>` with a `import type { RefreshControlProps } from "react-native"`. This is the type `ScrollView` actually accepts, so it is also strictly tighter than the plan intended — a non-RefreshControl element is now rejected at the call site instead of at the primitive's internals. No behavioral change; the prop is still purely additive and still forwarded only on the `scroll={true}` path.
 
 Everything else in Task 3 landed as written: `Screen.tsx` was unchanged from the `main@70b06dd` shape the plan was drafted against, the `ScrollView` block matched literally, and the diff is three touchpoints (prop declaration, destructure, forward) with nothing else touched. The JSDoc additionally states that `scroll={false}` renders no `ScrollView` and therefore ignores the prop.
+
+### Tasks 1–2 — code-quality review outcomes (2026-08-01)
+
+Review returned approve-with-changes; all nine issues taken. One input-shape change (below) supersedes both spec §4.2's revision and the withdrawn forward constraint above; the rest are behavioral fixes and coverage.
+
+#### Input shape: `meals` and `mealScores` collapsed into one array
+
+**Deviates from spec §4.2's pre-execution revision, which named `mealScores` as its own input.** Recorded in the spec's "Execution deviations" section as well.
+
+```ts
+// was: meals: Array<{ id; name }>  +  mealScores: Array<{ mealId; name; raw; display }>
+meals: Array<{ id: string; name: string; raw: number; display: number }>;
+```
+
+Two parallel arrays let station 2 take its COUNT from one and its CONTENT from the other. Non-empty `meals` with empty `mealScores` made `top!` throw a `TypeError` that took down all six stations — station 2 was the only place in the file where missing data was fatal rather than degrading. The silent sibling was worse: `meals: [m1]` with `mealScores: [m1, ghost]` rendered `"1 meals · top: Ghost 99"`, a headline naming a meal the count excluded. One array makes both unrepresentable — `top === undefined ⟺ meals.length === 0` by construction, so the non-null assertion is gone.
+
+**Task 4's assembly changes accordingly.** The snippet at plan:796-806 is superseded; it built the two arrays with two `.map`s over the SAME `library.meals`, so collapsing removes a map rather than adding work:
+
+```ts
+meals: library.meals.map((meal) => {
+  const s = computeBrianScore(
+    brianScoreInputFor(meal, library.conceptIdsBySavedFoodId, library.conceptsById),
+  );
+  return { id: meal.id, name: meal.name, raw: s.raw, display: s.score };
+}),
+// (no separate `mealScores` field)
+```
+
+`readyCount` moved with it, from counting `stockByMealId.values()` to counting over `inp.meals`: a stale map entry for a deleted meal previously inflated the count past the library size (`"assemblability → 3 of 2 meals ready"`, `"3 ready"` on a 2-meal library). Same number for consistent inputs, now structurally incapable of exceeding `meals.length`. Mutation-verified.
+
+#### Behavioral fixes
+
+- **A null goal no longer manufactures "On pace" (badge change).** `computeMealPace` returns `{ status: "on_pace" }` as its **no-goal sentinel** (`mealPace.ts:97-99`), and `goals.protein` is legitimately nullable — the station already em-dashes it. Reading status alone made `anyPaceish` permanently true for a user with no protein goal, pinning the badge to "On pace" before the window opened and after it closed while calories correctly reported `before_window`/`after_window`. Both `paceish` and `goalHit` now gate on `goal !== null`. The status enum cannot express "never asked to track this"; the goal can, and the engine already holds it. The ladder itself is unchanged — review confirmed it exhaustive across all 6×6 status combinations. Mutation-verified.
+- **`capChips` no longer wastes a row at exactly `DETAIL_MAX_ROWS + 1`.** Six chips in yielded five names plus `"+1 more"` — same row count, one fewer name. Cap is now `<= DETAIL_MAX_ROWS + 1`; truncation must buy back at least one row to be worth doing. `capLines` is unaffected (its overflow goes to a footnote, not a row). Mutation-verified.
+- **Forecast headline and footnote now count the same set.** `capLines` only ever saw the list already filtered to `daysUntilOut <= MAX_DISPLAY_DAYS`, so with 10 tracked / 7 displayable the headline said "10 items tracked" while the footnote said `"+2 more tracked"` — three items vanished unaccounted, same noun describing two different sets one tap apart. Now `tracked.length - lines.length`. Mutation-verified.
+- **Station 1 renders the `"today"` band as `"today"`, not `"0d left"`.** `projectItemStock` bands day zero as `"today"` (`stockState.ts:121`) and `expiryClause` exists specifically so the most urgent value doesn't read as the least urgent-sounding string (`eatNext.ts:291-293`, ruled twice). Station 1 saying `"0d left"` while station 3 said `"expires today"` was two answers in one sheet stack.
+- **Vendor breakdown breaks count ties by name.** Equal-count vendors previously ordered by first appearance in `listRows`, so the breakdown visibly reordered between refreshes as rows were purchased, with nothing having changed.
+- **Dead ternary removed.** Station 3's `Context` line used `r ? CONTEXT_LABELS[r.context] : "—"` inside the `pick ? […]` branch; `pick` derives from `r?.recommendations[0]`, so the `"—"` arm was unreachable and read as a real case. Now `CONTEXT_LABELS[r!.context]` with the soundness note stated inline.
+
+#### Coverage added
+
+Pace unit-pairing (no fixture had ever set `paceProtein` behind, so the Task 2 shared-object fix and the `catchUpLabel ?? "end of day"` fallback were both unpinned); station 2's and station 3's full `detail.lines`; every station's `title`, `destination` and `destinationLabel` (all three `LoopDestination` values typecheck in any station, so a copy-paste error routed the user to the wrong screen with a green suite — and node-env Jest means these assertions are the only automated protection these strings will ever get); a `listRows` row whose vendor is absent from `vendors`; the vendor tiebreak; the `capChips` boundary; the dual-overflow forecast case; and the `"today"` band. Three progressively-mutating multi-assertion tests were split so a first-assertion failure no longer hides the rest.
