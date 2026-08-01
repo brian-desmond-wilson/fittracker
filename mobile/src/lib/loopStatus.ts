@@ -148,9 +148,27 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
         if (s === undefined) {
           return { label: `${m.name}: unknown`, tone: "neutral" as const };
         }
-        return s.assemblable
-          ? { label: `${m.name}: ready`, tone: "success" as const }
-          : { label: `${m.name}: missing ${s.missingCount}`, tone: "warning" as const };
+        if (s.assemblable) {
+          return { label: `${m.name}: ready`, tone: "success" as const };
+        }
+        // The HELPER owns the unresolved-count rule: `missingCount === 0` on a
+        // non-assemblable meal renders "Missing items", never "Missing 0"
+        // (eatNext.ts:255-261 ruled this once already). Station 2 only
+        // reshapes that label into its "{name}: {verdict}" chip format rather
+        // than answering the same question a second, drift-prone time.
+        //
+        // Tone stays `warning`, NOT the `neutral` of the unknown chip above:
+        // `assemblable: false` is a real assessment — only the COUNT is
+        // unresolved — so the verdict is earned even when the number isn't.
+        //
+        // `!` is sound because `eatNextStockBadge` returns null for exactly one
+        // input, `undefined`, and `s` is narrowed non-undefined by this point.
+        // `toLowerCase()` assumes the helper's labels carry no proper nouns;
+        // the tests below are what hold that assumption in place.
+        return {
+          label: `${m.name}: ${eatNextStockBadge(s)!.label.toLowerCase()}`,
+          tone: "warning" as const,
+        };
       })),
       footnote: null,
     },

@@ -143,6 +143,26 @@ describe("station 2: library", () => {
     expect(chips).toContainEqual({ label: "Banana + PB: unknown", tone: "neutral" });
     expect(chips.some((c) => c.label.includes("?"))).toBe(false);
   });
+  // Single-definition copy: `eatNextStockBadge` already ruled how an
+  // unresolved count renders ("Missing items", never "Missing 0"), so station 2
+  // borrows that verdict rather than printing a second, self-contradictory
+  // answer. Tone stays `warning` — the non-assemblable verdict is real, only
+  // the count is unknown, which is what separates it from the neutral chip
+  // above. This assertion is also what holds the `toLowerCase()` assumption
+  // that the helper's labels carry no proper nouns.
+  it("an unresolved missing count borrows the helper's 'missing items', never 'missing 0'", () => {
+    const inp = baseInputs();
+    inp.stockByMealId = new Map([
+      ["m1", stock({ assemblable: false, missingCount: 0 })],
+      ["m2", stock()],
+    ]);
+    const chips = computeLoopStatus(inp).stations[1].detail.chips;
+    expect(chips).toContainEqual({ label: "Banana + PB: missing items", tone: "warning" });
+    expect(chips.some((c) => c.label.includes("missing 0"))).toBe(false);
+    // and the resolved-count form is untouched by the helper reshape
+    expect(computeLoopStatus(baseInputs()).stations[1].detail.chips)
+      .toContainEqual({ label: "Banana + PB: missing 2", tone: "warning" });
+  });
 });
 
 describe("station 3: eat next", () => {
