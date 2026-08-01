@@ -17,11 +17,14 @@ import { NotificationsScreen } from "@/src/components/profile/NotificationsScree
 import { AboutScreen } from "@/src/components/profile/AboutScreen";
 import { DevTaskManager } from "@/src/components/profile/DevTaskManager";
 import { NutritionPreferencesScreen } from "@/src/components/profile/nutrition/NutritionPreferencesScreen";
+import { TrackingSettingsScreen } from "@/src/components/profile/TrackingSettingsScreen";
+import { colors } from "@/src/theme/tokens";
 
 type ModalScreen =
   | "profile"
   | "goals"
   | "nutrition"
+  | "tracking-settings"
   | "routines"
   | "notifications"
   | "about"
@@ -40,6 +43,9 @@ export default function Profile() {
 
   const [formData, setFormData] = useState({
     height_cm: "",
+    birthdate: "",
+    sex: null as "male" | "female" | null,
+    health_notes: "",
     target_weight_kg: "",
     target_calories: "",
     target_protein_g: "",
@@ -115,6 +121,9 @@ export default function Profile() {
         setUserName(profile.full_name || "");
         setFormData({
           height_cm: profile.height_cm?.toString() || "",
+          birthdate: profile.birthdate || "",
+          sex: profile.sex === "male" || profile.sex === "female" ? profile.sex : null,
+          health_notes: profile.health_notes || "",
           target_weight_kg: profile.target_weight_kg?.toString() || "",
           target_calories: profile.target_calories?.toString() || "",
           target_protein_g: profile.target_protein_g?.toString() || "",
@@ -180,7 +189,7 @@ export default function Profile() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#22C55E" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </SafeAreaView>
     );
   }
@@ -192,6 +201,7 @@ export default function Profile() {
         onProfilePress={() => setActiveModal("profile")}
         onGoalsPress={() => setActiveModal("goals")}
         onNutritionPress={() => setActiveModal("nutrition")}
+        onTrackingSettingsPress={() => setActiveModal("tracking-settings")}
         onRoutinesPress={() => setActiveModal("routines")}
         onNotificationsPress={() => setActiveModal("notifications")}
         onAboutPress={() => setActiveModal("about")}
@@ -208,10 +218,18 @@ export default function Profile() {
         onRequestClose={() => setActiveModal(null)}
       >
         <ProfileScreen
+          userId={userId}
           userName={userName}
           userEmail={userEmail}
           memberSince={memberSince}
+          initialData={{
+            height_cm: formData.height_cm,
+            birthdate: formData.birthdate,
+            sex: formData.sex,
+            health_notes: formData.health_notes,
+          }}
           onClose={() => setActiveModal(null)}
+          onSave={handleGoalsSave}
         />
       </Modal>
 
@@ -225,7 +243,18 @@ export default function Profile() {
       >
         <GoalsScreen
           userId={userId}
-          initialData={formData}
+          initialData={{
+            target_weight_kg: formData.target_weight_kg,
+            target_calories: formData.target_calories,
+            target_protein_g: formData.target_protein_g,
+            target_carbs_g: formData.target_carbs_g,
+            target_sodium_mg: formData.target_sodium_mg,
+            target_fats_g: formData.target_fats_g,
+            target_sugars_g: formData.target_sugars_g,
+            target_fiber_g: formData.target_fiber_g,
+            target_water_oz: formData.target_water_oz,
+            water_workout_bonus_oz: formData.water_workout_bonus_oz,
+          }}
           onClose={() => setActiveModal(null)}
           onSave={handleGoalsSave}
         />
@@ -248,6 +277,30 @@ export default function Profile() {
             setActiveModal(null);
             loadUserData();
           }}
+        />
+      </Modal>
+
+      {/* Tracking Settings Modal */}
+      <Modal
+        visible={activeModal === "tracking-settings"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent={false}
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <TrackingSettingsScreen
+          userId={userId}
+          initialData={{
+            breakfast_time: formData.breakfast_time,
+            lunch_time: formData.lunch_time,
+            dinner_time: formData.dinner_time,
+            water_window_start: formData.water_window_start,
+            water_window_end: formData.water_window_end,
+            water_display_unit: formData.water_display_unit,
+            water_only_counts: formData.water_only_counts,
+          }}
+          onClose={() => setActiveModal(null)}
+          onSave={handleGoalsSave}
         />
       </Modal>
 
@@ -303,17 +356,17 @@ export default function Profile() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   devTasksContainer: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
     padding: 16,
   },
 });
