@@ -7,7 +7,9 @@ import type { MealType } from "@/src/types/track";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
 import type { MealAssemblability } from "@/src/lib/stockState";
-import { lib, scoreChipStyle } from "./styles";
+import { spacing } from "@/src/theme/tokens";
+import { Badge, Button, Card } from "@/src/components/ui";
+import { lib, scoreTone } from "./styles";
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
 
@@ -24,7 +26,7 @@ interface MealDetailProps {
 
 function ScoreBar({ label, value, max }: { label: string; value: number; max: number }) {
   return (
-    <View style={[lib.row, { marginTop: 6 }]}>
+    <View style={[lib.row, { marginTop: spacing.sm }]}>
       <Text style={[lib.mutedText, { width: 104 }]}>{label}</Text>
       <Text style={[lib.smallMuted, { width: 52 }]}>
         {Math.round(value * 10) / 10}/{max}
@@ -50,40 +52,38 @@ export function MealDetail({
   const hasSmallPieces = meal.items.some((it) => it.small_pieces_ok);
 
   return (
-    <ScrollView contentContainerStyle={{ paddingVertical: 16 }}>
-      <View style={lib.card}>
+    <ScrollView contentContainerStyle={{ paddingVertical: spacing.lg }}>
+      <Card variant="row" style={lib.cardSpacing}>
         <View style={lib.rowBetween}>
           <Text style={lib.mealName}>{meal.name}</Text>
-          <View style={[lib.scoreChip, scoreChipStyle(score.score)]}>
-            <Text style={lib.scoreChipText}>{score.score}</Text>
-          </View>
+          <Badge label={String(score.score)} tone={scoreTone(score.score)} />
         </View>
-        <Text style={[lib.mutedText, { marginTop: 4 }]}>
+        <Text style={[lib.mutedText, { marginTop: spacing.xs }]}>
           {Math.round(totals.calories)} cal · {Math.round(totals.protein)}g protein · {meal.prep_minutes} min
           {meal.role ? ` · ${ROLE_LABELS[meal.role]}` : ""}
         </Text>
         {score.approved && (
-          <View style={[lib.badge, { alignSelf: "flex-start", marginTop: 6 }]}>
-            <Text style={lib.badgeText}>Brian Approved</Text>
+          <View style={{ alignSelf: "flex-start", marginTop: spacing.sm }}>
+            <Badge label="Brian Approved" tone="success" />
           </View>
         )}
         {score.containsNever && (
-          <Text style={[lib.neverFlag, { marginTop: 6 }]}>
+          <Text style={[lib.neverFlag, { marginTop: spacing.sm }]}>
             Contains a food rated “never”
           </Text>
         )}
         {score.tasteUnknown && (
-          <Text style={[lib.smallMuted, { marginTop: 6 }]}>
+          <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
             Taste unknown — no ingredient is linked to a rated food concept yet.
           </Text>
         )}
-      </View>
+      </Card>
 
-      <View style={lib.card}>
+      <Card variant="row" style={lib.cardSpacing}>
         <Text style={[lib.mutedText, { fontWeight: "700" }]}>Ingredients</Text>
         {meal.items.map((it) => (
-          <View key={it.id} style={[lib.rowBetween, { marginTop: 8 }]}>
-            <Text style={[lib.mutedText, { color: "#D1D5DB", flexShrink: 1 }]} numberOfLines={1}>
+          <View key={it.id} style={[lib.rowBetween, { marginTop: spacing.sm }]}>
+            <Text style={[lib.bodyText, { flexShrink: 1 }]} numberOfLines={1}>
               {it.savedFood.name}
               {it.small_pieces_ok ? " ✂︎" : ""}
             </Text>
@@ -93,7 +93,7 @@ export function MealDetail({
           </View>
         ))}
         {hasSmallPieces && (
-          <Text style={[lib.smallMuted, { marginTop: 8 }]}>
+          <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
             ✂︎ already cut small — EoE-safe
           </Text>
         )}
@@ -105,7 +105,7 @@ export function MealDetail({
             are a live state — `updateMeal`'s non-atomic replace documents
             leaving one behind. */}
         {assemblability && assemblability.missing.length > 0 && (
-          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 8 }]}>
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: spacing.sm }]}>
             Missing: {assemblability.missing.join(", ")}
           </Text>
         )}
@@ -118,29 +118,29 @@ export function MealDetail({
             would silently render nothing for it — the recommender ordering on
             a signal the UI never states. */}
         {assemblability?.expiringItemName != null && (
-          <Text style={[lib.smallMuted, lib.warnText, { marginTop: 4 }]}>
+          <Text style={[lib.smallMuted, lib.warnText, { marginTop: spacing.xs }]}>
             Uses {assemblability.expiringItemName} —{" "}
             {assemblability.expiringDaysLeft === 0
               ? "expires today"
               : `expires in ${assemblability.expiringDaysLeft}d`}
           </Text>
         )}
-      </View>
+      </Card>
 
-      <View style={lib.card}>
+      <Card variant="row" style={lib.cardSpacing}>
         <Text style={[lib.mutedText, { fontWeight: "700" }]}>Brian Score breakdown</Text>
         <ScoreBar label="Taste" value={score.taste} max={COMPONENT_MAX.taste} />
         <ScoreBar label="Convenience" value={score.convenience} max={COMPONENT_MAX.convenience} />
         <ScoreBar label="Protein" value={score.protein} max={COMPONENT_MAX.protein} />
         <ScoreBar label="EoE-Friendly" value={score.eoe} max={COMPONENT_MAX.eoe} />
         <ScoreBar label="Calories" value={score.calories} max={COMPONENT_MAX.calories} />
-        <Text style={[lib.smallMuted, { marginTop: 8 }]}>
+        <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
           {score.raw}/{RAW_MAX} renormalized to {score.score}/100 (cost unscored — no price data).
         </Text>
-      </View>
+      </Card>
 
-      <View style={lib.card}>
-        <Text style={[lib.mutedText, { fontWeight: "700", marginBottom: 8 }]}>Log as</Text>
+      <Card variant="row" style={lib.cardSpacing}>
+        <Text style={[lib.mutedText, { fontWeight: "700", marginBottom: spacing.sm }]}>Log as</Text>
         <View style={[lib.row, { flexWrap: "wrap" }]}>
           {MEAL_TYPES.map((t) => (
             <TouchableOpacity
@@ -154,24 +154,20 @@ export function MealDetail({
             </TouchableOpacity>
           ))}
         </View>
-        <TouchableOpacity
-          style={[lib.primaryButton, { marginTop: 8, opacity: logging ? 0.6 : 1 }]}
-          disabled={logging}
-          onPress={() => onLog(meal, mealType)}
-        >
-          <Text style={lib.primaryButtonText}>
-            {logging ? "Logging…" : "Log this meal"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+        <View style={{ marginTop: spacing.sm }}>
+          <Button
+            label="Log this meal"
+            onPress={() => onLog(meal, mealType)}
+            loading={logging}
+            disabled={logging}
+            fluid
+          />
+        </View>
+      </Card>
 
-      <View style={[lib.rowBetween, { marginHorizontal: 16, marginTop: 4 }]}>
-        <TouchableOpacity onPress={() => onEdit(meal)}>
-          <Text style={lib.headerAction}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={confirmDelete}>
-          <Text style={lib.destructiveText}>Delete</Text>
-        </TouchableOpacity>
+      <View style={[lib.rowBetween, { marginHorizontal: spacing.screenGutter, marginTop: spacing.xs }]}>
+        <Button label="Edit" variant="ghost" onPress={() => onEdit(meal)} />
+        <Button label="Delete" variant="destructive" onPress={confirmDelete} />
       </View>
     </ScrollView>
   );

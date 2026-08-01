@@ -18,13 +18,15 @@ import {
   assessAssemblability, type AssemblabilityInventoryRow,
 } from "@/src/lib/stockState";
 import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
-import { lib, scoreChipStyle } from "./styles";
+import { colors, spacing } from "@/src/theme/tokens";
+import { Badge, Button, Card } from "@/src/components/ui";
+import { lib, scoreTone } from "./styles";
 
 const CATEGORIES: MealCategory[] = ["breakfast", "lunch", "dinner", "snack", "shake", "emergency"];
 const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const RATINGS: ConceptRating[] = ["love", "like", "neutral", "dislike", "never"];
-// The ± / ✕ glyphs are bare Text at roughly 12×20pt in a `gap: 10` row, and
-// the destructive ✕ sits 10pt from ＋ — well under a comfortable touch target,
+// The ± / ✕ glyphs are bare Text at roughly 12×20pt in a `spacing.md` row, and
+// the destructive ✕ sits 12pt from ＋ — well under a comfortable touch target,
 // with a delete as the cost of missing.
 const GLYPH_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 // `/^\d+$/` has no upper bound, so 11+ digits overflow int4 and the save fails
@@ -159,19 +161,19 @@ export function MealBuilder({
 
   return (
     <ScrollView
-      contentContainerStyle={{ paddingVertical: 16 }}
+      contentContainerStyle={{ paddingVertical: spacing.lg }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={lib.card}>
+      <Card variant="row" style={lib.cardSpacing}>
         <TextInput
           style={lib.input}
           placeholder="Meal name (e.g. Korean Beef Bowl)"
-          placeholderTextColor="#6B7280"
+          placeholderTextColor={colors.textFaint}
           value={name}
           onChangeText={setName}
         />
-        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: 12 }]}>Category</Text>
-        <View style={[lib.row, { flexWrap: "wrap", marginTop: 8 }]}>
+        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.md }]}>Category</Text>
+        <View style={[lib.row, { flexWrap: "wrap", marginTop: spacing.sm }]}>
           {CATEGORIES.map((c) => (
             <TouchableOpacity
               key={c}
@@ -184,8 +186,8 @@ export function MealBuilder({
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: 8 }]}>Role (optional)</Text>
-        <View style={[lib.row, { flexWrap: "wrap", marginTop: 8 }]}>
+        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.sm }]}>Role (optional)</Text>
+        <View style={[lib.row, { flexWrap: "wrap", marginTop: spacing.sm }]}>
           {ROLES.map((r) => (
             <TouchableOpacity
               key={r}
@@ -198,7 +200,7 @@ export function MealBuilder({
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: 8 }]}>Prep minutes</Text>
+        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.sm }]}>Prep minutes</Text>
         <TextInput
           style={lib.input}
           keyboardType="number-pad"
@@ -206,10 +208,10 @@ export function MealBuilder({
           value={prepMinutes}
           onChangeText={setPrepMinutes}
         />
-        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: 12 }]}>
+        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.md }]}>
           Taste override (whole meal)
         </Text>
-        <View style={[lib.row, { flexWrap: "wrap", marginTop: 8 }]}>
+        <View style={[lib.row, { flexWrap: "wrap", marginTop: spacing.sm }]}>
           {RATINGS.map((r) => (
             <TouchableOpacity
               key={r}
@@ -220,9 +222,9 @@ export function MealBuilder({
             </TouchableOpacity>
           ))}
         </View>
-      </View>
+      </Card>
 
-      <View style={lib.card}>
+      <Card variant="row" style={lib.cardSpacing}>
         <Text style={[lib.mutedText, { fontWeight: "700" }]}>Ingredients</Text>
         {items.map((it) => {
           const concepts = conceptsFor(it.saved_food_id);
@@ -249,9 +251,9 @@ export function MealBuilder({
               }).assemblable
             : null;
           return (
-            <View key={it.saved_food_id} style={{ marginTop: 10 }}>
+            <View key={it.saved_food_id} style={{ marginTop: spacing.md }}>
               <View style={lib.rowBetween}>
-                <Text style={[lib.mutedText, { color: "#D1D5DB", flexShrink: 1 }]} numberOfLines={1}>
+                <Text style={[lib.bodyText, { flexShrink: 1 }]} numberOfLines={1}>
                   {/* Nested inline Text, so the dot wraps with the name and
                       the row keeps its two-child space-between layout. The
                       trailing space is inside the literal because margins on
@@ -263,19 +265,19 @@ export function MealBuilder({
                   )}
                   {it.savedFood.name}
                 </Text>
-                <View style={[lib.row, { gap: 10 }]}>
+                <View style={[lib.row, { gap: spacing.md }]}>
                   <TouchableOpacity
                     hitSlop={GLYPH_HIT_SLOP}
                     onPress={() => setServings(it.saved_food_id, -SERVING_STEP)}
                   >
-                    <Text style={lib.headerAction}>−</Text>
+                    <Text style={lib.glyphAction}>−</Text>
                   </TouchableOpacity>
                   <Text style={lib.mutedText}>×{it.servings}</Text>
                   <TouchableOpacity
                     hitSlop={GLYPH_HIT_SLOP}
                     onPress={() => setServings(it.saved_food_id, SERVING_STEP)}
                   >
-                    <Text style={lib.headerAction}>＋</Text>
+                    <Text style={lib.glyphAction}>＋</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     hitSlop={GLYPH_HIT_SLOP}
@@ -288,7 +290,7 @@ export function MealBuilder({
                 </View>
               </View>
               {needsSmallPieces && (
-                <View style={[lib.rowBetween, { marginTop: 4 }]}>
+                <View style={[lib.rowBetween, { marginTop: spacing.xs }]}>
                   <Text style={lib.smallMuted}>Already in small pieces? (EoE)</Text>
                   <Switch
                     value={it.small_pieces_ok}
@@ -314,7 +316,7 @@ export function MealBuilder({
                   // succeeded. `saving` is the parent's `busy` flag.
                   style={[
                     lib.chip,
-                    { alignSelf: "flex-start", marginTop: 6, opacity: saving ? 0.6 : 1 },
+                    { alignSelf: "flex-start", marginTop: spacing.sm, opacity: saving ? 0.6 : 1 },
                   ]}
                   disabled={saving}
                   onPress={() => onQuickLink(it.saved_food_id, suggestion.conceptId)}
@@ -325,7 +327,7 @@ export function MealBuilder({
                 </TouchableOpacity>
               )}
               {unlinked && !suggestion && (
-                <Text style={[lib.smallMuted, { marginTop: 4 }]}>
+                <Text style={[lib.smallMuted, { marginTop: spacing.xs }]}>
                   Not linked to a rated concept — excluded from taste.
                 </Text>
               )}
@@ -335,54 +337,56 @@ export function MealBuilder({
         <TextInput
           style={lib.input}
           placeholder="Search saved foods to add…"
-          placeholderTextColor="#6B7280"
+          placeholderTextColor={colors.textFaint}
           value={search}
           onChangeText={setSearch}
         />
         {results.map((f) => (
-          <TouchableOpacity key={f.id} style={{ paddingVertical: 8 }} onPress={() => addItem(f)}>
-            <Text style={[lib.mutedText, { color: "#D1D5DB" }]}>
+          <TouchableOpacity
+            key={f.id}
+            style={{ paddingVertical: spacing.sm }}
+            onPress={() => addItem(f)}
+          >
+            <Text style={lib.bodyText}>
               ＋ {f.name}
               {f.calories != null ? `  ·  ${f.calories} cal` : ""}
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </Card>
 
-      <View style={lib.card}>
+      <Card variant="row" style={lib.cardSpacing}>
         <View style={lib.rowBetween}>
           <Text style={lib.mutedText}>
             {Math.round(score.totalCalories)} cal · {Math.round(score.totalProtein)}g protein
           </Text>
-          <View style={[lib.scoreChip, scoreChipStyle(score.score)]}>
-            <Text style={lib.scoreChipText}>{score.score}</Text>
-          </View>
+          <Badge label={String(score.score)} tone={scoreTone(score.score)} />
         </View>
         {enteredPrep === null && (
           // Says "isn't a whole number", not "is blank": the condition is
           // `parsePrepMinutes(...) === null`, which is also true for "3.5",
           // "-3" and "abc" — so the old copy claimed the field was empty while
           // it visibly showed 3.5.
-          <Text style={[lib.smallMuted, { marginTop: 6 }]}>
+          <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
             Prep time isn’t a whole number of minutes — scored (and saved) as{" "}
             {DEFAULT_PREP_MINUTES} min.
           </Text>
         )}
         {score.approved && (
-          <Text style={[lib.badgeText, { marginTop: 6 }]}>Meets the Brian Approved bar</Text>
-        )}
-      </View>
-
-      <View style={{ marginHorizontal: 16 }}>
-        <TouchableOpacity
-          style={[lib.primaryButton, { opacity: saving ? 0.6 : 1 }]}
-          disabled={saving}
-          onPress={handleSave}
-        >
-          <Text style={lib.primaryButtonText}>
-            {saving ? "Saving…" : initial ? "Save changes" : "Add to library"}
+          <Text style={[lib.approvedNote, { marginTop: spacing.sm }]}>
+            Meets the Brian Approved bar
           </Text>
-        </TouchableOpacity>
+        )}
+      </Card>
+
+      <View style={{ marginHorizontal: spacing.screenGutter }}>
+        <Button
+          label={initial ? "Save changes" : "Add to library"}
+          onPress={handleSave}
+          loading={saving}
+          disabled={saving}
+          fluid
+        />
       </View>
     </ScrollView>
   );

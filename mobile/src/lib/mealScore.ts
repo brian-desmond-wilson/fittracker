@@ -38,7 +38,7 @@ export type ScoreBand = "core" | "mid" | "low";
 
 /** Which band a /100 score falls in (spec §6). The DECISION lives here, next
  * to the thresholds and under test with every other §6 threshold; the chip's
- * `scoreChipStyle` is left a pure band → style lookup. Deliberately not
+ * `scoreTone` is left a pure band → Badge-tone lookup. Deliberately not
  * inlined in `styles.ts`, which imports `react-native` and so can never be
  * reached by the repo's `testEnvironment: node` Jest scope. */
 export function scoreBand(score: number): ScoreBand {

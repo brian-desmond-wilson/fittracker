@@ -1,10 +1,10 @@
 // mobile/src/components/track/meals/library/MealLibraryModal.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator, Alert, Modal, SectionList, StatusBar, Text,
-  TouchableOpacity, View,
+  Alert, Modal, SectionList, StatusBar, Text, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ChevronLeft, Plus } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
 import type { MealCategory, MealTotals, MealWithItems } from "@/src/types/meal-library";
 import {
@@ -19,6 +19,8 @@ import {
   undoMealLog, updateMeal,
   type MealInput, type MealLibraryData,
 } from "@/src/lib/supabase/mealLibrary";
+import { spacing } from "@/src/theme/tokens";
+import { Button, EmptyState, LoadingState } from "@/src/components/ui";
 import { MealRow } from "./MealRow";
 import { MealDetail } from "./MealDetail";
 import { MealBuilder } from "./MealBuilder";
@@ -380,19 +382,13 @@ export function MealLibraryModal({
   let body: React.ReactNode;
   if (!data && loadFailed) {
     body = (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
-        <Text style={lib.mutedText}>Couldn&apos;t load your Meal Library.</Text>
-        <TouchableOpacity style={[lib.primaryButton, { marginTop: 16, paddingHorizontal: 24 }]} onPress={() => load()}>
-          <Text style={lib.primaryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState
+        title="Couldn't load your Meal Library."
+        action={{ label: "Retry", onPress: () => load() }}
+      />
     );
   } else if (!data) {
-    body = (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator color="#3B82F6" />
-      </View>
-    );
+    body = <LoadingState />;
   } else if (view.mode === "detail" && detailMeal) {
     body = (
       <MealDetail
@@ -424,7 +420,7 @@ export function MealLibraryModal({
       <SectionList
         sections={sections}
         keyExtractor={(m) => m.id}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
         renderItem={renderItem}
         renderSectionHeader={({ section }) => (
           <View>
@@ -449,7 +445,7 @@ export function MealLibraryModal({
           // sections, so an over-narrow filter yields [] exactly like an empty
           // library — the two cases have to say different things, and the
           // filtered one has to name the way out.
-          <Text style={[lib.mutedText, { padding: 24, textAlign: "center" }]}>
+          <Text style={[lib.mutedText, { padding: spacing.xxl, textAlign: "center" }]}>
             {inStockOnly
               ? "No meals you can make from what's in stock. Tap “In stock only” again to see everything."
               : "No meals yet — add your first one."}
@@ -478,18 +474,24 @@ export function MealLibraryModal({
             swipe-to-dismiss, so no load state may strand the user. */}
         <View style={lib.header}>
           {view.mode === "list" ? (
-            <TouchableOpacity onPress={() => setView({ mode: "builder", mealId: null })}>
-              <Text style={lib.headerAction}>＋ New</Text>
-            </TouchableOpacity>
+            <Button
+              label="New"
+              icon={Plus}
+              variant="ghost"
+              size="sm"
+              onPress={() => setView({ mode: "builder", mealId: null })}
+            />
           ) : (
-            <TouchableOpacity onPress={() => setView({ mode: "list" })}>
-              <Text style={lib.headerAction}>‹ Library</Text>
-            </TouchableOpacity>
+            <Button
+              label="Library"
+              icon={ChevronLeft}
+              variant="ghost"
+              size="sm"
+              onPress={() => setView({ mode: "list" })}
+            />
           )}
           <Text style={lib.headerTitle} numberOfLines={1}>{headerTitle}</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={lib.headerAction}>Done</Text>
-          </TouchableOpacity>
+          <Button label="Done" variant="ghost" size="sm" onPress={onClose} />
         </View>
         {/* Filter bar, list mode only. Kept OUT of the scrolling SectionList
             so it can't scroll away while it is hiding rows — the state that
