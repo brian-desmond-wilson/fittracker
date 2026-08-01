@@ -965,3 +965,9 @@ Hand the owner this on-device checklist (Metro reload on the existing dev client
 ## ⚠️ Execution amendments
 
 *(Record every deviation from this plan here, in the same commit as the fix: what the plan said, what was actually done, why. Include token additions from Task 7 Step 3 and any Jest/ESLint config discoveries.)*
+
+### Task 1 — Jest `testMatch` did not pick up `src/theme/tokens.test.ts`
+
+The plan's Step 2 anticipated this exact contingency. `mobile/jest.config.js` scoped `testMatch` to `["**/__tests__/**/*.test.ts"]` only — every existing suite lives under a `src/lib/__tests__/` directory, and `src/theme/tokens.test.ts` sits directly in `src/theme/`, not in a `__tests__` folder, so `npx jest src/theme/tokens.test.ts` reported "No tests found" (0 matches) before the implementation even existed.
+
+Fix: extended `testMatch` to `["**/__tests__/**/*.test.ts", "**/theme/**/*.test.ts"]` in `mobile/jest.config.js`. Re-ran the test — it was now discovered and failed correctly on `Cannot find module './tokens'` (the true TDD-red state), then passed once `tokens.ts` was written. Final suite: 12 suites / 321 tests passing (up from 11/317); `npx tsc --noEmit` clean.
