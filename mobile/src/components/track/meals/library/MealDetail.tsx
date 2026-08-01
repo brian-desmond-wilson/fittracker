@@ -166,7 +166,7 @@ export function MealDetail({
       </Card>
 
       <View style={[lib.rowBetween, { marginHorizontal: spacing.screenGutter, marginTop: spacing.xs }]}>
-        <Button label="Edit" variant="ghost" onPress={() => onEdit(meal)} />
+        <Button label="Edit" variant="secondary" onPress={() => onEdit(meal)} />
         <Button label="Delete" variant="destructive" onPress={confirmDelete} />
       </View>
     </ScrollView>

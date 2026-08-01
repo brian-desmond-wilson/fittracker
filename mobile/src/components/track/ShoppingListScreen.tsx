@@ -227,6 +227,7 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
             <IconButton
               icon={X}
               variant="circle"
+              tone="danger"
               onPress={() =>
                 Alert.alert("Remove", `Remove "${item.name}" from the list?`, [
                   { text: "Cancel", style: "cancel" },
@@ -288,8 +289,10 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
             : row.item.id
         }
         // `Screen scroll={false}` applies neither the horizontal gutter nor the
-        // bottom inset — the list owns both. `flexGrow: 1` lets the full-bleed
-        // EmptyState below fill the viewport instead of collapsing.
+        // bottom inset — the list owns both. `flexGrow: 1` gives the EmptyState
+        // below (`flex: 1`) free space to grow into instead of collapsing to
+        // its own padding; it sits inside this container's gutter, so it is
+        // inset rather than full-bleed.
         contentContainerStyle={{
           paddingHorizontal: spacing.screenGutter,
           paddingBottom: insets.bottom + spacing.xxl,
@@ -394,10 +397,11 @@ const styles = StyleSheet.create({
   rowNamePurchased: { color: colors.textFaint, textDecorationLine: "line-through" },
   rowQty: { ...typography.caption, fontWeight: "400" },
   rowReason: { ...typography.caption, marginTop: spacing.xs },
-  // Unchecked outline uses `textFaint`, not `border`: `border` on a `surface`
-  // card is a divider value and would make the empty box near-invisible.
+  // Unchecked outline uses `textFaint`, not `border`: this outline IS the
+  // affordance (see the standing outline rule), where a chip/input border
+  // merely bounds visible content and stays on `colors.border`.
   checkbox: {
-    width: 22, height: 22, borderRadius: radii.control, borderWidth: 2,
+    width: 24, height: 24, borderRadius: radii.control, borderWidth: 2,
     borderColor: colors.textFaint, alignItems: "center", justifyContent: "center",
   },
   checkboxChecked: { backgroundColor: colors.brand, borderColor: colors.brand },

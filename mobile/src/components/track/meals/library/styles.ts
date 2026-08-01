@@ -1,7 +1,7 @@
 // mobile/src/components/track/meals/library/styles.ts
 import { StyleSheet } from "react-native";
 import { scoreBand, type ScoreBand } from "@/src/lib/mealScore";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import type { BadgeTone } from "@/src/components/ui";
 
 export const lib = StyleSheet.create({
@@ -15,9 +15,9 @@ export const lib = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: { ...typography.titleBar, color: colors.text },
-  /** Inline text-glyph controls (the builder's − / ＋ steppers). */
-  glyphAction: { ...typography.button, color: colors.brand },
+  // `flexShrink: 1` so a long meal name ellipsizes instead of pushing the
+  // flanking header buttons off the bar — same guard `Screen`'s `barTitle` has.
+  headerTitle: { ...typography.titleBar, color: colors.text, flexShrink: 1 },
   sectionHeader: {
     ...typography.section,
     paddingHorizontal: spacing.screenGutter,
@@ -68,10 +68,15 @@ export const lib = StyleSheet.create({
     marginRight: spacing.sm,
     marginBottom: spacing.sm,
   },
+  // Active state of a GROUPED, mutually-exclusive selector (category, role,
+  // taste override, meal type) — solid brand fill, `onBrand` label (spec §6).
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { ...typography.body, color: colors.textMuted },
   chipTextActive: { color: colors.onBrand, fontWeight: "600" },
-  destructiveText: { ...typography.button, color: colors.danger },
+  // Active state of a STANDALONE filter/toggle chip (no shared track) — the
+  // calmer tint treatment, per the standing active-chip rule.
+  chipFilterActive: { backgroundColor: tint(colors.brand), borderColor: colors.brand },
+  chipFilterTextActive: { color: colors.brand, fontWeight: "600" },
   input: {
     backgroundColor: colors.surface2,
     borderWidth: 1,
@@ -85,13 +90,13 @@ export const lib = StyleSheet.create({
   },
   barTrack: {
     height: 6,
-    borderRadius: 3,
+    borderRadius: radii.pill,
     backgroundColor: colors.border,
     flex: 1,
     marginLeft: spacing.sm,
     overflow: "hidden",
   },
-  barFill: { height: 6, borderRadius: 3, backgroundColor: colors.brand },
+  barFill: { height: 6, borderRadius: radii.pill, backgroundColor: colors.brand },
 });
 
 const TONE_BY_BAND: Record<ScoreBand, BadgeTone> = {

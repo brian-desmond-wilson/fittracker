@@ -1152,3 +1152,64 @@ The plan asks for "`SectionHeader` with count `Badge tone="shopping"`". The coun
 Applying the standing rules (Task 3: drop `± n`, keep the base token; Task 5: control touch-padding rounds up, other values round to nearest): several values here are exactly *between* two steps (`6` and `10`), which neither rule resolves. **Ties round up, uniformly** — the same "tap targets never shrink" instinct, applied consistently so the two files don't disagree. Applied to: the shopping row `gap: 10 → spacing.md`, `vendorPicker gap: 6 → spacing.sm`, `vendorChip padding 10/5 → spacing.md/spacing.sm` (a control, so it rounds up regardless), Meal Library's `chip padding 12/6 → spacing.md/spacing.sm`, and every `marginTop: 6 → spacing.sm` / `marginTop: 10 → spacing.md`. `borderRadius: 14`/`16` on chips → `radii.pill`; `borderRadius: 6` on the checkbox → `radii.control`.
 
 **Stale cross-reference left for Task 7:** `mobile/src/components/EatNextHomeCard.tsx:254-263` documents that its local chip/badge colors mirror `library/styles.ts`'s `scoreChipCore/Mid/Low` and `badge`/`inStockBadge`, all four of which this task deleted. Task 7 migrates that file to `Badge` and retires the comment; it was left untouched here rather than dragging an out-of-scope file into a Task 6 commit.
+
+### Task 6 (review follow-up) — four primitive defects that Task 6's call sites exposed
+
+Task 6 was the first task to put ghost buttons, section-header actions, icon-only deletes and `Card` style overrides into real use, and each one surfaced a defect in a Task 3/4 primitive. All four are fixed in `mobile/src/components/ui/` in their own commit, ahead of the call-site changes, because Tasks 7-10 inherit them.
+
+**`Button`'s style array applied `sm` after the variant.** The order was `styles.base, styles[variant], size === "sm" && styles.sm`, and `sm` sets `paddingHorizontal: spacing.lg` (16) while `ghost` sets `spacing.sm` (8) — so `sm` won and every `ghost` + `sm` button sat 16pt in, contradicting spec §5.1's "ghost: … horizontal padding 8". Reordered to `styles.base, size === "sm" && styles.sm, styles[variant]`. Verified against all four variants: `sm` carries **only** padding (`paddingVertical`/`paddingHorizontal`), and of the four variants only `ghost` declares padding at all — `primary` sets a background, `secondary`/`destructive` set a background plus a border. So the reorder changes exactly one combination (`ghost` + `sm`, horizontal padding 16 → 8) and is inert for `primary`/`secondary`/`destructive` at either size and for `ghost` at `md` (which already resolved to 8, since `ghost` followed `base` there too).
+
+**`Button` rendered its icon at a fixed `icons.md`.** A 20pt glyph beside a 14pt `buttonSm` label; it is also why Task 6's `↗ Open` could not honor the plan's `icons.sm`. Now `size={size === "sm" ? icons.sm : icons.md}`. No caller-facing icon-size prop was added — a per-call-site size knob is exactly the drift this system exists to remove.
+
+**`SectionHeader.action` was a `{ label, onPress }` shape with zero consumers.** It could not express any of Task 6's three section actions, which need `disabled` (the `busy` double-fire guard), an icon, and the destructive variant; adding those props would have rebuilt `Button` inside `SectionHeader`. It is now a `React.ReactNode` slot, like `badge` already was, and `styles.action` is deleted. Callers pass `<Button variant="ghost" size="sm" … />`. Changed now, while the cost is zero call sites, rather than after four more tasks migrate a dozen section headers. (This supersedes the Task 4 amendment's "action is label-only, revisit when a caller needs the icon form" — the caller arrived.)
+
+**`Card.style` was `ViewStyle`, not `StyleProp<ViewStyle>`.** It compiles for a single style object but rejects the `style={[a, cond && b]}` array that any conditional card state needs; the internal `base` array is now `StyleProp<ViewStyle>[]`. Widened before a later task works around it.
+
+**`IconButton` gains `tone?: "default" | "danger"`** — see the standing rule below. `circle` and `square` both take a `tint(colors.danger)` fill with a `colors.danger` glyph. "The same calm treatment" was read as *the circle's* treatment rather than a danger-bordered outline: adding a border would change the square's geometry, and the prohibition being expressed is against a **filled** red, which a 0.15-alpha tint is not.
+
+### Standing rule (Tasks 7-10) — destructive controls
+
+- **Labeled** destructive actions use `Button variant="destructive"` (calm outline, `danger` border and label). The word carries the meaning, so the control can be quiet.
+- **Icon-only** destructive row actions use `IconButton tone="danger"`.
+
+This **supersedes** the rule recorded earlier in Task 6 ("icon-only row actions go brand"). That rule was wrong on both law and affordance. On law: §3 decision 3's "every interactive control is brand" governs the four **domain accents** (meals/water/inventory/shopping) — `danger` is a semantic token, and §5.1 establishes it as the legitimate color of a destructive control. On affordance: strip the red from an unlabeled delete and nothing separates it from any other row action — in the Shopping row, `⇄` and `✕` become the same green circle and glyph shape is the only signal left. Applied to `ShoppingListScreen`'s row `✕` and `MealBuilder`'s ingredient `✕`. Note which of those two had kept its red before this task: the **unguarded** one. Shopping's delete is behind an `Alert` confirm; MealBuilder's removes the ingredient immediately with no confirmation at all.
+
+### Standing rule (Tasks 7-10) — outline color
+
+- An outline that **is itself the affordance** — an empty checkbox, a radio, an unfilled progress ring — uses `colors.textFaint`.
+- An outline that merely **bounds visible content** — a chip, an input, a card — uses `colors.border`.
+
+Task 6 shipped both (`ShoppingListScreen`'s checkbox on `textFaint`; `vendorChip` / `lib.chip` / `lib.input` on `border`) and recorded only the first as a deviation, which read as an inconsistency. Both were right; the rule simply was not written down. Task 9's `WaterProgressRing` unfilled track is the next instance.
+
+### Standing rule (Tasks 7-10) — active state of chips, segments and tabs
+
+Three treatments existed across Tasks 5-6 with no rule to choose between them. No eighth primitive is being added — spec §5 fixes the set at seven — so the treatment is selected by what the control *is*:
+
+- **Segmented control** (grouped, mutually exclusive, sitting on a shared track): `surface2` track, `radii.control`, active segment = **solid `colors.brand` fill + `onBrand` label**. Spec §6 verbatim.
+- **Standalone filter/toggle chip** (independent, no shared track): active = **`tint(colors.brand)` fill + `colors.brand` border + `colors.brand` label**. Matches Task 5's `SubcategoryPills` and Task 6's `vendorChipSelected`.
+- **Category tabs**: active = `colors.text` label + 2px `colors.brand` underline. Spec §6; done in Task 5's `CategoryTabs`.
+
+Applied in Task 6: `lib.chipActive` (solid brand) keeps the grouped, single-select selectors — meal type in `MealDetail`, category / role / taste override in `MealBuilder`. The `"In stock only"` filter in `MealLibraryModal` is a standalone toggle and was wrong under this rule, so `lib.chipFilterActive` / `chipFilterTextActive` were added for the tint treatment and that one call site moved onto them. Two style keys rather than one bent key, as instructed. This narrows the earlier Task 6 note that sent every `chipActive` to a solid fill.
+
+### Standing note (Tasks 7-10) — gutter strategy is decided by the screen's relationship to `Screen`
+
+Task 6 ships both strategies on purpose; the choice is not arbitrary.
+
+- `ShoppingListScreen` uses `Screen scroll={false}`, so `Screen` supplies **no** horizontal gutter and the screen's own `SectionList` puts `paddingHorizontal: spacing.screenGutter` on its `contentContainerStyle`. Per-element `marginHorizontal` was deleted from the rows and section headers rather than left to double up.
+- The Meal Library modal does **not** use `Screen` at all (its three-slot header has no `Screen` equivalent), so there is no container to hang a gutter on: its cards keep per-element `marginHorizontal` via `lib.cardSpacing`, and `MealDetail`/`MealBuilder` render into a plain `ScrollView`.
+
+Rule of thumb for the remaining tasks: **one gutter owner per screen.** If a container (`Screen`'s scroll path, or a list's `contentContainerStyle`) supplies it, elements carry none; if no container can, elements carry it uniformly. Never both.
+
+### Task 6 (review follow-up) — glyph scope correction and smaller fixes
+
+**The §4.6 scope reading was wrong.** Task 6 originally left `MealBuilder`'s inline glyphs as text on the argument that §4.6 scopes the lucide swap to Shopping's set. It does not: the subject of that sentence is "text-glyph controls", and Shopping's `＋ ✓ ⇄ ✕ ↗` is given parenthetically as the example. `MealBuilder`'s `−`, `＋`, `✕` and the `＋ {name}` add-food affordance are now `Minus`, `Plus`, `X` at `icons.sm` (brand, and `danger` for the delete per the rule above), and each picks up an `accessibilityRole`/`accessibilityLabel` it never had as bare text.
+
+The *other* half of the original argument stands and was kept: they are **not** promoted to `IconButton circle`. Three 32pt circles inside a dense card row is a layout change, not a restyle. The existing `TouchableOpacity` + `GLYPH_HIT_SLOP` wrappers and handlers are untouched — only the `<Text>` child was swapped for a lucide icon. `✂︎` and `●` are left alone: they are status glyphs inside prose, not controls. With the swap, `lib.glyphAction` and `lib.destructiveText` lose their last consumers and are deleted.
+
+Smaller items in the same commit:
+
+- `lib.headerTitle` gains `flexShrink: 1`. In a `space-between` bar a natural-width title claims its full intrinsic width and pushes the flanking actions out — and those actions just became `Button`s. `Screen.tsx`'s `barTitle` already carries this guard for exactly this reason (recorded in the Task 4 amendment); the bespoke modal header now matches.
+- `ShoppingListScreen`'s checkbox `22 → 24`. 22 is named in spec §4.3's banned list. Carrying an off-grid value through a fully-migrated file would establish "off-grid survives if it was pre-existing" as precedent for four more tasks.
+- `lib.barTrack` / `lib.barFill` `borderRadius: 3 → radii.pill`. Identical rendering on a 6pt bar, one fewer magic number.
+- `MealDetail`'s "Edit" moves from `Button ghost` to `Button secondary`, so the footer pair (`secondary` + `destructive`) is two outlined controls of equal weight instead of a bare text link beside a bordered one.
+- The `ShoppingListScreen` comment calling its `EmptyState` "full-bleed" is corrected — the list's `contentContainerStyle` now supplies a horizontal gutter, so it is inset. `flexGrow: 1` is still what keeps it from collapsing.

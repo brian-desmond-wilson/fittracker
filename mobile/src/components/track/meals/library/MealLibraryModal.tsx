@@ -499,10 +499,10 @@ export function MealLibraryModal({
         {view.mode === "list" && data && (
           <View style={lib.filterBar}>
             <TouchableOpacity
-              style={[lib.chip, { marginBottom: 0 }, inStockOnly && lib.chipActive]}
+              style={[lib.chip, { marginBottom: 0 }, inStockOnly && lib.chipFilterActive]}
               onPress={() => setInStockOnly((v) => !v)}
             >
-              <Text style={[lib.chipText, inStockOnly && lib.chipTextActive]}>
+              <Text style={[lib.chipText, inStockOnly && lib.chipFilterTextActive]}>
                 In stock only
               </Text>
             </TouchableOpacity>

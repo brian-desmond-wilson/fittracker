@@ -18,15 +18,16 @@ import {
   assessAssemblability, type AssemblabilityInventoryRow,
 } from "@/src/lib/stockState";
 import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
-import { colors, spacing } from "@/src/theme/tokens";
+import { Minus, Plus, X } from "lucide-react-native";
+import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { lib, scoreTone } from "./styles";
 
 const CATEGORIES: MealCategory[] = ["breakfast", "lunch", "dinner", "snack", "shake", "emergency"];
 const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const RATINGS: ConceptRating[] = ["love", "like", "neutral", "dislike", "never"];
-// The ± / ✕ glyphs are bare Text at roughly 12×20pt in a `spacing.md` row, and
-// the destructive ✕ sits 12pt from ＋ — well under a comfortable touch target,
+// The ± / ✕ controls are bare `icons.sm` glyphs in a `spacing.md` row, and the
+// destructive ✕ sits 12pt from ＋ — well under a comfortable touch target,
 // with a delete as the cost of missing.
 const GLYPH_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 // `/^\d+$/` has no upper bound, so 11+ digits overflow int4 and the save fails
@@ -269,23 +270,29 @@ export function MealBuilder({
                   <TouchableOpacity
                     hitSlop={GLYPH_HIT_SLOP}
                     onPress={() => setServings(it.saved_food_id, -SERVING_STEP)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`One less serving of ${it.savedFood.name}`}
                   >
-                    <Text style={lib.glyphAction}>−</Text>
+                    <Minus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
                   </TouchableOpacity>
                   <Text style={lib.mutedText}>×{it.servings}</Text>
                   <TouchableOpacity
                     hitSlop={GLYPH_HIT_SLOP}
                     onPress={() => setServings(it.saved_food_id, SERVING_STEP)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`One more serving of ${it.savedFood.name}`}
                   >
-                    <Text style={lib.glyphAction}>＋</Text>
+                    <Plus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     hitSlop={GLYPH_HIT_SLOP}
                     onPress={() =>
                       setItems((prev) => prev.filter((p) => p.saved_food_id !== it.saved_food_id))
                     }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${it.savedFood.name}`}
                   >
-                    <Text style={lib.destructiveText}>✕</Text>
+                    <X size={icons.sm} color={colors.danger} strokeWidth={icons.strokeWidth} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -344,11 +351,12 @@ export function MealBuilder({
         {results.map((f) => (
           <TouchableOpacity
             key={f.id}
-            style={{ paddingVertical: spacing.sm }}
+            style={[lib.row, { paddingVertical: spacing.sm, gap: spacing.sm }]}
             onPress={() => addItem(f)}
           >
-            <Text style={lib.bodyText}>
-              ＋ {f.name}
+            <Plus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            <Text style={[lib.bodyText, { flexShrink: 1 }]}>
+              {f.name}
               {f.calories != null ? `  ·  ${f.calories} cal` : ""}
             </Text>
           </TouchableOpacity>
