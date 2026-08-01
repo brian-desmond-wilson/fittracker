@@ -99,6 +99,8 @@ Contract mirrors `useEatNext`: `{ status: LoopStatus | null, loading /* first lo
 
 For Eat Next this hook does NOT nest `useEatNext` (its internal fetches would double the load); it calls the exported engine `computeEatNext`-equivalent path exactly as `useEatNext` does with the data already fetched. The plan pins the exact call.
 
+**Design revision 2026-08-01 (pre-execution, by the designer — not an execution deviation):** reading `useEatNext.ts` as landed showed the paragraph above underestimated the duplication: the Eat Next data path is ~80 lines of review-hardened assembly (scoring trio, constraints fallback, the local-midnight workout-completion query with its documented bug history). Replicating it in `useLoopHub` is the drift risk §10 warns about. Revised mechanics: **`LoopHubScreen` composes both hooks** — `useEatNext()` runs as-is, and `useLoopHub(eatNextResult: EatNextResult | null)` takes its result as a parameter, recomputing `computeLoopStatus` when either side updates. Combined loading = either first-load; combined error = either error; Retry calls both refetches. The extra fetch overlap this creates is accepted under the same reasoning already stated above. Additionally, `LoopStatusInputs` is refined in the plan to structural subsets (e.g. `inventory: Array<{ id; name; state: ItemStockState }>`, `vendors: Array<{ id; name }>`) plus a `mealScores` input that `useLoopHub` computes with the same pure trio `useEatNext` uses (`computeMealTotals` + `brianScoreInputFor` + `computeBrianScore`) — station 2's "top by raw" needs scores, and structural inputs keep the engine import-light and trivially testable.
+
 ## 5. Stations (fixed order; all values live)
 
 | # | key | Headline pattern | Badge | Attention rule | Connector after |
