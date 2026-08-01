@@ -1981,3 +1981,314 @@ Its comment is also corrected: it claimed the `border` outline helped separate t
 - **The hand-rolled beverage badge's `10`/`3` padding** in `WaterHistoryList` is raw. It is a deliberate copy of `ui/Badge`'s own `paddingHorizontal: 10, paddingVertical: 3` — the primitive hardcodes those two values itself, because §4.3's scale has no 10 and no 3 — and copying them is what makes this badge visually identical to every real `Badge` beside it. Tokenizing only the copy would make it *differ* from the primitive it is imitating. The real fix is upstream, in `Badge`, and it is not a Task 9 change.
 - **`fontSize: 12` + `fontWeight: "600"` now appears verbatim in four files** (`WaterCustomLogForm`, `WaterLogEditorModal`, `WaterQuickAddEditorModal`'s chip labels, and `WaterHistoryList`'s badge label), copied from Task 8's `MealLogEditorModal`/`QuickAdjustmentModal`. That is six call sites of one unnamed style across two tasks — a **de-facto token the module lacks**: a 12/600 "chip/badge label", sitting between `caption` (12/400) and `buttonSm` (14/600), and it is also exactly what `ui/Badge` hardcodes internally. **Task 11 token proposal: add it (e.g. `typography.label`) and point all six call sites plus `Badge` at it.** Deliberately NOT added here — inventing a token late in a cosmetic cycle is the scope expansion this cycle avoids, and no fifth hand-rolled copy was created either.
 - **`WaterDayStrip`'s `DAY_INITIALS[i]`** indexes a fixed 7-entry Sunday-first array by the map index of `weekDates`, so it silently assumes the caller always passes exactly seven days starting Sunday. `WaterScreen` does (`startOfWeek` sets `getDay()` to 0 and builds 7), so there is no live bug — but the label is positional rather than derived from each entry's own `date`. Pre-existing coupling with no styling content; out of scope for a restyle, worth a line in Task 11's closeout.
+
+### Task 11 — tab bar: the four value shifts, and what was deliberately kept
+
+Step 1 names three HSL strings. The file had five raw color values and an
+ad-hoc shadow; all six are gone. Three of the swaps are near-renames, three are
+real:
+
+| Was | Now | Delta |
+|---|---|---|
+| `backgroundColor: "hsl(217.2, 32.6%, 17.5%)"` | `colors.surface2` | **none** — that HSL is exactly `#1E293B` |
+| `tabBarActiveTintColor: "hsl(142, 76%, 36%)"` | `colors.brand` | `#16A249` → `#22C55E`, a slightly lighter green |
+| `tabBarInactiveTintColor: "hsl(215, 20.2%, 65.1%)"` | `colors.textMuted` | `#94A3B8` → `#9CA3AF`, the shift spec §4.1 mandates ("`textMuted` wins over `#94A3B8`") |
+| `borderTopColor: "#64748B"` | `colors.border` | `#64748B` → `#1F2937`, **the most visible change on the screen**: a bright slate hairline becomes the app's one dark border |
+| `shadowColor: "#64748B"` + offset `-1` / opacity 0.3 / radius 0 | deleted | a hard 1pt line above the bar in the same bright slate — it was a second border, drawn twice |
+| `paddingBottom: 24` / `paddingTop: 12` / `marginBottom: 4` | `spacing.xxl` / `spacing.md` / `spacing.xs` | pure renames |
+
+**`elevation: 0` was kept**, deliberately. It is not a color and it is not
+ad-hoc: it suppresses Android's default tab-bar shadow, and the system is
+flat, so removing it alongside the iOS shadow keys would have *added* a shadow
+on Android — a behavior change in the one file the task forbids changing
+behavior in. Same reasoning as Task 9's `WaterUndoSnackbar` shadow removal: no
+elevation scale exists, so the answer is no shadow, not a different shadow.
+
+**`height: 88` was kept** as a documented literal with a comment. It is the
+bar's fixed geometry, and Task 7's bottom-padding amendment verified against
+this exact value that the bar is not absolutely positioned; changing it would
+silently invalidate that verification on five screens.
+
+**`tabBarLabelStyle`'s `fontSize: 12, fontWeight: "500"` was kept**, with the
+reason in a comment: `typography.caption` carries `color: colors.textMuted`,
+and a `color` in `tabBarLabelStyle` **overrides** `tabBarActiveTintColor` /
+`tabBarInactiveTintColor` — spreading the token would have frozen every label
+muted and killed the active-tab signal. This is the tab bar's own near-miss of
+the `typography.label` proposal (12/600 vs 12/500); recorded, not resolved.
+
+`TabBarIcon.tsx` keeps size 24 (now `icons.lg`) and its focused `strokeWidth`
+2.5, which is lifted into a named `FOCUSED_STROKE_WIDTH` constant carrying the
+justification: it is the only weight signal the bar has once glyph and label
+have both taken the active tint. The unfocused branch takes
+`icons.strokeWidth`. The component's inert wrapping `<View>` was left alone —
+removing it is a structural edit with no styling content in a file the task
+requires to be behavior-identical.
+
+### Task 11 — ESLint: no setup existed at all, so one was created (Step 3, path B)
+
+Inspected `mobile/` per Step 3: no `.eslintrc*`, no `eslint.config.*`, no
+`eslintConfig` key in `package.json`, and **no `eslint` in `node_modules` at
+all** — nor `eslint-config-expo`, nor `@typescript-eslint/parser`. So Step 3's
+fallback path was taken in full:
+
+- Installed `eslint@9.39.1` and `@typescript-eslint/parser@8.46.0` as exact
+  devDependencies. Spec §2's "no new dependencies" non-goal is about the app's
+  runtime; spec §9 mandates this lint rule, and a rule that cannot be run is
+  not a backstop. Pinned exactly so the gate cannot drift under the next
+  `npm install`.
+- Created `mobile/eslint.config.js` (flat config, CJS — the package has no
+  `"type": "module"`). It enables **exactly one rule**. A general lint pass over
+  ~160 components is a separate project, and a config that fails on day one is
+  a config nobody runs.
+- Added `"lint": "eslint src app"` to `mobile/package.json` scripts.
+
+**Deviation — Step 3's error scope was unsatisfiable as written.** The spec and
+this plan both put `src/theme/**` in the **error** scope. But `src/theme/`
+is the sanctioned home for raw color values: `tokens.ts` holds ~29 by design
+and `tokens.test.ts` asserts on ~4 more, and spec §9's own grep gate excepts
+"token module and its shim". Under the plan's text, `npx eslint src/theme
+src/components/ui` — the gate Step 3 requires to pass — would emit ~33 errors
+and could never go green.
+
+Resolved by scoping the config to what each directory actually is:
+
+- **error** on `src/components/ui/**` (verified zero raw literals): every
+  screen is built out of the seven primitives, so one literal here is one
+  literal everywhere.
+- **off** on `src/theme/**`, with the spec's own carve-out quoted in a comment.
+  Chosen over file-level `/* eslint-disable */` headers in `tokens.ts` and
+  `tokens.test.ts` because the exemption belongs to the *directory's role*, not
+  to two files that happen to hold literals today — and a file-level disable in
+  the token module is the one place a reviewer would misread it as a violation
+  being suppressed. (`src/lib/colors.ts`, the shim, re-exports and holds no
+  literals, so it needs no entry.)
+- **warn** everywhere else, unchanged from the plan: the adopt-on-touch area is
+  most of the app and must not block anyone's commit.
+
+**Second deviation — a `react-hooks` rule stub was required.** Two pre-existing
+files (`profile/nutrition/VendorsSection.tsx`, `hooks/useEatNext.ts`) carry
+`// eslint-disable-next-line react-hooks/exhaustive-deps`, and ESLint
+hard-**errors** on a disable directive naming a rule it cannot resolve. Without
+a fix, `npm run lint` exited 1 on day one over something unrelated to color.
+The config declares `react-hooks/exhaustive-deps` as a no-op rule so the
+directives resolve, enables nothing, and turns
+`reportUnusedDisableDirectives` off so the now-structurally-unused comments are
+not flagged for deletion. Installing `eslint-plugin-react-hooks` for real was
+rejected as a third dependency this task has no mandate for; the comment says
+to swap the stub out if the hooks rules are ever genuinely wanted.
+
+**Recorded limitation.** Both selectors are `Literal[value=/…/]`, i.e. string
+literals only. An `rgba()` assembled from a template literal or by
+concatenation, or a hex built from parts, slips straight through. Stated in
+`docs/STYLE_GUIDE.md` §8 so nobody reads a green lint as a proof.
+
+Verified the rule actually fires rather than trusting a green run:
+`npx eslint src/components/track/MealsPaceLines.tsx` → 3 warnings (exit 0);
+a two-literal probe under `src/components/ui/` → 2 **errors** (exit 1).
+
+Gate output, verbatim:
+
+```
+$ npx eslint src/theme src/components/ui
+(no output)
+exit=0
+
+$ npm run lint
+✖ 1358 problems (0 errors, 1358 warnings)
+```
+
+### Task 11 — Step 4's assertion is false; the accepted residue, itemized
+
+Step 4 says to "verify the list contains no nutrition/Track/Home/ui/theme
+files". It does contain Track files, and no amount of sweeping inside this task
+would have changed that. The assertion is **replaced** by the explicit list
+below; the sweep now asserts against it. `src/components/ui/**`, `src/theme/**`
+(excepted), Home, Meals, Water, Food Inventory, Shopping, Meal Library and
+Nutrition Preferences are all clean, which is what Tasks 5-10 actually gated.
+
+Accepted residue, all still carrying raw hex and/or the `@/src/lib/colors`
+shim (verified 2026-08-01 by `grep -rlE '#[0-9A-Fa-f]{3,8}\b|hsl\('` over
+`src/components src/lib app`):
+
+**A. Children of migrated Meals/Inventory UI that were never in any task's file
+list** — so no grep gate ever covered them, and they render beside migrated
+surfaces:
+
+| File | What is left |
+|---|---|
+| `track/MealsPaceLines.tsx` | 3 status hues + shim |
+| `track/MealUndoSnackbar.tsx` | `shadowColor` + `#1F2937`/`#374151` chrome + a `#F97316` "Undo" control |
+| `track/MealsDistributionBar.tsx` | its own copy of the five meal-type hues + a `rgba(255,255,255,0.04)` track + shim |
+| `track/MealsCalorieChart.tsx` | goal line, orange area fill, threshold hues + shim |
+| `track/MealsMacroChart.tsx` | per-macro hues (`protein`/`carbs`/`fats`) + shim |
+| `track/MacroPercentageBar.tsx` | per-macro segment hues + a white-alpha track + shim |
+| `track/meals/RecentFoodChips.tsx` | the favourite amber + shim |
+| `track/RestockModal.tsx` | violet CTA, hand-rolled buttons, its own modal scaffold, ~15 raw font sizes + shim |
+
+**B. Helper modules whose hexes render into migrated UI** (the call sites are
+grep-clean because the literals live in the lib):
+
+- `track/meals/mealsHelpers.ts` — `MEAL_TYPES`' five hues, duplicated verbatim
+  in `MealsDistributionBar`. Flagged by Task 8.
+- `lib/waterUnits.ts` — `beverageColor()`'s five hues. Flagged by Task 9.
+
+**C. Track-hub siblings never in any task's scope**, legitimately adopt-on-touch
+but living under `src/components/track/**`: `WeightScreen.tsx`,
+`MeasurementsScreen.tsx`, `ProgressPhotosScreen.tsx`.
+
+(`src/lib/wodDetailHelpers.ts` also appears in the sweep. It is a training
+helper — out of this cycle's reach per spec §2, listed here only so the sweep
+output has no unexplained line.)
+
+### Task 11 — the eight Meals children were NOT migrated; the reasoning
+
+They are the most defensible candidate — they render inside surfaces this cycle
+restyled, and a user sees them side by side with migrated UI. They were still
+deferred, because "contained and mechanical" does not survive contact with
+them.
+
+**Size:** 1,236 lines across the eight, of which `RestockModal.tsx` alone is
+506. That is not the blocker; three things are:
+
+1. **Three of the eight cannot be migrated without a token decision this task
+   was told not to make.** `MealsDistributionBar` + `mealsHelpers` need the
+   five-hue `colors.mealTypes` group, whose members collide byte-for-byte with
+   `accents.water`/`accents.inventory`/`accents.measurements` on three of five
+   values — Task 8 deferred it precisely because it is "a naming decision worth
+   making on purpose". `MealsMacroChart` and `MacroPercentageBar` need a
+   **per-macro** identity palette, and `colors.macros` is deliberately keyed by
+   progress **state**, not by macro name — mapping `protein → macros.met` would
+   assert a meaning the system explicitly refuses. Doing this properly means
+   adding two token groups; doing it improperly means bending existing tokens
+   into a lie.
+2. **`RestockModal` is a Task-8-scale migration on its own.** It is a
+   `presentationStyle` modal with its own scaffold, a `#8B5CF6`-filled CTA, two
+   hand-rolled `TouchableOpacity` buttons, ~15 raw font sizes and a
+   quantity-stepper block. Done to this cycle's standard it takes the canonical
+   sheet recipe, `Button`/`Card`/`Badge` adoption, the typography convergences
+   and a dead-key audit — the same shape of work as a full task.
+3. **`MealUndoSnackbar` is blocked on the elevation proposal** (it has a real
+   `shadowColor`) and its orange "Undo" is a control, so migrating it means the
+   `Button ghost` + safe-area treatment Task 9 gave `WaterUndoSnackbar` — a
+   behavior-adjacent change, not a swap.
+
+Migrating the easy four and leaving the hard four would be exactly the
+half-migration the brief forbids: the meal-type hexes would remain duplicated
+across two files, and one chart would read from tokens while its sibling read
+from literals. **Deferred as a unit**, recorded in the accepted-residue list
+above and in `docs/STYLE_GUIDE.md` §7, where the two blocking token decisions
+are written up as open proposals. A follow-on cycle that starts by settling
+`colors.mealTypes` and the per-macro question can then sweep all eight
+mechanically.
+
+### Task 11 — the `keyboardShouldPersistTaps` sweep, discharged
+
+Task 9's spec-review amendment left this on the closeout: "Task 8's
+`FoodCorrectionModal`, `MealLogEditorModal`, `QuickAdjustmentModal` (and the two
+`pageSheet` modals with scrollers) should take the same prop."
+
+**Correction to that amendment: one of the five was a live defect, not a latent
+one.** It states "none of Task 8's five sheets uses `autoFocus`, so none of them
+has a keyboard up on open". `QuickAdjustmentModal` **does** — its Calories field
+carries `autoFocus` (the same file whose own `autoFocus` the Task 8 quality
+review cited when it added `KeyboardAvoidingView`), and its meal-type chips sit
+below that field inside the recipe's `ScrollView`. So every chip on that sheet
+has needed two taps since Task 8 shipped. `FoodCorrectionModal` and
+`MealLogEditorModal` are the latent cases the amendment described.
+
+Applied to all three centred sheets. The two `pageSheet` modals resolved on
+inspection rather than by rule: **`ManualFoodEntryModal` already carries it**
+(added in Task 8), and **`FoodPreviewModal` has no `TextInput` at all** — no
+keyboard, so the defect cannot arise and adding the prop would be cargo cult.
+
+One file was added beyond the deferred list, because the rule as written in the
+guide (§2 rule 22 — *any* scroller holding both a text input and a control)
+reaches it: **`EditFoodScreen.tsx`**. Its single `ScrollView` holds every text
+field on the screen *and* the accordion headers, the Scan control and the
+location add/remove actions, so focusing a field and tapping any of them spends
+the first tap dismissing the keyboard. `MealsScreen` was checked and does
+**not** qualify — its search `TextInput` sits in the header bar, outside the
+screen's `ScrollView`, so no scroller contains both.
+
+Each of the four call sites carries a one-line comment saying which case it is
+(live vs latent). Nothing else in those files changed.
+
+### Task 11 — `docs/STYLE_GUIDE.md`: what it contains beyond the plan's base text
+
+The plan's Step 2 supplies ten rules written before Tasks 3-10 existed. Shipped
+as §1 with corrections folded in (accent policy narrowed to the four **domain**
+accents, since `warning`/`danger` legitimately color a destructive control;
+`Screen` non-adoption stated as a normal outcome; `Card.style` named as the
+sanctioned extension point; `SectionHeader.action` documented as a `ReactNode`
+slot). Everything below §1 is new, and is the reason the guide is worth reading
+instead of the plan:
+
+- **§2 Standing rules (11-28)** — the binding rules Tasks 3-10 established:
+  the three off-grid spacing cases (drop `± n`; control padding rounds **up**;
+  ties round up); destructive controls; the outline-color split; unfilled
+  tracks → `surface2`; `onBrand` scoping; the stat-cell / hero-value / fitted-
+  literal typography triad; one form-label token; row controls take `rowTitle`;
+  the three active-state treatments; mandatory `keyboardShouldPersistTaps`; one
+  gutter owner; no percentage grid widths; **a `flex: 1` primitive needs a
+  parent with a definite main size** (with both the grow-chain and the
+  `minHeight`-box answers and when each is forced); `Button` cannot flex;
+  trailing space; which loading treatment.
+- **§3 Anti-drift** — delete dead style keys, don't copy a documented
+  exception, fix wrong comments.
+- **§4 Recipes** — the Banner and the canonical centred sheet, the latter
+  lifted verbatim from the Task 8 quality-review amendment as that amendment
+  instructed ("Task 11 lifts it into `docs/STYLE_GUIDE.md` beside the Banner
+  recipe"), including `keyboardShouldPersistTaps="handled"` and the
+  `maxHeight: "100%"` / `flexShrink: 1` scaffold.
+- **§5 Sanctioned exceptions** — `TabBarIcon`'s 2.5, `colors.imageWell`,
+  `colors.scrim`, the deliberate `colors.macros` and `accents.photos/workouts`
+  duplications, `MacroRing`'s held ring-fitted literals, and `Badge`'s internal
+  10/3 padding.
+- **§6 Open token proposals** — `typography.label` (12/600, ~six call sites plus
+  `Badge`'s internals), an input token (`fontSize: 16`, ~four sites), an
+  elevation token (`WaterUndoSnackbar`), and the `colors.mealTypes` /
+  `colors.beverages` groups. **Recorded, none implemented.**
+- **§7 Adopt-on-touch + the accepted-residue table** above.
+- **§8 The gate** — both greps, the three commands, the error/warn/off scoping
+  and the template-literal limitation.
+
+### Task 11 — the three structural notes left for the closeout, and why they stay open
+
+All three were recorded by earlier tasks as "Task 11's closeout is the place".
+None is acted on, and the reason is the same for each: they are **structural
+refactors with no styling content**, and this commit is the one that writes
+down the system — mixing a type-safety refactor and two module reshuffles into
+it would make the closeout the least reviewable commit in the cycle. They are
+restated here so they are not lost:
+
+- **`track/index.tsx`'s `iconMap: Record<string, any>`** is the last unsafe
+  field in the Track hub config — `icon: "Utensls"` type-checks and throws at
+  render. The fix is to delete the indirection (`icon: LucideIcon`, map gone);
+  the file already imports all eight lucide components.
+- **`mealsScreenStyles.ts` is three disjoint stylesheets in one file** — its 59
+  keys partition by consumer with zero overlap, which is why ten dead keys
+  survived unnoticed. Splitting it is a module reshuffle.
+- **`WaterDayStrip`'s `DAY_INITIALS[i]`** indexes a fixed Sunday-first array by
+  map position rather than deriving the label from each entry's own `date`. No
+  live bug (`WaterScreen` always passes seven days from `startOfWeek`), but the
+  coupling is silent.
+
+### Task 11 — one behavior bug found and fixed; gates
+
+Reviewed every hunk: the tab bar changed colors, spacing tokens and one dropped
+shadow only — no screen list, `href`, `title`, `tabBarIcon` or navigator option
+changed, and `TabBarIcon` renders the same tree at the same size. No handler,
+state, effect or data path was touched anywhere in the commit.
+
+The one behavior bug is the `QuickAdjustmentModal` double-tap corrected above —
+a **live** defect since Task 8, found by checking the deferred sweep's premise
+instead of trusting it, and fixed here along with the three latent cases. The
+four `keyboardShouldPersistTaps` additions are the only behavior change in the
+commit and are deliberate and sanctioned.
+
+Gates: `npx tsc --noEmit` → 0 errors; `npm test` → **12 suites / 321 tests
+passing**; `npx eslint src/theme src/components/ui` → **0 errors, no output**;
+`npm run lint` → 0 errors / 1358 warnings (all in the adopt-on-touch area and
+the accepted residue); both greps clean on `app/(tabs)/_layout.tsx` and
+`src/components/TabBarIcon.tsx`; zero orphaned style keys and zero unused
+imports.

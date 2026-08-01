@@ -110,7 +110,10 @@ export function FoodCorrectionModal({
             corrected values.
           </Text>
 
-          <ScrollView style={styles.sheetScroll}>
+          {/* `handled` is mandatory in the sheet recipe: a scroller between a
+              live keyboard and a control eats the first tap on that control.
+              No `autoFocus` here, so this is the latent case, not a live one. */}
+          <ScrollView style={styles.sheetScroll} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Name</Text>
             <TextInput
               style={styles.input}

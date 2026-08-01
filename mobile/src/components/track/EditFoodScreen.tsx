@@ -941,7 +941,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         </View>
 
         {/* Form */}
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* `handled`: this scroller holds both the text fields and the controls
+            (accordion headers, Scan, the location add/remove actions), so
+            without it the first tap on any of them only dismisses the keyboard. */}
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Basic Information Section */}
           <View style={styles.section}>
             <SectionHeader

@@ -104,7 +104,11 @@ export function MealLogEditorModal({
       >
         <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Meal</Text>
-          <ScrollView style={styles.sheetScroll}>
+          {/* `handled` is mandatory in the sheet recipe: a scroller between a
+              live keyboard and a control eats the first tap on that control.
+              This sheet has meal-type chips below its fields, so a user tapping
+              one while a field holds focus reproduces it. */}
+          <ScrollView style={styles.sheetScroll} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Name</Text>
             <TextInput
               style={styles.input}

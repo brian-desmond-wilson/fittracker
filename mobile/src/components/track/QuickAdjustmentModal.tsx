@@ -99,7 +99,11 @@ export function QuickAdjustmentModal({
             Add calories without picking a saved food. Macros are optional.
           </Text>
 
-          <ScrollView style={styles.sheetScroll}>
+          {/* `handled` is mandatory in the sheet recipe: a scroller between a
+              live keyboard and a control eats the first tap on that control.
+              LIVE case, not latent — Calories below carries `autoFocus`, so the
+              keyboard is up on open and the meal-type chips needed two taps. */}
+          <ScrollView style={styles.sheetScroll} keyboardShouldPersistTaps="handled">
             <Text style={styles.label}>Name</Text>
             <TextInput
               style={styles.input}

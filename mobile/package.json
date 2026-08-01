@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "prebuild": "expo prebuild",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint src app"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -50,9 +51,11 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/react": "~19.1.10",
+    "@typescript-eslint/parser": "8.46.0",
     "babel-plugin-module-resolver": "^5.0.2",
     "babel-preset-expo": "~54.0.10",
     "baseline-browser-mapping": "^2.9.11",
+    "eslint": "9.39.1",
     "jest": "^29.7.0",
     "sharp": "^0.34.4",
     "ts-jest": "^29.4.12",
