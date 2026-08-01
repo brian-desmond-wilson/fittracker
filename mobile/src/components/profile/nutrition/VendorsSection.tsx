@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Linking, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
-import { colors } from "@/src/lib/colors";
-import { nutritionStyles as s } from "./styles";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Card, SectionHeader } from "@/src/components/ui";
 
 export type VendorPatch = { name?: string; app_url?: string | null };
 
@@ -88,16 +88,16 @@ const VendorRow = React.memo(function VendorRow({
 
   return (
     <View>
-      <View style={s.row}>
+      <View style={styles.row}>
         <TouchableOpacity
-          style={s.flexShrinkColumn}
+          style={styles.flexShrinkColumn}
           onPress={() => onToggleExpand(vendor.id)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={s.rowLabel}>{vendor.name}</Text>
+          <Text style={styles.rowTitle}>{vendor.name}</Text>
           {vendor.app_url ? (
             <Text
-              style={[s.mutedText, { color: colors.primary }]}
+              style={styles.linkText}
               onPress={() =>
                 Linking.openURL(vendor.app_url!).catch((e) =>
                   Alert.alert("Failed to open link", e instanceof Error ? e.message : "Unknown error")
@@ -111,13 +111,13 @@ const VendorRow = React.memo(function VendorRow({
         <Switch
           value={vendor.is_active}
           onValueChange={(val) => onToggleActive(vendor, val)}
-          trackColor={{ true: colors.primary, false: colors.border }}
+          trackColor={{ true: colors.brand, false: colors.border }}
         />
       </View>
       {expanded && (
-        <View style={{ marginBottom: 8 }}>
+        <View style={styles.editor}>
           <TextInput
-            style={s.input}
+            style={styles.input}
             value={name}
             onChangeText={(text) => {
               setName(text);
@@ -125,10 +125,10 @@ const VendorRow = React.memo(function VendorRow({
             }}
             onEndEditing={flush}
             placeholder="Vendor name"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
           />
           <TextInput
-            style={s.input}
+            style={styles.input}
             value={url}
             onChangeText={(text) => {
               setUrl(text);
@@ -136,7 +136,7 @@ const VendorRow = React.memo(function VendorRow({
             }}
             onEndEditing={flush}
             placeholder="App / web URL (optional)"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
             spellCheck={false}
@@ -161,8 +161,10 @@ export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSect
   }, []);
 
   return (
-    <View style={s.card}>
-      <Text style={s.sectionTitle}>Vendors</Text>
+    <Card variant="panel" style={styles.cardSpacing}>
+      <View style={styles.sectionHeaderWrap}>
+        <SectionHeader title="Vendors" />
+      </View>
       {vendors.map((v) => (
         <VendorRow
           key={v.id}
@@ -173,7 +175,34 @@ export function VendorsSection({ vendors, onToggleActive, onPatch }: VendorsSect
           onPatch={onPatch}
         />
       ))}
-      <Text style={s.mutedText}>Tap a vendor to edit its name or link.</Text>
-    </View>
+      <Text style={styles.mutedText}>Tap a vendor to edit its name or link.</Text>
+    </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  cardSpacing: { marginBottom: spacing.lg },
+  sectionHeaderWrap: { marginBottom: spacing.md },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+  },
+  flexShrinkColumn: { flexShrink: 1 },
+  rowTitle: { ...typography.rowTitle, color: colors.text },
+  // The vendor's deep link is a control, so it takes brand — never an accent.
+  linkText: { ...typography.body, color: colors.brand },
+  mutedText: { ...typography.body, color: colors.textMuted },
+  editor: { marginBottom: spacing.sm, gap: spacing.sm },
+  input: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
+  },
+});

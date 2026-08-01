@@ -1,12 +1,12 @@
 import React from "react";
-import { Switch, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import type {
   NutritionConstraints,
   SpiceTolerance,
 } from "@/src/types/nutrition-preferences";
 import type { ConstraintsPatch } from "@/src/lib/supabase/nutritionPreferences";
-import { colors } from "@/src/lib/colors";
-import { nutritionStyles as s } from "./styles";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Card, SectionHeader } from "@/src/components/ui";
 
 const SPICE_LEVELS: SpiceTolerance[] = ["none", "mild", "medium", "hot"];
 const PREP_CHOICES = [5, 10, 15, 20];
@@ -27,12 +27,12 @@ function BoolRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <View style={s.row}>
-      <Text style={s.rowLabel}>{label}</Text>
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ true: colors.primary, false: colors.border }}
+        trackColor={{ true: colors.brand, false: colors.border }}
       />
     </View>
   );
@@ -52,18 +52,18 @@ function ChipPicker<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    <View style={s.chipPickerContainer}>
-      <Text style={s.rowLabel}>{label}</Text>
-      <View style={s.chipRow}>
+    <View style={styles.chipPickerContainer}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.chipRow}>
         {choices.map((c) => {
           const active = c === value;
           return (
             <TouchableOpacity
               key={String(c)}
-              style={[s.chip, active && s.chipActive]}
+              style={[styles.chip, active && styles.chipActive]}
               onPress={() => onChange(c)}
             >
-              <Text style={[s.chipText, active && s.chipTextActive]}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
                 {format(c)}
               </Text>
             </TouchableOpacity>
@@ -79,8 +79,10 @@ export function ConstraintsSection({
   onPatch,
 }: ConstraintsSectionProps) {
   return (
-    <View style={s.card}>
-      <Text style={s.sectionTitle}>Eating Constraints</Text>
+    <Card variant="panel" style={styles.cardSpacing}>
+      <View style={styles.sectionHeaderWrap}>
+        <SectionHeader title="Eating Constraints" />
+      </View>
       <BoolRow
         label="EoE (soft textures, small pieces)"
         value={constraints.has_eoe}
@@ -122,6 +124,39 @@ export function ConstraintsSection({
         format={(v) => `${v} h`}
         onChange={(v) => onPatch({ max_leftover_hours: v })}
       />
-    </View>
+    </Card>
   );
 }
+
+const styles = StyleSheet.create({
+  cardSpacing: { marginBottom: spacing.lg },
+  sectionHeaderWrap: { marginBottom: spacing.md },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+  },
+  // Label beside a control in a row — body copy, not a field heading.
+  rowLabel: { ...typography.body, color: colors.text, flexShrink: 1 },
+  // Label ABOVE a field group — the one form-label token.
+  fieldLabel: { ...typography.section },
+  chipPickerContainer: { paddingVertical: spacing.md },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  // Grouped single-select: solid brand fill + `onBrand` label.
+  chip: {
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  chipText: { ...typography.body, color: colors.textMuted },
+  chipTextActive: { color: colors.onBrand, fontWeight: "700" },
+});

@@ -5,7 +5,6 @@
 // No rejection memory — unmatched products simply stay in Needs review.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   SectionList,
   StyleSheet,
@@ -15,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Check, ChevronLeft } from "lucide-react-native";
 import type { FoodConcept } from "@/src/types/nutrition-preferences";
 import { suggestConcepts } from "@/src/lib/conceptMatch";
 import {
@@ -23,8 +23,15 @@ import {
   fetchFoodMatching,
   type FoodMatchingData,
 } from "@/src/lib/supabase/mealLibrary";
-import { colors } from "@/src/lib/colors";
-import { nutritionStyles as s } from "./styles";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  LoadingState,
+  SectionHeader,
+} from "@/src/components/ui";
 
 interface ProductRef {
   key: string;
@@ -128,10 +135,12 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
       };
     });
     // Counts come from the same arrays that are handed to the SectionList —
-    // there is no second filter pass that could drift from the title.
+    // there is no second filter pass that could drift from the title. They
+    // ride beside the title rather than inside it so the header can render
+    // them as a `Badge` (the Task 6 shopping-sections precedent).
     return [
-      { title: `Needs review (${needsReview.length})`, data: needsReview },
-      { title: `Linked (${linked.length})`, data: linked },
+      { title: "Needs review", count: needsReview.length, data: needsReview },
+      { title: "Linked", count: linked.length, data: linked },
     ].filter((sec) => sec.data.length > 0);
   }, [data]);
 
@@ -170,39 +179,40 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
       ? concepts.filter((c) => !q || c.name.toLowerCase().includes(q)).slice(0, 6)
       : [];
     return (
-      <View style={s.card}>
-        <Text style={s.itemTitle}>{product.name}</Text>
-        {product.brand && <Text style={s.mutedText}>{product.brand}</Text>}
-        <View style={s.chipRow}>
+      <Card variant="row" style={styles.cardSpacing}>
+        <Text style={styles.itemTitle}>{product.name}</Text>
+        {product.brand && <Text style={styles.mutedText}>{product.brand}</Text>}
+        <View style={styles.chipRow}>
           {suggestions.map(({ conceptId }) => {
             const c = concepts.find((x) => x.id === conceptId);
             if (!c) return null;
             return (
-              <TouchableOpacity
+              <Button
                 key={conceptId}
-                style={s.chip}
+                variant="secondary"
+                size="sm"
+                icon={Check}
+                label={c.name}
                 onPress={() => confirmLink(product, c)}
-              >
-                <Text style={s.chipText}>✓ {c.name}</Text>
-              </TouchableOpacity>
+              />
             );
           })}
-          <TouchableOpacity
-            style={s.chip}
+          <Button
+            variant="secondary"
+            size="sm"
+            label={picking ? "Cancel" : "Choose…"}
             onPress={() => {
               setPickingFor(picking ? null : product.key);
               setSearch("");
             }}
-          >
-            <Text style={s.chipText}>{picking ? "Cancel" : "Choose…"}</Text>
-          </TouchableOpacity>
+          />
         </View>
         {picking && (
-          <View style={s.chipPickerContainer}>
+          <View style={styles.picker}>
             <TextInput
-              style={s.input}
+              style={styles.input}
               placeholder="Search concepts…"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={search}
               onChangeText={setSearch}
               autoFocus
@@ -213,28 +223,31 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
                 style={styles.pickerRow}
                 onPress={() => confirmLink(product, c)}
               >
-                <Text style={s.mutedText}>
+                <Text style={styles.mutedText}>
                   {c.name} · {c.rating}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
-      </View>
+      </Card>
     );
   };
 
   const renderLinked = (row: LinkedRow) => (
-    <View style={[s.card, s.row]}>
-      <View style={s.flexShrinkColumn}>
-        <Text style={s.itemTitle} numberOfLines={1}>
+    <Card variant="row" style={styles.linkedRow}>
+      <View style={styles.flexShrinkColumn}>
+        <Text style={styles.itemTitle} numberOfLines={1}>
           {row.productName}
         </Text>
-        <Text style={s.mutedText}>
+        <Text style={styles.mutedText}>
           → {row.conceptName} ({row.matchedBy})
         </Text>
       </View>
-      <TouchableOpacity
+      <Button
+        variant="destructive"
+        size="sm"
+        label="Unlink"
         onPress={() =>
           Alert.alert("Unlink", `Unlink "${row.productName}" from ${row.conceptName}?`, [
             { text: "Cancel", style: "cancel" },
@@ -245,10 +258,8 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
             },
           ])
         }
-      >
-        <Text style={styles.unlinkText}>Unlink</Text>
-      </TouchableOpacity>
-    </View>
+      />
+    </Card>
   );
 
   // The header always renders regardless of load state (same reasoning as
@@ -257,34 +268,35 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
   let body: React.ReactNode;
   if (!data && loadFailed) {
     body = (
-      <View style={[styles.centerFill, { paddingHorizontal: 24 }]}>
-        <Text style={s.mutedText}>Couldn&apos;t load food matching.</Text>
-        <TouchableOpacity
-          style={[s.primaryButton, styles.retryButton]}
-          onPress={() => load()}
-        >
-          <Text style={s.primaryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <EmptyState
+        title="Couldn't load food matching."
+        action={{ label: "Retry", onPress: () => load() }}
+      />
     );
   } else if (!data) {
-    body = (
-      <View style={styles.centerFill}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
+    body = <LoadingState />;
   } else {
     body = (
       <SectionList
         sections={sections}
         keyExtractor={(row) => (row.type === "product" ? row.product.key : row.linked.key)}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        // This screen owns its own chrome, so the list owns the gutter too —
+        // one gutter owner, and the cards carry none.
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: insets.bottom + spacing.xxl },
+        ]}
         renderItem={({ item }) =>
           item.type === "product" ? renderProduct(item.product) : renderLinked(item.linked)
         }
         renderSectionHeader={({ section }) => (
-          <Text style={[s.sectionTitle, styles.sectionHeader]}>{section.title}</Text>
+          <View style={styles.sectionHeaderWrap}>
+            <SectionHeader
+              title={section.title}
+              badge={<Badge label={String(section.count)} tone="neutral" />}
+            />
+          </View>
         )}
       />
     );
@@ -292,12 +304,26 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
 
   return (
     <>
-      <View style={s.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={s.headerAction}>‹ Back</Text>
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Food Matching</Text>
-        <View style={styles.headerSpacer} />
+      {/* Bespoke bar rather than `Screen variant="detail"`: the left
+          affordance is a LABELLED back ("Back"), which `Screen` — chevron
+          only, no `headerLeft` slot — cannot express without changing the
+          navigation affordance. Same call Tasks 8/9 made for
+          `MealsWeeklySummaryModal` and `WaterScreen`. Equal flanks keep the
+          title optically centered, mirroring `Screen`'s own detail bar. */}
+      <View style={styles.header}>
+        <View style={styles.flank}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ChevronLeft}
+            label="Back"
+            onPress={onBack}
+          />
+        </View>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          Food Matching
+        </Text>
+        <View style={[styles.flank, styles.flankRight]} />
       </View>
       {body}
     </>
@@ -305,13 +331,55 @@ export function FoodMatchingScreen({ userId, onBack }: FoodMatchingScreenProps) 
 }
 
 const styles = StyleSheet.create({
-  centerFill: { flex: 1, justifyContent: "center", alignItems: "center" },
-  retryButton: { marginTop: 16, paddingHorizontal: 24 },
-  pickerRow: { paddingVertical: 8 },
-  unlinkText: { color: "#F87171", fontSize: 15 },
-  // Cards carry marginHorizontal: 16; without this the section headings would
-  // sit flush against the screen edge, out of line with everything below them.
-  sectionHeader: { paddingHorizontal: 16 },
-  // Balances the "‹ Back" action so the title stays optically centered.
-  headerSpacer: { width: 44 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  flank: { flex: 1, minWidth: 32, alignItems: "flex-start" },
+  flankRight: { alignItems: "flex-end" },
+  headerTitle: {
+    ...typography.titleBar,
+    color: colors.text,
+    flexShrink: 1,
+    textAlign: "center",
+  },
+  listContent: {
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.lg,
+  },
+  sectionHeaderWrap: { marginBottom: spacing.md },
+  cardSpacing: { marginBottom: spacing.md },
+  linkedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  flexShrinkColumn: { flexShrink: 1 },
+  itemTitle: { ...typography.rowTitle, color: colors.text },
+  mutedText: { ...typography.body, color: colors.textMuted },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  picker: { paddingVertical: spacing.md },
+  pickerRow: { paddingVertical: spacing.sm },
+  input: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
+  },
 });

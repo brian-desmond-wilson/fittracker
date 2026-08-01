@@ -1858,3 +1858,106 @@ Every other value shift in this task was listed; these were not.
 - **Day-strip cell separation 2 → 4.** `marginHorizontal: 1` on each of seven cells (2pt between neighbours) became a container `gap: spacing.xs` (4pt), per the "flex + gap, never per-child margins" rule.
 - **Trailing slack 40 → `insets.bottom + spacing.xxl`.** Flat 40pt of spacer becomes ~58pt on a notched device and 24pt on a flat one. `WaterScreen` renders as a route, not under the tab bar, so the safe-area term is the correct clearance and the flat-device reduction is pure slack removal. Same conversion Task 7 verified for `home.tsx` and `track/index.tsx`.
 - **`WaterQuickAddEditorModal.label` restored to the recipe's margins.** The first pass dropped the recipe's `marginTop: spacing.sm, marginBottom: spacing.xs` in favour of the `block` group's `gap`, which was internally coherent but contradicted the "verbatim" claim. The `label` style is now byte-identical across all three form sheets. `block` **keeps** its `gap: spacing.sm` and that is the one recorded structural difference: this sheet has one label heading *three* fields, so the label cannot own the inter-field rhythm the way it does in a one-label-per-field sheet. `block` is a per-button group, not the per-field wrapper the recipe bans.
+
+### Task 10 — `Screen variant="detail"` adopted for Nutrition Preferences, declined for Food Matching
+
+**Adopted for `NutritionPreferencesScreen`,** as the plan instructs, with `scroll={false}`. Verified first that `Screen` can express everything the old bar had:
+
+- **Left affordance: there was none.** The old header (`styles.ts:6-14`) was a `space-between` row of a left-aligned title and a right-hand "Done" — no back chevron, no ✕, no labelled back. `Screen` is passed **no `onBack`**, so its `backButton` is `null` and the left flank renders as an empty ≥32pt spacer. Adoption therefore *adds* no navigation affordance and *removes* none; "Done" (the only way out of this `presentationStyle="fullScreen"` modal) moves to `headerRight` as a `Button variant="ghost" size="sm"`. This is the first screen in the cycle where the missing `headerLeft` slot is not a blocker precisely because nothing occupies that position.
+- **No `RefreshControl` anywhere.** The screen's `FlatList` (and Food Matching's `SectionList`) have none, so `Screen` owning the scroller deletes no pull-to-refresh. This is the blocker that kept `ViewFoodDetailsScreen`, `home.tsx` and `MealsScreen` off `Screen` in Tasks 5/7/8; it simply does not apply here.
+- Per the `scroll={false}` contract the `FlatList` now supplies both `paddingHorizontal: spacing.screenGutter` and `paddingBottom: insets.bottom + spacing.xxl`; the cards' `marginHorizontal: 16` is deleted rather than doubled. One gutter owner, as the standing rule requires. The screen keeps `useSafeAreaInsets` only for that bottom inset and for the Food Matching view-switch container.
+
+**Declined for `FoodMatchingScreen`.** Its left affordance is a **labelled** back — "‹ Back" — and `Screen`'s is chevron-only with no `headerLeft` slot (deliberately, per the Task 4 amendment). This is exactly the call Task 8 made for `MealsWeeklySummaryModal` (`‹ Meals`) and Task 9 made for `WaterScreen` (`‹ Track`). The bespoke bar is kept and retokenized: `‹ Back` becomes `Button variant="ghost" size="sm" icon={ChevronLeft} label="Back"` (the Task 6 `‹ Library` precedent), the title takes `typography.titleBar`, and the old `headerSpacer: { width: 44 }` is replaced by the **equal-flank pattern copied from `Screen.tsx`** (`flank: { flex: 1, minWidth: 32 }` + `flankRight`, title `flexShrink: 1` + `numberOfLines={1}`) — the 44pt spacer could never have balanced a ghost button with an icon, and the flanks centre the title at any width. The bar also **gains a 1px `colors.border` bottom border** it did not have, so the two headers in this modal are the same object; spec §6 requires a bordered bar for detail screens.
+
+Consequence for the view switch: `NutritionPreferencesScreen`'s `showMatching` early return keeps its own `StatusBar` + inset-padded container (now a local `styles.screen`), because `FoodMatchingScreen` still does not render chrome of its own. Nothing about the switch changed.
+
+### Task 10 — `profile/nutrition/styles.ts` retired; where its 26 keys went
+
+Verified by repo-wide grep before deleting that the only importers were the six files in scope (`grep -rn "nutritionStyles\|nutrition/styles"` → six hits, all inside `profile/nutrition/`). Each subcomponent now owns a local `StyleSheet.create` built from tokens directly.
+
+| Retired key | Where it went |
+|---|---|
+| `screen` | local in `NutritionPreferencesScreen` (view-switch container only) |
+| `header` / `headerTitle` | `Screen`'s detail bar; a local bordered bar in `FoodMatchingScreen` |
+| `headerAction` | `Button variant="ghost" size="sm"` ("Done", "Back"); the nav row's `›` became a lucide `ChevronRight` |
+| `card` | `Card variant="panel"` (the four section cards) / `Card variant="row"` (concept, product and linked rows, the Food Matching nav row) |
+| `sectionTitle` | `SectionHeader` (five call sites) — see the nav-row exception below |
+| `row` | per-file `row` (`paddingVertical: 10 → spacing.md`) |
+| `rowLabel` | split — see the typography note below |
+| `itemTitle` | `typography.rowTitle` |
+| `rowValue` | `typography.body` + `colors.textMuted` |
+| `banner` / `bannerText` | the Banner recipe, `success` variant |
+| `primaryButton` / `primaryButtonText` | `Button` (primary) |
+| `destructiveButton` / `destructiveButtonText` | `Button variant="destructive"` |
+| `mutedText` / `mutedTextSpaced` | `typography.body` + `textMuted`; `marginTop: spacing.md` |
+| `chipRow` / `chip` / `chipActive` / `chipText` / `chipTextActive` | per-file grouped-single-select chip block (RampCard, ConstraintsSection, ConceptRow); **deleted entirely** in `FoodMatchingScreen` — see below |
+| `input` | the canonical sheet-recipe input |
+| `chipPickerContainer` | `paddingVertical: spacing.md` |
+| `flexShrinkColumn` | `{ flexShrink: 1 }` |
+
+`ls mobile/src/components/profile/nutrition/styles.ts` → No such file or directory.
+
+### Task 10 — the ramp status banner is the recipe's `success` variant
+
+The plan sends `styles.ts:40-47` to the Banner recipe. That banner was **green** (`rgba(34,197,94,0.12)` fill, solid `colors.primary` border), and its content is a positive prompt ("Time to advance to Level N"), so it takes the recipe's `success` half verbatim: `tint(colors.success)` fill, `tint(colors.success, 0.3)` 1px border, `radii.row`, `padding: spacing.md`, heading `{ ...typography.buttonSm, color: colors.success }`. Three real value shifts, all toward the system: fill alpha 0.12 → 0.15, the border from a full-strength stroke to the 0.3 tint, and the heading from 14/400 `colors.text` to 14/600 `colors.success` — the same treatment Task 5's `expiringTitle` and Task 7's `RampHomeBanner` already ship.
+
+The second banner in that card ("You're at the top ramp level… reassess your targets manually") uses the **same `success` variant**, not `warning`. It rendered green before and its message is an all-clear rather than a hazard; repainting it amber would be inventing a warning the screen never showed.
+
+### Task 10 — chips, and why `FoodMatchingScreen`'s chips became `Button`s
+
+Every chip row in this feature is a **grouped single-select** (ramp levels, spice/prep/leftover pickers, concept ratings), so all three take the standing rule's segment treatment: solid `colors.brand` fill + `colors.onBrand` label, which is what `chipActive` already was — a pure rename. Geometry converges: `borderRadius: 16 → radii.pill`, padding `12/6 → spacing.md/spacing.sm` (control touch-padding rounds up), label 13 → `typography.body`.
+
+`FoodMatchingScreen`'s chips are the exception and they are **not** chips: the three head-noun suggestions and the "Choose…"/"Cancel" toggle have no selected state at all — each is a one-shot action with a transparent background and a 1px border, which is the literal definition of `Button variant="secondary"`. Style-guide rule 3 ("never hand-roll a TouchableOpacity-with-background") applies, so they are `Button variant="secondary" size="sm"`, and the suggestion buttons carry `icon={Check}` — which is also how §4.6's `✓ → Check` glyph swap is discharged here. `chip`/`chipText` therefore have no consumer left in that file and are gone. Geometry consequence: those controls go from a 16pt pill to `radii.control` (8) with a 14/600 `colors.text` label, and the linked-row "Unlink" goes from bare red text to `Button variant="destructive" size="sm"` per the standing labeled-destructive rule.
+
+### Task 10 — `rowLabel` (15/400) split three ways, and the nav row is not a section
+
+The retired `rowLabel` did four different jobs at one size. Split by what each actually is:
+
+- **Row titles** — the concept name, the vendor name, RampCard's active level — take `typography.rowTitle` (16/600). `itemTitle` (15/600) landed on the same token, so the two are now one thing.
+- **Labels beside a control in a row** — the four `BoolRow` switch labels, ConceptRow's two switch labels — take `typography.body` + `colors.text`. They are row copy, not field headings.
+- **Labels above a field group** — `ChipPicker`'s "Spice tolerance" / "Max prep time" / "Leftovers OK for" — take **`typography.section`**, per the standing "one form-label token app-wide" rule. This is the most visible typography change in the task: they go from 15/400 white to 13/700 uppercase muted, and they now read as headings above their chip rows rather than as more switch labels.
+
+**The "Food Matching" nav row does not use `SectionHeader`.** The plan routes `sectionTitle` there, but this call site is the primary label of a tappable disclosure row, not a passive section heading — `typography.section` would have rendered the row's own name as 13/700 uppercase muted beside a full-strength description. It takes `typography.rowTitle`, the same call Task 5 recorded for the edit-food accordion titles ("they are row *controls*, not passive section labels"). The other five `sectionTitle` call sites do use the primitive.
+
+### Task 10 — `ConceptRow`'s five rating hues, re-expressed in existing tokens
+
+`RATING_COLORS` held three raw literals (`never`, `dislike`, `like`) beside two shim tokens. No new token group was added — unlike `macroColor` (Task 8) and `beverageColor` (Task 9, deferred), this scale maps cleanly onto tokens the system already has:
+
+| Rating | Was | Now |
+|---|---|---|
+| `never` | `#F87171` | `colors.danger` (the one red) |
+| `dislike` | `#FB923C` | `colors.warning` |
+| `neutral` | `mutedForeground` | `colors.textMuted` |
+| `like` | `#60A5FA` | `colors.text` |
+| `love` | `primary` | `colors.brand` |
+
+Four are near-renames. **`like` is a real hue change** — a light blue becomes full-strength white. Blue in this app is the water accent and has no identity role on a food-rating scale, so it could not survive contract 1 (the same reasoning Task 8 used to send `FoodPreviewModal`'s "auto-scaled" pill from `#3B82F6` to `neutral`). `colors.text` keeps the five steps monotonic and legible — red, amber, muted, full-strength, brand — reading as an escalating verdict without inventing a hue. The rating stays a colored `Text` rather than a `Badge`, because the same string carries the `· ✂︎` / `· ⏱` suffixes and `Badge` cannot hold them.
+
+### Task 10 — loading/empty states, and the definite-size question
+
+Both screens' error branches become `<EmptyState … action={{ label: "Retry" }}>` and both loading branches become `<LoadingState />`, matching `ShoppingListScreen` — the directly analogous screen (same `load`/`run`/`body` idiom) that Task 6 migrated. The bespoke `centerFill` + `retryButton` styles and the two hand-rolled `ActivityIndicator`s are gone.
+
+Neither needs a `flexGrow` chain or a `minHeight` box. Both primitives are rendered as the **direct child of a container with a definite main size**: in `NutritionPreferencesScreen` that is `Screen`'s `scroll={false}` `<View style={{ flex: 1 }}>`, and in `FoodMatchingScreen` it is the view-switch container (`flex: 1`, inset-padded) with the header as its only sibling. This is the "parent with a definite main size" the Task 9 spec-review amendment identified as the actual requirement — the `flexGrow` chain and the `minHeight` box are two ways of producing it, and neither is needed when a `flex: 1` ancestor already supplies it directly. Nothing is rendered as a `ListEmptyComponent` here, so no content container needs `flexGrow`.
+
+### Task 10 — section counts moved out of the title string into a `Badge`
+
+`FoodMatchingScreen`'s `sections` memo emitted `` `Needs review (${n})` ``. It now emits `title` plus a `count: number`, and `renderSectionHeader` renders `<SectionHeader title={…} badge={<Badge label={String(count)} tone="neutral" />} />`. Exactly the Task 6 shopping-sections conversion, including the reasoning: this is a presentational change to a derived array — no filtering, ordering, `keyExtractor` or section identity changed, and the counts still come from the same two arrays handed to the `SectionList`. `tone="neutral"` because nutrition preferences has no domain accent and nothing in the plan names one.
+
+### Task 10 — smaller deviations and unitemized deltas, recorded together
+
+- **Section cards are `Card variant="panel"`, item rows are `Card variant="row"`.** The four section cards had `padding: 16`, which is `panel` exactly; their radius converges 12 → `radii.panel` (16). The per-item cards (concept rows, product rows, linked rows) take `row` (12/12), which is what the plan's "concept/vendor rows → `Card row`" asks for. All of them move from `colors.card` (the shim's alias for `surface2`) to `Card`'s `colors.surface`, the same shift Task 8 recorded for every `colors.card` block that became a `Card`; the inputs sitting on them are `surface2`, so fields are now lighter than their card, which reads correctly.
+- **Inputs take the canonical sheet-recipe input verbatim** (`surface2` fill, `border` outline, `radii.control`, `spacing.md` padding both axes, `fontSize: 16`, `colors.text`) in all four files that have one. Real deltas: the background goes from `colors.background` (`bg`) to `surface2`, vertical padding 8 → 12, and text 15 → 16. §4.5 defines no input token, so 16 is the recipe's documented literal.
+- **`SectionHeader` has no `style` prop**, so each of the five call sites sits in a bare wrapper `<View>` carrying `marginBottom: spacing.md` — the Task 9 `WaterHistoryList` precedent.
+- **Three gaps that did not exist before were added,** each where tokenization exposed a collision rather than as free polish: `searchInput`'s `marginTop: spacing.md` (the search field sat flush against the "✂︎ small pieces" line), `VendorRow`'s editor `gap: spacing.sm` (its Name and URL fields were flush against each other), and both lists' `paddingTop: spacing.lg` (the first card sat directly under the header bar).
+- **`Button` cannot flex, only stretch**, so RampCard's "Advance to …" and ConceptRow's "Delete concept" use `fluid` — both were full-width `alignItems: "center"` blocks. "Delete concept" sits in a `deleteWrap` carrying the `marginTop: 12` the old `destructiveButton` style owned.
+- **The destructive label is now one red.** `destructiveButtonText`'s `#F87171` and `unlinkText`'s `#F87171` both become `Button variant="destructive"`'s `colors.danger` (`#EF4444`), which is the point of spec §4.1's "the one red".
+- **Bottom inset `insets.bottom + 24 → insets.bottom + spacing.xxl`** in both lists — a pure rename (`spacing.xxl` is 24).
+- **`Switch` `trackColor` `{ true: colors.primary }` → `colors.brand`** in all three files that render one; `thumbColor` was never set and still is not.
+- **The vendor deep-link text stays a `<Text onPress>` with its trailing `↗`.** Task 6's glyph swap covers text-glyph *controls* that are their own element; this glyph is a suffix inside a link string nested in the row's expand `TouchableOpacity`, and promoting it to a sibling `TouchableOpacity` + lucide `ArrowUpRight` would change gesture arbitration between the link and the expand tap. It is tokenized to `colors.brand` (a control, so brand — never an accent) and left structurally alone. `✂︎` and `⏱` likewise stay: status glyphs inside prose, per the Task 6 carve-out.
+- **`FoodMatchingScreen`'s section headers are still transparent**, so with `SectionList`'s default `stickySectionHeadersEnabled` on iOS, rows scroll behind a stuck header. That is exactly how it behaves today (the old header was a bare `<Text>` with no background); giving the wrapper a `colors.bg` fill would be a visual change the plan does not ask for, and disabling stickiness would be a behavior change. Left as-is, recorded so it is not mistaken for a regression introduced here.
+
+### Task 10 — no behavior bug found
+
+Reviewed hunk by hunk across all six files: no handler, state setter, data fetch, `useCallback`/`useMemo`/`useEffect` dependency, `Alert` flow, `Linking` call, modal open/close path or view-switch condition changed. `VendorRow`'s and `ConceptRow`'s `dirtyRef`/`latest`/`flush` edit-flush machinery is byte-identical, as are both screens' `load`/`run` idioms and the `silent` resync on returning from Food Matching. The two structural edits are presentational and were verified to preserve the rendered result: moving the section counts out of the title strings into a `Badge`, and replacing the four hand-rolled `TouchableOpacity` controls in `FoodMatchingScreen` with `Button`s carrying the same closures.
+
+Gates: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests passing; both greps clean on all six files; `ls .../styles.ts` → No such file or directory; zero orphaned style keys and zero unused imports.

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  StyleSheet,
   Switch,
   Text,
   TextInput,
@@ -13,8 +14,8 @@ import type {
 } from "@/src/types/nutrition-preferences";
 import { CONCEPT_RATINGS } from "@/src/types/nutrition-preferences";
 import type { ConceptPatch } from "@/src/lib/supabase/nutritionPreferences";
-import { colors } from "@/src/lib/colors";
-import { nutritionStyles as s } from "./styles";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 
 export const RATING_LABELS: Record<ConceptRating, string> = {
   never: "Never",
@@ -24,12 +25,17 @@ export const RATING_LABELS: Record<ConceptRating, string> = {
   love: "Love",
 };
 
+// A five-step verdict scale expressed entirely in existing tokens: red →
+// amber → muted → full-strength → brand. The old "like" light blue was in the
+// water accent's family with no identity role here, so it could not survive
+// contract 1; `colors.text` carries "positive but not the top" as a step up
+// from `textMuted` without inventing a hue.
 const RATING_COLORS: Record<ConceptRating, string> = {
-  never: "#F87171",
-  dislike: "#FB923C",
-  neutral: colors.mutedForeground,
-  like: "#60A5FA",
-  love: colors.primary,
+  never: colors.danger,
+  dislike: colors.warning,
+  neutral: colors.textMuted,
+  like: colors.text,
+  love: colors.brand,
 };
 
 interface ConceptRowProps {
@@ -84,13 +90,13 @@ export const ConceptRow = React.memo(function ConceptRow({
   };
 
   return (
-    <View style={[s.card, { marginBottom: 8, paddingVertical: 10 }]}>
+    <Card variant="row" style={styles.cardSpacing}>
       <TouchableOpacity
-        style={s.row}
+        style={styles.row}
         onPress={() => onToggleExpand(concept.id)}
       >
-        <Text style={s.rowLabel}>{concept.name}</Text>
-        <Text style={[s.rowValue, { color: RATING_COLORS[concept.rating] }]}>
+        <Text style={styles.rowTitle}>{concept.name}</Text>
+        <Text style={[styles.rowValue, { color: RATING_COLORS[concept.rating] }]}>
           {RATING_LABELS[concept.rating]}
           {concept.requires_small_pieces ? " · ✂︎" : ""}
           {concept.prep_intensive ? " · ⏱" : ""}
@@ -98,44 +104,44 @@ export const ConceptRow = React.memo(function ConceptRow({
       </TouchableOpacity>
       {expanded && (
         <View>
-          <View style={s.chipRow}>
+          <View style={styles.chipRow}>
             {CONCEPT_RATINGS.map((r) => {
               const active = r === concept.rating;
               return (
                 <TouchableOpacity
                   key={r}
-                  style={[s.chip, active && s.chipActive]}
+                  style={[styles.chip, active && styles.chipActive]}
                   onPress={() => {
                     if (r !== concept.rating) onPatch(concept, { rating: r });
                   }}
                 >
-                  <Text style={[s.chipText, active && s.chipTextActive]}>
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
                     {RATING_LABELS[r]}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          <View style={s.row}>
-            <Text style={s.rowLabel}>Requires small pieces (EoE)</Text>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Requires small pieces (EoE)</Text>
             <Switch
               value={concept.requires_small_pieces}
               onValueChange={(v) => onPatch(concept, { requires_small_pieces: v })}
-              trackColor={{ true: colors.primary, false: colors.border }}
+              trackColor={{ true: colors.brand, false: colors.border }}
             />
           </View>
-          <View style={s.row}>
-            <Text style={s.rowLabel}>Prep-intensive</Text>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Prep-intensive</Text>
             <Switch
               value={concept.prep_intensive}
               onValueChange={(v) => onPatch(concept, { prep_intensive: v })}
-              trackColor={{ true: colors.primary, false: colors.border }}
+              trackColor={{ true: colors.brand, false: colors.border }}
             />
           </View>
           <TextInput
-            style={s.input}
+            style={styles.input}
             placeholder="Form note (e.g. must be diced; no bones)"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formNote}
             onChangeText={(text) => {
               setFormNote(text);
@@ -148,11 +154,58 @@ export const ConceptRow = React.memo(function ConceptRow({
               onPatch(concept, { form_note: next });
             }}
           />
-          <TouchableOpacity style={s.destructiveButton} onPress={confirmDelete}>
-            <Text style={s.destructiveButtonText}>Delete concept</Text>
-          </TouchableOpacity>
+          <View style={styles.deleteWrap}>
+            <Button
+              variant="destructive"
+              label="Delete concept"
+              onPress={confirmDelete}
+              fluid
+            />
+          </View>
         </View>
       )}
-    </View>
+    </Card>
   );
+});
+
+const styles = StyleSheet.create({
+  cardSpacing: { marginBottom: spacing.sm },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+  },
+  rowTitle: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
+  rowValue: { ...typography.body },
+  rowLabel: { ...typography.body, color: colors.text, flexShrink: 1 },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  // Grouped single-select: solid brand fill + `onBrand` label.
+  chip: {
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  chipText: { ...typography.body, color: colors.textMuted },
+  chipTextActive: { color: colors.onBrand, fontWeight: "700" },
+  input: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
+    marginTop: spacing.md,
+  },
+  deleteWrap: { marginTop: spacing.md },
 });
