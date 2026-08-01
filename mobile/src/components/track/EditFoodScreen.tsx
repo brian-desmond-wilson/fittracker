@@ -1650,7 +1650,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                             else if (type === "side") setImageSide(null);
                           }}
                         >
-                          <Trash2 size={icons.sm} color={colors.onBrand} />
+                          <Trash2 size={icons.sm} color={colors.text} />
                         </TouchableOpacity>
                       )}
                     </View>

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Pressable,
   StatusBar,
   Alert,
   TextInput,
@@ -536,72 +535,72 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     const hasNoCategories = item.categories.length === 0;
 
     return (
-      // Card carries no `onPress` of its own — the existing Pressable stays
-      // INSIDE it so `onLongPress` (the action sheet) keeps working exactly as
-      // before; Card's TouchableOpacity has no long-press slot.
-      <Card variant="row" style={styles.gridItem}>
-        <Pressable
-          onPress={() => handleViewItem(item)}
-          onLongPress={() => handleLongPress(item)}
-        >
-          {/* Product Image */}
-          <View style={styles.gridImageContainer}>
-            {item.image_primary_url ? (
-              <Image
-                source={{ uri: item.image_primary_url }}
-                style={styles.gridImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.gridImagePlaceholder}>
-                <Package size={40} color={colors.textFaint} />
-              </View>
-            )}
+      // Both gestures live on the Card itself: the whole tile — including the
+      // 12pt padding ring — is the tap target, and press feedback matches every
+      // other Card in the app.
+      <Card
+        variant="row"
+        style={styles.gridItem}
+        onPress={() => handleViewItem(item)}
+        onLongPress={() => handleLongPress(item)}
+      >
+        {/* Product Image */}
+        <View style={styles.gridImageContainer}>
+          {item.image_primary_url ? (
+            <Image
+              source={{ uri: item.image_primary_url }}
+              style={styles.gridImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.gridImagePlaceholder}>
+              <Package size={40} color={colors.textFaint} />
+            </View>
+          )}
 
-            {/* Uncategorized icon overlay on bottom-left */}
-            {hasNoCategories && (
-              <View style={styles.uncategorizedIconContainer}>
-                <Tag size={icons.sm} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
-              </View>
-            )}
-          </View>
+          {/* Uncategorized icon overlay on bottom-left */}
+          {hasNoCategories && (
+            <View style={styles.uncategorizedIconContainer}>
+              <Tag size={icons.sm} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
+            </View>
+          )}
+        </View>
 
-          {/* Product Info Below Image */}
-          <View style={styles.gridItemInfo}>
-            <Text style={styles.gridItemName} numberOfLines={2}>
-              {item.name}
+        {/* Product Info Below Image */}
+        <View style={styles.gridItemInfo}>
+          <Text style={styles.gridItemName} numberOfLines={2}>
+            {item.name}
+          </Text>
+          {item.brand && (
+            <Text style={styles.gridItemBrand} numberOfLines={1}>
+              {item.brand}
             </Text>
-            {item.brand && (
-              <Text style={styles.gridItemBrand} numberOfLines={1}>
-                {item.brand}
-              </Text>
+          )}
+          <Text style={styles.gridItemQuantity}>
+            Qty: {item.state.totalQuantity} {item.unit}
+            {item.storage_type === 'multi-location' && item.state.readyQuantity > 0 && (
+              <Text style={styles.gridItemQuantityDetail}> ({item.state.readyQuantity} Ready)</Text>
             )}
-            <Text style={styles.gridItemQuantity}>
-              Qty: {item.state.totalQuantity} {item.unit}
-              {item.storage_type === 'multi-location' && item.state.readyQuantity > 0 && (
-                <Text style={styles.gridItemQuantityDetail}> ({item.state.readyQuantity} Ready)</Text>
-              )}
+          </Text>
+          {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut > 0 && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
+            <Text style={styles.forecastText}>
+              ~{ratesById.get(item.id)!.daysUntilOut}d left
             </Text>
-            {ratesById.get(item.id) && ratesById.get(item.id)!.daysUntilOut > 0 && ratesById.get(item.id)!.daysUntilOut <= MAX_DISPLAY_DAYS && (
-              <Text style={styles.forecastText}>
-                ~{ratesById.get(item.id)!.daysUntilOut}d left
-              </Text>
-            )}
-            {/* Stock/expiry chips live BELOW the photo, not over it: a Badge is a
-                15%-alpha tint fill, which is unreadable on the white image well. */}
-            {(needsRestockFridge || isLowTotalStock || expiration) && (
-              <View style={styles.gridBadges}>
-                {needsRestockFridge && <Badge tone="inventory" label="Restock Fridge" />}
-                {isLowTotalStock && <Badge tone="warning" label="Low" />}
-                {expiration && (expiration.tone ? (
-                  <Badge tone={expiration.tone} label={expiration.text} />
-                ) : (
-                  <Text style={styles.gridItemExpiration}>{expiration.text}</Text>
-                ))}
-              </View>
-            )}
-          </View>
-        </Pressable>
+          )}
+          {/* Stock/expiry chips live BELOW the photo, not over it: a Badge is a
+              15%-alpha tint fill, which is unreadable on the white image well. */}
+          {(needsRestockFridge || isLowTotalStock || expiration) && (
+            <View style={styles.gridBadges}>
+              {needsRestockFridge && <Badge tone="inventory" label="Restock Fridge" />}
+              {isLowTotalStock && <Badge tone="warning" label="Low" />}
+              {expiration && (expiration.tone ? (
+                <Badge tone={expiration.tone} label={expiration.text} />
+              ) : (
+                <Text style={styles.gridItemExpiration}>{expiration.text}</Text>
+              ))}
+            </View>
+          )}
+        </View>
       </Card>
     );
   };
@@ -742,9 +741,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                       {it.state.expiration === "expired" ? (
                         <Badge tone="danger" label="Expired" />
                       ) : (
-                        <Text style={styles.expiringWhen}>
-                          {it.state.expiration === "today" ? "Today" : `${it.state.daysLeft}d left`}
-                        </Text>
+                        <Badge
+                          tone="warning"
+                          label={it.state.expiration === "today" ? "Today" : `${it.state.daysLeft}d left`}
+                        />
                       )}
                     </TouchableOpacity>
                   ))}
@@ -760,7 +760,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           keyExtractor={(item) => item.id}
           numColumns={NUM_COLUMNS}
           style={styles.flatList}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[
+            styles.gridContainer,
+            { paddingBottom: insets.bottom + spacing.xxl },
+          ]}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -799,7 +802,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               />
             )
           }
-          ListFooterComponent={<View style={{ height: spacing.xxxl }} />}
         />
 
         {/* Restock Modal */}
@@ -882,7 +884,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: radii.row,
     marginHorizontal: spacing.screenGutter, marginBottom: spacing.md, padding: spacing.md,
   },
-  expiringTitle: { fontSize: 13, fontWeight: "700", color: colors.warning, marginBottom: spacing.xs },
+  // 14/600 per the banner recipe — `typography.buttonSm` is exactly that.
+  expiringTitle: { ...typography.buttonSm, color: colors.warning, marginBottom: spacing.xs },
   // ~5 rows (26px each); past that the list scrolls instead of growing.
   expiringList: { maxHeight: 130 },
   expiringRow: {
@@ -890,13 +893,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between", paddingVertical: spacing.xs,
   },
   expiringName: { ...typography.body, color: colors.text, flexShrink: 1 },
-  expiringWhen: { color: colors.warning, fontSize: 13, fontWeight: "600" },
   // Grid Layout Styles
   flatList: {
     flex: 1,
     backgroundColor: colors.bg,
   },
   gridContainer: {
+    // flexGrow lets the empty/loading states (which are `flex: 1`, i.e.
+    // flexBasis 0) actually fill and center in the viewport instead of
+    // collapsing to their own padding. Inert once rows exist.
+    flexGrow: 1,
     paddingHorizontal: GRID_PADDING,
     paddingTop: spacing.lg,
     backgroundColor: colors.bg,

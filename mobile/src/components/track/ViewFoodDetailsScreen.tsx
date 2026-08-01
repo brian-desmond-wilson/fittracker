@@ -83,9 +83,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   const renderSection = (title: string, content: React.ReactNode) => (
     <Card variant="panel" style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionContent}>
-        {content}
-      </View>
+      {content}
     </Card>
   );
 
@@ -106,15 +104,9 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
             <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
-          {isPreview ? (
-            <Button
-              label="Add"
-              onPress={() => onAddToInventory?.()}
-              variant="ghost"
-              size="sm"
-              icon={Plus}
-            />
-          ) : (
+          {/* Preview items aren't editable; and with no handler there is no
+              action to offer, so the slot stays empty rather than inert. */}
+          {!isPreview ? (
             <Button
               label="Edit"
               onPress={() => router.push(`/(tabs)/track/food-inventory/edit/${item.id}`)}
@@ -122,7 +114,15 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
               size="sm"
               icon={Pencil}
             />
-          )}
+          ) : onAddToInventory ? (
+            <Button
+              label="Add"
+              onPress={onAddToInventory}
+              variant="ghost"
+              size="sm"
+              icon={Plus}
+            />
+          ) : null}
         </View>
 
         {/* Scrollable Content */}
@@ -422,7 +422,6 @@ const styles = StyleSheet.create({
     ...typography.section,
     marginBottom: spacing.md,
   },
-  sectionContent: {},
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -1063,3 +1063,42 @@ Fix: that branch renders `<EmptyState title="Missing product data" />` instead. 
 - **Section-title typography.** `ViewFoodDetailsScreen`'s 18/700 section titles converge to `typography.section` per spec §4.5. The edit screen's accordion titles use `typography.rowTitle` instead: they are row *controls* with a chevron, not passive section labels, and 13/700 uppercase would have shrunk the primary tap affordance of that screen.
 - **`EditFoodScreen` footer + inline controls onto `Button`.** Cancel/Save are `Button secondary`/`Button primary` at equal flex inside `styles.footerButton` wrappers (`fluid`, so they still stretch); Save's `saving` state moved to `loading` + `disabled`, replacing the `"Saving..."` label swap and the manual `buttonDisabled` opacity. The barcode Scan control and the multi-location Add control likewise became `Button size="sm"`, which is what retired the inline `ActivityIndicator` the plan called out at `EditFoodScreen.tsx:1092-1095`. Press-blocking behavior is identical in all four cases (`Button` blocks on `disabled || loading`).
 - **Detail-screen category tags → `Badge`.** Categories are `tone="inventory"` (identity), subcategories `tone="neutral"`, replacing the `#E9D5FF`/`#7C3AED` and `#DBEAFE`/`#2563EB` pill pairs. `locationQuantity` keeps `colors.accents.inventory` — the other sanctioned violet survivor.
+
+### Task 5 (review follow-up) — banner heading was 13/700, spec says 14/600
+
+`FoodInventoryScreen`'s `expiringTitle` carried the pre-existing `fontSize: 13, fontWeight: "700"` straight through the conversion; only its color was retokenized. Spec §5 and this plan both specify a **14/600** heading for the banner recipe, and this is the recipe's first call site — Task 8's `RampHomeBanner` and Task 10's ramp status banner are both expected to copy it, so the drift would have propagated.
+
+Fix: `expiringTitle` is now `{ ...typography.buttonSm, color: colors.warning, marginBottom: spacing.xs }`. `typography.buttonSm` is exactly 14/600, so the banner recipe is now expressible entirely in tokens with no magic numbers left for the next copy to inherit.
+
+### Task 5 (review follow-up) — `Card` gains `onLongPress`; the grid tile collapses onto it
+
+The original conversion nested `Card(View) > Pressable` because `Card` had no long-press slot, which preserved the action sheet but left the card's own 12pt padding ring dead and shrank the effective tap target to roughly 88pt. Tasks 6-10 hit the same list-row-with-context-action shape repeatedly.
+
+Fix, in two parts:
+
+1. `mobile/src/components/ui/Card.tsx` takes an optional `onLongPress?: () => void`, passed to the existing `TouchableOpacity`. The interactive branch now triggers on `onPress || onLongPress`, so a long-press-only card is valid. Purely additive — every existing caller is unaffected.
+2. `FoodInventoryScreen`'s grid tile moves both handlers onto the `Card` and drops the inner `Pressable` (and its now-unused import).
+
+**Gesture equivalence verified before collapsing.** Both `Pressable` and `TouchableOpacity` are built on the same `Pressability` core with the same default `delayLongPress` (500ms) and the same suppression rule (a fired long-press cancels the subsequent `onPress`). The handlers are the same closures over the same argument: `onPress={() => handleViewItem(item)}`, `onLongPress={() => handleLongPress(item)}`. The inner `Pressable` carried no prop `Card` cannot express — only `style`, which was already the `Card`'s `styles.gridItem`. The two deliberate differences are both gains: the tile now shows the standard `activeOpacity` 0.7 press feedback like every other card, and it picks up `accessibilityRole="button"`.
+
+### Task 5 (review follow-up) — refinement to the standing off-grid spacing rule
+
+The Task 3 amendment established: for a `token ± n` expression, drop the `± n` and keep the base token. That rule says nothing about a **bare off-grid literal**, and rounding those to the nearest step silently shrank three controls in `edit-food/styles.ts` — `statusButton` and `locationEntryButton` went `paddingVertical: 6 → spacing.xs` (4), leaving them ~25pt tall, and `locationButton` went `10 → spacing.sm` (8).
+
+**Refinement, in force for Tasks 6-10:** when a bare off-grid literal is a control's touch-affecting padding, round **up** to the next step, never down. Tap targets must never shrink as a side effect of tokenization. (Non-control values — margins, gaps, decorative padding — keep nearest-step rounding.)
+
+Applied here: `statusButton` and `locationEntryButton` 6 → `spacing.sm` (8); `locationButton` 10 → `spacing.md` (12).
+
+### Task 5 (review follow-up) — uniform `Badge` treatment in the expiring-soon list
+
+The first pass rendered the expired rows as a `Badge` (following the mockup) but left today/soon rows as plain amber text, so adjacent rows in the same scroller had mismatched right-edge heights and baselines.
+
+Fix: all three bands now render a `Badge` — `tone="danger"` for expired, `tone="warning"` for today and for the "Nd left" case. The `expiringWhen` text style is deleted. This is also what the plan's mapping table asks for ("Expired"/low-stock text labels → `Badge`).
+
+### Task 5 (review follow-up) — smaller fixes, recorded together
+
+- **Empty/loading states did not fill the viewport.** `gridContainer` set only padding, so `EmptyState`/`LoadingState` (`flex: 1`, i.e. `flexBasis: 0`) had no free space to grow into and collapsed to their own 64pt of padding, rendering high in the list area. `flexGrow: 1` added to `gridContainer` — inert once rows exist, since content already exceeds the viewport and children are top-aligned. Same pairing `ShoppingListScreen.tsx:284` already uses.
+- **Footer spacer folded into the content container.** `ListFooterComponent={<View style={{ height: spacing.xxxl }} />}` is gone; `contentContainerStyle` now carries `paddingBottom: insets.bottom + spacing.xxl`, restoring the safe-area term the spacer never had and dropping a per-render element.
+- **Dead `sectionContent` removed.** Once `Card variant="panel"` took over the padding in `ViewFoodDetailsScreen`, `sectionContent` had no properties left; the empty key and its no-op wrapping `<View>` are both gone and `renderSection` renders `content` directly.
+- **Inert-button smell fixed at the source.** `onPress={() => onAddToInventory?.()}` existed only to satisfy `Button`'s required `onPress`. `Button.onPress` stays required — making it optional would let any downstream task ship an enabled-but-inert CTA — and the header slot is now conditional instead: Edit when not previewing, Add only when a handler exists, otherwise nothing. An Add button that silently does nothing is now unrepresentable.
+- **`colors.onBrand` used off-label twice.** `toggleThumb`'s fill and the `Trash2` glyph on the `colors.danger` remove-image button are both `colors.text` now. `onBrand` means "foreground on a brand fill"; both are literally `#FFFFFF` so nothing rendered wrong, but this file sets precedent for five more tasks. No `onDanger` token was added — there is no spec basis for one. The four remaining `onBrand` uses in `edit-food/styles.ts` are all `*TextActive` labels sitting on `colors.brand` fills, which is exactly on-label.

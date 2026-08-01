@@ -136,7 +136,8 @@ export const styles = StyleSheet.create({
   },
   locationButton: {
     flex: 1,
-    paddingVertical: spacing.sm,
+    // Control padding rounds UP off-grid (was 10): tap targets never shrink.
+    paddingVertical: spacing.md,
     borderRadius: radii.control,
     backgroundColor: colors.surface2,
     borderWidth: 1,
@@ -198,7 +199,7 @@ export const styles = StyleSheet.create({
     width: 27,
     height: 27,
     borderRadius: radii.pill,
-    backgroundColor: colors.onBrand,
+    backgroundColor: colors.text,
   },
   toggleThumbActive: {
     transform: [{ translateX: 20 }],
@@ -263,7 +264,8 @@ export const styles = StyleSheet.create({
   },
   locationEntryButton: {
     flex: 1,
-    paddingVertical: spacing.xs,
+    // Rounds UP off-grid (was 6) — see `locationButton`.
+    paddingVertical: spacing.sm,
     borderRadius: radii.control,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -297,7 +299,8 @@ export const styles = StyleSheet.create({
   },
   statusButton: {
     flex: 1,
-    paddingVertical: spacing.xs,
+    // Rounds UP off-grid (was 6) — see `locationButton`.
+    paddingVertical: spacing.sm,
     borderRadius: radii.control,
     backgroundColor: colors.surface,
     borderWidth: 1,
