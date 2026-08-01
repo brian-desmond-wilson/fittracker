@@ -971,3 +971,9 @@ Hand the owner this on-device checklist (Metro reload on the existing dev client
 The plan's Step 2 anticipated this exact contingency. `mobile/jest.config.js` scoped `testMatch` to `["**/__tests__/**/*.test.ts"]` only — every existing suite lives under a `src/lib/__tests__/` directory, and `src/theme/tokens.test.ts` sits directly in `src/theme/`, not in a `__tests__` folder, so `npx jest src/theme/tokens.test.ts` reported "No tests found" (0 matches) before the implementation even existed.
 
 Fix: extended `testMatch` to `["**/__tests__/**/*.test.ts", "**/theme/**/*.test.ts"]` in `mobile/jest.config.js`. Re-ran the test — it was now discovered and failed correctly on `Cannot find module './tokens'` (the true TDD-red state), then passed once `tokens.ts` was written. Final suite: 12 suites / 321 tests passing (up from 11/317); `npx tsc --noEmit` clean.
+
+### Task 3 — `IconButton` square icon size: plan had an untokenized `22`
+
+The plan's Task 3 `IconButton.tsx` source rendered the square variant's icon as `size={circle ? icons.sm : 22}` — a plan authoring bug. Spec §5.2 states the square variant renders its icon at size `md`, and `icons.md` is 20 in `mobile/src/theme/tokens.ts`. The plan is authoritative on mechanics but the spec is authoritative on values, so the spec wins here; `22` was also an untokenized magic number with no spec basis, in the exact primitive the whole style guide exists to keep tokenized.
+
+Fix: changed the expression to `size={circle ? icons.sm : icons.md}` in `mobile/src/components/ui/IconButton.tsx`. Nothing else in the file changed. Re-ran gates: `npx tsc --noEmit` clean; `npm test` still 12 suites / 321 tests passing.

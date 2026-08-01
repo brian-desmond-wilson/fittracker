@@ -29,7 +29,7 @@ export function IconButton({
       accessibilityState={{ disabled }}
     >
       <Icon
-        size={circle ? icons.sm : 22}
+        size={circle ? icons.sm : icons.md}
         color={circle ? colors.brand : colors.onBrand}
         strokeWidth={icons.strokeWidth}
       />
