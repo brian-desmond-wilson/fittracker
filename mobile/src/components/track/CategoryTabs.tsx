@@ -8,6 +8,7 @@ import {
   Dimensions,
 } from "react-native";
 import { FoodCategory } from "@/src/types/track";
+import { colors, spacing } from "@/src/theme/tokens";
 
 interface CategoryTabsProps {
   categories: FoodCategory[];
@@ -69,39 +70,39 @@ export function CategoryTabs({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: colors.border,
   },
   scrollView: {
     flexGrow: 0,
   },
   scrollContent: {
-    paddingHorizontal: 12,
-    gap: 4,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
   },
   tabContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     position: "relative",
   },
   tabText: {
     fontSize: 15,
     fontWeight: "500",
-    color: "#6B7280",
+    color: colors.textMuted,
   },
   tabTextActive: {
     fontWeight: "600",
-    color: "#111827",
+    color: colors.text,
   },
+  // Active tab underline is a control state, so it is brand — not the
+  // inventory accent (spec §6).
   indicator: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    height: 3,
-    backgroundColor: "#8B5CF6",
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 2,
+    height: 2,
+    backgroundColor: colors.brand,
   },
 });

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { FoodSubcategory } from "@/src/types/track";
+import { colors, radii, spacing, tint } from "@/src/theme/tokens";
 
 interface SubcategoryPillsProps {
   subcategories: FoodSubcategory[];
@@ -54,37 +55,38 @@ export function SubcategoryPills({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
+    backgroundColor: colors.bg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: colors.border,
   },
   scrollView: {
     flexGrow: 0,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    gap: 8,
+    paddingHorizontal: spacing.screenGutter,
+    gap: spacing.sm,
   },
   pill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: "#F3F4F6",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
+  // Selected filter is a control state — brand, not the inventory accent.
   pillSelected: {
-    backgroundColor: "#E9D5FF",
-    borderColor: "#C084FC",
+    backgroundColor: tint(colors.brand),
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#6B7280",
+    color: colors.textMuted,
   },
   pillTextSelected: {
-    color: "#7C3AED",
+    color: colors.brand,
     fontWeight: "600",
   },
 });

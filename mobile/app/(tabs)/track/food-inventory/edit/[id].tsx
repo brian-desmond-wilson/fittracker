@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Alert, View, Text, TouchableOpacity, StatusBar, StyleSheet, ActivityIndicator } from "react-native";
+import { Alert, View, Text, TouchableOpacity, StatusBar, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import { EditFoodScreen } from "@/src/components/track/EditFoodScreen";
+import { colors, icons, spacing } from "@/src/theme/tokens";
+import { LoadingState } from "@/src/components/ui";
 import {
   fetchInventoryWithState,
   type InventoryItemWithState,
@@ -61,16 +63,13 @@ export default function EditFoodItemPage() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.replace(`/(tabs)/track/food-inventory/${id}`)} style={styles.backButton}>
-              <ChevronLeft size={24} color="#FFFFFF" />
+              <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
           </View>
 
           {/* Loading content area */}
-          <View style={styles.loadingContent}>
-            <ActivityIndicator size="large" color="#8B5CF6" />
-            <Text style={styles.loadingText}>Loading...</Text>
-          </View>
+          <LoadingState />
         </View>
       </>
     );
@@ -82,32 +81,21 @@ export default function EditFoodItemPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
+    borderBottomColor: colors.border,
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
   },
   backText: {
     fontSize: 17,
-    color: "#FFFFFF",
-  },
-  loadingContent: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: "#6B7280",
+    color: colors.text,
   },
 });

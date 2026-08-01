@@ -15,7 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { ChevronLeft, Package, Pencil, Plus } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { Badge, Button, Card } from "@/src/components/ui";
 import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { parseLocalDate } from "@/src/lib/dates";
 
@@ -80,12 +81,12 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   };
 
   const renderSection = (title: string, content: React.ReactNode) => (
-    <View style={styles.section}>
+    <Card variant="panel" style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
       <View style={styles.sectionContent}>
         {content}
       </View>
-    </View>
+    </Card>
   );
 
   const renderDetailRow = (label: string, value: string | number | null | undefined) => (
@@ -102,25 +103,25 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
+            <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
           {isPreview ? (
-            <TouchableOpacity
-              onPress={onAddToInventory}
-              style={styles.addButton}
-            >
-              <Plus size={20} color="#FFFFFF" />
-              <Text style={styles.addText}>Add</Text>
-            </TouchableOpacity>
+            <Button
+              label="Add"
+              onPress={() => onAddToInventory?.()}
+              variant="ghost"
+              size="sm"
+              icon={Plus}
+            />
           ) : (
-            <TouchableOpacity
+            <Button
+              label="Edit"
               onPress={() => router.push(`/(tabs)/track/food-inventory/edit/${item.id}`)}
-              style={styles.editButton}
-            >
-              <Pencil size={20} color="#FFFFFF" />
-              <Text style={styles.editText}>Edit</Text>
-            </TouchableOpacity>
+              variant="ghost"
+              size="sm"
+              icon={Pencil}
+            />
           )}
         </View>
 
@@ -132,8 +133,8 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor="#8B5CF6"
-              colors={["#8B5CF6"]}
+              tintColor={colors.brand}
+              colors={[colors.brand]}
             />
           }
         >
@@ -178,7 +179,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
               </>
             ) : (
               <View style={styles.imagePlaceholder}>
-                <Package size={80} color={colors.mutedForeground} />
+                <Package size={80} color={colors.textFaint} />
               </View>
             )}
           </View>
@@ -238,9 +239,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   <Text style={styles.detailLabel}>Categories</Text>
                   <View style={styles.tagsContainer}>
                     {item.categories.map(cat => (
-                      <View key={cat.id} style={styles.tag}>
-                        <Text style={styles.tagText}>{cat.name}</Text>
-                      </View>
+                      <Badge key={cat.id} tone="inventory" label={cat.name} />
                     ))}
                   </View>
                 </View>
@@ -250,9 +249,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   <Text style={styles.detailLabel}>Subcategories</Text>
                   <View style={styles.tagsContainer}>
                     {item.subcategories.map(sub => (
-                      <View key={sub.id} style={[styles.tag, styles.subTag]}>
-                        <Text style={[styles.tagText, styles.subTagText]}>{sub.name}</Text>
-                      </View>
+                      <Badge key={sub.id} tone="neutral" label={sub.name} />
                     ))}
                   </View>
                 </View>
@@ -324,50 +321,33 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
+    borderBottomColor: colors.border,
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
   },
   backText: {
     fontSize: 17,
-    color: "#FFFFFF",
-  },
-  editButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  editText: {
-    fontSize: 17,
-    color: "#FFFFFF",
-  },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  addText: {
-    fontSize: 17,
-    color: "#FFFFFF",
+    color: colors.text,
   },
   content: {
     flex: 1,
   },
+  // The one sanctioned white surface: product photos are shot on white.
   imageSection: {
-    backgroundColor: "#FFFFFF",
-    paddingBottom: 16,
+    backgroundColor: colors.imageWell,
+    paddingBottom: spacing.lg,
   },
   imageCarousel: {
     width: SCREEN_WIDTH,
@@ -378,160 +358,136 @@ const styles = StyleSheet.create({
     height: 250,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 24,
+    paddingVertical: spacing.xxl,
   },
   productImage: {
     width: 200,
     height: 200,
-    borderRadius: 8,
+    borderRadius: radii.control,
   },
   imagePlaceholder: {
     width: 200,
     height: 200,
-    borderRadius: 8,
-    backgroundColor: "#F3F4F6",
+    borderRadius: radii.control,
     alignItems: "center",
     justifyContent: "center",
-    marginVertical: 24,
+    marginVertical: spacing.xxl,
     alignSelf: "center",
   },
   paginationContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    paddingTop: 8,
-    gap: 6,
+    paddingTop: spacing.sm,
+    gap: spacing.xs,
   },
   paginationDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: "#D1D5DB",
+    borderRadius: radii.pill,
+    backgroundColor: colors.textMuted,
   },
   paginationDotActive: {
-    backgroundColor: "#111827",
+    backgroundColor: colors.brand,
     width: 8,
     height: 8,
   },
   titleSection: {
-    padding: 20,
-    backgroundColor: "#FFFFFF",
+    padding: spacing.xl,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: colors.border,
   },
   productName: {
     fontSize: 24,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   productBrand: {
     fontSize: 18,
-    color: "#6B7280",
+    color: colors.textMuted,
     marginBottom: 2,
   },
   productFlavor: {
     fontSize: 16,
-    color: "#9CA3AF",
+    color: colors.textFaint,
   },
+  // Fill/radius/border/padding come from `Card variant="panel"`.
   section: {
-    backgroundColor: "#FFFFFF",
-    marginTop: 8,
-    paddingVertical: 16,
+    marginHorizontal: spacing.screenGutter,
+    marginTop: spacing.md,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    ...typography.section,
+    marginBottom: spacing.md,
   },
-  sectionContent: {
-    paddingHorizontal: 20,
-  },
+  sectionContent: {},
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.border,
   },
   detailLabel: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: "600",
-    color: "#6B7280",
+    color: colors.textMuted,
     flex: 1,
   },
   detailValue: {
-    fontSize: 14,
-    color: "#111827",
+    ...typography.body,
+    color: colors.text,
     flex: 1,
     textAlign: "right",
   },
   locationItem: {
-    padding: 12,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 8,
-    marginBottom: 8,
+    padding: spacing.md,
+    backgroundColor: colors.surface2,
+    borderRadius: radii.control,
+    marginBottom: spacing.sm,
   },
   locationHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   locationName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
+    ...typography.rowTitle,
+    color: colors.text,
   },
+  // Location identity — one of the two places the inventory violet survives.
   locationQuantity: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#8B5CF6",
+    color: colors.accents.inventory,
   },
   locationStatus: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginBottom: 4,
+    ...typography.caption,
+    marginBottom: spacing.xs,
   },
   locationNotes: {
-    fontSize: 12,
-    color: "#9CA3AF",
+    ...typography.caption,
+    color: colors.textFaint,
     fontStyle: "italic",
   },
   tagsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: spacing.sm,
     flex: 1,
     justifyContent: "flex-end",
   },
-  tag: {
-    backgroundColor: "#E9D5FF",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  tagText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#7C3AED",
-  },
-  subTag: {
-    backgroundColor: "#DBEAFE",
-  },
-  subTagText: {
-    color: "#2563EB",
-  },
   notesContainer: {
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
   },
   notesText: {
-    fontSize: 14,
-    color: "#111827",
-    marginTop: 8,
+    ...typography.body,
+    color: colors.text,
+    marginTop: spacing.sm,
     lineHeight: 20,
   },
 });
