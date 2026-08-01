@@ -10,6 +10,7 @@ import {
   Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ChevronLeft, Droplets, Share2 } from "lucide-react-native";
 import { colors, icons, spacing, tint, typography } from "@/src/theme/tokens";
 import { WaterLog } from "@/src/types/track";
@@ -463,7 +464,10 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   };
   const handleSelectDate = (dateKey: string) => setSelectedDate(dateKey);
 
-  const handleDatePickerChange = (event: any, picked?: Date) => {
+  const handleDatePickerChange = (
+    event: DateTimePickerEvent,
+    picked?: Date
+  ) => {
     if (event.type === "dismissed" || !picked) {
       setDatePickerVisible(false);
       return;
@@ -660,6 +664,11 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
           // safe-area term that spacer never had.
           contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
           showsVerticalScrollIndicator={false}
+          // Same rule as the modal sheets: this scroller sits between a live
+          // keyboard (`WaterCustomLogForm`'s amount field) and that form's
+          // beverage chips and "Add" button, so without `handled` the first
+          // tap on either is spent dismissing the keyboard.
+          keyboardShouldPersistTaps="handled"
         >
           <View style={styles.titleContainer}>
             <Droplets

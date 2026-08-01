@@ -1,13 +1,15 @@
 import React from "react";
 import { View, StyleSheet, Modal, Platform } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { colors, spacing } from "@/src/theme/tokens";
 import { Button, Card } from "@/src/components/ui";
 
 interface WaterCalendarModalProps {
   visible: boolean;
   initialDate: Date;
-  onChange: (event: any, picked?: Date) => void;
+  onChange: (event: DateTimePickerEvent, picked?: Date) => void;
   onClose: () => void;
 }
 

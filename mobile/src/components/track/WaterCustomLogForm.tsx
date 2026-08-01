@@ -58,16 +58,14 @@ export function WaterCustomLogForm({
         })}
       </View>
       <View style={styles.form}>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder={`Amount (${displayUnit})`}
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-            value={addAmount}
-            onChangeText={onChangeAmount}
-          />
-        </View>
+        <TextInput
+          style={styles.input}
+          placeholder={`Amount (${displayUnit})`}
+          placeholderTextColor={colors.textMuted}
+          keyboardType="decimal-pad"
+          value={addAmount}
+          onChangeText={onChangeAmount}
+        />
         <Button label="Add" icon={Plus} onPress={onSubmit} />
       </View>
     </View>
@@ -115,10 +113,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
-  inputContainer: {
-    flex: 1,
-  },
+  // Takes the row's free width itself; it needed no wrapper to do that.
   input: {
+    flex: 1,
     backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,

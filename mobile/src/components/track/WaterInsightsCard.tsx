@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { colors, spacing, typography } from "@/src/theme/tokens";
-import { Card } from "@/src/components/ui";
+import { Card, SectionHeader } from "@/src/components/ui";
 import { WaterBarChart } from "./WaterBarChart";
 import { DailySeriesEntry } from "@/src/lib/waterStats";
 import { WaterUnit, ozToLiters } from "@/src/lib/waterUnits";
@@ -29,7 +29,9 @@ export function WaterInsightsCard({
 }: WaterInsightsCardProps) {
   return (
     <Card variant="panel" style={styles.card}>
-      <Text style={styles.title}>Insights · Last 7 days</Text>
+      <View style={styles.sectionHeader}>
+        <SectionHeader title="Insights · Last 7 days" />
+      </View>
       <View style={styles.statsRow}>
         <View style={styles.statCell}>
           <Text style={styles.statValue}>{currentStreak}</Text>
@@ -67,8 +69,8 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.screenGutter,
     marginBottom: spacing.xxl,
   },
-  title: {
-    ...typography.section,
+  // `SectionHeader` takes no style prop; the wrapper owns its spacing.
+  sectionHeader: {
     marginBottom: spacing.md,
   },
   statsRow: {

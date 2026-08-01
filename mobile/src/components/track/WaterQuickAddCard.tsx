@@ -29,7 +29,7 @@ export function WaterQuickAddCard({
 }: WaterQuickAddCardProps) {
   return (
     <Card variant="panel" style={styles.card}>
-      <View style={styles.header}>
+      <View style={styles.sectionHeader}>
         <SectionHeader
           title="Quick Add"
           action={
@@ -83,8 +83,9 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.screenGutter,
     marginBottom: spacing.lg,
   },
-  header: {
-    marginBottom: spacing.sm,
+  // `SectionHeader` takes no style prop; the wrapper owns its spacing.
+  sectionHeader: {
+    marginBottom: spacing.md,
   },
   buttons: {
     flexDirection: "row",
