@@ -58,7 +58,22 @@ export const colors = {
 
 export type AccentKey = keyof typeof colors.accents;
 
-/** The one translucent-fill recipe (tiles, badges, banners). Border tints use 0.3. */
+/**
+ * The one translucent-fill helper: takes a token hex, returns `rgba()`.
+ *
+ * The common cases are the 0.15 default (tiles, badges, banner fills) and 0.3
+ * for the matching border on a tinted banner — those two alphas are what spec
+ * §4.2 collapses ~60 hand-typed `rgba()` literals onto, and new surface fills
+ * should use them.
+ *
+ * It is not limited to those: a caller with a genuinely functional alpha passes
+ * its own. `BarcodeScannerModal` dims its camera viewfinder with
+ * `tint(colors.bg, 0.6 / 0.8)` because that darkness has to keep white chrome
+ * legible over an arbitrarily bright live image, which neither 0.15 nor the
+ * fixed `colors.scrim` can express. Such a call must justify its alpha at the
+ * call site; the point of the helper is that the COLOR still comes from a
+ * token, never a raw literal.
+ */
 export function tint(hex: string, alpha = 0.15): string {
   if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
     throw new Error(`tint(): expected #RRGGBB, got "${hex}"`);

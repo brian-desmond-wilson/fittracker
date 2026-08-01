@@ -269,8 +269,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
+  // Standing stat-cell token (see amendments): `rowTitle` at 700. Not
+  // `titleRoot` — that is this modal's own H1 two lines above, and matching it
+  // flattened the hierarchy.
   statValue: {
-    ...typography.titleRoot,
+    ...typography.rowTitle,
+    fontWeight: "700",
     color: colors.text,
   },
   statLabel: {

@@ -29,7 +29,6 @@ import {
   Calendar,
   Plus,
   Share2,
-  Zap,
   BarChart3,
   Search,
   ScanBarcode,
@@ -1633,10 +1632,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 </View>
 
                 <View style={styles.actionRow}>
+                  {/* No `icon`: at `typography.button` this label already runs
+                      ~255pt against a ~220pt content box on a 320pt device, and
+                      `Button` neither truncates nor shrinks. Dropping the glyph
+                      reclaims 28pt; the copy is user-facing and stays as-is. */}
                   <Button
                     variant="secondary"
                     label="Quick Adjustment — calories only"
-                    icon={Zap}
                     onPress={() => setQuickAdjustVisible(true)}
                     fluid
                   />

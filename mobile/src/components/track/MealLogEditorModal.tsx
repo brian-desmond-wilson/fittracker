@@ -3,7 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   TouchableOpacity,
   TextInput,
   ScrollView,
@@ -96,25 +98,25 @@ export function MealLogEditorModal({
       transparent
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
         <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Meal</Text>
-          <ScrollView style={{ maxHeight: 500 }}>
-            <View style={styles.field}>
-              <Text style={styles.label}>Name</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Meal name"
-                placeholderTextColor={colors.textMuted}
-                editable={!saving}
-              />
-            </View>
+          <ScrollView style={styles.sheetScroll}>
+            <Text style={styles.label}>Name</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Meal name"
+              placeholderTextColor={colors.textMuted}
+              editable={!saving}
+            />
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Meal Type</Text>
-              <View style={styles.chipsRow}>
+            <Text style={styles.label}>Meal Type</Text>
+            <View style={styles.chipsRow}>
                 {MEAL_TYPES.map((t) => {
                   const active = mealType === t.value;
                   return (
@@ -135,21 +137,18 @@ export function MealLogEditorModal({
                     </TouchableOpacity>
                   );
                 })}
-              </View>
             </View>
 
-            <View style={styles.field}>
-              <Text style={styles.label}>Calories</Text>
-              <TextInput
-                style={styles.input}
-                value={calories}
-                onChangeText={setCalories}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textMuted}
-                editable={!saving}
-              />
-            </View>
+            <Text style={styles.label}>Calories</Text>
+            <TextInput
+              style={styles.input}
+              value={calories}
+              onChangeText={setCalories}
+              keyboardType="decimal-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+              editable={!saving}
+            />
 
             <View style={styles.row}>
               <View style={styles.halfField}>
@@ -254,7 +253,7 @@ export function MealLogEditorModal({
             </View>
           </View>
         </Card>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -267,20 +266,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: spacing.xl,
   },
-  /** Width only — `Card panel` owns surface, radius, padding and border. */
+  /**
+   * Width + a cap the sheet can never exceed. `maxHeight: "100%"` resolves
+   * against the backdrop's content box (screen minus its `spacing.xl` padding),
+   * which replaces the hand-picked `maxHeight: 460`/`500` those numbers could
+   * not adapt: on a 568pt device the chrome alone (title, actions, padding)
+   * eats ~146pt, so a 460pt scroller still pushed the footer off-screen.
+   */
   card: {
     width: "100%",
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
     ...typography.titleBar,
     color: colors.text,
     marginBottom: spacing.md,
   },
-  field: { marginBottom: spacing.md },
-  row: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.md },
+  row: { flexDirection: "row", gap: spacing.md },
   halfField: { flex: 1 },
   label: {
     ...typography.section,
+    marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },
   input: {
@@ -320,7 +330,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: spacing.md,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
   /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
   actionButton: { flex: 1 },

@@ -1533,3 +1533,139 @@ Every other value change in the commit was listed; these four were not, and one 
 - **Correction: the sheet ends at 60 keys, not 62** (85 → 60). The earlier figure was miscounted; the ten dead keys and the seventeen retired into primitives are listed correctly.
 
 Re-ran gates after this follow-up: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests; both greps clean on all eighteen gated files, `MacroBar.tsx` and `MacroRing.tsx` now included.
+
+### Standing rule (Tasks 9-10) — the stat-cell value token
+
+**A stat-cell value — the number in a compact labelled cell — is `{ ...typography.rowTitle, fontWeight: "700" }`.**
+
+One commit had produced three answers to the same widget: `MealsWeeklySummaryModal.statValue` → `typography.titleRoot` (28/bold), `MealsInsightsCard.statValue` → `rowTitle` + 700 (16), `MealsNutritionCard.compactValue` → `typography.body` + 600 (14). All three now use the rule. `titleRoot` was the worst of the three specifically: that modal renders its own "Weekly Summary" H1 two lines above the stat grid, so matching it flattened the hierarchy the H1 exists to create. `titleRoot` stays reserved for one title per surface.
+
+**Task 9's ring centre and day-strip totals take this token and must not re-litigate it.**
+
+One consequence to watch, recorded rather than hidden: `MealsNutritionCard`'s `compactValue` renders value + inline goal ("12.5g / 65.0g") in a three-across row. At the new 16pt, on a 320pt device the cell is ~85pt against ~92pt of glyphs, so it wraps to two lines. `compactRow` has no fixed height, so it grows gracefully rather than clipping — but it does wrap, where the pre-Task-8 13pt did not. Accepted as the cost of one token; if it reads badly on device the fix is a narrower goal string, not a fourth size.
+
+### Task 8 (quality review) — `QuickAdjustmentModal` could push its own footer off-screen
+
+A real defect, and the only one in the task that was not purely cosmetic. It was the one centred sheet with **no `ScrollView` and no height cap** — its two siblings capped their scrollers at 460/500. The migration added ~16pt net (four inputs moving to `spacing.md` vertical padding, chip padding, chip gap). On a 320×568 device the meal-type chips wrap to two rows and the content reaches ~543pt; the backdrop is `justifyContent: "center"`, so the overflow splits both ways and Cancel/Log leaves the screen with nothing to scroll. It also carries `autoFocus` on Calories with no `KeyboardAvoidingView`, so on a 375×667 device the footer was already sitting under the keyboard.
+
+**Fixed by making all three sheets identical rather than by patching one.** Note the sibling caps would NOT have fixed it either: on a 568pt screen the backdrop leaves 528pt, of which the chrome (Card padding 32 + title/subtitle ~58 + footer ~56 = ~146pt) is unavoidable, so even a 460pt scroller totals ~606pt and still overflows. Fixed pixel caps cannot adapt.
+
+The scaffold is now `maxHeight: "100%"` on the `Card` — which resolves against the backdrop's content box, i.e. screen minus its `spacing.xl` padding — plus `flexShrink: 1` on the inner `ScrollView`, so the scroller is what gives up space and the title and footer buttons always render, on any device. Both magic numbers are gone.
+
+**Deliberate zero-behavior-change exception, as sanctioned:** fix 2 adds a scroll container and keyboard avoidance to `QuickAdjustmentModal`. No handler, state, validation or submit path changed — this is layout capability, not logic. The other two sheets gain only `KeyboardAvoidingView` and lose their fixed caps.
+
+### Task 8 (quality review) — the centred-sheet spacing picks
+
+The three sheets disagreed on two things. Picks, with reasons:
+
+- **`actions.marginTop` → `spacing.lg`** (was `spacing.md` in `MealLogEditorModal`). Majority of two, and correct on its own terms: the footer needs more separation from the last field than fields need from each other, so it should not share the inter-field step.
+- **Field rhythm → label-owned (`label: { marginTop: spacing.sm, marginBottom: spacing.xs }`), no `field` wrapper** (was a `field: { marginBottom }` wrapper in `MealLogEditorModal`). Majority of two, and it keeps vertical rhythm in one declaration instead of splitting it between a wrapper and the label. `MealLogEditorModal` loses its three `<View style={styles.field}>` wrappers and the `field` key; its `row` drops `marginBottom` to match the other two.
+
+### Task 8 (quality review) — the canonical centred-sheet recipe
+
+**Not a primitive.** The coordinator declined `ui/Sheet` and `ui/TextField`: spec §5 fixes the set at seven, the plan is authoritative on architecture, and adding primitives late in a cosmetic cycle is the scope expansion this cycle exists to avoid. The spec already has the precedent — "Banner is a recipe, not a component," documented with copy-paste source. This is the second such recipe. **Task 9 copies this block verbatim for its four Water modals; Task 11 lifts it into `docs/STYLE_GUIDE.md` beside the Banner recipe.**
+
+```tsx
+import {
+  KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, View,
+} from "react-native";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
+
+<Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+  <KeyboardAvoidingView
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+    style={styles.backdrop}
+  >
+    <Card variant="panel" style={styles.card}>
+      <Text style={styles.title}>Sheet title</Text>
+      {/* optional */}
+      <Text style={styles.subtitle}>One line of supporting copy.</Text>
+
+      <ScrollView style={styles.sheetScroll}>
+        <Text style={styles.label}>Field name</Text>
+        <TextInput
+          style={styles.input}
+          placeholderTextColor={colors.textMuted}
+          editable={!saving}
+        />
+        <View style={styles.row}>
+          <View style={styles.halfField}>{/* … */}</View>
+          <View style={styles.halfField}>{/* … */}</View>
+        </View>
+      </ScrollView>
+
+      <View style={styles.actions}>
+        <View style={styles.actionButton}>
+          <Button variant="secondary" label="Cancel" onPress={onClose}
+                  disabled={saving} fluid />
+        </View>
+        <View style={styles.actionButton}>
+          <Button label="Save" onPress={handleSave} loading={saving} fluid />
+        </View>
+      </View>
+    </Card>
+  </KeyboardAvoidingView>
+</Modal>
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: colors.scrim,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  // `maxHeight: "100%"` resolves against the backdrop's content box (screen
+  // minus its padding), so the sheet can never exceed the screen on any device.
+  // Never a fixed pixel cap — it cannot adapt, and the chrome alone eats
+  // ~146pt, so even a 460pt scroller overflows a 568pt screen.
+  card: { width: "100%", maxHeight: "100%" },
+  // Shrinks first, so the title and the footer buttons always render.
+  sheetScroll: { flexShrink: 1 },
+
+  title: { ...typography.titleBar, color: colors.text, marginBottom: spacing.xs },
+  subtitle: { ...typography.caption, marginBottom: spacing.lg },
+
+  // The one form-label token. The label owns the field rhythm — no `field`
+  // wrapper, no per-field marginBottom.
+  label: { ...typography.section, marginTop: spacing.sm, marginBottom: spacing.xs },
+  input: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
+  },
+  row: { flexDirection: "row", gap: spacing.md },
+  halfField: { flex: 1 },
+
+  actions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
+  // `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it.
+  actionButton: { flex: 1 },
+});
+```
+
+Rules that come with it: confirm is `Button` (primary) on the **right**, cancel is `Button variant="secondary"` on the left; the confirm's in-flight state is `loading`, never a `"Saving…"` label swap; `disabled` carries only the validity condition, since `Button` already blocks on `disabled || loading`. Grouped single-select chips inside a sheet take the solid-brand active treatment.
+
+### Task 8 (quality review) — form labels converge on `typography.section`; twins deleted
+
+Two tokens were doing one job: `typography.buttonSm` + `colors.text` (`MealAddForm`, `ManualFoodEntryModal`) against `typography.section` (the three centred sheets). Standardized on **`typography.section`** — 13/700 uppercase `textMuted` is the only one of the two that reads as a label rather than as body text, and it is what the sheets already shipped.
+
+Both byte-identical `label`/`inputLabel` twins are gone — in `mealsScreenStyles.ts` (as instructed) and in `ManualFoodEntryModal.tsx`, which had the same pair for the same reason. Both files used the two interchangeably inside a single component, which is what made them indefensible. All call sites point at `label`. `mealsScreenStyles.ts`'s `subsectionTitle` follows to `typography.section` too, so `MealAddForm`'s "Nutrition (optional)" and `ManualFoodEntryModal`'s "Nutrition (per serving)" — the same heading in the same flow — finally match. Sheet key count: **60 → 59**.
+
+(The remaining `inputLabel` hits in the repo are `MeasurementsScreen.tsx` and `workout-session/`, both outside this cycle's migration reach per spec §2.)
+
+### Task 8 (quality review) — smaller fixes
+
+- **`"Quick Adjustment — calories only"` loses its `icon`.** At `typography.button` (16/600) with `spacing.xl` padding each side, the label runs ~255pt against a ~220pt content box on a 320pt device; `Button` neither truncates nor shrinks, so it wrapped to two lines and grew — and the `minWidth` capture then locked in that taller first layout. Dropping the glyph reclaims 28pt and fits. The copy is user-facing and is unchanged, since editing product text is not a restyle. `Zap` is no longer imported by `MealsScreen`.
+- **`FoodPreviewModal`'s `actionButtonFull: { flex: 2 }` deleted.** It applied only when `source === "saved"`, which is exactly the branch where the "Save to Library" sibling is not rendered — so the lone remaining child was already the only flex item and `2` versus `1` resolved identically. Dead code that read as intent.
+- **`RecentFoodsRow`'s favourite badge restored to 18pt.** It had grown to 24 purely so a 16pt `icons.sm` star would fit, which is the tail wagging the dog — at 24 it was ~34% of the 70pt thumbnail. The glyph goes back to its original 10 via a named `BADGE_GLYPH` constant with a comment, the same "fitted size, no token applies" call as `MacroRing`'s ring labels. The badge now renders exactly as it did pre-Task-8, in `colors.warning`.
+- **`tint()`'s doc comment widened** in `tokens.ts`. It described only the 0.15/0.3 surface recipe, which did not cover `BarcodeScannerModal`'s legitimate `tint(colors.bg, 0.6 / 0.8)` camera overlay. It now states the two common alphas as the default for surface fills and permits a justified functional alpha at the call site, the point being that the *color* always comes from a token. **Comment only — no behavior change, and no overlay tokens added.**
+
+### Note for Task 11 — `mealsScreenStyles.ts` is three disjoint stylesheets in one file
+
+Recorded, deliberately not acted on. Its 59 keys partition cleanly by consumer with **zero overlap**: `MealsScreen` uses the screen chrome, `MealAddForm` the form block, `MealsDayList` the list block. Nothing is genuinely shared, so the "shared stylesheet" framing is false — it is three stylesheets that happen to live in one module, which is why the ten dead keys survived unnoticed for so long. Splitting it into per-consumer sheets (or colocating each) is a structural refactor with no styling content, so it is out of scope for a cosmetic cycle. Task 11's closeout is the place.

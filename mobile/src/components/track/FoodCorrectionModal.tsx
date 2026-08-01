@@ -3,7 +3,9 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   TextInput,
   ScrollView,
 } from "react-native";
@@ -97,7 +99,10 @@ export function FoodCorrectionModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
         <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Nutrition</Text>
           <Text style={styles.subtitle}>
@@ -105,7 +110,7 @@ export function FoodCorrectionModal({
             corrected values.
           </Text>
 
-          <ScrollView style={{ maxHeight: 460 }}>
+          <ScrollView style={styles.sheetScroll}>
             <Text style={styles.label}>Name</Text>
             <TextInput
               style={styles.input}
@@ -249,7 +254,7 @@ export function FoodCorrectionModal({
             </View>
           </View>
         </Card>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -262,9 +267,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: spacing.xl,
   },
-  /** Width only — `Card panel` owns surface, radius, padding and border. */
+  /**
+   * Width + a cap the sheet can never exceed. `maxHeight: "100%"` resolves
+   * against the backdrop's content box (screen minus its `spacing.xl` padding),
+   * which replaces the hand-picked `maxHeight: 460`/`500` those numbers could
+   * not adapt: on a 568pt device the chrome alone (title, actions, padding)
+   * eats ~146pt, so a 460pt scroller still pushed the footer off-screen.
+   */
   card: {
     width: "100%",
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
     ...typography.titleBar,

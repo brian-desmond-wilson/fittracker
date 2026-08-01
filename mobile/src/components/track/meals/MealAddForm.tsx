@@ -143,7 +143,7 @@ export function MealAddForm({
 
       <View style={styles.row}>
         <View style={styles.halfField}>
-          <Text style={styles.inputLabel}>Calories</Text>
+          <Text style={styles.label}>Calories</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -154,7 +154,7 @@ export function MealAddForm({
           />
         </View>
         <View style={styles.halfField}>
-          <Text style={styles.inputLabel}>Protein (g)</Text>
+          <Text style={styles.label}>Protein (g)</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -168,7 +168,7 @@ export function MealAddForm({
 
       <View style={styles.row}>
         <View style={styles.halfField}>
-          <Text style={styles.inputLabel}>Carbs (g)</Text>
+          <Text style={styles.label}>Carbs (g)</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -179,7 +179,7 @@ export function MealAddForm({
           />
         </View>
         <View style={styles.halfField}>
-          <Text style={styles.inputLabel}>Fats (g)</Text>
+          <Text style={styles.label}>Fats (g)</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -193,7 +193,7 @@ export function MealAddForm({
 
       <View style={styles.row}>
         <View style={styles.halfField}>
-          <Text style={styles.inputLabel}>Sugars (g)</Text>
+          <Text style={styles.label}>Sugars (g)</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -204,7 +204,7 @@ export function MealAddForm({
           />
         </View>
         <View style={styles.halfField}>
-          <Text style={styles.inputLabel}>Sodium (mg)</Text>
+          <Text style={styles.label}>Sodium (mg)</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -217,7 +217,7 @@ export function MealAddForm({
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.inputLabel}>Fiber (g)</Text>
+        <Text style={styles.label}>Fiber (g)</Text>
         <TextInput
           style={styles.input}
           placeholder="0"

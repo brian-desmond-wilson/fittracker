@@ -12,6 +12,11 @@ import { Star, Utensils } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import { SavedFood, RecentFoodItem } from "@/src/types/track";
 
+// Badge-fitted glyph size. `icons.sm` (16) would fill an 18pt badge edge to
+// edge; the badge in turn cannot grow without dominating a 70pt thumbnail.
+// Same class of held value as `MacroRing`'s ring-fitted label sizes.
+const BADGE_GLYPH = 10;
+
 interface RecentFoodsRowProps {
   recentFoods: RecentFoodItem[];
   favorites: SavedFood[];
@@ -88,7 +93,7 @@ export function RecentFoodsRow({
         {/* Favorite Star Badge */}
         {item.is_favorite && (
           <View style={styles.favoriteBadge}>
-            <Star size={icons.sm} color={colors.onBrand} fill={colors.onBrand} />
+            <Star size={BADGE_GLYPH} color={colors.onBrand} fill={colors.onBrand} />
           </View>
         )}
       </View>
@@ -171,8 +176,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: spacing.xs,
     right: spacing.xs,
-    width: 24,
-    height: 24,
+    width: 18,
+    height: 18,
     borderRadius: radii.pill,
     backgroundColor: colors.warning,
     alignItems: "center",

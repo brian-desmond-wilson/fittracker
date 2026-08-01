@@ -184,7 +184,7 @@ export function ManualFoodEntryModal({
 
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Calories</Text>
+                <Text style={styles.label}>Calories</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
@@ -195,7 +195,7 @@ export function ManualFoodEntryModal({
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Protein (g)</Text>
+                <Text style={styles.label}>Protein (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
@@ -209,7 +209,7 @@ export function ManualFoodEntryModal({
 
             <View style={styles.row}>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Carbs (g)</Text>
+                <Text style={styles.label}>Carbs (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
@@ -220,7 +220,7 @@ export function ManualFoodEntryModal({
                 />
               </View>
               <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Fats (g)</Text>
+                <Text style={styles.label}>Fats (g)</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0"
@@ -233,7 +233,7 @@ export function ManualFoodEntryModal({
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.inputLabel}>Sugars (g)</Text>
+              <Text style={styles.label}>Sugars (g)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="0"
@@ -378,14 +378,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+  // The one form-label token (see `mealsScreenStyles`): `inputLabel` was a
+  // byte-identical twin used interchangeably in the same component.
   label: {
-    ...typography.buttonSm,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  inputLabel: {
-    ...typography.buttonSm,
-    color: colors.text,
+    ...typography.section,
     marginBottom: spacing.sm,
   },
   required: {

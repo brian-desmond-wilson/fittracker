@@ -137,8 +137,7 @@ export const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
   subsectionTitle: {
-    ...typography.buttonSm,
-    color: colors.text,
+    ...typography.section,
     marginBottom: spacing.md,
     marginTop: spacing.sm,
   },
@@ -153,14 +152,10 @@ export const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
+  // The one form-label token. `inputLabel` was a byte-identical twin used
+  // interchangeably inside the same component; both call sites point here.
   label: {
-    ...typography.buttonSm,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  inputLabel: {
-    ...typography.buttonSm,
-    color: colors.text,
+    ...typography.section,
     marginBottom: spacing.sm,
   },
   required: {

@@ -90,6 +90,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
+  // Standing stat-cell token (see amendments).
   statValue: {
     ...typography.rowTitle,
     fontWeight: "700",

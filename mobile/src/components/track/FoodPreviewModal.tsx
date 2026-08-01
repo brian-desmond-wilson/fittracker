@@ -408,12 +408,7 @@ export function FoodPreviewModal({
               />
             </View>
           )}
-          <View
-            style={[
-              styles.actionButton,
-              source === "saved" && styles.actionButtonFull,
-            ]}
-          >
+          <View style={styles.actionButton}>
             <Button label="Log Meal" onPress={handleLogMeal} fluid />
           </View>
         </View>
@@ -664,5 +659,4 @@ const styles = StyleSheet.create({
   },
   /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
   actionButton: { flex: 1 },
-  actionButtonFull: { flex: 2 },
 });

@@ -3,7 +3,10 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   TouchableOpacity,
   TextInput,
 } from "react-native";
@@ -86,102 +89,107 @@ export function QuickAdjustmentModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
         <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Quick Adjustment</Text>
           <Text style={styles.subtitle}>
             Add calories without picking a saved food. Macros are optional.
           </Text>
 
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Quick adjustment"
-            placeholderTextColor={colors.textMuted}
-            editable={!saving}
-          />
+          <ScrollView style={styles.sheetScroll}>
+            <Text style={styles.label}>Name</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Quick adjustment"
+              placeholderTextColor={colors.textMuted}
+              editable={!saving}
+            />
 
-          <Text style={styles.label}>Meal Type</Text>
-          <View style={styles.chipsRow}>
-            {MEAL_TYPES.map((t) => {
-              const active = mealType === t.value;
-              return (
-                <TouchableOpacity
-                  key={t.value}
-                  onPress={() => setMealType(t.value)}
-                  disabled={saving}
-                  style={[
-                    styles.chip,
-                    active && styles.chipActive,
-                  ]}
-                >
-                  <Text
-                    style={[styles.chipText, active && styles.chipTextActive]}
+            <Text style={styles.label}>Meal Type</Text>
+            <View style={styles.chipsRow}>
+              {MEAL_TYPES.map((t) => {
+                const active = mealType === t.value;
+                return (
+                  <TouchableOpacity
+                    key={t.value}
+                    onPress={() => setMealType(t.value)}
+                    disabled={saving}
+                    style={[
+                      styles.chip,
+                      active && styles.chipActive,
+                    ]}
                   >
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                    <Text
+                      style={[styles.chipText, active && styles.chipTextActive]}
+                    >
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-          <Text style={styles.label}>
-            Calories <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={calories}
-            onChangeText={setCalories}
-            keyboardType="decimal-pad"
-            placeholder="100"
-            placeholderTextColor={colors.textMuted}
-            editable={!saving}
-            autoFocus
-          />
+            <Text style={styles.label}>
+              Calories <Text style={styles.required}>*</Text>
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={calories}
+              onChangeText={setCalories}
+              keyboardType="decimal-pad"
+              placeholder="100"
+              placeholderTextColor={colors.textMuted}
+              editable={!saving}
+              autoFocus
+            />
 
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Protein (g)</Text>
-              <TextInput
-                style={styles.input}
-                value={protein}
-                onChangeText={setProtein}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textMuted}
-                editable={!saving}
-              />
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Protein (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={protein}
+                  onChangeText={setProtein}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Carbs (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={carbs}
+                  onChangeText={setCarbs}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
             </View>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Carbs (g)</Text>
-              <TextInput
-                style={styles.input}
-                value={carbs}
-                onChangeText={setCarbs}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textMuted}
-                editable={!saving}
-              />
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Fats (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={fats}
+                  onChangeText={setFats}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
+              <View style={styles.halfField} />
             </View>
-          </View>
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>Fats (g)</Text>
-              <TextInput
-                style={styles.input}
-                value={fats}
-                onChangeText={setFats}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textMuted}
-                editable={!saving}
-              />
-            </View>
-            <View style={styles.halfField} />
-          </View>
+          </ScrollView>
 
           <View style={styles.actions}>
             <View style={styles.actionButton}>
@@ -204,7 +212,7 @@ export function QuickAdjustmentModal({
             </View>
           </View>
         </Card>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -217,9 +225,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: spacing.xl,
   },
-  /** Width only — `Card panel` owns surface, radius, padding and border. */
+  /**
+   * Width + a cap the sheet can never exceed. `maxHeight: "100%"` resolves
+   * against the backdrop's content box (screen minus its `spacing.xl` padding),
+   * which replaces the hand-picked `maxHeight: 460`/`500` those numbers could
+   * not adapt: on a 568pt device the chrome alone (title, actions, padding)
+   * eats ~146pt, so a 460pt scroller still pushed the footer off-screen.
+   */
   card: {
     width: "100%",
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
     ...typography.titleBar,

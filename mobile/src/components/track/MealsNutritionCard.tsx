@@ -117,9 +117,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
+  // Standing stat-cell token (see amendments).
   compactValue: {
-    ...typography.body,
-    fontWeight: "600",
+    ...typography.rowTitle,
+    fontWeight: "700",
     color: colors.text,
   },
   compactGoal: {
