@@ -60,7 +60,15 @@ export function WaterQuickAddEditorModal({
             Optional name, amount in ounces, and beverage type per button.
           </Text>
 
-          <ScrollView style={styles.sheetScroll}>
+          {/*
+            No `autoFocus` here, so there is no live defect — `handled` is part
+            of the shared recipe and is applied for consistency: any tap on a
+            chip while a field above it holds focus should reach the chip.
+          */}
+          <ScrollView
+            style={styles.sheetScroll}
+            keyboardShouldPersistTaps="handled"
+          >
             {amountDrafts.map((draft, i) => (
               <View key={i} style={styles.block}>
                 <Text style={styles.label}>Button {i + 1}</Text>
@@ -159,16 +167,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   /**
-   * A per-button GROUP of three fields, not a per-field wrapper: the label
-   * still owns the field rhythm inside it via the group's `gap`.
+   * A per-button GROUP of three fields, not the `field` wrapper the recipe
+   * bans. One label heads three fields here, so the label cannot own the
+   * INTER-field rhythm; the group's `gap` does. The `label` style itself is
+   * byte-identical to the recipe's.
    */
   block: {
     marginBottom: spacing.lg,
     gap: spacing.sm,
   },
-  // The one form-label token.
+  // The one form-label token, with the recipe's own margins.
   label: {
     ...typography.section,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   input: {
     backgroundColor: colors.surface2,

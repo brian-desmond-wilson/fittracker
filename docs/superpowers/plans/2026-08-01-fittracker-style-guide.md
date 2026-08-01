@@ -1582,7 +1582,12 @@ import { Button, Card } from "@/src/components/ui";
       {/* optional */}
       <Text style={styles.subtitle}>One line of supporting copy.</Text>
 
-      <ScrollView style={styles.sheetScroll}>
+      {/* `handled` is required, not optional: a scroller sitting between a
+          live keyboard and a control eats the first tap on that control. */}
+      <ScrollView
+        style={styles.sheetScroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.label}>Field name</Text>
         <TextInput
           style={styles.input}
@@ -1649,7 +1654,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-Rules that come with it: confirm is `Button` (primary) on the **right**, cancel is `Button variant="secondary"` on the left; the confirm's in-flight state is `loading`, never a `"Saving…"` label swap; `disabled` carries only the validity condition, since `Button` already blocks on `disabled || loading`. Grouped single-select chips inside a sheet take the solid-brand active treatment.
+Rules that come with it: confirm is `Button` (primary) on the **right**, cancel is `Button variant="secondary"` on the left; the confirm's in-flight state is `loading`, never a `"Saving…"` label swap; `disabled` carries only the validity condition, since `Button` already blocks on `disabled || loading`. Grouped single-select chips inside a sheet take the solid-brand active treatment. The `ScrollView` **must** carry `keyboardShouldPersistTaps="handled"` — see the Task 9 amendment "the recipe's `ScrollView` was swallowing the first tap" for the defect that added it and for the follow-up it leaves on Task 8's five sheets.
 
 ### Task 8 (quality review) — form labels converge on `typography.section`; twins deleted
 
@@ -1749,7 +1754,7 @@ The plan says "history section headers → `SectionHeader`". There are two candi
 Other items in the same file:
 
 - **Per-log rows → `Card variant="row"`**, with `marginBottom` and the row's flex layout passed through `Card.style` (the `lib.cardSpacing` pattern from Task 6). `disabled={!onEdit}` + `activeOpacity={onEdit ? 0.7 : 1}` are gone because they are now expressed structurally: `Card` renders a plain `View` when it gets no handler, which is what "disabled" meant here. Radius converges 8 → `radii.row` (12).
-- **The loading branch → `LoadingState`**, per the plan. It is not a `ListEmptyComponent` — it sits inline in the screen's `ScrollView`, so it sizes to its own content and needs no `flexGrow` chain, and its opaque `colors.bg` is invisible against the screen's own `bg`.
+- **The loading branch → `LoadingState`**, per the plan. ~~It is not a `ListEmptyComponent` — it sits inline in the screen's `ScrollView`, so it sizes to its own content and needs no `flexGrow` chain~~ — **that rationale was WRONG and is corrected in "Task 9 (spec review) — the empty/loading states did not size themselves" below; a `flex: 1` primitive never sizes to its own content.** Its opaque `colors.bg` being invisible against the screen's own `bg` still holds.
 - **The empty branch → `EmptyState`** with `icon={Droplets}`. Its one string, `"No water logs yet. Start tracking today!"`, splits at its own sentence boundary into `title="No water logs yet"` + `body="Start tracking today!"`. Same words; the title drops its full stop, as titles do.
 - **The beverage badge follows the `Badge` recipe by hand** — `tint(beverageColor(type))` fill + a full-strength label, `radii.pill`, 12/600, padding 3×10 — rather than using the primitive, because `Badge`'s tone set has no per-beverage slot. Identical reasoning to Task 8's `MealsDayList` meal-type badge. It loses the uppercase/letter-spaced 10/700 white-on-solid treatment; at these labels the two render to within a couple of points of the same width.
 
@@ -1815,3 +1820,41 @@ Four judgement calls from the first pass were reviewed and accepted without chan
 - **`WaterUndoSnackbar` losing its drop shadow** — no elevation scale exists in the token system and inventing one is out of scope for a cosmetic cycle. **Recorded for a future elevation token: adding one would restore this shadow, and the snackbar is the call site that would justify it.**
 - **The three remaining hue changes** — the history row delete going to `IconButton tone="danger"`, the quick-add gear becoming a `tint(brand)` `IconButton circle`, and the beverage badge moving to a tinted fill with a full-strength label — are all correct applications of the standing destructive / control / `Badge`-recipe rules.
 - **`waterUnits.ts`'s `beverageColor()` deferred to Task 11** — agreed, and agreed that it is harder than `macroColor` was, since two of its five values have no token anywhere and a `colors.beverages` group is a naming decision rather than a side effect of a control sweep.
+
+### Task 9 (spec review) — the recipe's `ScrollView` was swallowing the first tap
+
+A genuine behavior regression introduced by the migration, and it originates in the **recipe**, not in this task's application of it.
+
+`WaterLogEditorModal` and `WaterGoalEditorModal` both `autoFocus` their amount/goal input, so the keyboard is up the instant either sheet opens. The migration moved their controls — the beverage chips and the oz/L segmented control — inside the recipe's `<ScrollView>`, and RN's default `keyboardShouldPersistTaps="never"` makes a scroller consume the first tap that occurs while a descendant holds keyboard focus, using it to dismiss the keyboard. Pre-migration those controls were direct `View` children of the sheet with no scroller between them and the modal, so the tap landed on the control. Post-migration the user had to tap every chip twice.
+
+Nothing upstream caught this because **none of Task 8's five sheets uses `autoFocus`**, so none of them has a keyboard up on open and none exhibits the defect.
+
+Fix, in two parts:
+
+1. `keyboardShouldPersistTaps="handled"` added to the `sheetScroll` `ScrollView` in all three water form sheets. `WaterQuickAddEditorModal` had no live defect (pre-existing scroller, no `autoFocus`) but takes the prop too, so the three sheets stay literally identical; each call site carries a comment saying which case it is.
+2. **The canonical recipe block above is updated** so Task 10 and every future sheet inherit it, with a one-line note: *a scroller sitting between a live keyboard and a control eats the first tap on that control.* The "rules that come with it" paragraph now states the prop is mandatory.
+
+**Follow-up left, deliberately not acted on:** Task 8's `FoodCorrectionModal`, `MealLogEditorModal`, `QuickAdjustmentModal` (and the two `pageSheet` modals with scrollers) should take the same prop. They have no `autoFocus` and therefore no live defect today, so editing five files outside this task's scope to fix a latent issue is not warranted here — but any of them gaining an `autoFocus` field, or a user tapping a chip while a text field above it holds focus, reproduces it. **Task 11's closeout should sweep the prop across every sheet.**
+
+### Task 9 (spec review) — the empty/loading states did not size themselves
+
+The Task 9 amendment above claimed the history list's `LoadingState`/`EmptyState` "sizes to its own content and needs no `flexGrow` chain". **That was wrong**, and a wrong rationale in this plan is worse than the bug, because Task 10 reads it. `EmptyState`'s and `LoadingState`'s shared `wrap` is `flex: 1` — i.e. `flexBasis: 0` — so it never sizes to its content. Nested in `styles.section` (`paddingHorizontal` only) inside `WaterScreen`'s content container (`paddingBottom` only), it resolved to zero content height and collapsed onto its own `2 × spacing.xxxl` = 64pt of padding, with the icon, title and body spilling out of the box.
+
+**The standard fix provably cannot work here, which is why this file needs a different one.** The `flexGrow: 1` chain (Task 5's `gridContainer`, Task 8's two-level `scrollContent` + `mealsSection`) works by giving the scroll content container a definite height of at least the viewport, so free space exists for the flex child to claim. This history list is the **last** block on a screen whose content above it — title ~90, ring card ~300, quick-add ~110, day strip ~110, insights ~250, custom-log form ~150 — already totals ~1000pt, more than any phone viewport. Free space at the content container is therefore always ≤ 0, `flexGrow` distributes nothing, and `section` has nothing to pass down. A chain here would have been inert at every level while looking like a fix.
+
+**Fix: a `stateBox` wrapper with `minHeight: 192`,** which each state fills. Verified against the actual engine rather than asserted — `node_modules/react-native/ReactCommon/yoga/yoga/algorithm/CalculateLayout.cpp` STEP 5 (~L1518-1545): when a min-dimension is defined and exceeds the flex line's consumed size, Yoga sets `availableInnerMainDim = minInnerMainDim` and, load-bearingly, leaves `sizeBasedOnContent` **false**, so `remainingFreeSpace` is positive and the `flexGrow: 1` child fills the box. Without a min-dimension the `else` branch sets `sizeBasedOnContent = true` and the child keeps its zero basis — exactly the collapse observed. The branch is guarded on `sizingModeMainDim != StretchFit`, which is the case for an auto-height `View` inside an auto-height scroll content container.
+
+192 is a documented literal, derived rather than picked: the taller of the two primitives' intrinsic content is `EmptyState` at `2 × spacing.xxxl` padding + a 40pt icon + `2 × spacing.md` gaps + a `rowTitle` line + a `body` line ≈ 166pt, plus slack for a wrapped title. The reasoning is recorded in full at the call site, since it is the kind of thing a later reader would otherwise "clean up" into an inert `flexGrow`.
+
+**Rule this generalizes, for Task 10:** the `flexGrow: 1` chain is not the fix for a `flex: 1` primitive — it is *one* way to produce the thing the primitive actually needs, which is **a parent with a definite main size**. Where the scroller can be at least viewport-height, grow the chain. Where sibling content guarantees the scroller is already overflowing, grow nothing and give the state its own box.
+
+### Task 9 (spec review) — six unrecorded deltas, itemized
+
+Every other value shift in this task was listed; these were not.
+
+- **`WaterProgressRing.unit` 16 → 14** (`typography.body`). The "oz"/"L" line under the ring's hero number; 16 had no token and `body` is the nearest. With the centre value now at `titleRoot` (28) the two are properly differentiated, which they were not at the interim 16/16.
+- **`WaterCustomLogForm.chipText` `foreground` → `textMuted`.** Inactive beverage chips were full-strength `text`; they now match the inactive chip label in every migrated sheet (`MealLogEditorModal`, `QuickAdjustmentModal`, and the two water sheets), which is `textMuted`. Active labels are `onBrand` on the brand fill.
+- **Cancel buttons now dim while saving.** All four sheets pass `disabled={saving}` to `Button variant="secondary"`, and `Button` applies `opacity: 0.5` — spec §5.1's single dimming mechanism. The hand-rolled cancels were `disabled` without any visual dim, so the control looked live while it was not. A gain, but a real visual change.
+- **Day-strip cell separation 2 → 4.** `marginHorizontal: 1` on each of seven cells (2pt between neighbours) became a container `gap: spacing.xs` (4pt), per the "flex + gap, never per-child margins" rule.
+- **Trailing slack 40 → `insets.bottom + spacing.xxl`.** Flat 40pt of spacer becomes ~58pt on a notched device and 24pt on a flat one. `WaterScreen` renders as a route, not under the tab bar, so the safe-area term is the correct clearance and the flat-device reduction is pure slack removal. Same conversion Task 7 verified for `home.tsx` and `track/index.tsx`.
+- **`WaterQuickAddEditorModal.label` restored to the recipe's margins.** The first pass dropped the recipe's `marginTop: spacing.sm, marginBottom: spacing.xs` in favour of the `block` group's `gap`, which was internally coherent but contradicted the "verbatim" claim. The `label` style is now byte-identical across all three form sheets. `block` **keeps** its `gap: spacing.sm` and that is the one recorded structural difference: this sheet has one label heading *three* fields, so the label cannot own the inter-field rhythm the way it does in a one-label-per-field sheet. `block` is a per-button group, not the per-field wrapper the recipe bans.

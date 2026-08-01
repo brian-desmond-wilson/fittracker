@@ -64,7 +64,16 @@ export function WaterGoalEditorModal({
         <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Daily Water Goal</Text>
 
-          <ScrollView style={styles.sheetScroll}>
+          {/*
+            `handled` is mandatory, not cosmetic: this sheet `autoFocus`es its
+            input, so the keyboard is up the instant it opens, and RN's default
+            `"never"` would spend the first tap on an oz/L segment dismissing
+            the keyboard instead of firing its handler.
+          */}
+          <ScrollView
+            style={styles.sheetScroll}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.unitToggle}>
               {(["oz", "L"] as WaterUnit[]).map((u) => (
                 <TouchableOpacity

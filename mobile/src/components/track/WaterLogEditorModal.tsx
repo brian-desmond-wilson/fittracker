@@ -56,7 +56,16 @@ export function WaterLogEditorModal({
         <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Edit Log</Text>
 
-          <ScrollView style={styles.sheetScroll}>
+          {/*
+            `handled` is mandatory, not cosmetic: this sheet `autoFocus`es its
+            input, so the keyboard is up the instant it opens, and RN's default
+            `"never"` would spend the first tap on a chip dismissing the
+            keyboard instead of firing its handler.
+          */}
+          <ScrollView
+            style={styles.sheetScroll}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.chipsRow}>
               {BEVERAGE_TYPES.map((t) => {
                 const active = draftType === t;
