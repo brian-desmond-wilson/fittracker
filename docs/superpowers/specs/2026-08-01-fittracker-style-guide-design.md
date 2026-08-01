@@ -71,7 +71,7 @@ Pure helper returning `rgba()` at `alpha` default **0.15** — the one transluce
 
 `{ control: 8, row: 12, panel: 16, pill: 999 }`. All fifteen current radii map to these.
 
-### 4.5 `type`
+### 4.5 `typography` (named to avoid TS `import { type … }` ambiguity)
 
 | Token | Size/weight | Use |
 |---|---|---|
@@ -95,7 +95,7 @@ Seven components. Each `StyleSheet.create`s internally from tokens; none accepts
 
 ### 5.1 `Button`
 `{ label, onPress, variant?: "primary" | "secondary" | "destructive" | "ghost", size?: "md" | "sm", loading?, disabled?, fluid?, icon? }`
-- Geometry always: `radii.control`, paddingVertical 12 (`sm`: 8), `type.button` label, row layout gap 8, `activeOpacity` 0.7.
+- Geometry always: `radii.control`, paddingVertical 12 (`sm`: 8), `typography.button` label, row layout gap 8, `activeOpacity` 0.7.
 - `primary`: brand fill, `onBrand` label. `secondary`: transparent, 1px `border`, `text` label. `destructive`: transparent, 1px `danger` border, `danger` label (the calm outline treatment; no filled red). `ghost`: text-only brand label, horizontal padding 8.
 - `disabled`: opacity 0.5 (the only dimming mechanism). `loading`: `ActivityIndicator` (small, `onBrand` on primary, `brand` otherwise) replaces the label; control keeps its rendered width via `minWidth` capture; press disabled.
 
@@ -119,7 +119,7 @@ Seven components. Each `StyleSheet.create`s internally from tokens; none accepts
 - `scroll: false` renders header only and lets the screen own its FlatList/SectionList (Inventory, Shopping).
 
 ### 5.5 `SectionHeader`
-`{ title, action?: { label | icon, onPress }, badge? }` — `type.section` title, brand-colored action on the right, optional `Badge` beside the title.
+`{ title, action?: { label | icon, onPress }, badge? }` — `typography.section` title, brand-colored action on the right, optional `Badge` beside the title.
 
 ### 5.6 `Badge`
 `{ label, tone: "warning" | "danger" | "success" | "neutral" | keyof accents }` — `radii.pill`, padding 3×10, 12/`"600"`, `tint(color)` fill + full-strength label. Replaces the copy-pasted score chips / stock badges (`EatNextHomeCard` ↔ meal library) and all expired/missing labels.
