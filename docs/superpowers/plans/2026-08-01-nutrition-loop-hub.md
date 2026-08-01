@@ -713,6 +713,8 @@ git commit -m "feat(ui): Screen accepts a refreshControl for its ScrollView"
 
 - [ ] **Step 1: Implement.** Mirrors `useEatNext`'s conventions exactly (stale-while-revalidate, runId guard, `toError`-style normalization — reuse the pattern, and copy the small `toError` helper since it is not exported; note that as acceptable duplication in a comment pointing at `useEatNext.ts:130`).
 
+> ⚠️ **SUPERSEDED — the `computeLoopStatus` call in the snippet below is stale.** It builds a separate `const mealScores = …` and passes both `meals` and `mealScores`; those two inputs are now ONE array, and `todayLocalDate` has been dropped. See "Input shape: `meals` and `mealScores` collapsed" in ⚠️ Execution amendments and use the corrected assembly there. The rest of the snippet (fetch composition, runId guard, pace/profile handling) stands.
+
 ```ts
 // mobile/src/hooks/useLoopHub.ts
 // Data assembly for the Loop Hub (spec §4.2 as revised): composes shipped
@@ -1381,7 +1383,7 @@ meals: library.meals.map((meal) => {
   );
   return { id: meal.id, name: meal.name, raw: s.raw, display: s.score };
 }),
-// (no separate `mealScores` field)
+// (no separate `mealScores` field, and NO `todayLocalDate` — see below)
 ```
 
 `readyCount` moved with it, from counting `stockByMealId.values()` to counting over `inp.meals`: a stale map entry for a deleted meal previously inflated the count past the library size (`"assemblability → 3 of 2 meals ready"`, `"3 ready"` on a 2-meal library). Same number for consistent inputs, now structurally incapable of exceeding `meals.length`. Mutation-verified.
@@ -1398,3 +1400,11 @@ meals: library.meals.map((meal) => {
 #### Coverage added
 
 Pace unit-pairing (no fixture had ever set `paceProtein` behind, so the Task 2 shared-object fix and the `catchUpLabel ?? "end of day"` fallback were both unpinned); station 2's and station 3's full `detail.lines`; every station's `title`, `destination` and `destinationLabel` (all three `LoopDestination` values typecheck in any station, so a copy-paste error routed the user to the wrong screen with a green suite — and node-env Jest means these assertions are the only automated protection these strings will ever get); a `listRows` row whose vendor is absent from `vendors`; the vendor tiebreak; the `capChips` boundary; the dual-overflow forecast case; and the `"today"` band. Three progressively-mutating multi-assertion tests were split so a first-assertion failure no longer hides the rest.
+
+#### `todayLocalDate` removed from `LoopStatusInputs`
+
+**Deviates from spec §4.1's input list, which included it.** Also recorded in the spec's "Execution deviations" section.
+
+The field was declared and never read — flagged after Tasks 1–2, again after the first review round, and raised a third time before being ruled on. Removed rather than retained "in case a station needs it", for the same reason the `meals`/`mealScores` collapse landed: **this engine is a projection over already-resolved data.** Every date-relative quantity a station renders is computed upstream — `ItemStockState.daysLeft` and `.expiration` (banded against today by `projectItemStock`), `ConsumptionEstimate.daysUntilOut`, `MealPaceState`. For a station to need `todayLocalDate` it would have to derive a date-relative fact *itself*, which this file's header comment explicitly forbids. So the speculative case isn't merely unlikely: if it ever arrived, needing the date here would be the signal that the computation belongs upstream in an engine that already has tests for it.
+
+Meanwhile the field obliged `useLoopHub` to thread a value with no consumer. Task 4's assembly drops the `todayLocalDate: today` line; `today` is still needed there for the fetchers (`fetchInventoryWithState(today)`, `fetchShoppingData(today)`, the `meal_logs` date filter), just not for `computeLoopStatus`.

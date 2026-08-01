@@ -20,7 +20,6 @@ const stock = (over: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
 });
 
 const baseInputs = (): LoopStatusInputs => ({
-  todayLocalDate: "2026-08-01",
   inventory: [
     { id: "i1", name: "Eggs", state: state() },
     { id: "i2", name: "Bananas", state: state({ totalQuantity: 0, isOut: true }) },
@@ -342,6 +341,27 @@ describe("station 4: pace", () => {
     const lines = computeLoopStatus(inp).stations[3].detail.lines;
     expect(lines).toContainEqual({ label: "Catch up", value: "400 cal by dinner (6 PM)" });
     expect(lines).toContainEqual({ label: "Catch up", value: "30 g by end of day" });
+  });
+  // The pair-walk's ACTUAL purpose: with two distinct objects an identity
+  // check (`p === pc ? "cal" : "g"`) also passes. Only ONE shared object for
+  // both macros — legal, since MealPaceState is a plain record — exposes it,
+  // and then the identity check labels both lines "cal".
+  it("a MealPaceState object shared by both macros still labels each line's own unit", () => {
+    const inp = baseInputs();
+    const shared = { status: "behind" as const, catchUpAmount: 200, catchUpLabel: "lunch (12 PM)" };
+    inp.paceCalories = shared;
+    inp.paceProtein = shared;
+    const lines = computeLoopStatus(inp).stations[3].detail.lines;
+    expect(lines).toContainEqual({ label: "Catch up", value: "200 cal by lunch (12 PM)" });
+    expect(lines).toContainEqual({ label: "Catch up", value: "200 g by lunch (12 PM)" });
+  });
+  // `goalHit`'s null gate is the twin of `paceish`'s — pinning one and not the
+  // other is the exact shape of the defect the previous round caught.
+  it("a null goal cannot manufacture 'Goal hit' either", () => {
+    const inp = baseInputs();
+    inp.goals = { calories: null, protein: null };
+    inp.paceCalories = { status: "goal_hit" }; inp.paceProtein = { status: "goal_hit" };
+    expect(computeLoopStatus(inp).stations[3].badge).toEqual({ label: "Day done", tone: "neutral" });
   });
   it("null goals render em-dashes", () => {
     const inp = baseInputs();

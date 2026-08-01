@@ -44,8 +44,13 @@ export interface StationStatus {
 
 export interface LoopStatus { stations: StationStatus[]; attentionCount: number }
 
+// No `todayLocalDate`: every date-relative fact a station renders is already
+// resolved upstream (`ItemStockState.daysLeft`/`.expiration`,
+// `ConsumptionEstimate.daysUntilOut`, `MealPaceState`). A station needing
+// today's date would have to derive a date-relative fact ITSELF, which the
+// header comment above forbids — so that need would be the signal the
+// computation belongs upstream, not that this field should return.
 export interface LoopStatusInputs {
-  todayLocalDate: string;
   inventory: Array<{ id: string; name: string; state: ItemStockState }>;
   /** The library AND its ranking in ONE array: `raw` ranks (spec §5.5),
    *  `display` is the /100 UI value. `useLoopHub` fills both with the same pure
