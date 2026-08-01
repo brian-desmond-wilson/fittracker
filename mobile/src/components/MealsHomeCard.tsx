@@ -1,10 +1,12 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { Flame } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
+import { Card } from "@/src/components/ui";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import {
   MacroGoals,
   MacroTotals,
@@ -78,15 +80,15 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
   );
 
   return (
-    <TouchableOpacity
-      style={styles.card}
+    <Card
+      variant="panel"
+      style={styles.cardSizing}
       onPress={() => router.push("/(tabs)/track/meals")}
-      activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>Meals</Text>
         <View style={styles.iconContainer}>
-          <Flame size={20} color="#F97316" strokeWidth={2} />
+          <Flame size={icons.md} color={colors.accents.meals} strokeWidth={icons.strokeWidth} />
         </View>
       </View>
 
@@ -117,7 +119,7 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
           />
         </View>
       </View>
-    </TouchableOpacity>
+    </Card>
   );
 }
 
@@ -145,7 +147,7 @@ function MiniRing({
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
       <Svg width={size} height={size}>
-        <Circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.08)" strokeWidth={strokeWidth} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={radius} stroke={colors.textFaint} strokeWidth={strokeWidth} fill="none" />
         <Circle
           cx={size / 2}
           cy={size / 2}
@@ -183,7 +185,7 @@ function MacroLine({
   // Stacked layout (label tiny on top, value + bar below) so the row
   // never overflows even when goals push the value width.
   return (
-    <View style={{ marginBottom: 8 }}>
+    <View style={lineStyles.wrap}>
       <Text style={lineStyles.label} numberOfLines={1}>
         {label.toUpperCase()}
       </Text>
@@ -201,12 +203,9 @@ function MacroLine({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#1F2937",
+  // `Card variant="panel"` owns surface/radius/padding/border; the half-width
+  // grid sizing the old bespoke `card` style also carried lives here.
+  cardSizing: {
     width: "47%",
     minWidth: 160,
   },
@@ -214,23 +213,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   cardTitle: {
-    fontSize: 14,
-    color: "#9CA3AF",
-    fontWeight: "500",
+    ...typography.body,
+    color: colors.textMuted,
     flex: 1,
   },
   iconContainer: {
-    backgroundColor: "rgba(249, 115, 22, 0.2)",
-    borderRadius: 8,
-    padding: 6,
+    backgroundColor: tint(colors.accents.meals),
+    borderRadius: radii.control,
+    padding: spacing.sm,
   },
   body: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: spacing.md,
   },
   rightCol: {
     flex: 1,
@@ -238,41 +236,45 @@ const styles = StyleSheet.create({
   },
 });
 
+// The ring's centre labels and the macro lines keep their sub-caption font
+// sizes (9/11): they are sized to fit inside a 64pt ring and a half-width
+// card, and spec §4.5 defines no token below `caption` (12) — same call Task 6
+// recorded for `lib.input`'s 15. Colors and spacing are tokenized.
 const ringStyles = StyleSheet.create({
   topText: {
-    fontSize: 16,
-    fontWeight: "bold",
+    ...typography.rowTitle,
     lineHeight: 18,
   },
   bottomText: {
     fontSize: 9,
-    color: "#9CA3AF",
+    color: colors.textMuted,
     marginTop: 1,
   },
 });
 
 const lineStyles = StyleSheet.create({
+  wrap: { marginBottom: spacing.sm },
   label: {
     fontSize: 9,
-    color: "#9CA3AF",
+    color: colors.textMuted,
     fontWeight: "700",
     letterSpacing: 0.4,
   },
   value: {
     fontSize: 11,
-    color: "#FFFFFF",
+    color: colors.text,
     fontWeight: "600",
     marginTop: 1,
   },
   track: {
     height: 3,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 1.5,
+    backgroundColor: colors.textFaint,
+    borderRadius: radii.pill,
     overflow: "hidden",
     marginTop: 3,
   },
   fill: {
     height: 3,
-    borderRadius: 1.5,
+    borderRadius: radii.pill,
   },
 });

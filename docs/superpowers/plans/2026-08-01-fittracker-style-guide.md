@@ -1213,3 +1213,90 @@ Smaller items in the same commit:
 - `lib.barTrack` / `lib.barFill` `borderRadius: 3 → radii.pill`. Identical rendering on a 6pt bar, one fewer magic number.
 - `MealDetail`'s "Edit" moves from `Button ghost` to `Button secondary`, so the footer pair (`secondary` + `destructive`) is two outlined controls of equal weight instead of a bare text link beside a bordered one.
 - The `ShoppingListScreen` comment calling its `EmptyState` "full-bleed" is corrected — the list's `contentContainerStyle` now supplies a horizontal gutter, so it is inset. `flexGrow: 1` is still what keeps it from collapsing.
+
+### Task 7 — the sanctioned `colors.accents` additions, in full
+
+Step 3 sanctions adding the non-nutrition tiles' base hexes to `colors.accents`. Exactly three were added, each reusing the tile's own pre-existing `iconColor` (so every tile renders the identical hue it did before) and each with a real consumer today:
+
+| Key | Value | Tile it serves | Where the value came from |
+|---|---|---|---|
+| `measurements` | `#EC4899` | Measurements (`Ruler`) | that entry's own `iconColor` / `rgba(236,72,153,0.15)` fill |
+| `photos` | `#F59E0B` | Progress Photos (`Camera`) | that entry's own `iconColor` / `rgba(245,158,11,0.15)` fill |
+| `workouts` | `#EF4444` | Workouts (`Dumbbell`) | that entry's own `iconColor` / `rgba(239,68,68,0.15)` fill |
+
+Nothing else was added — no speculative accents. The other five tiles use keys that already existed: Meals & Snacks → `meals`, Water → `water`, Food Inventory → `inventory`, Shopping List → `shopping`, Weight → `brand`, exactly as Step 3 lists.
+
+`photos` and `workouts` are byte-identical to `colors.warning` and `colors.danger`. They are kept as separate accent keys rather than aliased, because the two roles are genuinely different: `warning`/`danger` are **semantic** ("expiring", "delete this"), while these are **identity** ("the camera tile", "the dumbbell tile"). A tile should not have to say `colors.danger` to mean "Workouts", and a later change to the danger red must not silently repaint the Workouts tile. Both are `accents.*`, so contract 1 (accents are identity only, never controls) governs them.
+
+Consequence for the type: `TrackingCategoryConfig` in `mobile/src/types/track.ts` drops `iconColor: string` / `backgroundColor: string` for a single `accent: AccentKey`, which makes an unmappable tile color a compile error instead of a hex typo. That file and `mobile/src/theme/tokens.ts` are the two files Task 7 touched beyond the seven the plan names.
+
+### Task 7 — `EatNextHomeCard` imports `scoreTone` rather than mirroring it
+
+Task 6 left this file a stale cross-reference: its `scoreChipCore/Mid/Low` and `stockBadge*` styles were copy-pasted from `library/styles.ts` keys that Task 6 deleted, under a comment explaining that presentation is per-surface so a local copy was fine "since nothing shared existed". Something shared exists now.
+
+Both blocks are gone. The score chip is `<Badge label={String(top.score)} tone={scoreTone(top.score)} />`, importing the very same `scoreTone` from `@/src/components/track/meals/library/styles` that `MealRow`, `MealDetail` and `MealBuilder` use — so the same score is now provably the same color on Home and in the Library, rather than coincidentally similar. (`scoreTone` resolves `scoreBand` internally, so the local `scoreBand` import and the `band` local both went away; the threshold DECISION still lives only in `mealScore.ts`.) The import direction — a Home card reaching into the meal library's style module — is the smallest available fix: `scoreTone` is a pure `Record` lookup with no react-native runtime beyond the module it sits in, and hoisting it to a new shared module would be a Task 11 refactor, not a Task 7 restyle.
+
+The stock badge is `<Badge label={stockBadge.label} tone={stockBadge.assemblable ? "success" : "warning"} />`. `success` matches the tone Task 6 gave the Library's own `"In stock"` badge; `warning` preserves the amber the missing-items half already had. `eatNextStockBadge` remains the single decision point for the copy and the green/amber split.
+
+Resulting band → tone mapping, identical in both surfaces: `core → success`, `mid → warning`, `low → danger`.
+
+Two small consequences of adopting `Badge`: it carries no `numberOfLines` (the old stock-badge `<Text>` had `numberOfLines={1}`), and its `alignSelf: "flex-start"` top-aligns it in the `alignItems: "center"` header row. Both are immaterial for the labels this renders ("In stock", "Missing 3", a 1-3 digit score) and neither was worth bending the primitive for.
+
+### Task 7 — emergency card border converges to the 0.3 border tint
+
+`EatNextHomeCard`'s emergency state painted `rgba(248,113,113,0.5)` — a third alpha level (`#F87171` at 50%) on top of the system's two. It is now `tint(colors.danger, 0.3)`, the same border alpha the banner recipe uses, over the tokenized `#EF4444`. Spec §4.2's whole purpose is collapsing "seven arbitrary alpha levels" onto `0.15` fill / `0.3` border, and a fourth alpha in a file this task exists to detoxify would be new drift. The emergency signal is unweakened in practice: the title and the `UtensilsCrossed` glyph both switch to full-strength `colors.danger` alongside it, which is what actually reads at a glance.
+
+### Task 7 — unfilled progress tracks take `colors.textFaint` (three instances)
+
+The Tasks 7-10 standing rule on outline color names "an unfilled progress ring" as an affordance that uses `colors.textFaint`. Applied uniformly to all three unfilled tracks Home renders side by side, so they do not disagree with each other or with Task 9's `WaterProgressRing`:
+
+- `MealsHomeCard`'s `MiniRing` backing circle: `rgba(255,255,255,0.08)` → `colors.textFaint`.
+- `MealsHomeCard`'s macro bar `lineStyles.track`: same.
+- `WaterIntakeHomeCard`'s `progressTrack`: `rgba(59,130,246,0.15)` → `colors.textFaint`.
+
+The water one is the deliberate part: `rgba(59,130,246,0.15)` is exactly `tint(colors.accents.water)`, so keeping the identity read would have been a one-token swap. It went to `textFaint` anyway — the *filled* portion still carries the water accent, which is where the identity belongs, and having the Meals card's tracks grey while the Water card's stayed blue would have made two adjacent half-width cards in the same grid look like two systems. Track radii `1.5`/`2` → `radii.pill` (identical rendering on a 3-4pt bar), per the Task 6 precedent for `lib.barTrack`.
+
+### Task 7 — `home.tsx` had twelve dead style keys, not one
+
+Step 1 says to delete "the dead duplicate card styles in `home.tsx:246-254`" — that range is the `card` key alone. Auditing every key against the JSX found that `card`, `cardHeader`, `cardTitle`, `iconContainer`, `iconGreen`, `iconBlue`, `cardValue`, `cardSubtext`, `emptyState`, `emptyStateIcon`, `emptyStateTitle` and `emptyStateText` are **all** unreferenced — the fossil of the summary cards before `MealsHomeCard`/`WaterIntakeHomeCard` were extracted into their own components. All twelve are deleted; the file's stylesheet drops from 24 keys to 12, every one of which is used. Leaving eleven dead keys that the grep gate would still flag for hex would have failed the task's own definition of done.
+
+### Task 7 — `Screen` adoption declined for both screens
+
+Neither adoption is a clean win, and the plan requires neither.
+
+- **`home.tsx`**: its `ScrollView` carries a `RefreshControl`, which `Screen` owns the `ScrollView` for and cannot pass through — the same blocker that kept `ViewFoodDetailsScreen` off `Screen` in Task 5. It also renders a sticky absolutely-positioned "Refreshing..." overlay as a sibling of the scroller, and a top bar whose only content is a right-hand profile button. Adopting `Screen` would have deleted pull-to-refresh.
+- **`track/index.tsx`**: no such blocker, but nothing to gain either. Its header is a *bordered* bar containing the title, whereas `Screen variant="root"` renders an unbordered chrome bar (empty here, since there are no header props) and moves the title into the scroll body. That is a visible restructure of a screen this task was asked to retokenize, and `Screen`'s `scrollContent` `gap: spacing.lg` would additionally re-space the three sections. Kept and retokenized: the title converges to `typography.titleRoot` (32/bold → 28/bold, spec §4.5) and the gutter to `spacing.screenGutter`, which is the substance of what §6 asks for.
+
+Home's profile button likewise stayed a plain `TouchableOpacity`, retokenized. `IconButton square` is a 44×44 **brand-filled** control and `circle` a tinted green one; the profile glyph is deliberately quiet grey chrome, and either variant would have turned it into a green button — a visual change the plan does not ask for.
+
+### Task 7 — bottom padding: both screens converge on `insets.bottom + spacing.xxl`
+
+Step 1 prescribes this for `home.tsx`'s magic `paddingBottom: 100`. `track/index.tsx`'s equivalent — a trailing `<View style={{ height: 32 }} />` spacer inside the `ScrollView` — was folded into `contentContainerStyle` the same way, matching the Task 5 precedent in `FoodInventoryScreen` (drops a per-render element and gains the safe-area term the spacer never had).
+
+Verified this does not hide content behind the tab bar: `app/(tabs)/_layout.tsx`'s `tabBarStyle` has a fixed `height: 88` and is **not** absolutely positioned, so the tab bar sits below the scene rather than over it, and `@react-navigation/bottom-tabs` does not shrink the scene's `SafeAreaInsetsContext`. The trailing space therefore goes from a flat 100 to `insets.bottom + 24` (≈58 on a notched device, 24 on a flat one) of pure slack below the last card — less dead space, nothing clipped.
+
+### Task 7 — typography convergences, and the sizes that were deliberately kept
+
+Converged to tokens:
+
+- `home.tsx` `userName` 32/`"bold"` → `typography.titleRoot` (28/bold) + `colors.text`; `track/index.tsx` `headerTitle` the same. Spec §4.5 fixes the root title at 28.
+- `track/index.tsx` `sectionTitle` 12/600 `letterSpacing: 1` → `typography.section` (13/700 uppercase, `letterSpacing: 0.5`, `textMuted`). The strings were already uppercase, so `textTransform` is a no-op here.
+- `EatNextHomeCard`'s five 13pt text styles → `typography.body` (14). `#D1D5DB` (a hex with no token) and `#9CA3AF` both land on `colors.textMuted`; the CTA line lands on `colors.brand`; the expiring line on `typography.caption` + `colors.warning`.
+- `title` 16/700 → `typography.rowTitle` (16/600); `MealsHomeCard`'s ring `topText` 16/`"bold"` → `typography.rowTitle`; `WaterIntakeHomeCard`'s `cardValue` `"bold"` → `"700"`. `"bold"` is spec-banned outside `titleRoot`.
+- The two home cards' `cardTitle` 14/500 → `typography.body` + `textMuted`; `cardSubtext` 11 → `typography.caption`.
+
+Deliberately **not** converged, each with a reason:
+
+- `home.tsx`'s section headers stay screen-owned 20/600 text, recolored only — Step 1 says so explicitly.
+- `WaterIntakeHomeCard`'s `cardValue` keeps `fontSize: 22`. It sits between `rowTitle` (16) and `titleRoot` (28) with no token in between; either substitution visibly resizes the headline number of a half-width tile, which is a layout change rather than a restyle. (22 is on spec §4.3's banned list, but that list governs *spacing*, and Task 6's ban-driven `22 → 24` fix was a checkbox's box size, not a font size.)
+- `MealsHomeCard`'s ring/macro-line sub-caption sizes (9 and 11) are kept. Spec §4.5 defines no token below `caption` (12) and these are sized to fit inside a 64pt ring; same call Task 6 recorded for `lib.input`'s 15. Their colors and spacing are tokenized.
+
+### Task 7 — smaller deviations, recorded together
+
+- **The plan's `TrackingCard` source had one untokenized literal.** Step 2's full-replacement source ends `title: { ...typography.rowTitle, color: colors.text, marginTop: 8 }`. Shipped as `marginTop: spacing.sm` — same value, and an 8 hardcoded in the plan's own exemplar tile would be an odd precedent for the system's most-copied component. Same class of plan-authoring fix as Task 3's `IconButton` `22`. The glyph's `size={32}` **was** kept as the plan wrote it: `icons.lg` (24) would visibly shrink every Track hub tile's glyph, and 32 is what ships today.
+- **`RampHomeBanner` takes the recipe's uniform padding.** Its `paddingHorizontal: 14` / `paddingVertical: 12` become `padding: spacing.md`, matching `FoodInventoryScreen`'s shipped banner exactly so the two variants of one recipe are one shape. The round-up-on-control-padding rule does not bite here: the banner is full-width, so its horizontal padding sets where the text starts, not how big the tap target is. `gap: 10 → spacing.md` and `borderRadius: 12 → radii.row` follow the standing tie/mapping rules.
+- **18pt glyphs → `icons.md`.** `RampHomeBanner`'s `TrendingUp` and `EatNextHomeCard`'s `UtensilsCrossed` were `size={18}`, which is not a token; both round to `icons.md` (20). `home.tsx`'s profile `User` glyph was already exactly `icons.lg`.
+- **Icon tint wells keep their geometry, gain the `tint()` recipe.** The two home cards' `iconContainer` fills go from hand-typed `rgba(…, 0.2)` to `tint(colors.accents.meals)` / `tint(colors.accents.water)` (and `tint(colors.success)` for water's goal-hit state) — 0.2 → the system's single 0.15, `borderRadius: 8 → radii.control`, `padding: 6 → spacing.sm` (tie rounds up).
+- **Half-width sizing survives the `Card` swap.** `Card variant="panel"` cannot express `width: "47%"` / `minWidth: 160`, so both home cards pass a `cardSizing` style through `Card.style`, exactly as Task 6's `lib.cardSpacing` does. `EatNextHomeCard`'s `marginBottom` is passed the same way as `cardSpacing`. Padding converges 20 → `spacing.lg` (16) in all three, which is the point of the panel variant.
+- **`WaterIntakeHomeCard`'s pace colors.** `"on pace"` blue `#3B82F6` → `colors.accents.water` (identity, on the water card); goal-hit/ahead green → `colors.success`; behind amber → `colors.warning`. No control changed color — these are status text, not affordances.
+- **Not fixed, flagged for Task 8: `lib/mealMacros.ts`'s `macroColor()` returns raw hex** (`#3B82F6`, `#22C55E`, `#F59E0B`, `#EF4444`, `rgba(59,130,246,0.7)`) and `MealsHomeCard` renders those values into its ring and macro bars. The card itself is grep-clean because the literals live in the lib, but the color is untokenized in substance. It was left alone deliberately: `mealMacros` is shared with `MealsScreen` and its modal fleet, so deciding which blue means "in progress" versus the water accent is Task 8's call, in the task that owns those call sites. Task 8 should tokenize `macroColor` when it sweeps that file's consumers.

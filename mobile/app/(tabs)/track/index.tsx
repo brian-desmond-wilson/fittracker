@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import {
   Utensils,
@@ -13,11 +13,12 @@ import {
   ShoppingCart,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
-import { colors } from "@/src/lib/colors";
+import { colors, spacing, typography } from "@/src/theme/tokens";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
 export default function Track() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Category configuration with prioritized ordering
   const trackingCategories: TrackingCategoryConfig[] = [
@@ -26,32 +27,28 @@ export default function Track() {
       id: "meals",
       title: "Meals & Snacks",
       icon: "Utensils",
-      iconColor: "#F97316",
-      backgroundColor: "rgba(249, 115, 22, 0.15)",
+      accent: "meals",
       section: "nutrition",
     },
     {
       id: "water",
       title: "Water",
       icon: "Droplets",
-      iconColor: "#3B82F6",
-      backgroundColor: "rgba(59, 130, 246, 0.15)",
+      accent: "water",
       section: "nutrition",
     },
     {
       id: "food-inventory",
       title: "Food Inventory",
       icon: "Package",
-      iconColor: "#8B5CF6",
-      backgroundColor: "rgba(139, 92, 246, 0.15)",
+      accent: "inventory",
       section: "nutrition",
     },
     {
       id: "shopping",
       title: "Shopping List",
       icon: "ShoppingCart",
-      iconColor: "#14B8A6",
-      backgroundColor: "rgba(20, 184, 166, 0.15)",
+      accent: "shopping",
       section: "nutrition",
     },
     // Body & Measurements Section
@@ -59,24 +56,21 @@ export default function Track() {
       id: "weight",
       title: "Weight",
       icon: "Scale",
-      iconColor: "#22C55E",
-      backgroundColor: "rgba(34, 197, 94, 0.15)",
+      accent: "brand",
       section: "body",
     },
     {
       id: "measurements",
       title: "Measurements",
       icon: "Ruler",
-      iconColor: "#EC4899",
-      backgroundColor: "rgba(236, 72, 153, 0.15)",
+      accent: "measurements",
       section: "body",
     },
     {
       id: "photos",
       title: "Progress Photos",
       icon: "Camera",
-      iconColor: "#F59E0B",
-      backgroundColor: "rgba(245, 158, 11, 0.15)",
+      accent: "photos",
       section: "body",
     },
     // Activity & Recovery Section
@@ -84,8 +78,7 @@ export default function Track() {
       id: "workouts",
       title: "Workouts",
       icon: "Dumbbell",
-      iconColor: "#EF4444",
-      backgroundColor: "rgba(239, 68, 68, 0.15)",
+      accent: "workouts",
       section: "activity",
     },
   ];
@@ -128,8 +121,7 @@ export default function Track() {
             key={category.id}
             title={category.title}
             icon={iconMap[category.icon]}
-            iconColor={category.iconColor}
-            backgroundColor={category.backgroundColor}
+            accent={category.accent}
             onPress={() => handleCardPress(category.id)}
           />
         ))}
@@ -149,7 +141,10 @@ export default function Track() {
       {/* Scrollable Content */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + spacing.xxl },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Nutrition & Food Section */}
@@ -169,9 +164,6 @@ export default function Track() {
           <Text style={styles.sectionTitle}>ACTIVITY & RECOVERY</Text>
           {renderCategoryGrid(activityCategories)}
         </View>
-
-        {/* Bottom Spacing */}
-        <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -180,40 +172,36 @@ export default function Track() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: colors.foreground,
+    ...typography.titleRoot,
+    color: colors.text,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.xxl,
   },
   section: {
-    marginBottom: 32,
+    marginBottom: spacing.xxxl,
   },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    letterSpacing: 1,
-    marginBottom: 16,
+    ...typography.section,
+    marginBottom: spacing.lg,
   },
   row: {
     flexDirection: "row",
-    gap: 16,
-    marginBottom: 16,
+    gap: spacing.lg,
+    marginBottom: spacing.lg,
   },
   cardSpacer: {
     flex: 1,

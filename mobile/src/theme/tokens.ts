@@ -24,6 +24,15 @@ export const colors = {
     inventory: "#8B5CF6",
     shopping: "#14B8A6",
     brand: "#22C55E",
+    // Track hub's non-nutrition tiles (Task 7). Identity only, same as above:
+    // each is the tile's own pre-existing base hex, now named by domain so the
+    // tile can pass an `accent` key instead of a hex/rgba pair. `photos` and
+    // `workouts` are literally `warning`/`danger`, but they are IDENTITY here
+    // (a camera tile, a dumbbell tile), not a semantic verdict — a tile must
+    // not have to reach for `colors.danger` to say "Workouts".
+    measurements: "#EC4899",
+    photos: "#F59E0B",
+    workouts: "#EF4444",
   },
 } as const;
 
