@@ -1,7 +1,7 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import Svg, { Rect, Line, Text as SvgText } from "react-native-svg";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 
 interface WaterBarChartProps {
   // Oldest -> newest. Each entry: { date: "YYYY-MM-DD", total: oz, goal: oz }.
@@ -45,7 +45,7 @@ export function WaterBarChart({
           x2={VIEW_WIDTH - padding.right}
           y1={goalLineY}
           y2={goalLineY}
-          stroke="rgba(255,255,255,0.25)"
+          stroke={colors.textFaint}
           strokeWidth={1}
           strokeDasharray="3,3"
         />
@@ -58,11 +58,12 @@ export function WaterBarChart({
           const x = padding.left + i * slotWidth + (slotWidth - barWidth) / 2;
           const y = baseY - barHeight;
           const hit = d.goal > 0 && d.total >= d.goal;
+          // A zero day renders a 2pt stub — an empty track, not a fill.
           const fill = d.total === 0
-            ? "rgba(59, 130, 246, 0.18)"
+            ? colors.surface2
             : hit
-              ? "#22C55E"
-              : "#3B82F6";
+              ? colors.success
+              : colors.accents.water;
           if (d.total === 0) {
             return (
               <Rect
@@ -100,7 +101,9 @@ export function WaterBarChart({
               key={`label-${i}`}
               x={x}
               y={height - 6}
-              fill={colors.mutedForeground}
+              fill={colors.textMuted}
+              // Chart-fitted: §4.5 defines no token below `caption` (12), and
+              // fourteen columns in a 300-unit viewBox cannot hold one.
               fontSize="9"
               textAnchor="middle"
             >

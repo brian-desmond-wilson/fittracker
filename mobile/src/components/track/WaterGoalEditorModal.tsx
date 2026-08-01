@@ -3,11 +3,15 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
+  ScrollView,
   TouchableOpacity,
   TextInput,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import { WaterUnit, OZ_PER_LITER } from "@/src/lib/waterUnits";
 
 interface WaterGoalEditorModalProps {
@@ -53,61 +57,64 @@ export function WaterGoalEditorModal({
       transparent
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Daily Water Goal</Text>
-          <View style={styles.unitToggle}>
-            {(["oz", "L"] as WaterUnit[]).map((u) => (
-              <TouchableOpacity
-                key={u}
-                style={[
-                  styles.unitButton,
-                  unit === u && styles.unitButtonActive,
-                ]}
-                onPress={() => handleUnitChange(u)}
-                disabled={saving}
-              >
-                <Text
+
+          <ScrollView style={styles.sheetScroll}>
+            <View style={styles.unitToggle}>
+              {(["oz", "L"] as WaterUnit[]).map((u) => (
+                <TouchableOpacity
+                  key={u}
                   style={[
-                    styles.unitButtonText,
-                    unit === u && styles.unitButtonTextActive,
+                    styles.unitButton,
+                    unit === u && styles.unitButtonActive,
                   ]}
+                  onPress={() => handleUnitChange(u)}
+                  disabled={saving}
                 >
-                  {u}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={onChangeDraft}
-            keyboardType="decimal-pad"
-            placeholder={unit === "oz" ? "64" : "2"}
-            placeholderTextColor={colors.mutedForeground}
-            autoFocus
-            editable={!saving}
-          />
+                  <Text
+                    style={[
+                      styles.unitButtonText,
+                      unit === u && styles.unitButtonTextActive,
+                    ]}
+                  >
+                    {u}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={styles.input}
+              value={draft}
+              onChangeText={onChangeDraft}
+              keyboardType="decimal-pad"
+              placeholder={unit === "oz" ? "64" : "2"}
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+              editable={!saving}
+            />
+          </ScrollView>
+
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonPrimary]}
-              onPress={onSave}
-              disabled={saving}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Save"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button label="Save" onPress={onSave} loading={saving} fluid />
+            </View>
           </View>
-        </View>
-      </View>
+        </Card>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -115,87 +122,69 @@ export function WaterGoalEditorModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /**
+   * `maxHeight: "100%"` resolves against the backdrop's content box (screen
+   * minus its padding), so the sheet can never exceed the screen on any
+   * device. Never a fixed pixel cap — it cannot adapt.
+   */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 16,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
+  // Segmented control: `surface2` track, solid brand active segment.
   unitToggle: {
     flexDirection: "row",
-    backgroundColor: "#1F2937",
-    borderRadius: 8,
-    padding: 3,
-    gap: 3,
-    marginBottom: 12,
+    backgroundColor: colors.surface2,
+    borderRadius: radii.control,
+    padding: spacing.xs,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
     alignSelf: "flex-start",
   },
   unitButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.control,
   },
   unitButtonActive: {
-    backgroundColor: "#3B82F6",
+    backgroundColor: colors.brand,
   },
   unitButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#9CA3AF",
+    ...typography.buttonSm,
+    color: colors.textMuted,
   },
   unitButtonTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 18,
-    color: "#FFFFFF",
-    marginBottom: 20,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
   },
   actions: {
     flexDirection: "row",
-    gap: 12,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: {
-    backgroundColor: "#3B82F6",
-  },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  buttonSecondaryText: {
-    color: colors.foreground,
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

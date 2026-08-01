@@ -1,7 +1,14 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Droplets, Trash2 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import {
+  Card,
+  EmptyState,
+  IconButton,
+  LoadingState,
+  SectionHeader,
+} from "@/src/components/ui";
 import { WaterLog } from "@/src/types/track";
 import {
   WaterUnit,
@@ -35,11 +42,17 @@ export function WaterHistoryList({
 }: WaterHistoryListProps) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>History</Text>
+      <View style={styles.sectionHeader}>
+        <SectionHeader title="History" />
+      </View>
       {loading ? (
-        <Text style={styles.loadingText}>Loading...</Text>
+        <LoadingState />
       ) : sortedDates.length === 0 ? (
-        <Text style={styles.emptyText}>No water logs yet. Start tracking today!</Text>
+        <EmptyState
+          icon={Droplets}
+          title="No water logs yet"
+          body="Start tracking today!"
+        />
       ) : (
         sortedDates.map((date) => {
           const dayLogs = groupedLogs[date];
@@ -57,15 +70,14 @@ export function WaterHistoryList({
               {dayLogs.map((log) => {
                 const type = (log.beverage_type || "water") as BeverageType;
                 return (
-                  <TouchableOpacity
+                  <Card
                     key={log.id}
+                    variant="row"
                     style={styles.logCard}
                     onPress={onEdit ? () => onEdit(log) : undefined}
-                    activeOpacity={onEdit ? 0.7 : 1}
-                    disabled={!onEdit}
                   >
                     <View style={styles.logInfo}>
-                      <Droplets size={16} color={beverageColor(type)} />
+                      <Droplets size={icons.sm} color={beverageColor(type)} />
                       <Text style={styles.logAmount}>
                         {formatAmount(Number(log.amount_oz), displayUnit)}
                       </Text>
@@ -73,24 +85,29 @@ export function WaterHistoryList({
                         <View
                           style={[
                             styles.badge,
-                            { backgroundColor: beverageColor(type) },
+                            { backgroundColor: tint(beverageColor(type)) },
                           ]}
                         >
-                          <Text style={styles.badgeText}>
+                          <Text
+                            style={[
+                              styles.badgeText,
+                              { color: beverageColor(type) },
+                            ]}
+                          >
                             {beverageLabel(type)}
                           </Text>
                         </View>
                       )}
                       <Text style={styles.logTime}>{formatTime(log.logged_at)}</Text>
                     </View>
-                    <TouchableOpacity
+                    <IconButton
+                      icon={Trash2}
+                      variant="circle"
+                      tone="danger"
                       onPress={() => onDelete(log.id)}
-                      style={styles.deleteButton}
-                      activeOpacity={0.7}
-                    >
-                      <Trash2 size={18} color={colors.mutedForeground} />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
+                      accessibilityLabel="Delete water log"
+                    />
+                  </Card>
                 );
               })}
             </View>
@@ -103,52 +120,39 @@ export function WaterHistoryList({
 
 const styles = StyleSheet.create({
   section: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.screenGutter,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 12,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    textAlign: "center",
-    paddingVertical: 24,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    textAlign: "center",
-    paddingVertical: 24,
+  // `SectionHeader` takes no style prop; the wrapper owns its spacing.
+  sectionHeader: {
+    marginBottom: spacing.md,
   },
   dayGroup: {
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
+  /**
+   * A per-day sub-header, NOT a `SectionHeader`: "History" above it already
+   * owns `typography.section`, and nesting the same 13/700 uppercase style
+   * inside itself would flatten the hierarchy it exists to create.
+   */
   dayHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   dayDate: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.rowTitle,
+    color: colors.textMuted,
   },
+  // The stat-cell value token.
   dayTotal: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#3B82F6",
+    ...typography.rowTitle,
+    fontWeight: "700",
+    color: colors.text,
   },
+  // Placement only — `Card variant="row"` owns surface, radius, padding, border.
   logCard: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -156,33 +160,31 @@ const styles = StyleSheet.create({
   logInfo: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: spacing.sm,
     flex: 1,
   },
   logAmount: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.rowTitle,
+    color: colors.text,
   },
+  /**
+   * The `Badge` recipe (tinted fill + full-strength label) applied by hand:
+   * `Badge`'s tone set has no per-beverage slot, the same reason Task 8 left
+   * `MealsDayList`'s meal-type badge bespoke.
+   */
   badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    marginLeft: spacing.xs,
   },
   badgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    fontSize: 12,
+    fontWeight: "600",
   },
   logTime: {
-    fontSize: 14,
-    color: colors.mutedForeground,
+    ...typography.body,
+    color: colors.textMuted,
     marginLeft: "auto",
-  },
-  deleteButton: {
-    padding: 4,
   },
 });

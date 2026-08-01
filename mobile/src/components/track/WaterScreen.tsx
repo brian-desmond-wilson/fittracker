@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Droplets, Share2 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, spacing, tint, typography } from "@/src/theme/tokens";
 import { WaterLog } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import {
@@ -600,12 +600,16 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     const endStr = end.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     return `${startStr} – ${endStr}`;
   };
+  // Day-strip dot fills — one of the three sanctioned surviving blues. The
+  // 0.4 alpha is functional: it has to read as "some water, but under half"
+  // next to both the full-strength dot and the fully transparent one, which
+  // neither the 0.15 surface tint nor a token can express.
   const dotColorFor = (dateKey: string): string => {
     const total = totalsByDate[dateKey] || 0;
     if (total === 0) return "transparent";
-    if (total >= goalOz) return "#22C55E";
-    if (total >= goalOz * 0.5) return "#3B82F6";
-    return "rgba(59, 130, 246, 0.4)";
+    if (total >= goalOz) return colors.success;
+    if (total >= goalOz * 0.5) return colors.accents.water;
+    return tint(colors.accents.water, 0.4);
   };
 
   // History
@@ -634,7 +638,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <ChevronLeft size={24} color="#FFFFFF" />
+            <ChevronLeft size={icons.lg} color={colors.text} />
             <Text style={styles.backText}>Track</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -643,13 +647,26 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             style={styles.headerActionButton}
             activeOpacity={0.7}
           >
-            <Share2 size={20} color={exporting ? colors.mutedForeground : colors.foreground} />
+            <Share2
+              size={icons.md}
+              color={exporting ? colors.textMuted : colors.text}
+            />
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          // Replaces the trailing 40pt spacer `<View>`, and gains the
+          // safe-area term that spacer never had.
+          contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.titleContainer}>
-            <Droplets size={32} color="#3B82F6" strokeWidth={2} />
+            <Droplets
+              size={icons.xl}
+              color={colors.accents.water}
+              strokeWidth={icons.strokeWidth}
+            />
             <Text style={styles.pageTitle}>Water Intake</Text>
           </View>
 
@@ -716,8 +733,6 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             onDelete={handleDeleteLog}
             onEdit={openLogEditor}
           />
-
-          <View style={{ height: 40 }} />
         </ScrollView>
 
         <WaterUndoSnackbar
@@ -782,11 +797,11 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     flexDirection: "row",
@@ -794,16 +809,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   headerActionButton: {
-    padding: 6,
+    padding: spacing.sm,
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
   },
   backText: {
-    fontSize: 17,
-    color: colors.foreground,
+    ...typography.titleBar,
+    fontWeight: "400",
+    color: colors.text,
   },
   content: {
     flex: 1,
@@ -811,14 +827,13 @@ const styles = StyleSheet.create({
   titleContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 16,
+    gap: spacing.md,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.lg,
   },
   pageTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: colors.foreground,
+    ...typography.titleRoot,
+    color: colors.text,
   },
 });

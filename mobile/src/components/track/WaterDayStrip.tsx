@@ -5,7 +5,8 @@ import {
   ChevronRight,
   Calendar as CalendarIcon,
 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Card } from "@/src/components/ui";
 
 const DAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -31,14 +32,14 @@ export function WaterDayStrip({
   dotColorFor,
 }: WaterDayStripProps) {
   return (
-    <View style={styles.card}>
+    <Card variant="panel" style={styles.card}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => onNavigateWeek(-1)}
           style={styles.navButton}
           activeOpacity={0.7}
         >
-          <ChevronLeft size={20} color={colors.foreground} />
+          <ChevronLeft size={icons.md} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerText}>{weekRangeLabel}</Text>
         <TouchableOpacity
@@ -46,14 +47,14 @@ export function WaterDayStrip({
           style={styles.navButton}
           activeOpacity={0.7}
         >
-          <ChevronRight size={20} color={colors.foreground} />
+          <ChevronRight size={icons.md} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={onOpenDatePicker}
           style={styles.navButton}
           activeOpacity={0.7}
         >
-          <CalendarIcon size={18} color={colors.foreground} />
+          <CalendarIcon size={icons.md} color={colors.text} />
         </TouchableOpacity>
       </View>
       <View style={styles.row}>
@@ -82,62 +83,57 @@ export function WaterDayStrip({
           );
         })}
       </View>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  // Placement only — `Card variant="panel"` owns surface, radius and padding.
   card: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 12,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.xxl,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingBottom: 10,
+    paddingBottom: spacing.md,
   },
   headerText: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
+    ...typography.buttonSm,
+    color: colors.text,
     textAlign: "center",
   },
   navButton: {
-    padding: 6,
+    padding: spacing.sm,
   },
+  // Equal cells separated by a `gap`, replacing a 1pt per-cell margin.
   row: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: spacing.xs,
   },
   cell: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginHorizontal: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.control,
   },
+  // A day-strip fill — one of the three sanctioned surviving blues.
   cellSelected: {
-    backgroundColor: "rgba(59, 130, 246, 0.18)",
+    backgroundColor: tint(colors.accents.water),
   },
   dayInitial: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginBottom: 4,
+    ...typography.caption,
+    marginBottom: spacing.xs,
   },
   dayNumber: {
-    fontSize: 15,
-    color: colors.foreground,
+    ...typography.body,
+    color: colors.text,
     fontWeight: "500",
   },
   dayNumberToday: {
-    color: "#3B82F6",
+    color: colors.accents.water,
     fontWeight: "700",
   },
   dayNumberSelected: {
@@ -146,7 +142,7 @@ const styles = StyleSheet.create({
   dot: {
     width: 6,
     height: 6,
-    borderRadius: 3,
-    marginTop: 6,
+    borderRadius: radii.pill,
+    marginTop: spacing.sm,
   },
 });

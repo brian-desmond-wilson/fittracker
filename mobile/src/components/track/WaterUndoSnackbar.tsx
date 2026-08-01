@@ -1,6 +1,8 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Undo2 } from "lucide-react-native";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button } from "@/src/components/ui";
 
 interface WaterUndoSnackbarProps {
   visible: boolean;
@@ -19,55 +21,44 @@ export function WaterUndoSnackbar({
       <Text style={styles.text} numberOfLines={1}>
         {label}
       </Text>
-      <TouchableOpacity
+      <Button
+        variant="ghost"
+        size="sm"
+        label="Undo"
+        icon={Undo2}
         onPress={onUndo}
-        style={styles.undoButton}
-        activeOpacity={0.7}
-      >
-        <Undo2 size={16} color="#FFFFFF" />
-        <Text style={styles.undoText}>Undo</Text>
-      </TouchableOpacity>
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The drop shadow is gone: its `shadowColor` was a raw black literal and the
+   * token module has no elevation scale (the system is deliberately flat, the
+   * same call Task 5 made for the inventory tile's tag overlay). The `surface2`
+   * fill and the `border` outline are what separate it from `bg`. It is still
+   * the last sibling in the screen's root `View`, so it paints on top.
+   */
   snackbar: {
     position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 24,
-    backgroundColor: "#1F2937",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    left: spacing.screenGutter,
+    right: spacing.screenGutter,
+    bottom: spacing.xxl,
+    backgroundColor: colors.surface2,
+    borderRadius: radii.row,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    gap: spacing.md,
     borderWidth: 1,
-    borderColor: "#374151",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    borderColor: colors.border,
   },
   text: {
-    color: "#FFFFFF",
-    fontSize: 14,
+    ...typography.body,
+    color: colors.text,
     flex: 1,
-  },
-  undoButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  undoText: {
-    color: "#3B82F6",
-    fontSize: 14,
-    fontWeight: "700",
   },
 });

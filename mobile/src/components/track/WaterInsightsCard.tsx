@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, spacing, typography } from "@/src/theme/tokens";
+import { Card } from "@/src/components/ui";
 import { WaterBarChart } from "./WaterBarChart";
 import { DailySeriesEntry } from "@/src/lib/waterStats";
 import { WaterUnit, ozToLiters } from "@/src/lib/waterUnits";
@@ -27,7 +28,7 @@ export function WaterInsightsCard({
   displayUnit,
 }: WaterInsightsCardProps) {
   return (
-    <View style={styles.card}>
+    <Card variant="panel" style={styles.card}>
       <Text style={styles.title}>Insights · Last 7 days</Text>
       <View style={styles.statsRow}>
         <View style={styles.statCell}>
@@ -56,56 +57,47 @@ export function WaterInsightsCard({
       </View>
       <Text style={styles.chartLabel}>Last 14 days</Text>
       <WaterBarChart series={chartSeries} referenceGoalOz={referenceGoalOz} />
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  // Placement only — `Card variant="panel"` owns surface, radius and padding.
   card: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.xxl,
   },
   title: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.mutedForeground,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 12,
+    ...typography.section,
+    marginBottom: spacing.md,
   },
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   statCell: {
     flex: 1,
     alignItems: "center",
   },
+  // The stat-cell value token.
   statValue: {
-    fontSize: 22,
+    ...typography.rowTitle,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
   },
   statValueSub: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: "500",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   statLabel: {
-    fontSize: 11,
-    color: colors.mutedForeground,
-    marginTop: 2,
+    ...typography.caption,
+    marginTop: spacing.xs,
     textAlign: "center",
   },
   chartLabel: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginBottom: 6,
+    ...typography.caption,
+    marginBottom: spacing.sm,
   },
 });

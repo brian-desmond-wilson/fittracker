@@ -3,17 +3,19 @@ import {
   View,
   Text,
   StyleSheet,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   TouchableOpacity,
   TextInput,
   ScrollView,
 } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { Button, Card } from "@/src/components/ui";
 import {
   BEVERAGE_TYPES,
   BeverageType,
   beverageLabel,
-  beverageColor,
 } from "@/src/lib/waterUnits";
 
 interface WaterQuickAddEditorModalProps {
@@ -48,22 +50,26 @@ export function WaterQuickAddEditorModal({
       transparent
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.backdrop}
+      >
+        <Card variant="panel" style={styles.card}>
           <Text style={styles.title}>Customize Quick-Add</Text>
           <Text style={styles.subtitle}>
             Optional name, amount in ounces, and beverage type per button.
           </Text>
-          <ScrollView style={{ maxHeight: 420 }}>
+
+          <ScrollView style={styles.sheetScroll}>
             {amountDrafts.map((draft, i) => (
               <View key={i} style={styles.block}>
-                <Text style={styles.blockLabel}>Button {i + 1}</Text>
+                <Text style={styles.label}>Button {i + 1}</Text>
                 <TextInput
                   style={styles.input}
                   value={nameDrafts[i] ?? ""}
                   onChangeText={(t) => onChangeName(i, t)}
                   placeholder="Name (optional)"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
                 <TextInput
@@ -72,7 +78,7 @@ export function WaterQuickAddEditorModal({
                   onChangeText={(t) => onChangeAmount(i, t)}
                   placeholder="Amount (oz)"
                   keyboardType="decimal-pad"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!saving}
                 />
                 <View style={styles.chipsRow}>
@@ -83,13 +89,7 @@ export function WaterQuickAddEditorModal({
                         key={t}
                         onPress={() => onChangeType(i, t)}
                         disabled={saving}
-                        style={[
-                          styles.chip,
-                          active && {
-                            backgroundColor: beverageColor(t),
-                            borderColor: beverageColor(t),
-                          },
-                        ]}
+                        style={[styles.chip, active && styles.chipActive]}
                       >
                         <Text
                           style={[
@@ -106,26 +106,23 @@ export function WaterQuickAddEditorModal({
               </View>
             ))}
           </ScrollView>
+
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonSecondary]}
-              onPress={onClose}
-              disabled={saving}
-            >
-              <Text style={styles.buttonSecondaryText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.buttonPrimary]}
-              onPress={onSave}
-              disabled={saving}
-            >
-              <Text style={styles.buttonPrimaryText}>
-                {saving ? "Saving…" : "Save"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.actionButton}>
+              <Button
+                variant="secondary"
+                label="Cancel"
+                onPress={onClose}
+                disabled={saving}
+                fluid
+              />
+            </View>
+            <View style={styles.actionButton}>
+              <Button label="Save" onPress={onSave} loading={saving} fluid />
+            </View>
           </View>
-        </View>
-      </View>
+        </Card>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -133,99 +130,87 @@ export function WaterQuickAddEditorModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: spacing.xl,
   },
+  /**
+   * `maxHeight: "100%"` resolves against the backdrop's content box (screen
+   * minus its padding), so the sheet can never exceed the screen on any
+   * device. This replaces the scroller's hand-picked `maxHeight: 420`, which
+   * could not adapt: the chrome alone eats ~146pt.
+   */
   card: {
     width: "100%",
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
+    maxHeight: "100%",
+  },
+  /** Shrinks first, so the title and the footer buttons always render. */
+  sheetScroll: {
+    flexShrink: 1,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 8,
+    ...typography.titleBar,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 13,
-    color: colors.mutedForeground,
-    marginBottom: 12,
+    ...typography.caption,
+    marginBottom: spacing.lg,
   },
+  /**
+   * A per-button GROUP of three fields, not a per-field wrapper: the label
+   * still owns the field rhythm inside it via the group's `gap`.
+   */
   block: {
-    marginBottom: 16,
-    gap: 6,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
   },
-  blockLabel: {
-    width: 80,
-    fontSize: 14,
-    color: colors.mutedForeground,
+  // The one form-label token.
+  label: {
+    ...typography.section,
   },
   input: {
-    flex: 1,
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: "#374151",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: "#FFFFFF",
+    borderColor: colors.border,
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
-    marginTop: 4,
+    gap: spacing.sm,
   },
   chip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: "#374151",
-    backgroundColor: "#1F2937",
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+  },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  chipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   chipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
-    color: "#D1D5DB",
+    color: colors.textMuted,
   },
   chipTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
+    gap: spacing.md,
+    marginTop: spacing.lg,
   },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonPrimary: {
-    backgroundColor: "#3B82F6",
-  },
-  buttonSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  buttonSecondaryText: {
-    color: colors.foreground,
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
+  actionButton: { flex: 1 },
 });

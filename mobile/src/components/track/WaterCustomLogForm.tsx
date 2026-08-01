@@ -7,13 +7,13 @@ import {
   TextInput,
 } from "react-native";
 import { Plus } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, radii, spacing } from "@/src/theme/tokens";
+import { Button, SectionHeader } from "@/src/components/ui";
 import {
   WaterUnit,
   BEVERAGE_TYPES,
   BeverageType,
   beverageLabel,
-  beverageColor,
 } from "@/src/lib/waterUnits";
 
 interface WaterCustomLogFormProps {
@@ -35,7 +35,9 @@ export function WaterCustomLogForm({
 }: WaterCustomLogFormProps) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Log a Custom Amount</Text>
+      <View style={styles.sectionHeader}>
+        <SectionHeader title="Log a Custom Amount" />
+      </View>
       <View style={styles.chipsRow}>
         {BEVERAGE_TYPES.map((t) => {
           const active = addType === t;
@@ -43,13 +45,7 @@ export function WaterCustomLogForm({
             <TouchableOpacity
               key={t}
               onPress={() => onChangeType(t)}
-              style={[
-                styles.chip,
-                active && {
-                  backgroundColor: beverageColor(t),
-                  borderColor: beverageColor(t),
-                },
-              ]}
+              style={[styles.chip, active && styles.chipActive]}
               activeOpacity={0.7}
             >
               <Text
@@ -66,20 +62,13 @@ export function WaterCustomLogForm({
           <TextInput
             style={styles.input}
             placeholder={`Amount (${displayUnit})`}
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
             value={addAmount}
             onChangeText={onChangeAmount}
           />
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={onSubmit}
-          activeOpacity={0.7}
-        >
-          <Plus size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add</Text>
-        </TouchableOpacity>
+        <Button label="Add" icon={Plus} onPress={onSubmit} />
       </View>
     </View>
   );
@@ -87,68 +76,56 @@ export function WaterCustomLogForm({
 
 const styles = StyleSheet.create({
   section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    paddingHorizontal: spacing.screenGutter,
+    marginBottom: spacing.xxl,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: 12,
+  // `SectionHeader` takes no style prop; the wrapper owns its spacing.
+  sectionHeader: {
+    marginBottom: spacing.md,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 12,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
+  },
+  // Grouped, mutually-exclusive selector → solid brand fill + `onBrand` label.
+  chipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   chipText: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.textMuted,
   },
   chipTextActive: {
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   form: {
     flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
+    gap: spacing.md,
+    marginBottom: spacing.lg,
   },
   inputContainer: {
     flex: 1,
   },
   input: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.foreground,
-  },
-  addButton: {
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    justifyContent: "center",
-  },
-  addButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
+    borderRadius: radii.control,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    fontSize: 16, // §4.5 defines no input token
+    color: colors.text,
   },
 });

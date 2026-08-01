@@ -1669,3 +1669,111 @@ Both byte-identical `label`/`inputLabel` twins are gone — in `mealsScreenStyle
 ### Note for Task 11 — `mealsScreenStyles.ts` is three disjoint stylesheets in one file
 
 Recorded, deliberately not acted on. Its 59 keys partition cleanly by consumer with **zero overlap**: `MealsScreen` uses the screen chrome, `MealAddForm` the form block, `MealsDayList` the list block. Nothing is genuinely shared, so the "shared stylesheet" framing is false — it is three stylesheets that happen to live in one module, which is why the ten dead keys survived unnoticed for so long. Splitting it into per-consumer sheets (or colocating each) is a structural refactor with no styling content, so it is out of scope for a cosmetic cycle. Task 11's closeout is the place.
+
+### Task 9 — the file list grew from twelve to fourteen
+
+The plan names twelve files. Two more were forced, neither discretionary:
+
+- **`WaterRingCard.tsx`** — it is the container that renders `WaterProgressRing` (which the plan *does* name), it is the screen's hero card, and it was the single most hex-heavy file in the water fleet (`rgba(59,130,246,0.1)` fill, `rgba(59,130,246,0.3)` border, a `#3B82F6` "Today" link, and a four-colour pace-status block). Migrating the ring inside it while leaving its wrapper on raw rgba would have shipped a `surface2` groove sitting on a hand-typed blue tint — the exact composite failure Task 8's `MacroBar`/`MacroRing` follow-up had to correct.
+- **`WaterBarChart.tsx`** — the only child of `WaterInsightsCard`, which the plan names. Its bar fills are the same `#22C55E`/`#3B82F6` pair the ring uses and its zero-day stub was a hand-typed water tint. Converting the card without it would have left a hex-failing file inside a grep-clean one.
+
+Same justification Task 5 used for `CategoryTabs`/`SubcategoryPills` and Task 8 used for `MacroBar`/`MacroRing`. All fourteen are grep-clean.
+
+### Task 9 — `Screen` adoption declined for `WaterScreen`
+
+The plan does not require it and it is not a clean win. Two blockers, both familiar:
+
+- The back affordance is a **labelled** one — a chevron plus the word "Track". `Screen`'s is chevron-only (there is no `headerLeft`, deliberately, per the Task 4 amendment). This is exactly why Task 8 kept `MealsWeeklySummaryModal` (`‹ Meals`) off `Screen`.
+- The header is a **bordered** bar. `Screen variant="root"` renders an unbordered chrome bar and `variant="detail"` has no 28pt body title — neither expresses what this screen has today.
+
+Additionally `Screen`'s `scrollContent` carries `gap: spacing.lg`, which would re-space six body blocks that already own their own vertical rhythm. Header kept and retokenized; `backText` uses the same `{ ...typography.titleBar, fontWeight: "400" }` recipe Task 8 gave `MealsWeeklySummaryModal`.
+
+Gutter strategy follows from that: no container can own the gutter, so every body block carries `spacing.screenGutter` uniformly (20 → 16 across all six), exactly as `MealsScreen` does. The trailing `<View style={{ height: 40 }} />` spacer is folded into `contentContainerStyle` as `insets.bottom + spacing.xxl` — the Task 7/8 precedent, which also gains the safe-area term the spacer never had.
+
+### Task 9 — the centred-sheet recipe, applied to four modals
+
+`WaterLogEditorModal`, `WaterGoalEditorModal` and `WaterQuickAddEditorModal` take the canonical recipe **verbatim**: `KeyboardAvoidingView` backdrop on `colors.scrim`, `Card variant="panel"` at `width: "100%"` / `maxHeight: "100%"`, a `flexShrink: 1` `ScrollView`, and a `secondary` Cancel / `primary` Save pair in `flex: 1` wrappers. All three previously had a bare `<View>` backdrop at `rgba(0,0,0,0.7)`, no keyboard avoidance, a `"Saving…"` label swap, and — in the quick-add editor — a hand-picked `maxHeight: 420` on the scroller. `saving` now drives `Button`'s `loading`; the press-blocking boolean is identical (`Button` blocks on `disabled || loading`).
+
+Two deliberate non-additions inside the recipe:
+
+- **No field labels were invented.** The recipe's `styles.label` is used only where a label already existed (`WaterQuickAddEditorModal`'s "Button 1…4", which converges from 14/400-muted to `typography.section` and drops its `width: 80`). The log and goal sheets have single fields whose placeholders already name them; adding "AMOUNT" headings would be new product copy, not a restyle. `styles.label` is simply not declared in those two files, so there are no orphans.
+- **The three sheets that have no subtitle use `title.marginBottom: spacing.md`**, matching the shipped `MealLogEditorModal`; the one that has a subtitle uses `xs` + `subtitle.marginBottom: lg`, per the recipe.
+
+**`WaterCalendarModal` deviates, as anticipated.** It keeps the backdrop, the `Card variant="panel"` sheet and a footer `Button`, and drops the form parts: there is no title, no `ScrollView` and no Cancel. A native `DateTimePicker` spinner is not a form — it commits through `onChange` as the user spins, so "Done" is a dismiss, not a confirm, and a Cancel beside it would imply a rollback the component cannot perform. Done is therefore a single full-width `Button` (the card is a column, so `fluid` stretches it), replacing a `#3B82F6` fill with `borderRadius: 10` / `paddingVertical: 14` — two off-grid values. No `KeyboardAvoidingView` either: a spinner raises no keyboard. `maxHeight: "100%"` is still applied. The Android branch (a bare, chrome-less `DateTimePicker`) is untouched.
+
+### Task 9 — the blue control sweep, itemized
+
+| Control | Was | Now |
+|---|---|---|
+| `WaterLogEditorModal` confirm/cancel | `#3B82F6` fill / bordered | `Button` primary + secondary |
+| `WaterGoalEditorModal` confirm/cancel | `#3B82F6` fill / bordered | `Button` primary + secondary |
+| `WaterQuickAddEditorModal` confirm/cancel | `#3B82F6` fill / bordered | `Button` primary + secondary |
+| `WaterCalendarModal` "Done" | `#3B82F6` fill | `Button` primary, `fluid` |
+| `WaterCustomLogForm` "Add" pill | `#3B82F6` fill + `#FFFFFF` glyph | `Button` primary + `icon={Plus}` |
+| `WaterGoalEditorModal` oz/L toggle | `#3B82F6` active segment on `#1F2937` | `surface2` track + solid `colors.brand` + `onBrand` label |
+| beverage-type chips (×3 files) | the beverage's own hue as a solid fill | solid `colors.brand` + `onBrand` (standing rule: grouped single-select) |
+| `WaterRingCard` "Today" link | `#3B82F6` text | `Button variant="ghost" size="sm"` |
+| `WaterUndoSnackbar` "Undo" | `#3B82F6` text + white glyph | `Button variant="ghost" size="sm"` + `icon={Undo2}` |
+| `WaterHistoryList` row delete | 18pt `textMuted` `Trash2` in a 4pt pad | `IconButton variant="circle" tone="danger"` (+ `accessibilityLabel`) |
+| `WaterQuickAddCard` gear | 16pt `textMuted` `Sliders` in a 4pt pad | `IconButton variant="circle"` inside `SectionHeader`'s action slot |
+
+Blue survives **exactly** where contract 1 allows and nowhere else: the `Droplets` title glyph (`accents.water` at `icons.xl`), the progress-ring **fill**, the day-strip selected-cell fill and dot fills, `WaterDayStrip`'s "today" day number, `WaterBarChart`'s bar fills, and `WaterRingCard`'s `"on pace"` **status text** (which is text, not a control — the same call Task 7 recorded for `WaterIntakeHomeCard`'s pace line, and it uses the identical three-way `accents.water` / `success` / `warning` split).
+
+Two of those are hue changes worth flagging rather than pure renames: the row delete goes from grey to `danger` (per the standing destructive rule; note this delete *is* guarded by a confirm `Alert`, unchanged), and the quick-add gear goes from a quiet grey glyph to a 32pt `tint(brand)` circle. The gear is a genuine inline row action opening a modal — precisely what `circle` exists for — and it gains a ≥44pt touch target and an accessibility label it never had.
+
+### Task 9 — `WaterRingCard` loses its blue tint; the hardest call in the task
+
+The hero card was `rgba(59,130,246,0.1)` fill on a `rgba(59,130,246,0.3)` border at `radii.row`. It is now a plain `Card variant="panel"` (`surface`, `radii.panel`), like every other card on the screen.
+
+The spec is genuinely two-voiced here: §3 decision 3 lists "tints" among the sanctioned identity uses of a domain accent, which would have permitted a one-token `tint(colors.accents.water)` / `tint(…, 0.3)` swap. But the plan's Task 9 instruction is an **exhaustive** list — "blue survives in the water drop glyph, progress ring fill, and day-strip fills" — and it converges the screen's in-screen cards onto panel geometry in the same sentence. The plan is authoritative on mechanics, and three sibling cards on `surface` beside one tinted-blue card would read as the odd one out on the screen this task exists to unify. The identity is not lost: a 180pt water-blue ring sits inside this very card, under a 32pt blue `Droplets` glyph.
+
+This is the most visible single change in the task. It is a one-line revert (`tint(colors.accents.water)` through `Card.style`) if the owner disagrees at screenshot time.
+
+### Task 9 — `WaterProgressRing`: the groove, and the ring-centre value
+
+- **Unfilled track → `colors.surface2`**, per the standing rule, which names this file explicitly. It was `rgba(59, 130, 246, 0.15)` — i.e. exactly `tint(colors.accents.water)`, so keeping the identity read there was a one-token swap, and it was declined for the same reason Task 7 declined it on `WaterIntakeHomeCard`'s track: the *fill* already carries the identity, and a groove is a bounding element. This is **not** the outline rule's `textFaint` case.
+- **Ring fill** stays water blue (`accents.water`, `success` when complete) — a sanctioned survivor.
+- **Centre value → `{ ...typography.rowTitle, fontWeight: "700" }`**, the standing stat-cell token, which names "Task 9's ring centre" verbatim and forbids re-litigating it. Its color goes to `colors.text` (`colors.success` when complete), matching `WaterIntakeHomeCard`'s `cardValue`/`cardValueHit` exactly — the blue it had is not on contract 1's survivor list.
+
+**Flagged for the owner, applied as instructed:** this is a 36 → 16 shrink of the headline number inside a 180pt ring, by far the largest single metric change in the migration. The `lineHeight: 40` and the `marginTop: -2` nudge on the unit below it are dropped with it, since both existed only to manage the 36pt headline's metrics. Note this cuts against the precedent Task 8 set for `MacroRing`, whose three ring-fitted font sizes were deliberately **held** on the argument that a fixed-diameter ring has no room for a token. The standing rule wins because it names this call site by name; if the screenshot shows a 16pt number floating in a 180pt ring, the honest fix is to amend the standing rule (or add a type token between `rowTitle` and `titleRoot`), not to special-case this file.
+
+Applied consistently elsewhere: `WaterInsightsCard`'s four `statValue`s (22/700 → the token) and `WaterHistoryList`'s per-day totals. `WaterDayStrip` has **no** stat cells — it renders day *numbers*, not totals — so the rule finds nothing to bind to there; its day number stays `typography.body` + weight, and the history day total is the "day total" the rule was reaching for.
+
+### Task 9 — `WaterHistoryList`: two section levels, one `SectionHeader`
+
+The plan says "history section headers → `SectionHeader`". There are two candidates and they are nested, so only the outer one takes the primitive:
+
+- **"History"** (and `WaterCustomLogForm`'s "Log a Custom Amount") → `SectionHeader`. Both were 18/600, the same convergence Task 8 applied to `mealsScreenStyles`' `sectionTitle`. Each sits in a bare wrapper `<View>` that owns `marginBottom: spacing.md`, because `SectionHeader` takes no `style` prop.
+- **The per-day group headers** ("Today" / "Yesterday" / a date, with the day's total on the right) stay bespoke, tokenized. Nesting `typography.section` (13/700 uppercase muted) directly inside itself would flatten the hierarchy the outer header exists to create. They read `typography.rowTitle` + `textMuted` for the date against the stat-cell token for the total.
+
+Other items in the same file:
+
+- **Per-log rows → `Card variant="row"`**, with `marginBottom` and the row's flex layout passed through `Card.style` (the `lib.cardSpacing` pattern from Task 6). `disabled={!onEdit}` + `activeOpacity={onEdit ? 0.7 : 1}` are gone because they are now expressed structurally: `Card` renders a plain `View` when it gets no handler, which is what "disabled" meant here. Radius converges 8 → `radii.row` (12).
+- **The loading branch → `LoadingState`**, per the plan. It is not a `ListEmptyComponent` — it sits inline in the screen's `ScrollView`, so it sizes to its own content and needs no `flexGrow` chain, and its opaque `colors.bg` is invisible against the screen's own `bg`.
+- **The empty branch → `EmptyState`** with `icon={Droplets}`. Its one string, `"No water logs yet. Start tracking today!"`, splits at its own sentence boundary into `title="No water logs yet"` + `body="Start tracking today!"`. Same words; the title drops its full stop, as titles do.
+- **The beverage badge follows the `Badge` recipe by hand** — `tint(beverageColor(type))` fill + a full-strength label, `radii.pill`, 12/600, padding 3×10 — rather than using the primitive, because `Badge`'s tone set has no per-beverage slot. Identical reasoning to Task 8's `MealsDayList` meal-type badge. It loses the uppercase/letter-spaced 10/700 white-on-solid treatment; at these labels the two render to within a couple of points of the same width.
+
+### Task 9 — flagged, NOT fixed: `waterUnits.ts`'s `beverageColor()` is still raw hex
+
+`mobile/src/lib/waterUnits.ts:65-78` holds `beverageColor()` returning `#3B82F6` / `#92400E` / `#15803D` / `#F59E0B` / `#6B7280`, which `WaterQuickAddCard` (pill left-border), `WaterHistoryList` (`Droplets` glyph + badge) still consume. All three call sites are grep-clean because the literals live in the lib — the same shape of problem Task 7 flagged for `macroColor` and Task 8 flagged for `mealsHelpers`' `MEAL_TYPES`.
+
+Left alone deliberately, and this one is *harder* than `macroColor` was: the sweep already removed its three **control** consumers (every beverage chip's active fill is brand now), so what remains is pure identity. But two of the five values — the coffee brown `#92400E` and the tea green `#15803D` — have no token anywhere in the system and no spec basis, so tokenizing honestly means **adding** a `colors.beverages` group of five new values in a task whose brief forbids inventing tokens. That is a naming decision worth making on purpose. **Task 11's closeout should either add the group or decide the beverage marks do not need five hues.**
+
+### Task 9 — smaller deviations, recorded together
+
+- **`WaterUndoSnackbar` lost its drop shadow.** `shadowColor` was a raw black literal, and the token module has no elevation scale — the system is deliberately flat. Same call Task 5 made for the inventory tile's tag overlay. `elevation: 8` went with it; the snackbar is still the last sibling in the screen's root `View`, so it paints above the scroller on both platforms. Its `#1F2937` fill maps to `colors.surface2` (a raised floating element, not a border) and its `#374151` outline to `colors.border`. **Its timer, its `visible` gate and its `onUndo` handler are untouched.**
+- **`WaterBarChart`'s goal reference line → `colors.textFaint`,** not `colors.border`. It was `rgba(255,255,255,0.25)`; `border` (`#1F2937`) on a `surface` card would have been all but invisible, and this dashed line *is* the chart's affordance — the only thing that says where the goal sits. That is the outline rule's `textFaint` clause. Its zero-day 2pt stub goes the other way, to `colors.surface2`: a stub for a day with no water is an empty track, not a fill.
+- **`WaterBarChart`'s internal geometry is untouched.** Its `padding` object (`14/22/8/8`) and the `fontSize="9"` axis labels are SVG viewBox coordinates inside a fixed 300-unit chart, not RN spacing; §4.5 defines no token below `caption` (12) and fourteen columns cannot hold one. Same call Task 8 recorded for the weekly summary's `dayValue`. Colors and only colors changed.
+- **`WaterDayStrip`'s 1pt per-cell margin → a `gap`.** `marginHorizontal: 1` on seven `flex: 1` cells is both off-grid and the wrong mechanism; the row now carries `gap: spacing.xs` and drops its inert `justifyContent: "space-between"`, per the standing "flex: 1 on children + gap on the container" rule. Separation goes 2pt → 4pt.
+- **`WaterQuickAddCard`'s pills stay bespoke.** They render a two-line label (custom name over the amount) and carry an optional beverage-colored left border; `Button` can express neither. Tokenized in place as neutral chrome on `surface2` — the same call Task 8 made for `FoodPreviewModal`'s serving steppers. Contract 1 does not reach them: they were never accent-colored.
+- **Spacing follows the standing rules.** Control touch-padding rounds up (`WaterQuickAddCard`'s pill `paddingVertical: 10 → spacing.md`, every chip's `10/6 → spacing.md/spacing.sm`, the goal toggle's `unitButton` `6 → spacing.sm`, `navButton`/`headerActionButton` `6 → spacing.sm`); ties round up (the snackbar's `paddingHorizontal: 14 → spacing.lg`, `dot.marginTop: 6 → spacing.sm`, `dayStrip.header.paddingBottom: 10 → spacing.md`); non-control values take the nearest step (`marginTop: 2 → spacing.xs`, `marginBottom: 4 → spacing.xs`). Radii `3/6/8/10/12/14/16 → radii.pill`/`control`/`row`/`panel`.
+- **Icon sizes.** The title `Droplets` 32 → `icons.xl`; the back chevron 24 → `icons.lg` (§4.6's "back chevron always `lg`"); `Share2` 20, the day-strip chevrons 20 and its calendar 18 → `icons.md`; the ring card's `Pencil` 14 and the history `Droplets` 16 → `icons.sm`. `strokeWidth: 2` → `icons.strokeWidth`.
+- **Typography convergences.** `pageTitle` 28/`"bold"` → `typography.titleRoot` (a pure rename); the modal titles 18/600 → `typography.titleBar` (17/600); `WaterInsightsCard`'s bespoke 13/600-uppercase-`letterSpacing: 0.6` card title → `typography.section`; 14/600 labels → `typography.buttonSm`; 13pt and 14pt body text → `typography.body` (the Task 7 precedent); 11pt and 12pt metadata → `typography.caption`. Input text stays `fontSize: 16` in every field — §4.5 defines no input token.
+- **`#D1D5DB` inactive chip labels → `colors.textMuted`**, the same mapping Task 8 applied in `MealLogEditorModal`/`QuickAdjustmentModal`. `#FFFFFF` on brand fills → `colors.onBrand`; `#FFFFFF` elsewhere (snackbar copy, the calendar picker's `textColor`) → `colors.text`, per the Task 5 precedent that `onBrand` means "on a brand fill".
+- **The day-strip dot's `rgba(59,130,246,0.4)` keeps its alpha** as `tint(colors.accents.water, 0.4)`. Justified at the call site, as `tint()`'s widened doc comment permits: that dot has to read as "some water, under half" between a full-strength dot and a fully transparent one, which the 0.15 surface alpha cannot do.
+
+### Task 9 — no behavior bug found
+
+Reviewed hunk by hunk across all fourteen files: no handler, state setter, data fetch, effect dependency, modal open/close path, `Alert` flow, CSV export path or undo timer changed. `showUndoFor`'s 5000ms `setTimeout`, `dismissUndo`'s clear, and the `undoTimerRef` lifecycle are byte-identical. The three structural edits are layout-only and were verified to preserve the rendered result: folding the 40pt spacer into `contentContainerStyle`, replacing the day strip's per-cell margin with a container `gap`, and collapsing `TouchableOpacity` + `disabled` onto `Card`'s handler-presence branch.
+
+Gates: `npx tsc --noEmit` → 0 errors; `npm test` → 12 suites / 321 tests passing; both greps clean on all fourteen files; zero orphaned style keys and zero unused imports.

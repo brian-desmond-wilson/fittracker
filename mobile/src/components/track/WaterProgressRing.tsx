@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { colors } from "@/src/lib/colors";
+import { colors, spacing, typography } from "@/src/theme/tokens";
 import { formatVolume, formatGoal, WaterUnit } from "@/src/lib/waterUnits";
 
 interface WaterProgressRingProps {
@@ -31,19 +31,24 @@ export function WaterProgressRing({
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
       <Svg width={size} height={size}>
+        {/*
+          The unfilled groove is `surface2`, not a tinted water blue: a track
+          is a bounding element and the FILL is what carries the identity.
+        */}
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="rgba(59, 130, 246, 0.15)"
+          stroke={colors.surface2}
           strokeWidth={strokeWidth}
           fill="none"
         />
+        {/* The ring fill is one of the three sanctioned surviving blues. */}
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={isComplete ? "#22C55E" : "#3B82F6"}
+          stroke={isComplete ? colors.success : colors.accents.water}
           strokeWidth={strokeWidth}
           fill="none"
           strokeLinecap="round"
@@ -73,23 +78,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // The stat-cell value token. The old 36/bold headline also carried a
+  // `lineHeight: 40` and a `-2` nudge on the unit below it; both existed only
+  // to manage that headline's metrics and go with it.
   amount: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#3B82F6",
-    lineHeight: 40,
+    ...typography.rowTitle,
+    fontWeight: "700",
+    color: colors.text,
   },
   amountComplete: {
-    color: "#22C55E",
+    color: colors.success,
   },
   unit: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-    marginTop: -2,
+    ...typography.body,
+    color: colors.textMuted,
   },
   goalText: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginTop: 4,
+    ...typography.caption,
+    marginTop: spacing.xs,
   },
 });
