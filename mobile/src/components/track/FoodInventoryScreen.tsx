@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, X, Tag } from "lucide-react-native";
-import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
 import {
@@ -203,6 +203,30 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     });
     return () => scrollY.removeListener(id);
   }, [collapseDistance, scrollY]);
+
+  // Decrementing is a one-tap, silent mutation on a small target, so it needs
+  // an acknowledgement — otherwise you cannot tell a successful "used one" from
+  // a missed tap. An alert would be worse than the problem: it demands a
+  // dismissal for something you meant to do. A toast states what happened and
+  // what is left, then leaves.
+  const [toast, setToast] = useState<{ title: string; detail: string } | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (title: string, detail: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ title, detail });
+    Animated.timing(toastAnim, {
+      toValue: 1, duration: 180, useNativeDriver: true,
+    }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, {
+        toValue: 0, duration: 180, useNativeDriver: true,
+      }).start(({ finished }) => { if (finished) setToast(null); });
+    }, 2400);
+  };
+  // A pending timer outliving the screen would set state on an unmounted tree.
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   // Pull-to-refresh feedback. The gesture and the `refreshing` lifecycle still
   // come from RefreshControl, but on iOS its own spinner does not render in
@@ -513,6 +537,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         Alert.alert("Nothing to use", `${item.name} is already out of stock.`);
         return;
       }
+      showToast(
+        `Used one ${item.name}`,
+        formatQuantity(item.state.totalQuantity - consumed, item.unit),
+      );
       fetchInventory();
     } catch (e) {
       console.error("consume failed:", e);
@@ -1301,6 +1329,34 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         />
         </View>
 
+        {toast && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.toast,
+              {
+                // This screen is laid out inside the tab navigator's content
+                // area, so its own bottom edge already sits above the tab bar
+                // — no clearance for it, and no safe-area inset either.
+                bottom: spacing.xl,
+                opacity: toastAnim,
+                transform: [{
+                  translateY: toastAnim.interpolate({
+                    inputRange: [0, 1], outputRange: [12, 0],
+                  }),
+                }],
+              },
+            ]}
+            accessibilityLiveRegion="polite"
+          >
+            <Minus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            <View style={styles.toastText}>
+              <Text style={styles.toastTitle} numberOfLines={1}>{toast.title}</Text>
+              <Text style={typography.caption} numberOfLines={1}>{toast.detail}</Text>
+            </View>
+          </Animated.View>
+        )}
+
         {/* Condensed bar. A sibling of the container, not a child, so top:0 is
             the true top of the screen and it can own the safe-area inset
             itself. Everything the scrolled-away rows offered is here. */}
@@ -1380,6 +1436,27 @@ const styles = StyleSheet.create({
   },
   belowHeader: { flex: 1 },
   gridWrap: { flex: 1 },
+  // Fill alone could not separate this from the page: the palette has three
+  // neutrals and `surface2`, the lightest, is what every other raised panel
+  // already uses. `elevation.overlay` is the answer — the toast floats rather
+  // than sits. The outline is brand at low alpha rather than `border`, which on
+  // this fill differs by about one step per channel and would contribute
+  // nothing; it also ties the edge to the green glyph.
+  toast: {
+    position: "absolute",
+    left: spacing.screenGutter, right: spacing.screenGutter,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.row,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: tint(colors.brand, 0.4),
+    ...elevation.overlay,
+  },
+  toastText: { flex: 1, minWidth: 0 },
+  toastTitle: { ...typography.buttonSm, color: colors.text },
   // Overlaid rather than inserted: the grid must not jump down and back as the
   // refresh starts and finishes.
   refreshRow: {
