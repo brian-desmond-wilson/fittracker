@@ -57,6 +57,50 @@ export interface DecrementEvent {
   dateLocal: string; // YYYY-MM-DD, the meal log's local date
 }
 
+/** One row of the append-only inventory trail, as the estimator cares about it. */
+export interface InventoryTrailEvent {
+  inventoryId: string;
+  kind: "consume" | "restore";
+  dateLocal: string;
+  /** Epoch ms, used only to decide which consume a restore cancels. */
+  at: number;
+}
+
+/**
+ * Nets undone taps out of the consume stream.
+ *
+ * The trail is append-only: undoing a "used one" writes a compensating
+ * `restore` rather than deleting the consume. So the raw rows say a unit was
+ * eaten AND put back, and demand must count neither. Each restore cancels the
+ * most recent unmatched consume for the same item — most recent, because an
+ * undo follows its own tap by seconds, and cancelling the oldest would
+ * misdate the remaining event.
+ *
+ * Restores with no consume left to cancel are dropped, not carried as negative
+ * demand: they mean the consume fell outside the query window, and a negative
+ * rate is not a thing.
+ */
+export function netConsumeEvents(rows: readonly InventoryTrailEvent[]): DecrementEvent[] {
+  const byItem = new Map<string, { consumes: InventoryTrailEvent[]; restores: number }>();
+  for (const row of rows) {
+    let entry = byItem.get(row.inventoryId);
+    if (!entry) {
+      entry = { consumes: [], restores: 0 };
+      byItem.set(row.inventoryId, entry);
+    }
+    if (row.kind === "consume") entry.consumes.push(row);
+    else entry.restores += 1;
+  }
+
+  const out: DecrementEvent[] = [];
+  for (const [inventoryId, { consumes, restores }] of byItem) {
+    const survivors = [...consumes].sort((a, b) => a.at - b.at); // oldest first
+    survivors.splice(Math.max(0, survivors.length - restores), restores);
+    for (const c of survivors) out.push({ inventoryId, dateLocal: c.dateLocal });
+  }
+  return out;
+}
+
 export interface ConsumptionEstimate {
   ratePerDay: number;
   daysUntilOut: number;

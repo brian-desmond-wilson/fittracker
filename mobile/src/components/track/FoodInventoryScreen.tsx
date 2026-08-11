@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, X, Tag } from "lucide-react-native";
+import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, Undo2, X, Tag } from "lucide-react-native";
 import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -32,6 +32,7 @@ import {
   fetchInventoryWithState,
   transferInventoryUnits,
   consumeOneUnit,
+  restoreOneUnit,
   discardItem,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
@@ -208,14 +209,28 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // an acknowledgement — otherwise you cannot tell a successful "used one" from
   // a missed tap. An alert would be worse than the problem: it demands a
   // dismissal for something you meant to do. A toast states what happened and
-  // what is left, then leaves.
-  const [toast, setToast] = useState<{ title: string; detail: string } | null>(null);
+  // what is left, then leaves — and carries the correction for the mis-tap the
+  // small target invites, which otherwise means opening the item to edit a
+  // quantity back up.
+  const [toast, setToast] = useState<{
+    title: string;
+    detail: string;
+    /** Present only when the action is reversible. */
+    undo?: () => void;
+  } | null>(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = (title: string, detail: string) => {
+  const hideToast = () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast({ title, detail });
+    Animated.timing(toastAnim, {
+      toValue: 0, duration: 180, useNativeDriver: true,
+    }).start(({ finished }) => { if (finished) setToast(null); });
+  };
+
+  const showToast = (title: string, detail: string, undo?: () => void) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ title, detail, undo });
     Animated.timing(toastAnim, {
       toValue: 1, duration: 180, useNativeDriver: true,
     }).start();
@@ -532,7 +547,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // ours); surface it instead of pretending.
   const handleConsumeOne = async (item: InventoryItemWithState) => {
     try {
-      const consumed = await consumeOneUnit(item.id);
+      const { consumed, locationId } = await consumeOneUnit(item.id);
       if (consumed === 0) {
         Alert.alert("Nothing to use", `${item.name} is already out of stock.`);
         return;
@@ -540,11 +555,31 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       showToast(
         `Used one ${item.name}`,
         formatQuantity(item.state.totalQuantity - consumed, item.unit),
+        () => handleUndoConsume(item, locationId),
       );
       fetchInventory();
     } catch (e) {
       console.error("consume failed:", e);
       Alert.alert("Error", `Couldn't mark ${item.name} as used.`);
+    }
+  };
+
+  // The unit goes back to the location it came from, which is why consume
+  // reports one. The consume event is not deleted — the trail is append-only —
+  // so a compensating restore event is written and the rate estimator nets the
+  // pair out.
+  const handleUndoConsume = async (item: InventoryItemWithState, locationId: string | null) => {
+    hideToast();
+    try {
+      const restored = await restoreOneUnit(item.id, locationId);
+      if (restored === 0) {
+        Alert.alert("Couldn't undo", `${item.name} could not be put back.`);
+        return;
+      }
+      fetchInventory();
+    } catch (e) {
+      console.error("undo consume failed:", e);
+      Alert.alert("Error", `Couldn't undo the change to ${item.name}.`);
     }
   };
 
@@ -1331,7 +1366,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
         {toast && (
           <Animated.View
-            pointerEvents="none"
+            // "box-none", not "none": the bar itself must stay transparent to
+            // taps aimed at the tiles beneath it, but Undo has to be reachable.
+            pointerEvents="box-none"
             style={[
               styles.toast,
               {
@@ -1354,6 +1391,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               <Text style={styles.toastTitle} numberOfLines={1}>{toast.title}</Text>
               <Text style={typography.caption} numberOfLines={1}>{toast.detail}</Text>
             </View>
+            {toast.undo && (
+              <TouchableOpacity
+                onPress={toast.undo}
+                style={styles.toastUndo}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="Undo"
+              >
+                <Undo2 size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+                <Text style={styles.toastUndoLabel}>Undo</Text>
+              </TouchableOpacity>
+            )}
           </Animated.View>
         )}
 
@@ -1457,6 +1506,8 @@ const styles = StyleSheet.create({
   },
   toastText: { flex: 1, minWidth: 0 },
   toastTitle: { ...typography.buttonSm, color: colors.text },
+  toastUndo: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  toastUndoLabel: { ...typography.buttonSm, color: colors.brand },
   // Overlaid rather than inserted: the grid must not jump down and back as the
   // refresh starts and finishes.
   refreshRow: {

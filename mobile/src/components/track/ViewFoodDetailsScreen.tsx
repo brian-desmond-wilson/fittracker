@@ -131,7 +131,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   // quantities on screen are re-read, never hand-patched.
   const handleUsedOne = async () => {
     try {
-      const consumed = await consumeOneUnit(item.id);
+      const { consumed } = await consumeOneUnit(item.id);
       if (consumed === 0) {
         Alert.alert("Nothing to use", `${item.name} is already out of stock.`);
         return;

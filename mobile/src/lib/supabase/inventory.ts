@@ -127,21 +127,58 @@ export async function replaceItemLocations(
  * moved; if the insert fails the verb still succeeded — stock is truth,
  * the trail is bookkeeping — so we log and carry on rather than throw.
  */
-export async function consumeOneUnit(itemId: string): Promise<number> {
-  const { data, error } = await supabase.rpc("consume_inventory_units", {
-    p_inventory_ids: [itemId],
+/** What a consume did, and where it took the unit from, so it can be undone. */
+export interface ConsumeResult {
+  consumed: number;
+  /** Null for a location-less item, whose stock lives on the legacy column. */
+  locationId: string | null;
+}
+
+export async function consumeOneUnit(itemId: string): Promise<ConsumeResult> {
+  // The single-item RPC, not the plural one, because this one reports the
+  // location it decremented — `restoreOneUnit` needs it. The plural function
+  // stays untouched for meal logging and the barcode match service.
+  const { data, error } = await supabase.rpc("consume_one_inventory_unit", {
+    p_inventory_id: itemId,
   });
   if (error) throw error;
   touchVerified(itemId);
-  const consumed = (data as Array<{ inventory_id: string; consumed: number }> | null)
-    ?.find((r) => r.inventory_id === itemId)?.consumed ?? 0;
+  const row = (data as Array<{ consumed: number; location_id: string | null }> | null)?.[0];
+  const consumed = row?.consumed ?? 0;
   if (consumed > 0) {
     const { error: evErr } = await supabase.from("inventory_events").insert({
       food_inventory_id: itemId, kind: "consume", quantity: consumed,
     });
     if (evErr) console.error("consumeOneUnit: event insert failed:", evErr);
   }
-  return consumed;
+  return { consumed, locationId: row?.location_id ?? null };
+}
+
+/**
+ * Undo for `consumeOneUnit`: put the unit back where it came from.
+ *
+ * The trail is append-only, so this does NOT delete the consume event — it
+ * writes a compensating `restore` event, exactly as the trail's own design
+ * note prescribes. `expandDecrementEvents`' caller nets the pair out, so an
+ * undone tap never teaches the rate estimator anything.
+ */
+export async function restoreOneUnit(
+  itemId: string,
+  locationId: string | null,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("restore_inventory_unit", {
+    p_inventory_id: itemId,
+    p_location_id: locationId,
+  });
+  if (error) throw error;
+  const restored = (data as number | null) ?? 0;
+  if (restored > 0) {
+    const { error: evErr } = await supabase.from("inventory_events").insert({
+      food_inventory_id: itemId, kind: "restore", quantity: restored,
+    });
+    if (evErr) console.error("restoreOneUnit: event insert failed:", evErr);
+  }
+  return restored;
 }
 
 /**

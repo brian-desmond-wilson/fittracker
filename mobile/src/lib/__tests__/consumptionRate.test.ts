@@ -211,3 +211,57 @@ describe("suggestedRestockThreshold (sweep D5)", () => {
     expect(suggestedRestockThreshold({ ratePerDay: 0.01, daysUntilOut: 300 })).toBe(1);
   });
 });
+
+describe("netConsumeEvents — undone taps must not teach the estimator", () => {
+  const { netConsumeEvents } = require("../consumptionRate");
+  const ev = (inventoryId: string, kind: "consume" | "restore", at: number, dateLocal = "2026-08-11") =>
+    ({ inventoryId, kind, dateLocal, at });
+
+  it("passes consumes through untouched when nothing was undone", () => {
+    expect(netConsumeEvents([ev("a", "consume", 1), ev("a", "consume", 2)]))
+      .toEqual([
+        { inventoryId: "a", dateLocal: "2026-08-11" },
+        { inventoryId: "a", dateLocal: "2026-08-11" },
+      ]);
+  });
+
+  it("a restore cancels one consume, not the whole item", () => {
+    const out = netConsumeEvents([
+      ev("a", "consume", 1), ev("a", "consume", 2), ev("a", "restore", 3),
+    ]);
+    expect(out).toHaveLength(1);
+  });
+
+  it("cancels the MOST RECENT consume, so the survivor keeps its own date", () => {
+    const out = netConsumeEvents([
+      ev("a", "consume", 1, "2026-08-09"),
+      ev("a", "consume", 2, "2026-08-11"),
+      ev("a", "restore", 3),
+    ]);
+    expect(out).toEqual([{ inventoryId: "a", dateLocal: "2026-08-09" }]);
+  });
+
+  it("a restore only cancels its own item's consume", () => {
+    const out = netConsumeEvents([
+      ev("a", "consume", 1), ev("b", "consume", 2), ev("b", "restore", 3),
+    ]);
+    expect(out).toEqual([{ inventoryId: "a", dateLocal: "2026-08-11" }]);
+  });
+
+  it("orphan restores are dropped, never negative demand", () => {
+    expect(netConsumeEvents([ev("a", "restore", 1), ev("a", "restore", 2)])).toEqual([]);
+    expect(netConsumeEvents([ev("a", "consume", 1), ev("a", "restore", 2), ev("a", "restore", 3)]))
+      .toEqual([]);
+  });
+
+  it("input order does not matter — restores may arrive before their consume", () => {
+    const out = netConsumeEvents([
+      ev("a", "restore", 3), ev("a", "consume", 2, "2026-08-11"), ev("a", "consume", 1, "2026-08-09"),
+    ]);
+    expect(out).toEqual([{ inventoryId: "a", dateLocal: "2026-08-09" }]);
+  });
+
+  it("empty in, empty out", () => {
+    expect(netConsumeEvents([])).toEqual([]);
+  });
+});

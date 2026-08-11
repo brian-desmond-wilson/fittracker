@@ -8,9 +8,11 @@ import {
 import {
   estimateConsumption,
   expandDecrementEvents,
+  netConsumeEvents,
   RATE_WINDOW_DAYS,
   type ConsumptionEstimate,
   type DecrementEvent,
+  type InventoryTrailEvent,
 } from "../consumptionRate";
 import {
   computeShoppingSuggestions,
@@ -55,8 +57,8 @@ export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
       .gte("date", sinceLocal),
     supabase
       .from("inventory_events")
-      .select("food_inventory_id, quantity, created_at")
-      .eq("kind", "consume")
+      .select("food_inventory_id, kind, quantity, created_at")
+      .in("kind", ["consume", "restore"])
       .gte("created_at", since.toISOString()),
   ]);
   if (logs.error) throw logs.error;
@@ -64,15 +66,22 @@ export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   const fromLogs = expandDecrementEvents(
     (logs.data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
   );
-  const fromEvents: DecrementEvent[] = (events.data ?? []).flatMap(
-    (e: { food_inventory_id: string; quantity: number; created_at: string }) => {
-      const date = getLocalDateString(new Date(e.created_at));
-      // one DecrementEvent per unit, mirroring expandDecrementEvents' shape;
-      // quantity is check-constrained > 0 but clamp defensively anyway.
+  // Expand to one row per unit, mirroring expandDecrementEvents' shape, then
+  // let netConsumeEvents cancel each undone tap against its consume. Quantity
+  // is check-constrained > 0 but clamp defensively anyway.
+  const trail: InventoryTrailEvent[] = (events.data ?? []).flatMap(
+    (e: { food_inventory_id: string; kind: string; quantity: number; created_at: string }) => {
+      const at = new Date(e.created_at);
       const n = Math.max(0, Math.min(50, Math.round(e.quantity)));
-      return Array.from({ length: n }, () => ({ inventoryId: e.food_inventory_id, dateLocal: date }));
+      return Array.from({ length: n }, () => ({
+        inventoryId: e.food_inventory_id,
+        kind: e.kind === "restore" ? ("restore" as const) : ("consume" as const),
+        dateLocal: getLocalDateString(at),
+        at: at.getTime(),
+      }));
     },
   );
+  const fromEvents = netConsumeEvents(trail);
   return [...fromLogs, ...fromEvents];
 }
 
