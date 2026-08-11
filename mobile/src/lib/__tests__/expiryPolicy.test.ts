@@ -90,3 +90,24 @@ describe("isExpiringSoon — the ONE definition both hub and screen consume", ()
     expect(isExpiringSoon(state({ expiration: "expired", daysLeft: -35 }), ["Produce"])).toBe(false);
   });
 });
+
+describe("estimateShelfLifeDays (sweep E4 — display-layer estimate, never stored)", () => {
+  const { estimateShelfLifeDays } = require("../expiryPolicy");
+  it("perishable categories get short typical lives", () => {
+    expect(estimateShelfLifeDays(["Produce"])).toBe(7);
+    expect(estimateShelfLifeDays(["Dairy, Cheese & Eggs"])).toBe(14);
+    expect(estimateShelfLifeDays(["Meat & Seafood"])).toBe(5);
+  });
+  it("shelf-stable categories get long ones; frozen is long", () => {
+    expect(estimateShelfLifeDays(["Pantry"])).toBe(365);
+    expect(estimateShelfLifeDays(["Frozen"])).toBe(180);
+  });
+  it("mixed items estimate by their most perishable component", () => {
+    expect(estimateShelfLifeDays(["Pantry", "Produce"])).toBe(7);
+  });
+  it("no categories -> no estimate, never a guess", () => {
+    expect(estimateShelfLifeDays([])).toBeNull();
+    expect(estimateShelfLifeDays(undefined)).toBeNull();
+    expect(estimateShelfLifeDays(["Mystery Aisle"])).toBeNull();
+  });
+});

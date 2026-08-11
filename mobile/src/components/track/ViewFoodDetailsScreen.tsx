@@ -20,7 +20,7 @@ import { ChevronLeft, Package, Pencil, Plus, ScanBarcode } from "lucide-react-na
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { consumeOneUnit, discardItem, type InventoryItemWithState } from "@/src/lib/supabase/inventory";
-import { reviewExpiry } from "@/src/lib/expiryPolicy";
+import { estimateShelfLifeDays, reviewExpiry } from "@/src/lib/expiryPolicy";
 import { formatQuantity } from "@/src/lib/units";
 import { suggestedRestockThreshold } from "@/src/lib/consumptionRate";
 import { fetchConsumptionRates } from "@/src/lib/supabase/shopping";
@@ -197,6 +197,13 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
     }
     return null;
   })();
+
+  // E4: category-typical shelf life, shown ONLY as a hint beside a missing
+  // date — never written to the row (a fabricated date would flow into the
+  // bands and the aging policy as if a human had read it off the package).
+  const shelfLifeEstimate = item.expiration_date
+    ? null
+    : estimateShelfLifeDays(item.categories.map((c) => c.name));
 
   const renderSection = (title: string, content: React.ReactNode) => (
     <Card variant="panel" style={styles.section}>
@@ -452,7 +459,14 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           {renderSection(
             "Dates",
             <>
-              {renderDetailRow("Expiration Date", formatCalendarDate(item.expiration_date))}
+              {item.expiration_date
+                ? renderDetailRow("Expiration Date", formatCalendarDate(item.expiration_date))
+                : renderDetailRow(
+                    "Expiration Date",
+                    shelfLifeEstimate !== null
+                      ? `Not set — typically lasts ~${shelfLifeEstimate}d`
+                      : "Not set",
+                  )}
               {renderDetailRow("Added", formatTimestamp(item.created_at))}
               {renderDetailRow("Last Updated", formatTimestamp(item.updated_at))}
             </>

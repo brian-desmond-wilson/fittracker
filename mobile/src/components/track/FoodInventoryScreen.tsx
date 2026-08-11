@@ -37,6 +37,8 @@ import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shoppi
 import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
 import { isExpiringSoon, reviewExpiry } from "@/src/lib/expiryPolicy";
 import { formatQuantity } from "@/src/lib/units";
+import { mealsUsingConcepts } from "@/src/lib/useItUp";
+import { fetchMealLibrary } from "@/src/lib/supabase/mealLibrary";
 import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
@@ -118,9 +120,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // A2: the expiring panel became a one-line banner opening this review sheet.
   const [showReviewModal, setShowReviewModal] = useState(false);
+  // E6: itemId -> meal names, resolved through concept links when the sheet
+  // opens. Decoration — a failed fetch just renders rows without meal hints.
+  const [mealsByItemId, setMealsByItemId] = useState<Map<string, string[]>>(new Map());
 
-  // E5: photo/receipt bulk-capture sheet.
+  // E5: photo/receipt bulk-capture sheet. E3: a barcode from a failed scan
+  // lookup rides into the capture flow and attaches to its new item.
   const [showCaptureModal, setShowCaptureModal] = useState(false);
+  const [captureBarcode, setCaptureBarcode] = useState<string | null>(null);
 
   // A9: themed long-press actions sheet (replaces the light-appearance
   // system ActionSheetIOS that couldn't match the theme).
@@ -557,11 +564,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       if (!productData) {
         // D2: an unknown barcode is a fallback, not a dead end — carry the
         // scanned code into the add form so it isn't typed twice.
+        // E3: the vision fallback — photograph the label and let the model
+        // read what the barcode database couldn't. The scanned code rides
+        // along and lands on whatever single new item the capture creates.
         Alert.alert(
           "Product Not Found",
-          "This barcode isn't in the product database yet. Add it manually and the barcode comes along.",
+          "This barcode isn't in the product database yet.",
           [
             { text: "Cancel", style: "cancel" },
+            {
+              text: "Photograph label",
+              onPress: () => { setCaptureBarcode(barcode); setShowCaptureModal(true); },
+            },
             {
               text: "Add manually",
               onPress: () => router.push({
@@ -683,6 +697,30 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     else if (cat.slug === "out-of-stock") categoryCounts.set(cat.id, items.filter((i) => i.state.isOut).length);
     else categoryCounts.set(cat.id, items.filter((i) => i.categories.some((c) => c.id === cat.id)).length);
   }
+
+  // E6: resolve which meals consume each attention item, deterministically
+  // through concept links (the AI matcher curates links; this is pure graph
+  // walking, no model call).
+  const loadUseItUp = async () => {
+    try {
+      const library = await fetchMealLibrary();
+      const invConcepts = new Map(library.inventory.map((r) => [r.id, r.conceptIds]));
+      const meals = library.meals.map((m) => ({
+        name: m.name,
+        items: m.items.map((it) => ({
+          conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+        })),
+      }));
+      const next = new Map<string, string[]>();
+      for (const it of items) {
+        const names = mealsUsingConcepts(invConcepts.get(it.id) ?? [], meals);
+        if (names.length > 0) next.set(it.id, names);
+      }
+      setMealsByItemId(next);
+    } catch (e) {
+      console.error("use-it-up fetch failed:", e);
+    }
+  };
 
   // A7/A2 derived sets. Archive = out-of-stock or stale-expired (the C1
   // aging policy); everything else is the working inventory. The attention
@@ -907,7 +945,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           {attentionItems.length > 0 && (
             <TouchableOpacity
               style={styles.attentionBanner}
-              onPress={() => setShowReviewModal(true)}
+              onPress={() => { setShowReviewModal(true); loadUseItUp(); }}
               accessibilityRole="button"
               accessibilityLabel={`${attentionItems.length} items need attention`}
             >
@@ -1047,8 +1085,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
         <BulkCaptureModal
           visible={showCaptureModal}
-          onClose={() => setShowCaptureModal(false)}
+          onClose={() => { setShowCaptureModal(false); setCaptureBarcode(null); }}
           onApplied={fetchInventory}
+          attachBarcode={captureBarcode}
         />
 
         <ExpiryReviewModal
@@ -1059,6 +1098,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           onToss={handleToss}
           onShop={handleAddToShoppingList}
           onOpenItem={handleViewItem}
+          mealsByItemId={mealsByItemId}
         />
 
         <RestockModal

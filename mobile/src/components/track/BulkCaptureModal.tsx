@@ -32,11 +32,16 @@ interface BulkCaptureModalProps {
   onClose: () => void;
   /** Called after any writes were applied, so the screen refetches. */
   onApplied: () => void;
+  /** E3: a barcode carried in from a failed scan lookup. Attached to the new
+   *  item ONLY when the apply creates exactly one — a barcode positively
+   *  identifies a single product, and guessing which of several rows it
+   *  belongs to would corrupt future scan matches. */
+  attachBarcode?: string | null;
 }
 
 type Phase = "pick" | "processing" | "review" | "applying";
 
-export function BulkCaptureModal({ visible, onClose, onApplied }: BulkCaptureModalProps) {
+export function BulkCaptureModal({ visible, onClose, onApplied, attachBarcode }: BulkCaptureModalProps) {
   const [phase, setPhase] = useState<Phase>("pick");
   const [proposals, setProposals] = useState<CaptureProposal[]>([]);
   const [included, setIncluded] = useState<Set<number>>(new Set());
@@ -91,6 +96,7 @@ export function BulkCaptureModal({ visible, onClose, onApplied }: BulkCaptureMod
   const apply = async () => {
     setPhase("applying");
     const chosen = proposals.filter((_, i) => included.has(i));
+    const newChosen = chosen.filter((p) => p.kind === "new");
     let applied = 0;
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -143,6 +149,7 @@ export function BulkCaptureModal({ visible, onClose, onApplied }: BulkCaptureMod
               user_id: userId,
               name: p.name,
               brand: p.brand,
+              barcode: attachBarcode && newChosen.length === 1 ? attachBarcode : null,
               unit: p.unit || "count",
               category: "other",       // legacy text column; junction tables are truth
               storage_type: "single-location",

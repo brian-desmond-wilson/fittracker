@@ -84,3 +84,29 @@ export function isStaleExpired(
 ): boolean {
   return reviewExpiry(state, categoryNames) === "stale";
 }
+
+/** Sweep E4: typical shelf life by category, in days — DISPLAY-LAYER ONLY.
+ *  An estimate is a hint the UI shows beside a missing date ("typically lasts
+ *  ~2 weeks — set a date"); it is never written to expiration_date, because a
+ *  fabricated date would flow into bands, counts, and the aging policy as if
+ *  a human had read it off the package. Mixed items estimate by their most
+ *  perishable component; unknown categories estimate nothing. */
+const TYPICAL_SHELF_LIFE_DAYS: Record<string, number> = {
+  "Produce": 7,
+  "Meat & Seafood": 5,
+  "Dairy, Cheese & Eggs": 14,
+  "Deli & Prepared Foods": 5,
+  "Breads & Bakery": 7,
+  "Frozen": 180,
+  "Snacks": 180,
+  "Beverages": 270,
+  "Breakfast Foods": 270,
+  "Pantry": 365,
+};
+
+export function estimateShelfLifeDays(categoryNames?: readonly string[]): number | null {
+  const known = (categoryNames ?? [])
+    .map((n) => TYPICAL_SHELF_LIFE_DAYS[n])
+    .filter((d): d is number => d !== undefined);
+  return known.length > 0 ? Math.min(...known) : null;
+}

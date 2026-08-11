@@ -21,6 +21,9 @@ interface ExpiryReviewModalProps {
   onShop: (item: InventoryItemWithState) => void;
   /** B5: row body opens the item's detail screen (closes the sheet first). */
   onOpenItem: (item: InventoryItemWithState) => void;
+  /** E6: itemId -> names of meals that consume it (via concept links).
+   *  Empty/absent renders nothing — no meals is not an error. */
+  mealsByItemId?: Map<string, string[]>;
 }
 
 const badgeFor = (it: InventoryItemWithState): { label: string; tone: "danger" | "warning" } => {
@@ -31,7 +34,7 @@ const badgeFor = (it: InventoryItemWithState): { label: string; tone: "danger" |
 };
 
 export function ExpiryReviewModal({
-  visible, items, onClose, onConsume, onToss, onShop, onOpenItem,
+  visible, items, onClose, onConsume, onToss, onShop, onOpenItem, mealsByItemId,
 }: ExpiryReviewModalProps) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -55,8 +58,18 @@ export function ExpiryReviewModal({
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${it.name}`}
                 >
-                  <Text style={[typography.body, styles.rowName]} numberOfLines={1}>{it.name}</Text>
-                  <Badge label={b.label} tone={b.tone} />
+                  <View style={styles.rowNameBlock}>
+                    <View style={styles.rowNameLine}>
+                      <Text style={[typography.body, styles.rowName]} numberOfLines={1}>{it.name}</Text>
+                      <Badge label={b.label} tone={b.tone} />
+                    </View>
+                    {/* E6: the obvious next move — cook the thing that uses it. */}
+                    {(mealsByItemId?.get(it.id)?.length ?? 0) > 0 && (
+                      <Text style={typography.caption} numberOfLines={1}>
+                        Use it in: {mealsByItemId!.get(it.id)!.join(", ")}
+                      </Text>
+                    )}
+                  </View>
                 </TouchableOpacity>
                 <View style={styles.rowActions}>
                   <IconButton
@@ -112,7 +125,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.border,
   },
-  rowText: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  rowText: { flex: 1, minWidth: 0 },
+  rowNameBlock: { gap: 2 },
+  rowNameLine: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   rowName: { color: colors.text, flexShrink: 1 },
   rowActions: { flexDirection: "row", gap: spacing.sm },
   empty: { paddingVertical: spacing.lg, textAlign: "center" },
