@@ -22,7 +22,13 @@ export default function FoodProductPreviewPage() {
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, { paddingTop: insets.top }]}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.replace("/(tabs)/track/food-inventory")} style={styles.backButton}>
+            <TouchableOpacity
+              onPress={() =>
+                // `replace` animates as a push, so it is wrong for Back.
+                router.canGoBack() ? router.back() : router.replace("/(tabs)/track/food-inventory")
+              }
+              style={styles.backButton}
+            >
               <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -96,7 +102,9 @@ export default function FoodProductPreviewPage() {
   return (
     <ViewFoodDetailsScreen
       item={previewItem}
-      onClose={() => router.replace("/(tabs)/track/food-inventory")}
+      onClose={() =>
+        router.canGoBack() ? router.back() : router.replace("/(tabs)/track/food-inventory")
+      }
       isPreview={true}
       onAddToInventory={handleAddToInventory}
     />
