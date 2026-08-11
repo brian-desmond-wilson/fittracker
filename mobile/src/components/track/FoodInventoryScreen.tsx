@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, Trash2, X, Tag } from "lucide-react-native";
+import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, Trash2, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -893,11 +893,26 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             <IconButton icon={Plus} onPress={handleAddItem} accessibilityLabel="Add food" />
           </View>
 
-          {/* Title */}
+          {/* Title. A2: the attention signal is a compact shortcut here rather
+              than a full-width banner — a caution glyph and a count, opening
+              the same triage sheet. The count is the C3 shared definition over
+              the WHOLE inventory, not the tab/search-filtered slice. */}
           <View style={styles.titleContainer}>
             <View style={styles.titleRow}>
               <Package size={26} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
               <Text style={styles.pageTitle}>Food Inventory</Text>
+              {attentionItems.length > 0 && (
+                <TouchableOpacity
+                  style={styles.attentionChip}
+                  onPress={() => { setShowReviewModal(true); loadUseItUp(); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Review ${attentionItems.length} ${attentionItems.length === 1 ? "item" : "items"} needing attention`}
+                >
+                  <AlertTriangle size={icons.sm} color={colors.warning} strokeWidth={icons.strokeWidth} />
+                  <Text style={styles.attentionChipCount}>{attentionItems.length}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -937,25 +952,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             return null;
           })()}
 
-          {/* A2: the expiring panel is now a one-line banner (style-guide
-              Banner recipe) — a summary with a verb, not five rows of chrome.
-              The count uses the C3 shared definition over the WHOLE inventory
-              (not the tab/search-filtered slice): attention is global, and the
-              review sheet it opens carries the per-row actions. */}
-          {attentionItems.length > 0 && (
-            <TouchableOpacity
-              style={styles.attentionBanner}
-              onPress={() => { setShowReviewModal(true); loadUseItUp(); }}
-              accessibilityRole="button"
-              accessibilityLabel={`${attentionItems.length} items need attention`}
-            >
-              <Text style={styles.attentionBannerTitle}>
-                {attentionItems.length} {attentionItems.length === 1 ? "item needs" : "items need"} attention
-              </Text>
-              <Text style={styles.attentionBannerAction}>Review</Text>
-            </TouchableOpacity>
-          )}
-
           {/* A7: Active / Archive segments. Interactive control -> brand
               (style rule 2); counts keep the hidden rows honest. */}
           <View style={styles.viewSegments}>
@@ -966,6 +962,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                 : v === "low" ? lowItems.length
                 : archiveItems.length;
               const selected = view === v;
+              // No warning paint here: the title chip is the one place amber
+              // appears, so the strip stays a plain set of filters.
               return (
                 <TouchableOpacity
                   key={v}
@@ -1246,19 +1244,21 @@ const styles = StyleSheet.create({
   },
   batchCount: { color: colors.text },
   batchActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  attentionBanner: {
+  // Banner-recipe colors on a pill: the warning read survives, the full-width
+  // slab does not.
+  attentionChip: {
+    marginLeft: "auto",   // far right of the title row
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
     backgroundColor: tint(colors.warning),
     borderWidth: 1,
     borderColor: tint(colors.warning, 0.3),
-    borderRadius: radii.row,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
-  attentionBannerTitle: { ...typography.buttonSm, color: colors.warning },
-  attentionBannerAction: { ...typography.buttonSm, color: colors.warning },
+  attentionChipCount: { ...typography.buttonSm, color: colors.warning },
   viewSegments: {
     flexDirection: "row",
     alignItems: "center",
