@@ -5,8 +5,17 @@
 //      positively identifies the product; if that row is empty there is simply
 //      nothing to decrement, and falling through would decrement a different
 //      SKU that merely shares a concept.
-//   2. unique shared-concept match with stock (2+ candidates = ambiguous,
-//      0 = none; both skip — under-matching is the intended failure mode)
+//   2. shared-concept match with stock. 0 candidates = none (under-matching
+//      stays the honest failure mode for ABSENCE). 2+ candidates: pick
+//      deterministically — soonest expiration, then largest quantity, then id.
+//      DESIGN CHANGE (inventory refinement Phase 3, 2026-08-11): plurality
+//      used to collapse to absence ("ambiguous = skip"), which meant owning
+//      TWO stocked oatmeals made oatmeal unavailable. That inverted the
+//      system's goal the moment the AI concept backfill linked a second
+//      product to an existing concept in prod. Duplicate stocked products
+//      sharing a concept are normal kitchen reality, not an error state; the
+//      soonest-expiring pick is the use-it-first behavior a person would want,
+//      and determinism keeps logging reproducible.
 export interface ResolutionItem {
   savedFoodId: string;
   barcode: string | null;
@@ -16,6 +25,10 @@ export interface ResolutionItem {
 export interface ResolutionInventoryRow {
   id: string;
   barcode: string | null;
+  /** Days until expiry when known (negative = expired). Optional because the
+   *  logging path's rows carry it and synthetic callers may not; a null/absent
+   *  date sorts AFTER any dated candidate — use dated stock first. */
+  daysLeft?: number | null;
   /**
    * Σ of the item's `food_inventory_locations.quantity` rows — the ONLY stock
    * truth (spec §5.1). There is no legacy arm and there must never be one:
@@ -59,7 +72,15 @@ export function resolveInventoryMatches(
     const candidates = inStock.filter((r) =>
       r.conceptIds.some((cid) => wanted.has(cid)),
     );
-    if (candidates.length === 1) out.set(it.savedFoodId, candidates[0].id);
+    if (candidates.length === 0) continue;
+    const winner = [...candidates].sort((a, b) => {
+      const ad = a.daysLeft ?? Infinity;   // undated after dated: use dated stock first
+      const bd = b.daysLeft ?? Infinity;
+      if (ad !== bd) return ad - bd;       // soonest expiration first
+      if (a.totalQuantity !== b.totalQuantity) return b.totalQuantity - a.totalQuantity;
+      return a.id < b.id ? -1 : 1;         // total order — resolution is reproducible
+    })[0];
+    out.set(it.savedFoodId, winner.id);
   }
   return out;
 }
