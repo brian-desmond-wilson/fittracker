@@ -62,8 +62,13 @@ const GRID_GAP = spacing.md;
 const NUM_COLUMNS = 2;
 
 // B6: segment display names, one place.
+// Kitchen words, not software words: nobody calls food "active". "Expiring"
+// deliberately covers both about-to-go and already-past-date-but-still-worth-
+// dealing-with (see expiryPolicy's grace windows) — the action is the same for
+// both, and the tile badge says which is which. "Past" is what falls out of
+// that grace, plus anything run down to zero.
 const SEGMENT_LABELS = {
-  active: "Active", expiring: "Expiring", low: "Low", archive: "Archive",
+  active: "On hand", expiring: "Expiring", low: "Low", archive: "Past",
 } as const;
 const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
@@ -949,7 +954,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             }}
           />
 
-          {/* A7: Active / Archive segments. Interactive control -> brand
+          {/* A7: stock-state segments. Interactive control -> brand
               (style rule 2); counts keep the hidden rows honest. */}
           <View style={styles.viewSegments}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentStrip}>
