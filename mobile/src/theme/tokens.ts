@@ -1,7 +1,7 @@
 // mobile/src/theme/tokens.ts
 // FitTracker design tokens — the ONLY place raw color/size values may live.
 // Spec: docs/superpowers/specs/2026-08-01-fittracker-style-guide-design.md
-import type { TextStyle } from "react-native";
+import type { TextStyle, ViewStyle } from "react-native";
 
 export const colors = {
   bg: "#0A0F1E",
@@ -17,6 +17,7 @@ export const colors = {
   warning: "#F59E0B",
   danger: "#EF4444",
   imageWell: "#FFFFFF", // product photos are shot on white; wells stay white on dark cards
+  shadow: "#000000",    // only for `elevation` below — never a fill or a stroke
   scrim: "rgba(0,0,0,0.5)",
   accents: {
     meals: "#F97316",
@@ -83,6 +84,29 @@ export function tint(hex: string, alpha = 0.15): string {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+/**
+ * The one exception to a deliberately flat system.
+ *
+ * Cards, sheets and panels stay flat: they belong to the page, and a fill step
+ * is enough to separate them. Transient surfaces that float OVER content —
+ * toasts and snackbars — cannot be read that way, because the palette has only
+ * three neutral fills and the lightest of them is already spoken for by every
+ * other raised panel. A shadow is what says "this is above the page and will
+ * leave again"; no fill can say it.
+ *
+ * Deliberately ONE step, not a scale. A scale invites arbitrary depth
+ * decisions; this is a single named case with a single answer.
+ */
+export const elevation = {
+  overlay: {
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8, // Android reads this and ignores the rest
+  } satisfies ViewStyle,
+};
 
 export const spacing = {
   xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32,

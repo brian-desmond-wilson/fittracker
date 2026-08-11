@@ -7,8 +7,9 @@
 and that plan disagree, the plan is the record of what was decided and why —
 but this file is what you are expected to have read.
 
-The app is dark-only, deliberately flat (no elevation scale), and has exactly
-seven UI primitives. No theme runtime, no provider, no light mode.
+The app is dark-only, flat everywhere except surfaces that float over content
+(one elevation step, §2), and has exactly seven UI primitives. No theme
+runtime, no provider, no light mode.
 
 ---
 
@@ -92,6 +93,16 @@ disagreement. They are binding.
     checkbox, a radio, a chart's goal reference line — uses `colors.textFaint`.
     An outline that merely **bounds visible content** — a chip, an input, a
     card — uses `colors.border`.
+13b. **Shadows are for floating surfaces only.** `elevation.overlay` is the
+    single elevation step, and it belongs to transient surfaces that sit **over**
+    content and then leave — toasts and snackbars. Cards, sheets, panels and
+    headers stay flat: they belong to the page, and a fill step separates them
+    adequately. There is no scale and no second step; if a surface seems to want
+    one, it probably wants a different fill instead. Never write `shadowColor`
+    at a call site — the colour lives in `colors.shadow`, reachable only through
+    this token. (Added after the inventory toast: the palette has three neutral
+    fills and `surface2`, the lightest, is already every raised panel's fill, so
+    no fill could say "this is above the page".)
 14. **Unfilled tracks are `colors.surface2`** — the groove a progress ring,
     meter or bar fills into, and the trough behind a segmented control. This is
     *not* a `textFaint` case (rule 13 is about affordance outlines): the fill
@@ -339,9 +350,6 @@ call sites that would justify it:
   adjacent but not identical.
 - **An input token.** `fontSize: 16` is repeated at ~four call sites, each
   carrying the same "§4.5 defines no input token" apology.
-- **An elevation/shadow token.** The system is deliberately flat, so
-  `WaterUndoSnackbar` and the inventory tag overlay simply dropped their
-  shadows. The snackbar is the call site that would justify a scale.
 - **`colors.mealTypes` (5 hues) and `colors.beverages` (5 hues).** Needed by
   `mealsHelpers.ts` / `MealsDistributionBar` and by `waterUnits.ts`'s
   `beverageColor()`. Both are genuine naming decisions, not renames: three of
