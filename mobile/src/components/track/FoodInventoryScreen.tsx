@@ -18,7 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { ChevronLeft, Plus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
+import { ChevronLeft, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -30,6 +30,8 @@ import { supabase } from "@/src/lib/supabase";
 import {
   fetchInventoryWithState,
   transferInventoryUnits,
+  consumeOneUnit,
+  discardItem,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
 import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shopping";
@@ -290,8 +292,55 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     }
   };
 
+  // B1: the one-tap consume verb. RPC first, then refetch — the projection is
+  // the only quantity truth on screen, so we re-read rather than hand-patch
+  // state. consumed === 0 means the RPC moved nothing (already empty / not
+  // ours); surface it instead of pretending.
+  const handleConsumeOne = async (item: InventoryItemWithState) => {
+    try {
+      const consumed = await consumeOneUnit(item.id);
+      if (consumed === 0) {
+        Alert.alert("Nothing to use", `${item.name} is already out of stock.`);
+        return;
+      }
+      fetchInventory();
+    } catch (e) {
+      console.error("consume failed:", e);
+      Alert.alert("Error", `Couldn't mark ${item.name} as used.`);
+    }
+  };
+
+  // B2: toss = zero the stock, keep the row and its history. Reason is
+  // optional and becomes waste analytics (event trail, D4).
+  const handleToss = (item: InventoryItemWithState) => {
+    const toss = async (reason?: string) => {
+      try {
+        const discarded = await discardItem(item.id, reason);
+        if (discarded === 0) {
+          Alert.alert("Nothing to toss", `${item.name} is already out of stock.`);
+          return;
+        }
+        fetchInventory();
+      } catch (e) {
+        console.error("discard failed:", e);
+        Alert.alert("Error", `Couldn't toss ${item.name}.`);
+      }
+    };
+    Alert.alert(
+      `Toss ${item.name}?`,
+      "Remaining stock goes to zero. The item stays in your inventory history.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Expired / spoiled", onPress: () => toss("expired") },
+        { text: "Didn't like it", onPress: () => toss("didn't like") },
+        { text: "Just toss it", style: "destructive", onPress: () => toss() },
+      ],
+    );
+  };
+
   const handleLongPress = (item: InventoryItemWithState) => {
     const needsRestockFridge = item.state.needsFridgeRestock;
+    const inStock = item.state.totalQuantity > 0;
 
     // Build action sheet options dynamically
     const options: string[] = ['View Details', 'Edit Details', 'Delete Item'];
@@ -310,18 +359,27 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       }
     ];
 
-    // "Add to Shopping List" (insert at position 2, after "Edit Details") —
-    // un-gated (spec §9.3): every item can be topped up, not just ones
-    // already at zero, now that the quantity is threshold-exit rather than
-    // the old out-of-stock-only restock_threshold read.
-    options.splice(2, 0, 'Add to Shopping List');
-    actions.splice(2, 0, () => handleAddToShoppingList(item));
+    // B1/B2 verbs, only when there is stock to act on. Inserted after "Edit
+    // Details" so the destructive "Delete Item" stays last-before-Cancel.
+    if (inStock) {
+      options.splice(2, 0, 'Used One', 'Toss Item…');
+      actions.splice(2, 0, () => handleConsumeOne(item), () => handleToss(item));
+    }
+
+    // "Add to Shopping List" after the stock verbs — un-gated (spec §9.3):
+    // every item can be topped up, not just ones already at zero, now that
+    // the quantity is threshold-exit rather than the old out-of-stock-only
+    // restock_threshold read. Positions are DERIVED (not hardcoded) because
+    // the B1/B2 verbs above are conditional and would shift fixed indices.
+    const afterEdit = options.indexOf('Edit Details') + 1 + (inStock ? 2 : 0);
+    options.splice(afterEdit, 0, 'Add to Shopping List');
+    actions.splice(afterEdit, 0, () => handleAddToShoppingList(item));
 
     // Add "Restock Fridge" if multi-location and needs restock (always after
     // "Add to Shopping List", which is now unconditional).
     if (needsRestockFridge) {
-      options.splice(3, 0, 'Restock Fridge');
-      actions.splice(3, 0, () => {
+      options.splice(afterEdit + 1, 0, 'Restock Fridge');
+      actions.splice(afterEdit + 1, 0, () => {
         setRestockingItem(item);
         setShowRestockModal(true);
       });
@@ -564,6 +622,24 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             <View style={styles.uncategorizedIconContainer}>
               <Tag size={icons.sm} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
             </View>
+          )}
+
+          {/* B1: one-tap "used one" on the tile itself. POINTER-ONLY shortcut
+              (same ruling as StationRow's chevron): the Card is a
+              TouchableOpacity, which groups its subtree for VoiceOver on iOS,
+              so this button is not independently focusable — the accessible path to
+              the same verb is the long-press menu and the detail screen.
+              brand fill + onBrand glyph per style rules 2/15. */}
+          {item.state.totalQuantity > 0 && (
+            <TouchableOpacity
+              style={styles.useOneButton}
+              onPress={() => handleConsumeOne(item)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Use one ${item.name}`}
+            >
+              <Minus size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
           )}
         </View>
 
@@ -940,6 +1016,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.imageWell,
+  },
+  useOneButton: {
+    position: "absolute",
+    bottom: spacing.xs,
+    right: spacing.xs,
+    width: 28,
+    height: 28,
+    borderRadius: radii.pill,
+    backgroundColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
   },
   uncategorizedIconContainer: {
     position: "absolute",

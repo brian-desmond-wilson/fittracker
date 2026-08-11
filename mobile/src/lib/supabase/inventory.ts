@@ -111,3 +111,54 @@ export async function replaceItemLocations(
   });
   if (error) throw error;
 }
+
+/**
+ * B1's one-tap verb: consume a single unit of one item, through the same
+ * atomic RPC meal logging uses (ready-first location policy, legacy-cache
+ * resync). Returns units actually consumed — 0 means "nothing was moved"
+ * (already empty, unknown id, or not yours; the RPC deliberately conflates
+ * these — see 20260729100100) and callers must not compensate for it.
+ *
+ * The event row is the loop's memory of the action (D4 feeds it to the
+ * consumption-rate estimator, link-independent). It is written AFTER stock
+ * moved; if the insert fails the verb still succeeded — stock is truth,
+ * the trail is bookkeeping — so we log and carry on rather than throw.
+ */
+export async function consumeOneUnit(itemId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("consume_inventory_units", {
+    p_inventory_ids: [itemId],
+  });
+  if (error) throw error;
+  const consumed = (data as Array<{ inventory_id: string; consumed: number }> | null)
+    ?.find((r) => r.inventory_id === itemId)?.consumed ?? 0;
+  if (consumed > 0) {
+    const { error: evErr } = await supabase.from("inventory_events").insert({
+      food_inventory_id: itemId, kind: "consume", quantity: consumed,
+    });
+    if (evErr) console.error("consumeOneUnit: event insert failed:", evErr);
+  }
+  return consumed;
+}
+
+/**
+ * B2's verb: discard an item's remaining stock (spoiled, disliked, gone).
+ * Distinct from delete — the row and its history survive; only quantities go
+ * to zero. `reason` lands on the event row and becomes waste analytics for
+ * Shopping intelligence. Same 0-semantics and same trail-after-stock rule as
+ * consumeOneUnit.
+ */
+export async function discardItem(itemId: string, reason?: string): Promise<number> {
+  const { data, error } = await supabase.rpc("discard_inventory_units", {
+    p_inventory_id: itemId,
+  });
+  if (error) throw error;
+  const discarded = (data as number | null) ?? 0;
+  if (discarded > 0) {
+    const { error: evErr } = await supabase.from("inventory_events").insert({
+      food_inventory_id: itemId, kind: "discard", quantity: discarded,
+      reason: reason ?? null,
+    });
+    if (evErr) console.error("discardItem: event insert failed:", evErr);
+  }
+  return discarded;
+}

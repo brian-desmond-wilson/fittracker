@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -17,7 +18,7 @@ import { useRouter } from "expo-router";
 import { ChevronLeft, Package, Pencil, Plus } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
-import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import { consumeOneUnit, discardItem, type InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { parseLocalDate } from "@/src/lib/dates";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -78,6 +79,50 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
         setRefreshing(false);
       }
     }
+  };
+
+  // B1: consume one unit, then hand control to the parent's refresh so the
+  // quantities on screen are re-read, never hand-patched.
+  const handleUsedOne = async () => {
+    try {
+      const consumed = await consumeOneUnit(item.id);
+      if (consumed === 0) {
+        Alert.alert("Nothing to use", `${item.name} is already out of stock.`);
+        return;
+      }
+      await onRefresh?.();
+    } catch (e) {
+      console.error("consume failed:", e);
+      Alert.alert("Error", `Couldn't mark ${item.name} as used.`);
+    }
+  };
+
+  // B2: discard remaining stock with an optional reason (event trail feeds
+  // waste analytics). Distinct from delete — the row and history survive.
+  const handleToss = () => {
+    const toss = async (reason?: string) => {
+      try {
+        const discarded = await discardItem(item.id, reason);
+        if (discarded === 0) {
+          Alert.alert("Nothing to toss", `${item.name} is already out of stock.`);
+          return;
+        }
+        await onRefresh?.();
+      } catch (e) {
+        console.error("discard failed:", e);
+        Alert.alert("Error", `Couldn't toss ${item.name}.`);
+      }
+    };
+    Alert.alert(
+      `Toss ${item.name}?`,
+      "Remaining stock goes to zero. The item stays in your inventory history.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Expired / spoiled", onPress: () => toss("expired") },
+        { text: "Didn't like it", onPress: () => toss("didn't like") },
+        { text: "Just toss it", style: "destructive", onPress: () => toss() },
+      ],
+    );
   };
 
   const renderSection = (title: string, content: React.ReactNode) => (
@@ -190,6 +235,22 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
             {item.brand && <Text style={styles.productBrand}>{item.brand}</Text>}
             {item.flavor && <Text style={styles.productFlavor}>{item.flavor}</Text>}
           </View>
+
+          {/* B1/B2 verbs — the daily-use actions, first-class on the detail
+              page (and the VoiceOver-reachable path to what the grid tile's
+              pointer-only "−" shortcut does). Hidden in preview mode and when
+              there is no stock to act on. Side-by-side pair per style rule 26:
+              Button cannot flex, so each sits in a flex:1 wrapper. */}
+          {!isPreview && item.state.totalQuantity > 0 && (
+            <View style={styles.verbRow}>
+              <View style={styles.verbHalf}>
+                <Button label="Used one" onPress={handleUsedOne} fluid />
+              </View>
+              <View style={styles.verbHalf}>
+                <Button label="Toss item…" onPress={handleToss} variant="destructive" fluid />
+              </View>
+            </View>
+          )}
 
           {/* Quantity & Location */}
           {renderSection(
@@ -392,6 +453,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
   },
+  verbRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  verbHalf: { flex: 1 },
   titleSection: {
     padding: spacing.xl,
     backgroundColor: colors.bg,
