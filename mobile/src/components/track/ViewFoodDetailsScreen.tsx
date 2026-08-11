@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import {
   Alert,
+  Platform,
   View,
   Text,
   StyleSheet,
@@ -15,13 +16,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Package, Pencil, Plus } from "lucide-react-native";
+import { ChevronLeft, Package, Pencil, Plus, ScanBarcode } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { consumeOneUnit, discardItem, type InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import { reviewExpiry } from "@/src/lib/expiryPolicy";
 import { parseLocalDate } from "@/src/lib/dates";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
+// A3: the product image lives in a CONTAINED well, not a half-screen white
+// band — imageWell is sanctioned as a well on a dark card, not as full-bleed
+// flooding of the theme. Carousel paging math must use this width.
+const WELL_WIDTH = SCREEN_WIDTH - spacing.screenGutter * 2;
 
 interface ViewFoodDetailsScreenProps {
   item: InventoryItemWithState;
@@ -66,7 +72,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const scrollPosition = event.nativeEvent.contentOffset.x;
-    const index = Math.round(scrollPosition / SCREEN_WIDTH);
+    const index = Math.round(scrollPosition / WELL_WIDTH);
     setActiveImageIndex(index);
   };
 
@@ -124,6 +130,33 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
       ],
     );
   };
+
+  // A4: relative expiry phrasing driven by the shared policy. Stale items get
+  // the QUIET treatment (neutral) — they belong to the Archive, not to alarm.
+  const relativeDays = (d: number): string => {
+    const abs = Math.abs(d);
+    if (abs >= 60) return `${Math.round(abs / 30)} months`;
+    if (abs >= 14) return `${Math.round(abs / 7)} weeks`;
+    return `${abs} day${abs === 1 ? "" : "s"}`;
+  };
+  const expiryStatus = (() => {
+    const { expiration, daysLeft } = item.state;
+    if (expiration === null || daysLeft === null) return null;
+    const review = reviewExpiry(item.state, item.categories.map((c) => c.name));
+    if (review === "stale") {
+      return { label: "Was expired", tone: "neutral" as const, detail: `${relativeDays(daysLeft)} ago` };
+    }
+    if (expiration === "expired") {
+      return { label: "Expired", tone: "danger" as const, detail: `${relativeDays(daysLeft)} ago` };
+    }
+    if (expiration === "today") {
+      return { label: "Expires today", tone: "warning" as const, detail: "use or move it" };
+    }
+    if (expiration === "soon") {
+      return { label: "Expiring", tone: "warning" as const, detail: `in ${relativeDays(daysLeft)}` };
+    }
+    return null;
+  })();
 
   const renderSection = (title: string, content: React.ReactNode) => (
     <Card variant="panel" style={styles.section}>
@@ -234,6 +267,15 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
             <Text style={styles.productName}>{item.name}</Text>
             {item.brand && <Text style={styles.productBrand}>{item.brand}</Text>}
             {item.flavor && <Text style={styles.productFlavor}>{item.flavor}</Text>}
+            {/* A4: the same urgency the grid shows, with relative phrasing —
+                the grid screamed "Expired" while this page whispered a bare
+                calendar date. One truth, one weight, both surfaces. */}
+            {expiryStatus && (
+              <View style={styles.expiryStatusRow}>
+                <Badge label={expiryStatus.label} tone={expiryStatus.tone} />
+                <Text style={styles.expiryStatusText}>{expiryStatus.detail}</Text>
+              </View>
+            )}
           </View>
 
           {/* B1/B2 verbs — the daily-use actions, first-class on the detail
@@ -263,7 +305,6 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   {renderDetailRow("In Storage", `${item.state.storageQuantity} ${item.unit}`)}
                 </>
               )}
-              {renderDetailRow("Storage Type", item.storage_type === 'single-location' ? 'Single Location' : 'Multi-Location')}
               {item.storage_type === 'single-location' && item.location && (
                 renderDetailRow("Location", item.location.charAt(0).toUpperCase() + item.location.slice(1))
               )}
@@ -331,7 +372,10 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   {renderDetailRow("Total Restock Threshold", item.total_restock_threshold ? `${item.total_restock_threshold} ${item.unit}` : "Not set")}
                 </>
               )}
-              {renderDetailRow("Requires Refrigeration", item.requires_refrigeration ? "Yes" : "No")}
+              {/* A5: only shown when true — "Requires Refrigeration: No" on
+                  milk was the DB contradicting itself in the user's face.
+                  Deriving/validating the pair is C5's backend job. */}
+              {item.requires_refrigeration ? renderDetailRow("Keep Refrigerated", "Yes") : null}
             </>
           )}
 
@@ -362,7 +406,15 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           {(item.barcode || item.notes) && renderSection(
             "Additional Information",
             <>
-              {renderDetailRow("Barcode", item.barcode)}
+              {item.barcode ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Barcode</Text>
+                  <View style={styles.barcodeValue}>
+                    <ScanBarcode size={icons.sm} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
+                    <Text style={styles.barcodeText}>{item.barcode}</Text>
+                  </View>
+                </View>
+              ) : null}
               {item.notes && (
                 <View style={styles.notesContainer}>
                   <Text style={styles.detailLabel}>Notes</Text>
@@ -408,18 +460,22 @@ const styles = StyleSheet.create({
   // The one sanctioned white surface: product photos are shot on white.
   imageSection: {
     backgroundColor: colors.imageWell,
-    paddingBottom: spacing.lg,
+    marginHorizontal: spacing.screenGutter,
+    marginTop: spacing.md,
+    borderRadius: radii.panel,
+    overflow: "hidden",
+    paddingBottom: spacing.md,
   },
   imageCarousel: {
-    width: SCREEN_WIDTH,
-    height: 250,
+    width: WELL_WIDTH,
+    height: 220,
   },
   imageContainer: {
-    width: SCREEN_WIDTH,
-    height: 250,
+    width: WELL_WIDTH,
+    height: 220,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.xxl,
+    paddingVertical: spacing.lg,
   },
   productImage: {
     width: 200,
@@ -460,6 +516,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   verbHalf: { flex: 1 },
+  expiryStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  expiryStatusText: { ...typography.caption, color: colors.textMuted },
+  barcodeValue: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  barcodeText: {
+    ...typography.body,
+    color: colors.text,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
   titleSection: {
     padding: spacing.xl,
     backgroundColor: colors.bg,

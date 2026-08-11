@@ -36,10 +36,11 @@ import {
 } from "@/src/lib/supabase/inventory";
 import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shopping";
 import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
-import { isExpiringSoon } from "@/src/lib/expiryPolicy";
+import { isExpiringSoon, reviewExpiry } from "@/src/lib/expiryPolicy";
 import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
+import { ExpiryReviewModal } from "./ExpiryReviewModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -52,7 +53,9 @@ interface FoodInventoryScreenProps {
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.screenGutter;
 const GRID_GAP = spacing.md;
-const NUM_COLUMNS = 3;
+// A6: two columns — three truncated nearly every product name, and the name
+// is the identifier. Wider tiles also give the B1 quick-verb real estate.
+const NUM_COLUMNS = 2;
 const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
@@ -99,6 +102,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+
+  // A7: default view is ACTIVE stock. Out-of-stock and stale-expired rows
+  // are real records but dead weight in the daily view; they live in the
+  // Archive segment instead of rendering as loudly as live food.
+  const [view, setView] = useState<"active" | "archive">("active");
+
+  // A2: the expiring panel became a one-line banner opening this review sheet.
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   // Fetch categories and subcategories on mount
   useEffect(() => {
@@ -536,8 +547,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       let matchesCategory = true;
       if (selectedCategory) {
         if (selectedCategory.slug === "all-products") {
-          // "All Products" shows all in-stock items
-          matchesCategory = !item.state.isOut;
+          // A7: genuinely ALL products. The old `!isOut` exclusion predates
+          // the Active/Archive segments and silently hid out-of-stock rows
+          // from every count — the screen could never agree with the hub's
+          // "22 items". Deadness is the segment's job now, not the tab's.
+          matchesCategory = true;
         } else if (selectedCategory.slug === "out-of-stock") {
           // "Out of Stock" shows all out-of-stock items
           matchesCategory = item.state.isOut;
@@ -580,11 +594,17 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // Bands and day counts come from the projection; this only picks copy/tone.
   // A non-null `tone` renders as a Badge; `null` is the plain muted date line.
+  // A1: the urgency ladder, driven by the shared expiry policy — danger only
+  // for actionably-expired (within grace), warning for today/soon, and a
+  // deliberately QUIET neutral "Was expired" for stale items so a wall of
+  // year-old red no longer drowns the one thing expiring tomorrow.
   const formatExpirationDate = (
     item: InventoryItemWithState,
   ): { text: string; tone: BadgeTone | null } | null => {
     const { expiration, daysLeft } = item.state;
     if (!item.expiration_date || expiration === null) return null;
+    const review = reviewExpiry(item.state, item.categories.map((c) => c.name));
+    if (review === "stale") return { text: "Was expired", tone: "neutral" };
     if (expiration === "expired") return { text: "Expired", tone: "danger" };
     if (expiration === "today") return { text: "Expires today", tone: "warning" };
     if (expiration === "soon") return { text: `Exp: ${daysLeft}d left`, tone: "warning" };
@@ -597,6 +617,20 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       tone: null,
     };
   };
+
+
+  // A7/A2 derived sets. Archive = out-of-stock or stale-expired (the C1
+  // aging policy); everything else is the working inventory. The attention
+  // list feeds the banner + review sheet and is computed over ALL items —
+  // urgency does not care which tab is open.
+  const isArchived = (it: InventoryItemWithState) =>
+    it.state.isOut || reviewExpiry(it.state, it.categories.map((c) => c.name)) === "stale";
+  const activeItems = filteredItems.filter((it) => !isArchived(it));
+  const archiveItems = filteredItems.filter(isArchived);
+  const visibleItems = view === "active" ? activeItems : archiveItems;
+  const attentionItems = items
+    .filter((it) => isExpiringSoon(it.state, it.categories.map((c) => c.name)))
+    .sort((a, b) => (a.state.daysLeft ?? 0) - (b.state.daysLeft ?? 0));
 
   // Render function for grid items
   const renderGridItem = ({ item }: { item: InventoryItemWithState }) => {
@@ -780,78 +814,51 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             return null;
           })()}
 
-          {/* Expiring soon — pinned above the grid */}
-          {(() => {
-            // C3: the shared expiring definition (expiryPolicy.ts) — same rule
-            // the Loop Hub's inventory station uses, so the two surfaces can
-            // no longer disagree. Adds the C1 aging policy for free: an item
-            // expired past its category's grace window is stale, not urgent,
-            // and leaves this panel (it awaits the audit/review flow instead).
-            const expiring = filteredItems.filter(
-              (it) => isExpiringSoon(it.state, it.categories.map((c) => c.name)),
-            )
-              // Rescue-first WITHIN the section, overriding the grid's plain
-              // soonest-first order. Same objection that ruled out a "+k more"
-              // cap applies to the scroll: expired days are negative, so
-              // inheriting the grid order puts the least actionable rows —
-              // things that went off months ago — in the visible five and
-              // pushes the item expiring tomorrow below the fold. Still
-              // rescuable (daysLeft >= 0) ascending first, then the expired
-              // ones most-recent-first. One rule: nearest to today wins, and
-              // the future beats the past.
-              .sort((a, b) => {
-                const ad = a.state.daysLeft ?? 0;
-                const bd = b.state.daysLeft ?? 0;
-                if (ad >= 0 && bd >= 0) return ad - bd;
-                if (ad < 0 && bd < 0) return bd - ad;
-                return ad >= 0 ? -1 : 1;
-              });
-            if (expiring.length === 0) return null;
-            return (
-              <View style={styles.expiringSection}>
-                <Text style={styles.expiringTitle}>
-                  Expiring soon{expiring.length > 1 ? ` (${expiring.length})` : ""}
-                </Text>
-                {/* Bounded height with internal scroll rather than a "+k more"
-                    cap. The `"expired"` band has NO lower bound, so an in-stock
-                    item that expired months ago stays here forever and sorts
-                    FIRST (soonest-daysLeft first, and expired days are
-                    negative) — a cap would push genuinely rescuable items out
-                    of view behind the stalest ones. Scrolling bounds the chrome
-                    above the grid while keeping every row reachable, and needs
-                    no policy decision about when an expired item stops
-                    mattering. Safe to nest: the parent is a plain View and the
-                    grid below is a sibling FlatList, not an enclosing scroller. */}
-                <ScrollView
-                  style={styles.expiringList}
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator
-                  /* The list is filtered by `searchQuery`, so search-then-tap is
-                     the natural flow — and the default ("never") makes the first
-                     tap with the keyboard up only dismiss the keyboard. */
-                  keyboardShouldPersistTaps="handled"
+          {/* A2: the expiring panel is now a one-line banner (style-guide
+              Banner recipe) — a summary with a verb, not five rows of chrome.
+              The count uses the C3 shared definition over the WHOLE inventory
+              (not the tab/search-filtered slice): attention is global, and the
+              review sheet it opens carries the per-row actions. */}
+          {attentionItems.length > 0 && (
+            <TouchableOpacity
+              style={styles.attentionBanner}
+              onPress={() => setShowReviewModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`${attentionItems.length} items need attention`}
+            >
+              <Text style={styles.attentionBannerTitle}>
+                {attentionItems.length} {attentionItems.length === 1 ? "item needs" : "items need"} attention
+              </Text>
+              <Text style={styles.attentionBannerAction}>Review</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* A7: Active / Archive segments. Interactive control -> brand
+              (style rule 2); counts keep the hidden rows honest. */}
+          <View style={styles.viewSegments}>
+            {(["active", "archive"] as const).map((v) => {
+              const n = v === "active" ? activeItems.length : archiveItems.length;
+              const selected = view === v;
+              return (
+                <TouchableOpacity
+                  key={v}
+                  style={[styles.viewSegment, selected && styles.viewSegmentSelected]}
+                  onPress={() => setView(v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${v === "active" ? "Active" : "Archive"} (${n})`}
                 >
-                  {expiring.map((it) => (
-                    <TouchableOpacity key={it.id} onPress={() => handleViewItem(it)} style={styles.expiringRow}>
-                      <Text style={styles.expiringName} numberOfLines={1}>{it.name}</Text>
-                      {it.state.expiration === "expired" ? (
-                        <Badge tone="danger" label="Expired" />
-                      ) : (
-                        <Badge
-                          tone="warning"
-                          label={it.state.expiration === "today" ? "Today" : `${it.state.daysLeft}d left`}
-                        />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            );
-          })()}
+                  <Text style={[styles.viewSegmentText, selected && styles.viewSegmentTextSelected]}>
+                    {v === "active" ? "Active" : "Archive"} ({n})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
         {/* Items Grid */}
         <FlatList
-          data={filteredItems}
+          data={visibleItems}
           renderItem={renderGridItem}
           keyExtractor={(item) => item.id}
           numColumns={NUM_COLUMNS}
@@ -901,6 +908,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         />
 
         {/* Restock Modal */}
+        <ExpiryReviewModal
+          visible={showReviewModal}
+          items={attentionItems}
+          onClose={() => setShowReviewModal(false)}
+          onConsume={handleConsumeOne}
+          onToss={handleToss}
+          onShop={handleAddToShoppingList}
+        />
+
         <RestockModal
           visible={showRestockModal}
           onClose={() => {
@@ -975,20 +991,8 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   // Banner recipe (spec §5.7): tint fill, 0.3 tint border, warning heading.
-  expiringSection: {
-    backgroundColor: tint(colors.warning), borderColor: tint(colors.warning, 0.3),
-    borderWidth: 1, borderRadius: radii.row,
-    marginHorizontal: spacing.screenGutter, marginBottom: spacing.md, padding: spacing.md,
-  },
   // 14/600 per the banner recipe — `typography.buttonSm` is exactly that.
-  expiringTitle: { ...typography.buttonSm, color: colors.warning, marginBottom: spacing.xs },
   // ~5 rows (26px each); past that the list scrolls instead of growing.
-  expiringList: { maxHeight: 130 },
-  expiringRow: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between", paddingVertical: spacing.xs,
-  },
-  expiringName: { ...typography.body, color: colors.text, flexShrink: 1 },
   // Grid Layout Styles
   flatList: {
     flex: 1,
@@ -1032,6 +1036,38 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.imageWell,
   },
+  attentionBanner: {
+    backgroundColor: tint(colors.warning),
+    borderWidth: 1,
+    borderColor: tint(colors.warning, 0.3),
+    borderRadius: radii.row,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  attentionBannerTitle: { ...typography.buttonSm, color: colors.warning },
+  attentionBannerAction: { ...typography.buttonSm, color: colors.warning },
+  viewSegments: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  viewSegment: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  viewSegmentSelected: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  viewSegmentText: { ...typography.buttonSm, color: colors.textMuted },
+  viewSegmentTextSelected: { color: colors.onBrand },
   useOneButton: {
     position: "absolute",
     bottom: spacing.xs,
