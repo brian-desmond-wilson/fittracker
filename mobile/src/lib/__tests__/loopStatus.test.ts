@@ -92,6 +92,24 @@ describe("station 1: inventory", () => {
     ];
     expect(computeLoopStatus(inp).stations[0].headline).toBe("2 items · 0 out · 1 expiring");
   });
+  it("C1/C3: stale expired items and out-of-stock items leave the expiring count", () => {
+    const inp = baseInputs();
+    inp.inventory = [
+      // long-expired perishable (no categories → perishable grace 14) → stale
+      { id: "a", name: "Old Milk", state: state({ expiration: "expired", daysLeft: -273 }) },
+      // long-expired but shelf-stable and within its 90d grace → still counts
+      { id: "b", name: "Oats Overnight", state: state({ expiration: "expired", daysLeft: -35 }), categories: ["Breakfast Foods"] },
+      // expiring soon but out of stock → nothing to use or toss → excluded
+      { id: "c", name: "Ghost Yogurt", state: state({ totalQuantity: 0, isOut: true, expiration: "soon", daysLeft: 2 }) },
+      // freshly expired perishable, inside grace → counts
+      { id: "d", name: "New Casualty", state: state({ expiration: "expired", daysLeft: -3 }) },
+    ];
+    const s = computeLoopStatus(inp).stations[0];
+    expect(s.headline).toBe("4 items · 1 out · 2 expiring");
+    // stale item also stays out of the detail-sheet expiring lines
+    expect(s.detail.lines.find((l) => l.label === "Old Milk")).toBeUndefined();
+    expect(s.detail.lines.find((l) => l.label === "Oats Overnight")).toBeDefined();
+  });
   it("detail: out names as danger chips, expiring lines soonest-first, expired shows 'expired'", () => {
     const inp = baseInputs();
     inp.inventory = [

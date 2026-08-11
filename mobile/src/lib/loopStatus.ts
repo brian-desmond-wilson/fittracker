@@ -5,6 +5,7 @@
 // and Eat Next stock display goes through eatNextStockBadge rather than being
 // re-derived from `reasons` (the Phase 4 Task 14 lesson).
 import type { ItemStockState } from "./stockState";
+import { isExpiringSoon } from "./expiryPolicy";
 import type { EatNextResult, EatNextStockInfo } from "./eatNext";
 import { eatNextExpiringLine, eatNextStockBadge } from "./eatNext";
 import type { MealPaceState } from "./mealPace";
@@ -51,7 +52,10 @@ export interface LoopStatus { stations: StationStatus[]; attentionCount: number 
 // header comment above forbids — so that need would be the signal the
 // computation belongs upstream, not that this field should return.
 export interface LoopStatusInputs {
-  inventory: Array<{ id: string; name: string; state: ItemStockState }>;
+  /** `categories` = `food_categories.name` values the item carries; drives the
+   *  expiry-aging grace window (expiryPolicy.ts). Optional so synthetic
+   *  fixtures stay terse — absent means the conservative perishable default. */
+  inventory: Array<{ id: string; name: string; state: ItemStockState; categories?: string[] }>;
   /** The library AND its ranking in ONE array: `raw` ranks (spec §5.5),
    *  `display` is the /100 UI value. `useLoopHub` fills both with the same pure
    *  trio `useEatNext` uses. Deliberately not two parallel arrays — a separate
@@ -96,12 +100,12 @@ const capLines = (lines: StationDetailLine[]): { lines: StationDetailLine[]; ove
     ? { lines, overflow: 0 }
     : { lines: lines.slice(0, DETAIL_MAX_ROWS), overflow: lines.length - DETAIL_MAX_ROWS };
 
-const isExpiring = (s: ItemStockState): boolean =>
-  s.expiration !== null && s.expiration !== "later";
-
 function inventoryStation(inp: LoopStatusInputs, readyCount: number): StationStatus {
   const out = inp.inventory.filter((i) => i.state.isOut);
-  const expiring = inp.inventory.filter((i) => isExpiring(i.state));
+  // C3: the ONE "expiring" definition, shared with the Inventory screen —
+  // excludes out-of-stock items and stale (aged-out) expired items. Never
+  // re-derive from bands here; the policy module owns the semantics.
+  const expiring = inp.inventory.filter((i) => isExpiringSoon(i.state, i.categories));
   const badge: StationChip =
     out.length > 0 ? { label: `${out.length} out`, tone: "danger" }
     : expiring.length > 0 ? { label: `${expiring.length} expiring`, tone: "warning" }

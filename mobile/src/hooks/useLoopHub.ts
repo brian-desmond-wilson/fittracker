@@ -182,7 +182,10 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
           mealTimes, macro, now,
         });
       const next = computeLoopStatus({
-        inventory: inventory.map((i) => ({ id: i.id, name: i.name, state: i.state })),
+        inventory: inventory.map((i) => ({
+          id: i.id, name: i.name, state: i.state,
+          categories: i.categories.map((c) => c.name),
+        })),
         // Library AND ranking in one array — `raw` ranks, `display` is the /100
         // UI value (spec §5.5). One `.map`, so a meal cannot appear in the
         // count without its score, or vice versa.

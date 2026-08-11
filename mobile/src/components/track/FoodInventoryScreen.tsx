@@ -34,6 +34,7 @@ import {
 } from "@/src/lib/supabase/inventory";
 import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shopping";
 import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
+import { isExpiringSoon } from "@/src/lib/expiryPolicy";
 import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
@@ -690,9 +691,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
           {/* Expiring soon — pinned above the grid */}
           {(() => {
+            // C3: the shared expiring definition (expiryPolicy.ts) — same rule
+            // the Loop Hub's inventory station uses, so the two surfaces can
+            // no longer disagree. Adds the C1 aging policy for free: an item
+            // expired past its category's grace window is stale, not urgent,
+            // and leaves this panel (it awaits the audit/review flow instead).
             const expiring = filteredItems.filter(
-              (it) => !it.state.isOut &&
-                (it.state.expiration === "expired" || it.state.expiration === "today" || it.state.expiration === "soon"),
+              (it) => isExpiringSoon(it.state, it.categories.map((c) => c.name)),
             )
               // Rescue-first WITHIN the section, overriding the grid's plain
               // soonest-first order. Same objection that ruled out a "+k more"
