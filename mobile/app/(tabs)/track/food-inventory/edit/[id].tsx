@@ -48,10 +48,17 @@ export default function EditFoodItemPage() {
     }
   };
 
+  // See the sibling detail route: `replace` animates as a push, so it is wrong
+  // for Back. Pop when there is a stack; `replace` only for a cold deep link.
+  const goBack = () =>
+    router.canGoBack() ? router.back() : router.replace(`/(tabs)/track/food-inventory/${id}`);
+
   const handleSave = () => {
-    // Refresh the data after save
-    fetchItemDetails();
-    router.replace(`/(tabs)/track/food-inventory/${id}`);
+    // Pop, don't replace. Replacing this route with the detail route put the
+    // same page in the stack twice, so Back from it needed two taps. The
+    // detail screen refetches when it regains focus, so popping to the copy
+    // already in the stack still shows the edit.
+    goBack();
   };
 
   if (loading || !item) {
@@ -62,7 +69,7 @@ export default function EditFoodItemPage() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.replace(`/(tabs)/track/food-inventory/${id}`)} style={styles.backButton}>
+            <TouchableOpacity onPress={goBack} style={styles.backButton}>
               <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
               <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
@@ -75,7 +82,7 @@ export default function EditFoodItemPage() {
     );
   }
 
-  return <EditFoodScreen item={item} onClose={() => router.replace(`/(tabs)/track/food-inventory/${id}`)} onSave={handleSave} />;
+  return <EditFoodScreen item={item} onClose={goBack} onSave={handleSave} />;
 }
 
 const styles = StyleSheet.create({
