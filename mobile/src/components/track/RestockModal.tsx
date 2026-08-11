@@ -11,7 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { X, Package } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, tint } from "@/src/theme/tokens";
 import { FoodLocation } from "@/src/types/track";
 import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 
@@ -116,11 +116,11 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Package size={24} color="#8B5CF6" />
+            <Package size={24} color={colors.accents.inventory} />
             <Text style={styles.title}>Restock Item</Text>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <X size={24} color={colors.foreground} />
+            <X size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -183,7 +183,7 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
             <TextInput
               style={styles.input}
               placeholder="Enter quantity"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               value={quantity}
               onChangeText={setQuantity}
@@ -273,7 +273,7 @@ export function RestockModal({ visible, onClose, item, onConfirm }: RestockModal
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: "bold",
-    color: colors.foreground,
+    color: colors.text,
   },
   closeButton: {
     padding: 4,
@@ -308,12 +308,12 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 22,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   itemBrand: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   section: {
     paddingVertical: 20,
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     letterSpacing: 0.5,
     marginBottom: 16,
   },
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   },
   quantityBox: {
     flex: 1,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
@@ -343,13 +343,13 @@ const styles = StyleSheet.create({
   quantityLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 8,
   },
   quantityValue: {
     fontSize: 24,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
   },
   radioOption: {
     flexDirection: "row",
@@ -372,52 +372,52 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   radioSelected: {
-    borderColor: "#8B5CF6",
+    borderColor: colors.accents.inventory,
   },
   radioInner: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: "#8B5CF6",
+    backgroundColor: colors.accents.inventory,
   },
   radioLabel: {
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   sourceQuantity: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontWeight: "600",
   },
   input: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   errorText: {
     fontSize: 13,
-    color: "#EF4444",
+    color: colors.danger,
     marginTop: 8,
     fontWeight: "500",
   },
   previewSection: {
     marginHorizontal: 20,
     marginTop: 20,
-    backgroundColor: "rgba(139, 92, 246, 0.05)",
+    backgroundColor: tint(colors.accents.inventory),
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: "rgba(139, 92, 246, 0.2)",
+    borderColor: tint(colors.accents.inventory, 0.3),
   },
   previewTitle: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#8B5CF6",
+    color: colors.accents.inventory,
     letterSpacing: 0.5,
     marginBottom: 12,
   },
@@ -429,13 +429,13 @@ const styles = StyleSheet.create({
   },
   previewTotal: {
     borderTopWidth: 1,
-    borderTopColor: "rgba(139, 92, 246, 0.2)",
+    borderTopColor: tint(colors.accents.inventory, 0.3),
     marginTop: 8,
     paddingTop: 12,
   },
   previewLabel: {
     fontSize: 14,
-    color: colors.foreground,
+    color: colors.text,
     fontWeight: "500",
   },
   previewTotalLabel: {
@@ -449,17 +449,17 @@ const styles = StyleSheet.create({
   },
   previewOld: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontWeight: "600",
   },
   previewArrow: {
     fontSize: 14,
-    color: "#8B5CF6",
+    color: colors.accents.inventory,
     fontWeight: "600",
   },
   previewNew: {
     fontSize: 14,
-    color: "#8B5CF6",
+    color: colors.accents.inventory,
     fontWeight: "700",
   },
   previewTotalValue: {
@@ -472,13 +472,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
@@ -486,13 +486,13 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
   },
   confirmButton: {
     flex: 1.5,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: "#8B5CF6",
+    backgroundColor: colors.accents.inventory,
     alignItems: "center",
   },
   confirmButtonDisabled: {
@@ -501,6 +501,6 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
 });

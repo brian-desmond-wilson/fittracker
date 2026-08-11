@@ -14,6 +14,10 @@ interface CategoryTabsProps {
   categories: FoodCategory[];
   selectedCategoryId: string | null;
   onSelectCategory: (categoryId: string) => void;
+  /** A8: per-category item counts keyed by category id. A count on the tab is
+   *  the scroll affordance the clipped labels never gave — a tab reading
+   *  "Produce 1" tells you it's worth (or not worth) the horizontal trip. */
+  countsByCategoryId?: Map<string, number>;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -22,6 +26,7 @@ export function CategoryTabs({
   categories,
   selectedCategoryId,
   onSelectCategory,
+  countsByCategoryId,
 }: CategoryTabsProps) {
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -58,6 +63,9 @@ export function CategoryTabs({
             >
               <Text style={[styles.tabText, isSelected && styles.tabTextActive]}>
                 {category.name}
+                {countsByCategoryId?.has(category.id)
+                  ? `  ${countsByCategoryId.get(category.id)}`
+                  : ""}
               </Text>
               {isSelected && <View style={styles.indicator} />}
             </TouchableOpacity>

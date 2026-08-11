@@ -12,13 +12,12 @@ import {
   RefreshControl,
   FlatList,
   Dimensions,
-  ActionSheetIOS,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { Camera, ChevronLeft, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
+import { Camera, ChevronLeft, Eye, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, Trash2, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -42,6 +41,7 @@ import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
 import { ExpiryReviewModal } from "./ExpiryReviewModal";
 import { BulkCaptureModal } from "./BulkCaptureModal";
+import { ItemActionsSheet, type ItemAction } from "./ItemActionsSheet";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -114,6 +114,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // E5: photo/receipt bulk-capture sheet.
   const [showCaptureModal, setShowCaptureModal] = useState(false);
+
+  // A9: themed long-press actions sheet (replaces the light-appearance
+  // system ActionSheetIOS that couldn't match the theme).
+  const [actionsItem, setActionsItem] = useState<InventoryItemWithState | null>(null);
 
   // Fetch categories and subcategories on mount
   useEffect(() => {
@@ -354,82 +358,45 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleLongPress = (item: InventoryItemWithState) => {
-    const needsRestockFridge = item.state.needsFridgeRestock;
-    const inStock = item.state.totalQuantity > 0;
+    setActionsItem(item);
+  };
 
-    // Build action sheet options dynamically
-    const options: string[] = ['View Details', 'Edit Details', 'Delete Item'];
-    const actions: (() => void)[] = [
-      () => handleViewItem(item),
-      () => handleEditItem(item),
-      () => {
+  // A9: the actions the themed sheet offers for the long-pressed item — the
+  // same set the old native menu carried, now consistent on both platforms
+  // and matching the theme.
+  const itemActions = (item: InventoryItemWithState): ItemAction[] => {
+    const inStock = item.state.totalQuantity > 0;
+    const actions: ItemAction[] = [
+      { label: "View Details", icon: Eye, onPress: () => handleViewItem(item) },
+      { label: "Edit Details", icon: Pencil, onPress: () => handleEditItem(item) },
+    ];
+    if (inStock) {
+      actions.push(
+        { label: "Used One", icon: Minus, onPress: () => handleConsumeOne(item) },
+        { label: "Toss Item…", icon: Trash2, onPress: () => handleToss(item) },
+      );
+    }
+    actions.push({ label: "Add to Shopping List", icon: ShoppingCart, onPress: () => handleAddToShoppingList(item) });
+    if (item.state.needsFridgeRestock) {
+      actions.push({
+        label: "Restock Fridge", icon: Package,
+        onPress: () => { setRestockingItem(item); setShowRestockModal(true); },
+      });
+    }
+    actions.push({
+      label: "Delete Item", icon: Trash2, destructive: true,
+      onPress: () => {
         Alert.alert(
           "Delete Item",
           `Are you sure you want to delete ${item.name}?`,
           [
             { text: "Cancel", style: "cancel" },
-            { text: "Delete", style: "destructive", onPress: () => handleDeleteItem(item.id) }
-          ]
+            { text: "Delete", style: "destructive", onPress: () => handleDeleteItem(item.id) },
+          ],
         );
-      }
-    ];
-
-    // B1/B2 verbs, only when there is stock to act on. Inserted after "Edit
-    // Details" so the destructive "Delete Item" stays last-before-Cancel.
-    if (inStock) {
-      options.splice(2, 0, 'Used One', 'Toss Item…');
-      actions.splice(2, 0, () => handleConsumeOne(item), () => handleToss(item));
-    }
-
-    // "Add to Shopping List" after the stock verbs — un-gated (spec §9.3):
-    // every item can be topped up, not just ones already at zero, now that
-    // the quantity is threshold-exit rather than the old out-of-stock-only
-    // restock_threshold read. Positions are DERIVED (not hardcoded) because
-    // the B1/B2 verbs above are conditional and would shift fixed indices.
-    const afterEdit = options.indexOf('Edit Details') + 1 + (inStock ? 2 : 0);
-    options.splice(afterEdit, 0, 'Add to Shopping List');
-    actions.splice(afterEdit, 0, () => handleAddToShoppingList(item));
-
-    // Add "Restock Fridge" if multi-location and needs restock (always after
-    // "Add to Shopping List", which is now unconditional).
-    if (needsRestockFridge) {
-      options.splice(afterEdit + 1, 0, 'Restock Fridge');
-      actions.splice(afterEdit + 1, 0, () => {
-        setRestockingItem(item);
-        setShowRestockModal(true);
-      });
-    }
-
-    options.push('Cancel');
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: options.length - 1,
-          destructiveButtonIndex: options.indexOf('Delete Item'),
-        },
-        (buttonIndex) => {
-          if (buttonIndex < actions.length) {
-            actions[buttonIndex]();
-          }
-        }
-      );
-    } else {
-      // For Android, use Alert with buttons
-      Alert.alert(
-        item.name,
-        'Choose an action',
-        [
-          ...actions.map((action, index) => ({
-            text: options[index],
-            onPress: action,
-            style: options[index] === 'Delete Item' ? 'destructive' as const : 'default' as const,
-          })),
-          { text: 'Cancel', style: 'cancel' as const },
-        ]
-      );
-    }
+      },
+    });
+    return actions;
   };
 
   // `sourceLocationId` is null for "from store" (units enter inventory);
@@ -623,6 +590,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
 
+  // A8: per-tab counts (items carrying that category; pseudo-tabs get the
+  // obvious totals). Cheap: 22 items x few categories.
+  const categoryCounts = new Map<string, number>();
+  for (const cat of categories) {
+    if (cat.slug === "all-products") categoryCounts.set(cat.id, items.length);
+    else if (cat.slug === "out-of-stock") categoryCounts.set(cat.id, items.filter((i) => i.state.isOut).length);
+    else categoryCounts.set(cat.id, items.filter((i) => i.categories.some((c) => c.id === cat.id)).length);
+  }
+
   // A7/A2 derived sets. Archive = out-of-stock or stale-expired (the C1
   // aging policy); everything else is the working inventory. The attention
   // list feeds the banner + review sheet and is computed over ALL items —
@@ -750,6 +726,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search items..."
+              autoCapitalize="none"
+              autoCorrect={false}
                 placeholderTextColor={colors.textFaint}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -786,6 +764,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
           {/* Category Tabs */}
           <CategoryTabs
+            countsByCategoryId={categoryCounts}
             categories={categories}
             selectedCategoryId={selectedCategoryId}
             onSelectCategory={(categoryId) => {
@@ -913,6 +892,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         />
 
         {/* Restock Modal */}
+        <ItemActionsSheet
+          visible={actionsItem !== null}
+          title={actionsItem?.name ?? null}
+          actions={actionsItem ? itemActions(actionsItem) : []}
+          onClose={() => setActionsItem(null)}
+        />
+
         <BulkCaptureModal
           visible={showCaptureModal}
           onClose={() => setShowCaptureModal(false)}
