@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, Trash2, X, Tag } from "lucide-react-native";
+import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -46,7 +46,7 @@ import { ExpiryReviewModal } from "./ExpiryReviewModal";
 import { BulkCaptureModal } from "./BulkCaptureModal";
 import { ItemActionsSheet, type ItemAction } from "./ItemActionsSheet";
 import { CategoryTabs } from "./CategoryTabs";
-import { SubcategoryPills } from "./SubcategoryPills";
+import { SubcategoryFilterSheet } from "./SubcategoryFilterSheet";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
 
@@ -141,6 +141,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // one ordering that drives action.
   const [sortBy, setSortBy] = useState<"expiry" | "name" | "recent" | "quantity">("expiry");
   const [showSortSheet, setShowSortSheet] = useState(false);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
 
   // B7: batch selection for kitchen audits — long-press -> Select Multiple.
   const [selectMode, setSelectMode] = useState(false);
@@ -698,6 +699,27 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     else categoryCounts.set(cat.id, items.filter((i) => i.categories.some((c) => c.id === cat.id)).length);
   }
 
+  // Subcategories of the open category, with per-subcategory item counts. The
+  // pseudo-tabs ("All Products", "Out of Stock") own no subcategories, so both
+  // lists come out empty and the filter button hides itself.
+  const categorySubcategories = selectedCategoryId
+    ? subcategories.filter((sub) => sub.category_id === selectedCategoryId)
+    : [];
+  const subcategoryCounts = new Map<string, number>();
+  for (const sub of categorySubcategories) {
+    subcategoryCounts.set(
+      sub.id,
+      items.filter((it) => it.subcategories.some((s) => s.id === sub.id)).length,
+    );
+  }
+
+  const toggleSubcategory = (subcategoryId: string) =>
+    setSelectedSubcategoryIds((prev) =>
+      prev.includes(subcategoryId)
+        ? prev.filter((id) => id !== subcategoryId)
+        : [...prev, subcategoryId],
+    );
+
   // E6: resolve which meals consume each attention item, deterministically
   // through concept links (the AI matcher curates links; this is pure graph
   // walking, no model call).
@@ -927,31 +949,6 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             }}
           />
 
-          {/* Subcategory Pills (hidden for "All Products" and "Out of Stock") */}
-          {selectedCategoryId && (() => {
-            const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-            const isAllProducts = selectedCategory?.slug === "all-products";
-            const isOutOfStock = selectedCategory?.slug === "out-of-stock";
-
-            if (!isAllProducts && !isOutOfStock) {
-              const categorySubcategories = subcategories.filter(sub => sub.category_id === selectedCategoryId);
-              return (
-                <SubcategoryPills
-                  subcategories={categorySubcategories}
-                  selectedSubcategoryIds={selectedSubcategoryIds}
-                  onToggleSubcategory={(subcategoryId) => {
-                    setSelectedSubcategoryIds(prev =>
-                      prev.includes(subcategoryId)
-                        ? prev.filter(id => id !== subcategoryId)
-                        : [...prev, subcategoryId]
-                    );
-                  }}
-                />
-              );
-            }
-            return null;
-          })()}
-
           {/* A7: Active / Archive segments. Interactive control -> brand
               (style rule 2); counts keep the hidden rows honest. */}
           <View style={styles.viewSegments}>
@@ -980,6 +977,32 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               );
             })}
             </ScrollView>
+            {/* Subcategory filtering used to own a whole third lane of its
+                own. It is now this button plus a sheet: two lanes always, and
+                the options stop being clipped off the right edge. Hidden
+                entirely when the current category has no subcategories, so
+                the lane never carries a dead control. */}
+            {categorySubcategories.length > 0 && (
+              <TouchableOpacity
+                style={[styles.sortButton, selectedSubcategoryIds.length > 0 && styles.sortButtonActive]}
+                onPress={() => setShowFilterSheet(true)}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  selectedSubcategoryIds.length > 0
+                    ? `Filter, ${selectedSubcategoryIds.length} active`
+                    : "Filter items"
+                }
+              >
+                <SlidersHorizontal
+                  size={icons.sm}
+                  color={selectedSubcategoryIds.length > 0 ? colors.brand : colors.textMuted}
+                  strokeWidth={icons.strokeWidth}
+                />
+                {selectedSubcategoryIds.length > 0 && (
+                  <Text style={styles.filterCount}>{selectedSubcategoryIds.length}</Text>
+                )}
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.sortButton}
               onPress={() => setShowSortSheet(true)}
@@ -1072,6 +1095,16 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           title="Sort by"
           actions={sortActions()}
           onClose={() => setShowSortSheet(false)}
+        />
+
+        <SubcategoryFilterSheet
+          visible={showFilterSheet}
+          subcategories={categorySubcategories}
+          selectedSubcategoryIds={selectedSubcategoryIds}
+          countsBySubcategoryId={subcategoryCounts}
+          onToggle={toggleSubcategory}
+          onClearAll={() => setSelectedSubcategoryIds([])}
+          onClose={() => setShowFilterSheet(false)}
         />
 
         <ItemActionsSheet
@@ -1220,11 +1253,18 @@ const styles = StyleSheet.create({
   },
   sortButton: {
     flexShrink: 0,
-    width: 36, height: 36, borderRadius: radii.pill,
+    flexDirection: "row", gap: spacing.xs,
+    minWidth: 36, height: 36, borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
     backgroundColor: colors.surface2,
     borderWidth: 1, borderColor: colors.border,
     alignItems: "center", justifyContent: "center",
   },
+  sortButtonActive: {
+    backgroundColor: tint(colors.brand),
+    borderColor: colors.brand,
+  },
+  filterCount: { ...typography.caption, fontWeight: "600", color: colors.brand },
   selectCircle: {
     position: "absolute",
     top: spacing.xs, left: spacing.xs,
@@ -1271,7 +1311,9 @@ const styles = StyleSheet.create({
     paddingRight: spacing.sm,
   },
   viewSegment: {
-    paddingHorizontal: spacing.lg,
+    // md, not lg: the filter button joined this lane, and the fourth segment
+    // has to stay at least partly visible or nobody knows the strip scrolls.
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
     backgroundColor: colors.surface2,
