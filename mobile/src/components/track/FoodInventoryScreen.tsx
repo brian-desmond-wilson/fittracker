@@ -14,11 +14,12 @@ import {
   Dimensions,
   Platform,
   Animated,
+  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, X, Tag } from "lucide-react-native";
+import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -202,6 +203,48 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     });
     return () => scrollY.removeListener(id);
   }, [collapseDistance, scrollY]);
+
+  // Pull-to-refresh feedback. The gesture and the `refreshing` lifecycle still
+  // come from RefreshControl, but on iOS its own spinner does not render in
+  // this app, so the indicator is drawn here instead. Android's RefreshControl
+  // draws its own perfectly well, hence the platform gate — two spinners would
+  // be worse than none.
+  const refreshSpin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!refreshing) {
+      refreshSpin.setValue(0);
+      return;
+    }
+    const anim = Animated.loop(
+      Animated.timing(refreshSpin, {
+        toValue: 1,
+        duration: 900,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [refreshing, refreshSpin]);
+  const refreshRotation = refreshSpin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+  // Overscroll at the top is negative, so the same scroll value that drives the
+  // collapsing header also drives the pull. Feedback has to start while the
+  // finger is still down — waiting for release is what made the gesture feel
+  // dead — so the glyph fades in and turns with the drag, then the loop above
+  // takes over once the fetch is actually running.
+  const pullOpacity = scrollY.interpolate({
+    inputRange: [-60, -12],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
+  const pullRotation = scrollY.interpolate({
+    inputRange: [-90, 0],
+    outputRange: ["360deg", "0deg"],
+    extrapolate: "clamp",
+  });
 
   // Search lives in the row that just scrolled away, so reaching it means
   // bringing that row back first. The delay lets the scroll settle before the
@@ -1098,6 +1141,22 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           </View>
 
         {/* Items Grid */}
+        <View style={styles.gridWrap}>
+        {Platform.OS === "ios" && (
+          <Animated.View
+            style={[styles.refreshRow, { opacity: refreshing ? 1 : pullOpacity }]}
+            pointerEvents="none"
+          >
+            <Animated.View
+              style={{ transform: [{ rotate: refreshing ? refreshRotation : pullRotation }] }}
+            >
+              <RefreshCw size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            </Animated.View>
+            <Text style={typography.caption}>
+              {refreshing ? "Refreshing…" : "Pull to refresh"}
+            </Text>
+          </Animated.View>
+        )}
         <Animated.FlatList
           ref={listRef}
           onScroll={Animated.event(
@@ -1158,6 +1217,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             )
           }
         />
+        </View>
           </Animated.View>
 
         {/* Restock Modal */}
@@ -1319,6 +1379,18 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   belowHeader: { flex: 1 },
+  gridWrap: { flex: 1 },
+  // Overlaid rather than inserted: the grid must not jump down and back as the
+  // refresh starts and finishes.
+  refreshRow: {
+    position: "absolute",
+    top: spacing.md, left: 0, right: 0,
+    zIndex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
   slimBar: {
     position: "absolute",
     top: 0, left: 0, right: 0,
