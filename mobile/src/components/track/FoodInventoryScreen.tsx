@@ -18,7 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { ChevronLeft, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
+import { Camera, ChevronLeft, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -41,6 +41,7 @@ import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptio
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
 import { ExpiryReviewModal } from "./ExpiryReviewModal";
+import { BulkCaptureModal } from "./BulkCaptureModal";
 import { CategoryTabs } from "./CategoryTabs";
 import { SubcategoryPills } from "./SubcategoryPills";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
@@ -110,6 +111,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
 
   // A2: the expiring panel became a one-line banner opening this review sheet.
   const [showReviewModal, setShowReviewModal] = useState(false);
+
+  // E5: photo/receipt bulk-capture sheet.
+  const [showCaptureModal, setShowCaptureModal] = useState(false);
 
   // Fetch categories and subcategories on mount
   useEffect(() => {
@@ -768,6 +772,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                 </TouchableOpacity>
               )}
             </View>
+            <IconButton icon={Camera} onPress={() => setShowCaptureModal(true)} accessibilityLabel="Capture inventory from a photo" />
             <IconButton icon={Plus} onPress={handleAddItem} accessibilityLabel="Add food" />
           </View>
 
@@ -908,6 +913,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         />
 
         {/* Restock Modal */}
+        <BulkCaptureModal
+          visible={showCaptureModal}
+          onClose={() => setShowCaptureModal(false)}
+          onApplied={fetchInventory}
+        />
+
         <ExpiryReviewModal
           visible={showReviewModal}
           items={attentionItems}
