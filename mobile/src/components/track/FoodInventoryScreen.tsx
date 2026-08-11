@@ -982,40 +982,43 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               );
             })}
             </ScrollView>
-            {/* Subcategory filtering used to own a whole third lane of its
-                own. It is now this button plus a sheet: two lanes always, and
-                the options stop being clipped off the right edge. Hidden
-                entirely when the current category has no subcategories, so
-                the lane never carries a dead control. */}
-            {categorySubcategories.length > 0 && (
+            {/* Pinned tools, fenced off from the scrolling chips by a rule so
+                the strip visibly ends instead of colliding with them.
+                Subcategory filtering used to own a whole third lane; it is now
+                this button plus a sheet. The filter hides itself when the
+                current category has no subcategories, so the lane never
+                carries a dead control. */}
+            <View style={styles.segmentTools}>
+              {categorySubcategories.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.sortButton, selectedSubcategoryIds.length > 0 && styles.sortButtonActive]}
+                  onPress={() => setShowFilterSheet(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selectedSubcategoryIds.length > 0
+                      ? `Filter, ${selectedSubcategoryIds.length} active`
+                      : "Filter items"
+                  }
+                >
+                  <SlidersHorizontal
+                    size={icons.sm}
+                    color={selectedSubcategoryIds.length > 0 ? colors.brand : colors.textMuted}
+                    strokeWidth={icons.strokeWidth}
+                  />
+                  {selectedSubcategoryIds.length > 0 && (
+                    <Text style={styles.filterCount}>{selectedSubcategoryIds.length}</Text>
+                  )}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                style={[styles.sortButton, selectedSubcategoryIds.length > 0 && styles.sortButtonActive]}
-                onPress={() => setShowFilterSheet(true)}
+                style={styles.sortButton}
+                onPress={() => setShowSortSheet(true)}
                 accessibilityRole="button"
-                accessibilityLabel={
-                  selectedSubcategoryIds.length > 0
-                    ? `Filter, ${selectedSubcategoryIds.length} active`
-                    : "Filter items"
-                }
+                accessibilityLabel="Sort items"
               >
-                <SlidersHorizontal
-                  size={icons.sm}
-                  color={selectedSubcategoryIds.length > 0 ? colors.brand : colors.textMuted}
-                  strokeWidth={icons.strokeWidth}
-                />
-                {selectedSubcategoryIds.length > 0 && (
-                  <Text style={styles.filterCount}>{selectedSubcategoryIds.length}</Text>
-                )}
+                <ArrowUpDown size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
               </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={styles.sortButton}
-              onPress={() => setShowSortSheet(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Sort items"
-            >
-              <ArrowUpDown size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-            </TouchableOpacity>
+            </View>
           </View>
 
         {/* Items Grid */}
@@ -1304,16 +1307,32 @@ const styles = StyleSheet.create({
     borderColor: tint(colors.warning, 0.3),
   },
   attentionChipCount: { ...typography.buttonSm, color: colors.warning },
+  // Its own band, matching the category tabs above it: gutter, vertical
+  // breathing room, and a closing rule. Without these the chips sat flush
+  // against the tab row's underline and against the screen edge.
   viewSegments: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingRight: spacing.screenGutter,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
     marginBottom: spacing.md,
   },
   segmentStrip: {
     flexDirection: "row",
     gap: spacing.sm,
-    paddingRight: spacing.sm,
+    paddingHorizontal: spacing.screenGutter,
+  },
+  segmentTools: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "stretch",
+    gap: spacing.sm,
+    paddingLeft: spacing.md,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
   },
   viewSegment: {
     // md, not lg: the filter button joined this lane, and the fourth segment
