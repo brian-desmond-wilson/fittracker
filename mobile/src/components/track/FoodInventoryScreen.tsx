@@ -36,6 +36,7 @@ import {
 import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shopping";
 import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
 import { isExpiringSoon, reviewExpiry } from "@/src/lib/expiryPolicy";
+import { formatQuantity } from "@/src/lib/units";
 import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
@@ -783,7 +784,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             </Text>
           )}
           <Text style={styles.gridItemQuantity}>
-            Qty: {item.state.totalQuantity} {item.unit}
+            {formatQuantity(item.state.totalQuantity, item.unit)}
             {item.storage_type === 'multi-location' && item.state.readyQuantity > 0 && (
               <Text style={styles.gridItemQuantityDetail}> ({item.state.readyQuantity} Ready)</Text>
             )}

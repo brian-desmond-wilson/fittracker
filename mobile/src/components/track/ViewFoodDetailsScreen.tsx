@@ -21,6 +21,7 @@ import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { consumeOneUnit, discardItem, type InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { reviewExpiry } from "@/src/lib/expiryPolicy";
+import { formatQuantity } from "@/src/lib/units";
 import { parseLocalDate } from "@/src/lib/dates";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -298,11 +299,11 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           {renderSection(
             "Inventory",
             <>
-              {renderDetailRow("Total Quantity", `${item.state.totalQuantity} ${item.unit}`)}
+              {renderDetailRow("In Stock", formatQuantity(item.state.totalQuantity, item.unit))}
               {item.storage_type === 'multi-location' && (
                 <>
-                  {renderDetailRow("Ready to Consume", `${item.state.readyQuantity} ${item.unit}`)}
-                  {renderDetailRow("In Storage", `${item.state.storageQuantity} ${item.unit}`)}
+                  {renderDetailRow("Ready to Consume", formatQuantity(item.state.readyQuantity, item.unit))}
+                  {renderDetailRow("In Storage", formatQuantity(item.state.storageQuantity, item.unit))}
                 </>
               )}
               {item.storage_type === 'single-location' && item.location && (

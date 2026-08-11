@@ -122,13 +122,19 @@ serve(async (req) => {
       (linksRes.data ?? []).flatMap((l: { saved_food_id: string | null; food_inventory_id: string | null }) =>
         [l.saved_food_id, l.food_inventory_id].filter(Boolean) as string[]),
     );
-    const invTargets = (invRes.data ?? []).filter((r: { id: string }) => !already.has(r.id));
-    const sfTargets = (sfRes.data ?? []).filter((r: { id: string }) => !already.has(r.id));
 
     const catMapRes = inventoryIds.length
       ? await admin.from('food_inventory_category_map').select('food_inventory_id').in('food_inventory_id', inventoryIds)
       : { data: [] };
     const hasCategory = new Set((catMapRes.data ?? []).map((r: { food_inventory_id: string }) => r.food_inventory_id));
+
+    // Link-need and category-need are INDEPENDENT: an item can carry a
+    // concept link but no category (Bananas did exactly this in prod). An
+    // inventory row stays a target if EITHER is missing; the apply step
+    // below re-checks each independently.
+    const invTargets = (invRes.data ?? []).filter(
+      (r: { id: string }) => !already.has(r.id) || !hasCategory.has(r.id));
+    const sfTargets = (sfRes.data ?? []).filter((r: { id: string }) => !already.has(r.id));
 
     const items = [
       ...invTargets.map((r: { id: string; name: string; brand: string | null; flavor: string | null }) => ({
@@ -201,8 +207,10 @@ serve(async (req) => {
         concept: null as unknown, category: null as unknown, applied: { link: false, category: false },
       };
       if (p) {
-        // Concept link
+        // Concept link — only when the row doesn't already have one (a row
+        // can be a target purely for categorization).
         if (p.conceptId && conceptIds.has(p.conceptId)
+            && !already.has(id)
             && !declined.has(`${item.name}::${conceptName.get(p.conceptId)}`)) {
           out.concept = {
             id: p.conceptId, name: conceptName.get(p.conceptId), confidence: p.conceptConfidence,
@@ -225,12 +233,12 @@ serve(async (req) => {
           };
           if (p.categoryConfidence === 'high') {
             const { error } = await admin.from('food_inventory_category_map')
-              .insert({ food_inventory_id: id, category_id: p.categoryId });
+              .insert({ food_inventory_id: id, category_id: p.categoryId, user_id: userId });
             if (!error) {
               (out.applied as Record<string, boolean>).category = true;
               if (sub && sub.category_id === p.categoryId) {
                 await admin.from('food_inventory_subcategory_map')
-                  .insert({ food_inventory_id: id, subcategory_id: sub.id });
+                  .insert({ food_inventory_id: id, subcategory_id: sub.id, user_id: userId });
               }
             } else console.error('category insert failed:', error);
           }

@@ -670,7 +670,13 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         // the cache and the location rows tell two different stories.
         unit: unit,
         location: isSingle ? singleLocation : null,
-        requires_refrigeration: requiresRefrigeration,
+        // C5: fridge-stored implies refrigeration — derived, not trusted to a
+        // second hand-set flag. Storing milk in the Fridge while the row said
+        // "Requires Refrigeration: No" was the DB contradicting itself; the
+        // 2026-08-11 data fix corrected 8 such rows, and this keeps the pair
+        // coherent for every future save. The user's explicit YES is never
+        // downgraded — derivation only ever adds the requirement.
+        requires_refrigeration: requiresRefrigeration || location === "fridge",
         // Only the thresholds the active storage type RENDERS appear in the
         // payload; the inactive ones are absent, so an UPDATE genuinely does
         // not touch those columns. Writing them from `item.*` instead would
