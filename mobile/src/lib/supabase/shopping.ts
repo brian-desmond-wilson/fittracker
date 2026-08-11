@@ -39,13 +39,41 @@ export interface ShoppingData {
 export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   const since = new Date();
   since.setDate(since.getDate() - (RATE_WINDOW_DAYS + 7)); // small slack for span
-  const { data, error } = await supabase
-    .from("meal_logs")
-    .select("date, inventory_items")
-    .eq("uses_inventory", true)
-    .gte("date", getLocalDateString(since));
-  if (error) throw error;
-  return expandDecrementEvents((data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>);
+  const sinceLocal = getLocalDateString(since);
+  // D4: two consumption signals, merged. Meal-log decrements only exist when
+  // concept resolution succeeded — the linking gap kept Forecast dark for
+  // months. The B1 "used one" verb writes inventory_events directly, giving
+  // the estimator a link-independent second source. DISCARDS ARE EXCLUDED on
+  // purpose: tossing spoiled food is depletion but not demand — a rate that
+  // counted waste would tell Shopping to buy more of what the user throws
+  // away.
+  const [logs, events] = await Promise.all([
+    supabase
+      .from("meal_logs")
+      .select("date, inventory_items")
+      .eq("uses_inventory", true)
+      .gte("date", sinceLocal),
+    supabase
+      .from("inventory_events")
+      .select("food_inventory_id, quantity, created_at")
+      .eq("kind", "consume")
+      .gte("created_at", since.toISOString()),
+  ]);
+  if (logs.error) throw logs.error;
+  if (events.error) throw events.error;
+  const fromLogs = expandDecrementEvents(
+    (logs.data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+  );
+  const fromEvents: DecrementEvent[] = (events.data ?? []).flatMap(
+    (e: { food_inventory_id: string; quantity: number; created_at: string }) => {
+      const date = getLocalDateString(new Date(e.created_at));
+      // one DecrementEvent per unit, mirroring expandDecrementEvents' shape;
+      // quantity is check-constrained > 0 but clamp defensively anyway.
+      const n = Math.max(0, Math.min(50, Math.round(e.quantity)));
+      return Array.from({ length: n }, () => ({ inventoryId: e.food_inventory_id, dateLocal: date }));
+    },
+  );
+  return [...fromLogs, ...fromEvents];
 }
 
 /**

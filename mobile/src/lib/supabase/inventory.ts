@@ -36,8 +36,11 @@ export async function fetchInventoryWithState(
   todayLocalDate: string,
 ): Promise<InventoryItemWithState[]> {
   const [items, locations, categoryMaps, subcategoryMaps] = await Promise.all([
-    supabase.from("food_inventory").select("*"),
-    supabase.from("food_inventory_locations").select("*"),
+    // D1: deterministic order — the fetch previously returned rows in
+    // whatever order the planner chose, so the grid (pre-sort) and every
+    // precedence walk over locations could differ between refreshes.
+    supabase.from("food_inventory").select("*").order("name"),
+    supabase.from("food_inventory_locations").select("*").order("created_at"),
     supabase.from("food_inventory_category_map").select("*, food_categories(*)"),
     supabase.from("food_inventory_subcategory_map").select("*, food_subcategories(*)"),
   ]);
@@ -129,6 +132,7 @@ export async function consumeOneUnit(itemId: string): Promise<number> {
     p_inventory_ids: [itemId],
   });
   if (error) throw error;
+  touchVerified(itemId);
   const consumed = (data as Array<{ inventory_id: string; consumed: number }> | null)
     ?.find((r) => r.inventory_id === itemId)?.consumed ?? 0;
   if (consumed > 0) {
@@ -152,6 +156,7 @@ export async function discardItem(itemId: string, reason?: string): Promise<numb
     p_inventory_id: itemId,
   });
   if (error) throw error;
+  touchVerified(itemId);
   const discarded = (data as number | null) ?? 0;
   if (discarded > 0) {
     const { error: evErr } = await supabase.from("inventory_events").insert({
@@ -161,4 +166,20 @@ export async function discardItem(itemId: string, reason?: string): Promise<numb
     if (evErr) console.error("discardItem: event insert failed:", evErr);
   }
   return discarded;
+}
+
+/**
+ * D6: acting on an item IS attesting it exists as recorded — consume, toss,
+ * restock, and capture-apply all imply the user just looked at it. The
+ * timestamp is the audit trail's freshness signal ("verified 3 weeks ago"),
+ * so it's fire-and-forget: bookkeeping must never fail the verb.
+ */
+export function touchVerified(itemId: string): void {
+  supabase
+    .from("food_inventory")
+    .update({ last_verified_at: new Date().toISOString() })
+    .eq("id", itemId)
+    .then(({ error }) => {
+      if (error) console.error("touchVerified failed:", error);
+    });
 }

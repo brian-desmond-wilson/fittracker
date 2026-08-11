@@ -198,3 +198,16 @@ describe("expandDecrementEvents", () => {
     expect(result.size).toBe(0);
   });
 });
+
+describe("suggestedRestockThreshold (sweep D5)", () => {
+  const { suggestedRestockThreshold, RESTOCK_BUFFER_DAYS } = require("../consumptionRate");
+  it("covers the buffer window at the observed rate, rounded up", () => {
+    expect(suggestedRestockThreshold({ ratePerDay: 0.5, daysUntilOut: 10 }))
+      .toBe(Math.ceil(0.5 * RESTOCK_BUFFER_DAYS));
+    expect(suggestedRestockThreshold({ ratePerDay: 2, daysUntilOut: 3 }))
+      .toBe(2 * RESTOCK_BUFFER_DAYS);
+  });
+  it("never suggests below one unit, even for trickle rates", () => {
+    expect(suggestedRestockThreshold({ ratePerDay: 0.01, daysUntilOut: 300 })).toBe(1);
+  });
+});

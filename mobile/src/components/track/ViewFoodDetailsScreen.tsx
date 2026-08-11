@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Alert,
   Platform,
@@ -22,6 +22,10 @@ import { Badge, Button, Card } from "@/src/components/ui";
 import { consumeOneUnit, discardItem, type InventoryItemWithState } from "@/src/lib/supabase/inventory";
 import { reviewExpiry } from "@/src/lib/expiryPolicy";
 import { formatQuantity } from "@/src/lib/units";
+import { suggestedRestockThreshold } from "@/src/lib/consumptionRate";
+import { fetchConsumptionRates } from "@/src/lib/supabase/shopping";
+import { supabase } from "@/src/lib/supabase";
+import { getLocalDateString } from "@/src/lib/dates";
 import { parseLocalDate } from "@/src/lib/dates";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -60,6 +64,8 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  // D5: learned restock threshold — decoration; failure leaves it null.
+  const [suggestedThreshold, setSuggestedThreshold] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -75,6 +81,39 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
     const scrollPosition = event.nativeEvent.contentOffset.x;
     const index = Math.round(scrollPosition / WELL_WIDTH);
     setActiveImageIndex(index);
+  };
+
+  useEffect(() => {
+    if (isPreview) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rates = await fetchConsumptionRates(
+          getLocalDateString(),
+          new Map([[item.id, item.state.totalQuantity]]),
+        );
+        const est = rates.get(item.id);
+        if (!cancelled && est) setSuggestedThreshold(suggestedRestockThreshold(est));
+      } catch (e) {
+        console.error("suggested threshold fetch failed:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item.id, item.state.totalQuantity, isPreview]);
+
+  const applySuggestedThreshold = async () => {
+    if (suggestedThreshold === null) return;
+    try {
+      const { error } = await supabase
+        .from("food_inventory")
+        .update({ restock_threshold: suggestedThreshold })
+        .eq("id", item.id);
+      if (error) throw error;
+      await onRefresh?.();
+    } catch (e) {
+      console.error("apply threshold failed:", e);
+      Alert.alert("Error", "Couldn't apply the suggested threshold.");
+    }
   };
 
   const handleRefresh = async () => {
@@ -377,6 +416,22 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   milk was the DB contradicting itself in the user's face.
                   Deriving/validating the pair is C5's backend job. */}
               {item.requires_refrigeration ? renderDetailRow("Keep Refrigerated", "Yes") : null}
+              {/* D5: the learned threshold, advisory-only. Appears once real
+                  consumption data exists for this item and differs from the
+                  hand-set value; Apply is one tap, never silent. */}
+              {suggestedThreshold !== null && suggestedThreshold !== item.restock_threshold && (
+                <View style={styles.suggestionRow}>
+                  <Text style={styles.suggestionText}>
+                    Suggested threshold: {suggestedThreshold} (based on your usage)
+                  </Text>
+                  <Button
+                    label="Apply"
+                    variant="ghost"
+                    size="sm"
+                    onPress={applySuggestedThreshold}
+                  />
+                </View>
+              )}
             </>
           )}
 
@@ -517,6 +572,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   verbHalf: { flex: 1 },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  suggestionText: { ...typography.caption, color: colors.textMuted, flexShrink: 1 },
   expiryStatusRow: {
     flexDirection: "row",
     alignItems: "center",

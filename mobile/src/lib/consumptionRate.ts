@@ -139,3 +139,18 @@ export function estimateConsumption(opts: {
   }
   return out;
 }
+
+/** Sweep D5: how many units of buffer a learned threshold should hold —
+ *  roughly a week of usage plus shopping cadence slack. */
+export const RESTOCK_BUFFER_DAYS = 10;
+
+/**
+ * A restock threshold derived from observed consumption instead of the
+ * hand-set 0/1 defaults that made the low-stock signal meaningless. Ceil of
+ * the buffer window at the observed rate, floored at one unit — a threshold
+ * of zero can never fire. Advisory: surfaces as a suggestion the user
+ * applies, never a silent overwrite of their own setting.
+ */
+export function suggestedRestockThreshold(est: ConsumptionEstimate): number {
+  return Math.max(1, Math.ceil(est.ratePerDay * RESTOCK_BUFFER_DAYS));
+}
