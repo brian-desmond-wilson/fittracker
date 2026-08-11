@@ -13,6 +13,7 @@ import {
   FlatList,
   Dimensions,
   Platform,
+  Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -71,6 +72,11 @@ const SEGMENT_LABELS = {
   active: "On hand", expiring: "Expiring", low: "Low", archive: "Past",
 } as const;
 const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
+
+// Height of the condensed bar that stands in for the search row and the page
+// title once you scroll. Everything those two rows can do has to survive in
+// here, or scrolling would take away function rather than chrome.
+const SLIM_BAR_HEIGHT = 48;
 
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const insets = useSafeAreaInsets();
@@ -151,6 +157,59 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // B7: batch selection for kitchen audits — long-press -> Select Multiple.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Collapsing header. The search row and the title slide up under a condensed
+  // bar as you scroll, handing their space to the grid; the category tabs and
+  // segment chips ride up with them but stay on screen, because losing your
+  // filters mid-scroll costs more than the space it would win.
+  //
+  // Transform only, never height: `useNativeDriver` cannot animate height, and
+  // a JS-driven height on a list of photos is exactly where scroll jank comes
+  // from. The two blocks translate by the same amount and the lower one is
+  // extended past the bottom edge by that distance, so the grid gains real
+  // estate instead of dragging a gap up behind it.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [collapsibleHeight, setCollapsibleHeight] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
+  const listRef = useRef<FlatList<InventoryItemWithState> | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
+
+  const collapseDistance = Math.max(0, collapsibleHeight - SLIM_BAR_HEIGHT);
+  const headerTranslate = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [0, collapseDistance],
+        outputRange: [0, -collapseDistance],
+        extrapolate: "clamp",
+      })
+    : 0;
+  // Fades in over the back half of the travel, so the condensed bar arrives
+  // just as the rows it replaces finish disappearing behind it.
+  const slimBarOpacity = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [collapseDistance / 2, collapseDistance],
+        outputRange: [0, 1],
+        extrapolate: "clamp",
+      })
+    : 0;
+
+  // The bar must not swallow taps while it is invisible. One boolean flipped at
+  // the threshold — not a per-frame state update.
+  useEffect(() => {
+    if (collapseDistance <= 0) return;
+    const id = scrollY.addListener(({ value }) => {
+      const next = value >= collapseDistance - 1;
+      setCollapsed((prev) => (prev === next ? prev : next));
+    });
+    return () => scrollY.removeListener(id);
+  }, [collapseDistance, scrollY]);
+
+  // Search lives in the row that just scrolled away, so reaching it means
+  // bringing that row back first. The delay lets the scroll settle before the
+  // keyboard takes over the screen.
+  const openSearch = () => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setTimeout(() => searchInputRef.current?.focus(), 300);
+  };
 
   // Fetch categories and subcategories on mount
   useEffect(() => {
@@ -882,6 +941,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       <StatusBar barStyle="light-content" />
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={[styles.container, { paddingTop: insets.top }]}>
+          {/* The two rows that stand down while you scroll. */}
+          <Animated.View
+            onLayout={(e) => setCollapsibleHeight(e.nativeEvent.layout.height)}
+            style={{ transform: [{ translateY: headerTranslate }] }}
+          >
           {/* Header with Back, Search, and Add Button */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
@@ -890,6 +954,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             <View style={styles.searchBar}>
               <Search size={icons.md} color={colors.textFaint} />
               <TextInput
+                ref={searchInputRef}
                 style={styles.searchInput}
                 placeholder="Search items..."
               autoCapitalize="none"
@@ -942,6 +1007,17 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               )}
             </View>
           </View>
+          </Animated.View>
+
+          {/* Rides up with the header but never leaves: filters stay reachable
+              at any scroll position. Extended below the screen edge by exactly
+              the collapse distance so the grid gains that space. */}
+          <Animated.View
+            style={[
+              styles.belowHeader,
+              { marginBottom: -collapseDistance, transform: [{ translateY: headerTranslate }] },
+            ]}
+          >
 
           {/* Category Tabs */}
           <CategoryTabs
@@ -1022,7 +1098,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           </View>
 
         {/* Items Grid */}
-        <FlatList
+        <Animated.FlatList
+          ref={listRef}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true },
+          )}
+          scrollEventThrottle={16}
           data={visibleItems}
           renderItem={renderGridItem}
           keyExtractor={(item) => item.id}
@@ -1076,6 +1158,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             )
           }
         />
+          </Animated.View>
 
         {/* Restock Modal */}
         {selectMode && (
@@ -1157,6 +1240,62 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           onBarcodeScanned={handleBarcodeScanned}
         />
         </View>
+
+        {/* Condensed bar. A sibling of the container, not a child, so top:0 is
+            the true top of the screen and it can own the safe-area inset
+            itself. Everything the scrolled-away rows offered is here. */}
+        <Animated.View
+          style={[styles.slimBar, { paddingTop: insets.top, opacity: slimBarOpacity }]}
+          pointerEvents={collapsed ? "auto" : "none"}
+        >
+          <View style={styles.slimBarRow}>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
+              <ChevronLeft size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
+            <Text style={styles.slimBarTitle} numberOfLines={1}>Food Inventory</Text>
+            {attentionItems.length > 0 && (
+              <TouchableOpacity
+                style={styles.attentionChip}
+                onPress={() => { setShowReviewModal(true); loadUseItUp(); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Review ${attentionItems.length} ${attentionItems.length === 1 ? "item" : "items"} needing attention`}
+              >
+                <AlertTriangle size={icons.sm} color={colors.warning} strokeWidth={icons.strokeWidth} />
+                <Text style={styles.attentionChipCount}>{attentionItems.length}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={openSearch}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Search items"
+            >
+              <Search size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowCaptureModal(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Capture inventory from a photo"
+            >
+              <Camera size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleAddItem}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Add food"
+            >
+              <Plus size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
       </GestureHandlerRootView>
     </>
   );
@@ -1179,6 +1318,22 @@ const styles = StyleSheet.create({
   backButton: {
     padding: spacing.xs,
   },
+  belowHeader: { flex: 1 },
+  slimBar: {
+    position: "absolute",
+    top: 0, left: 0, right: 0,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  slimBarRow: {
+    height: SLIM_BAR_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    paddingHorizontal: spacing.screenGutter,
+  },
+  slimBarTitle: { ...typography.titleBar, color: colors.text, flex: 1 },
   titleContainer: {
     paddingHorizontal: spacing.screenGutter,
     paddingVertical: spacing.lg,
