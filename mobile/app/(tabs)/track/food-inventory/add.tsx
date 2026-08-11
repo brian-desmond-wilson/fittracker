@@ -18,8 +18,12 @@ export default function AddFoodItemPage() {
   let barcodeData: ProductData | undefined;
   let barcodeValue: string | undefined;
 
-  if (productDataString && barcode) {
+  // Decoupled on purpose (D2): a scan that found no product still hands its
+  // barcode to the form, so the code prefills even with no product data.
+  if (productDataString) {
     barcodeData = JSON.parse(productDataString);
+  }
+  if (barcode) {
     barcodeValue = barcode;
   }
 

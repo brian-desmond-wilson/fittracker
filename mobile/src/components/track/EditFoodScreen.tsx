@@ -804,6 +804,18 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           if (subcategoryInsertError) throw subcategoryInsertError;
         }
 
+        // E1/E2: intelligence at birth — fire-and-forget. The function links
+        // this item to a concept and (if none was chosen above) proposes a
+        // category, so every new item joins the loop connected instead of
+        // landing in the unlinked pile that starved assemblability, Forecast,
+        // and Shopping. Failure is non-fatal by design: the item still exists,
+        // and FoodMatchingScreen's "Needs review" remains the backstop.
+        supabase.functions
+          .invoke("inventory-intelligence", { body: { inventoryIds: [foodItemId] } })
+          .then(({ error }) => {
+            if (error) console.error("inventory-intelligence (on add):", error);
+          });
+
         Alert.alert("Success", "Item added successfully");
         onSave(foodItemId);
         onClose();

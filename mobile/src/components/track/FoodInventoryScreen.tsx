@@ -493,7 +493,22 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       const productData = await getProductByBarcode(barcode);
 
       if (!productData) {
-        Alert.alert("Product Not Found", "Could not find product information for this barcode.");
+        // D2: an unknown barcode is a fallback, not a dead end — carry the
+        // scanned code into the add form so it isn't typed twice.
+        Alert.alert(
+          "Product Not Found",
+          "This barcode isn't in the product database yet. Add it manually and the barcode comes along.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Add manually",
+              onPress: () => router.push({
+                pathname: "/(tabs)/track/food-inventory/add" as never,
+                params: { barcode },
+              } as never),
+            },
+          ],
+        );
         return;
       }
 
