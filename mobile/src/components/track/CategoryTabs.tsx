@@ -8,7 +8,7 @@ import {
   Dimensions,
 } from "react-native";
 import { FoodCategory } from "@/src/types/track";
-import { colors, spacing } from "@/src/theme/tokens";
+import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 
 interface CategoryTabsProps {
   categories: FoodCategory[];
@@ -53,6 +53,7 @@ export function CategoryTabs({
       >
         {categories.map((category) => {
           const isSelected = category.id === selectedCategoryId;
+          const count = countsByCategoryId?.get(category.id);
 
           return (
             <TouchableOpacity
@@ -60,13 +61,28 @@ export function CategoryTabs({
               style={styles.tabContainer}
               onPress={() => onSelectCategory(category.id)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={
+                count === undefined ? category.name : `${category.name}, ${count} items`
+              }
             >
-              <Text style={[styles.tabText, isSelected && styles.tabTextActive]}>
-                {category.name}
-                {countsByCategoryId?.has(category.id)
-                  ? `  ${countsByCategoryId.get(category.id)}`
-                  : ""}
-              </Text>
+              {/* The count is a badge rather than trailing digits: two data of
+                  different kinds (a name and a quantity) should not share one
+                  text run, and the pill gives the number a hit-free shape the
+                  eye can skip when it is scanning names. */}
+              <View style={styles.tabRow}>
+                <Text style={[styles.tabText, isSelected && styles.tabTextActive]}>
+                  {category.name}
+                </Text>
+                {count !== undefined && (
+                  <View style={[styles.countBadge, isSelected && styles.countBadgeActive]}>
+                    <Text style={[styles.countText, isSelected && styles.countTextActive]}>
+                      {count}
+                    </Text>
+                  </View>
+                )}
+              </View>
               {isSelected && <View style={styles.indicator} />}
             </TouchableOpacity>
           );
@@ -94,11 +110,30 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     position: "relative",
   },
+  tabRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   tabText: {
     fontSize: 15,
     fontWeight: "500",
     color: colors.textMuted,
   },
+  countBadge: {
+    minWidth: spacing.xl,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    alignItems: "center",
+  },
+  // Selected is a control state, so the badge follows the underline to brand.
+  countBadgeActive: {
+    backgroundColor: tint(colors.brand),
+  },
+  countText: { ...typography.caption, fontWeight: "600" },
+  countTextActive: { color: colors.brand },
   tabTextActive: {
     fontWeight: "600",
     color: colors.text,
