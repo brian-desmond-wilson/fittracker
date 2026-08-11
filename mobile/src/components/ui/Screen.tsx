@@ -1,6 +1,7 @@
 // mobile/src/components/ui/Screen.tsx
 import React from "react";
 import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { RefreshControlProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
@@ -26,12 +27,19 @@ interface ScreenProps {
    * and `paddingBottom: insets.bottom + spacing.xxl` in its `contentContainerStyle`.
    */
   scroll?: boolean;
+  /** Forwarded to the internal ScrollView (scroll=true only). Closes the gap
+   *  recorded in the style-guide amendments (pull-to-refresh screens).
+   *  The `scroll={false}` path renders no ScrollView, so it ignores this.
+   *  Typed `ReactElement<RefreshControlProps>` rather than a bare
+   *  `ReactElement`: React 19's types default element props to `unknown`, so
+   *  the looser form is not assignable to what `ScrollView` accepts. */
+  refreshControl?: React.ReactElement<RefreshControlProps>;
   children: React.ReactNode;
 }
 
 export function Screen({
   variant, title, accent, icon: Icon, onBack, headerCenter, headerRight,
-  scroll = true, children,
+  scroll = true, refreshControl, children,
 }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const titleGlyphColor = colors.accents[accent ?? "brand"];
@@ -76,6 +84,7 @@ export function Screen({
             style={styles.scroll}
             contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xxl }]}
             showsVerticalScrollIndicator={false}
+            refreshControl={refreshControl}
           >
             {body}
           </ScrollView>

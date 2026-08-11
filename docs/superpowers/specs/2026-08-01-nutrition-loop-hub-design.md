@@ -155,3 +155,35 @@ Forecast name resolution: `rates` is keyed by inventory id; the engine resolves 
 - `computeMealPace(opts) → MealPaceState { status, delta?, catchUpAmount?, catchUpLabel? }` — `src/lib/mealPace.ts:86`.
 - `fetchMealLibrary` → `MealLibraryData` — `src/lib/supabase/mealLibrary.ts:38`; `computeMealTotals` (:182).
 - ui primitives as shipped (post-amendment contracts): `Screen` has no `headerLeft`; `scroll={false}` supplies no gutter/insets; `Card` has `onPress`/`onLongPress`; `SectionHeader.action` is a slot; `EmptyState` is full-bleed only.
+
+## Execution deviations
+
+**2026-08-01 — Tasks 1–2 (`loopStatus` engine).** Per the append-only rule in the preamble: each bullet points into the plan's "⚠️ Execution amendments" section (`docs/superpowers/plans/2026-08-01-nutrition-loop-hub.md`), which holds the full reasoning. Nothing above this heading was edited.
+
+- **Step 0 field-name verifications.** `ShoppingListItem` uses `is_purchased`, not `purchased`; `computeBrianScore`'s `{ raw, score }` and `eatNextExpiringLine`'s single-param signature were as specified. See plan → Task 1 Step 0, items 1–4.
+- **`eatNextStockBadge` usage corrected.** The plan's draft hand-rolled station 3's badge string; it now calls the shipped helper, which renders `"Missing items"` (not `"Missing 0"`) for a known-unassemblable meal with an unresolved count. See plan → Task 1 Step 0, item 3.
+- **Station 3 attention ruling.** A LOADED Eat Next result with no recommendations and a non-empty library sets `attention: true` (§5's second clause); `eatNext === null` means "not loaded yet" and stays quiet. See plan → "Related ruling (spec §5 vs. plan code, station 3 attention)".
+- **`paceStation` catch-up unit walk.** Unit travels with its pace state as a tuple instead of being recovered by an identity check against `paceCalories`. See plan → Task 2 deviation.
+- **Station 2's unknown-stock chip (D-adjacent, fixed in code).** A meal absent from `stockByMealId` yields a neutral `"{name}: unknown"` chip rather than a warning-toned `"missing ?"`, matching §4.1's no-fabrication rule and station 3's existing treatment of unknown stock. See plan → Tasks 1–2 review outcomes.
+- **§5 row 3 headline omits `{context label}`.** Deliberate: the row is single-line and the meal name must survive truncation; the label appears as the detail sheet's first line instead. See plan → review outcome D.
+- **§5 line-list overflow uses a footnote, not a `+N more` chip.** Chip lists cap as specified; line lists truncate and report the remainder in the footnote, which at station 6 replaces the decorative restock line. See plan → review outcome E.
+- **§4.1 "all label templates … are exported constants" not taken literally.** Only `DETAIL_MAX_ROWS` and `CONTEXT_LABELS` are exported; the remaining literals are inline and pinned by tests. See plan → review outcome F.
+
+**2026-08-01 — Tasks 1–2, code-quality review round.** Same pointer convention; full reasoning in the plan's "Tasks 1–2 — code-quality review outcomes".
+
+- **§4.2's `mealScores` input is collapsed into `meals`.** The revision named `mealScores` as its own input alongside `meals`; they are now one array, `Array<{ id; name; raw; display }>`. Two parallel arrays let station 2 take its count from one and its content from the other — a non-empty `meals` with an empty `mealScores` crashed all six stations, and a ghost entry in `mealScores` produced a headline naming a meal the count excluded. One array makes both unrepresentable. `useLoopHub` builds it with the same pure trio, in one `.map` instead of two.
+- **§5's pace badge no longer reads "On pace" for a macro with no goal.** `computeMealPace`'s no-goal return is the `on_pace` sentinel, so an ungated read pinned the badge to "On pace" all day for a user with no protein goal — including before the eating window opened. The badge ladder is otherwise unchanged and was confirmed exhaustive.
+
+**2026-08-01 — Tasks 1–2, quality re-review close-out.**
+
+- **§4.1's `todayLocalDate` input is removed.** It was declared and never read. Every date-relative quantity the stations render is already resolved upstream (`ItemStockState.daysLeft`/`.expiration`, `ConsumptionEstimate.daysUntilOut`, `MealPaceState`); a station needing today's date would have to derive a date-relative fact itself, which §4.1's own no-derivation rule forbids — so that need would signal the computation belongs upstream, not that the field should return. `useLoopHub` still resolves `today` for the fetchers, just not for `computeLoopStatus`. See the plan's "`todayLocalDate` removed from `LoopStatusInputs`".
+
+**2026-08-01 — Task 5 (`Connector`).**
+
+- **§6's connector label is `fontSize: 11`, not `typography.caption`'s 12.** The plan specified 11 (plan:884) and governs; 11 keeps the connector subordinate to the station rows it links, and no smaller type token exists to name it. See the plan's "Task 5 — `Connector` label font size".
+
+**2026-08-01 — Task 7 (`LoopHubScreen`), code-quality review round.**
+
+- **§8's loading and error states need a definite-height parent.** The plan asserted they were correctly placed as direct children of `Screen`'s scroll body; they were not. Both primitives are `flex: 1`, and that scroll container has no `flexGrow: 1`, so under style guide rule 25 they collapsed onto their padding and spilled. Both states now early-return a non-scrolling `Screen` (rule 25's third bullet, matching `ShoppingListScreen`); the station list keeps its scroller and pull-to-refresh. The happy path was never affected, so device verification did not surface it. See plan → "Task 7 — the plan's 'sanctioned container' note was wrong".
+- **§8's combined error state is now total.** The failure decision (`stationsShowable`) is separated from the failure payload (`failure`), and the error body carries a fallback message, so no combination of hook states can render a blank screen with no Retry. Refinement of the `ccb23c2` fix, same bug class. See the same plan entry.
+- **§6's detail sheet reads a live station, not a snapshot.** The open station is keyed by `StationKey` and re-found from `hub.status` each render, so a sheet opened before Eat Next resolves updates in place instead of holding station 3's not-loaded-yet `"—"`. See the same plan entry.

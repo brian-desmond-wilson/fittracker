@@ -11,9 +11,12 @@ import {
   Camera,
   Dumbbell,
   ShoppingCart,
+  RefreshCw,
+  ChevronRight,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
-import { colors, spacing, typography } from "@/src/theme/tokens";
+import { Card } from "@/src/components/ui";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
 export default function Track() {
@@ -150,6 +153,29 @@ export default function Track() {
         {/* Nutrition & Food Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>NUTRITION & FOOD</Text>
+          {/* STATIC BY DESIGN (spec §7): no fetch, no badge, no live data. The
+              Track hub is fetch-free, and spec §2 lists "no live badge on the
+              Track-hub entry" as an explicit non-goal — the loop's state is the
+              hub screen's job. Deliberately NOT a `TrackingCategory` tile
+              either: it is a full-width entry that pushes the route directly,
+              so `trackingCategories`, `iconMap` and `handleCardPress` stay
+              untouched. */}
+          <Card
+            variant="row"
+            onPress={() => router.push("/(tabs)/track/loop")}
+            style={styles.loopEntry}
+          >
+            <View style={styles.loopEntryLine}>
+              <View style={styles.loopIcon}>
+                <RefreshCw size={18} color={colors.brand} strokeWidth={icons.strokeWidth} />
+              </View>
+              <View style={styles.loopText}>
+                <Text style={styles.loopTitle}>Nutrition Loop</Text>
+                <Text style={styles.loopSub}>Inventory → Meals → Shopping → back ↺</Text>
+              </View>
+              <ChevronRight size={icons.md} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
+            </View>
+          </Card>
           {renderCategoryGrid(nutritionCategories)}
         </View>
 
@@ -206,4 +232,20 @@ const styles = StyleSheet.create({
   cardSpacer: {
     flex: 1,
   },
+  // Mirrors `StationRow`'s line geometry (34pt tinted pill, 18pt glyph,
+  // rowTitle + caption block, faint chevron) so the entry reads as the same
+  // family as the rows it leads to.
+  loopEntry: { marginBottom: spacing.lg },
+  loopEntryLine: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  loopIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radii.pill,
+    backgroundColor: tint(colors.brand),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loopText: { flex: 1 },
+  loopTitle: { ...typography.rowTitle, color: colors.text },
+  loopSub: { ...typography.caption, marginTop: 1 },
 });
