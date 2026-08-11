@@ -6,7 +6,7 @@
 // StationDetailSheet (sibling scrim + intrinsic-height sheet inside RN's
 // flex-column Modal container).
 import React from "react";
-import { Modal, ScrollView, StyleSheet, Text, TouchableWithoutFeedback, View } from "react-native";
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from "react-native";
 import { Minus, ShoppingCart, Trash2 } from "lucide-react-native";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { Badge, IconButton } from "@/src/components/ui";
@@ -19,6 +19,8 @@ interface ExpiryReviewModalProps {
   onConsume: (item: InventoryItemWithState) => void;
   onToss: (item: InventoryItemWithState) => void;
   onShop: (item: InventoryItemWithState) => void;
+  /** B5: row body opens the item's detail screen (closes the sheet first). */
+  onOpenItem: (item: InventoryItemWithState) => void;
 }
 
 const badgeFor = (it: InventoryItemWithState): { label: string; tone: "danger" | "warning" } => {
@@ -29,7 +31,7 @@ const badgeFor = (it: InventoryItemWithState): { label: string; tone: "danger" |
 };
 
 export function ExpiryReviewModal({
-  visible, items, onClose, onConsume, onToss, onShop,
+  visible, items, onClose, onConsume, onToss, onShop, onOpenItem,
 }: ExpiryReviewModalProps) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -47,10 +49,15 @@ export function ExpiryReviewModal({
             const b = badgeFor(it);
             return (
               <View key={it.id} style={styles.row}>
-                <View style={styles.rowText}>
+                <TouchableOpacity
+                  style={styles.rowText}
+                  onPress={() => { onClose(); onOpenItem(it); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${it.name}`}
+                >
                   <Text style={[typography.body, styles.rowName]} numberOfLines={1}>{it.name}</Text>
                   <Badge label={b.label} tone={b.tone} />
-                </View>
+                </TouchableOpacity>
                 <View style={styles.rowActions}>
                   <IconButton
                     icon={Minus} variant="circle"

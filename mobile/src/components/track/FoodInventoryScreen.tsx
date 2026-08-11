@@ -17,9 +17,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { Camera, ChevronLeft, Eye, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, Trash2, X, Tag } from "lucide-react-native";
+import { ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, Search, Package, ShoppingCart, ScanBarcode, Trash2, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
+import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
 import {
   FoodCategory,
@@ -57,6 +57,11 @@ const GRID_GAP = spacing.md;
 // A6: two columns — three truncated nearly every product name, and the name
 // is the identifier. Wider tiles also give the B1 quick-verb real estate.
 const NUM_COLUMNS = 2;
+
+// B6: segment display names, one place.
+const SEGMENT_LABELS = {
+  active: "Active", expiring: "Expiring", low: "Low", archive: "Archive",
+} as const;
 const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
 export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
@@ -104,10 +109,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // Barcode scanner state
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
-  // A7: default view is ACTIVE stock. Out-of-stock and stale-expired rows
-  // are real records but dead weight in the daily view; they live in the
-  // Archive segment instead of rendering as loudly as live food.
-  const [view, setView] = useState<"active" | "archive">("active");
+  // A7 + B6: status-first segments. Active is the working default;
+  // Expiring and Low are the two states that demand action; Archive holds
+  // out-of-stock and stale-expired rows. Category tabs stay the secondary,
+  // taxonomy-browsing axis.
+  const [view, setView] = useState<"active" | "expiring" | "low" | "archive">("active");
 
   // A2: the expiring panel became a one-line banner opening this review sheet.
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -118,6 +124,19 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // A9: themed long-press actions sheet (replaces the light-appearance
   // system ActionSheetIOS that couldn't match the theme).
   const [actionsItem, setActionsItem] = useState<InventoryItemWithState | null>(null);
+
+  // B3: scan-first add chooser — the + button offers capture paths before
+  // the manual form, inverting the old form-first flow.
+  const [showAddSheet, setShowAddSheet] = useState(false);
+
+  // B4: sort order for the grid. Soonest-expiry stays the default — it's the
+  // one ordering that drives action.
+  const [sortBy, setSortBy] = useState<"expiry" | "name" | "recent" | "quantity">("expiry");
+  const [showSortSheet, setShowSortSheet] = useState(false);
+
+  // B7: batch selection for kitchen audits — long-press -> Select Multiple.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Fetch categories and subcategories on mount
   useEffect(() => {
@@ -200,7 +219,63 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   };
 
   const handleAddItem = () => {
-    router.push("/(tabs)/track/food-inventory/add");
+    setShowAddSheet(true);
+  };
+
+  // B3: capture-first add paths. Scanning and photographing come before the
+  // manual form — additions that take seconds become habits.
+  const addActions = (): ItemAction[] => [
+    { label: "Scan Barcode", icon: ScanBarcode, onPress: () => setShowBarcodeScanner(true) },
+    { label: "Photograph Shelf or Receipt", icon: Camera, onPress: () => setShowCaptureModal(true) },
+    { label: "Enter Manually", icon: Pencil, onPress: () => router.push("/(tabs)/track/food-inventory/add") },
+  ];
+
+  // B4: sort options, applied to the grid below.
+  const sortActions = (): ItemAction[] => [
+    { label: "Soonest Expiring", icon: CalendarClock, onPress: () => setSortBy("expiry") },
+    { label: "Name", icon: ArrowDownAZ, onPress: () => setSortBy("name") },
+    { label: "Recently Added", icon: Clock, onPress: () => setSortBy("recent") },
+    { label: "Quantity", icon: Layers, onPress: () => setSortBy("quantity") },
+  ];
+
+  // B7 helpers.
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
+  const batchToss = () => {
+    const chosen = items.filter((i) => selectedIds.has(i.id) && i.state.totalQuantity > 0);
+    if (chosen.length === 0) { exitSelectMode(); return; }
+    Alert.alert(
+      `Toss ${chosen.length} item${chosen.length === 1 ? "" : "s"}?`,
+      "Remaining stock goes to zero for every selected item. History survives.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Toss all", style: "destructive",
+          onPress: async () => {
+            for (const it of chosen) {
+              try { await discardItem(it.id, "batch audit"); }
+              catch (e) { console.error("batch toss failed for", it.name, e); }
+            }
+            exitSelectMode();
+            fetchInventory();
+          },
+        },
+      ],
+    );
+  };
+  const batchShop = async () => {
+    const chosen = items.filter((i) => selectedIds.has(i.id));
+    for (const it of chosen) {
+      try { await handleAddToShoppingList(it); }
+      catch (e) { console.error("batch shop failed for", it.name, e); }
+    }
+    exitSelectMode();
   };
 
   const handleViewItem = (item: InventoryItemWithState) => {
@@ -377,6 +452,10 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       );
     }
     actions.push({ label: "Add to Shopping List", icon: ShoppingCart, onPress: () => handleAddToShoppingList(item) });
+    actions.push({
+      label: "Select Multiple…", icon: Check,
+      onPress: () => { setSelectMode(true); setSelectedIds(new Set([item.id])); },
+    });
     if (item.state.needsFridgeRestock) {
       actions.push({
         label: "Restock Fridge", icon: Package,
@@ -547,20 +626,25 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       return matchesCategory && matchesSearch;
     })
     .sort((a, b) => {
-      // Soonest-expiring first; no (or unparseable) date goes to the end.
-      // Keyed off `state.daysLeft`, not the raw `expiration_date` column, so
-      // this screen has exactly one source of date truth — the projection.
-      // Ordering is identical for well-formed dates (daysLeft is monotone in
-      // expiration_date against a single "today"), and strictly better for a
-      // malformed one: `projectItemStock` normalises that to `daysLeft: null`
-      // and it sorts to the end, where the raw comparison produced NaN and an
-      // implementation-defined position.
-      const ad = a.state.daysLeft;
-      const bd = b.state.daysLeft;
-      if (ad === null && bd === null) return 0;
-      if (ad === null) return 1; // a goes to end
-      if (bd === null) return -1; // b goes to end
-      return ad - bd;
+      // B4: user-selectable order. Expiry stays keyed off state.daysLeft (the
+      // projection is the single date truth); null dates sort last there.
+      switch (sortBy) {
+        case "name":
+          return a.name.localeCompare(b.name);
+        case "recent":
+          return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+        case "quantity":
+          return b.state.totalQuantity - a.state.totalQuantity;
+        case "expiry":
+        default: {
+          const ad = a.state.daysLeft;
+          const bd = b.state.daysLeft;
+          if (ad === null && bd === null) return 0;
+          if (ad === null) return 1;
+          if (bd === null) return -1;
+          return ad - bd;
+        }
+      }
     });
 
   // Bands and day counts come from the projection; this only picks copy/tone.
@@ -607,7 +691,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     it.state.isOut || reviewExpiry(it.state, it.categories.map((c) => c.name)) === "stale";
   const activeItems = filteredItems.filter((it) => !isArchived(it));
   const archiveItems = filteredItems.filter(isArchived);
-  const visibleItems = view === "active" ? activeItems : archiveItems;
+  const expiringItems = activeItems.filter((it) =>
+    isExpiringSoon(it.state, it.categories.map((c) => c.name)));
+  const lowItems = activeItems.filter((it) => it.state.isLow);
+  const visibleItems =
+    view === "active" ? activeItems
+    : view === "expiring" ? expiringItems
+    : view === "low" ? lowItems
+    : archiveItems;
   const attentionItems = items
     .filter((it) => isExpiringSoon(it.state, it.categories.map((c) => c.name)))
     .sort((a, b) => (a.state.daysLeft ?? 0) - (b.state.daysLeft ?? 0));
@@ -629,8 +720,8 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       <Card
         variant="row"
         style={styles.gridItem}
-        onPress={() => handleViewItem(item)}
-        onLongPress={() => handleLongPress(item)}
+        onPress={() => (selectMode ? toggleSelected(item.id) : handleViewItem(item))}
+        onLongPress={() => (selectMode ? undefined : handleLongPress(item))}
       >
         {/* Product Image */}
         <View style={styles.gridImageContainer}>
@@ -643,6 +734,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           ) : (
             <View style={styles.gridImagePlaceholder}>
               <Package size={40} color={colors.textFaint} />
+            </View>
+          )}
+
+          {/* B7: selection state, top-left, only in select mode */}
+          {selectMode && (
+            <View style={[styles.selectCircle, selectedIds.has(item.id) && styles.selectCircleOn]}>
+              {selectedIds.has(item.id) && (
+                <Check size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />
+              )}
             </View>
           )}
 
@@ -820,8 +920,12 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           {/* A7: Active / Archive segments. Interactive control -> brand
               (style rule 2); counts keep the hidden rows honest. */}
           <View style={styles.viewSegments}>
-            {(["active", "archive"] as const).map((v) => {
-              const n = v === "active" ? activeItems.length : archiveItems.length;
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentStrip}>
+            {(["active", "expiring", "low", "archive"] as const).map((v) => {
+              const n = v === "active" ? activeItems.length
+                : v === "expiring" ? expiringItems.length
+                : v === "low" ? lowItems.length
+                : archiveItems.length;
               const selected = view === v;
               return (
                 <TouchableOpacity
@@ -830,14 +934,23 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
                   onPress={() => setView(v)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${v === "active" ? "Active" : "Archive"} (${n})`}
+                  accessibilityLabel={`${SEGMENT_LABELS[v]} (${n})`}
                 >
                   <Text style={[styles.viewSegmentText, selected && styles.viewSegmentTextSelected]}>
-                    {v === "active" ? "Active" : "Archive"} ({n})
+                    {SEGMENT_LABELS[v]} ({n})
                   </Text>
                 </TouchableOpacity>
               );
             })}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.sortButton}
+              onPress={() => setShowSortSheet(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Sort items"
+            >
+              <ArrowUpDown size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
           </View>
 
         {/* Items Grid */}
@@ -867,31 +980,63 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             loading ? (
               <LoadingState />
             ) : (
+              // B9: the empty state names its cause and carries the next
+              // action. A no-results search offers to clear itself; a truly
+              // empty inventory points at the fastest add path (scan).
               <EmptyState
                 icon={Package}
-                title={(() => {
-                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-                  if (selectedCategory?.slug === "out-of-stock") {
-                    return "No out of stock items";
-                  }
-                  return "No items found";
-                })()}
-                body={(() => {
-                  const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
-                  if (selectedCategory?.slug === "out-of-stock") {
-                    return "Items with zero quantity will appear here";
-                  }
-                  if (selectedCategory?.slug === "all-products") {
-                    return "Add items to start tracking your inventory";
-                  }
-                  return "Try adjusting your filters or add items to this category";
-                })()}
+                title={
+                  searchQuery.length > 0 ? `No matches for “${searchQuery}”`
+                  : view !== "active" ? `Nothing in ${SEGMENT_LABELS[view]}`
+                  : "No items yet"
+                }
+                body={
+                  searchQuery.length > 0 ? "Try a shorter search, or clear it."
+                  : view === "archive" ? "Out-of-stock and long-expired items land here."
+                  : view === "expiring" ? "Nothing needs rescuing right now."
+                  : view === "low" ? "Nothing is running low."
+                  : "Scan a barcode to add your first item in seconds."
+                }
+                action={
+                  searchQuery.length > 0
+                    ? { label: "Clear search", onPress: () => setSearchQuery("") }
+                    : view === "active"
+                      ? { label: "Scan an item", onPress: () => setShowBarcodeScanner(true) }
+                      : undefined
+                }
               />
             )
           }
         />
 
         {/* Restock Modal */}
+        {selectMode && (
+          <View style={[styles.batchBar, { paddingBottom: insets.bottom + spacing.md }]}>
+            <Text style={[typography.buttonSm, styles.batchCount]}>
+              {selectedIds.size} selected
+            </Text>
+            <View style={styles.batchActions}>
+              <IconButton icon={Trash2} tone="danger" onPress={batchToss} accessibilityLabel="Toss selected items" />
+              <IconButton icon={ShoppingCart} onPress={batchShop} accessibilityLabel="Add selected to shopping list" />
+              <Button label="Done" variant="secondary" size="sm" onPress={exitSelectMode} />
+            </View>
+          </View>
+        )}
+
+        <ItemActionsSheet
+          visible={showAddSheet}
+          title="Add food"
+          actions={addActions()}
+          onClose={() => setShowAddSheet(false)}
+        />
+
+        <ItemActionsSheet
+          visible={showSortSheet}
+          title="Sort by"
+          actions={sortActions()}
+          onClose={() => setShowSortSheet(false)}
+        />
+
         <ItemActionsSheet
           visible={actionsItem !== null}
           title={actionsItem?.name ?? null}
@@ -912,6 +1057,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
           onConsume={handleConsumeOne}
           onToss={handleToss}
           onShop={handleAddToShoppingList}
+          onOpenItem={handleViewItem}
         />
 
         <RestockModal
@@ -1033,6 +1179,32 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.imageWell,
   },
+  sortButton: {
+    flexShrink: 0,
+    width: 36, height: 36, borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  selectCircle: {
+    position: "absolute",
+    top: spacing.xs, left: spacing.xs,
+    width: 26, height: 26, borderRadius: radii.pill,
+    borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center", justifyContent: "center",
+  },
+  selectCircleOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  batchBar: {
+    position: "absolute",
+    left: 0, right: 0, bottom: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: spacing.screenGutter, paddingTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  batchCount: { color: colors.text },
+  batchActions: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   attentionBanner: {
     backgroundColor: tint(colors.warning),
     borderWidth: 1,
@@ -1048,8 +1220,14 @@ const styles = StyleSheet.create({
   attentionBannerAction: { ...typography.buttonSm, color: colors.warning },
   viewSegments: {
     flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
     marginBottom: spacing.md,
+  },
+  segmentStrip: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingRight: spacing.sm,
   },
   viewSegment: {
     paddingHorizontal: spacing.lg,
