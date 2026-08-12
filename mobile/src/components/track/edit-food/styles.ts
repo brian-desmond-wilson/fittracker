@@ -226,6 +226,18 @@ export const styles = StyleSheet.create({
     backgroundColor: tint(colors.accents.inventory),
     borderWidth: 1, borderColor: tint(colors.accents.inventory, 0.3),
   },
+  // Same look as `hintRow`, different spacing: this one OPENS a section, so it
+  // needs room under the title above it and a full field gap beneath, or the
+  // next field's label sits on its bottom edge. `hintRow` is always preceded
+  // by content and followed by a margin-carrying line, so it needs neither.
+  scanAssist: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: spacing.md,
+    marginTop: spacing.sm, marginBottom: spacing.lg,
+    padding: spacing.md, borderRadius: radii.row,
+    backgroundColor: tint(colors.accents.inventory),
+    borderWidth: 1, borderColor: tint(colors.accents.inventory, 0.3),
+  },
   hintText: { ...typography.caption, color: colors.text, flexShrink: 1 },
   hintAction: { ...typography.buttonSm, color: colors.accents.inventory },
   previewText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md },

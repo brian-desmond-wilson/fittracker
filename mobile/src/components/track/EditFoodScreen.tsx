@@ -1756,7 +1756,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     is an easier read than a shelf. Typing six numbers off the
                     back of a packet is the clearest waste on this form. */}
                 <TouchableOpacity
-                  style={styles.hintRow}
+                  style={styles.scanAssist}
                   onPress={scanNutritionLabel}
                   disabled={scanningLabel}
                   accessibilityRole="button"
