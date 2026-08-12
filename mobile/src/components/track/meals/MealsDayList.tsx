@@ -42,6 +42,13 @@ export function MealsDayList({
 }: MealsDayListProps) {
   return (
     <View style={styles.mealsSection}>
+      {/* A1. The day's log was the only block on this tab with no heading, so
+          it floated as an unlabelled tail rather than reading as the third
+          group — what you have eaten, after the summary and the ways to eat.
+          Suppressed while empty: the EmptyState below is its own heading. */}
+      {!loadingDay && dayMeals.length > 0 && (
+        <Text style={styles.loggedHeader}>Logged today</Text>
+      )}
       {loadingDay ? (
         <LoadingState />
       ) : dayMeals.length === 0 ? (
