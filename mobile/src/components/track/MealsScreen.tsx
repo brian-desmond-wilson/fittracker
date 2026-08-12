@@ -55,7 +55,7 @@ import { FoodPreviewModal } from "./FoodPreviewModal";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
-import { MealLogEditorModal } from "./MealLogEditorModal";
+import { MealLogEditorModal, type MealLogEdit } from "./MealLogEditorModal";
 import { MealLibraryModal } from "./meals/library/MealLibraryModal";
 import {
   confirmConceptRating,
@@ -1202,17 +1202,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   };
 
-  const handleSaveMealEdit = async (updates: {
-    name: string;
-    meal_type: MealType;
-    calories: number | null;
-    protein: number | null;
-    carbs: number | null;
-    fats: number | null;
-    sugars: number | null;
-    sodium_mg: number | null;
-    fiber_g: number | null;
-  }) => {
+  const handleSaveMealEdit = async (updates: MealLogEdit) => {
     if (!editingMeal) return;
     try {
       setSavingEdit(true);
@@ -2053,8 +2043,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         visible={editingMeal !== null}
         meal={editingMeal}
         saving={savingEdit}
+        faceUrl={editingMeal ? (logFaceById.get(editingMeal.id) ?? null) : null}
+        dayCalories={dayTotals.calories}
+        goalCalories={goals.calories}
         onClose={() => setEditingMeal(null)}
         onSave={handleSaveMealEdit}
+        onDelete={(mealId) => {
+          setEditingMeal(null);
+          handleDeleteMeal(mealId);
+        }}
       />
 
       {/* Meal Library Modal */}
