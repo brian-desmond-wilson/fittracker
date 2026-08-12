@@ -4,6 +4,7 @@ import {
   eatNextStockBadge,
   eatNextExpiringLine,
   nudgeFireDate,
+  eatNextReadyAlternative,
   prepBudgetVerdict,
   prepBudgetLabel,
   EMERGENCY_MIN_GAP_CAL,
@@ -1876,5 +1877,44 @@ describe("prepBudgetVerdict / prepBudgetLabel", () => {
     expect(r.recommendations.map((x) => x.mealId)).toEqual([atCap.meal.id]);
     expect(prepBudgetVerdict(11, 5)).toBe("excluded");
     expect(prepBudgetVerdict(10, 5)).toBe("over");
+  });
+});
+
+// B1. The engine leads with its role-preferred pick even when that meal cannot
+// be made — deliberately, and pinned by "role match still beats availability"
+// above. What was missing was the sentence naming the one you COULD eat, which
+// left the Home card showing a single meal the owner had no way to act on.
+describe("eatNextReadyAlternative", () => {
+  const rec = (mealId: string, assemblable: boolean | null) => ({
+    mealId, name: mealId, reasons: [], calories: 400, protein: 20, prepMinutes: 5, score: 80,
+    stock: assemblable === null ? undefined : {
+      assemblable, missingCount: assemblable ? 0 : 2, unlinkedCount: 0,
+      expiringItemName: null, expiringDaysLeft: null,
+    },
+  });
+
+  it("names the first makeable meal below an un-makeable headline", () => {
+    expect(eatNextReadyAlternative([rec("a", false), rec("b", true), rec("c", true)])?.mealId)
+      .toBe("b");
+  });
+
+  it("says nothing when the headline is already makeable", () => {
+    expect(eatNextReadyAlternative([rec("a", true), rec("b", true)])).toBeNull();
+  });
+
+  it("says nothing when nothing below is makeable either", () => {
+    expect(eatNextReadyAlternative([rec("a", false), rec("b", false)])).toBeNull();
+  });
+
+  it("treats unknown stock as not an alternative — it would be a guess", () => {
+    expect(eatNextReadyAlternative([rec("a", false), rec("b", null)])).toBeNull();
+  });
+
+  it("never offers the headline as its own alternative", () => {
+    expect(eatNextReadyAlternative([rec("a", false)])).toBeNull();
+  });
+
+  it("is empty-safe", () => {
+    expect(eatNextReadyAlternative([])).toBeNull();
   });
 });

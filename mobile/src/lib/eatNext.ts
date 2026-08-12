@@ -339,6 +339,34 @@ function expiryClause(daysLeft: number | null): string {
  * ingredient, are both correctly silent — this line is a rescue notice, not a
  * status field.
  */
+/**
+ * The best recommendation you could actually make right now, when the top one
+ * is not it (B1).
+ *
+ * The comparator puts the context's ROLE preference above availability, and
+ * that is deliberate: a post-workout meal you must shop for really does beat a
+ * plain one in the fridge when you have just trained, and there is a test that
+ * says so. The cost is what the owner saw — "Banana + PB · Missing 2" as the
+ * headline of the whole feature, with a meal that was in stock AND rescuing
+ * food expiring the next day sitting underneath it. A first line you cannot
+ * act on.
+ *
+ * Rather than overturn the ranking, the surfaces name the fallback. The engine
+ * still leads with its choice and still explains it; this adds the sentence
+ * that was missing — "here is the one you can eat right now instead".
+ *
+ * Returns null when the top pick is already makeable (nothing to say) or when
+ * nothing below it is either (nothing to offer). Reads the TYPED `stock`
+ * verdict, never `reasons`, whose entries have no fixed position.
+ */
+export function eatNextReadyAlternative(
+  recommendations: readonly EatNextRecommendation[],
+): EatNextRecommendation | null {
+  const top = recommendations[0];
+  if (!top || top.stock?.assemblable) return null;
+  return recommendations.slice(1).find((r) => r.stock?.assemblable) ?? null;
+}
+
 export function eatNextExpiringLine(stock: EatNextStockInfo | undefined): string | null {
   if (stock == null || stock.expiringItemName == null) return null;
   return `Uses ${stock.expiringItemName} — ${expiryClause(stock.expiringDaysLeft)}`;
@@ -521,7 +549,7 @@ function prepReason(m: ScoredMeal, maxPrepMinutes: number): string[] {
 }
 
 function rank(cands: Candidate[]): Candidate[] {
-  return [...cands].sort(
+  return ([...cands].sort(
     (a, b) =>
       a.roleRank - b.roleRank ||
       // Availability sits between role and score (spec §9): the context's
@@ -537,7 +565,7 @@ function rank(cands: Candidate[]): Candidate[] {
       b.score.raw - a.score.raw ||
       a.meal.prep_minutes - b.meal.prep_minutes ||
       a.meal.name.localeCompare(b.meal.name),
-  );
+  ));
 }
 
 function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): EatNextRecommendation[] {

@@ -19,6 +19,7 @@ import {
   EMPTY_LIBRARY_MESSAGE,
   eatNextStockBadge,
   eatNextExpiringLine,
+  eatNextReadyAlternative,
 } from "@/src/lib/eatNext";
 // `scoreTone` is the ONE band → Badge-tone lookup (it resolves spec §6's
 // thresholds through `scoreBand`, whose cutoffs this file never re-declares).
@@ -157,6 +158,12 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // whether or not the meal is assemblable, because the user already owns the
   // item that is about to spoil (Task 8's DECISION, Task 9 FIX 3).
   const expiringLine = eatNextExpiringLine(top.stock);
+  // B1. This card shows ONE meal, so when the engine's pick is not makeable
+  // the whole card is an instruction the owner cannot follow. The ranking
+  // stays as designed — role above availability is deliberate and tested —
+  // and the missing sentence is added instead: here is the one you could eat
+  // right now. Tapping it opens that meal, not the headline one.
+  const readyAlternative = eatNextReadyAlternative(result.recommendations);
 
   return (
     <Card
@@ -197,6 +204,20 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         <Badge label={String(top.score)} suffix="/100" tone={scoreTone(top.score)} />
       </View>
       {showMessage && <Text style={styles.mutedText}>{result.message}</Text>}
+      {readyAlternative && (
+        <Text
+          style={styles.readyAlternative}
+          numberOfLines={2}
+          onPress={() =>
+            router.push({
+              pathname: "/(tabs)/track/meals",
+              params: { suggestMealId: readyAlternative.mealId },
+            })
+          }
+        >
+          Ready now instead: {readyAlternative.name}
+        </Text>
+      )}
     </Card>
   );
 }
@@ -212,6 +233,11 @@ const styles = StyleSheet.create({
   reason: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm },
   mutedText: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
   ctaText: { ...typography.body, color: colors.brand, marginTop: spacing.sm },
+  // Brand-coloured because it is the actionable half of this card whenever it
+  // appears — the headline above it is, by definition, the one you cannot make.
+  readyAlternative: {
+    ...typography.body, color: colors.brand, marginTop: spacing.sm, fontWeight: "600",
+  },
   // `flex: 1` (not `numberOfLines`): sits in a `flexDirection: "row"` beside
   // a fixed-width icon with nothing else to stop it pushing the row wider
   // than the card. The longest engine message is 45 chars, so this is
