@@ -16,14 +16,25 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Package, Pencil, Plus, ScanBarcode } from "lucide-react-native";
-import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import {
+  ChevronDown, ChevronLeft, ChevronRight, Minus, MoreHorizontal, Package, Pencil,
+  Plus, ScanBarcode, ShoppingCart, Trash2,
+} from "lucide-react-native";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
-import { consumeOneUnit, discardItem, type InventoryItemWithState } from "@/src/lib/supabase/inventory";
+import { ItemActionsSheet, type ItemAction } from "./ItemActionsSheet";
+import {
+  consumeOneUnit,
+  restockOneUnit,
+  discardItem,
+  type InventoryItemWithState,
+} from "@/src/lib/supabase/inventory";
 import { estimateShelfLifeDays, reviewExpiry } from "@/src/lib/expiryPolicy";
-import { formatQuantity } from "@/src/lib/units";
-import { suggestedRestockThreshold } from "@/src/lib/consumptionRate";
-import { fetchConsumptionRates } from "@/src/lib/supabase/shopping";
+import { formatQuantity, normalizeUnit } from "@/src/lib/units";
+import { suggestedRestockThreshold, MAX_DISPLAY_DAYS } from "@/src/lib/consumptionRate";
+import { addSuggestions } from "@/src/lib/supabase/shopping";
+import { fetchItemDetailContext, type ItemDetailContext } from "@/src/lib/supabase/itemDetail";
+import { lowThresholdFor } from "@/src/lib/stockState";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/lib/dates";
 import { parseLocalDate } from "@/src/lib/dates";
@@ -64,10 +75,19 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  // D5: learned restock threshold — decoration; failure leaves it null.
-  const [suggestedThreshold, setSuggestedThreshold] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  // What the item means to the rest of the loop: the meals it feeds, how fast
+  // it goes, whether it's already on the list. All decoration — a failed fetch
+  // leaves the page rendering everything else.
+  const [ctx, setCtx] = useState<ItemDetailContext | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const addingToList = useRef(false);
+
+  // D5: learned restock threshold, derived from the same estimate the pace
+  // line uses rather than a second round trip.
+  const suggestedThreshold = ctx?.rate ? suggestedRestockThreshold(ctx.rate) : null;
 
   // Collect all available images
   const images = [
@@ -84,18 +104,20 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   };
 
   useEffect(() => {
+    // A previewed barcode result is not in inventory yet, so it has no rate,
+    // no meals and no list entry — there is nothing to ask about.
     if (isPreview) return;
     let cancelled = false;
     (async () => {
       try {
-        const rates = await fetchConsumptionRates(
+        const next = await fetchItemDetailContext(
+          item.id,
+          item.state.totalQuantity,
           getLocalDateString(),
-          new Map([[item.id, item.state.totalQuantity]]),
         );
-        const est = rates.get(item.id);
-        if (!cancelled && est) setSuggestedThreshold(suggestedRestockThreshold(est));
+        if (!cancelled) setCtx(next);
       } catch (e) {
-        console.error("suggested threshold fetch failed:", e);
+        console.error("item detail context fetch failed:", e);
       }
     })();
     return () => { cancelled = true; };
@@ -140,6 +162,63 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
     } catch (e) {
       console.error("consume failed:", e);
       Alert.alert("Error", `Couldn't mark ${item.name} as used.`);
+    }
+  };
+
+  // The stepper's other half. Recorded as a restock, not an undo: it moves
+  // stock the same way but means the opposite thing to demand.
+  const handleAddOne = async () => {
+    try {
+      const added = await restockOneUnit(item.id, item.locations);
+      if (added === 0) {
+        Alert.alert("Couldn't add", `${item.name} has no storage location to add to.`);
+        return;
+      }
+      await onRefresh?.();
+    } catch (e) {
+      console.error("restock failed:", e);
+      Alert.alert("Error", `Couldn't add one ${item.name}.`);
+    }
+  };
+
+  // Same guards as the list screen's add: an in-flight flag, then a check for
+  // an existing unpurchased row, because shopping_list has no unique
+  // constraint and nothing else consults it before inserting.
+  const handleAddToList = async () => {
+    if (addingToList.current) return;
+    addingToList.current = true;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: existing, error: existingError } = await supabase
+        .from("shopping_list")
+        .select("id")
+        .eq("food_inventory_id", item.id)
+        .eq("is_purchased", false)
+        .limit(1);
+      if (existingError) throw existingError;
+      if (existing && existing.length > 0) {
+        Alert.alert("Already on your list", `${item.name} is already on your shopping list.`);
+        return;
+      }
+      // Routed through the shopping module so this shares the one quantity
+      // formula and vendor stamping with every other add path.
+      await addSuggestions(user.id, [{
+        name: item.name,
+        foodInventoryId: item.id,
+        vendorId: item.preferred_vendor_id ?? null,
+        quantity: Math.max(1, lowThresholdFor(item) - item.state.totalQuantity + 1),
+        unit: item.unit,
+        priority: item.state.isOut ? 1 : 2,
+        reasons: ["added from item page"],
+      }]);
+      await onRefresh?.();
+      Alert.alert("Added", `${item.name} is on your shopping list.`);
+    } catch (e) {
+      console.error("add to list failed:", e);
+      Alert.alert("Error", "Couldn't add to the shopping list.");
+    } finally {
+      addingToList.current = false;
     }
   };
 
@@ -204,6 +283,45 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   const shelfLifeEstimate = item.expiration_date
     ? null
     : estimateShelfLifeDays(item.categories.map((c) => c.name));
+
+  // "Fresh · 5 weeks left" as one chip. `expiryStatus` covers the states that
+  // demand action; this adds the calm one, which the page never used to say
+  // out loud — it printed a calendar date and left you to do the subtraction.
+  const freshness = (() => {
+    if (expiryStatus) return expiryStatus;
+    const { expiration, daysLeft } = item.state;
+    if (expiration === "later" && daysLeft !== null) {
+      return { label: "Fresh", tone: "success" as const, detail: `${relativeDays(daysLeft)} left` };
+    }
+    return null;
+  })();
+
+  // How long the stock lasts at the observed rate. Null until the estimator
+  // has seen this item move — an invented rate would be worse than silence.
+  const paceLine = (() => {
+    if (!ctx) return null;
+    const days = ctx.rate?.daysUntilOut;
+    if (days === undefined || days === null || !Number.isFinite(days)) return null;
+    if (days >= MAX_DISPLAY_DAYS) return `more than ${MAX_DISPLAY_DAYS} days at this rate`;
+    return `about ${relativeDays(Math.round(days))} left at your pace`;
+  })();
+
+  // Per-serving figures scale to stock only when a unit IS a serving. For
+  // weights and volumes that arithmetic is meaningless, so the row is omitted
+  // rather than guessed at.
+  const unitIsServing = ["count", "servings"].includes(normalizeUnit(item.unit));
+  const stockCalories =
+    unitIsServing && item.calories ? item.calories * item.state.totalQuantity : null;
+  const stockProtein =
+    unitIsServing && item.protein ? item.protein * item.state.totalQuantity : null;
+  const targetShare =
+    ctx?.targetCalories && item.calories
+      ? Math.round((item.calories / ctx.targetCalories) * 100)
+      : null;
+
+  const moreActions = (): ItemAction[] => [
+    { label: "Toss item…", icon: Trash2, destructive: true, onPress: handleToss },
+  ];
 
   const renderSection = (title: string, content: React.ReactNode) => (
     <Card variant="panel" style={styles.section}>
@@ -317,12 +435,28 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
             {/* A4: the same urgency the grid shows, with relative phrasing —
                 the grid screamed "Expired" while this page whispered a bare
                 calendar date. One truth, one weight, both surfaces. */}
-            {expiryStatus && (
-              <View style={styles.expiryStatusRow}>
-                <Badge label={expiryStatus.label} tone={expiryStatus.tone} />
-                <Text style={styles.expiryStatusText}>{expiryStatus.detail}</Text>
-              </View>
-            )}
+            {/* Status, taxonomy and shelf as one chip row directly under the
+                brand: the first glance should answer "is this still good?"
+                without scrolling to a Dates card at the very bottom. */}
+            <View style={styles.chipRow}>
+              {freshness && (
+                <View style={[styles.chip, styles[`chip_${freshness.tone}`]]}>
+                  <Text style={[styles.chipText, styles[`chipText_${freshness.tone}`]]}>
+                    {freshness.label} · {freshness.detail}
+                  </Text>
+                </View>
+              )}
+              {item.categories.map((cat) => (
+                <View key={cat.id} style={[styles.chip, styles.chip_inventory]}>
+                  <Text style={[styles.chipText, styles.chipText_inventory]}>{cat.name}</Text>
+                </View>
+              ))}
+              {item.subcategories.map((sub) => (
+                <View key={sub.id} style={styles.chip}>
+                  <Text style={styles.chipText}>{sub.name}</Text>
+                </View>
+              ))}
+            </View>
           </View>
 
           {/* B1/B2 verbs — the daily-use actions, first-class on the detail
@@ -330,172 +464,254 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
               pointer-only "−" shortcut does). Hidden in preview mode and when
               there is no stock to act on. Side-by-side pair per style rule 26:
               Button cannot flex, so each sits in a flex:1 wrapper. */}
-          {!isPreview && item.state.totalQuantity > 0 && (
-            <View style={styles.verbRow}>
-              <View style={styles.verbHalf}>
-                <Button label="Used one" onPress={handleUsedOne} fluid />
-              </View>
-              <View style={styles.verbHalf}>
-                <Button label="Toss item…" onPress={handleToss} variant="destructive" fluid />
-              </View>
+          {/* The one line worth arriving for: how much there is, and how long
+              that lasts at the rate you actually consume it. */}
+          {!isPreview && (
+            <View style={styles.strip}>
+              <Text style={styles.stripCount}>
+                {formatQuantity(item.state.totalQuantity, item.unit)}
+              </Text>
+              <Text style={styles.stripLede}>
+                {paceLine ?? "no pace learned yet — use it a few times"}
+              </Text>
             </View>
           )}
 
-          {/* Quantity & Location */}
-          {renderSection(
-            "Inventory",
-            <>
-              {renderDetailRow("In Stock", formatQuantity(item.state.totalQuantity, item.unit))}
-              {item.storage_type === 'multi-location' && (
-                <>
-                  {renderDetailRow("Ready to Consume", formatQuantity(item.state.readyQuantity, item.unit))}
-                  {renderDetailRow("In Storage", formatQuantity(item.state.storageQuantity, item.unit))}
-                </>
-              )}
-              {item.storage_type === 'single-location' && item.location && (
-                renderDetailRow("Location", item.location.charAt(0).toUpperCase() + item.location.slice(1))
-              )}
-            </>
+          {/* B1 + the stepper's other half. A single "used one" button meant
+              eating three, or unpacking six, sent you into the edit form.
+              Toss moves to the overflow: it is the one destructive action here
+              and it used to take half the row. */}
+          {!isPreview && (
+            <View style={styles.actionRow}>
+              <View style={styles.stepper}>
+                <TouchableOpacity
+                  onPress={handleUsedOne}
+                  disabled={item.state.totalQuantity === 0}
+                  style={[styles.stepBtn, item.state.totalQuantity === 0 && styles.stepBtnOff]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Used one ${item.name}`}
+                >
+                  <Minus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                </TouchableOpacity>
+                <Text style={styles.stepCount}>{item.state.totalQuantity}</Text>
+                <TouchableOpacity
+                  onPress={handleAddOne}
+                  style={[styles.stepBtn, styles.stepBtnOn]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add one ${item.name}`}
+                >
+                  <Plus size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.actionFill}>
+                <Button
+                  label={ctx?.onShoppingList ? "On your list" : "Add to list"}
+                  onPress={handleAddToList}
+                  variant="secondary"
+                  size="sm"
+                  icon={ShoppingCart}
+                  disabled={ctx?.onShoppingList === true}
+                  fluid
+                />
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowMore(true)}
+                style={styles.moreBtn}
+                accessibilityRole="button"
+                accessibilityLabel="More actions"
+              >
+                <MoreHorizontal size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+              </TouchableOpacity>
+            </View>
           )}
 
-          {/* Multi-Location Details */}
-          {item.storage_type === 'multi-location' && item.locations.length > 0 && renderSection(
-            "Locations",
+          {/* The item's place in the loop. Every input already existed — the
+              concept graph, the assemblability check, the rate estimator — but
+              nothing had ever asked them about a single item, so this page had
+              no idea it was describing food you could cook with. */}
+          {/* Always rendered once the context loads, never hidden when empty:
+              "no meal can claim this" is the single most actionable thing the
+              page can say, and it is exactly the case an emptiness check would
+              have suppressed. */}
+          {!isPreview && ctx &&
+            renderSection(
+              "In the loop",
+              <>
+                {ctx.meals.map((m) => (
+                  <View key={m.name} style={styles.mealRow}>
+                    <Text style={styles.mealName} numberOfLines={1}>{m.name}</Text>
+                    <Badge
+                      label={m.ready ? "Ready" : `Missing ${m.missing.length}`}
+                      tone={m.ready ? "success" : "warning"}
+                    />
+                  </View>
+                ))}
+                {ctx.meals.length === 0 && (
+                  <Text style={styles.emptyNote}>
+                    Not linked to any meals yet, so nothing in your library can claim it.
+                  </Text>
+                )}
+                {ctx.runsOutOn && renderDetailRow("Runs out around", formatCalendarDate(ctx.runsOutOn))}
+                {renderDetailRow("On shopping list", ctx.onShoppingList ? "Yes" : "Not yet")}
+              </>,
+            )}
+
+          {/* One row per shelf with its own count, instead of a single
+              "Location: Freezer" that cannot describe split stock. */}
+          {item.locations.length > 0 && renderSection(
+            "Where it is",
             <>
-              {item.locations.map((loc, index) => (
-                <View key={loc.id} style={styles.locationItem}>
-                  <View style={styles.locationHeader}>
-                    <Text style={styles.locationName}>
+              {[...item.locations]
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .map((loc) => (
+                  <View key={loc.id} style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>
                       {loc.location.charAt(0).toUpperCase() + loc.location.slice(1)}
                     </Text>
-                    <Text style={styles.locationQuantity}>{loc.quantity} {item.unit}</Text>
+                    <View style={styles.locValue}>
+                      <Text style={styles.detailValue}>{loc.quantity}</Text>
+                      <Text style={styles.locNote}>
+                        {loc.is_ready_to_consume ? "ready to eat" : "in storage"}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.locationStatus}>
-                    {loc.is_ready_to_consume ? 'Ready to Consume' : 'Storage'}
-                  </Text>
-                  {loc.notes && <Text style={styles.locationNotes}>{loc.notes}</Text>}
-                </View>
-              ))}
+                ))}
             </>
           )}
 
-          {/* Categories */}
-          {(item.categories.length > 0 || item.subcategories.length > 0) && renderSection(
-            "Categories",
-            <>
-              {item.categories.length > 0 && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Categories</Text>
-                  <View style={styles.tagsContainer}>
-                    {item.categories.map(cat => (
-                      <Badge key={cat.id} tone="inventory" label={cat.name} />
-                    ))}
-                  </View>
-                </View>
-              )}
-              {item.subcategories.length > 0 && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Subcategories</Text>
-                  <View style={styles.tagsContainer}>
-                    {item.subcategories.map(sub => (
-                      <Badge key={sub.id} tone="neutral" label={sub.name} />
-                    ))}
-                  </View>
-                </View>
-              )}
-            </>
-          )}
-
-          {/* Thresholds */}
+          {/* Relative first, calendar date as the small print. */}
           {renderSection(
-            "Restock Thresholds",
+            "Freshness",
             <>
-              {item.storage_type === 'single-location' && (
-                renderDetailRow("Restock Threshold", `${item.restock_threshold} ${item.unit}`)
-              )}
-              {item.storage_type === 'multi-location' && (
-                <>
-                  {renderDetailRow("Fridge Restock Threshold", item.fridge_restock_threshold ? `${item.fridge_restock_threshold} ${item.unit}` : "Not set")}
-                  {renderDetailRow("Total Restock Threshold", item.total_restock_threshold ? `${item.total_restock_threshold} ${item.unit}` : "Not set")}
-                </>
-              )}
-              {/* A5: only shown when true — "Requires Refrigeration: No" on
-                  milk was the DB contradicting itself in the user's face.
-                  Deriving/validating the pair is C5's backend job. */}
-              {item.requires_refrigeration ? renderDetailRow("Keep Refrigerated", "Yes") : null}
-              {/* D5: the learned threshold, advisory-only. Appears once real
-                  consumption data exists for this item and differs from the
-                  hand-set value; Apply is one tap, never silent. */}
-              {suggestedThreshold !== null && suggestedThreshold !== item.restock_threshold && (
-                <View style={styles.suggestionRow}>
-                  <Text style={styles.suggestionText}>
-                    Suggested threshold: {suggestedThreshold} (based on your usage)
+              {item.expiration_date ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>
+                    {item.state.expiration === "expired" ? "Expired" : "Good for"}
                   </Text>
-                  <Button
-                    label="Apply"
-                    variant="ghost"
-                    size="sm"
-                    onPress={applySuggestedThreshold}
-                  />
+                  <View style={styles.locValue}>
+                    <Text style={styles.detailValue}>
+                      {freshness?.detail ?? formatCalendarDate(item.expiration_date)}
+                    </Text>
+                    <Text style={styles.locNote}>{formatCalendarDate(item.expiration_date)}</Text>
+                  </View>
+                </View>
+              ) : (
+                renderDetailRow(
+                  "Expiration date",
+                  shelfLifeEstimate !== null
+                    ? `Not set — typically lasts ~${shelfLifeEstimate}d`
+                    : "Not set",
+                )
+              )}
+              {item.requires_refrigeration ? renderDetailRow("Keep refrigerated", "Yes") : null}
+              {renderDetailRow("You last checked", formatTimestamp(item.last_verified_at))}
+            </>
+          )}
+
+          {/* Per serving, per shelf, and against the day you already track. */}
+          {(item.calories || item.protein || item.carbs || item.fats || item.sugars) && renderSection(
+            "Nutrition",
+            <>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>{item.serving_size || "One serving"}</Text>
+                <View style={styles.locValue}>
+                  <Text style={styles.detailValue}>
+                    {item.calories ? `${item.calories} kcal` : "—"}
+                  </Text>
+                  <Text style={styles.locNote}>
+                    {[
+                      item.protein ? `${item.protein}P` : null,
+                      item.carbs ? `${item.carbs}C` : null,
+                      item.fats ? `${item.fats}F` : null,
+                    ].filter(Boolean).join(" · ")}
+                  </Text>
+                </View>
+              </View>
+              {stockCalories !== null && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>
+                    All {item.state.totalQuantity} on hand
+                  </Text>
+                  <View style={styles.locValue}>
+                    <Text style={styles.detailValue}>
+                      {stockCalories.toLocaleString()} kcal
+                    </Text>
+                    {stockProtein !== null && (
+                      <Text style={styles.locNote}>{Math.round(stockProtein)}g protein</Text>
+                    )}
+                  </View>
                 </View>
               )}
+              {targetShare !== null && renderDetailRow("Share of today's target", `${targetShare}%`)}
+              {item.sugars ? renderDetailRow("Sugars", `${item.sugars}g`) : null}
             </>
           )}
 
-          {/* Nutrition */}
-          {(item.calories || item.protein || item.carbs || item.fats || item.sugars || item.serving_size) && renderSection(
-            "Nutritional Information",
-            <>
-              {renderDetailRow("Serving Size", item.serving_size)}
-              {renderDetailRow("Calories", item.calories ? `${item.calories} kcal` : null)}
-              {renderDetailRow("Protein", item.protein ? `${item.protein}g` : null)}
-              {renderDetailRow("Carbohydrates", item.carbs ? `${item.carbs}g` : null)}
-              {renderDetailRow("Fats", item.fats ? `${item.fats}g` : null)}
-              {renderDetailRow("Sugars", item.sugars ? `${item.sugars}g` : null)}
-            </>
-          )}
-
-          {/* Expiration & Dates */}
-          {renderSection(
-            "Dates",
-            <>
-              {item.expiration_date
-                ? renderDetailRow("Expiration Date", formatCalendarDate(item.expiration_date))
-                : renderDetailRow(
-                    "Expiration Date",
-                    shelfLifeEstimate !== null
-                      ? `Not set — typically lasts ~${shelfLifeEstimate}d`
-                      : "Not set",
+          {/* Set once, read rarely — folded away rather than given three cards
+              above the fold. */}
+          <Card variant="panel" style={styles.section}>
+            <TouchableOpacity
+              style={styles.discloseRow}
+              onPress={() => setShowDetails((v) => !v)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showDetails }}
+              accessibilityLabel="Details and settings"
+            >
+              <Text style={styles.sectionTitle}>Details &amp; settings</Text>
+              {showDetails
+                ? <ChevronDown size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+                : <ChevronRight size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />}
+            </TouchableOpacity>
+            {showDetails && (
+              <>
+                {item.storage_type === "single-location"
+                  ? renderDetailRow("Restock threshold", `${item.restock_threshold} ${item.unit}`)
+                  : (
+                    <>
+                      {renderDetailRow("Fridge restock threshold", item.fridge_restock_threshold ? `${item.fridge_restock_threshold} ${item.unit}` : "Not set")}
+                      {renderDetailRow("Total restock threshold", item.total_restock_threshold ? `${item.total_restock_threshold} ${item.unit}` : "Not set")}
+                    </>
                   )}
-              {renderDetailRow("Added", formatTimestamp(item.created_at))}
-              {renderDetailRow("Last Updated", formatTimestamp(item.updated_at))}
-            </>
-          )}
-
-          {/* Additional Info */}
-          {(item.barcode || item.notes) && renderSection(
-            "Additional Information",
-            <>
-              {item.barcode ? (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Barcode</Text>
-                  <View style={styles.barcodeValue}>
-                    <ScanBarcode size={icons.sm} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
-                    <Text style={styles.barcodeText}>{item.barcode}</Text>
+                {/* D5: advisory only, and only once real usage disagrees with
+                    the hand-set number. Apply is one tap, never silent. */}
+                {suggestedThreshold !== null && suggestedThreshold !== item.restock_threshold && (
+                  <View style={styles.suggestionRow}>
+                    <Text style={styles.suggestionText}>
+                      Your usage suggests {suggestedThreshold}
+                    </Text>
+                    <Button label="Apply" variant="ghost" size="sm" onPress={applySuggestedThreshold} />
                   </View>
-                </View>
-              ) : null}
-              {item.notes && (
-                <View style={styles.notesContainer}>
-                  <Text style={styles.detailLabel}>Notes</Text>
-                  <Text style={styles.notesText}>{item.notes}</Text>
-                </View>
-              )}
-            </>
-          )}
+                )}
+                {item.barcode ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Barcode</Text>
+                    <View style={styles.barcodeValue}>
+                      <ScanBarcode size={icons.sm} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
+                      <Text style={styles.barcodeText}>{item.barcode}</Text>
+                    </View>
+                  </View>
+                ) : null}
+                {renderDetailRow("Added", formatTimestamp(item.created_at))}
+                {renderDetailRow("Last updated", formatTimestamp(item.updated_at))}
+                {item.notes && (
+                  <View style={styles.notesContainer}>
+                    <Text style={styles.detailLabel}>Notes</Text>
+                    <Text style={styles.notesText}>{item.notes}</Text>
+                  </View>
+                )}
+              </>
+            )}
+          </Card>
 
           <View style={{ height: 40 }} />
         </ScrollView>
+
+        <ItemActionsSheet
+          visible={showMore}
+          title={item.name}
+          actions={moreActions()}
+          onClose={() => setShowMore(false)}
+        />
       </View>
     </>
   );
@@ -579,13 +795,91 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
   },
-  verbRow: {
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+  },
+  chipText: { ...typography.caption, fontWeight: "600", color: colors.textMuted },
+  chip_success: { backgroundColor: tint(colors.success), borderColor: tint(colors.success, 0.3) },
+  chip_warning: { backgroundColor: tint(colors.warning), borderColor: tint(colors.warning, 0.3) },
+  chip_danger: { backgroundColor: tint(colors.danger), borderColor: tint(colors.danger, 0.3) },
+  chip_neutral: {},
+  chip_inventory: {
+    backgroundColor: tint(colors.accents.inventory),
+    borderColor: tint(colors.accents.inventory, 0.3),
+  },
+  chipText_success: { color: colors.success },
+  chipText_warning: { color: colors.warning },
+  chipText_danger: { color: colors.danger },
+  chipText_neutral: {},
+  chipText_inventory: { color: colors.accents.inventory },
+
+  // The decision line. surface2 so it reads as the one raised thing between
+  // the title and the cards.
+  strip: {
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radii.row,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  stripCount: { fontSize: 22, fontWeight: "700", color: colors.text },
+  stripLede: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
+
+  actionRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.xl,
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
-  verbHalf: { flex: 1 },
+  actionFill: { flex: 1 },
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  stepBtn: {
+    width: 32, height: 32, borderRadius: radii.pill,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: colors.border,
+  },
+  stepBtnOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  stepBtnOff: { opacity: 0.4 },
+  stepCount: {
+    ...typography.rowTitle, color: colors.text, minWidth: spacing.xxl, textAlign: "center",
+  },
+  moreBtn: {
+    width: 36, height: 36, borderRadius: radii.pill,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border,
+  },
+
+  mealRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: spacing.md, paddingVertical: spacing.sm,
+  },
+  mealName: { ...typography.body, color: colors.text, flex: 1, minWidth: 0 },
+  emptyNote: { ...typography.caption, color: colors.textMuted, paddingVertical: spacing.sm },
+  locValue: { alignItems: "flex-end" },
+  locNote: { ...typography.caption, color: colors.textFaint },
+  discloseRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+  },
   suggestionRow: {
     flexDirection: "row",
     alignItems: "center",

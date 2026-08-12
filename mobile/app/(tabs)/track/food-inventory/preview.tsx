@@ -72,6 +72,7 @@ export default function FoodProductPreviewPage() {
     preferred_vendor_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    last_verified_at: null,
     locations: [],
     categories: [],
     subcategories: [],
