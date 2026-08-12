@@ -1670,6 +1670,20 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 groupedMealsByType={groupedMealsByType}
                 onEditMeal={setEditingMeal}
                 onDeleteMeal={handleDeleteMeal}
+                // B8. Only on today, and only when there is a suggestion —
+                // the recommender's answer is the useful thing to say under
+                // "nothing logged", and on a past day there is no such thing.
+                suggestedMealName={
+                  viewingToday
+                    ? eatNext.result?.recommendations[0]?.name ?? null
+                    : null
+                }
+                onOpenSuggestion={() => {
+                  const mealId = eatNext.result?.recommendations[0]?.mealId;
+                  if (!mealId) return;
+                  setLibraryInitialMealId(mealId);
+                  setLibraryVisible(true);
+                }}
               />
             )}
           </ScrollView>
