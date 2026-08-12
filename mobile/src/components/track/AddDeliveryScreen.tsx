@@ -17,7 +17,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { Calendar, ChevronLeft, Plus, Trash2 } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import { Calendar, Camera, ChevronLeft, Plus, Trash2 } from "lucide-react-native";
 import { Button, Card } from "@/src/components/ui";
 import { VendorTiles } from "@/src/components/track/edit/VendorTiles";
 import { supabase } from "@/src/lib/supabase";
@@ -103,6 +104,83 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
       // into, and "add a meal" is the whole purpose of the screen.
       return next.length > 0 ? next : [emptyDraft()];
     });
+  };
+
+  // Same shape as the Nutrition Facts reader: request permission, fall back to
+  // the library when the camera is unavailable (the simulator has none), and
+  // never let a rejected picker escape as an unhandled promise.
+  const [scanningMenu, setScanningMenu] = useState(false);
+  const scanMenu = async () => {
+    const opts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    };
+    let base64: string | null | undefined;
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      const shot = perm.granted
+        ? await ImagePicker.launchCameraAsync(opts).catch(() => null)
+        : null;
+      const picked = shot && !shot.canceled
+        ? shot
+        : await ImagePicker.launchImageLibraryAsync(opts);
+      if (picked.canceled) return;
+      base64 = picked.assets?.[0]?.base64;
+    } catch (e) {
+      console.error("menu picker failed:", e);
+      Alert.alert("Couldn't open the camera", "Pick the menu photo from your library instead.");
+      return;
+    }
+    if (!base64) return;
+
+    setScanningMenu(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("delivery-menu", {
+        body: { imageBase64: base64 },
+      });
+      if (error) throw error;
+      const read = (data?.meals ?? []) as Array<{
+        name: string; slot: MealType | null; quantity: number | null;
+        calories: number | null; protein: number | null; fiber: number | null;
+      }>;
+      if (read.length === 0) {
+        Alert.alert("No menu found", data?.note ?? "That doesn't look like a delivery menu.");
+        return;
+      }
+      // REPLACES the drafts rather than appending: this is the box being read,
+      // and merging a re-scan with a half-typed first attempt would silently
+      // duplicate meals. Anything typed already is lost, so it asks first if
+      // there is anything to lose.
+      const apply = () => {
+        setDrafts(read.map((m) => ({
+          ...emptyDraft(m.slot ?? "lunch"),
+          name: m.name,
+          quantity: m.quantity != null ? String(Math.max(1, Math.round(m.quantity))) : "1",
+          calories: m.calories != null ? String(Math.round(m.calories)) : "",
+          protein: m.protein != null ? String(m.protein) : "",
+          fiber: m.fiber != null ? String(m.fiber) : "",
+        })));
+        if (data?.note) Alert.alert("Read the menu", data.note);
+      };
+      if (filled > 0) {
+        Alert.alert(
+          `Replace ${filled} meal${filled === 1 ? "" : "s"}?`,
+          `The menu has ${read.length}. What you have typed will be replaced.`,
+          [
+            { text: "Keep mine", style: "cancel" },
+            { text: "Replace", style: "destructive", onPress: apply },
+          ],
+        );
+      } else {
+        apply();
+      }
+    } catch (e) {
+      console.error("delivery menu scan failed:", e);
+      Alert.alert("Couldn't read it", "Try again with more light and the menu filling the frame.");
+    } finally {
+      setScanningMenu(false);
+    }
   };
 
   const handleClose = () => {
@@ -200,6 +278,26 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
                 box wins — every meal in this delivery gets it.
               </Text>
             </Card>
+
+            {/* E4. The whole box is printed on the packing slip. Typing it
+                out by hand — eight meals, four fields each, twice a week — is
+                the actual cost of keeping these in the app. This reads it and
+                fills the form; nothing is written until Save, and anything it
+                could not read stays empty rather than being guessed. */}
+            <TouchableOpacity
+              style={styles.scanMenu}
+              onPress={scanMenu}
+              disabled={scanningMenu}
+              accessibilityRole="button"
+              accessibilityLabel="Photograph the delivery menu"
+            >
+              <Camera size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+              <Text style={styles.scanMenuText}>
+                {scanningMenu
+                  ? "Reading the menu…"
+                  : "Photograph the menu and I'll fill these in"}
+              </Text>
+            </TouchableOpacity>
 
             {/* One line per meal. Name, slot, and the three numbers on the lid. */}
             {drafts.map((d, index) => (
@@ -350,6 +448,13 @@ const styles = StyleSheet.create({
   label: { ...typography.section, color: colors.textMuted },
   labelSpaced: { marginTop: spacing.md },
   help: { ...typography.caption, color: colors.textFaint },
+  scanMenu: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
+  },
+  scanMenuText: { ...typography.caption, color: colors.textMuted, flexShrink: 1 },
   dateButton: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
     backgroundColor: colors.surface2,

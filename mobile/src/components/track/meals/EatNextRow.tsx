@@ -44,19 +44,30 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing, typography } from "@/src/theme/tokens";
-import { Badge, Card } from "@/src/components/ui";
+import { Badge, Button, Card } from "@/src/components/ui";
 import {
   eatNextStockBadge,
   eatNextExpiringLine,
+  eatNextMissingLine,
   type EatNextResult,
 } from "@/src/lib/eatNext";
 
 interface EatNextRowProps {
   result: EatNextResult | null;
   onMealPress: (mealId: string) => void;
+  /**
+   * B3. Suggestion to logged meal was chip → library modal → detail → Log:
+   * three screens to accept an answer the app had already worked out. This
+   * logs it where it is suggested, into the meal's own default slot. The chip
+   * body still opens the detail, for when you want to look before eating.
+   */
+  onQuickLog: (mealId: string) => void;
+  loggingMealId: string | null;
 }
 
-export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
+export function EatNextRow({
+  result, onMealPress, onQuickLog, loggingMealId,
+}: EatNextRowProps) {
   // No recommendations → no strip. Every context that renders a message but
   // no recommendation (`after_window`, terminal `goal_hit`, an empty library)
   // is the Home card's job (§7.1's "never a blank card"); §7.2 is a chip row,
@@ -83,6 +94,8 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
         // Eat Next surfaces back in the state this task exists to fix, one
         // naming the rescue and one silently not.
         const expiringLine = eatNextExpiringLine(rec.stock);
+        // B2: which ones, not just how many.
+        const missingLine = eatNextMissingLine(rec.stock);
         return (
           <Card
             key={rec.mealId}
@@ -93,15 +106,26 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
             <View style={styles.chipHeader}>
               <Text style={styles.chipName} numberOfLines={1}>{rec.name}</Text>
               {badge && (
-                <Badge
-                  label={badge.label}
-                  tone={badge.assemblable ? "success" : "warning"}
-                />
+                <Badge label={badge.label} tone={badge.tone} />
               )}
             </View>
-            <Text style={styles.chipStats} numberOfLines={1}>
-              {rec.calories} cal · {rec.prepMinutes} min
-            </Text>
+            <View style={styles.chipStatsRow}>
+              <Text style={styles.chipStats} numberOfLines={1}>
+                {rec.calories} cal · {rec.prepMinutes} min
+              </Text>
+              <Button
+                label={loggingMealId === rec.mealId ? "Logging…" : "Log"}
+                onPress={() => onQuickLog(rec.mealId)}
+                variant="secondary"
+                size="sm"
+                disabled={loggingMealId !== null}
+              />
+            </View>
+            {missingLine && (
+              <Text style={styles.chipStats} numberOfLines={1}>
+                {missingLine}
+              </Text>
+            )}
             {expiringLine && (
               <Text style={styles.chipExpiring} numberOfLines={1}>
                 {expiringLine}
@@ -137,7 +161,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
   },
-  chipStats: { ...typography.caption, marginTop: spacing.xs },
+  chipStats: { ...typography.caption, marginTop: spacing.xs, flexShrink: 1 },
+  // The stats and the Log verb share a row so the chip does not grow a fourth
+  // line for a button; `flexShrink` on the text keeps a long stats line from
+  // pushing the button out.
+  chipStatsRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: spacing.sm,
+  },
   // Same amber as the Home card's expiring line and the same unfilled
   // treatment `MealDetail` gives the identical string, with
   // `numberOfLines={1}` rather than 2 because this is the dense surface and

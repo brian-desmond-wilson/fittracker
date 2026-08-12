@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   Image,
 } from "react-native";
-import { Star, Utensils } from "lucide-react-native";
-import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { Star } from "lucide-react-native";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { SavedFood, RecentFoodItem } from "@/src/types/track";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 // Badge-fitted glyph size. `icons.sm` (16) would fill an 18pt badge edge to
 // edge; the badge in turn cannot grow without dominating a 70pt thumbnail.
@@ -36,9 +37,16 @@ export function RecentFoodsRow({
   const combinedFoods: SavedFood[] = [];
   const seenIds = new Set<string>();
 
+  // B9. A case of water led the FOOD quick-add row while the app has a whole
+  // Water station of its own, pushing a real food off the visible end.
+  // Excluded on `=== 0` and never on falsiness: a saved food whose calories
+  // were never recorded is `null`, which means unknown, not zero, and hiding
+  // those would quietly shrink the row for the opposite reason.
+  const carriesCalories = (food: SavedFood) => food.calories !== 0;
+
   // Add favorites first
   favorites.forEach((food) => {
-    if (!seenIds.has(food.id)) {
+    if (!seenIds.has(food.id) && carriesCalories(food)) {
       combinedFoods.push(food);
       seenIds.add(food.id);
     }
@@ -46,7 +54,7 @@ export function RecentFoodsRow({
 
   // Add recent foods (excluding any that are already in favorites)
   recentFoods.forEach(({ savedFood }) => {
-    if (!seenIds.has(savedFood.id)) {
+    if (!seenIds.has(savedFood.id) && carriesCalories(savedFood)) {
       combinedFoods.push(savedFood);
       seenIds.add(savedFood.id);
     }
@@ -86,8 +94,12 @@ export function RecentFoodsRow({
             resizeMode="cover"
           />
         ) : (
+          // A5. A generic fork glyph on three of four tiles told you nothing
+          // and made the row look broken. The food's own initials at least
+          // distinguish one tile from the next — the same fallback the vendor
+          // tiles use when a logo fails to load.
           <View style={styles.imagePlaceholder}>
-            <Utensils size={icons.md} color={colors.textMuted} />
+            <Text style={styles.monogram}>{monogram(item.name)}</Text>
           </View>
         )}
         {/* Favorite Star Badge */}
@@ -144,9 +156,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
   },
   foodItem: {
-    width: 90,
+    // A6. 90pt clipped "Instant Oatmeal, pre…" even across two lines. Wider
+    // tiles rather than a third line: the row scrolls horizontally, so length
+    // costs nothing but a little more swiping.
+    width: 104,
     alignItems: "center",
   },
+  monogram: { ...typography.titleBar, color: colors.textFaint },
   imageContainer: {
     width: 70,
     height: 70,

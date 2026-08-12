@@ -4,13 +4,13 @@
 // changes), loading / error+retry / contextual-empty states. Also the
 // app-open resync point for the eat-nudge family.
 import React, { useCallback, useEffect, useRef } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { UtensilsCrossed } from "lucide-react-native";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 import { Badge, Card } from "@/src/components/ui";
-import { colors, icons, spacing, tint, typography } from "@/src/theme/tokens";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 // `eatNextStockBadge` is the ONE decision point for the badge's copy and its
 // green/amber split (see its doc comment) — this file never re-derives
 // "In stock" / "Missing N" from `stock.assemblable`/`stock.missingCount`
@@ -19,6 +19,8 @@ import {
   EMPTY_LIBRARY_MESSAGE,
   eatNextStockBadge,
   eatNextExpiringLine,
+  eatNextMissingLine,
+  eatNextReadyAlternative,
 } from "@/src/lib/eatNext";
 // `scoreTone` is the ONE band → Badge-tone lookup (it resolves spec §6's
 // thresholds through `scoreBand`, whose cutoffs this file never re-declares).
@@ -157,6 +159,13 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // whether or not the meal is assemblable, because the user already owns the
   // item that is about to spoil (Task 8's DECISION, Task 9 FIX 3).
   const expiringLine = eatNextExpiringLine(top.stock);
+  const missingLine = eatNextMissingLine(top.stock);
+  // B1. This card shows ONE meal, so when the engine's pick is not makeable
+  // the whole card is an instruction the owner cannot follow. The ranking
+  // stays as designed — role above availability is deliberate and tested —
+  // and the missing sentence is added instead: here is the one you could eat
+  // right now. Tapping it opens that meal, not the headline one.
+  const readyAlternative = eatNextReadyAlternative(result.recommendations);
 
   return (
     <Card
@@ -169,37 +178,75 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         })
       }
     >
+      {/* The picture leads, at a size you can actually recognise food in — a
+          36pt chip beside the title was a bullet point, not a photograph. The
+          name, its reason and the two verdict chips stack beside it; anything
+          that can run long (the expiring rescue, the stats) goes full width
+          below, where it is not squeezed into a half-width column. */}
       <View style={styles.headerRow}>
-        <UtensilsCrossed
-          size={icons.md}
-          color={emergency ? colors.danger : colors.brand}
-          strokeWidth={icons.strokeWidth}
-        />
-        <Text style={[styles.title, emergency && styles.titleEmergency]} numberOfLines={1}>
-          {top.name}
-        </Text>
-        {stockBadge && (
-          <Badge
-            label={stockBadge.label}
-            tone={stockBadge.assemblable ? "success" : "warning"}
-          />
-        )}
+        {/* C5. The same borrowed picture the Meal Library shows — resolved by
+            the engine (`faceUrl`), never re-derived here, so one meal cannot
+            wear two faces. Falls back to the utensils glyph rather than to
+            initials: unlike a library row, this card is alone on the Home
+            surface with nothing beside it to identify it as a meal at all. */}
+        <View style={styles.face}>
+          {top.faceUrl ? (
+            <Image source={{ uri: top.faceUrl }} style={styles.faceImage} resizeMode="cover" />
+          ) : (
+            <UtensilsCrossed
+              size={icons.lg}
+              color={emergency ? colors.danger : colors.brand}
+              strokeWidth={icons.strokeWidth}
+            />
+          )}
+        </View>
+        <View style={styles.headerText}>
+          {/* Two lines, not one: at this width "Pasta Trapanese With Sauté…"
+              truncated mid-word and the dish was unidentifiable from the card
+              that was recommending it. */}
+          <Text style={[styles.title, emergency && styles.titleEmergency]} numberOfLines={2}>
+            {top.name}
+          </Text>
+          <Text style={styles.reason} numberOfLines={2}>
+            {top.reasons[0]}
+          </Text>
+          <View style={styles.badgeRow}>
+            {stockBadge && <Badge label={stockBadge.label} tone={stockBadge.tone} />}
+            <Badge label={String(top.score)} suffix="/100" tone={scoreTone(top.score)} />
+          </View>
+        </View>
       </View>
-      <Text style={styles.reason} numberOfLines={2}>
-        {top.reasons[0]}
-      </Text>
+      {/* B2. The badge says how many; this says which. Without it "Missing 2"
+          is a number you cannot act on — you have to open the meal to find out
+          what it even wants. */}
+      {missingLine && (
+        <Text style={styles.mutedText} numberOfLines={2}>
+          {missingLine}
+        </Text>
+      )}
       {expiringLine && (
         <Text style={styles.expiringText} numberOfLines={2}>
           {expiringLine}
         </Text>
       )}
-      <View style={styles.statsRow}>
-        <Text style={styles.statsText} numberOfLines={1}>
-          {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
-        </Text>
-        <Badge label={String(top.score)} tone={scoreTone(top.score)} />
-      </View>
+      <Text style={styles.statsText} numberOfLines={1}>
+        {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
+      </Text>
       {showMessage && <Text style={styles.mutedText}>{result.message}</Text>}
+      {readyAlternative && (
+        <Text
+          style={styles.readyAlternative}
+          numberOfLines={2}
+          onPress={() =>
+            router.push({
+              pathname: "/(tabs)/track/meals",
+              params: { suggestMealId: readyAlternative.mealId },
+            })
+          }
+        >
+          Ready now instead: {readyAlternative.name}
+        </Text>
+      )}
     </Card>
   );
 }
@@ -209,25 +256,56 @@ const styles = StyleSheet.create({
   // placement the old bespoke `card` style also carried lives here.
   cardSpacing: { marginBottom: spacing.sm },
   cardEmergency: { borderColor: tint(colors.danger, 0.3) },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  title: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
+  // `alignItems: "flex-start"`: the picture is taller than a one-line title,
+  // so centring would float it against a two-line name and leave the column
+  // ragged. Both columns hang from the top edge instead.
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  // The Meal Library's 36pt face at the size a photograph needs to be read as
+  // food. `overflow: "hidden"` is what rounds the image itself, since a child
+  // Image ignores the parent's radius otherwise; the centring is for the
+  // fallback glyph, which the Image (100% of the well) ignores.
+  face: {
+    width: 96,
+    height: 96,
+    borderRadius: radii.row,
+    backgroundColor: colors.surface2,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  faceImage: { width: "100%", height: "100%" },
+  // `flex: 1` + `minWidth: 0`: without it the title's own width sets the
+  // column and a long dish name pushes the row wider than the card instead of
+  // wrapping inside it.
+  headerText: { flex: 1, minWidth: 0 },
+  title: { ...typography.rowTitle, color: colors.text },
   titleEmergency: { color: colors.danger },
-  reason: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm },
+  reason: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
+  // Wraps: at narrow widths two chips plus a long stock label ("Missing 2")
+  // would otherwise overflow the column the picture leaves behind.
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
   mutedText: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
   ctaText: { ...typography.body, color: colors.brand, marginTop: spacing.sm },
+  // Brand-coloured because it is the actionable half of this card whenever it
+  // appears — the headline above it is, by definition, the one you cannot make.
+  readyAlternative: {
+    ...typography.body, color: colors.brand, marginTop: spacing.sm, fontWeight: "600",
+  },
   // `flex: 1` (not `numberOfLines`): sits in a `flexDirection: "row"` beside
   // a fixed-width icon with nothing else to stop it pushing the row wider
   // than the card. The longest engine message is 45 chars, so this is
   // headroom for a future longer one more than a fix for today's strings.
   emptyMessageText: { flex: 1 },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
-    gap: spacing.sm,
-  },
-  statsText: { ...typography.body, color: colors.textMuted, flexShrink: 1 },
+  // Full width under the picture, not opposite the score chip as before: the
+  // chip moved up beside the stock badge, where both verdicts about this meal
+  // now sit together instead of one floating a row apart from the other.
+  statsText: { ...typography.body, color: colors.textMuted, marginTop: spacing.sm },
   // The score chip and the stock badge are both `Badge` now. The DECISIONS
   // still live where they always did — the band in `scoreBand`/`scoreTone`,
   // the badge's copy and its green/amber split in `eatNextStockBadge` — but

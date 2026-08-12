@@ -15,7 +15,7 @@ const state = (over: Partial<ItemStockState> = {}): ItemStockState => ({
 });
 
 const stock = (over: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-  assemblable: true, missingCount: 0,
+  assemblable: true, missingCount: 0, unlinkedCount: 0,
   expiringItemName: null, expiringDaysLeft: null, ...over,
 });
 
@@ -38,9 +38,9 @@ const baseInputs = (): LoopStatusInputs => ({
     message: null,
     recommendations: [
       { mealId: "m2", name: "Korean Beef Bowl", reasons: [], calories: 640,
-        protein: 45, prepMinutes: 10, score: 95, stock: stock() },
+        protein: 45, prepMinutes: 10, score: 95, faceUrl: null, stock: stock() },
       { mealId: "m1", name: "Banana + PB", reasons: [], calories: 295,
-        protein: 11, prepMinutes: 2, score: 84,
+        protein: 11, prepMinutes: 2, score: 84, faceUrl: null,
         stock: stock({ assemblable: false, missingCount: 2 }) },
     ],
     nudge: null,
@@ -69,7 +69,7 @@ describe("station 1: inventory", () => {
     expect(s.headline).toBe("3 items · 1 out · 1 expiring");
     expect(s.badge).toEqual({ label: "1 out", tone: "danger" });
     expect(s.attention).toBe(true);
-    expect(s.connector).toBe("assemblability → 1 of 2 meals ready");
+    expect(s.connector).toBe("what you have makes 1 of 2 meals");
     expect(s.destination).toBe("/(tabs)/track/food-inventory");
   });
   it("warning badge when only expiring; success when clean", () => {
@@ -142,7 +142,7 @@ describe("station 1: inventory", () => {
 describe("station 2: library", () => {
   it("headline names the top meal by RAW score with its display score", () => {
     const s = computeLoopStatus(baseInputs()).stations[1];
-    expect(s.headline).toBe("2 meals · top: Korean Beef Bowl 95");
+    expect(s.headline).toBe("Korean Beef Bowl 95 · 2 meals");
     expect(s.badge).toEqual({ label: "1 ready", tone: "success" });
     expect(s.attention).toBe(false);
   });
@@ -210,7 +210,7 @@ describe("station 2: library", () => {
     ]);
     const r = computeLoopStatus(inp);
     expect(r.stations[1].badge).toEqual({ label: "2 ready", tone: "success" });
-    expect(r.stations[0].connector).toBe("assemblability → 2 of 2 meals ready");
+    expect(r.stations[0].connector).toBe("what you have makes 2 of 2 meals");
   });
 });
 
@@ -478,7 +478,7 @@ describe("station 6: shopping + assembly", () => {
     expect(s.headline).toBe("2 on list · Costco 2");
     expect(s.badge).toEqual({ label: "2 suggested", tone: "shopping" });
     expect(s.attention).toBe(true);
-    expect(s.connector).toBe("purchased → restock ↺ inventory");
+    expect(s.connector).toBe("what you buy comes back as stock");
   });
   it("unassigned bucket renders last", () => {
     const inp = baseInputs();
@@ -615,7 +615,7 @@ describe("station 6: shopping + assembly", () => {
       ]);
   });
   // Contract: SIX stations, SIX connectors. Station 6's connector is the loop
-  // CLOSING ("purchased → restock ↺ inventory"), not an off-by-one to be
+  // CLOSING ("what you buy comes back as stock"), not an off-by-one to be
   // "fixed" away by a later reader who counts five gaps between six rows.
   it("every station carries a non-empty trailing connector, station 6 included", () => {
     const stations = computeLoopStatus(baseInputs()).stations;

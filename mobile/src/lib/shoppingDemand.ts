@@ -34,6 +34,15 @@ export interface DemandInventoryItem {
 export interface MealGap {
   mealName: string;
   missing: string[];
+  /** D2: which meal, so a suggestion born from a gap can point back at it
+   *  instead of arriving on the list as an unexplained name. */
+  mealId?: string;
+  /** D2: `missing[i]`'s saved-food id, positionally. The handle a purchase
+   *  needs to close the gap it came from — buying "Korean BBQ Sauce" today
+   *  creates an inventory row linked to no concept, so the meal stays
+   *  un-makeable and suggests it again. Same order as `missing` because they
+   *  are built from one walk over the meal's items. */
+  missingSavedFoodIds?: string[];
 }
 
 export interface UnpurchasedRow {
@@ -49,6 +58,10 @@ export interface ShoppingSuggestion {
   unit: string | null;
   priority: 1 | 2 | 3;
   reasons: string[];
+  /** D2: set only on a suggestion a meal gap produced. Carried through the
+   *  merge so a row that is ALSO out of stock keeps the provenance. */
+  sourceMealId?: string | null;
+  sourceSavedFoodId?: string | null;
 }
 
 const fold = (s: string) => s.trim().toLowerCase();
@@ -91,14 +104,29 @@ export function computeShoppingSuggestions(opts: {
     reason: string,
     quantity: number,
     thresholdQuantity: boolean,
+    // D2. Provenance, when the source knows it. Merged rather than overwritten
+    // below: a row can be BOTH out of stock and needed for a meal, and losing
+    // the meal link in that case would drop it exactly where it is most
+    // useful.
+    provenance?: { sourceMealId: string | null; sourceSavedFoodId: string | null },
   ) => {
     const existing = drafts.get(key);
     if (!existing) {
-      drafts.set(key, { ...base, priority, reasons: [reason], quantity, thresholdQuantity });
+      drafts.set(key, {
+        ...base, priority, reasons: [reason], quantity, thresholdQuantity,
+        sourceMealId: provenance?.sourceMealId ?? null,
+        sourceSavedFoodId: provenance?.sourceSavedFoodId ?? null,
+      });
       return;
     }
     existing.priority = Math.min(existing.priority, priority) as 1 | 2 | 3;
     existing.reasons.push(reason);
+    // First provenance wins — a later gap naming the same ingredient does not
+    // relabel which meal sent you shopping.
+    if (provenance?.sourceMealId && !existing.sourceMealId) {
+      existing.sourceMealId = provenance.sourceMealId;
+      existing.sourceSavedFoodId = provenance.sourceSavedFoodId;
+    }
     if (thresholdQuantity && !existing.thresholdQuantity) {
       existing.quantity = quantity;
       existing.thresholdQuantity = true;
@@ -120,14 +148,19 @@ export function computeShoppingSuggestions(opts: {
     if (it.isOut) upsert(it.id, itemBase(it), 1, "out of stock", exitLowQty(it), true);
   }
   for (const gap of mealGaps) {
-    for (const missingName of gap.missing) {
+    gap.missing.forEach((missingName, idx) => {
       const match = byName.get(fold(missingName));
       const key = match ? match.id : fold(missingName);
       const base = match
         ? itemBase(match)
         : { name: missingName, foodInventoryId: null, vendorId: null, unit: null };
-      upsert(key, base, 1, `needed for ${gap.mealName}`, 1, false);
-    }
+      upsert(key, base, 1, `needed for ${gap.mealName}`, 1, false, {
+        sourceMealId: gap.mealId ?? null,
+        // Positional, by construction: both arrays come from one walk over
+        // the meal's items.
+        sourceSavedFoodId: gap.missingSavedFoodIds?.[idx] ?? null,
+      });
+    });
   }
   for (const it of items) {
     if (it.isLow) {

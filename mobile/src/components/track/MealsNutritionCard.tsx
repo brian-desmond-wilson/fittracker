@@ -1,12 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import {
-  MacroTotals,
-  MacroGoals,
-  formatMacroValue,
-  MacroKey,
-} from "@/src/lib/mealMacros";
+import { MacroTotals, MacroGoals, MacroKey } from "@/src/lib/mealMacros";
 import { MacroRing } from "./MacroRing";
 import { MacroBar } from "./MacroBar";
 import { MacroPercentageBar } from "./MacroPercentageBar";
@@ -55,29 +50,29 @@ export function MealsNutritionCard({
         />
       </View>
 
-      {/* Tier C: fats / sugars / fiber compact */}
-      <View style={styles.compactRow}>
-        {TIER_C.map((m) => {
-          const value =
-            m === "fats" ? totals.fats : m === "sugars" ? totals.sugars : totals.fiber_g;
-          const goal =
-            m === "fats" ? goals.fats : m === "sugars" ? goals.sugars : goals.fiber_g;
-          return (
-            <View key={m} style={styles.compactCell}>
-              <Text style={styles.compactValue}>
-                {formatMacroValue(value, m)}g
-                {goal != null && (
-                  <Text style={styles.compactGoal}>
-                    {" "}/ {formatMacroValue(goal, m)}g
-                  </Text>
-                )}
-              </Text>
-              <Text style={styles.compactLabel}>
-                {m === "fats" ? "Fats" : m === "sugars" ? "Sugars" : "Fiber"}
-              </Text>
-            </View>
-          );
-        })}
+      {/* Tier C: fats / sugars / fiber — the SAME meter as tier B, at half
+          weight (A2). It used to be bare text, which made three tiers read as
+          three different kinds of fact rather than one ranked set; fiber in
+          particular had a goal and no way to show progress against it (A3),
+          while sodium — no more important — got a full bar. */}
+      <View style={styles.tierC}>
+        {TIER_C.map((m) => (
+          <MacroBar
+            key={m}
+            macro={m}
+            compact
+            value={
+              m === "fats" ? totals.fats
+              : m === "sugars" ? totals.sugars
+              : totals.fiber_g
+            }
+            goal={
+              m === "fats" ? goals.fats
+              : m === "sugars" ? goals.sugars
+              : goals.fiber_g
+            }
+          />
+        ))}
       </View>
     </View>
   );
@@ -106,30 +101,12 @@ const styles = StyleSheet.create({
   barsBlock: {
     marginBottom: spacing.sm,
   },
-  compactRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: spacing.sm,
+  // Separated by a rule rather than by a change of encoding: the tier below
+  // is the same meter at half weight, so the divider is what says "these
+  // matter less" without the bars having to become something else.
+  tierC: {
+    paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
-  compactCell: {
-    flex: 1,
-    alignItems: "center",
-  },
-  // Standing stat-cell token (see amendments).
-  compactValue: {
-    ...typography.rowTitle,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  compactGoal: {
-    ...typography.caption,
-  },
-  compactLabel: {
-    ...typography.caption,
-    marginTop: spacing.xs,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
   },
 });

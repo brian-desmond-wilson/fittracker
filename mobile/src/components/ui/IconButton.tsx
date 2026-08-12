@@ -16,20 +16,29 @@ interface IconButtonProps {
    * Both variants keep the calm `tint()` treatment — never a filled red.
    */
   tone?: "default" | "danger";
+  /**
+   * `secondary` keeps the square geometry but swaps the filled brand ground
+   * for the same calm `tint()` the circle variant uses. For a square action
+   * that is NAVIGATION rather than a create — two filled brand squares side by
+   * side read as two primary actions and neither wins.
+   */
+  weight?: "primary" | "secondary";
   accessibilityLabel: string;
   disabled?: boolean;
 }
 
 export function IconButton({
   icon: Icon, onPress, variant = "square", tone = "default",
-  accessibilityLabel, disabled = false,
+  weight = "primary", accessibilityLabel, disabled = false,
 }: IconButtonProps) {
   const circle = variant === "circle";
   const danger = tone === "danger";
+  const secondary = !circle && !danger && weight === "secondary";
   return (
     <TouchableOpacity
       style={[
         circle ? styles.circle : styles.square,
+        secondary && styles.squareSecondary,
         danger && (circle ? styles.circleDanger : styles.squareDanger),
         disabled && styles.disabled,
       ]}
@@ -44,7 +53,7 @@ export function IconButton({
     >
       <Icon
         size={circle ? icons.sm : icons.md}
-        color={danger ? colors.danger : circle ? colors.brand : colors.onBrand}
+        color={danger ? colors.danger : circle || secondary ? colors.brand : colors.onBrand}
         strokeWidth={icons.strokeWidth}
       />
     </TouchableOpacity>
@@ -60,6 +69,7 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: radii.pill,
     backgroundColor: tint(colors.brand), alignItems: "center", justifyContent: "center",
   },
+  squareSecondary: { backgroundColor: tint(colors.brand) },
   squareDanger: { backgroundColor: tint(colors.danger) },
   circleDanger: { backgroundColor: tint(colors.danger) },
   disabled: { opacity: 0.5 },

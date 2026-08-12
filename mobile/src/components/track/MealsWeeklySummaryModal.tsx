@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Card } from "@/src/components/ui";
 import { MealLog } from "@/src/types/track";
 import { MacroGoals, MacroTotals, EMPTY_TOTALS, sumNutrition } from "@/src/lib/mealMacros";
 import { computeMacroSplit } from "@/src/lib/mealStats";
+import { supabase } from "@/src/lib/supabase";
 
 function getLocalDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -92,6 +93,46 @@ export function MealsWeeklySummaryModal({
 
   const weekSplit = computeMacroSplit(weekTotals);
 
+  // E5. Asked once per opening, never on a timer, and failure is silence: an
+  // observation is a bonus on a screen that is already complete without it.
+  const [observations, setObservations] = useState<string[]>([]);
+  const [loadingInsight, setLoadingInsight] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    setObservations([]);
+    setLoadingInsight(true);
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("meal-week-insight", {
+          body: {
+            logs: historicalLogs
+              .filter((l) => dailyTotals.some((d) => d.date === l.date))
+              .map((l) => ({
+                date: l.date,
+                meal_type: l.meal_type,
+                name: l.name,
+                calories: l.calories,
+                protein: l.protein,
+              })),
+            calorieGoal: goals.calories ?? null,
+            proteinGoal: goals.protein ?? null,
+          },
+        });
+        if (error) throw error;
+        if (!cancelled) setObservations((data?.observations ?? []) as string[]);
+      } catch (e) {
+        console.error("meal-week-insight:", e);
+      } finally {
+        if (!cancelled) setLoadingInsight(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // `dailyTotals`/`historicalLogs` are derived fresh each render; keying on
+    // `visible` asks once per opening rather than on every recomputation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
   return (
     <Modal
       visible={visible}
@@ -110,6 +151,23 @@ export function MealsWeeklySummaryModal({
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
           <Text style={styles.title}>Weekly Summary</Text>
           <Text style={styles.subtitle}>Last 7 days</Text>
+
+          {/* E5. Everything below this is arithmetic the reader can already
+              do. This is the only part that says something they could not see
+              — patterns across rows rather than sums of columns. Renders
+              nothing at all when the week is too thin to support one, which
+              is the honest output rather than a padded paragraph. */}
+          {observations.length > 0 && (
+            <Card variant="row" style={styles.insightCard}>
+              <Text style={styles.insightHeader}>What stands out</Text>
+              {observations.map((o) => (
+                <Text key={o} style={styles.insightLine}>• {o}</Text>
+              ))}
+            </Card>
+          )}
+          {loadingInsight && (
+            <Text style={styles.insightPending}>Reading your week…</Text>
+          )}
 
           {/* Top-line totals */}
           <View style={styles.statsRow}>
@@ -272,6 +330,14 @@ const styles = StyleSheet.create({
   // Standing stat-cell token (see amendments): `rowTitle` at 700. Not
   // `titleRoot` — that is this modal's own H1 two lines above, and matching it
   // flattened the hierarchy.
+  insightCard: { marginBottom: spacing.lg },
+  insightHeader: { ...typography.section, marginBottom: spacing.sm },
+  insightLine: {
+    ...typography.body, color: colors.text, marginBottom: spacing.sm, lineHeight: 20,
+  },
+  insightPending: {
+    ...typography.caption, color: colors.textFaint, marginBottom: spacing.lg,
+  },
   statValue: {
     ...typography.rowTitle,
     fontWeight: "700",

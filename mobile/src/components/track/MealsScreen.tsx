@@ -57,6 +57,17 @@ import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal } from "./MealLogEditorModal";
 import { MealLibraryModal } from "./meals/library/MealLibraryModal";
+import {
+  confirmConceptRating,
+  fetchMealLibrary,
+  logMeal,
+  undoMealLog,
+  MealLoggedButDecrementFailed,
+} from "@/src/lib/supabase/mealLibrary";
+import { tasteAskFor } from "@/src/lib/tasteAsk";
+import { markSuggestionActedOn } from "@/src/lib/supabase/eatNextLog";
+import type { ConceptRating } from "@/src/types/nutrition-preferences";
+import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { MealsInsightsCard } from "./MealsInsightsCard";
 import {
   buildDailyTotalsByDate,
@@ -87,11 +98,14 @@ import {
 import { useMacroGoals } from "./meals/useMacroGoals";
 import { useRecentAndFavorites } from "./meals/useRecentAndFavorites";
 import { useSavedFoodsSearch } from "./meals/useSavedFoodsSearch";
+import { useMealSearch } from "./meals/useMealSearch";
 import { useHistoricalMeals } from "./meals/useHistoricalMeals";
 import { useMealAddForm } from "./meals/useMealAddForm";
 import { MealsDayList } from "./meals/MealsDayList";
 import { MealAddForm } from "./meals/MealAddForm";
 import { EatNextRow } from "./meals/EatNextRow";
+import { RescueRow } from "./meals/RescueRow";
+import { useRescuePlan } from "./meals/useRescuePlan";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 
@@ -218,6 +232,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
+  const { mealResults } = useMealSearch(searchQuery);
+  const { rescues } = useRescuePlan();
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -1169,6 +1185,114 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   };
 
+  // B3. Accepting a suggestion used to be chip → library modal → detail →
+  // Log: three screens to say yes to an answer the app had already computed.
+  //
+  // Reuses `logMeal` — the same function the library detail calls, with the
+  // same two failure branches — rather than reimplementing the write. The
+  // meal and the concept maps come from `fetchMealLibrary`, which since D1
+  // serves this out of the cache the recommender itself just populated, so
+  // this costs no extra round trip in practice.
+  const [quickLoggingMealId, setQuickLoggingMealId] = useState<string | null>(null);
+  // Fire-and-report: a failed rating must not disturb a log that succeeded.
+  const rateConcept = async (conceptId: string, rating: ConceptRating) => {
+    try {
+      await confirmConceptRating(conceptId, rating);
+      eatNext.refetch();
+    } catch (e) {
+      console.error("confirm concept rating:", e);
+      Alert.alert("Couldn't save that rating", "The meal is still logged.");
+    }
+  };
+  const handleQuickLogSuggestion = async (mealId: string) => {
+    if (quickLoggingMealId) return;
+    setQuickLoggingMealId(mealId);
+    try {
+      const library = await fetchMealLibrary();
+      const meal = library.meals.find((m) => m.id === mealId);
+      if (!meal) throw new Error("That meal is no longer in your library.");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const result = await logMeal(user.id, meal, {
+        date: viewingDateStr,
+        mealType: defaultMealTypeFor(meal),
+        conceptIdsBySavedFoodId: library.conceptIdsBySavedFoodId,
+        inventory: library.inventory,
+      });
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      await fetchRecentAndFavorites();
+      eatNext.refetch();
+      // C3/E2. The one moment the answer is free: the food is in front of you
+      // and the question is one tap. Only fires when exactly one of the meal's
+      // concepts has never been rated by hand — see `tasteAskFor` for why the
+      // multi-unrated case stays silent.
+      const ask = tasteAskFor(
+        meal.items
+          .flatMap((it) => library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
+          .map((id) => library.conceptsById.get(id))
+          .filter((c): c is NonNullable<typeof c> => !!c)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            ratingConfirmedAt: c.rating_confirmed_at ?? null,
+          })),
+      );
+      // Fired from the confirmation's OK, never alongside it: two alerts
+      // raised in the same tick stack, and the second covers the first. Not
+      // fired after Undo either — undoing means you did not eat it, so there
+      // is nothing to have an opinion about.
+      const askTaste = () => {
+        if (!ask) return;
+        Alert.alert(
+          `How was ${ask.name}?`,
+          "Your answer replaces the rating the app guessed, which is 30% of every meal's score.",
+          [
+            { text: "Loved it", onPress: () => void rateConcept(ask.id, "love") },
+            { text: "Fine", onPress: () => void rateConcept(ask.id, "like") },
+            { text: "Not again", style: "destructive", onPress: () => void rateConcept(ask.id, "dislike") },
+            { text: "Skip", style: "cancel" },
+          ],
+        );
+      };
+      Alert.alert("Logged", `${meal.name} → ${defaultMealTypeFor(meal)}`, [
+        {
+          text: "Undo",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                await undoMealLog(meal.id, result.loggedAt, result.consumedIds);
+                await fetchMealsForDate(viewingDate, true);
+                eatNext.refetch();
+              } catch (e) {
+                console.error("undo quick log:", e);
+                Alert.alert("Couldn't undo", "The meal is still logged.");
+              }
+            })();
+          },
+        },
+        { text: "OK", style: "default", onPress: askTaste },
+      ]);
+    } catch (e) {
+      // `MealLoggedButDecrementFailed` carries its own explanatory message and
+      // means the log DID commit — never presented as a failure to log.
+      if (e instanceof MealLoggedButDecrementFailed) {
+        await fetchMealsForDate(viewingDate, true);
+        Alert.alert("Logged (inventory not updated)", e.message);
+      } else {
+        console.error("quick log suggestion:", e);
+        Alert.alert("Couldn't log that", e instanceof Error ? e.message : "Unknown error");
+      }
+    } finally {
+      setQuickLoggingMealId(null);
+    }
+  };
+
   const handleDeleteMeal = async (mealId: string) => {
     Alert.alert("Delete Meal", "Are you sure you want to delete this meal log?", [
       { text: "Cancel", style: "cancel" },
@@ -1370,6 +1494,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </TouchableOpacity>
             )}
           </View>
+          {/* B5. The Meal Library is the loop's second station and its door
+              was at the bottom of the scroll, below the pace lines, the
+              suggestions, the search results and the quick-add row — four
+              scrolls from the top. It belongs beside the other two things you
+              can do from here. */}
+          <IconButton
+            icon={Utensils}
+            weight="secondary"
+            onPress={() => setLibraryVisible(true)}
+            accessibilityLabel="Open your meal library"
+          />
           <IconButton
             icon={Plus}
             onPress={handleOpenAddForm}
@@ -1531,12 +1666,24 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                     {/* "Suggested now" (spec §7.2) — directly under the pace
                         lines, inside the same `viewingToday` guard and gutter.
                         Renders nothing when there are no recommendations. */}
+                    {/* E3: from the other end — the food that is about to go,
+                        and what would use it. Renders nothing when nothing is
+                        expiring, which is most days. */}
+                    <RescueRow
+                      suggestions={rescues}
+                      onMealPress={(mealId) => {
+                        setLibraryInitialMealId(mealId);
+                        setLibraryVisible(true);
+                      }}
+                    />
                     <EatNextRow
                       result={eatNext.result}
                       onMealPress={(mealId) => {
                         setLibraryInitialMealId(mealId);
                         setLibraryVisible(true);
                       }}
+                      onQuickLog={handleQuickLogSuggestion}
+                      loggingMealId={quickLoggingMealId}
                     />
                   </View>
                 )}
@@ -1544,11 +1691,46 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 {/* Search Results — from your saved foods library */}
                 {searchQuery.trim().length >= 2 && (
                   <Card variant="row" style={styles.searchResultsSpacing}>
+                    {/* B4. Search used to cover saved foods only, so every meal
+                        you had assembled was invisible to it — you could search
+                        "oats" and be told nothing matched while Protein Oatmeal
+                        Bowl sat two taps away. Both kinds now, each labelled,
+                        meals first because a meal is the bigger unit and the
+                        one you are usually reaching for. */}
+                    {mealResults.length > 0 && (
+                      <>
+                        <Text style={styles.searchResultsHeader}>
+                          {`Meals matching "${searchQuery.trim()}"`}
+                        </Text>
+                        {mealResults.slice(0, 5).map((m) => (
+                          <TouchableOpacity
+                            key={m.id}
+                            onPress={() => {
+                              setLibraryInitialMealId(m.id);
+                              setLibraryVisible(true);
+                            }}
+                            style={styles.searchResultRow}
+                            activeOpacity={0.7}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.searchResultName} numberOfLines={1}>
+                                {m.name}
+                              </Text>
+                              <Text style={styles.searchResultBrand} numberOfLines={1}>
+                                {m.items.length} ingredient{m.items.length === 1 ? "" : "s"} · {m.prep_minutes} min
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </>
+                    )}
                     <Text style={styles.searchResultsHeader}>
                       {searching
                         ? "Searching…"
                         : searchResults.length === 0
-                          ? `No saved foods match "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
+                          ? mealResults.length > 0
+                            ? "No saved foods match — scan a barcode or tap + to add one."
+                            : `Nothing matches "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
                           : `Saved foods matching "${searchQuery.trim()}"`}
                     </Text>
                     {searchResults.slice(0, 8).map((f) => (
@@ -1586,16 +1768,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   loading={loadingRecent}
                 />
 
-                {/* Meal Library entry point */}
-                <View style={styles.actionRow}>
-                  <Button
-                    variant="secondary"
-                    label="Meal Library"
-                    icon={Utensils}
-                    onPress={() => setLibraryVisible(true)}
-                    fluid
-                  />
-                </View>
+                {/* The Meal Library button that used to sit here has moved to
+                    the header (B5), where it is reachable without scrolling
+                    past everything else on the tab. Keeping both would be two
+                    doors to one room. */}
               </>
             )}
 
@@ -1670,6 +1846,20 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 groupedMealsByType={groupedMealsByType}
                 onEditMeal={setEditingMeal}
                 onDeleteMeal={handleDeleteMeal}
+                // B8. Only on today, and only when there is a suggestion —
+                // the recommender's answer is the useful thing to say under
+                // "nothing logged", and on a past day there is no such thing.
+                suggestedMealName={
+                  viewingToday
+                    ? eatNext.result?.recommendations[0]?.name ?? null
+                    : null
+                }
+                onOpenSuggestion={() => {
+                  const mealId = eatNext.result?.recommendations[0]?.mealId;
+                  if (!mealId) return;
+                  setLibraryInitialMealId(mealId);
+                  setLibraryVisible(true);
+                }}
               />
             )}
           </ScrollView>

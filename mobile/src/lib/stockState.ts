@@ -149,8 +149,25 @@ export interface AssemblabilityInventoryRow extends ResolutionInventoryRow {
 
 export interface MealAssemblability {
   assemblable: boolean;
-  /** Saved-food display names, in meal item order. */
+  /**
+   * Saved-food display names, in meal item order, that we CHECKED FOR and did
+   * not find. These are groceries: the ingredient is identifiable (it carries
+   * a barcode or a concept link) and no in-stock row answers to it, so buying
+   * one would genuinely close the gap.
+   */
   missing: string[];
+  /**
+   * Ingredients we could not check at all — no barcode and no concept link, so
+   * nothing in the inventory could ever match them however full the fridge is.
+   *
+   * Kept separate from `missing` because conflating them makes the app lie in
+   * two directions at once: it reports a curation gap as a shopping need (the
+   * "unassigned" rows that pile up on the list for food already in the
+   * kitchen), and it reports "you are out of X" when the truth is "nobody has
+   * told me what X is". Same epistemics as an item-less meal in `eatNext`:
+   * absence of evidence, not evidence of absence.
+   */
+  unlinked: string[];
   expiringItemName: string | null;
   expiringDaysLeft: number | null;
 }
@@ -158,9 +175,14 @@ export interface MealAssemblability {
 /**
  * "Can I make this meal right now?" — resolution reuses Phase 2's
  * resolveInventoryMatches verbatim (barcode terminal, else unique shared
- * concept among in-stock rows). An item that resolves to nothing counts as
- * MISSING: under-claiming is the honest failure mode. Duplicate resolution
+ * concept among in-stock rows). An item that resolves to nothing blocks the
+ * verdict: under-claiming is the honest failure mode. Duplicate resolution
  * (two items → one container) satisfies both — v1 units are containers.
+ *
+ * What it does NOT do is claim to know WHY an item failed to resolve. That
+ * split — `missing` (checked, absent) versus `unlinked` (uncheckable) — is
+ * the difference between a shopping list and a curation queue; see the field
+ * docs above.
  */
 export function assessAssemblability(opts: {
   items: Array<{ savedFoodId: string; name: string; barcode: string | null; conceptIds: string[] }>;
@@ -168,7 +190,19 @@ export function assessAssemblability(opts: {
 }): MealAssemblability {
   const { items, inventory } = opts;
   const matches = resolveInventoryMatches(items, inventory);
-  const missing = items.filter((it) => !matches.has(it.savedFoodId)).map((it) => it.name);
+
+  // An item with neither a barcode nor a concept link cannot match ANY row —
+  // `resolveInventoryMatches` has nothing to compare on, so it falls through
+  // both arms regardless of what is in stock. Failing that test says something
+  // about our records, not about the kitchen, so it is reported separately.
+  // The falsy barcode check mirrors the resolver's own, which treats an empty
+  // string as no barcode.
+  const uncheckable = (it: { barcode: string | null; conceptIds: string[] }) =>
+    !it.barcode && it.conceptIds.length === 0;
+
+  const unresolved = items.filter((it) => !matches.has(it.savedFoodId));
+  const missing = unresolved.filter((it) => !uncheckable(it)).map((it) => it.name);
+  const unlinked = unresolved.filter(uncheckable).map((it) => it.name);
 
   // "Expiring" is a rescue signal (eat this soon), not a spoilage report:
   // bounded below at 0 so already-expired rows (daysLeft < 0) never win the
@@ -192,8 +226,12 @@ export function assessAssemblability(opts: {
   }
 
   return {
-    assemblable: items.length > 0 && missing.length === 0,
+    // Unchanged: an unresolved item still blocks the verdict whichever bucket
+    // it lands in. We cannot claim you can make a meal containing something we
+    // cannot account for — the split refines the EXPLANATION, not the answer.
+    assemblable: items.length > 0 && unresolved.length === 0,
     missing,
+    unlinked,
     expiringItemName,
     expiringDaysLeft: expiringDays,
   };

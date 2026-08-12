@@ -36,7 +36,7 @@ function meal(over: Partial<MealWithItems> = {}): MealWithItems {
   return {
     id: "m1", user_id: "u", name: "Meal", slug: "meal",
     category: "lunch", role: "bridge", default_meal_type: null,
-    prep_minutes: 7, taste_override: "like", notes: null,
+    prep_minutes: 7, taste_override: "like", is_complete_portion: false, notes: null,
     created_at: "2026-07-29T00:00:00Z", updated_at: "2026-07-29T00:00:00Z",
     items: [item()],
     ...over,
@@ -66,6 +66,7 @@ describe("brianScoreInputFor", () => {
       prepMinutes: 7,
       role: "bridge",
       tasteOverride: "like",
+      completePortion: false,
       items: [
         {
           calories: 250,

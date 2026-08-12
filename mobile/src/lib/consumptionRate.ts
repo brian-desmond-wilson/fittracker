@@ -133,10 +133,35 @@ export const MAX_CLAIMED_UNITS_PER_ROW = 1000;
  * at module load, which is exactly what that scope excludes).
  */
 export function expandDecrementEvents(
-  rows: Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+  rows: Array<{
+    date: string;
+    inventory_items: InventoryUsage[] | null;
+    /**
+     * D3. What the consume RPC CONFIRMED it took, when the log carries it.
+     * Preferred over `inventory_items` wherever present, which retires bias
+     * (4) in this file's header for every row written since the column
+     * landed: a claim can name a unit that was never removed, and the
+     * confirmed list cannot.
+     *
+     * `null`/absent means UNKNOWN — a row from before the column, or from a
+     * path that does not decrement — not "nothing was taken", so those rows
+     * still fall back to the claim rather than contributing zero demand.
+     */
+    consumed_inventory_ids?: string[] | null;
+  }>,
 ): DecrementEvent[] {
   const events: DecrementEvent[] = [];
   for (const log of rows) {
+    if (Array.isArray(log.consumed_inventory_ids)) {
+      // One unit per id: `consume_inventory_units` decrements exactly one per
+      // id passed, and only ids it actually took are recorded.
+      for (const id of log.consumed_inventory_ids) {
+        if (typeof id === "string" && id !== "") {
+          events.push({ inventoryId: id, dateLocal: log.date });
+        }
+      }
+      continue;
+    }
     if (!Array.isArray(log.inventory_items)) continue; // malformed JSONB — never throw the caller down over it
     for (const u of log.inventory_items) {
       const claimed = Math.min(Math.max(Math.trunc(u.quantity), 0), MAX_CLAIMED_UNITS_PER_ROW);

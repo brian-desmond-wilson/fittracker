@@ -18,6 +18,9 @@ import {
   fetchMealLibrary,
 } from "@/src/lib/supabase/mealLibrary";
 import { getLocalDateString } from "@/src/lib/dates";
+import { recordSuggestions } from "@/src/lib/supabase/eatNextLog";
+import { shouldRetire } from "@/src/lib/mealRetirement";
+import { daysBetweenLocalDates } from "@/src/lib/stockState";
 
 /** Mirrors `nutrition_constraints.max_prep_minutes`'s own schema default
  *  (`20260728100000_nutrition_preference_schema.sql:54`), so a missing
@@ -266,11 +269,35 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
           now, // share this assembly's clock instead of sampling a new one
         });
 
+      // C1. Retired meals are excluded from the CANDIDATE SET, not merely
+      // ranked low: a dish that left the menu three weeks ago is not an answer
+      // to "what should I eat now", and leaving them in would let a month of
+      // deliveries crowd out the meals actually worth suggesting. Retirement
+      // reverses itself the moment stock returns, so nothing here goes stale.
+      // Reuses this assembly's `today` rather than sampling a second clock.
+      const live = library.meals.filter((meal) => !shouldRetire({
+        isCompletePortion: meal.is_complete_portion ?? false,
+        totalQuantity: library.inventory.some(
+          (row) =>
+            row.totalQuantity > 0 &&
+            meal.items.some((it) =>
+              (library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
+                .some((cid) => row.conceptIds.includes(cid)),
+            ),
+        ) ? 1 : 0,
+        daysSinceLastLogged: library.lastLoggedByMealId.has(meal.id)
+          ? daysBetweenLocalDates(library.lastLoggedByMealId.get(meal.id)!, today)
+          : null,
+        daysSinceCreated: daysBetweenLocalDates(
+          getLocalDateString(new Date(meal.created_at)),
+          today,
+        ),
+      }));
+
       // The score input assembly lives in `mealScoreInput.ts` (pure, tested).
-      // `MealLibraryModal` and `MealBuilder` still carry their own copies —
-      // migrating those two Phase 2 components is a recorded follow-up, out of
-      // scope for this task.
-      const meals: ScoredMeal[] = library.meals.map((meal) => ({
+      // `MealBuilder` still carries its own copy — migrating it is a recorded
+      // follow-up (`MealLibraryModal`'s was retired by C2).
+      const meals: ScoredMeal[] = live.map((meal) => ({
         meal,
         totals: computeMealTotals(meal.items),
         score: computeBrianScore(
@@ -340,6 +367,20 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
       setError(null);
       setResult(next);
       setComputedAt(now);
+
+      // D5. Telemetry, deliberately after the state is set and deliberately
+      // unawaited: this is a record of what was offered, and it must never
+      // delay a render or surface an error to someone trying to eat. The
+      // daily grain (see `recordSuggestions`) is what keeps a recommender
+      // that recomputes on every focus from writing thousands of rows a week.
+      void (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) await recordSuggestions(user.id, next, today);
+        } catch (e) {
+          console.error("useEatNext: suggestion log:", e);
+        }
+      })();
     } catch (e) {
       console.error("useEatNext:", e);
       if (runId !== runIdRef.current) return;

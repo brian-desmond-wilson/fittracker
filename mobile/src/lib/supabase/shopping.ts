@@ -52,7 +52,9 @@ export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   const [logs, events] = await Promise.all([
     supabase
       .from("meal_logs")
-      .select("date, inventory_items")
+      // D3: `consumed_inventory_ids` is the truthful record; the expander
+      // prefers it and falls back to the claim for rows that predate it.
+      .select("date, inventory_items, consumed_inventory_ids")
       .eq("uses_inventory", true)
       .gte("date", sinceLocal),
     supabase
@@ -64,7 +66,11 @@ export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   if (logs.error) throw logs.error;
   if (events.error) throw events.error;
   const fromLogs = expandDecrementEvents(
-    (logs.data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+    (logs.data ?? []) as Array<{
+      date: string;
+      inventory_items: InventoryUsage[] | null;
+      consumed_inventory_ids: string[] | null;
+    }>,
   );
   // Expand to one row per unit, mirroring expandDecrementEvents' shape, then
   // let netConsumeEvents cancel each undone tap against its consume. Quantity
@@ -137,19 +143,27 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
   // Meal gaps: sanctioned additional CALL SITE of assessAssemblability, not a
   // fourth definition (see eatNext.ts's canonical comment). Gate on
   // missing.length > 0, not !assemblable (item-less meals must not suggest).
+  // Reads `.missing` and deliberately NOT `.unlinked`: an ingredient with no
+  // barcode and no concept link was never checked against the kitchen, so
+  // turning it into a suggestion asks you to buy food you may already own.
+  // That is where the list's "unassigned" rows were coming from.
   const mealGaps = library.meals
-    .map((meal) => ({
-      mealName: meal.name,
-      missing: assessAssemblability({
-        items: meal.items.map((it) => ({
-          savedFoodId: it.saved_food_id,
-          name: it.savedFood.name,
-          barcode: it.savedFood.barcode,
-          conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
-        })),
-        inventory: library.inventory,
-      }).missing,
-    }))
+    .map((meal) => {
+      const items = meal.items.map((it) => ({
+        savedFoodId: it.saved_food_id,
+        name: it.savedFood.name,
+        barcode: it.savedFood.barcode,
+        conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+      }));
+      const { missing } = assessAssemblability({ items, inventory: library.inventory });
+      // D2: the saved-food id behind each missing NAME, positionally. Matched
+      // by name against the same item list `assessAssemblability` walked, so
+      // the two arrays line up by construction.
+      const missingSavedFoodIds = missing.map(
+        (name) => items.find((it) => it.name === name)?.savedFoodId ?? "",
+      );
+      return { mealName: meal.name, mealId: meal.id, missing, missingSavedFoodIds };
+    })
     .filter((g) => g.missing.length > 0);
 
   const suggestions = computeShoppingSuggestions({
@@ -210,6 +224,10 @@ export async function addSuggestions(
       vendor_id: s.vendorId,
       priority: s.priority,
       notes: s.reasons.join(" · "),
+      // D2: provenance, so a row born from a meal gap knows which meal and
+      // which ingredient it stands for. Null for manual and stock-driven rows.
+      source_meal_id: s.sourceMealId ?? null,
+      source_saved_food_id: s.sourceSavedFoodId ?? null,
     })),
   );
   if (error) throw error;

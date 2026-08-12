@@ -1,5 +1,22 @@
 import { supabase } from "@/src/lib/supabase";
 import { SavedFood, RecentFoodItem } from "@/src/types/track";
+import { withBorrowedImage } from "@/src/lib/foodImageBorrow";
+import { getBorrowedFoodImages } from "@/src/lib/supabase/borrowedFoodImages";
+
+/**
+ * A saved food and the same product in Food Inventory are one thing to the
+ * owner, and only the inventory half is ever photographed — so every read that
+ * hands a saved food to the UI resolves its picture here. Reads that exist to
+ * WRITE (create/update/toggle) deliberately do not: a borrowed picture is a
+ * display fact, and persisting it into `saved_foods` would turn it into a copy
+ * that outlives the link it came from.
+ */
+async function withImages<T extends { id: string; image_primary_url: string | null }>(
+  foods: T[],
+): Promise<T[]> {
+  const borrowed = await getBorrowedFoodImages();
+  return foods.map((f) => withBorrowedImage(f, borrowed));
+}
 
 /**
  * Get all saved foods for the current user
@@ -24,7 +41,7 @@ export async function getSavedFoods(): Promise<SavedFood[]> {
     throw error;
   }
 
-  return data || [];
+  return withImages(data || []);
 }
 
 /**
@@ -57,7 +74,7 @@ export async function getSavedFoodByBarcode(
     throw error;
   }
 
-  return data;
+  return (await withImages([data as SavedFood]))[0];
 }
 
 /**
@@ -78,7 +95,7 @@ export async function getSavedFoodById(id: string): Promise<SavedFood | null> {
     throw error;
   }
 
-  return data;
+  return (await withImages([data as SavedFood]))[0];
 }
 
 /**
@@ -266,7 +283,7 @@ export async function getFavorites(): Promise<SavedFood[]> {
     throw error;
   }
 
-  return data || [];
+  return withImages(data || []);
 }
 
 /**
@@ -297,7 +314,7 @@ export async function searchSavedFoods(query: string): Promise<SavedFood[]> {
     throw error;
   }
 
-  return data || [];
+  return withImages(data || []);
 }
 
 /**
@@ -387,9 +404,10 @@ export async function getRecentFoods(limit: number = 5): Promise<RecentFoodItem[
 
   // Build result maintaining the sorted order
   const result: RecentFoodItem[] = [];
+  const pictured = await withImages(savedFoods as SavedFood[]);
 
   sortedFoodIds.forEach((id) => {
-    const food = savedFoods.find((f) => f.id === id);
+    const food = pictured.find((f) => f.id === id);
     const countData = foodCounts.get(id);
 
     if (food && countData) {

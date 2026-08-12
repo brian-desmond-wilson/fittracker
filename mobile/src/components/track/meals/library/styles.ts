@@ -43,6 +43,18 @@ export const lib = StyleSheet.create({
     justifyContent: "space-between",
   },
   mealName: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
+  // C5. The thumbnail and the name are one unit that shrinks together, so a
+  // long meal name truncates instead of pushing the score badge off the row.
+  faceRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1,
+  },
+  face: {
+    width: 36, height: 36, borderRadius: radii.control,
+    backgroundColor: colors.surface2,
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  faceImage: { width: "100%", height: "100%" },
+  faceMonogram: { ...typography.caption, fontWeight: "700", color: colors.textFaint },
   mutedText: { ...typography.body, color: colors.textMuted },
   smallMuted: { ...typography.caption, color: colors.textFaint },
   bodyText: { ...typography.body, color: colors.text },
@@ -52,6 +64,24 @@ export const lib = StyleSheet.create({
   warnText: { color: colors.warning },
   availableDot: { ...typography.caption, color: colors.success },
   unavailableDot: { ...typography.caption, color: colors.textFaint },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginHorizontal: spacing.screenGutter,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.control,
+  },
+  searchInput: {
+    ...typography.body,
+    color: colors.text,
+    flex: 1,
+    paddingVertical: spacing.md,
+  },
   filterBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -99,10 +129,16 @@ export const lib = StyleSheet.create({
   barFill: { height: 6, borderRadius: radii.pill, backgroundColor: colors.brand },
 });
 
+// A8. `mid` was amber and `low` was red, so the middle of the range — where
+// most of a real library sits — was permanently styled as a problem, and the
+// bottom as an emergency. A meal scoring 78 is not a warning; it is a meal.
+// Neutral for the middle, amber reserved for genuinely poor fits, and `danger`
+// given up entirely: the one thing that IS an alarm, a meal containing a food
+// rated "never", already says so in red words of its own.
 const TONE_BY_BAND: Record<ScoreBand, BadgeTone> = {
   core: "success",
-  mid: "warning",
-  low: "danger",
+  mid: "neutral",
+  low: "warning",
 } as const;
 
 /** Pure band → Badge tone lookup. The band DECISION (spec §6's thresholds) lives

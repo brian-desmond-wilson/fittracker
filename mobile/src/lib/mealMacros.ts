@@ -100,7 +100,14 @@ export function formatMacroValue(value: number, m: MacroKey): string {
   if (m === "calories" || m === "sodium") {
     return Math.round(value).toLocaleString();
   }
-  return value.toFixed(1);
+  // C6. Gram values used to be unconditionally `toFixed(1)`, so a protein goal
+  // of 160 rendered "of 160.0g" and an untouched day read "0.0" — a decimal of
+  // precision on numbers that have none, and one the reader has to look past
+  // on every screen. Round to a tenth (the display precision), then drop the
+  // trailing zero: 160 → "160", 12.5 → "12.5". Same rule the Nutrition Facts
+  // panel already applies to its own gram figures.
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 /**

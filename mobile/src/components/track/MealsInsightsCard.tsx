@@ -6,6 +6,10 @@ import { MealsSeriesEntry } from "@/src/lib/mealStats";
 import { MealsCalorieChart } from "./MealsCalorieChart";
 import { MealsMacroChart } from "./MealsMacroChart";
 
+/** Two days is the least that can produce a streak, an average worth the
+ *  name, or a chart with a shape. Below it the card says so instead. */
+const MIN_DAYS_FOR_INSIGHTS = 2;
+
 interface MealsInsightsCardProps {
   // Streaks
   calorieStreak: number;
@@ -32,6 +36,25 @@ export function MealsInsightsCard({
   series14,
   calorieGoal,
 }: MealsInsightsCardProps) {
+  // A9. With nothing logged yet this card was four zeros over two empty
+  // charts — which reads as broken software, not as a young history. Below a
+  // couple of days there is genuinely nothing to reflect on, so say what will
+  // appear here and when, rather than drawing the shape of an answer around
+  // no data.
+  const daysWithData = series14.filter((d) => d.calories > 0).length;
+  if (daysWithData < MIN_DAYS_FOR_INSIGHTS) {
+    return (
+      <Card variant="row" style={styles.cardSpacing}>
+        <Text style={styles.title}>Insights · Last 7 days</Text>
+        <Text style={styles.warmUpBody}>
+          {daysWithData === 0
+            ? "Nothing logged yet. Streaks, your daily average and the last fortnight's charts appear here once you have logged a couple of days."
+            : `One day logged. Streaks and charts appear here from ${MIN_DAYS_FOR_INSIGHTS} days on.`}
+        </Text>
+      </Card>
+    );
+  }
+
   return (
     <Card variant="row" style={styles.cardSpacing}>
       <Text style={styles.title}>Insights · Last 7 days</Text>
@@ -81,6 +104,7 @@ const styles = StyleSheet.create({
     ...typography.section,
     marginBottom: spacing.md,
   },
+  warmUpBody: { ...typography.body, color: colors.textMuted },
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",

@@ -4,6 +4,10 @@ import {
   eatNextStockBadge,
   eatNextExpiringLine,
   nudgeFireDate,
+  eatNextReadyAlternative,
+  eatNextMissingLine,
+  prepBudgetVerdict,
+  prepBudgetLabel,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
   POST_WORKOUT_WINDOW_MIN,
@@ -75,6 +79,7 @@ function scored(over: {
       default_meal_type: null,
       prep_minutes: over.prep ?? 5,
       taste_override: null,
+      is_complete_portion: false,
       notes: null,
       created_at: "",
       updated_at: "",
@@ -100,6 +105,15 @@ function scored(over: {
 }
 const input = (over: Partial<EatNextInput>, meals: ScoredMeal[]): EatNextInput =>
   ({ ...BASE, ...over, meals });
+
+// 16:00 — the earliest whole hour where the current slot is dinner under the
+// grace rule (owner decision 2026-08-12: a slot keeps counting until the
+// midpoint to the next meal, here 15:00), with dinner exactly
+// BRIDGE_PREFER_GAP_MIN away so farFromMeal is still true. Every dynamic the
+// slot-agnostic tests below were written against at the old 13:00 (slot
+// dinner, expanded bridge/snack pool) holds at this time; BASE's 13:00 is
+// now LUNCH's grace period, which the next_meal tests pin separately.
+const DINNER_SLOT: Partial<EatNextInput> = { nowMinutes: 16 * 60 };
 
 beforeEach(() => { nextId = 0; });
 
@@ -356,24 +370,25 @@ describe("emergency and catch_up", () => {
 
 // ── next_meal ──────────────────────────────────────────────────────────────
 describe("next_meal", () => {
-  it("13:00 → next slot dinner; dinner-category meals win", () => {
+  it("past the lunch→dinner midpoint the slot is dinner; dinner-category meals win", () => {
     const dinner = scored({ category: "dinner" });
     const breakfast = scored({ category: "breakfast" });
-    const r = recommendEatNext(input({ nowMinutes: 13 * 60 + 1 }, [breakfast, dinner]));
+    const r = recommendEatNext(input(DINNER_SLOT, [breakfast, dinner]));
     expect(r.context).toBe("next_meal");
     expect(r.recommendations[0].mealId).toBe(dinner.meal.id);
   });
   it("≥120 min before next meal prefers bridge/snack", () => {
-    // 13:00, dinner 18:00 → 300 min out
+    // 16:00, dinner 18:00 → 120 min out
     const bridge = scored({ role: "bridge", category: "snack", calories: 300 });
     const dinner = scored({ category: "dinner", score: 99 });
-    const r = recommendEatNext(input({}, [dinner, bridge]));
+    const r = recommendEatNext(input(DINNER_SLOT, [dinner, bridge]));
     expect(r.recommendations[0].mealId).toBe(bridge.meal.id);
   });
-  it("after dinner time (on pace) → snack slot; shakes count as snacks; emergency never surfaces", () => {
+  it("past dinner's grace (on pace) → snack slot; shakes count as snacks; emergency never surfaces", () => {
+    // Dinner 18:00, window ends 23:00 → dinner's grace runs to 20:30.
     const shake = scored({ category: "shake" });
     const emergency = scored({ category: "emergency", score: 100 });
-    const r = recommendEatNext(input({ nowMinutes: 19 * 60 }, [emergency, shake]));
+    const r = recommendEatNext(input({ nowMinutes: 21 * 60 }, [emergency, shake]));
     expect(r.context).toBe("next_meal");
     expect(r.recommendations.map((x) => x.mealId)).toEqual([shake.meal.id]);
   });
@@ -406,28 +421,177 @@ describe("next_meal", () => {
   it("prefers category=snack even without role=bridge when far from the next meal (spec §5.3.6)", () => {
     const snackMeal = scored({ category: "snack", role: null, score: 10 }); // low raw
     const dinner = scored({ category: "dinner", score: 99 }); // high raw
-    // default nowMinutes 13:00, dinner 18:00 → 300 min out, well past BRIDGE_PREFER_GAP_MIN
-    const r = recommendEatNext(input({}, [dinner, snackMeal]));
+    // 16:00, dinner 18:00 → exactly BRIDGE_PREFER_GAP_MIN out
+    const r = recommendEatNext(input(DINNER_SLOT, [dinner, snackMeal]));
     expect(r.recommendations[0].mealId).toBe(snackMeal.meal.id);
   });
 
   it("emergency-category meal never surfaces in next_meal, even with role=bridge (spec §5.3.6)", () => {
     const emergencyBridge = scored({ category: "emergency", role: "bridge", score: 100 });
     const dinner = scored({ category: "dinner", score: 50 });
-    const r = recommendEatNext(input({}, [dinner, emergencyBridge])); // 300 min out, pool expanded
+    const r = recommendEatNext(input(DINNER_SLOT, [dinner, emergencyBridge])); // 300 min out, pool expanded
     expect(r.context).toBe("next_meal");
     expect(r.recommendations.map((x) => x.mealId)).not.toContain(emergencyBridge.meal.id);
   });
 
-  it("at exactly the lunch meal time, lunch has passed and dinner is next (spec §5.3.6: strictly after now)", () => {
+  it("at exactly the lunch meal time, the slot IS lunch (owner decision 2026-08-12 — supersedes spec §5.3.6's strictly-after reading)", () => {
     const lunch = scored({ category: "lunch" });
     const dinner = scored({ category: "dinner" });
     const r = recommendEatNext(
       input({ nowMinutes: BASE.mealTimesMinutes.lunch }, [lunch, dinner]),
     );
     expect(r.context).toBe("next_meal");
-    expect(r.recommendations.map((x) => x.mealId)).toContain(dinner.meal.id);
-    expect(r.recommendations.map((x) => x.mealId)).not.toContain(lunch.meal.id);
+    expect(r.recommendations.map((x) => x.mealId)).toContain(lunch.meal.id);
+    expect(r.recommendations.map((x) => x.mealId)).not.toContain(dinner.meal.id);
+  });
+});
+
+// The two owner decisions of 2026-08-12, motivated by the same on-device
+// afternoon: at 12:31 an in-stock pasta expiring the next day disappeared in
+// favor of a missing-2-ingredients bridge snack for a dinner six hours away.
+describe("next_meal — the current slot has a grace period (owner decision 2026-08-12)", () => {
+  it("just past lunch time it is still lunch, not dinner", () => {
+    const lunch = scored({ category: "lunch" });
+    const dinner = scored({ category: "dinner", score: 99 });
+    const r = recommendEatNext(input({ nowMinutes: 12 * 60 + 31 }, [dinner, lunch]));
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([lunch.meal.id]);
+    expect(r.recommendations[0].reasons).toEqual(["next: lunch"]);
+  });
+
+  it("no bridge preference during a slot's grace — the meal itself is the suggestion", () => {
+    // Old behavior at 12:31: slot dinner, 329 min out → bridge snack preferred
+    // over any lunch meal. The grace makes the lunch meal the suggestion.
+    const bridge = scored({ role: "bridge", category: "snack", score: 99 });
+    const lunch = scored({ category: "lunch", score: 50 });
+    const r = recommendEatNext(input({ nowMinutes: 12 * 60 + 31 }, [bridge, lunch]));
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([lunch.meal.id]);
+  });
+
+  it("lunch yields to dinner at the midpoint between them, not a minute before", () => {
+    const lunch = scored({ category: "lunch" });
+    const dinner = scored({ category: "dinner" });
+    // Lunch 12:00, dinner 18:00 → midpoint 15:00.
+    const before = recommendEatNext(input({ nowMinutes: 15 * 60 - 1 }, [lunch, dinner]));
+    expect(before.recommendations.map((x) => x.mealId)).toEqual([lunch.meal.id]);
+    const at = recommendEatNext(input({ nowMinutes: 15 * 60 }, [lunch, dinner]));
+    expect(at.recommendations.map((x) => x.mealId)).toContain(dinner.meal.id);
+    expect(at.recommendations.map((x) => x.mealId)).not.toContain(lunch.meal.id);
+  });
+
+  it("dinner's grace runs to the midpoint of the remaining window, then snack", () => {
+    const dinner = scored({ category: "dinner" });
+    const snack = scored({ category: "snack" });
+    // Dinner 18:00, window end 23:00 → midpoint 20:30.
+    const during = recommendEatNext(input({ nowMinutes: 20 * 60 + 29 }, [dinner, snack]));
+    expect(during.recommendations[0].mealId).toBe(dinner.meal.id);
+    const after = recommendEatNext(input({ nowMinutes: 20 * 60 + 30 }, [dinner, snack]));
+    expect(after.recommendations.map((x) => x.mealId)).toEqual([snack.meal.id]);
+    expect(after.recommendations[0].reasons).toEqual(["between meals"]);
+  });
+
+  it("morning half of breakfast→lunch belongs to breakfast", () => {
+    const breakfast = scored({ category: "breakfast" });
+    const lunch = scored({ category: "lunch" });
+    // Breakfast 08:00, lunch 12:00 → midpoint 10:00.
+    const r = recommendEatNext(input({ nowMinutes: 9 * 60 + 30 }, [lunch, breakfast]));
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([breakfast.meal.id]);
+  });
+});
+
+describe("expiring rescues cross slots and bands (owner decision 2026-08-12)", () => {
+  const rescueStock = (mealId: string, over: Partial<EatNextStockInfo> = {}) =>
+    new Map([[mealId, {
+      assemblable: true, missingCount: 0, unlinkedCount: 0,
+      expiringItemName: "Pasta Trapanese", expiringDaysLeft: 1, ...over,
+    }]]);
+
+  it("a makeable meal using expiring food is suggested outside its slot, and says why", () => {
+    const lunchRescue = scored({ category: "lunch", score: 50 });
+    const dinner = scored({ category: "dinner", score: 99 });
+    const r = recommendEatNext({
+      ...input(DINNER_SLOT, [dinner, lunchRescue]),
+      stockByMealId: rescueStock(lunchRescue.meal.id),
+    });
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations[0].mealId).toBe(lunchRescue.meal.id);
+    expect(r.recommendations[0].reasons[0]).toBe("worth eating before dinner");
+  });
+
+  it("a makeable rescue outranks the bridge preference far from a meal", () => {
+    // The on-device case: bridge snack missing 2 ingredients vs an in-stock
+    // lunch meal whose ingredient turns tomorrow.
+    const bridge = scored({ role: "bridge", category: "snack", score: 99 });
+    const lunchRescue = scored({ category: "lunch", score: 50 });
+    const r = recommendEatNext({
+      ...input(DINNER_SLOT, [bridge, lunchRescue]),
+      stockByMealId: rescueStock(lunchRescue.meal.id),
+    });
+    expect(r.recommendations[0].mealId).toBe(lunchRescue.meal.id);
+  });
+
+  it("an UNMAKEABLE rescue joins its context but never beats a makeable candidate (stock doctrine holds)", () => {
+    const dinner = scored({ category: "dinner", score: 50 });
+    const lunchRescue = scored({ category: "lunch", score: 99 });
+    const r = recommendEatNext({
+      ...input(DINNER_SLOT, [dinner, lunchRescue]),
+      stockByMealId: rescueStock(lunchRescue.meal.id, { assemblable: false, missingCount: 1 }),
+    });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      dinner.meal.id, lunchRescue.meal.id,
+    ]);
+  });
+
+  it("an emergency-category rescue still never surfaces in next_meal (spec §5.3.6)", () => {
+    const emergencyRescue = scored({ category: "emergency", score: 100 });
+    const dinner = scored({ category: "dinner", score: 50 });
+    const r = recommendEatNext({
+      ...input(DINNER_SLOT, [dinner, emergencyRescue]),
+      stockByMealId: rescueStock(emergencyRescue.meal.id),
+    });
+    expect(r.recommendations.map((x) => x.mealId)).not.toContain(emergencyRescue.meal.id);
+  });
+
+  it("catch_up: an out-of-band rescue joins with an honest partial-gap reason", () => {
+    // Gap 793, band ±35% → [516, 1071]; the 470 cal rescue sits outside it.
+    const inBand = scored({ category: "dinner", calories: 800 });
+    const rescue = scored({ category: "lunch", calories: 470 });
+    const r = recommendEatNext({
+      ...input({ caloriePace: { status: "behind", delta: 793, catchUpAmount: 793 } },
+        [inBand, rescue]),
+      stockByMealId: rescueStock(rescue.meal.id),
+    });
+    expect(r.context).toBe("catch_up");
+    expect(r.recommendations[0].mealId).toBe(rescue.meal.id);
+    expect(r.recommendations[0].reasons[0]).toBe("~470 cal toward the ~793 cal gap (5 min)");
+    const band = r.recommendations.find((x) => x.mealId === inBand.meal.id)!;
+    expect(band.reasons[0]).toBe("closes the ~793 cal gap (800 cal, 5 min)");
+  });
+
+  it("catch_up: an unmakeable out-of-band rescue joins without displacing the in-band pick", () => {
+    const inBand = scored({ category: "dinner", calories: 800 });
+    const rescue = scored({ category: "lunch", calories: 470 });
+    const r = recommendEatNext({
+      ...input({ caloriePace: { status: "behind", delta: 793, catchUpAmount: 793 } },
+        [inBand, rescue]),
+      stockByMealId: rescueStock(rescue.meal.id, { assemblable: false, missingCount: 2 }),
+    });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([
+      inBand.meal.id, rescue.meal.id,
+    ]);
+  });
+
+  it("the nudge's body pick ignores rescues — it keeps naming a meal sized to the gap", () => {
+    const inBand = scored({ name: "Big Bowl", category: "dinner", calories: 800 });
+    const rescue = scored({ name: "Pasta", category: "lunch", calories: 470, score: 99 });
+    const r = recommendEatNext({
+      ...input({
+        nudgesEnabled: true,
+        caloriePace: { status: "behind", delta: 793, catchUpAmount: 793 },
+      }, [inBand, rescue]),
+      stockByMealId: rescueStock(rescue.meal.id),
+    });
+    expect(r.nudge?.body).toContain("Big Bowl");
   });
 });
 
@@ -436,7 +600,7 @@ describe("filters and ranking", () => {
   it("containsNever never surfaces in any context", () => {
     const never = scored({ category: "dinner", score: 100, containsNever: true });
     const ok = scored({ category: "dinner", score: 50 });
-    const r = recommendEatNext(input({}, [never, ok]));
+    const r = recommendEatNext(input(DINNER_SLOT, [never, ok]));
     expect(r.recommendations.map((x) => x.mealId)).toEqual([ok.meal.id]);
   });
 
@@ -444,7 +608,7 @@ describe("filters and ranking", () => {
     const way = scored({ category: "dinner", prep: 11 });   // > 10 → gone
     const over = scored({ category: "dinner", prep: 8 });    // (5,10] → reason
     const fine = scored({ category: "dinner", prep: 4 });
-    const r = recommendEatNext(input({}, [way, over, fine]));
+    const r = recommendEatNext(input(DINNER_SLOT, [way, over, fine]));
     const ids = r.recommendations.map((x) => x.mealId);
     expect(ids).not.toContain(way.meal.id);
     expect(ids).toContain(over.meal.id);
@@ -457,8 +621,8 @@ describe("filters and ranking", () => {
     const b = scored({ name: "B", category: "dinner", score: 90, prep: 3 });
     const c = scored({ name: "C", category: "dinner", score: 95 });
     const d = scored({ name: "D", category: "dinner", score: 90, prep: 5 });
-    const r1 = recommendEatNext(input({}, [a, d, c, b]));
-    const r2 = recommendEatNext(input({}, [d, b, a, c]));
+    const r1 = recommendEatNext(input(DINNER_SLOT, [a, d, c, b]));
+    const r2 = recommendEatNext(input(DINNER_SLOT, [d, b, a, c]));
     expect(r1.recommendations.map((x) => x.mealId)).toEqual([
       c.meal.id, b.meal.id, a.meal.id,
     ]);
@@ -466,7 +630,7 @@ describe("filters and ranking", () => {
   });
 
   it("empty library → next_meal with empty recommendations and a message", () => {
-    const r = recommendEatNext(input({}, []));
+    const r = recommendEatNext(input(DINNER_SLOT, []));
     expect(r.recommendations).toHaveLength(0);
     expect(r.message).not.toBeNull();
   });
@@ -474,7 +638,7 @@ describe("filters and ranking", () => {
   it("ranks by raw, not the rounded score (Phase 2 amendment) — raw and score set independently", () => {
     const highRawLowScore = scored({ category: "dinner", raw: 95, score: 10 });
     const lowRawHighScore = scored({ category: "dinner", raw: 50, score: 99 });
-    const r = recommendEatNext(input({}, [lowRawHighScore, highRawLowScore]));
+    const r = recommendEatNext(input(DINNER_SLOT, [lowRawHighScore, highRawLowScore]));
     expect(r.recommendations[0].mealId).toBe(highRawLowScore.meal.id);
   });
 });
@@ -483,7 +647,7 @@ describe("filters and ranking", () => {
 describe("recommendation structured fields", () => {
   it("pins calories, protein, and prepMinutes from the meal's own totals", () => {
     const m = scored({ category: "dinner", calories: 512.6, protein: 33.6, prep: 4 });
-    const r = recommendEatNext(input({}, [m]));
+    const r = recommendEatNext(input(DINNER_SLOT, [m]));
     expect(r.recommendations[0].calories).toBe(513); // Math.round(512.6)
     expect(r.recommendations[0].protein).toBe(34); // Math.round(33.6)
     expect(r.recommendations[0].prepMinutes).toBe(4);
@@ -491,7 +655,7 @@ describe("recommendation structured fields", () => {
 
   it("recommendation.score is the /100 renormalized score, NOT raw (spec §5.5) — raw and score set independently so a raw-projection mutant fails", () => {
     const m = scored({ category: "dinner", raw: 50, score: 99 });
-    const r = recommendEatNext(input({}, [m]));
+    const r = recommendEatNext(input(DINNER_SLOT, [m]));
     expect(r.recommendations[0].score).toBe(99);
     expect(r.recommendations[0].score).not.toBe(50);
   });
@@ -815,14 +979,14 @@ import type { EatNextStockInfo } from "../eatNext";
 describe("stock awareness", () => {
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, {
-      assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+      assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
     }]));
 
   it("assemblable beats higher raw", () => {
     const inStock = scored({ category: "dinner", score: 79 });
     const outStock = scored({ category: "dinner", score: 90 });
     const r = recommendEatNext({
-      ...input({}, [outStock, inStock]),
+      ...input(DINNER_SLOT, [outStock, inStock]),
       stockByMealId: stock([
         [inStock.meal.id, {}],
         [outStock.meal.id, { assemblable: false, missingCount: 2 }],
@@ -852,7 +1016,7 @@ describe("stock awareness", () => {
     const usesExpiring = scored({ category: "dinner", score: 80 });
     const fresh = scored({ category: "dinner", score: 80 });
     const r = recommendEatNext({
-      ...input({}, [fresh, usesExpiring]),
+      ...input(DINNER_SLOT, [fresh, usesExpiring]),
       stockByMealId: stock([
         [fresh.meal.id, {}],
         [usesExpiring.meal.id, { expiringItemName: "Sirloin", expiringDaysLeft: 2 }],
@@ -865,7 +1029,7 @@ describe("stock awareness", () => {
   it("never a hard filter: all-out-of-stock still recommends, with reasons", () => {
     const only = scored({ category: "dinner" });
     const r = recommendEatNext({
-      ...input({}, [only]),
+      ...input(DINNER_SLOT, [only]),
       stockByMealId: stock([[only.meal.id, { assemblable: false, missingCount: 1 }]]),
     });
     expect(r.recommendations).toHaveLength(1);
@@ -874,8 +1038,8 @@ describe("stock awareness", () => {
 
   it("absent map = bit-for-bit prior behavior", () => {
     const meals = [scored({ category: "dinner", score: 90 }), scored({ category: "dinner", score: 80 })];
-    const withUndefined = recommendEatNext({ ...input({}, meals), stockByMealId: undefined });
-    const without = recommendEatNext(input({}, meals));
+    const withUndefined = recommendEatNext({ ...input(DINNER_SLOT, meals), stockByMealId: undefined });
+    const without = recommendEatNext(input(DINNER_SLOT, meals));
     expect(withUndefined).toEqual(without);
   });
 
@@ -884,7 +1048,7 @@ describe("stock awareness", () => {
     const unknown = scored({ category: "dinner", score: 95 });
     const out = scored({ category: "dinner", score: 99 });
     const r = recommendEatNext({
-      ...input({}, [out, unknown, known]),
+      ...input(DINNER_SLOT, [out, unknown, known]),
       stockByMealId: stock([
         [known.meal.id, {}],
         [out.meal.id, { assemblable: false, missingCount: 1 }],
@@ -902,7 +1066,7 @@ describe("stock awareness", () => {
 describe("stock awareness — mutation-driven coverage", () => {
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, {
-      assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+      assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
     }]));
   const behind = (catchUpAmount: number): Partial<EatNextInput> => ({
     caloriePace: { status: "behind", delta: catchUpAmount, catchUpAmount },
@@ -916,7 +1080,7 @@ describe("stock awareness — mutation-driven coverage", () => {
     const fresh = scored({ category: "dinner", score: 95 });
     const usesExpiring = scored({ category: "dinner", score: 70 });
     const r = recommendEatNext({
-      ...input({}, [fresh, usesExpiring]),
+      ...input(DINNER_SLOT, [fresh, usesExpiring]),
       stockByMealId: stock([
         [fresh.meal.id, {}],
         [usesExpiring.meal.id, { expiringItemName: "Sirloin", expiringDaysLeft: 3 }],
@@ -935,7 +1099,7 @@ describe("stock awareness — mutation-driven coverage", () => {
     const fresh = scored({ category: "dinner", score: 95 });
     const expiresToday = scored({ category: "dinner", score: 70 });
     const r = recommendEatNext({
-      ...input({}, [fresh, expiresToday]),
+      ...input(DINNER_SLOT, [fresh, expiresToday]),
       stockByMealId: stock([
         [fresh.meal.id, {}],
         [expiresToday.meal.id, { expiringItemName: "Sirloin", expiringDaysLeft: 0 }],
@@ -1041,7 +1205,7 @@ describe("stock awareness — mutation-driven coverage", () => {
     const known = scored({ category: "dinner" });
     const unknown = scored({ category: "dinner" });
     const r = recommendEatNext({
-      ...input({}, [known, unknown]),
+      ...input(DINNER_SLOT, [known, unknown]),
       stockByMealId: stock([[known.meal.id, {}]]),
     });
     const u = r.recommendations.find((x) => x.mealId === unknown.meal.id)!;
@@ -1053,7 +1217,7 @@ describe("stock awareness — mutation-driven coverage", () => {
 // survived the first round's 89 tests. See the Task 9 amendment's round-2 table.
 describe("stock awareness — key, precedence, and copy pinning", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, info(o)]));
@@ -1071,7 +1235,7 @@ describe("stock awareness — key, precedence, and copy pinning", () => {
     // wrong-key mutant could resolve by accident and survive again.
     expect(new Set([inStock.meal.id, inStock.meal.slug, inStock.meal.name]).size).toBe(3);
     const r = recommendEatNext({
-      ...input({}, [outStock, inStock]),
+      ...input(DINNER_SLOT, [outStock, inStock]),
       stockByMealId: stock([
         [inStock.meal.id, {}],
         [outStock.meal.id, { assemblable: false, missingCount: 1 }],
@@ -1090,11 +1254,11 @@ describe("stock awareness — key, precedence, and copy pinning", () => {
     const missingExpiring = scored({ category: "dinner", name: "Bbb", score: 70 });
     const missingPlain = scored({ category: "dinner", name: "Ccc", score: 95 });
     const r = recommendEatNext({
-      ...input({}, [missingPlain, missingExpiring, inStockPlain]),
+      ...input(DINNER_SLOT, [missingPlain, missingExpiring, inStockPlain]),
       stockByMealId: stock([
         [inStockPlain.meal.id, {}],
         [missingExpiring.meal.id, {
-          assemblable: false, missingCount: 1, expiringItemName: "Sirloin", expiringDaysLeft: 1,
+          assemblable: false, missingCount: 1, unlinkedCount: 0, expiringItemName: "Sirloin", expiringDaysLeft: 1,
         }],
         [missingPlain.meal.id, { assemblable: false, missingCount: 1 }],
       ]),
@@ -1119,7 +1283,7 @@ describe("stock awareness — key, precedence, and copy pinning", () => {
   it("pins the exact reason array and its order (context, prep budget, stock, expiring)", () => {
     const m = scored({ category: "dinner", prep: 8 }); // maxPrepMinutes is 5
     const r = recommendEatNext({
-      ...input({}, [m]),
+      ...input(DINNER_SLOT, [m]),
       stockByMealId: stock([[m.meal.id, { expiringItemName: "Kefir", expiringDaysLeft: 4 }]]),
     });
     expect(r.recommendations[0].reasons).toEqual([
@@ -1159,10 +1323,10 @@ describe("stock awareness — key, precedence, and copy pinning", () => {
   it("no stock map → Phase 3 ordering exactly (raw desc) and no stock reason; an empty map is indistinguishable", () => {
     const low = scored({ category: "dinner", score: 60 });
     const high = scored({ category: "dinner", score: 95 });
-    const r = recommendEatNext(input({}, [low, high]));
+    const r = recommendEatNext(input(DINNER_SLOT, [low, high]));
     expect(r.recommendations.map((x) => x.mealId)).toEqual([high.meal.id, low.meal.id]);
     expect(r.recommendations.flatMap((x) => x.reasons)).toEqual(["next: dinner", "next: dinner"]);
-    expect(recommendEatNext({ ...input({}, [low, high]), stockByMealId: new Map() })).toEqual(r);
+    expect(recommendEatNext({ ...input(DINNER_SLOT, [low, high]), stockByMealId: new Map() })).toEqual(r);
   });
 });
 
@@ -1216,7 +1380,7 @@ describe("buildStockByMealId", () => {
     });
     expect([...stockByMealId.keys()]).toEqual([inStock.meal.id, outOfStock.meal.id]);
     const r = recommendEatNext({
-      ...input({}, [outOfStock, inStock]),
+      ...input(DINNER_SLOT, [outOfStock, inStock]),
       stockByMealId,
     });
     expect(r.recommendations.map((x) => x.mealId)).toEqual([
@@ -1246,6 +1410,8 @@ describe("buildStockByMealId", () => {
     expect(stockByMealId.get(m.meal.id)).toEqual({
       assemblable: false,
       missingCount: 2,
+      missingNames: ["Korean BBQ Sauce", "Rice"],
+      unlinkedCount: 0,
       expiringItemName: "Kefir",
       expiringDaysLeft: 4,
     });
@@ -1282,7 +1448,7 @@ describe("buildStockByMealId", () => {
     expect([...stockByMealId.keys()]).toEqual([inStock.meal.id, knownMissing.meal.id]);
 
     const r = recommendEatNext({
-      ...input({}, [knownMissing, itemLess, inStock]),
+      ...input(DINNER_SLOT, [knownMissing, itemLess, inStock]),
       stockByMealId,
     });
     // Between in-stock and known-missing, despite `knownMissing` holding the
@@ -1357,12 +1523,14 @@ describe("buildStockByMealId — paths the first round of tests never executed",
     expect(stockByMealId.get(rescue.meal.id)).toEqual({
       assemblable: true,
       missingCount: 0,
+      missingNames: [],
+      unlinkedCount: 0,
       expiringItemName: "Kefir",
       expiringDaysLeft: 3,
     });
     // Both meals are stockRank 0, so `expiringRank` is the only term that can
     // separate them — and it must beat a 35-point raw deficit.
-    const r = recommendEatNext({ ...input({}, [plain, rescue]), stockByMealId });
+    const r = recommendEatNext({ ...input(DINNER_SLOT, [plain, rescue]), stockByMealId });
     expect(r.recommendations.map((x) => x.mealId)).toEqual([
       rescue.meal.id, plain.meal.id,
     ]);
@@ -1392,43 +1560,90 @@ describe("buildStockByMealId — paths the first round of tests never executed",
     expect(stockByMealId.get(m.meal.id)).toEqual({
       assemblable: true,
       missingCount: 0,
+      missingNames: [],
+      unlinkedCount: 0,
       expiringItemName: null,
       expiringDaysLeft: null,
     });
   });
 });
 
-// The OTHER half of Task 10's hand-off. `EatNextStockInfo` is an exported,
-// optional public input, so `{assemblable: false, missingCount: 0}` remains a
-// constructible value even though `buildStockByMealId` now refuses to produce
-// one. This characterises what the recommender does when handed it — which is
-// the whole reason the builder refuses: rank 2 ("we established you can't make
-// this") plus the self-contradicting copy "missing 0 ingredients". Read it as
-// the counterfactual the DECISION above avoids, not as endorsed behavior.
-// Kills two mutants Task 9's round-2 amendment recorded as surviving its whole
-// suite: deriving `stockRank` from `missingCount === 0` instead of
-// `assemblable`, and widening the pluralization ternary to `missingCount <= 1`.
-describe("stock awareness — the {assemblable: false, missingCount: 0} counterfactual", () => {
-  it("stockRank derives from the `assemblable` verdict, never from missingCount", () => {
+// C4 SUPERSEDES Task 10's counterfactual here. `{assemblable: false,
+// missingCount: 0}` used to be an unreachable, self-contradicting value the
+// builder refused to produce ("missing 0 ingredients"). It is now a REAL and
+// common state with a name: a meal held back purely by ingredients that carry
+// no barcode and no concept link, so nothing in the inventory could ever match
+// them. That is ignorance, not a shortfall, and the three tiers below are what
+// the split buys — a meal we cannot check must not be ranked beneath one we
+// checked and found wanting.
+describe("stock awareness — the three tiers of stockRank", () => {
+  const tri = (o: Partial<EatNextStockInfo>): EatNextStockInfo => ({
+    assemblable: false, missingCount: 0, unlinkedCount: 0,
+    expiringItemName: null, expiringDaysLeft: null, ...o,
+  });
+
+  it("orders makeable, then uncheckable, then confirmed short — regardless of score", () => {
+    // Scores run OPPOSITE to the desired order, so only the stock tiers can
+    // produce this result.
     const inStock = scored({ category: "dinner", score: 50 });
-    const phantom = scored({ category: "dinner", score: 99 });
+    const unlinked = scored({ category: "dinner", score: 70 });
+    const short = scored({ category: "dinner", score: 99 });
     const r = recommendEatNext({
-      ...input({}, [phantom, inStock]),
+      ...input(DINNER_SLOT, [short, unlinked, inStock]),
       stockByMealId: new Map([
-        [inStock.meal.id, {
-          assemblable: true, missingCount: 0,
-          expiringItemName: null, expiringDaysLeft: null,
-        }],
-        [phantom.meal.id, {
-          assemblable: false, missingCount: 0,
-          expiringItemName: null, expiringDaysLeft: null,
-        }],
+        [inStock.meal.id, tri({ assemblable: true })],
+        [unlinked.meal.id, tri({ unlinkedCount: 2 })],
+        [short.meal.id, tri({ missingCount: 2 })],
       ]),
     });
-    // Rank 2 beats the higher raw score: derived from the verdict, not the count.
-    expect(r.recommendations.map((x) => x.mealId)).toEqual([inStock.meal.id, phantom.meal.id]);
-    // Plural at zero — `missingCount === 1 ? "" : "s"`, not `<= 1`.
-    expect(r.recommendations[1].reasons).toContain("missing 0 ingredients");
+    expect(r.recommendations.map((x) => x.mealId))
+      .toEqual([inStock.meal.id, unlinked.meal.id, short.meal.id]);
+  });
+
+  it("ranks an uncheckable meal level with one we know nothing about", () => {
+    // Absent entry (item-less meal) and unlinked-only are the same epistemic
+    // state, so the score decides between them rather than the stock tier.
+    const absent = scored({ category: "dinner", score: 80 });
+    const unlinked = scored({ category: "dinner", score: 90 });
+    const r = recommendEatNext({
+      ...input(DINNER_SLOT, [absent, unlinked]),
+      stockByMealId: new Map([[unlinked.meal.id, tri({ unlinkedCount: 1 })]]),
+    });
+    expect(r.recommendations[0].mealId).toBe(unlinked.meal.id);
+  });
+
+  it("says what is actually wrong, and never 'missing 0 ingredients'", () => {
+    const unlinked = scored({ category: "dinner", score: 90 });
+    const r = recommendEatNext({
+      ...input(DINNER_SLOT, [unlinked]),
+      stockByMealId: new Map([[unlinked.meal.id, tri({ unlinkedCount: 2 })]]),
+    });
+    expect(r.recommendations[0].reasons).toContain("2 ingredients not linked yet");
+    expect(r.recommendations[0].reasons).not.toContain("missing 0 ingredients");
+  });
+
+  it("keeps the singular for exactly one, on both branches", () => {
+    // Guards the `=== 1 ? "" : "s"` ternary against widening to `<= 1`.
+    const one = scored({ category: "dinner", score: 90 });
+    const short = recommendEatNext({
+      ...input(DINNER_SLOT, [one]),
+      stockByMealId: new Map([[one.meal.id, tri({ missingCount: 1 })]]),
+    });
+    expect(short.recommendations[0].reasons).toContain("missing 1 ingredient");
+    const link = recommendEatNext({
+      ...input(DINNER_SLOT, [one]),
+      stockByMealId: new Map([[one.meal.id, tri({ unlinkedCount: 1 })]]),
+    });
+    expect(link.recommendations[0].reasons).toContain("1 ingredient not linked yet");
+  });
+
+  it("badges the three tiers with three distinct tones", () => {
+    expect(eatNextStockBadge(tri({ assemblable: true })))
+      .toEqual({ assemblable: true, tone: "success", label: "In stock" });
+    expect(eatNextStockBadge(tri({ missingCount: 2 })))
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 2" });
+    expect(eatNextStockBadge(tri({ unlinkedCount: 2 })))
+      .toEqual({ assemblable: false, tone: "neutral", label: "2 not linked" });
   });
 });
 
@@ -1452,7 +1667,7 @@ describe("stock awareness — the {assemblable: false, missingCount: 0} counterf
 // is deliberately the only thing a surface has to get right.
 describe("recommendation.stock — the typed verdict the surfaces render", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, info(o)]));
@@ -1460,14 +1675,14 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
   it("carries the FULL verdict for an assemblable meal, not just the ranking tier", () => {
     const m = scored({ category: "dinner" });
     const r = recommendEatNext({
-      ...input({}, [m]),
+      ...input(DINNER_SLOT, [m]),
       stockByMealId: stock([[m.meal.id, { expiringItemName: "Kefir", expiringDaysLeft: 4 }]]),
     });
     // All four fields, `toEqual` rather than a spot-check: a surface that only
     // ever needs `assemblable` today is exactly how the next field quietly
     // stops being projected.
     expect(r.recommendations[0].stock).toEqual({
-      assemblable: true, missingCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 4,
+      assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 4,
     });
   });
 
@@ -1477,22 +1692,22 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     // on screen to say so.
     const only = scored({ category: "dinner" });
     const r = recommendEatNext({
-      ...input({}, [only]),
+      ...input(DINNER_SLOT, [only]),
       stockByMealId: stock([[only.meal.id, { assemblable: false, missingCount: 3 }]]),
     });
     expect(r.recommendations).toHaveLength(1);
     expect(r.recommendations[0].stock).toEqual({
-      assemblable: false, missingCount: 3, expiringItemName: null, expiringDaysLeft: null,
+      assemblable: false, missingCount: 3, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null,
     });
     // And the badge the surfaces derive from it.
     expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({
-      assemblable: false, label: "Missing 3",
+      assemblable: false, tone: "warning", label: "Missing 3",
     });
   });
 
   it("is undefined with NO map at all (unknown, on every recommendation)", () => {
     const meals = [scored({ category: "dinner", score: 95 }), scored({ category: "dinner", score: 60 })];
-    const r = recommendEatNext(input({}, meals));
+    const r = recommendEatNext(input(DINNER_SLOT, meals));
     expect(r.recommendations).toHaveLength(2);
     for (const rec of r.recommendations) expect(rec.stock).toBeUndefined();
   });
@@ -1503,7 +1718,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     const known = scored({ category: "dinner", score: 60 });
     const unknown = scored({ category: "dinner", score: 95 });
     const r = recommendEatNext({
-      ...input({}, [unknown, known]),
+      ...input(DINNER_SLOT, [unknown, known]),
       stockByMealId: stock([[known.meal.id, {}]]),
     });
     const byId = new Map(r.recommendations.map((x) => [x.mealId, x]));
@@ -1528,7 +1743,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     });
     expect(r.context).toBe("goal_hit");
     expect(r.recommendations[0].stock).toEqual({
-      assemblable: false, missingCount: 2, expiringItemName: null, expiringDaysLeft: null,
+      assemblable: false, missingCount: 2, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null,
     });
     // Task 9's recorded gap is UNCHANGED and pinned as such: this site still
     // carries no stock REASON strings. The badge is the fix; unifying this
@@ -1570,15 +1785,15 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
         { id: "inv-oats", name: "Oats", barcode: null, totalQuantity: 2, conceptIds: ["c-oats"], daysLeft: null },
       ],
     });
-    const r = recommendEatNext({ ...input({}, [missing, inStock]), stockByMealId });
+    const r = recommendEatNext({ ...input(DINNER_SLOT, [missing, inStock]), stockByMealId });
     // In-stock wins despite a 39-point raw deficit — proof the same verdict
     // reached the comparator.
     expect(r.recommendations.map((x) => x.mealId)).toEqual([inStock.meal.id, missing.meal.id]);
     for (const rec of r.recommendations) {
       expect(rec.stock).toEqual(stockByMealId.get(rec.mealId));
     }
-    expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({ assemblable: true, label: "In stock" });
-    expect(eatNextStockBadge(r.recommendations[1].stock)).toEqual({ assemblable: false, label: "Missing 1" });
+    expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({ assemblable: true, tone: "success", label: "In stock" });
+    expect(eatNextStockBadge(r.recommendations[1].stock)).toEqual({ assemblable: false, tone: "warning", label: "Missing 1" });
   });
 
   it("an item-less meal stays unknown all the way to the field (the Task 10 DECISION, end to end)", () => {
@@ -1594,7 +1809,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
       inventory: [],
     });
     expect(stockByMealId.size).toBe(0);
-    const r = recommendEatNext({ ...input({}, [itemLess]), stockByMealId });
+    const r = recommendEatNext({ ...input(DINNER_SLOT, [itemLess]), stockByMealId });
     expect(r.recommendations[0].stock).toBeUndefined();
     expect(eatNextStockBadge(r.recommendations[0].stock)).toBeNull();
   });
@@ -1606,7 +1821,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
 // below is the entirety of what those two files decide.
 describe("eatNextStockBadge", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
 
   it("unknown renders NOTHING — null, not a badge that guesses", () => {
@@ -1614,7 +1829,7 @@ describe("eatNextStockBadge", () => {
   });
 
   it("assemblable → the green 'In stock' badge", () => {
-    expect(eatNextStockBadge(info())).toEqual({ assemblable: true, label: "In stock" });
+    expect(eatNextStockBadge(info())).toEqual({ assemblable: true, tone: "success", label: "In stock" });
     // Pinned as an exact string, not a regex: this is the same copy
     // `MealRow` already shows in the Meal Library, and the two are supposed
     // to read identically.
@@ -1623,15 +1838,15 @@ describe("eatNextStockBadge", () => {
 
   it("not assemblable → the amber 'Missing N' badge, with the real count", () => {
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 1 })))
-      .toEqual({ assemblable: false, label: "Missing 1" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 1" });
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 7 })))
-      .toEqual({ assemblable: false, label: "Missing 7" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 7" });
     // Two digits. Without this the count was pinned only at {0,1,3,7}, so a
     // "cap the count at 10" edit survived all 270 tests — the badge is the
     // one place a meal's shortfall is quantified, and a silently clamped
     // number is worse than none.
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 12 })))
-      .toEqual({ assemblable: false, label: "Missing 12" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 12" });
   });
 
   it("expiring info never changes the badge — that signal belongs to the reasons, not here", () => {
@@ -1639,22 +1854,36 @@ describe("eatNextStockBadge", () => {
     // one question ("can I make this now?"); the expiring line is separate
     // copy the reason strings already carry.
     expect(eatNextStockBadge(info({ expiringItemName: "Kefir", expiringDaysLeft: 0 })))
-      .toEqual({ assemblable: true, label: "In stock" });
+      .toEqual({ assemblable: true, tone: "success", label: "In stock" });
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 2, expiringItemName: "Kefir", expiringDaysLeft: 0 })))
-      .toEqual({ assemblable: false, label: "Missing 2" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 2" });
   });
 
-  it("never renders 'Missing 0' — the unproducible-but-constructible counterfactual", () => {
-    // `buildStockByMealId`'s item-less DECISION removed the one input that
-    // yields `{assemblable: false, missingCount: 0}`, but `EatNextStockInfo`
-    // is an exported public input so the value stays constructible — same
-    // reasoning as the `{assemblable: false, missingCount: 0}` counterfactual
-    // above. "Missing 0" reads as a rendering bug; degrade, don't print it.
+  it("never renders 'Missing 0' — the last-resort fallback", () => {
+    // Post-C4 this input means "not makeable, nothing confirmed absent, and
+    // nothing unlinked either" — no longer reachable from
+    // `buildStockByMealId` by any route, but `EatNextStockInfo` is an exported
+    // public input so the value stays constructible. "Missing 0" reads as a
+    // rendering bug; degrade, don't print it.
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 })))
-      .toEqual({ assemblable: false, label: "Missing items" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing items" });
     // Still AMBER, not green: the verdict is what decides the color, and a
     // count we can't state does not become "you can make it".
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 }))!.assemblable).toBe(false);
+  });
+
+  it("an unlinked-only verdict reads as neutral, not as a shortfall", () => {
+    // The live case that used to land in the fallback above and print
+    // "Missing items" for food that may well be in the fridge.
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0, unlinkedCount: 3 })))
+      .toEqual({ assemblable: false, tone: "neutral", label: "3 not linked" });
+  });
+
+  it("a confirmed shortfall outranks an unlinked one in the same verdict", () => {
+    // Both buckets populated: the groceries are the actionable half, so the
+    // badge states those and stays amber.
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 2, unlinkedCount: 5 })))
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 2" });
   });
 });
 
@@ -1672,7 +1901,7 @@ describe("eatNextStockBadge", () => {
 // allowed to happen silently.
 describe("eatNextExpiringLine", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
 
   it("names the ingredient and the days left, in MealDetail's exact words", () => {
@@ -1710,7 +1939,7 @@ describe("eatNextExpiringLine", () => {
     // `expiringRank` is likewise unconditioned on `assemblable`, so gating the
     // line here would put the UI back to ranking on a signal it never states.
     expect(eatNextExpiringLine(info({
-      assemblable: false, missingCount: 2, expiringItemName: "Kefir", expiringDaysLeft: 1,
+      assemblable: false, missingCount: 2, unlinkedCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 1,
     }))).toBe("Uses Kefir — expires in 1d");
   });
 
@@ -1733,7 +1962,7 @@ describe("eatNextExpiringLine", () => {
     // other unnoticed.
     const m = scored({ category: "dinner" });
     const r = recommendEatNext({
-      ...input({}, [m]),
+      ...input(DINNER_SLOT, [m]),
       stockByMealId: new Map([[m.meal.id, info({ expiringItemName: "Sirloin", expiringDaysLeft: 0 })]]),
     });
     expect(r.recommendations[0].reasons).toContain("uses Sirloin — expires today");
@@ -1757,7 +1986,7 @@ describe("eatNextExpiringLine", () => {
         { id: "i2", name: "Oats", barcode: null, totalQuantity: 1, conceptIds: ["c-oats"], daysLeft: null },
       ],
     });
-    const r = recommendEatNext({ ...input({}, [plain, rescue]), stockByMealId });
+    const r = recommendEatNext({ ...input(DINNER_SLOT, [plain, rescue]), stockByMealId });
     // The rescue outranks a 35-point raw deficit (spec §9) AND names itself.
     expect(r.recommendations[0].mealId).toBe(rescue.meal.id);
     expect(eatNextExpiringLine(r.recommendations[0].stock)).toBe("Uses Kefir — expires in 3d");
@@ -1778,5 +2007,137 @@ describe("stock helpers tolerate a null the type system forbids", () => {
   });
   it("eatNextExpiringLine(null) is null, not a crash", () => {
     expect(eatNextExpiringLine(asStock)).toBeNull();
+  });
+});
+
+// C7. Both consequences of the prep budget used to live as inline comparisons:
+// "over" earns a caveat but is still suggested, "excluded" is dropped from the
+// running entirely. The second is invisible — the meal simply never appears —
+// so the rule is named, exported, and stated in the library.
+describe("prepBudgetVerdict / prepBudgetLabel", () => {
+  it("is within budget at and below the limit", () => {
+    expect(prepBudgetVerdict(0, 5)).toBe("within");
+    expect(prepBudgetVerdict(5, 5)).toBe("within");
+    expect(prepBudgetLabel(5, 5)).toBeNull();
+  });
+
+  it("is over budget above the limit, up to the hard cap", () => {
+    expect(prepBudgetVerdict(6, 5)).toBe("over");
+    expect(prepBudgetVerdict(10, 5)).toBe("over");
+    expect(prepBudgetLabel(6, 5)).toBe("Over your 5 min budget");
+  });
+
+  it("is excluded past the hard cap — the silent case", () => {
+    expect(prepBudgetVerdict(11, 5)).toBe("excluded");
+    expect(prepBudgetLabel(11, 5)).toBe("Too long to suggest");
+  });
+
+  it("agrees with the filter the recommender actually applies", () => {
+    // The point of extracting it: one rule, not two that can drift.
+    const overCap = scored({ category: "dinner", prep: 11 });
+    const atCap = scored({ category: "dinner", prep: 10 });
+    const r = recommendEatNext({ ...input({ ...DINNER_SLOT, maxPrepMinutes: 5 }, [overCap, atCap]) });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([atCap.meal.id]);
+    expect(prepBudgetVerdict(11, 5)).toBe("excluded");
+    expect(prepBudgetVerdict(10, 5)).toBe("over");
+  });
+});
+
+// B1. The engine leads with its role-preferred pick even when that meal cannot
+// be made — deliberately, and pinned by "role match still beats availability"
+// above. What was missing was the sentence naming the one you COULD eat, which
+// left the Home card showing a single meal the owner had no way to act on.
+describe("eatNextReadyAlternative", () => {
+  const rec = (mealId: string, assemblable: boolean | null) => ({
+    mealId, name: mealId, reasons: [], calories: 400, protein: 20, prepMinutes: 5, score: 80,
+    faceUrl: null,
+    stock: assemblable === null ? undefined : {
+      assemblable, missingCount: assemblable ? 0 : 2, unlinkedCount: 0,
+      expiringItemName: null, expiringDaysLeft: null,
+    },
+  });
+
+  it("names the first makeable meal below an un-makeable headline", () => {
+    expect(eatNextReadyAlternative([rec("a", false), rec("b", true), rec("c", true)])?.mealId)
+      .toBe("b");
+  });
+
+  it("says nothing when the headline is already makeable", () => {
+    expect(eatNextReadyAlternative([rec("a", true), rec("b", true)])).toBeNull();
+  });
+
+  it("says nothing when nothing below is makeable either", () => {
+    expect(eatNextReadyAlternative([rec("a", false), rec("b", false)])).toBeNull();
+  });
+
+  it("treats unknown stock as not an alternative — it would be a guess", () => {
+    expect(eatNextReadyAlternative([rec("a", false), rec("b", null)])).toBeNull();
+  });
+
+  it("never offers the headline as its own alternative", () => {
+    expect(eatNextReadyAlternative([rec("a", false)])).toBeNull();
+  });
+
+  it("is empty-safe", () => {
+    expect(eatNextReadyAlternative([])).toBeNull();
+  });
+});
+
+// B2. "Missing 2" said how many and never which, so the badge was a number you
+// could not act on without opening the meal to find out what it wanted.
+describe("eatNextMissingLine", () => {
+  const withNames = (missingNames: string[]): EatNextStockInfo => ({
+    assemblable: false, missingCount: missingNames.length, missingNames,
+    unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null,
+  });
+
+  it("names them", () => {
+    expect(eatNextMissingLine(withNames(["Banana", "Peanut Butter"])))
+      .toBe("Missing: Banana, Peanut Butter");
+  });
+
+  it("caps a long list rather than running off the card", () => {
+    expect(eatNextMissingLine(withNames(["A", "B", "C", "D", "E"])))
+      .toBe("Missing: A, B, C +2 more");
+  });
+
+  it("says nothing when nothing is missing", () => {
+    expect(eatNextMissingLine(withNames([]))).toBeNull();
+  });
+
+  it("says nothing when the names were never supplied", () => {
+    // An ABSENT list is not an empty one. Rendering "Missing: " with nothing
+    // after it is the failure this helper exists to avoid.
+    expect(eatNextMissingLine({
+      assemblable: false, missingCount: 2, unlinkedCount: 0,
+      expiringItemName: null, expiringDaysLeft: null,
+    })).toBeNull();
+  });
+
+  it("says nothing for unknown stock", () => {
+    expect(eatNextMissingLine(undefined)).toBeNull();
+  });
+});
+
+describe("buildStockByMealId — the names behind the count", () => {
+  it("keeps the count and the names in step", () => {
+    const m = scored({ category: "dinner" });
+    const map = buildStockByMealId({
+      meals: [{
+        id: m.meal.id,
+        items: [
+          { saved_food_id: "sf-a", savedFood: { name: "Have It", barcode: null } },
+          { saved_food_id: "sf-b", savedFood: { name: "Want It", barcode: null } },
+        ],
+      }],
+      conceptIdsBySavedFoodId: new Map([["sf-a", ["a"]], ["sf-b", ["b"]]]),
+      inventory: [{
+        id: "inv1", name: "A thing", barcode: null,
+        totalQuantity: 3, conceptIds: ["a"], daysLeft: null,
+      }],
+    });
+    const info = map.get(m.meal.id)!;
+    expect(info.missingNames).toEqual(["Want It"]);
+    expect(info.missingCount).toBe(info.missingNames!.length);
   });
 });

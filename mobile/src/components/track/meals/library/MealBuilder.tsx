@@ -368,7 +368,7 @@ export function MealBuilder({
           <Text style={lib.mutedText}>
             {Math.round(score.totalCalories)} cal · {Math.round(score.totalProtein)}g protein
           </Text>
-          <Badge label={String(score.score)} tone={scoreTone(score.score)} />
+          <Badge label={String(score.score)} suffix="/100" tone={scoreTone(score.score)} />
         </View>
         {enteredPrep === null && (
           // Says "isn't a whole number", not "is blank": the condition is

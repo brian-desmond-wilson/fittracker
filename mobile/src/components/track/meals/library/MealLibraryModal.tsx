@@ -1,10 +1,10 @@
 // mobile/src/components/track/meals/library/MealLibraryModal.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert, Modal, SectionList, StatusBar, Text, TouchableOpacity, View,
+  Alert, Modal, SectionList, StatusBar, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Plus } from "lucide-react-native";
+import { ChevronLeft, Plus, X } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
 import type { MealCategory, MealTotals, MealWithItems } from "@/src/types/meal-library";
 import {
@@ -12,6 +12,12 @@ import {
 } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
+import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
+import { addSuggestions } from "@/src/lib/supabase/shopping";
+import { matchesQuery } from "@/src/lib/mealSearch";
+import { shouldRetire } from "@/src/lib/mealRetirement";
+import { daysBetweenLocalDates } from "@/src/lib/stockState";
+import { getLocalDateString } from "@/src/lib/dates";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import {
   computeMealTotals, createMeal, createUserLink, deleteMeal,
@@ -19,11 +25,12 @@ import {
   undoMealLog, updateMeal,
   type MealInput, type MealLibraryData,
 } from "@/src/lib/supabase/mealLibrary";
-import { spacing } from "@/src/theme/tokens";
+import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button, EmptyState, LoadingState } from "@/src/components/ui";
 import { MealRow } from "./MealRow";
 import { MealDetail } from "./MealDetail";
 import { MealBuilder } from "./MealBuilder";
+import { ConceptPickerSheet } from "./ConceptPickerSheet";
 import { lib } from "./styles";
 
 type View_ =
@@ -56,6 +63,11 @@ export function MealLibraryModal({
   const [view, setView] = useState<View_>({ mode: "list" });
   const [busy, setBusy] = useState(false);
   const [inStockOnly, setInStockOnly] = useState(false);
+  // B4. The library was un-searchable inside its own modal — seventeen meals
+  // across six category sections, and the only way to a specific one was to
+  // scroll. Local filtering, because the library is tens of rows and already
+  // in memory.
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
@@ -128,35 +140,31 @@ export function MealLibraryModal({
     [load],
   );
 
+  // `brianScoreInputFor`, not a hand-rolled copy of it. This screen carried a
+  // third inline transcription of that mapping — the exact duplication the
+  // builder was extracted to end — and it had already drifted: the builder
+  // learned `completePortion` and this copy did not, so a delivered meal
+  // scored as a whole meal everywhere in the app EXCEPT the one screen where
+  // you read its score breakdown. The mapping is under test; an inline copy
+  // never can be.
   const scores = useMemo(() => {
     const map = new Map<string, BrianScoreResult>();
     if (!data) return map;
     for (const meal of data.meals) {
       map.set(
         meal.id,
-        computeBrianScore({
-          prepMinutes: meal.prep_minutes,
-          role: meal.role,
-          tasteOverride: meal.taste_override,
-          items: meal.items.map((it) => ({
-            calories: it.savedFood.calories,
-            protein: it.savedFood.protein,
-            servings: it.servings,
-            smallPiecesOk: it.small_pieces_ok,
-            concepts: (data.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
-              .map((id) => data.conceptsById.get(id))
-              .filter((c): c is NonNullable<typeof c> => !!c)
-              .map((c) => ({
-                rating: c.rating,
-                requiresSmallPieces: c.requires_small_pieces,
-                prepIntensive: c.prep_intensive,
-              })),
-          })),
-        }),
+        computeBrianScore(
+          brianScoreInputFor(meal, data.conceptIdsBySavedFoodId, data.conceptsById),
+        ),
       );
     }
     return map;
   }, [data]);
+
+  // Falls back to the schema default while the library is still loading, so
+  // the memo below has a stable primitive rather than churning between
+  // undefined and a number on first paint.
+  const maxPrepMinutes = data?.maxPrepMinutes ?? 5;
 
   // Built alongside `scores` and keyed the same way, so `renderItem` can hand
   // MealRow a STABLE totals object. Recomputing `computeMealTotals(item.items)`
@@ -198,10 +206,44 @@ export function MealLibraryModal({
     return map;
   }, [data]);
 
+  // C1. A rotating delivery menu adds a permanent one-item meal per dish —
+  // about eight a week — so the library doubles roughly monthly with dishes
+  // that may never return, diluting every screen that is about deciding what
+  // to eat. Retired meals are HIDDEN, never deleted: you ate them, their logs
+  // point at them, and a favourite comes back next season. Stock returning
+  // un-retires a meal on its own, with no state to keep in sync.
+  const retiredIds = useMemo(() => {
+    const out = new Set<string>();
+    if (!data) return out;
+    const today = getLocalDateString();
+    for (const meal of data.meals) {
+      const lastLogged = data.lastLoggedByMealId.get(meal.id) ?? null;
+      out.add(meal.id);
+      if (!shouldRetire({
+        isCompletePortion: meal.is_complete_portion ?? false,
+        // For a one-item prepared meal, "assemblable" IS "a unit is in the
+        // kitchen" — the verdict is already computed, so no second stock read.
+        totalQuantity: assemblabilityById.get(meal.id)?.assemblable ? 1 : 0,
+        daysSinceLastLogged: lastLogged
+          ? daysBetweenLocalDates(lastLogged, today)
+          : null,
+        daysSinceCreated: daysBetweenLocalDates(
+          getLocalDateString(new Date(meal.created_at)),
+          today,
+        ),
+      })) {
+        out.delete(meal.id);
+      }
+    }
+    return out;
+  }, [data, assemblabilityById]);
+
   const sections = useMemo(() => {
     if (!data) return [];
     return CATEGORY_SECTION_ORDER.map((category) => {
-      let meals = data.meals.filter((m) => m.category === category);
+      let meals = data.meals.filter(
+        (m) => m.category === category && !retiredIds.has(m.id),
+      );
       // Composes with the category split rather than replacing it: each
       // section is narrowed in place, and `.filter((s) => s.data.length > 0)`
       // below then drops any section left empty — so a category with no
@@ -209,16 +251,40 @@ export function MealLibraryModal({
       if (inStockOnly) {
         meals = meals.filter((m) => assemblabilityById.get(m.id)?.assemblable);
       }
+      // Composes with the stock filter the same way: narrow in place, and the
+      // empty-section drop below removes any category left with nothing.
+      if (query.trim().length > 0) {
+        meals = meals.filter((m) => matchesQuery(m.name, query));
+      }
       if (category === "emergency") {
         // Biggest rescue first (spec §9.1).
         meals = [...meals].sort(
           (a, b) =>
             computeMealTotals(b.items).calories - computeMealTotals(a.items).calories,
         );
+      } else {
+        // B7. Categories still group the library — you come here looking for
+        // a breakfast — but WITHIN a category the meals you can actually make
+        // come first. Ordering was effectively alphabetical (the query's
+        // `order("name")` carried through), so on a real library the two
+        // makeable meals out of seventeen sat wherever the alphabet put them.
+        //
+        // Sorted rather than filtered: `inStockOnly` already exists for the
+        // filtering answer, and defaulting it on would hide fifteen of the
+        // seventeen — a worse failure than burying two.
+        meals = [...meals].sort((a, b) => {
+          const aReady = assemblabilityById.get(a.id)?.assemblable ? 0 : 1;
+          const bReady = assemblabilityById.get(b.id)?.assemblable ? 0 : 1;
+          return (
+            aReady - bReady ||
+            (scores.get(b.id)?.raw ?? 0) - (scores.get(a.id)?.raw ?? 0) ||
+            a.name.localeCompare(b.name)
+          );
+        });
       }
       return { category, data: meals };
     }).filter((s) => s.data.length > 0);
-  }, [data, inStockOnly, assemblabilityById]);
+  }, [data, inStockOnly, query, assemblabilityById, scores, retiredIds]);
 
   const remaining =
     data?.targetCalories != null && dayCalories != null
@@ -301,20 +367,144 @@ export function MealLibraryModal({
     [data, todayDate, onLogged, load, run],
   );
 
+  // E1. Concept links are the curation chore the whole loop is gated on, and
+  // the builder — the one moment you are already thinking about what an
+  // ingredient IS — was saving meals with none at all. This asks the existing
+  // matcher for proposals over the meal's unlinked items.
+  //
+  // `dryRun: true`, so the function proposes and writes NOTHING. Linking here
+  // happens in a foreground moment the owner is looking at, which makes the
+  // right shape a suggestion to accept rather than a silent write; and it is
+  // the owner's concept graph, not the model's.
+  const suggestLinksFor = useCallback(async (mealId: string) => {
+    const library = await fetchMealLibrary();
+    const meal = library.meals.find((m) => m.id === mealId);
+    if (!meal) return;
+    const unlinked = meal.items
+      .map((it) => it.saved_food_id)
+      .filter((id) => (library.conceptIdsBySavedFoodId.get(id) ?? []).length === 0);
+    if (unlinked.length === 0) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("inventory-intelligence", {
+        body: { savedFoodIds: unlinked, dryRun: true },
+      });
+      if (error) throw error;
+      const proposals = ((data?.results ?? []) as Array<{
+        id: string; name: string; concept: { id: string; name: string } | null;
+      }>).filter((r) => r.concept !== null);
+      if (proposals.length === 0) return;
+      const summary = proposals
+        .map((r) => `${r.name} → ${r.concept!.name}`)
+        .join("\n");
+      Alert.alert(
+        proposals.length === 1 ? "Link this ingredient?" : `Link ${proposals.length} ingredients?`,
+        `${summary}\n\nLinking lets the app check your kitchen for them.`,
+        [
+          { text: "Not now", style: "cancel" },
+          {
+            text: "Link",
+            onPress: () => {
+              void run("Couldn't link those", async () => {
+                const userId = await getUserId();
+                for (const r of proposals) {
+                  await createUserLink(userId, r.concept!.id, { savedFoodId: r.id });
+                }
+              });
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      // Silent: this is an offer, and a matcher that is down should not
+      // interrupt saving a meal.
+      console.error("suggestLinksFor:", e);
+    }
+  }, [run]);
+
   const handleSave = useCallback(
     async (input: MealInput) => {
       const editingId = view.mode === "builder" ? view.mealId : null;
+      let savedMealId: string | null = editingId;
       const ok = await run(
         editingId ? "Failed to save meal" : "Failed to create meal",
         async () => {
           const userId = await getUserId();
           if (editingId) await updateMeal(userId, editingId, input);
-          else await createMeal(userId, input);
+          else savedMealId = await createMeal(userId, input);
         },
       );
-      if (ok) setView({ mode: "list" });
+      if (ok) {
+        setView({ mode: "list" });
+        // E1: offered after the save lands, so a matcher that is slow or down
+        // never delays or blocks saving a meal.
+        if (savedMealId) void suggestLinksFor(savedMealId);
+      }
     },
-    [view, run],
+    [view, run, suggestLinksFor],
+  );
+
+  // B2. Name-only rows on purpose: an unresolved ingredient has no inventory
+  // row to point at — that is what makes it missing — so `food_inventory_id`
+  // is null and the demand engine's name-based suppression is what stops it
+  // suggesting the same thing again. Priority 1: you asked for this one
+  // explicitly, which outranks anything the engine inferred.
+  const [addingToList, setAddingToList] = useState(false);
+  const [addedToListMealId, setAddedToListMealId] = useState<string | null>(null);
+  const handleAddMissing = useCallback(
+    async (names: string[]) => {
+      if (names.length === 0 || view.mode !== "detail") return;
+      const mealId = view.mealId;
+      setAddingToList(true);
+      try {
+        const userId = await getUserId();
+        await addSuggestions(userId, names.map((name) => ({
+          name,
+          foodInventoryId: null,
+          vendorId: null,
+          quantity: 1,
+          unit: null,
+          priority: 1 as const,
+          reasons: ["needed for a meal you opened"],
+        })));
+        setAddedToListMealId(mealId);
+      } catch (e) {
+        console.error("add missing to shopping list:", e);
+        Alert.alert("Couldn't add to the list", "Nothing was added — try again.");
+      } finally {
+        setAddingToList(false);
+      }
+    },
+    [view],
+  );
+
+  // D4. Repairing a concept link from the meal that is broken by its absence.
+  // Resolves the ingredient NAME back to its saved-food id here rather than
+  // threading ids through `MealAssemblability`, which deliberately reports
+  // display names — the verdict is about what to tell the reader, not about
+  // identity.
+  const [linkTarget, setLinkTarget] = useState<
+    { savedFoodId: string; name: string } | null
+  >(null);
+  const handleLinkIngredient = useCallback(
+    (savedFoodName: string) => {
+      if (view.mode !== "detail" || !data) return;
+      const meal = data.meals.find((m) => m.id === view.mealId);
+      const item = meal?.items.find((it) => it.savedFood.name === savedFoodName);
+      if (!item) return;
+      setLinkTarget({ savedFoodId: item.saved_food_id, name: savedFoodName });
+    },
+    [view, data],
+  );
+  const handlePickConcept = useCallback(
+    async (conceptId: string) => {
+      if (!linkTarget) return;
+      const ok = await run("Couldn't link that", async () => {
+        const userId = await getUserId();
+        await createUserLink(userId, conceptId, { savedFoodId: linkTarget.savedFoodId });
+      });
+      if (ok) setLinkTarget(null);
+    },
+    [linkTarget, run],
   );
 
   const handleDelete = useCallback(
@@ -365,11 +555,12 @@ export function MealLibraryModal({
           totals={totals}
           score={score}
           assemblability={assemblabilityById.get(item.id)}
+          maxPrepMinutes={maxPrepMinutes}
           onPress={handleOpenDetail}
         />
       );
     },
-    [scores, totalsById, assemblabilityById, handleOpenDetail],
+    [scores, totalsById, assemblabilityById, maxPrepMinutes, handleOpenDetail],
   );
 
   const detailMeal =
@@ -397,6 +588,10 @@ export function MealLibraryModal({
         score={scores.get(detailMeal.id)!}
         assemblability={assemblabilityById.get(detailMeal.id)}
         logging={busy}
+        onAddMissing={handleAddMissing}
+        onLinkIngredient={handleLinkIngredient}
+        addingToList={addingToList}
+        addedToList={addedToListMealId === detailMeal.id}
         onLog={handleLog}
         onEdit={(m) => setView({ mode: "builder", mealId: m.id })}
         onDelete={handleDelete}
@@ -497,6 +692,27 @@ export function MealLibraryModal({
             so it can't scroll away while it is hiding rows — the state that
             most needs to stay visible is the one that shortens the list. */}
         {view.mode === "list" && data && (
+          <>
+          <View style={lib.searchBar}>
+            <TextInput
+              style={lib.searchInput}
+              placeholder="Search your meals…"
+              placeholderTextColor={colors.textMuted}
+              value={query}
+              onChangeText={setQuery}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {query.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setQuery("")}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <X size={icons.md} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={lib.filterBar}>
             <TouchableOpacity
               style={[lib.chip, { marginBottom: 0 }, inStockOnly && lib.chipFilterActive]}
@@ -507,8 +723,17 @@ export function MealLibraryModal({
               </Text>
             </TouchableOpacity>
           </View>
+          </>
         )}
         {body}
+        <ConceptPickerSheet
+          visible={linkTarget !== null}
+          subject={linkTarget?.name ?? ""}
+          concepts={data ? [...data.conceptsById.values()] : []}
+          busy={busy}
+          onPick={handlePickConcept}
+          onClose={() => setLinkTarget(null)}
+        />
       </View>
     </Modal>
   );

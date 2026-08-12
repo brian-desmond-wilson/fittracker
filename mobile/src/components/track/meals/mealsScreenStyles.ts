@@ -225,6 +225,12 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.screenGutter,
   },
+  // Matches "SUGGESTED NOW" and "QUICK ADD" above it, so the tab reads as
+  // three labelled groups instead of a stack of unrelated blocks.
+  loggedHeader: {
+    ...typography.section,
+    marginBottom: spacing.md,
+  },
   mealTypeSection: {
     marginBottom: spacing.xl,
   },

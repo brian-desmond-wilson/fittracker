@@ -131,7 +131,10 @@ function inventoryStation(inp: LoopStatusInputs, readyCount: number): StationSta
     headline: `${inp.inventory.length} items · ${out.length} out · ${expiring.length} expiring`,
     badge,
     attention: out.length > 0 || expiring.length > 0,
-    connector: `assemblability → ${readyCount} of ${inp.meals.length} meals ready`,
+    // A10. These captions describe how one station feeds the next, and they
+    // were written in schema words — "assemblability", "meal_logs" — on a
+    // screen about food. Same fact, said the way a person would say it.
+    connector: `what you have makes ${readyCount} of ${inp.meals.length} meals`,
     detail: {
       lines,
       chips: capChips(out.map((i) => ({ label: i.name, tone: "danger" as const }))),
@@ -152,8 +155,12 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
   return {
     key: "library",
     title: "Meal Library",
+    // A11. "17 meals · top: Cheeseburger Bo…" — the prefix cost five
+    // characters of the one thing worth reading, and the row truncates.
+    // The meal is already the largest thing on the line and the count sits
+    // beside it; nothing needed the word "top".
     headline: top === undefined ? "0 meals — build your library"
-      : `${n} meals · top: ${top.name} ${top.display}`,
+      : `${top.name} ${top.display} · ${n} meals`,
     badge: n === 0 ? null
       : readyCount === 0 ? { label: "0 ready", tone: "warning" }
       : { label: `${readyCount} ready`, tone: "success" },
@@ -190,9 +197,14 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
         // input, `undefined`, and `s` is narrowed non-undefined by this point.
         // `toLowerCase()` assumes the helper's labels carry no proper nouns;
         // the tests below are what hold that assumption in place.
+        // Tone now comes FROM the helper rather than being hardcoded here.
+        // The reasoning above still holds for a genuine shortfall, but it no
+        // longer holds for every non-assemblable meal: one blocked purely by
+        // unlinked ingredients is not a verdict about the kitchen, and the
+        // helper returns `neutral` for it — the same tone as the unknown chip.
         return {
           label: `${m.name}: ${eatNextStockBadge(s)!.label.toLowerCase()}`,
-          tone: "warning" as const,
+          tone: eatNextStockBadge(s)!.tone,
         };
       })),
       footnote: null,
@@ -212,7 +224,6 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
   // Task 14 closed (it also renders "Missing items", not "Missing 0", for a
   // known-unassemblable meal with an unresolved count).
   const pickBadge = eatNextStockBadge(pick?.stock);
-  const tone = (assemblable: boolean): StationTone => (assemblable ? "success" : "warning");
   const expiring = pick ? eatNextExpiringLine(pick.stock) : null;
   const runnerUpBadge = eatNextStockBadge(runnerUp?.stock);
   return {
@@ -220,14 +231,18 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
     title: "Eat Next",
     headline: pick ? `${pick.name} · ${pick.calories} cal · ${pick.prepMinutes} min`
       : r?.message ?? "—",
-    badge: pickBadge ? { label: pickBadge.label, tone: tone(pickBadge.assemblable) } : null,
+    badge: pickBadge ? { label: pickBadge.label, tone: pickBadge.tone } : null,
     // Warning badge on the pick, OR a LOADED result that produced no pick at
     // all while the library has meals (spec §5). `eatNext === null` is "not
     // loaded yet", never a stalled loop, so it stays quiet.
+    // Keyed on the WARNING tone, not on `!assemblable`: a pick held back only
+    // by unlinked ingredients is a curation nudge, and raising the loop's
+    // attention flag for it would put the station permanently in alarm while
+    // the concept graph is still being filled in.
     attention:
-      (pickBadge !== null && !pickBadge.assemblable) ||
+      (pickBadge !== null && pickBadge.tone === "warning") ||
       (r !== null && r.recommendations.length === 0 && inp.meals.length > 0),
-    connector: "you eat → units − · log +",
+    connector: "eating one takes it off the shelf",
     detail: {
       lines: pick ? [
         // `r!` is sound: `pick` comes from `r?.recommendations[0]`, so a
@@ -243,7 +258,7 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
       // count chip only. Adding per-meal missing NAMES would mean re-running
       // assemblability here — a new derivation, out of scope for a projection.
       chips: pickBadge && !pickBadge.assemblable
-        ? [{ label: pickBadge.label, tone: tone(false) }]
+        ? [{ label: pickBadge.label, tone: pickBadge.tone }]
         : [],
       footnote: runnerUp
         ? `Runner-up: ${runnerUp.name} · ${runnerUp.calories} cal${runnerUpBadge ? ` · ${runnerUpBadge.label}` : ""}`
@@ -300,7 +315,7 @@ function paceStation(inp: LoopStatusInputs): StationStatus {
     headline: `${fmt(inp.totals.calories)} / ${goalStr(inp.goals.calories)} cal · ${fmt(inp.totals.protein)} / ${goalStr(inp.goals.protein)}g protein`,
     badge,
     attention: behind,
-    connector: "meal_logs → consumption rates",
+    connector: "what you log becomes your pace",
     detail: { lines, chips: [], footnote: null },
     destination: "/(tabs)/track/meals",
     destinationLabel: "Open Meals",
@@ -336,7 +351,7 @@ function forecastStation(inp: LoopStatusInputs): StationStatus {
     headline,
     badge: urgent.length > 0 ? { label: `${urgent.length} urgent`, tone: "shopping" } : null,
     attention: urgent.length > 0,
-    connector: "gaps + forecasts → suggestions",
+    connector: "gaps and forecasts become a list",
     detail: { lines, chips: [], footnote: hiddenTracked > 0 ? `+${hiddenTracked} more tracked` : null },
     destination: "/(tabs)/track/shopping",
     destinationLabel: "Open Shopping",
@@ -374,7 +389,7 @@ function shoppingStation(inp: LoopStatusInputs): StationStatus {
     attention: s > 0,
     // The loop CLOSING, not a dangling sixth connector: six stations, six
     // connectors, and this one is the arrow back to station 1.
-    connector: "purchased → restock ↺ inventory",
+    connector: "what you buy comes back as stock",
     // When both apply, overflow wins: the ↺ line is decorative, the count is
     // information.
     detail: { lines, chips: [], footnote: overflow > 0 ? `+${overflow} more suggested` : "restock returns units to Inventory ↺" },

@@ -24,7 +24,7 @@ describe("mealsForItem", () => {
       meals: [meal("Overnight oats", [mealItem("sf-oats", ["oats"])])],
       inventory: [inv("inv-oats", ["oats"])],
     });
-    expect(out).toEqual([{ name: "Overnight oats", missing: [], ready: true }]);
+    expect(out).toEqual([{ name: "Overnight oats", missing: [], unlinked: [], ready: true }]);
   });
 
   it("an item with no concept links belongs to no meals", () => {
@@ -52,7 +52,43 @@ describe("mealsForItem", () => {
       ])],
       inventory: [inv("inv-oats", ["oats"])],
     });
-    expect(out).toEqual([{ name: "Oats + berries", missing: ["sf-berries"], ready: false }]);
+    expect(out).toEqual([{ name: "Oats + berries", missing: ["sf-berries"], unlinked: [], ready: false }]);
+  });
+
+  it("an unlinked ingredient blocks readiness without becoming a grocery", () => {
+    // The regression the missing/unlinked split invited: with `ready` derived
+    // from `missing.length === 0`, this meal — whose second ingredient nothing
+    // could ever match — would have been promoted to "Ready".
+    const out = mealsForItem({
+      itemConceptIds: ["oats"],
+      meals: [meal("Oats + mystery", [
+        mealItem("sf-oats", ["oats"]),
+        { savedFoodId: "sf-x", name: "sf-x", barcode: null, conceptIds: [] },
+      ])],
+      inventory: [inv("inv-oats", ["oats"])],
+    });
+    expect(out[0]).toEqual({
+      name: "Oats + mystery", missing: [], unlinked: ["sf-x"], ready: false,
+    });
+  });
+
+  it("sorts by total distance to the plate, counting both buckets", () => {
+    const out = mealsForItem({
+      itemConceptIds: ["oats"],
+      meals: [
+        meal("Two unlinked", [
+          mealItem("sf-oats", ["oats"]),
+          { savedFoodId: "a", name: "a", barcode: null, conceptIds: [] },
+          { savedFoodId: "b", name: "b", barcode: null, conceptIds: [] },
+        ]),
+        meal("One missing", [
+          mealItem("sf-oats", ["oats"]),
+          mealItem("sf-berries", ["berries"]),
+        ]),
+      ],
+      inventory: [inv("inv-oats", ["oats"])],
+    });
+    expect(out.map((m) => m.name)).toEqual(["One missing", "Two unlinked"]);
   });
 
   it("out-of-stock inventory cannot satisfy a meal item", () => {
@@ -61,7 +97,7 @@ describe("mealsForItem", () => {
       meals: [meal("Overnight oats", [mealItem("sf-oats", ["oats"])])],
       inventory: [inv("inv-oats", ["oats"], 0)],
     });
-    expect(out[0]).toEqual({ name: "Overnight oats", missing: ["sf-oats"], ready: false });
+    expect(out[0]).toEqual({ name: "Overnight oats", missing: ["sf-oats"], unlinked: [], ready: false });
   });
 
   it("an item-less meal is a stub, not a ready meal", () => {

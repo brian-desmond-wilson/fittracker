@@ -3,8 +3,10 @@
 import { supabase } from "../supabase";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
 import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
+import { buildBorrowedFoodImages, withBorrowedImage } from "../foodImageBorrow";
+import { invalidateBorrowedFoodImages } from "./borrowedFoodImages";
 import { getLocalDateString } from "../dates";
-import type { FoodConcept } from "@/src/types/nutrition-preferences";
+import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
   MealItemWithFood,
@@ -28,6 +30,9 @@ interface InventoryRowRaw {
   name: string;
   barcode: string | null;
   expiration_date: string | null;
+  /** Read for `buildBorrowedFoodImages` only — the eating half of the app has
+   *  no photographs of its own, and this is where they live. */
+  image_primary_url: string | null;
   /** `is_ready_to_consume` is NOT dead payload despite nothing here reading
    *  the ready/storage split: `projectItemStock` takes a `StockQuantityRow`
    *  (`Pick<StockLocationRow, "quantity" | "is_ready_to_consume">`), so the
@@ -46,10 +51,79 @@ export interface MealLibraryData {
   inventory: AssemblabilityInventoryRow[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
+  /** C1: meal id → the most recent local date it was logged on. Absent means
+   *  never. Drives retirement, which is what stops a rotating delivery menu
+   *  burying the meals you actually assembled. */
+  lastLoggedByMealId: Map<string, string>;
+  /** nutrition_constraints.max_prep_minutes — the budget the recommender
+   *  filters on. Carried here so the library can SAY that a meal is over it
+   *  (C7) instead of the meal silently never being suggested. */
+  maxPrepMinutes: number;
 }
 
-export async function fetchMealLibrary(): Promise<MealLibraryData> {
-  const [meals, items, concepts, links, inventory, profile] = await Promise.all([
+/** Mirrors the column's own schema default, so a missing constraints row
+ *  behaves exactly like an untouched one — same constant and reasoning as
+ *  `useEatNext`'s. */
+const DEFAULT_MAX_PREP_MINUTES = 5;
+
+/**
+ * D1. Seven independent call sites pull this — the Loop Hub, the Home card's
+ * recommender, the Meals screen's recommender, the Meal Library modal, the
+ * shopping engine, the item-detail page and the inventory screen — and on a
+ * cold app open several fire within the same tick, each issuing the same seven
+ * queries. Nothing shared them.
+ *
+ * TWO mechanisms, and the first is the one that matters:
+ *
+ *   • `inFlight` coalesces concurrent callers onto one round trip. This is
+ *     the mount storm, and it is exact: there is no staleness window at all,
+ *     because everyone waits on the same promise.
+ *   • `cache` collapses a burst that arrives just after one settles, for a
+ *     deliberately short window.
+ *
+ * The TTL is SMALL on purpose. A long one would need every write in the app
+ * to remember to invalidate, and a missed call would show stale stock
+ * indefinitely — the failure mode is silent and the write paths are spread
+ * across screens. At five seconds a missed invalidation self-heals before
+ * anyone reads the screen, so `invalidateMealLibrary` is an optimisation for
+ * immediacy after a known write rather than a correctness requirement.
+ */
+const MEAL_LIBRARY_TTL_MS = 5_000;
+let cached: { data: MealLibraryData; at: number } | null = null;
+let inFlight: Promise<MealLibraryData> | null = null;
+
+/** Drop the cache after a write that changes meals, links or stock. Cheap and
+ *  safe to over-call; see the TTL note above for why missing one is survivable. */
+export function invalidateMealLibrary(): void {
+  cached = null;
+}
+
+export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibraryData> {
+  if (opts?.force) {
+    cached = null;
+    inFlight = null;
+  } else {
+    if (cached && Date.now() - cached.at < MEAL_LIBRARY_TTL_MS) {
+      return Promise.resolve(cached.data);
+    }
+    if (inFlight) return inFlight;
+  }
+  const run = fetchMealLibraryUncached()
+    .then((data) => {
+      cached = { data, at: Date.now() };
+      return data;
+    })
+    .finally(() => {
+      // Cleared whether it resolved or threw: a failed load must not pin every
+      // future caller to the same rejected promise.
+      if (inFlight === run) inFlight = null;
+    });
+  inFlight = run;
+  return run;
+}
+
+async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
+  const [meals, items, concepts, links, inventory, profile, constraints, logs] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     supabase
       .from("meal_items")
@@ -63,13 +137,18 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
       // reads it, and an absent column means the removed fallback cannot be
       // re-added without also editing this query — one more step between a
       // future reader and re-arming the divergence Phase 4 closed.
-      .select("id, name, barcode, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      .select("id, name, barcode, expiration_date, image_primary_url, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
     supabase.from("profiles").select("target_calories").maybeSingle(),
+    // Same single-row reasoning as profiles: `nutrition_constraints` is
+    // unique on user_id and its RLS select policy is owner-only.
+    supabase.from("nutrition_constraints").select("max_prep_minutes").maybeSingle(),
+    // C1. Only rows that name a meal — a free-typed log has nothing to date.
+    supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null),
   ]);
-  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error]
+  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));
@@ -101,9 +180,21 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
   // Library plan's Task 12 builder (`MealBuilder`, `setServings`) does
   // `+ delta` (string concatenation) and `.toFixed()` (throws). NB: a
   // different plan's Task 12 — not this phase's migration apply.
+  const invRows = (inventory.data ?? []) as unknown as InventoryRowRaw[];
+  // A vendor meal exists twice — as the thing you own and as the thing you eat
+  // — and only the owned half carries a photograph. Resolved once here, at the
+  // single place `MealItemWithFood` values are constructed, so every meal
+  // surface (library rows, meal detail, Eat Next's borrowed face) shows the
+  // picture without each of them re-deriving the link.
+  const borrowedImages = buildBorrowedFoodImages(
+    linkRows,
+    new Map(invRows.map((r) => [r.id, r.image_primary_url])),
+  );
+
   const itemRows = ((items.data ?? []) as MealItemWithFood[]).map((it) => ({
     ...it,
     servings: Number(it.servings),
+    savedFood: withBorrowedImage(it.savedFood, borrowedImages),
   }));
   const byMeal = new Map<string, MealItemWithFood[]>();
   for (const it of itemRows) {
@@ -112,7 +203,6 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     byMeal.set(it.meal_id, arr);
   }
 
-  const invRows = (inventory.data ?? []) as unknown as InventoryRowRaw[];
   // ONE clock for the whole map: `getLocalDateString()` inside the callback
   // would sample a fresh `new Date()` per row and could straddle local
   // midnight mid-list, banding two items against different "today"s.
@@ -159,6 +249,17 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     ),
     conceptIdsBySavedFoodId,
     inventory: resolutionInventory,
+    // Max per meal. String comparison is sound and cheap here: these are
+    // YYYY-MM-DD, which sorts lexicographically exactly as it sorts by date.
+    lastLoggedByMealId: ((logs.data ?? []) as Array<{ meal_id: string; date: string }>)
+      .reduce((acc, r) => {
+        const prev = acc.get(r.meal_id);
+        if (!prev || r.date > prev) acc.set(r.meal_id, r.date);
+        return acc;
+      }, new Map<string, string>()),
+    maxPrepMinutes:
+      (constraints.data as { max_prep_minutes: number } | null)
+        ?.max_prep_minutes ?? DEFAULT_MAX_PREP_MINUTES,
     targetCalories:
       (profile.data as { target_calories: number | null } | null)
         ?.target_calories ?? null,
@@ -256,7 +357,10 @@ export interface MealInput {
   items: MealItemInput[];
 }
 
-export async function createMeal(userId: string, input: MealInput): Promise<void> {
+/** Returns the new meal's id, so a caller can act on what it just made
+ *  (E1 offers concept links for it). */
+export async function createMeal(userId: string, input: MealInput): Promise<string> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
@@ -294,6 +398,7 @@ export async function createMeal(userId: string, input: MealInput): Promise<void
     await supabase.from("meals").delete().eq("id", data.id);
     throw itemsError;
   }
+  return data.id;
 }
 
 export async function updateMeal(
@@ -301,6 +406,7 @@ export async function updateMeal(
   mealId: string,
   input: MealInput,
 ): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
@@ -336,6 +442,7 @@ export async function updateMeal(
 }
 
 export async function deleteMeal(mealId: string): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const { error } = await supabase.from("meals").delete().eq("id", mealId);
   if (error) throw error;
 }
@@ -367,6 +474,7 @@ export async function logMeal(
     inventory: ResolutionInventoryRow[];
   },
 ): Promise<LogMealResult> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   // An item-less meal must not log "successfully". `rows` would be [],
   // PostgREST accepts an empty insert without error, and the caller would show
   // a "Logged" toast plus a working Undo for zero rows written — a silent lie
@@ -458,6 +566,24 @@ export async function logMeal(
     const results = (data ?? []) as Array<{ inventory_id: string; consumed: number }>;
     consumedIds = results.filter(r => r.consumed > 0).map(r => r.inventory_id);
   }
+
+  // D3. Record what the decrement ACTUALLY took, beside the claim written
+  // above. `inventory_items` is intent — it is written before this RPC runs
+  // and can name a unit that was never removed — and the consumption
+  // estimator, reading those claims, inherits the error as phantom demand.
+  // The truthful ids were already in hand and were being thrown away after
+  // undo used them.
+  //
+  // Best-effort, and deliberately after the log rows are committed: failing
+  // to annotate history must never fail the log itself, or roll one back.
+  // Scoped by `logged_at`, the same key undo uses to identify this batch.
+  const { error: stampError } = await supabase
+    .from("meal_logs")
+    .update({ consumed_inventory_ids: consumedIds })
+    .eq("meal_id", meal.id)
+    .eq("logged_at", loggedAt);
+  if (stampError) console.error("logMeal: could not record confirmed decrements:", stampError);
+
   return { loggedAt, consumedIds };
 }
 
@@ -466,6 +592,7 @@ export async function undoMealLog(
   loggedAt: string,
   consumedIds: string[],
 ): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const { error } = await supabase
     .from("meal_logs")
     .delete()
@@ -515,6 +642,9 @@ export async function createUserLink(
   conceptId: string,
   target: { savedFoodId: string } | { foodInventoryId: string },
 ): Promise<void> {
+  invalidateMealLibrary(); // D1: links change what every read means
+  // A new link can be the one that lends a saved food its picture.
+  invalidateBorrowedFoodImages();
   const { error } = await supabase.from("food_concept_links").insert({
     user_id: userId,
     concept_id: conceptId,
@@ -525,7 +655,27 @@ export async function createUserLink(
   if (error) throw error;
 }
 
+/**
+ * C3/E2. Record the owner's actual opinion of a concept, and mark it as
+ * theirs rather than ours. Both halves matter: without the timestamp the app
+ * cannot tell an answer from the default it invented, and would keep asking.
+ */
+export async function confirmConceptRating(
+  conceptId: string,
+  rating: ConceptRating,
+): Promise<void> {
+  invalidateMealLibrary(); // taste feeds the score, which feeds every ranking
+  const { error } = await supabase
+    .from("food_concepts")
+    .update({ rating, rating_confirmed_at: new Date().toISOString() })
+    .eq("id", conceptId);
+  if (error) throw error;
+}
+
 export async function deleteLink(linkId: string): Promise<void> {
+  invalidateMealLibrary(); // D1: links change what every read means
+  // Removing a link can take a borrowed picture away again.
+  invalidateBorrowedFoodImages();
   const { error } = await supabase.from("food_concept_links").delete().eq("id", linkId);
   if (error) throw error;
 }

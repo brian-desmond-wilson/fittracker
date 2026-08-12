@@ -3,13 +3,18 @@
 // replacing the suffix-heuristic that can't even match "Rice".
 //
 // Contract:
-//   POST { inventoryIds?: string[], savedFoodIds?: string[] }
+//   POST { inventoryIds?: string[], savedFoodIds?: string[], dryRun?: boolean }
 //   → { results: [{ kind, id, name, concept, category, applied }] }
 //
 // Doctrine (mirrors the app's honesty rules):
 // - The model NEVER invents catalog entries — it picks an id from the lists
 //   we hand it, or null. Under-linking stays the honest failure mode.
-// - High-confidence proposals are applied (link rows matched_by='ai';
+// - `dryRun: true` proposes and writes NOTHING (E1). The Meal Builder uses it:
+//   linking happens in a foreground moment the owner is already looking at, so
+//   the right shape there is a suggestion to accept, not a silent write. The
+//   `applied` flags come back all-false and the caller performs the writes it
+//   chooses.
+// - Otherwise, high-confidence proposals are applied (link rows matched_by='ai';
 //   category maps only added where the item has NONE — existing human
 //   categorization is never overwritten here).
 // - Low-confidence proposals are returned but NOT applied; the item stays in
@@ -87,7 +92,7 @@ serve(async (req) => {
       userId = userData.user.id;
     }
 
-    const { inventoryIds = [], savedFoodIds = [] } = body;
+    const { inventoryIds = [], savedFoodIds = [], dryRun = false } = body;
     if (inventoryIds.length === 0 && savedFoodIds.length === 0) {
       return new Response(JSON.stringify({ results: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -215,7 +220,7 @@ serve(async (req) => {
           out.concept = {
             id: p.conceptId, name: conceptName.get(p.conceptId), confidence: p.conceptConfidence,
           };
-          if (p.conceptConfidence === 'high') {
+          if (p.conceptConfidence === 'high' && !dryRun) {
             const row = kind === 'inv'
               ? { user_id: userId, concept_id: p.conceptId, food_inventory_id: id, matched_by: 'ai' }
               : { user_id: userId, concept_id: p.conceptId, saved_food_id: id, matched_by: 'ai' };
@@ -231,7 +236,7 @@ serve(async (req) => {
             id: p.categoryId, subcategoryId: sub?.category_id === p.categoryId ? p.subcategoryId : null,
             confidence: p.categoryConfidence,
           };
-          if (p.categoryConfidence === 'high') {
+          if (p.categoryConfidence === 'high' && !dryRun) {
             const { error } = await admin.from('food_inventory_category_map')
               .insert({ food_inventory_id: id, category_id: p.categoryId, user_id: userId });
             if (!error) {

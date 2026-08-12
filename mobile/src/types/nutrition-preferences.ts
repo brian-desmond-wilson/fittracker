@@ -17,6 +17,9 @@ export interface FoodConcept {
   name: string;
   slug: string;
   rating: ConceptRating;
+  /** C3/E2: when the owner last confirmed this rating by hand. Null means it
+   *  is a default or an import — usable, but never actually asked about. */
+  rating_confirmed_at?: string | null;
   requires_small_pieces: boolean;
   prep_intensive: boolean;
   form_note: string | null;

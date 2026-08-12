@@ -11,6 +11,7 @@ import {
   assessAssemblability,
   type AssemblabilityInventoryRow,
 } from "./stockState";
+import { mealFaceUrl } from "./mealFace";
 import type { MealCategory, MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
 
 export const POST_WORKOUT_WINDOW_MIN = 180;
@@ -68,7 +69,22 @@ export interface EatNextInput {
 
 export interface EatNextStockInfo {
   assemblable: boolean;
+  /** Ingredients we looked for and did not find. Real groceries. */
   missingCount: number;
+  /**
+   * Which ones (B2). `missingCount` stays the summary every consumer reads
+   * for the number; this is the detail, so "Missing 2" can name the two and
+   * offer to buy them instead of being a dead end.
+   *
+   * Optional because `EatNextStockInfo` is a public input and every existing
+   * caller and fixture predates it — `buildStockByMealId` always populates it,
+   * and always consistently with the count.
+   */
+  missingNames?: string[];
+  /** Ingredients we could not look for at all — no barcode, no concept link.
+   *  A records gap, not a shopping need, and ranked as ignorance rather than
+   *  as a confirmed shortfall (see `stockRank` in `candidate`). */
+  unlinkedCount: number;
   expiringItemName: string | null;
   expiringDaysLeft: number | null;
 }
@@ -181,6 +197,8 @@ export function buildStockByMealId(library: {
     map.set(meal.id, {
       assemblable: a.assemblable,
       missingCount: a.missing.length,
+      missingNames: a.missing,
+      unlinkedCount: a.unlinked.length,
       expiringItemName: a.expiringItemName,
       expiringDaysLeft: a.expiringDaysLeft,
     });
@@ -202,6 +220,12 @@ export interface EatNextRecommendation {
    *  Spec §5.5: ranking reads `raw`; "UI surfaces still display `score`/100."
    *  This field is the UI-facing one — do not swap it for `raw`. */
   score: number;
+  /** The meal's borrowed picture (C5), `null` when no item has one. Resolved
+   *  here rather than at each surface so the Home card and the Meal Library
+   *  cannot pick different faces for the same meal — `mealFaceUrl` is the one
+   *  decision, and this field is how it reaches a consumer that only ever
+   *  receives recommendations, never `MealWithItems`. */
+  faceUrl: string | null;
   /** The stock verdict this recommendation was ranked with, carried as a
    *  TYPED field rather than left only in `reasons`.
    *
@@ -233,10 +257,17 @@ export interface EatNextRecommendation {
 
 /** What a surface renders for `EatNextRecommendation.stock`. */
 export interface EatNextStockBadge {
-  /** `true` → the green "can make it now" treatment; `false` → the amber
-   *  "you're short something" one. A boolean, not a color: the two surfaces
-   *  own their own palettes (Home card vs. the denser Meals chip). */
+  /** Kept as the plain "can I make it now" answer. It is NOT the tone: a meal
+   *  held back only by unlinked ingredients is also `false` here, and that
+   *  case has earned no warning. */
   assemblable: boolean;
+  /**
+   * Which of the three verdicts this is, so every surface states the same one
+   * in the same colour instead of re-deriving it from `assemblable` — which
+   * would collapse "you're short something" and "we can't tell" back into one
+   * amber badge, the exact conflation this split exists to undo.
+   */
+  tone: "success" | "warning" | "neutral";
   label: string;
 }
 
@@ -268,11 +299,19 @@ export function eatNextStockBadge(
   // that lets a `null` through to a property read. Free, and matches the
   // neighbour.
   if (stock == null) return null;
-  if (stock.assemblable) return { assemblable: true, label: "In stock" };
-  return {
-    assemblable: false,
-    label: stock.missingCount > 0 ? `Missing ${stock.missingCount}` : "Missing items",
-  };
+  if (stock.assemblable) return { assemblable: true, tone: "success", label: "In stock" };
+  if (stock.missingCount > 0) {
+    return { assemblable: false, tone: "warning", label: `Missing ${stock.missingCount}` };
+  }
+  // Nothing confirmed absent, yet not makeable — the remainder is ingredients
+  // we cannot identify. Neutral, because no shortfall has been established;
+  // the fix is a concept link, not a shop.
+  if (stock.unlinkedCount > 0) {
+    return { assemblable: false, tone: "neutral", label: `${stock.unlinkedCount} not linked` };
+  }
+  // Unreachable from `buildStockByMealId` (item-less meals are omitted), kept
+  // so a hand-built info object cannot fall through to no badge at all.
+  return { assemblable: false, tone: "warning", label: "Missing items" };
 }
 
 /** The tail of every expiring-rescue string this app renders, in ALL THREE
@@ -318,6 +357,52 @@ function expiryClause(daysLeft: number | null): string {
  * ingredient, are both correctly silent — this line is a rescue notice, not a
  * status field.
  */
+/**
+ * The best recommendation you could actually make right now, when the top one
+ * is not it (B1).
+ *
+ * The comparator puts the context's ROLE preference above availability, and
+ * that is deliberate: a post-workout meal you must shop for really does beat a
+ * plain one in the fridge when you have just trained, and there is a test that
+ * says so. The cost is what the owner saw — "Banana + PB · Missing 2" as the
+ * headline of the whole feature, with a meal that was in stock AND rescuing
+ * food expiring the next day sitting underneath it. A first line you cannot
+ * act on.
+ *
+ * Rather than overturn the ranking, the surfaces name the fallback. The engine
+ * still leads with its choice and still explains it; this adds the sentence
+ * that was missing — "here is the one you can eat right now instead".
+ *
+ * Returns null when the top pick is already makeable (nothing to say) or when
+ * nothing below it is either (nothing to offer). Reads the TYPED `stock`
+ * verdict, never `reasons`, whose entries have no fixed position.
+ */
+/**
+ * "Missing 2" said how many and never which (B2). This is the line that names
+ * them, capped so a five-ingredient gap does not run off the card.
+ *
+ * Null when there is nothing missing, or when the builder did not supply
+ * names — an absent list is not an empty one, and inventing "Missing: " with
+ * nothing after it is the failure mode this replaces.
+ */
+export const MISSING_NAMES_SHOWN = 3;
+
+export function eatNextMissingLine(stock: EatNextStockInfo | undefined): string | null {
+  const names = stock?.missingNames;
+  if (!names || names.length === 0) return null;
+  const shown = names.slice(0, MISSING_NAMES_SHOWN).join(", ");
+  const rest = names.length - MISSING_NAMES_SHOWN;
+  return rest > 0 ? `Missing: ${shown} +${rest} more` : `Missing: ${shown}`;
+}
+
+export function eatNextReadyAlternative(
+  recommendations: readonly EatNextRecommendation[],
+): EatNextRecommendation | null {
+  const top = recommendations[0];
+  if (!top || top.stock?.assemblable) return null;
+  return recommendations.slice(1).find((r) => r.stock?.assemblable) ?? null;
+}
+
 export function eatNextExpiringLine(stock: EatNextStockInfo | undefined): string | null {
   if (stock == null || stock.expiringItemName == null) return null;
   return `Uses ${stock.expiringItemName} — ${expiryClause(stock.expiringDaysLeft)}`;
@@ -421,7 +506,13 @@ function stockReasons(info: EatNextStockInfo | undefined): string[] {
   if (!info) return [];
   const out = info.assemblable
     ? ["in stock"]
-    : [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
+    : info.missingCount > 0
+      ? [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`]
+      // Not "missing 0 ingredients", and not silence either: the meal was held
+      // back and the reason is fixable in one tap on the meal, not at a shop.
+      : [
+          `${info.unlinkedCount} ingredient${info.unlinkedCount === 1 ? "" : "s"} not linked yet`,
+        ];
   // The expiring line is appended on BOTH branches — deliberately, adopting
   // Task 8's DECISION for the same signal in MealDetail: the rescue is about
   // an ingredient the user ALREADY OWNS, which is *more* actionable when the
@@ -448,19 +539,53 @@ function stockReasons(info: EatNextStockInfo | undefined): string[] {
   return out;
 }
 
+/**
+ * Where a meal's prep time sits relative to the budget (C7).
+ *
+ * Both consequences of that number used to be expressed only as inline
+ * comparisons inside this file: `over` earns a caveat but still gets
+ * suggested, `excluded` is dropped from the running entirely. The second is
+ * invisible — a meal simply never appears, and nothing in the library where
+ * you browse it explains why — so the rule is named and exported, and the
+ * Meal Library states it on the row rather than re-deriving the arithmetic.
+ */
+export type PrepBudgetVerdict = "within" | "over" | "excluded";
+
+export function prepBudgetVerdict(
+  prepMinutes: number,
+  maxPrepMinutes: number,
+): PrepBudgetVerdict {
+  if (prepMinutes > maxPrepMinutes * PREP_HARD_CAP_FACTOR) return "excluded";
+  if (prepMinutes > maxPrepMinutes) return "over";
+  return "within";
+}
+
+/** The words for that verdict, or null when there is nothing to say. One
+ *  definition, so the library badge and any future surface agree. */
+export function prepBudgetLabel(
+  prepMinutes: number,
+  maxPrepMinutes: number,
+): string | null {
+  switch (prepBudgetVerdict(prepMinutes, maxPrepMinutes)) {
+    case "excluded": return "Too long to suggest";
+    case "over": return `Over your ${maxPrepMinutes} min budget`;
+    default: return null;
+  }
+}
+
 function baseEligible(m: ScoredMeal, maxPrepMinutes: number): boolean {
   if (m.score.containsNever) return false;
-  return m.meal.prep_minutes <= maxPrepMinutes * PREP_HARD_CAP_FACTOR;
+  return prepBudgetVerdict(m.meal.prep_minutes, maxPrepMinutes) !== "excluded";
 }
 
 function prepReason(m: ScoredMeal, maxPrepMinutes: number): string[] {
-  return m.meal.prep_minutes > maxPrepMinutes
+  return prepBudgetVerdict(m.meal.prep_minutes, maxPrepMinutes) === "over"
     ? [`${m.meal.prep_minutes} min — over your prep budget`]
     : [];
 }
 
 function rank(cands: Candidate[]): Candidate[] {
-  return [...cands].sort(
+  return ([...cands].sort(
     (a, b) =>
       a.roleRank - b.roleRank ||
       // Availability sits between role and score (spec §9): the context's
@@ -476,6 +601,20 @@ function rank(cands: Candidate[]): Candidate[] {
       b.score.raw - a.score.raw ||
       a.meal.prep_minutes - b.meal.prep_minutes ||
       a.meal.name.localeCompare(b.meal.name),
+  ));
+}
+
+/** The one place a recommendation's picture is chosen, so both the `toRecs`
+ *  path and the protein-short site below cannot diverge. Mirrors `MealRow`'s
+ *  mapping exactly — calories are per-item TOTALS (unit calories × servings),
+ *  which is what `mealFaceUrl` ranks on. */
+function faceOf(meal: MealWithItems): string | null {
+  return mealFaceUrl(
+    meal.items.map((it) => ({
+      displayOrder: it.display_order,
+      imageUrl: it.savedFood.image_primary_url,
+      calories: (it.savedFood.calories ?? 0) * it.servings,
+    })),
   );
 }
 
@@ -488,6 +627,7 @@ function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): 
     protein: Math.round(c.totals.protein),
     prepMinutes: c.meal.prep_minutes,
     score: c.score.score,
+    faceUrl: faceOf(c.meal),
     stock: c.stock,
   }));
 }
@@ -510,9 +650,35 @@ function candidate(
     // No map, or no entry for this meal → 1 (unknown), which sorts after
     // in-stock and before known-missing. An absent map therefore leaves
     // every candidate tied on both new terms, i.e. bit-for-bit prior order.
-    stockRank: info === undefined ? 1 : info.assemblable ? 0 : 2,
+    // 0 = confirmed makeable, 1 = we cannot say, 2 = confirmed short.
+    // A meal blocked ONLY by unlinked ingredients belongs in the middle tier,
+    // not the bottom: rank 2 asserts "we established you can't make this",
+    // and for an ingredient nobody has identified we established nothing.
+    // Exactly the argument the item-less DECISION above makes for `undefined`.
+    stockRank:
+      info === undefined ? 1
+      : info.assemblable ? 0
+      : info.missingCount > 0 ? 2
+      : 1,
     expiringRank: info !== undefined && info.expiringItemName != null ? 0 : 1,
   };
+}
+
+/**
+ * Fresh-first (owner decision, 2026-08-12): an expiring rescue the owner can
+ * make RIGHT NOW passes the context's role/category preference (roleRank 0)
+ * instead of queueing behind it — the ingredient's clock is a harder deadline
+ * than the slot's shape. Only the MAKEABLE ones: an unmakeable rescue still
+ * joins its context as a plain candidate, so the pinned doctrine that an
+ * unmakeable rescue never outranks a makeable meal (the stockRank tests)
+ * survives. That restriction is load-bearing — `roleRank` sits ABOVE
+ * `stockRank` in `rank`, so boosting an unmakeable rescue here would put a
+ * meal you cannot cook above one you can.
+ */
+function boostMakeableRescue(c: Candidate): Candidate {
+  return c.stock?.assemblable && c.stock.expiringItemName != null
+    ? { ...c, roleRank: 0 }
+    : c;
 }
 
 /** Calorie half of the goal_hit rule (spec §5.3.2): calories at/over goal,
@@ -537,7 +703,10 @@ function catchUpCandidates(
     .map((m) => candidate(m, ["bridge"], maxPrepMinutes, [], stockByMealId));
 }
 
-/** Next main-meal slot strictly after now, else snack (mealPace's milestone rule). */
+/** Next main-meal slot strictly after now, else snack (mealPace's milestone
+ *  rule). Since the owner decision of 2026-08-12 this is the NUDGE's clock
+ *  only — "when is the next milestone to fire after" is genuinely a
+ *  strictly-future question. The next_meal context reads `currentSlot`. */
 function nextSlot(
   nowMinutes: number,
   mealTimesMinutes: EatNextInput["mealTimesMinutes"],
@@ -550,6 +719,56 @@ function nextSlot(
     .filter((e) => e.atMinutes > nowMinutes)
     .sort((a, b) => a.atMinutes - b.atMinutes);
   return entries[0] ?? { slot: "snack", atMinutes: null };
+}
+
+/**
+ * The meal slot to recommend for RIGHT NOW (owner decision, 2026-08-12 —
+ * supersedes spec §5.3.6's "strictly after now" reading for the next_meal
+ * context).
+ *
+ * `nextSlot` reads the clock the way a timetable does: the moment a meal time
+ * passes, that meal is over. Applied to recommendations it meant lunch
+ * stopped existing at 12:01 — the engine was already shopping for dinner and
+ * a lunch-category meal could not be suggested at all. The case that exposed
+ * it: an in-stock pasta expiring tomorrow vanished at lunchtime in favor of a
+ * bridge snack for a dinner six hours away.
+ *
+ * This reads the clock the way a person does: it is still lunchtime until you
+ * are closer to dinner than to lunch. A slot keeps counting past its own time
+ * up to the midpoint to the next meal (the midpoint itself tips forward);
+ * dinner's grace runs to the midpoint of what remains of the eating window,
+ * after which the evening is snack territory exactly as before. Before the
+ * day's first meal, that meal is simply upcoming — unchanged.
+ *
+ * `atMinutes` stays the slot's OWN clock time even when that time has passed.
+ * Its one reader (`farFromMeal`) asks "is the target meal ≥2 h away", and a
+ * past target never is — which is right: during a slot's grace the meal
+ * itself is the suggestion, not a bridge toward it.
+ */
+function currentSlot(
+  nowMinutes: number,
+  mealTimesMinutes: EatNextInput["mealTimesMinutes"],
+  windowEndMinutes: number,
+): { slot: "breakfast" | "lunch" | "dinner" | "snack"; atMinutes: number | null } {
+  const entries = [
+    { slot: "breakfast" as const, atMinutes: mealTimesMinutes.breakfast },
+    { slot: "lunch" as const, atMinutes: mealTimesMinutes.lunch },
+    { slot: "dinner" as const, atMinutes: mealTimesMinutes.dinner },
+  ].sort((a, b) => a.atMinutes - b.atMinutes);
+  const prev = [...entries].reverse().find((e) => e.atMinutes <= nowMinutes);
+  const next = entries.find((e) => e.atMinutes > nowMinutes);
+  if (!prev) {
+    // Before the day's first meal. `next` cannot be undefined here (no prev
+    // means now precedes every entry), but `??` keeps this total without a
+    // non-null assertion.
+    return next ?? { slot: "snack", atMinutes: null };
+  }
+  if (next) {
+    return nowMinutes - prev.atMinutes < next.atMinutes - nowMinutes ? prev : next;
+  }
+  return nowMinutes - prev.atMinutes < windowEndMinutes - nowMinutes
+    ? prev
+    : { slot: "snack", atMinutes: null };
 }
 
 export function recommendEatNext(input: EatNextInput): EatNextResult {
@@ -600,6 +819,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             protein: Math.round(top.totals.protein),
             prepMinutes: top.meal.prep_minutes,
             score: top.score.score,
+            faceUrl: faceOf(top.meal),
             // This site builds its recommendation inline (terminal, single
             // pick, sorted by protein desc) and so bypasses `candidate()` and
             // `toRecs` — which is exactly why Task 9 recorded it as the one
@@ -687,13 +907,33 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 
   // 5. catch_up — falls through when empty.
   if (behind && gap > 0) {
-    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId);
+    const inBand = catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId);
+    const bandIds = new Set(inBand.map((c) => c.meal.id));
+    // Fresh-first (owner decision, 2026-08-12): the band asks "does this meal
+    // fit the remaining gap"; an expiring rescue is exempt from that fit. The
+    // gap survives the evening — the ingredient does not. As the day wore on
+    // and the gap grew, the band walked upward PAST the expiring meal and the
+    // engine dropped it in favor of nothing. Its reason states the partial
+    // contribution honestly instead of borrowing the closes-the-gap copy.
+    // The merge lives HERE, not in `catchUpCandidates`: the nudge's body pick
+    // shares that helper, and a static notification should keep suggesting
+    // the meal sized to the gap it names.
+    const rescues = eligible
+      .filter(
+        (m) =>
+          !bandIds.has(m.meal.id) &&
+          stockByMealId?.get(m.meal.id)?.expiringItemName != null,
+      )
+      .map((m) => candidate(m, [], maxPrepMinutes, [], stockByMealId));
+    const cands = [...inBand, ...rescues].map(boostMakeableRescue);
     if (cands.length > 0) {
       return {
         context: "catch_up",
         message: `${gap} cal behind pace`,
         recommendations: toRecs(rank(cands), (c) => [
-          `closes the ~${gap} cal gap (${Math.round(c.totals.calories)} cal, ${c.meal.prep_minutes} min)`,
+          bandIds.has(c.meal.id)
+            ? `closes the ~${gap} cal gap (${Math.round(c.totals.calories)} cal, ${c.meal.prep_minutes} min)`
+            : `~${Math.round(c.totals.calories)} cal toward the ~${gap} cal gap (${c.meal.prep_minutes} min)`,
         ]),
         nudge,
       };
@@ -701,7 +941,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   }
 
   // 6. next_meal — default.
-  const { slot, atMinutes } = nextSlot(nowMinutes, mealTimesMinutes);
+  const { slot, atMinutes } = currentSlot(nowMinutes, mealTimesMinutes, windowEndMinutes);
   const slotCategories: ReadonlyArray<MealCategory> =
     slot === "snack" ? ["snack", "shake"] : [slot];
   const farFromMeal =
@@ -717,8 +957,24 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             m.meal.category === "snack"),
       )
     : eligible.filter((m) => slotCategories.includes(m.meal.category));
-  const cands = pool.map((m) =>
-    candidate(m, preferredRoles, maxPrepMinutes, preferredCategories, stockByMealId));
+  const poolIds = new Set(pool.map((m) => m.meal.id));
+  // Fresh-first (owner decision, 2026-08-12): a meal that would use an
+  // ingredient about to expire is a candidate whatever the slot says. The
+  // slot filter matches food to the time of day; left alone it also meant a
+  // lunch meal whose ingredient turns tomorrow could spend the whole
+  // afternoon invisible while the app suggested shelf-stable snacks.
+  // Emergency-category meals stay out, as everywhere in next_meal (spec
+  // §5.3.6). Its reason names the urgency rather than claiming the slot.
+  const rescues = eligible.filter(
+    (m) =>
+      !poolIds.has(m.meal.id) &&
+      m.meal.category !== "emergency" &&
+      stockByMealId?.get(m.meal.id)?.expiringItemName != null,
+  );
+  const cands = [...pool, ...rescues]
+    .map((m) =>
+      candidate(m, preferredRoles, maxPrepMinutes, preferredCategories, stockByMealId))
+    .map(boostMakeableRescue);
   return {
     context: "next_meal",
     message:
@@ -727,8 +983,10 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           ? EMPTY_LIBRARY_MESSAGE
           : `Nothing in the library fits ${slot} right now.`
         : null,
-    recommendations: toRecs(rank(cands), () => [
-      slot === "snack" ? "between meals" : `next: ${slot}`,
+    recommendations: toRecs(rank(cands), (c) => [
+      poolIds.has(c.meal.id)
+        ? slot === "snack" ? "between meals" : `next: ${slot}`
+        : slot === "snack" ? "worth eating tonight" : `worth eating before ${slot}`,
     ]),
     nudge,
   };

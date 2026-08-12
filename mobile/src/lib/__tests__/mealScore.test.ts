@@ -387,7 +387,7 @@ describe("scoreBand", () => {
 
   it("puts one below SCORE_BAND_CORE_MIN in the mid band", () => {
     expect(scoreBand(SCORE_BAND_CORE_MIN - 1)).toBe("mid");
-    expect(scoreBand(94)).toBe("mid");
+    expect(scoreBand(84)).toBe("mid");
   });
 
   it("puts SCORE_BAND_MID_MIN in the mid band", () => {
@@ -397,7 +397,91 @@ describe("scoreBand", () => {
 
   it("puts one below SCORE_BAND_MID_MIN in the low band", () => {
     expect(scoreBand(SCORE_BAND_MID_MIN - 1)).toBe("low");
-    expect(scoreBand(70)).toBe("low");
+    expect(scoreBand(69)).toBe("low");
     expect(scoreBand(0)).toBe("low");
+  });
+
+  it("separates the real library instead of lumping it into one band", () => {
+    // A8's whole point. These are the scores actually in the library: before
+    // the recalibration only the two 95s were green and everything else —
+    // including three Brian Approved meals — wore the same amber chip.
+    const observed = [95, 95, 93, 93, 88, 87, 80, 77, 77, 77];
+    const bands = observed.map(scoreBand);
+    expect(bands.filter((b) => b === "core")).toHaveLength(6);
+    expect(bands.filter((b) => b === "mid")).toHaveLength(4);
+    expect(bands).not.toContain("low");
+  });
+});
+
+// C2. The calorie ladder is calibrated for meals you ASSEMBLE, where stopping
+// at 440 kcal was a choice. A delivered meal's portion is not a choice, so the
+// same number means "a whole breakfast" rather than "70% of a meal" — and the
+// old ladder disqualified every prepared breakfast in the library for its size.
+describe("complete portions", () => {
+  const meal = (calories: number, completePortion: boolean, over = {}) =>
+    computeBrianScore({
+      prepMinutes: 0,
+      role: null,
+      tasteOverride: "like",
+      completePortion,
+      items: [item({ calories, protein: 35, concepts: [] })],
+      ...over,
+    });
+
+  it("gives a 440-kcal delivered meal full calorie points", () => {
+    expect(meal(440, true).calories).toBe(COMPONENT_MAX.calories);
+  });
+
+  it("still docks the same 440 kcal when you assembled it yourself", () => {
+    expect(meal(440, false).calories).toBe(7);
+  });
+
+  it("holds the line at the new band edge", () => {
+    expect(meal(400, true).calories).toBe(COMPONENT_MAX.calories);
+    expect(meal(399, true).calories).toBe(7);
+  });
+
+  it("does not excuse a genuinely small portion", () => {
+    // Someone else choosing the size does not make a 250-kcal cup a meal.
+    expect(meal(250, true).calories).toBe(4);
+    expect(meal(150, true).calories).toBe(2);
+  });
+
+  it("shifts the whole ladder, leaving no cliff at the top band", () => {
+    // Moving only the 10-point line would strand the 7 above it and drop a
+    // 399-kcal delivered meal from 10 straight to 4.
+    expect([440, 399, 250, 150].map((c) => meal(c, true).calories))
+      .toEqual([10, 7, 4, 2]);
+    expect([540, 440, 350, 250].map((c) => meal(c, false).calories))
+      .toEqual([10, 7, 4, 2]);
+  });
+
+  it("lets a delivered meal earn Brian Approved on size", () => {
+    // 440 kcal, 35g protein, zero prep, liked, no EoE penalty: every other
+    // clause passes, so the calorie bar is the only thing under test.
+    expect(meal(440, true).approved).toBe(true);
+    expect(meal(440, false).approved).toBe(false);
+  });
+
+  it("changes nothing for a bridge, which has its own band", () => {
+    const asBridge = (completePortion: boolean) =>
+      computeBrianScore({
+        prepMinutes: 0,
+        role: "bridge",
+        tasteOverride: "like",
+        completePortion,
+        items: [item({ calories: 300, protein: 35, concepts: [] })],
+      });
+    expect(asBridge(true).calories).toBe(asBridge(false).calories);
+  });
+
+  it("defaults to the assembled ladder when the flag is absent", () => {
+    const r = computeBrianScore({
+      prepMinutes: 0,
+      role: null,
+      tasteOverride: "like",
+      items: [item({ calories: 440, protein: 35, concepts: [] })],
+    });
+    expect(r.calories).toBe(7);
   });
 });
