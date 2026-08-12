@@ -41,6 +41,7 @@ import {
   photosSummary, notesSummary, changeCount, changeLabel, relativeDays,
 } from "@/src/lib/editSummaries";
 import { estimateShelfLifeDays } from "@/src/lib/expiryPolicy";
+import { sanitizeInteger, sanitizeDecimal } from "@/src/lib/numericInput";
 import { SectionKey, UNITS, LocationEntry } from "./edit-food/constants";
 import { useFoodImages } from "./edit-food/useFoodImages";
 
@@ -1797,7 +1798,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       placeholder="0"
                       placeholderTextColor={colors.textFaint}
                       value={calories}
-                      onChangeText={setCalories}
+                      onChangeText={(t) => setCalories(sanitizeInteger(t))}
                       keyboardType="numeric"
                     />
                   </View>
@@ -1822,7 +1823,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       placeholder="0"
                       placeholderTextColor={colors.textFaint}
                       value={protein}
-                      onChangeText={setProtein}
+                      onChangeText={(t) => setProtein(sanitizeDecimal(t))}
                       keyboardType="decimal-pad"
                     />
                   </View>
@@ -1834,7 +1835,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       placeholder="0"
                       placeholderTextColor={colors.textFaint}
                       value={carbs}
-                      onChangeText={setCarbs}
+                      onChangeText={(t) => setCarbs(sanitizeDecimal(t))}
                       keyboardType="decimal-pad"
                     />
                   </View>
@@ -1848,7 +1849,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       placeholder="0"
                       placeholderTextColor={colors.textFaint}
                       value={fats}
-                      onChangeText={setFats}
+                      onChangeText={(t) => setFats(sanitizeDecimal(t))}
                       keyboardType="decimal-pad"
                     />
                   </View>
@@ -1860,7 +1861,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       placeholder="0"
                       placeholderTextColor={colors.textFaint}
                       value={sugars}
-                      onChangeText={setSugars}
+                      onChangeText={(t) => setSugars(sanitizeDecimal(t))}
                       keyboardType="decimal-pad"
                     />
                   </View>
