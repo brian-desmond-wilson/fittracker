@@ -27,6 +27,7 @@ import {
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
+import { daysBetweenLocalDates } from "@/src/lib/stockState";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
 import { styles } from "./edit-food/styles";
@@ -392,8 +393,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     ? `Already used for ${brand.trim()}`
     : "Used elsewhere in your inventory";
 
+  // `daysBetweenLocalDates`, not hand-rolled millisecond arithmetic. The
+  // version this replaces subtracted local MIDNIGHT today from a date
+  // `parseLocalDate` anchors at local NOON, so every gap came out half a day
+  // long and rounded up: a use-by five days out read "in 6 days" here while
+  // the grid and the item page — both of which go through the shared
+  // helper — said five. Same clock at both ends, one answer everywhere.
   const daysUntilExpiry = expirationDate
-    ? Math.round((expirationDate.getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000)
+    ? daysBetweenLocalDates(getLocalDateString(), getLocalDateString(expirationDate))
     : null;
 
   const shelfLifeHint = estimateShelfLifeDays(
