@@ -11,6 +11,7 @@ import {
   assessAssemblability,
   type AssemblabilityInventoryRow,
 } from "./stockState";
+import { mealFaceUrl } from "./mealFace";
 import type { MealCategory, MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
 
 export const POST_WORKOUT_WINDOW_MIN = 180;
@@ -219,6 +220,12 @@ export interface EatNextRecommendation {
    *  Spec §5.5: ranking reads `raw`; "UI surfaces still display `score`/100."
    *  This field is the UI-facing one — do not swap it for `raw`. */
   score: number;
+  /** The meal's borrowed picture (C5), `null` when no item has one. Resolved
+   *  here rather than at each surface so the Home card and the Meal Library
+   *  cannot pick different faces for the same meal — `mealFaceUrl` is the one
+   *  decision, and this field is how it reaches a consumer that only ever
+   *  receives recommendations, never `MealWithItems`. */
+  faceUrl: string | null;
   /** The stock verdict this recommendation was ranked with, carried as a
    *  TYPED field rather than left only in `reasons`.
    *
@@ -597,6 +604,20 @@ function rank(cands: Candidate[]): Candidate[] {
   ));
 }
 
+/** The one place a recommendation's picture is chosen, so both the `toRecs`
+ *  path and the protein-short site below cannot diverge. Mirrors `MealRow`'s
+ *  mapping exactly — calories are per-item TOTALS (unit calories × servings),
+ *  which is what `mealFaceUrl` ranks on. */
+function faceOf(meal: MealWithItems): string | null {
+  return mealFaceUrl(
+    meal.items.map((it) => ({
+      displayOrder: it.display_order,
+      imageUrl: it.savedFood.image_primary_url,
+      calories: (it.savedFood.calories ?? 0) * it.servings,
+    })),
+  );
+}
+
 function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): EatNextRecommendation[] {
   return cands.slice(0, TOP_N).map((c) => ({
     mealId: c.meal.id,
@@ -606,6 +627,7 @@ function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): 
     protein: Math.round(c.totals.protein),
     prepMinutes: c.meal.prep_minutes,
     score: c.score.score,
+    faceUrl: faceOf(c.meal),
     stock: c.stock,
   }));
 }
@@ -727,6 +749,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             protein: Math.round(top.totals.protein),
             prepMinutes: top.meal.prep_minutes,
             score: top.score.score,
+            faceUrl: faceOf(top.meal),
             // This site builds its recommendation inline (terminal, single
             // pick, sorted by protein desc) and so bypasses `candidate()` and
             // `toRecs` — which is exactly why Task 9 recorded it as the one

@@ -38,9 +38,9 @@ const baseInputs = (): LoopStatusInputs => ({
     message: null,
     recommendations: [
       { mealId: "m2", name: "Korean Beef Bowl", reasons: [], calories: 640,
-        protein: 45, prepMinutes: 10, score: 95, stock: stock() },
+        protein: 45, prepMinutes: 10, score: 95, faceUrl: null, stock: stock() },
       { mealId: "m1", name: "Banana + PB", reasons: [], calories: 295,
-        protein: 11, prepMinutes: 2, score: 84,
+        protein: 11, prepMinutes: 2, score: 84, faceUrl: null,
         stock: stock({ assemblable: false, missingCount: 2 }) },
     ],
     nudge: null,

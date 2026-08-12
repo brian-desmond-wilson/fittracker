@@ -1891,6 +1891,7 @@ describe("prepBudgetVerdict / prepBudgetLabel", () => {
 describe("eatNextReadyAlternative", () => {
   const rec = (mealId: string, assemblable: boolean | null) => ({
     mealId, name: mealId, reasons: [], calories: 400, protein: 20, prepMinutes: 5, score: 80,
+    faceUrl: null,
     stock: assemblable === null ? undefined : {
       assemblable, missingCount: assemblable ? 0 : 2, unlinkedCount: 0,
       expiringItemName: null, expiringDaysLeft: null,
