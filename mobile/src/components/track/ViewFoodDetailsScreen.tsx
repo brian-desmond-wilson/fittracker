@@ -630,9 +630,21 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                 {ctx.meals.map((m) => (
                   <View key={m.name} style={styles.mealRow}>
                     <Text style={styles.mealName} numberOfLines={1}>{m.name}</Text>
+                    {/* Three verdicts, not two. "Missing N" is reserved for
+                        ingredients actually looked for and not found; a meal
+                        we simply cannot check says so in neutral rather than
+                        claiming a shortfall. */}
                     <Badge
-                      label={m.ready ? "Ready" : `Missing ${m.missing.length}`}
-                      tone={m.ready ? "success" : "warning"}
+                      label={
+                        m.ready ? "Ready"
+                        : m.missing.length > 0 ? `Missing ${m.missing.length}`
+                        : `${m.unlinked.length} not linked`
+                      }
+                      tone={
+                        m.ready ? "success"
+                        : m.missing.length > 0 ? "warning"
+                        : "neutral"
+                      }
                     />
                   </View>
                 ))}

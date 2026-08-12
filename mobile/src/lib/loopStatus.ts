@@ -190,9 +190,14 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
         // input, `undefined`, and `s` is narrowed non-undefined by this point.
         // `toLowerCase()` assumes the helper's labels carry no proper nouns;
         // the tests below are what hold that assumption in place.
+        // Tone now comes FROM the helper rather than being hardcoded here.
+        // The reasoning above still holds for a genuine shortfall, but it no
+        // longer holds for every non-assemblable meal: one blocked purely by
+        // unlinked ingredients is not a verdict about the kitchen, and the
+        // helper returns `neutral` for it — the same tone as the unknown chip.
         return {
           label: `${m.name}: ${eatNextStockBadge(s)!.label.toLowerCase()}`,
-          tone: "warning" as const,
+          tone: eatNextStockBadge(s)!.tone,
         };
       })),
       footnote: null,
@@ -212,7 +217,6 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
   // Task 14 closed (it also renders "Missing items", not "Missing 0", for a
   // known-unassemblable meal with an unresolved count).
   const pickBadge = eatNextStockBadge(pick?.stock);
-  const tone = (assemblable: boolean): StationTone => (assemblable ? "success" : "warning");
   const expiring = pick ? eatNextExpiringLine(pick.stock) : null;
   const runnerUpBadge = eatNextStockBadge(runnerUp?.stock);
   return {
@@ -220,12 +224,16 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
     title: "Eat Next",
     headline: pick ? `${pick.name} · ${pick.calories} cal · ${pick.prepMinutes} min`
       : r?.message ?? "—",
-    badge: pickBadge ? { label: pickBadge.label, tone: tone(pickBadge.assemblable) } : null,
+    badge: pickBadge ? { label: pickBadge.label, tone: pickBadge.tone } : null,
     // Warning badge on the pick, OR a LOADED result that produced no pick at
     // all while the library has meals (spec §5). `eatNext === null` is "not
     // loaded yet", never a stalled loop, so it stays quiet.
+    // Keyed on the WARNING tone, not on `!assemblable`: a pick held back only
+    // by unlinked ingredients is a curation nudge, and raising the loop's
+    // attention flag for it would put the station permanently in alarm while
+    // the concept graph is still being filled in.
     attention:
-      (pickBadge !== null && !pickBadge.assemblable) ||
+      (pickBadge !== null && pickBadge.tone === "warning") ||
       (r !== null && r.recommendations.length === 0 && inp.meals.length > 0),
     connector: "you eat → units − · log +",
     detail: {
@@ -243,7 +251,7 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
       // count chip only. Adding per-meal missing NAMES would mean re-running
       // assemblability here — a new derivation, out of scope for a projection.
       chips: pickBadge && !pickBadge.assemblable
-        ? [{ label: pickBadge.label, tone: tone(false) }]
+        ? [{ label: pickBadge.label, tone: pickBadge.tone }]
         : [],
       footnote: runnerUp
         ? `Runner-up: ${runnerUp.name} · ${runnerUp.calories} cal${runnerUpBadge ? ` · ${runnerUpBadge.label}` : ""}`

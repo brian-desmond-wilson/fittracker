@@ -109,6 +109,17 @@ export function MealDetail({
             Missing: {assemblability.missing.join(", ")}
           </Text>
         )}
+        {/* The other half of the old "Missing" line. Muted rather than amber,
+            and worded as a records gap, because these are ingredients nothing
+            could have matched — saying "missing" here sent people shopping for
+            food that was already in the fridge. */}
+        {assemblability && assemblability.unlinked.length > 0 && (
+          <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
+            Not linked to anything in your kitchen yet:{" "}
+            {assemblability.unlinked.join(", ")} — so this meal can't be checked
+            against your stock.
+          </Text>
+        )}
         {/* Gated on `expiringItemName != null`, NOT on the truthiness of
             `expiringDaysLeft`: 0 means "expires today" — a retained rescue
             signal (see stockState.ts) — and 0 is falsy. `!= null` rather than

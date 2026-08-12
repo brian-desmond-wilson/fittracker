@@ -137,6 +137,10 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
   // Meal gaps: sanctioned additional CALL SITE of assessAssemblability, not a
   // fourth definition (see eatNext.ts's canonical comment). Gate on
   // missing.length > 0, not !assemblable (item-less meals must not suggest).
+  // Reads `.missing` and deliberately NOT `.unlinked`: an ingredient with no
+  // barcode and no concept link was never checked against the kitchen, so
+  // turning it into a suggestion asks you to buy food you may already own.
+  // That is where the list's "unassigned" rows were coming from.
   const mealGaps = library.meals
     .map((meal) => ({
       mealName: meal.name,

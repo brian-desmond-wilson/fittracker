@@ -815,7 +815,7 @@ import type { EatNextStockInfo } from "../eatNext";
 describe("stock awareness", () => {
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, {
-      assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+      assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
     }]));
 
   it("assemblable beats higher raw", () => {
@@ -902,7 +902,7 @@ describe("stock awareness", () => {
 describe("stock awareness — mutation-driven coverage", () => {
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, {
-      assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+      assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
     }]));
   const behind = (catchUpAmount: number): Partial<EatNextInput> => ({
     caloriePace: { status: "behind", delta: catchUpAmount, catchUpAmount },
@@ -1053,7 +1053,7 @@ describe("stock awareness — mutation-driven coverage", () => {
 // survived the first round's 89 tests. See the Task 9 amendment's round-2 table.
 describe("stock awareness — key, precedence, and copy pinning", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, info(o)]));
@@ -1094,7 +1094,7 @@ describe("stock awareness — key, precedence, and copy pinning", () => {
       stockByMealId: stock([
         [inStockPlain.meal.id, {}],
         [missingExpiring.meal.id, {
-          assemblable: false, missingCount: 1, expiringItemName: "Sirloin", expiringDaysLeft: 1,
+          assemblable: false, missingCount: 1, unlinkedCount: 0, expiringItemName: "Sirloin", expiringDaysLeft: 1,
         }],
         [missingPlain.meal.id, { assemblable: false, missingCount: 1 }],
       ]),
@@ -1246,6 +1246,7 @@ describe("buildStockByMealId", () => {
     expect(stockByMealId.get(m.meal.id)).toEqual({
       assemblable: false,
       missingCount: 2,
+      unlinkedCount: 0,
       expiringItemName: "Kefir",
       expiringDaysLeft: 4,
     });
@@ -1357,6 +1358,7 @@ describe("buildStockByMealId — paths the first round of tests never executed",
     expect(stockByMealId.get(rescue.meal.id)).toEqual({
       assemblable: true,
       missingCount: 0,
+      unlinkedCount: 0,
       expiringItemName: "Kefir",
       expiringDaysLeft: 3,
     });
@@ -1392,43 +1394,89 @@ describe("buildStockByMealId — paths the first round of tests never executed",
     expect(stockByMealId.get(m.meal.id)).toEqual({
       assemblable: true,
       missingCount: 0,
+      unlinkedCount: 0,
       expiringItemName: null,
       expiringDaysLeft: null,
     });
   });
 });
 
-// The OTHER half of Task 10's hand-off. `EatNextStockInfo` is an exported,
-// optional public input, so `{assemblable: false, missingCount: 0}` remains a
-// constructible value even though `buildStockByMealId` now refuses to produce
-// one. This characterises what the recommender does when handed it — which is
-// the whole reason the builder refuses: rank 2 ("we established you can't make
-// this") plus the self-contradicting copy "missing 0 ingredients". Read it as
-// the counterfactual the DECISION above avoids, not as endorsed behavior.
-// Kills two mutants Task 9's round-2 amendment recorded as surviving its whole
-// suite: deriving `stockRank` from `missingCount === 0` instead of
-// `assemblable`, and widening the pluralization ternary to `missingCount <= 1`.
-describe("stock awareness — the {assemblable: false, missingCount: 0} counterfactual", () => {
-  it("stockRank derives from the `assemblable` verdict, never from missingCount", () => {
+// C4 SUPERSEDES Task 10's counterfactual here. `{assemblable: false,
+// missingCount: 0}` used to be an unreachable, self-contradicting value the
+// builder refused to produce ("missing 0 ingredients"). It is now a REAL and
+// common state with a name: a meal held back purely by ingredients that carry
+// no barcode and no concept link, so nothing in the inventory could ever match
+// them. That is ignorance, not a shortfall, and the three tiers below are what
+// the split buys — a meal we cannot check must not be ranked beneath one we
+// checked and found wanting.
+describe("stock awareness — the three tiers of stockRank", () => {
+  const tri = (o: Partial<EatNextStockInfo>): EatNextStockInfo => ({
+    assemblable: false, missingCount: 0, unlinkedCount: 0,
+    expiringItemName: null, expiringDaysLeft: null, ...o,
+  });
+
+  it("orders makeable, then uncheckable, then confirmed short — regardless of score", () => {
+    // Scores run OPPOSITE to the desired order, so only the stock tiers can
+    // produce this result.
     const inStock = scored({ category: "dinner", score: 50 });
-    const phantom = scored({ category: "dinner", score: 99 });
+    const unlinked = scored({ category: "dinner", score: 70 });
+    const short = scored({ category: "dinner", score: 99 });
     const r = recommendEatNext({
-      ...input({}, [phantom, inStock]),
+      ...input({}, [short, unlinked, inStock]),
       stockByMealId: new Map([
-        [inStock.meal.id, {
-          assemblable: true, missingCount: 0,
-          expiringItemName: null, expiringDaysLeft: null,
-        }],
-        [phantom.meal.id, {
-          assemblable: false, missingCount: 0,
-          expiringItemName: null, expiringDaysLeft: null,
-        }],
+        [inStock.meal.id, tri({ assemblable: true })],
+        [unlinked.meal.id, tri({ unlinkedCount: 2 })],
+        [short.meal.id, tri({ missingCount: 2 })],
       ]),
     });
-    // Rank 2 beats the higher raw score: derived from the verdict, not the count.
-    expect(r.recommendations.map((x) => x.mealId)).toEqual([inStock.meal.id, phantom.meal.id]);
-    // Plural at zero — `missingCount === 1 ? "" : "s"`, not `<= 1`.
-    expect(r.recommendations[1].reasons).toContain("missing 0 ingredients");
+    expect(r.recommendations.map((x) => x.mealId))
+      .toEqual([inStock.meal.id, unlinked.meal.id, short.meal.id]);
+  });
+
+  it("ranks an uncheckable meal level with one we know nothing about", () => {
+    // Absent entry (item-less meal) and unlinked-only are the same epistemic
+    // state, so the score decides between them rather than the stock tier.
+    const absent = scored({ category: "dinner", score: 80 });
+    const unlinked = scored({ category: "dinner", score: 90 });
+    const r = recommendEatNext({
+      ...input({}, [absent, unlinked]),
+      stockByMealId: new Map([[unlinked.meal.id, tri({ unlinkedCount: 1 })]]),
+    });
+    expect(r.recommendations[0].mealId).toBe(unlinked.meal.id);
+  });
+
+  it("says what is actually wrong, and never 'missing 0 ingredients'", () => {
+    const unlinked = scored({ category: "dinner", score: 90 });
+    const r = recommendEatNext({
+      ...input({}, [unlinked]),
+      stockByMealId: new Map([[unlinked.meal.id, tri({ unlinkedCount: 2 })]]),
+    });
+    expect(r.recommendations[0].reasons).toContain("2 ingredients not linked yet");
+    expect(r.recommendations[0].reasons).not.toContain("missing 0 ingredients");
+  });
+
+  it("keeps the singular for exactly one, on both branches", () => {
+    // Guards the `=== 1 ? "" : "s"` ternary against widening to `<= 1`.
+    const one = scored({ category: "dinner", score: 90 });
+    const short = recommendEatNext({
+      ...input({}, [one]),
+      stockByMealId: new Map([[one.meal.id, tri({ missingCount: 1 })]]),
+    });
+    expect(short.recommendations[0].reasons).toContain("missing 1 ingredient");
+    const link = recommendEatNext({
+      ...input({}, [one]),
+      stockByMealId: new Map([[one.meal.id, tri({ unlinkedCount: 1 })]]),
+    });
+    expect(link.recommendations[0].reasons).toContain("1 ingredient not linked yet");
+  });
+
+  it("badges the three tiers with three distinct tones", () => {
+    expect(eatNextStockBadge(tri({ assemblable: true })))
+      .toEqual({ assemblable: true, tone: "success", label: "In stock" });
+    expect(eatNextStockBadge(tri({ missingCount: 2 })))
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 2" });
+    expect(eatNextStockBadge(tri({ unlinkedCount: 2 })))
+      .toEqual({ assemblable: false, tone: "neutral", label: "2 not linked" });
   });
 });
 
@@ -1452,7 +1500,7 @@ describe("stock awareness — the {assemblable: false, missingCount: 0} counterf
 // is deliberately the only thing a surface has to get right.
 describe("recommendation.stock — the typed verdict the surfaces render", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
   const stock = (entries: Array<[string, Partial<EatNextStockInfo>]>) =>
     new Map(entries.map(([id, o]) => [id, info(o)]));
@@ -1467,7 +1515,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     // ever needs `assemblable` today is exactly how the next field quietly
     // stops being projected.
     expect(r.recommendations[0].stock).toEqual({
-      assemblable: true, missingCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 4,
+      assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 4,
     });
   });
 
@@ -1482,11 +1530,11 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     });
     expect(r.recommendations).toHaveLength(1);
     expect(r.recommendations[0].stock).toEqual({
-      assemblable: false, missingCount: 3, expiringItemName: null, expiringDaysLeft: null,
+      assemblable: false, missingCount: 3, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null,
     });
     // And the badge the surfaces derive from it.
     expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({
-      assemblable: false, label: "Missing 3",
+      assemblable: false, tone: "warning", label: "Missing 3",
     });
   });
 
@@ -1528,7 +1576,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     });
     expect(r.context).toBe("goal_hit");
     expect(r.recommendations[0].stock).toEqual({
-      assemblable: false, missingCount: 2, expiringItemName: null, expiringDaysLeft: null,
+      assemblable: false, missingCount: 2, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null,
     });
     // Task 9's recorded gap is UNCHANGED and pinned as such: this site still
     // carries no stock REASON strings. The badge is the fix; unifying this
@@ -1577,8 +1625,8 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
     for (const rec of r.recommendations) {
       expect(rec.stock).toEqual(stockByMealId.get(rec.mealId));
     }
-    expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({ assemblable: true, label: "In stock" });
-    expect(eatNextStockBadge(r.recommendations[1].stock)).toEqual({ assemblable: false, label: "Missing 1" });
+    expect(eatNextStockBadge(r.recommendations[0].stock)).toEqual({ assemblable: true, tone: "success", label: "In stock" });
+    expect(eatNextStockBadge(r.recommendations[1].stock)).toEqual({ assemblable: false, tone: "warning", label: "Missing 1" });
   });
 
   it("an item-less meal stays unknown all the way to the field (the Task 10 DECISION, end to end)", () => {
@@ -1606,7 +1654,7 @@ describe("recommendation.stock — the typed verdict the surfaces render", () =>
 // below is the entirety of what those two files decide.
 describe("eatNextStockBadge", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
 
   it("unknown renders NOTHING — null, not a badge that guesses", () => {
@@ -1614,7 +1662,7 @@ describe("eatNextStockBadge", () => {
   });
 
   it("assemblable → the green 'In stock' badge", () => {
-    expect(eatNextStockBadge(info())).toEqual({ assemblable: true, label: "In stock" });
+    expect(eatNextStockBadge(info())).toEqual({ assemblable: true, tone: "success", label: "In stock" });
     // Pinned as an exact string, not a regex: this is the same copy
     // `MealRow` already shows in the Meal Library, and the two are supposed
     // to read identically.
@@ -1623,15 +1671,15 @@ describe("eatNextStockBadge", () => {
 
   it("not assemblable → the amber 'Missing N' badge, with the real count", () => {
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 1 })))
-      .toEqual({ assemblable: false, label: "Missing 1" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 1" });
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 7 })))
-      .toEqual({ assemblable: false, label: "Missing 7" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 7" });
     // Two digits. Without this the count was pinned only at {0,1,3,7}, so a
     // "cap the count at 10" edit survived all 270 tests — the badge is the
     // one place a meal's shortfall is quantified, and a silently clamped
     // number is worse than none.
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 12 })))
-      .toEqual({ assemblable: false, label: "Missing 12" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 12" });
   });
 
   it("expiring info never changes the badge — that signal belongs to the reasons, not here", () => {
@@ -1639,22 +1687,36 @@ describe("eatNextStockBadge", () => {
     // one question ("can I make this now?"); the expiring line is separate
     // copy the reason strings already carry.
     expect(eatNextStockBadge(info({ expiringItemName: "Kefir", expiringDaysLeft: 0 })))
-      .toEqual({ assemblable: true, label: "In stock" });
+      .toEqual({ assemblable: true, tone: "success", label: "In stock" });
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 2, expiringItemName: "Kefir", expiringDaysLeft: 0 })))
-      .toEqual({ assemblable: false, label: "Missing 2" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 2" });
   });
 
-  it("never renders 'Missing 0' — the unproducible-but-constructible counterfactual", () => {
-    // `buildStockByMealId`'s item-less DECISION removed the one input that
-    // yields `{assemblable: false, missingCount: 0}`, but `EatNextStockInfo`
-    // is an exported public input so the value stays constructible — same
-    // reasoning as the `{assemblable: false, missingCount: 0}` counterfactual
-    // above. "Missing 0" reads as a rendering bug; degrade, don't print it.
+  it("never renders 'Missing 0' — the last-resort fallback", () => {
+    // Post-C4 this input means "not makeable, nothing confirmed absent, and
+    // nothing unlinked either" — no longer reachable from
+    // `buildStockByMealId` by any route, but `EatNextStockInfo` is an exported
+    // public input so the value stays constructible. "Missing 0" reads as a
+    // rendering bug; degrade, don't print it.
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 })))
-      .toEqual({ assemblable: false, label: "Missing items" });
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing items" });
     // Still AMBER, not green: the verdict is what decides the color, and a
     // count we can't state does not become "you can make it".
     expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0 }))!.assemblable).toBe(false);
+  });
+
+  it("an unlinked-only verdict reads as neutral, not as a shortfall", () => {
+    // The live case that used to land in the fallback above and print
+    // "Missing items" for food that may well be in the fridge.
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 0, unlinkedCount: 3 })))
+      .toEqual({ assemblable: false, tone: "neutral", label: "3 not linked" });
+  });
+
+  it("a confirmed shortfall outranks an unlinked one in the same verdict", () => {
+    // Both buckets populated: the groceries are the actionable half, so the
+    // badge states those and stays amber.
+    expect(eatNextStockBadge(info({ assemblable: false, missingCount: 2, unlinkedCount: 5 })))
+      .toEqual({ assemblable: false, tone: "warning", label: "Missing 2" });
   });
 });
 
@@ -1672,7 +1734,7 @@ describe("eatNextStockBadge", () => {
 // allowed to happen silently.
 describe("eatNextExpiringLine", () => {
   const info = (o: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-    assemblable: true, missingCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
+    assemblable: true, missingCount: 0, unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null, ...o,
   });
 
   it("names the ingredient and the days left, in MealDetail's exact words", () => {
@@ -1710,7 +1772,7 @@ describe("eatNextExpiringLine", () => {
     // `expiringRank` is likewise unconditioned on `assemblable`, so gating the
     // line here would put the UI back to ranking on a signal it never states.
     expect(eatNextExpiringLine(info({
-      assemblable: false, missingCount: 2, expiringItemName: "Kefir", expiringDaysLeft: 1,
+      assemblable: false, missingCount: 2, unlinkedCount: 0, expiringItemName: "Kefir", expiringDaysLeft: 1,
     }))).toBe("Uses Kefir — expires in 1d");
   });
 

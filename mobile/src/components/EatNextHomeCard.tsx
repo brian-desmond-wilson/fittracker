@@ -179,10 +179,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
           {top.name}
         </Text>
         {stockBadge && (
-          <Badge
-            label={stockBadge.label}
-            tone={stockBadge.assemblable ? "success" : "warning"}
-          />
+          <Badge label={stockBadge.label} tone={stockBadge.tone} />
         )}
       </View>
       <Text style={styles.reason} numberOfLines={2}>

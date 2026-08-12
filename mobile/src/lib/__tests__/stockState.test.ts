@@ -161,13 +161,64 @@ describe("assessAssemblability", () => {
     expect(r.assemblable).toBe(true);
     expect(r.missing).toEqual([]);
   });
-  it("unresolvable item counts as missing (under-claiming is honest)", () => {
+  it("an identifiable item we cannot find is missing (under-claiming is honest)", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ name: "Korean BBQ Sauce", conceptIds: ["bbq-sauce"] })],
+      inventory: [invRow()],
+    });
+    expect(r.assemblable).toBe(false);
+    expect(r.missing).toEqual(["Korean BBQ Sauce"]);
+    expect(r.unlinked).toEqual([]);
+  });
+  it("an item with no barcode and no concept is unlinked, not missing", () => {
+    // We never checked the kitchen for this — there was nothing to check on.
+    // Calling it "missing" would put it on a shopping list for food that may
+    // well be in the fridge already.
     const r = assessAssemblability({
       items: [mealItem({ name: "Korean BBQ Sauce" })],
       inventory: [invRow()],
     });
     expect(r.assemblable).toBe(false);
-    expect(r.missing).toEqual(["Korean BBQ Sauce"]);
+    expect(r.missing).toEqual([]);
+    expect(r.unlinked).toEqual(["Korean BBQ Sauce"]);
+  });
+  it("treats an empty-string barcode as no barcode, matching the resolver", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ barcode: "" })],
+      inventory: [invRow()],
+    });
+    expect(r.unlinked).toEqual(["Boost Very High Calorie"]);
+  });
+  it("splits a mixed meal into the two buckets, each in item order", () => {
+    const r = assessAssemblability({
+      items: [
+        mealItem({ savedFoodId: "a", name: "Unknown One" }),
+        mealItem({ savedFoodId: "b", name: "Have It", conceptIds: ["boost"] }),
+        mealItem({ savedFoodId: "c", name: "Genuinely Out", conceptIds: ["rice"] }),
+        mealItem({ savedFoodId: "d", name: "Unknown Two" }),
+      ],
+      inventory: [invRow({ conceptIds: ["boost"] })],
+    });
+    expect(r.missing).toEqual(["Genuinely Out"]);
+    expect(r.unlinked).toEqual(["Unknown One", "Unknown Two"]);
+    expect(r.assemblable).toBe(false);
+  });
+  it("a barcoded item still counts as missing when nothing answers to it", () => {
+    // A barcode is a positive identification: we looked and it is not here.
+    const r = assessAssemblability({
+      items: [mealItem({ name: "Specific Thing", barcode: "999" })],
+      inventory: [invRow()],
+    });
+    expect(r.missing).toEqual(["Specific Thing"]);
+    expect(r.unlinked).toEqual([]);
+  });
+  it("keeps both buckets empty for a meal it can actually make", () => {
+    const r = assessAssemblability({
+      items: [mealItem({ conceptIds: ["boost"] })],
+      inventory: [invRow({ conceptIds: ["boost"] })],
+    });
+    expect(r.missing).toEqual([]);
+    expect(r.unlinked).toEqual([]);
   });
   it("barcode-terminal-but-out-of-stock is missing, NOT resolved to a concept sibling", () => {
     // Phase 2 amendment: barcode is terminal evidence of identity.
@@ -184,9 +235,9 @@ describe("assessAssemblability", () => {
   it("missing preserves item order", () => {
     const r = assessAssemblability({
       items: [
-        mealItem({ savedFoodId: "a", name: "A-Food" }),
+        mealItem({ savedFoodId: "a", name: "A-Food", conceptIds: ["a"] }),
         mealItem({ savedFoodId: "b", name: "B-Food", conceptIds: ["boost"] }),
-        mealItem({ savedFoodId: "c", name: "C-Food" }),
+        mealItem({ savedFoodId: "c", name: "C-Food", conceptIds: ["c"] }),
       ],
       inventory: [invRow({ conceptIds: ["boost"] })],
     });
@@ -289,6 +340,7 @@ describe("assessAssemblability — the item-less verdict (Task 10 premise)", () 
     ).toEqual({
       assemblable: false,
       missing: [],
+      unlinked: [],
       expiringItemName: null,
       expiringDaysLeft: null,
     });

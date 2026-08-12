@@ -22,8 +22,11 @@ export interface LoopMealInput {
 
 export interface LoopMeal {
   name: string;
-  /** Names of the meal's items with nothing in stock to satisfy them. */
+  /** Names of the meal's items we checked for and did not find. Groceries. */
   missing: string[];
+  /** Items nothing could have matched — no barcode, no concept link. These
+   *  block `ready` without being a shopping need; see `MealAssemblability`. */
+  unlinked: string[];
   ready: boolean;
 }
 
@@ -53,15 +56,25 @@ export function mealsForItem(opts: {
     if (meal.items.length === 0) continue;
     const usesIt = meal.items.some((it) => it.conceptIds.some((c) => wanted.has(c)));
     if (!usesIt) continue;
-    const { missing } = assessAssemblability({ items: meal.items, inventory });
-    out.push({ name: meal.name, missing, ready: missing.length === 0 });
+    const { missing, unlinked, assemblable } = assessAssemblability({
+      items: meal.items,
+      inventory,
+    });
+    // `assemblable`, NOT `missing.length === 0`. Since the missing/unlinked
+    // split, an empty `missing` no longer implies makeable: a meal whose only
+    // unresolved items are unidentifiable has nothing in `missing` and cannot
+    // be confirmed. Deriving readiness from the list would have promoted every
+    // such meal to "Ready" here.
+    out.push({ name: meal.name, missing, unlinked, ready: assemblable });
   }
   // Ready meals first — they are the ones you can act on right now — then by
   // how close the rest are, then by name so the order never wobbles between
-  // renders on ties.
+  // renders on ties. Distance counts BOTH buckets: two unlinked ingredients
+  // is exactly as far from the plate as two absent ones.
+  const distance = (m: LoopMeal) => m.missing.length + m.unlinked.length;
   return out.sort((a, b) =>
-    a.missing.length !== b.missing.length
-      ? a.missing.length - b.missing.length
+    distance(a) !== distance(b)
+      ? distance(a) - distance(b)
       : a.name.localeCompare(b.name),
   );
 }

@@ -93,10 +93,7 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
             <View style={styles.chipHeader}>
               <Text style={styles.chipName} numberOfLines={1}>{rec.name}</Text>
               {badge && (
-                <Badge
-                  label={badge.label}
-                  tone={badge.assemblable ? "success" : "warning"}
-                />
+                <Badge label={badge.label} tone={badge.tone} />
               )}
             </View>
             <Text style={styles.chipStats} numberOfLines={1}>

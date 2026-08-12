@@ -68,7 +68,12 @@ export interface EatNextInput {
 
 export interface EatNextStockInfo {
   assemblable: boolean;
+  /** Ingredients we looked for and did not find. Real groceries. */
   missingCount: number;
+  /** Ingredients we could not look for at all — no barcode, no concept link.
+   *  A records gap, not a shopping need, and ranked as ignorance rather than
+   *  as a confirmed shortfall (see `stockRank` in `candidate`). */
+  unlinkedCount: number;
   expiringItemName: string | null;
   expiringDaysLeft: number | null;
 }
@@ -181,6 +186,7 @@ export function buildStockByMealId(library: {
     map.set(meal.id, {
       assemblable: a.assemblable,
       missingCount: a.missing.length,
+      unlinkedCount: a.unlinked.length,
       expiringItemName: a.expiringItemName,
       expiringDaysLeft: a.expiringDaysLeft,
     });
@@ -233,10 +239,17 @@ export interface EatNextRecommendation {
 
 /** What a surface renders for `EatNextRecommendation.stock`. */
 export interface EatNextStockBadge {
-  /** `true` → the green "can make it now" treatment; `false` → the amber
-   *  "you're short something" one. A boolean, not a color: the two surfaces
-   *  own their own palettes (Home card vs. the denser Meals chip). */
+  /** Kept as the plain "can I make it now" answer. It is NOT the tone: a meal
+   *  held back only by unlinked ingredients is also `false` here, and that
+   *  case has earned no warning. */
   assemblable: boolean;
+  /**
+   * Which of the three verdicts this is, so every surface states the same one
+   * in the same colour instead of re-deriving it from `assemblable` — which
+   * would collapse "you're short something" and "we can't tell" back into one
+   * amber badge, the exact conflation this split exists to undo.
+   */
+  tone: "success" | "warning" | "neutral";
   label: string;
 }
 
@@ -268,11 +281,19 @@ export function eatNextStockBadge(
   // that lets a `null` through to a property read. Free, and matches the
   // neighbour.
   if (stock == null) return null;
-  if (stock.assemblable) return { assemblable: true, label: "In stock" };
-  return {
-    assemblable: false,
-    label: stock.missingCount > 0 ? `Missing ${stock.missingCount}` : "Missing items",
-  };
+  if (stock.assemblable) return { assemblable: true, tone: "success", label: "In stock" };
+  if (stock.missingCount > 0) {
+    return { assemblable: false, tone: "warning", label: `Missing ${stock.missingCount}` };
+  }
+  // Nothing confirmed absent, yet not makeable — the remainder is ingredients
+  // we cannot identify. Neutral, because no shortfall has been established;
+  // the fix is a concept link, not a shop.
+  if (stock.unlinkedCount > 0) {
+    return { assemblable: false, tone: "neutral", label: `${stock.unlinkedCount} not linked` };
+  }
+  // Unreachable from `buildStockByMealId` (item-less meals are omitted), kept
+  // so a hand-built info object cannot fall through to no badge at all.
+  return { assemblable: false, tone: "warning", label: "Missing items" };
 }
 
 /** The tail of every expiring-rescue string this app renders, in ALL THREE
@@ -421,7 +442,13 @@ function stockReasons(info: EatNextStockInfo | undefined): string[] {
   if (!info) return [];
   const out = info.assemblable
     ? ["in stock"]
-    : [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`];
+    : info.missingCount > 0
+      ? [`missing ${info.missingCount} ingredient${info.missingCount === 1 ? "" : "s"}`]
+      // Not "missing 0 ingredients", and not silence either: the meal was held
+      // back and the reason is fixable in one tap on the meal, not at a shop.
+      : [
+          `${info.unlinkedCount} ingredient${info.unlinkedCount === 1 ? "" : "s"} not linked yet`,
+        ];
   // The expiring line is appended on BOTH branches — deliberately, adopting
   // Task 8's DECISION for the same signal in MealDetail: the rescue is about
   // an ingredient the user ALREADY OWNS, which is *more* actionable when the
@@ -510,7 +537,16 @@ function candidate(
     // No map, or no entry for this meal → 1 (unknown), which sorts after
     // in-stock and before known-missing. An absent map therefore leaves
     // every candidate tied on both new terms, i.e. bit-for-bit prior order.
-    stockRank: info === undefined ? 1 : info.assemblable ? 0 : 2,
+    // 0 = confirmed makeable, 1 = we cannot say, 2 = confirmed short.
+    // A meal blocked ONLY by unlinked ingredients belongs in the middle tier,
+    // not the bottom: rank 2 asserts "we established you can't make this",
+    // and for an ingredient nobody has identified we established nothing.
+    // Exactly the argument the item-less DECISION above makes for `undefined`.
+    stockRank:
+      info === undefined ? 1
+      : info.assemblable ? 0
+      : info.missingCount > 0 ? 2
+      : 1,
     expiringRank: info !== undefined && info.expiringItemName != null ? 0 : 1,
   };
 }

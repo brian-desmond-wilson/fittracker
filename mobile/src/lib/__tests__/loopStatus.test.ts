@@ -15,7 +15,7 @@ const state = (over: Partial<ItemStockState> = {}): ItemStockState => ({
 });
 
 const stock = (over: Partial<EatNextStockInfo> = {}): EatNextStockInfo => ({
-  assemblable: true, missingCount: 0,
+  assemblable: true, missingCount: 0, unlinkedCount: 0,
   expiringItemName: null, expiringDaysLeft: null, ...over,
 });
 
