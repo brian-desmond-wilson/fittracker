@@ -52,7 +52,6 @@ import {
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { FoodPreviewModal } from "./FoodPreviewModal";
-import { RecentFoodsRow } from "./meals/RecentFoodsRow";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
@@ -224,7 +223,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const {
     recentFoods,
     favorites,
-    loadingRecent,
     refetch: fetchRecentAndFavorites,
   } = useRecentAndFavorites();
   const [searchQuery, setSearchQuery] = useState("");
@@ -236,6 +234,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // backdated to that window's midpoint so the receipt lands where the meal
   // actually happened (R5). Null = a normal, now-stamped log.
   const retroLoggedAtRef = useRef<string | null>(null);
+  // The bottom chip row's Search chip focuses this instead of duplicating a
+  // second search field.
+  const searchInputRef = useRef<TextInput>(null);
 
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
@@ -899,15 +900,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   };
 
-  // Handle recent food selection
-  const handleRecentFoodPress = (food: SavedFood) => {
-    setPreviewFood(food);
-    setPreviewSource("saved");
-    setScannedBarcode(food.barcode);
-    setPreviewWasEdited(false);
-    setShowFoodPreview(true);
-  };
-
   // Swipe gesture handler
   const panResponder = useMemo(
     () =>
@@ -1364,6 +1356,27 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setShowAddForm(true);
   };
 
+  // The chip row under the rail (mock position 6): add something the plan
+  // didn't suggest, typed straight into the form.
+  const handleQuickChip = (mealType: MealType | null) => {
+    addForm.setSelectedDate(viewingDate);
+    if (mealType) addForm.setMealType(mealType);
+    retroLoggedAtRef.current = null;
+    setShowAddForm(true);
+  };
+
+  // Receipts borrow their saved food's photo, same as meals borrow their
+  // biggest item's (C5) — a rail of grey initials would waste pictures the
+  // library already holds.
+  const logFaceById = useMemo(() => {
+    const foodById = new Map(allSavedFoods.map((f) => [f.id, f.image_primary_url ?? null]));
+    const m = new Map<string, string | null>();
+    for (const l of dayMeals) {
+      m.set(l.id, l.saved_food_id ? (foodById.get(l.saved_food_id) ?? null) : null);
+    }
+    return m;
+  }, [dayMeals, allSavedFoods]);
+
   // Second of the eat-nudge family's two resync points (spec §8.1; the Home
   // card is the other, covering app open/foreground). Sited here, rather than
   // up with the other effects, because it reads `viewingToday` — a dep array
@@ -1449,6 +1462,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           <View style={styles.searchBar}>
             <Search size={icons.md} color={colors.textMuted} />
             <TextInput
+              ref={searchInputRef}
               style={styles.searchInput}
               placeholder="Search foods..."
               placeholderTextColor={colors.textMuted}
@@ -1635,6 +1649,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                     projection={fuel.model.projection}
                     dayTotals={dayTotals}
                     goals={goals}
+                    computedAt={fuel.model.computedAt}
                   />
                 ) : (
                   <MealsNutritionCard
@@ -1714,20 +1729,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   </Card>
                 )}
 
-                {/* Recent Foods (Quick Add) — promoted above meal sections
-                    so the fastest path to logging is one tap from here. */}
-                <RecentFoodsRow
-                  recentFoods={recentFoods}
-                  favorites={favorites}
-                  onFoodPress={handleRecentFoodPress}
-                  onFoodLongPress={handleToggleFavorite}
-                  loading={loadingRecent}
-                />
-
-                {/* The Meal Library button that used to sit here has moved to
-                    the header (B5), where it is reachable without scrolling
-                    past everything else on the tab. Keeping both would be two
-                    doors to one room. */}
+                {/* Quick add lives BELOW the rail as the mock's chip row —
+                    the plan is the page; adding something unplanned is the
+                    escape hatch, not the headline. Recent-food one-tap chips
+                    still live inside the add form. */}
               </>
             )}
 
@@ -1810,6 +1815,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   <FuelRail
                     rows={fuel.model?.rows ?? []}
                     loggingMealId={quickLoggingMealId}
+                    logFaceById={logFaceById}
                     onPressLog={(logId) => {
                       const m = dayMeals.find((x) => x.id === logId);
                       if (m) setEditingMeal(m);
@@ -1822,6 +1828,42 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                       setLibraryVisible(true);
                     }}
                   />
+                )}
+
+                {/* Quick add chips — the mock's bottom row. Anything the plan
+                    didn't suggest is one tap into the form (R13). */}
+                {!showAddForm && (
+                  <View style={styles.quickChipsRow}>
+                    {(
+                      [
+                        ["Meal", null],
+                        ["Snack", "snack"],
+                        ["Dessert", "dessert"],
+                      ] as Array<[string, MealType | null]>
+                    ).map(([label, type]) => (
+                      <TouchableOpacity
+                        key={label}
+                        style={styles.quickChip}
+                        onPress={() => handleQuickChip(type)}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add a ${label.toLowerCase()}`}
+                      >
+                        <Plus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                        <Text style={styles.quickChipText}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={styles.quickChip}
+                      onPress={() => searchInputRef.current?.focus()}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="Search foods"
+                    >
+                      <Search size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                      <Text style={styles.quickChipText}>Search</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             )}

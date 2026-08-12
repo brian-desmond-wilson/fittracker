@@ -1,19 +1,21 @@
 // The verdict strip: Fuel's one-glance answer to "am I okay?", worn at the
 // top of the rail (Direction B's hero, at Direction A's density).
 //
-// Verdict chip first, arithmetic second, and the engine's promise — what the
-// plan below lands the day at — so the reader knows the rail already solves
-// whatever gap the chip announces. Replaces the pace lines AND the ring card
-// on today's view; past days keep the full nutrition card, because a finished
-// day is a record, not a plan.
+// Verdict chip first — including WHEN the plan was last rebuilt, so the strip
+// never pretends to be more live than it is — arithmetic second, and the engine's
+// promise: what the rail below lands the day at. Replaces the pace lines AND
+// the ring card on today's view; past days keep the full nutrition card,
+// because a finished day is a record, not a plan.
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 import { Badge, Card, type BadgeTone } from "@/src/components/ui";
 import {
   formatMacroProgress,
+  formatMacroValue,
   macroColor,
   macroProgress,
+  macroUnit,
   type MacroGoals,
   type MacroTotals,
   type MacroKey,
@@ -25,6 +27,8 @@ interface FuelVerdictStripProps {
   projection: FuelProjection | null;
   dayTotals: MacroTotals;
   goals: MacroGoals;
+  /** When the plan was computed — rendered on the chip ("· replanned 1:25"). */
+  computedAt: Date;
 }
 
 const TONE_FOR: Record<FuelVerdict["tone"], BadgeTone> = {
@@ -35,8 +39,19 @@ const TONE_FOR: Record<FuelVerdict["tone"], BadgeTone> = {
   closed: "neutral",
 };
 
-/** The three macros the strip paces. The rest stay on Insights and the
- *  past-day card — the strip is a glance, not a panel. */
+/** Chip copy stays short — the chip carries the verdict word plus the
+ *  replanned time, per the approved mock ("Behind · replanned 1:25"). */
+const CHIP_WORD: Record<FuelVerdict["tone"], string> = {
+  behind: "Behind",
+  on_pace: "On pace",
+  ahead: "Ahead",
+  goal_hit: "Goals hit",
+  closed: "Day closed",
+};
+
+/** The three macros the strip paces — always all three, per the mock. A
+ *  missing goal renders the row with an empty track rather than hiding it:
+ *  "you're not pacing fiber" is information, an absent row is a mystery. */
 const STRIP_MACROS: Array<{ key: MacroKey; label: string }> = [
   { key: "calories", label: "Calories" },
   { key: "protein", label: "Protein" },
@@ -50,16 +65,27 @@ function goalFor(g: MacroGoals, k: MacroKey): number | null {
   return k === "calories" ? g.calories : k === "protein" ? g.protein : g.fiber_g;
 }
 
+function fmtClock(d: Date): string {
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const display = h % 12 === 0 ? 12 : h % 12;
+  return `${display}:${String(m).padStart(2, "0")}`;
+}
+
 export function FuelVerdictStrip({
   verdict,
   projection,
   dayTotals,
   goals,
+  computedAt,
 }: FuelVerdictStripProps) {
   return (
     <Card variant="panel">
       <View style={s.headRow}>
-        <Badge tone={TONE_FOR[verdict.tone]} label={verdict.label} />
+        <Badge
+          tone={TONE_FOR[verdict.tone]}
+          label={`${CHIP_WORD[verdict.tone]} · replanned ${fmtClock(computedAt)}`}
+        />
         {projection && (
           <Text style={s.projection} numberOfLines={1}>
             plan lands {projection.calories.toLocaleString()} cal ·{" "}
@@ -70,22 +96,25 @@ export function FuelVerdictStrip({
       {STRIP_MACROS.map(({ key, label }) => {
         const value = valueFor(dayTotals, key);
         const goal = goalFor(goals, key);
-        if (goal == null) return null;
         return (
           <View key={key} style={s.barRow}>
             <Text style={s.barLabel} numberOfLines={1}>
-              {label} {formatMacroProgress(value, goal, key)}
+              {goal != null
+                ? `${label} ${formatMacroProgress(value, goal, key)}`
+                : `${label} ${formatMacroValue(value, key)}${macroUnit(key)} · no goal`}
             </Text>
             <View style={s.track}>
-              <View
-                style={[
-                  s.fill,
-                  {
-                    width: `${macroProgress(value, goal) * 100}%`,
-                    backgroundColor: macroColor(value, goal, key),
-                  },
-                ]}
-              />
+              {goal != null && (
+                <View
+                  style={[
+                    s.fill,
+                    {
+                      width: `${macroProgress(value, goal) * 100}%`,
+                      backgroundColor: macroColor(value, goal, key),
+                    },
+                  ]}
+                />
+              )}
             </View>
           </View>
         );

@@ -15,6 +15,9 @@ interface FuelRailProps {
   rows: FuelRailRow[];
   /** Meal id currently quick-logging (its Log button shows the spinner). */
   loggingMealId: string | null;
+  /** Borrowed product photo per logged row (log id → url), so receipts carry
+   *  the same face their meal did. Missing entries fall back to initials. */
+  logFaceById: Map<string, string | null>;
   onPressLog: (logId: string) => void;
   onDeleteLog: (logId: string) => void;
   /** Ghost rows: a missed window (retro into its slot) or the generic
@@ -42,14 +45,28 @@ function initials(name: string): string {
     .join("");
 }
 
+function Face({ url, name, small }: { url: string | null; name: string; small?: boolean }) {
+  return (
+    <View style={[s.face, small && s.faceSm]}>
+      {url ? (
+        <Image source={{ uri: url }} style={s.faceImage} resizeMode="cover" />
+      ) : (
+        <Text style={s.faceInitials}>{initials(name)}</Text>
+      )}
+    </View>
+  );
+}
+
 function LoggedRow({
   log,
   windowLabel,
+  faceUrl,
   onPress,
   onDelete,
 }: {
   log: AttributedLog;
   windowLabel: string | null;
+  faceUrl: string | null;
   onPress: () => void;
   onDelete: () => void;
 }) {
@@ -62,6 +79,7 @@ function LoggedRow({
       </Text>
       <Card variant="row" onPress={onPress}>
         <View style={s.rowLine}>
+          <Face url={faceUrl} name={log.name} />
           <View style={s.rowBody}>
             <Text style={s.rowTitle} numberOfLines={1}>
               {log.name}
@@ -84,10 +102,17 @@ function LoggedRow({
   );
 }
 
+/**
+ * The mock's "next decision is the biggest card" rule: only the IMMINENT
+ * suggestion gets the full treatment — face, reasons, big Log + Swap. Every
+ * later window renders compact: face, name, numbers (portion note inline),
+ * and a ghost Log on the right.
+ */
 function SuggestionRow({
   window,
   pick,
   closingSoon,
+  primary,
   loggingMealId,
   onQuickLog,
   onOpenLibrary,
@@ -95,32 +120,64 @@ function SuggestionRow({
   window: FuelWindow;
   pick: FuelPick;
   closingSoon: boolean;
+  primary: boolean;
   loggingMealId: string | null;
   onQuickLog: (mealId: string) => void;
   onOpenLibrary: (mealId: string | null) => void;
 }) {
+  const stamp = (
+    <Text style={s.stamp}>
+      {fmtMinutes(window.startMinutes)} · {window.label.toUpperCase()}
+      {closingSoon ? " — window closes soon" : ""}
+    </Text>
+  );
+
+  if (!primary) {
+    return (
+      <View style={s.stop}>
+        <View style={[s.dot, s.dotSuggestion]} />
+        {stamp}
+        <Card variant="row" onPress={() => onOpenLibrary(pick.mealId)}>
+          <View style={s.rowLine}>
+            <Face url={pick.faceUrl} name={pick.name} small />
+            <View style={s.rowBody}>
+              <Text style={s.rowTitle} numberOfLines={1}>
+                {pick.name}
+              </Text>
+              <Text style={s.rowMeta} numberOfLines={2}>
+                {Math.round(pick.calories)} cal · {Math.round(pick.protein)}g P
+                {pick.reasons.length > 0 ? (
+                  <Text style={s.reasonInline}> · {pick.reasons.join(" · ")}</Text>
+                ) : null}
+              </Text>
+            </View>
+            <Button
+              label="Log"
+              size="sm"
+              variant="ghost"
+              loading={loggingMealId === pick.mealId}
+              onPress={() => onQuickLog(pick.mealId)}
+            />
+          </View>
+        </Card>
+      </View>
+    );
+  }
+
   return (
     <View style={s.stop}>
       <View style={[s.dot, s.dotSuggestion]} />
-      <Text style={s.stamp}>
-        {fmtMinutes(window.startMinutes)} · {window.label.toUpperCase()}
-        {closingSoon ? " — window closes soon" : ""}
-      </Text>
+      {stamp}
       <Card variant="row" onPress={() => onOpenLibrary(pick.mealId)}>
         <View style={s.rowLine}>
-          <View style={s.face}>
-            {pick.faceUrl ? (
-              <Image source={{ uri: pick.faceUrl }} style={s.faceImage} resizeMode="cover" />
-            ) : (
-              <Text style={s.faceInitials}>{initials(pick.name)}</Text>
-            )}
-          </View>
+          <Face url={pick.faceUrl} name={pick.name} />
           <View style={s.rowBody}>
             <Text style={s.rowTitle} numberOfLines={2}>
               {pick.name}
             </Text>
             <Text style={s.rowMeta}>
               {Math.round(pick.calories)} cal · {Math.round(pick.protein)}g P
+              {pick.prepMinutes === 0 ? " · ready to eat" : ` · ${pick.prepMinutes} min prep`}
             </Text>
           </View>
         </View>
@@ -154,6 +211,7 @@ function SuggestionRow({
 export function FuelRail({
   rows,
   loggingMealId,
+  logFaceById,
   onPressLog,
   onDeleteLog,
   onRetro,
@@ -161,6 +219,7 @@ export function FuelRail({
   onOpenLibrary,
 }: FuelRailProps) {
   if (rows.length === 0) return null;
+  const firstSuggestionIdx = rows.findIndex((r) => r.kind === "suggestion");
   return (
     <View style={s.rail}>
       {rows.map((row, i) => {
@@ -171,6 +230,7 @@ export function FuelRail({
                 key={`log-${row.log.id}`}
                 log={row.log}
                 windowLabel={row.windowLabel}
+                faceUrl={logFaceById.get(row.log.id) ?? null}
                 onPress={() => onPressLog(row.log.id)}
                 onDelete={() => onDeleteLog(row.log.id)}
               />
@@ -230,6 +290,7 @@ export function FuelRail({
                 window={row.window}
                 pick={row.pick}
                 closingSoon={row.closingSoon}
+                primary={i === firstSuggestionIdx}
                 loggingMealId={loggingMealId}
                 onQuickLog={onQuickLog}
                 onOpenLibrary={onOpenLibrary}
@@ -320,10 +381,12 @@ const s = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
+  faceSm: { width: 36, height: 36 },
   faceImage: { width: "100%", height: "100%" },
   faceInitials: { ...typography.rowTitle, color: colors.labelInk },
 
   reasons: { ...typography.caption, color: colors.warning, marginTop: spacing.sm },
+  reasonInline: { color: colors.warning },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",

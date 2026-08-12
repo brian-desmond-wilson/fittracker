@@ -246,4 +246,25 @@ export const styles = StyleSheet.create({
   distributionWrap: {
     marginHorizontal: spacing.screenGutter,
   },
+  /** The mock's bottom quick-add chips (＋ Meal · ＋ Snack · ＋ Dessert · Search). */
+  quickChipsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  quickChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickChipText: {
+    ...typography.buttonSm,
+    color: colors.text,
+  },
 });

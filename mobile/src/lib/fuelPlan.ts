@@ -307,6 +307,7 @@ export interface FuelPick {
   calories: number;
   protein: number;
   portion: number;
+  prepMinutes: number;
   faceUrl: string | null;
   /** Short chips: "uses food expiring in 1d", "portion 1.25×". */
   reasons: string[];
@@ -384,6 +385,7 @@ export function pickForWindows(opts: {
       calories: best.calories,
       protein: best.protein,
       portion,
+      prepMinutes: best.prepMinutes,
       faceUrl: best.faceUrl,
       reasons,
     });
@@ -463,6 +465,7 @@ export function mergeAiPicks(opts: {
         calories: aiCandidate.calories,
         protein: aiCandidate.protein,
         portion,
+        prepMinutes: aiCandidate.prepMinutes,
         faceUrl: aiCandidate.faceUrl,
         reasons,
       });
