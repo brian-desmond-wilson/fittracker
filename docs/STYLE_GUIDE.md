@@ -63,8 +63,12 @@ runtime, no provider, no light mode.
 9. **Two documented recipes, not components:** the Banner and the centred
    sheet (§4). Copy them verbatim.
 10. **Exceptions that are tokens, not violations:** `colors.imageWell` (product
-    photos are shot on white, so the wells stay white on dark cards) and
-    `colors.scrim`.
+    photos are shot on white, so the wells stay white on dark cards),
+    `colors.scrim`, and `colors.labelPaper` / `colors.labelInk` (the Nutrition
+    Facts panel is a regulated artifact whose identity IS black on white —
+    a dark-themed version reads as "some card about nutrition" rather than as
+    the back of the packet). All three are faithful reproductions of something
+    physical, never app chrome.
 
 ---
 

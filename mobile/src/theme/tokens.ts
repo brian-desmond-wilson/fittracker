@@ -18,6 +18,13 @@ export const colors = {
   danger: "#EF4444",
   imageWell: "#FFFFFF", // product photos are shot on white; wells stay white on dark cards
   shadow: "#000000",    // only for `elevation` below — never a fill or a stroke
+  // The Nutrition Facts panel is a regulated artifact, not a component: its
+  // identity IS black on white with those rule weights, and a dark-themed
+  // version reads as "some card about nutrition" rather than as the back of
+  // the packet. Same class of exception as `imageWell` — a faithful
+  // reproduction of something physical. Never use these for app chrome.
+  labelPaper: "#FFFFFF",
+  labelInk: "#000000",
   scrim: "rgba(0,0,0,0.5)",
   accents: {
     meals: "#F97316",
