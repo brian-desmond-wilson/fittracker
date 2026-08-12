@@ -213,10 +213,29 @@ export function MealLibraryModal({
           (a, b) =>
             computeMealTotals(b.items).calories - computeMealTotals(a.items).calories,
         );
+      } else {
+        // B7. Categories still group the library — you come here looking for
+        // a breakfast — but WITHIN a category the meals you can actually make
+        // come first. Ordering was effectively alphabetical (the query's
+        // `order("name")` carried through), so on a real library the two
+        // makeable meals out of seventeen sat wherever the alphabet put them.
+        //
+        // Sorted rather than filtered: `inStockOnly` already exists for the
+        // filtering answer, and defaulting it on would hide fifteen of the
+        // seventeen — a worse failure than burying two.
+        meals = [...meals].sort((a, b) => {
+          const aReady = assemblabilityById.get(a.id)?.assemblable ? 0 : 1;
+          const bReady = assemblabilityById.get(b.id)?.assemblable ? 0 : 1;
+          return (
+            aReady - bReady ||
+            (scores.get(b.id)?.raw ?? 0) - (scores.get(a.id)?.raw ?? 0) ||
+            a.name.localeCompare(b.name)
+          );
+        });
       }
       return { category, data: meals };
     }).filter((s) => s.data.length > 0);
-  }, [data, inStockOnly, assemblabilityById]);
+  }, [data, inStockOnly, assemblabilityById, scores]);
 
   const remaining =
     data?.targetCalories != null && dayCalories != null
