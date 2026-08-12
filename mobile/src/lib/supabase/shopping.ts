@@ -148,18 +148,22 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
   // turning it into a suggestion asks you to buy food you may already own.
   // That is where the list's "unassigned" rows were coming from.
   const mealGaps = library.meals
-    .map((meal) => ({
-      mealName: meal.name,
-      missing: assessAssemblability({
-        items: meal.items.map((it) => ({
-          savedFoodId: it.saved_food_id,
-          name: it.savedFood.name,
-          barcode: it.savedFood.barcode,
-          conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
-        })),
-        inventory: library.inventory,
-      }).missing,
-    }))
+    .map((meal) => {
+      const items = meal.items.map((it) => ({
+        savedFoodId: it.saved_food_id,
+        name: it.savedFood.name,
+        barcode: it.savedFood.barcode,
+        conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+      }));
+      const { missing } = assessAssemblability({ items, inventory: library.inventory });
+      // D2: the saved-food id behind each missing NAME, positionally. Matched
+      // by name against the same item list `assessAssemblability` walked, so
+      // the two arrays line up by construction.
+      const missingSavedFoodIds = missing.map(
+        (name) => items.find((it) => it.name === name)?.savedFoodId ?? "",
+      );
+      return { mealName: meal.name, mealId: meal.id, missing, missingSavedFoodIds };
+    })
     .filter((g) => g.missing.length > 0);
 
   const suggestions = computeShoppingSuggestions({
@@ -220,6 +224,10 @@ export async function addSuggestions(
       vendor_id: s.vendorId,
       priority: s.priority,
       notes: s.reasons.join(" · "),
+      // D2: provenance, so a row born from a meal gap knows which meal and
+      // which ingredient it stands for. Null for manual and stock-driven rows.
+      source_meal_id: s.sourceMealId ?? null,
+      source_saved_food_id: s.sourceSavedFoodId ?? null,
     })),
   );
   if (error) throw error;

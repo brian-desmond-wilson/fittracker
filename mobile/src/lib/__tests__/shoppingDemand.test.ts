@@ -2,6 +2,7 @@ import {
   computeShoppingSuggestions,
   FORECAST_LEAD_DAYS,
   type DemandInventoryItem,
+  type MealGap,
 } from "../shoppingDemand";
 import type { ConsumptionEstimate } from "../consumptionRate";
 
@@ -222,5 +223,68 @@ describe("scheduled supply", () => {
     // Every pre-existing caller omits the field; absence must not silence it.
     const [s] = run({ items: [item({ name: "Milk", totalQuantity: 0, isOut: true })] });
     expect(s.name).toBe("Milk");
+  });
+});
+
+// D2. A meal gap reached the list as a bare name — no way back to the meal
+// that wanted it, and no handle for closing the gap when you bought the thing.
+describe("gap provenance", () => {
+  const gap = (over: Partial<MealGap> = {}): MealGap => ({
+    mealName: "Korean Beef Bowl",
+    mealId: "meal-1",
+    missing: ["Korean BBQ Sauce"],
+    missingSavedFoodIds: ["sf-sauce"],
+    ...over,
+  });
+
+  it("carries the meal and the ingredient onto the suggestion", () => {
+    const [s] = run({ mealGaps: [gap()] });
+    expect(s).toMatchObject({
+      name: "Korean BBQ Sauce",
+      sourceMealId: "meal-1",
+      sourceSavedFoodId: "sf-sauce",
+    });
+  });
+
+  it("pairs each missing name with its own id, positionally", () => {
+    const got = run({
+      mealGaps: [gap({ missing: ["Sauce", "Rice"], missingSavedFoodIds: ["sf-a", "sf-b"] })],
+    });
+    expect(got.find((s) => s.name === "Sauce")?.sourceSavedFoodId).toBe("sf-a");
+    expect(got.find((s) => s.name === "Rice")?.sourceSavedFoodId).toBe("sf-b");
+  });
+
+  it("keeps provenance when the same row is ALSO out of stock", () => {
+    // The merge case: losing the meal link here would drop it exactly where
+    // it is most useful.
+    const it0 = item({ name: "Korean BBQ Sauce", totalQuantity: 0, isOut: true });
+    const [s] = run({
+      items: [it0],
+      mealGaps: [gap()],
+    });
+    expect(s.reasons).toEqual(["out of stock", "needed for Korean Beef Bowl"]);
+    expect(s.sourceMealId).toBe("meal-1");
+  });
+
+  it("leaves provenance null on a purely stock-driven suggestion", () => {
+    const [s] = run({ items: [item({ totalQuantity: 0, isOut: true })] });
+    expect(s.sourceMealId).toBeNull();
+    expect(s.sourceSavedFoodId).toBeNull();
+  });
+
+  it("survives a gap that carries no ids at all", () => {
+    const [s] = run({ mealGaps: [{ mealName: "Soup", missing: ["Stock"] }] });
+    expect(s).toMatchObject({ name: "Stock", sourceMealId: null, sourceSavedFoodId: null });
+  });
+
+  it("does not let a later gap relabel which meal sent you shopping", () => {
+    const got = run({
+      mealGaps: [
+        gap(),
+        { mealName: "Other Meal", mealId: "meal-2", missing: ["Korean BBQ Sauce"], missingSavedFoodIds: ["sf-x"] },
+      ],
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0].sourceMealId).toBe("meal-1");
   });
 });
