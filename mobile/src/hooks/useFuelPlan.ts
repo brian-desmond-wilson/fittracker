@@ -1,0 +1,411 @@
+// mobile/src/hooks/useFuelPlan.ts
+// Single assembly point for the Fuel rail: fetches what the engine needs
+// (library, profile, windows, prep budget), takes the day's logs from the
+// screen that already owns them, and hands back rendered-ready rows.
+//
+// Clock contract: the plan re-computes at EVENTS — a log, an undo, a screen
+// focus, a pull-to-refresh (bump `refreshKey`) — never on a ticking timer.
+// Each compute samples one `now` and threads it through attribution, states,
+// pace and the rail, so no two parts of the page can disagree about the time
+// (the two-clocks defect the old pace lines carried). Between events the rail
+// simply stays as computed, which is what a plan should do.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/src/lib/supabase";
+import { computeBrianScore } from "@/src/lib/mealScore";
+import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
+import { computeMealPace, type MealPaceState } from "@/src/lib/mealPace";
+import { sumNutrition, type MacroGoals, type MacroTotals } from "@/src/lib/mealMacros";
+import {
+  attributeLogs,
+  buildFuelRail,
+  fuelVerdict,
+  pickForWindows,
+  planProjection,
+  timeToMinutes,
+  windowsFromLegacyTimes,
+  windowsFromRows,
+  windowStates,
+  windowTargets,
+  type EatingWindowRow,
+  type FuelCandidate,
+  type FuelPick,
+  type FuelProjection,
+  type FuelRailRow,
+  type FuelVerdict,
+  type FuelWindow,
+} from "@/src/lib/fuelPlan";
+import { buildStockByMealId } from "@/src/lib/eatNext";
+import { rescuePlan } from "@/src/lib/rescuePlan";
+import { assessAssemblability } from "@/src/lib/stockState";
+import { mealFaceUrl } from "@/src/lib/mealFace";
+import { shouldRetire } from "@/src/lib/mealRetirement";
+import { daysBetweenLocalDates } from "@/src/lib/stockState";
+import {
+  computeMealTotals,
+  fetchMealLibrary,
+  type MealLibraryData,
+} from "@/src/lib/supabase/mealLibrary";
+import { getLocalDateString } from "@/src/lib/dates";
+import { defaultMealTypeFor } from "@/src/types/meal-library";
+import type { MealLog } from "@/src/types/track";
+
+const DEFAULT_MAX_PREP_MINUTES = 5;
+
+interface ProfileRow {
+  target_calories: number | null;
+  target_protein_g: number | null;
+  target_carbs_g: number | null;
+  target_sodium_mg: number | null;
+  target_fats_g: number | null;
+  target_sugars_g: number | null;
+  target_fiber_g: number | null;
+  breakfast_time: string;
+  lunch_time: string;
+  dinner_time: string;
+  water_window_start: string;
+  water_window_end: string;
+}
+
+// Same both-ways drift guard as useEatNext's PROFILE_COLUMNS: the client is
+// untyped, so the select list is derived from the interface.
+const PROFILE_COLUMNS = {
+  target_calories: true,
+  target_protein_g: true,
+  target_carbs_g: true,
+  target_sodium_mg: true,
+  target_fats_g: true,
+  target_sugars_g: true,
+  target_fiber_g: true,
+  breakfast_time: true,
+  lunch_time: true,
+  dinner_time: true,
+  water_window_start: true,
+  water_window_end: true,
+} satisfies Record<keyof ProfileRow, true>;
+const PROFILE_SELECT = Object.keys(PROFILE_COLUMNS).join(", ");
+
+const WINDOW_COLUMNS = {
+  id: true,
+  label: true,
+  meal_type: true,
+  start_time: true,
+  end_time: true,
+  budget_weight: true,
+} satisfies Record<keyof EatingWindowRow, true>;
+const WINDOW_SELECT = Object.keys(WINDOW_COLUMNS).join(", ");
+
+const hhmm = (t: string) => t.slice(0, 5);
+
+interface FuelSources {
+  library: MealLibraryData;
+  profile: ProfileRow;
+  windowRows: EatingWindowRow[];
+  maxPrepMinutes: number;
+}
+
+export interface FuelDayModel {
+  rows: FuelRailRow[];
+  windows: FuelWindow[];
+  picks: FuelPick[];
+  verdict: FuelVerdict | null;
+  caloriePace: MealPaceState | null;
+  proteinPace: MealPaceState | null;
+  projection: FuelProjection | null;
+  goals: MacroGoals | null;
+  dayTotals: MacroTotals;
+  /** The clock the whole model was computed against. */
+  computedAt: Date;
+}
+
+export interface UseFuelPlanValue {
+  model: FuelDayModel | null;
+  /** True only before the first successful source fetch — stale-while-
+   *  revalidate, same contract as useEatNext. */
+  loading: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+function toError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  if (typeof e === "object" && e !== null && "message" in e) {
+    const m = e as { message?: unknown; code?: unknown };
+    const text = typeof m.message === "string" ? m.message : String(m.message);
+    return new Error(typeof m.code === "string" ? `${text} (${m.code})` : text);
+  }
+  return new Error(String(e));
+}
+
+/** Minutes since local midnight of a timestamptz string, in device-local time
+ *  — the same coordinate system the windows live in. */
+function localMinutes(iso: string): number {
+  const d = new Date(iso);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/**
+ * @param dayLogs   The viewed day's `meal_logs`, already fetched and kept
+ *                  fresh by the screen. Order does not matter.
+ * @param viewingToday  Past days get receipts only: no picks, no ghosts.
+ * @param refreshKey    Bump to force a source refetch (pull-to-refresh).
+ */
+export function useFuelPlan(
+  dayLogs: MealLog[],
+  viewingToday: boolean,
+  refreshKey?: number,
+): UseFuelPlanValue {
+  const [sources, setSources] = useState<FuelSources | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const runIdRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const runId = ++runIdRef.current;
+    try {
+      const [library, profile, windows, constraints] = await Promise.all([
+        fetchMealLibrary(),
+        supabase.from("profiles").select(PROFILE_SELECT).maybeSingle(),
+        supabase.from("eating_windows").select(WINDOW_SELECT).order("start_time"),
+        supabase.from("nutrition_constraints").select("max_prep_minutes").maybeSingle(),
+      ]);
+      const errs = [profile.error, windows.error, constraints.error].filter((e) => e !== null);
+      if (errs.length > 0) {
+        errs.slice(1).forEach((e) => console.error("useFuelPlan (secondary):", e));
+        throw errs[0];
+      }
+      const p = profile.data as ProfileRow | null;
+      if (!p) throw new Error("No profile row");
+      if (runId !== runIdRef.current) return;
+      setError(null);
+      setSources({
+        library,
+        profile: p,
+        // Untyped client + computed select string → postgrest infers an error
+        // shape; the row type is pinned by WINDOW_COLUMNS above.
+        windowRows: (windows.data ?? []) as unknown as EatingWindowRow[],
+        maxPrepMinutes:
+          (constraints.data as { max_prep_minutes: number } | null)?.max_prep_minutes ??
+          DEFAULT_MAX_PREP_MINUTES,
+      });
+    } catch (e) {
+      console.error("useFuelPlan:", e);
+      if (runId !== runIdRef.current) return;
+      setError(toError(e));
+    } finally {
+      if (runId === runIdRef.current) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    // refreshKey is the consumers' force-reload signal, not read by load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, refreshKey]);
+
+  const model = useMemo<FuelDayModel | null>(() => {
+    if (!sources) return null;
+    const { library, profile, windowRows, maxPrepMinutes } = sources;
+    // ONE clock per compute — see the header comment for the contract.
+    const now = new Date();
+    const today = getLocalDateString(now);
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const goals: MacroGoals = {
+      calories: profile.target_calories,
+      protein: profile.target_protein_g,
+      carbs: profile.target_carbs_g,
+      sodium_mg: profile.target_sodium_mg,
+      fats: profile.target_fats_g,
+      sugars: profile.target_sugars_g,
+      fiber_g: profile.target_fiber_g,
+    };
+    const dayTotals = sumNutrition(dayLogs);
+
+    const windows =
+      windowRows.length > 0
+        ? windowsFromRows(windowRows)
+        : windowsFromLegacyTimes({
+            breakfast: hhmm(profile.breakfast_time),
+            lunch: hhmm(profile.lunch_time),
+            dinner: hhmm(profile.dinner_time),
+          });
+
+    const attributed = attributeLogs(
+      dayLogs.map((l) => ({
+        id: l.id,
+        mealType: l.meal_type,
+        loggedAtMinutes: localMinutes(l.logged_at),
+        calories: Number(l.calories ?? 0),
+        protein: Number(l.protein ?? 0),
+        name: l.name,
+      })),
+      windows,
+    );
+
+    // Past days: receipts only (R6). No states clock, no picks, no verdict.
+    if (!viewingToday) {
+      return {
+        rows: buildFuelRail({
+          states: windowStates(windows, attributed, 24 * 60),
+          logs: attributed,
+          picks: [],
+          projection: null,
+          nowMinutes: null,
+          goalCalories: goals.calories,
+        }),
+        windows,
+        picks: [],
+        verdict: null,
+        caloriePace: null,
+        proteinPace: null,
+        projection: null,
+        goals,
+        dayTotals,
+        computedAt: now,
+      };
+    }
+
+    const states = windowStates(windows, attributed, nowMinutes);
+    const targets = windowTargets({
+      states,
+      goalCalories: goals.calories,
+      goalProtein: goals.protein,
+      consumedCalories: dayTotals.calories,
+      consumedProtein: dayTotals.protein,
+    });
+
+    // Candidate assembly — the same exclusions the recommender applies
+    // (retired meals out), plus rescue data so expiring food can jump the
+    // queue (R11). All from the one cached library read.
+    const expiring = library.inventory
+      .filter((r) => r.totalQuantity > 0 && r.daysLeft !== null && r.daysLeft >= 0 && r.daysLeft <= 7)
+      .map((r) => ({ name: r.name, conceptIds: r.conceptIds, daysLeft: r.daysLeft as number }));
+    const stockByMealId = buildStockByMealId(library);
+
+    const live = library.meals.filter((meal) =>
+      !shouldRetire({
+        isCompletePortion: meal.is_complete_portion ?? false,
+        totalQuantity: library.inventory.some(
+          (row) =>
+            row.totalQuantity > 0 &&
+            meal.items.some((it) =>
+              (library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
+                .some((cid) => row.conceptIds.includes(cid)),
+            ),
+        ) ? 1 : 0,
+        daysSinceLastLogged: library.lastLoggedByMealId.has(meal.id)
+          ? daysBetweenLocalDates(library.lastLoggedByMealId.get(meal.id)!, today)
+          : null,
+        daysSinceCreated: daysBetweenLocalDates(
+          getLocalDateString(new Date(meal.created_at)),
+          today,
+        ),
+      }),
+    );
+
+    const rescueByMealId = new Map(
+      rescuePlan({
+        meals: live.map((m) => {
+          const items = m.items.map((it) => ({
+            savedFoodId: it.saved_food_id,
+            name: it.savedFood.name,
+            barcode: it.savedFood.barcode,
+            conceptIds: library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+          }));
+          return {
+            mealId: m.id,
+            name: m.name,
+            conceptIds: items.flatMap((it) => it.conceptIds),
+            assemblable: assessAssemblability({ items, inventory: library.inventory }).assemblable,
+          };
+        }),
+        expiring,
+        limit: live.length, // every rescue counts here; the cap is a UI concern
+      }).map((r) => [r.mealId, r]),
+    );
+
+    const candidates: FuelCandidate[] = live.map((meal) => {
+      const totals = computeMealTotals(meal.items);
+      const score = computeBrianScore(
+        brianScoreInputFor(meal, library.conceptIdsBySavedFoodId, library.conceptsById),
+      );
+      const rescue = rescueByMealId.get(meal.id);
+      return {
+        mealId: meal.id,
+        name: meal.name,
+        calories: totals.calories,
+        protein: totals.protein,
+        prepMinutes: meal.prep_minutes,
+        score: score.score,
+        mealType: defaultMealTypeFor(meal),
+        assemblable: stockByMealId.get(meal.id)?.assemblable ?? false,
+        rescueCount: rescue?.rescues.length ?? 0,
+        rescueSoonestDays: rescue?.soonestDaysLeft ?? null,
+        faceUrl: mealFaceUrl(
+          meal.items.map((it) => ({
+            displayOrder: it.display_order,
+            imageUrl: it.savedFood.image_primary_url,
+            calories: (it.savedFood.calories ?? 0) * it.servings,
+          })),
+        ),
+      };
+    });
+
+    const picks = pickForWindows({ states, targets, candidates, maxPrepMinutes });
+
+    const windowStart = hhmm(profile.water_window_start);
+    const windowEnd = hhmm(profile.water_window_end);
+    const mealTimes = {
+      breakfast: hhmm(profile.breakfast_time),
+      lunch: hhmm(profile.lunch_time),
+      dinner: hhmm(profile.dinner_time),
+    };
+    const paceFor = (macro: "calories" | "protein"): MealPaceState =>
+      computeMealPace({
+        currentValue: macro === "calories" ? dayTotals.calories : dayTotals.protein,
+        goal: macro === "calories" ? goals.calories : goals.protein,
+        windowStart,
+        windowEnd,
+        mealTimes,
+        macro,
+        now,
+      });
+    const caloriePace = paceFor("calories");
+    const proteinPace = paceFor("protein");
+
+    const projection = planProjection({
+      consumedCalories: dayTotals.calories,
+      consumedProtein: dayTotals.protein,
+      picks,
+      goalCalories: goals.calories,
+      goalProtein: goals.protein,
+    });
+
+    return {
+      rows: buildFuelRail({
+        states,
+        logs: attributed,
+        picks,
+        projection,
+        nowMinutes,
+        goalCalories: goals.calories,
+      }),
+      windows,
+      picks,
+      verdict: fuelVerdict({
+        calorieStatus: caloriePace.status,
+        proteinStatus: proteinPace.status,
+        nowMinutes,
+        windowEndMinutes: timeToMinutes(windowEnd),
+      }),
+      caloriePace,
+      proteinPace,
+      projection,
+      goals,
+      dayTotals,
+      computedAt: now,
+    };
+  }, [sources, dayLogs, viewingToday]);
+
+  return { model, loading, error, refetch: load };
+}
