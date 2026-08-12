@@ -1444,17 +1444,25 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
                     <View style={styles.field}>
                       <Text style={styles.label}>Location</Text>
-                      <View style={styles.locationButtons}>
+                      {/* Segmented control, not four separate buttons: the
+                          options are mutually exclusive and share a track, so
+                          style rule 21's segmented case applies — surface2
+                          trough, solid brand on the active segment, onBrand
+                          label. Four independently-bordered filled buttons
+                          read as four unrelated toggles. */}
+                      <View style={styles.segTrack}>
                         {(["fridge", "freezer", "pantry", "cabinet"] as FoodLocation[]).map((loc) => (
                           <TouchableOpacity
                             key={loc}
-                            style={[styles.locationButton, location === loc && styles.locationButtonActive]}
+                            style={[styles.segItem, location === loc && styles.segItemActive]}
                             onPress={() => setLocation(loc)}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: location === loc }}
                           >
                             <Text
                               style={[
-                                styles.locationButtonText,
-                                location === loc && styles.locationButtonTextActive,
+                                styles.segText,
+                                location === loc && styles.segTextActive,
                               ]}
                             >
                               {loc.charAt(0).toUpperCase() + loc.slice(1)}

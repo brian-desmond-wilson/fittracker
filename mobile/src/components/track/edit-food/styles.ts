@@ -157,6 +157,28 @@ export const styles = StyleSheet.create({
   // size to their own text like every other chip row in the app.
   // A stepper does not want the full width — 3 digits is the widest it gets.
   thresholdRow: { maxWidth: 180 },
+  // Segmented control (style rule 21 + rule 14's trough). The radius is
+  // `pill`, not the rule's stated `control`: 8pt reads as a square-cornered
+  // box, and the segmented controls already shipping in the app are pills.
+  segTrack: {
+    flexDirection: "row",
+    backgroundColor: colors.surface2,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  segItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    borderRadius: radii.pill,
+  },
+  segItemActive: { backgroundColor: colors.brand },
+  segText: { ...typography.buttonSm, color: colors.textMuted },
+  segTextActive: { color: colors.onBrand },
   identityRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   identityThumb: {
     width: 52, height: 52, borderRadius: radii.control,
