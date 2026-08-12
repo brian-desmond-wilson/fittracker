@@ -1650,6 +1650,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                     dayTotals={dayTotals}
                     goals={goals}
                     computedAt={fuel.model.computedAt}
+                    paceByMacro={{
+                      calories: fuel.model.caloriePace,
+                      protein: fuel.model.proteinPace,
+                      fiber: fuel.model.fiberPace,
+                    }}
                   />
                 ) : (
                   <MealsNutritionCard

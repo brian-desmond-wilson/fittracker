@@ -8,8 +8,9 @@
 // because a finished day is a record, not a plan.
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { colors, spacing, typography } from "@/src/theme/tokens";
+import { colors, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Card, type BadgeTone } from "@/src/components/ui";
+import type { MealPaceState } from "@/src/lib/mealPace";
 import {
   formatMacroProgress,
   formatMacroValue,
@@ -29,6 +30,9 @@ interface FuelVerdictStripProps {
   goals: MacroGoals;
   /** When the plan was computed — rendered on the chip ("· replanned 1:25"). */
   computedAt: Date;
+  /** Per-macro pace. Where one carries an `expected`, the bar draws the gap
+   *  between what you've eaten and what you'd have eaten to be on pace. */
+  paceByMacro: Partial<Record<MacroKey, MealPaceState | null>>;
 }
 
 const TONE_FOR: Record<FuelVerdict["tone"], BadgeTone> = {
@@ -78,6 +82,7 @@ export function FuelVerdictStrip({
   dayTotals,
   goals,
   computedAt,
+  paceByMacro,
 }: FuelVerdictStripProps) {
   return (
     // This screen's elements each carry the gutter (no container owns it) —
@@ -98,6 +103,17 @@ export function FuelVerdictStrip({
       {STRIP_MACROS.map(({ key, label }) => {
         const value = valueFor(dayTotals, key);
         const goal = goalFor(goals, key);
+        const fillColor = goal != null ? macroColor(value, goal, key) : null;
+        // The shortfall segment: from what you've eaten to what you'd have
+        // eaten by now to be on pace. Only present when the pace lib says
+        // you are genuinely behind (outside its tolerance band), so the strip
+        // and the verdict chip can never disagree.
+        const expected = paceByMacro[key]?.expected ?? null;
+        const valueFrac = goal != null ? macroProgress(value, goal) : 0;
+        const behindFrac =
+          goal != null && expected != null
+            ? Math.max(0, Math.min(expected / goal, 1) - valueFrac)
+            : 0;
         return (
           <View key={key} style={s.barRow}>
             <Text style={s.barLabel} numberOfLines={1}>
@@ -106,13 +122,24 @@ export function FuelVerdictStrip({
                 : `${label} ${formatMacroValue(value, key)}${macroUnit(key)} · no goal`}
             </Text>
             <View style={s.track}>
-              {goal != null && (
+              {fillColor && (
+                <View
+                  style={[s.fill, { width: `${valueFrac * 100}%`, backgroundColor: fillColor }]}
+                />
+              )}
+              {fillColor && behindFrac > 0 && (
                 <View
                   style={[
                     s.fill,
                     {
-                      width: `${macroProgress(value, goal) * 100}%`,
-                      backgroundColor: macroColor(value, goal, key),
+                      width: `${behindFrac * 100}%`,
+                      // A washed-out version of the same fill, not a separate
+                      // hue: this segment IS the fill, in the tense of "should
+                      // have been". 0.4 rather than the system's 0.15/0.3
+                      // because it has to read as a mark on `surface2` — same
+                      // functional-alpha case `macroColor` records for its own
+                      // dimmed under-cap fill.
+                      backgroundColor: tint(fillColor, 0.4),
                     },
                   ]}
                 />
@@ -146,13 +173,16 @@ const s = StyleSheet.create({
   // Wide enough for "Calories 2,300 / 2,300" without wrapping; the bar takes
   // the rest of the row.
   barLabel: { ...typography.caption, width: 148 },
-  // Rule 14: the groove a fill lives in is surface2.
+  // Rule 14: the groove a fill lives in is surface2. `row` so the consumed
+  // fill and the behind-pace segment sit end to end without either needing to
+  // know the other's width.
   track: {
     flex: 1,
+    flexDirection: "row",
     height: 8,
     borderRadius: 999,
     backgroundColor: colors.surface2,
     overflow: "hidden",
   },
-  fill: { height: "100%", borderRadius: 999 },
+  fill: { height: "100%" },
 });

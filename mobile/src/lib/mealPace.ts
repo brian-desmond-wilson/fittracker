@@ -2,7 +2,7 @@
 // window (shared with water), with prescriptive copy targeting the next
 // scheduled meal time.
 
-export type MacroPaceTarget = "calories" | "protein";
+export type MacroPaceTarget = "calories" | "protein" | "fiber";
 
 export type MealPaceStatus =
   | "before_window"
@@ -20,6 +20,18 @@ export interface MealPaceState {
   catchUpAmount?: number;
   // Friendly label for the next meal (or "end of day"). e.g. "dinner (6 PM)"
   catchUpLabel?: string;
+  /**
+   * How much you'd have eaten by now to be exactly on pace — the linear
+   * expected-by-now this model is built on, surfaced so a meter can DRAW the
+   * shortfall rather than only name it (Fuel's verdict strip fills the gap
+   * between consumed and this in a light tint).
+   *
+   * Populated only where a shortfall is real and drawable: `behind` (the
+   * expected value at this instant) and `after_window` (the whole goal — the
+   * day is over, all of it was expected). Absent on `on_pace`/`ahead`/
+   * `goal_hit`/`before_window`, all of which have nothing to draw.
+   */
+  expected?: number;
 }
 
 function timeToMinutes(hhmm: string): number {
@@ -104,7 +116,8 @@ export function computeMealPace(opts: ComputeMealPaceOpts): MealPaceState {
   const endMin = timeToMinutes(windowEnd);
 
   if (nowMin < startMin) return { status: "before_window" };
-  if (nowMin > endMin) return { status: "after_window" };
+  // The window has closed short of the goal: everything was expected by now.
+  if (nowMin > endMin) return { status: "after_window", expected: goal };
   if (endMin <= startMin) return { status: "on_pace" };
 
   const windowLen = endMin - startMin;
@@ -112,8 +125,11 @@ export function computeMealPace(opts: ComputeMealPaceOpts): MealPaceState {
   const expected = goal * elapsedRatio;
   const delta = currentValue - expected; // + = ahead, - = behind
 
-  // Tolerance: 5% of goal, with reasonable floors per macro.
-  const floor = macro === "calories" ? 100 : 8; // 100 cal or 8 g protein
+  // Tolerance: 5% of goal, with reasonable floors per macro. Each floor is
+  // set so it lands near 5% of a TYPICAL goal for that macro — 100 of 2300
+  // cal, 8 of 160 g protein, 2 of a ~38 g fiber goal — so no macro's band is
+  // proportionally wider than another's on a normal day.
+  const floor = macro === "calories" ? 100 : macro === "protein" ? 8 : 2;
   const tolerance = Math.max(goal * 0.05, floor);
 
   if (Math.abs(delta) <= tolerance) return { status: "on_pace" };
@@ -129,5 +145,6 @@ export function computeMealPace(opts: ComputeMealPaceOpts): MealPaceState {
     delta: Math.round(-delta),
     catchUpAmount: catchUp,
     catchUpLabel: next.label,
+    expected,
   };
 }

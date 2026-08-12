@@ -86,6 +86,48 @@ describe("tolerance floors", () => {
       }).status,
     ).toBe("on_pace");
   });
+  it("fiber floor 2 g", () => {
+    // goal 20g → 5% = 1 < floor 2. At 12:00 expected 5.33; 4 → behind 1.33
+    // → within floor → on_pace. A gram and a third of fiber is not a verdict.
+    expect(
+      computeMealPace({
+        ...base, macro: "fiber", goal: 20, currentValue: 4, now: at(12),
+      }).status,
+    ).toBe("on_pace");
+    expect(
+      computeMealPace({
+        ...base, macro: "fiber", goal: 20, currentValue: 1, now: at(12),
+      }).status,
+    ).toBe("behind");
+  });
+});
+
+describe("expected-by-now, for drawing the shortfall", () => {
+  it("behind carries the expected value the meter fills to", () => {
+    // 13:00 → 2300 × (780−480)/900 = 766.67
+    const r = computeMealPace({ ...base, currentValue: 400, now: at(13) });
+    expect(r.expected).toBeCloseTo(766.67, 1);
+  });
+
+  it("after the window closes, all of it was expected", () => {
+    const r = computeMealPace({ ...base, currentValue: 800, now: at(23, 30) });
+    expect(r.status).toBe("after_window");
+    expect(r.expected).toBe(2300);
+  });
+
+  it("nothing to draw when you are not behind", () => {
+    // on_pace, ahead, goal_hit and before_window each leave it absent, so a
+    // meter reading `expected` can never paint a shortfall that isn't there.
+    expect(computeMealPace({ ...base, currentValue: 550, now: at(12) }).expected).toBeUndefined();
+    expect(computeMealPace({ ...base, currentValue: 800, now: at(12) }).expected).toBeUndefined();
+    expect(computeMealPace({ ...base, currentValue: 2300, now: at(12) }).expected).toBeUndefined();
+    expect(computeMealPace({ ...base, currentValue: 0, now: at(7) }).expected).toBeUndefined();
+  });
+
+  it("the drawn gap is exactly the delta it reports", () => {
+    const r = computeMealPace({ ...base, currentValue: 400, now: at(13) });
+    expect(Math.round((r.expected ?? 0) - 400)).toBe(r.delta);
+  });
 });
 
 describe("milestone label formatting", () => {

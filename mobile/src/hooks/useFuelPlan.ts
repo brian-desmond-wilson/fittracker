@@ -112,6 +112,9 @@ export interface FuelDayModel {
   verdict: FuelVerdict | null;
   caloriePace: MealPaceState | null;
   proteinPace: MealPaceState | null;
+  /** Paced like the other two so the strip can draw its shortfall; the
+   *  recommender still reads only calories and protein. */
+  fiberPace: MealPaceState | null;
   projection: FuelProjection | null;
   goals: MacroGoals | null;
   dayTotals: MacroTotals;
@@ -274,6 +277,7 @@ export function useFuelPlan(
         verdict: null,
         caloriePace: null,
         proteinPace: null,
+        fiberPace: null,
         projection: null,
         goals,
         dayTotals,
@@ -435,10 +439,20 @@ export function useFuelPlan(
       lunch: hhmm(profile.lunch_time),
       dinner: hhmm(profile.dinner_time),
     };
-    const paceFor = (macro: "calories" | "protein"): MealPaceState =>
+    const paceFor = (macro: "calories" | "protein" | "fiber"): MealPaceState =>
       computeMealPace({
-        currentValue: macro === "calories" ? dayTotals.calories : dayTotals.protein,
-        goal: macro === "calories" ? goals.calories : goals.protein,
+        currentValue:
+          macro === "calories"
+            ? dayTotals.calories
+            : macro === "protein"
+              ? dayTotals.protein
+              : dayTotals.fiber_g,
+        goal:
+          macro === "calories"
+            ? goals.calories
+            : macro === "protein"
+              ? goals.protein
+              : goals.fiber_g,
         windowStart,
         windowEnd,
         mealTimes,
@@ -447,6 +461,7 @@ export function useFuelPlan(
       });
     const caloriePace = paceFor("calories");
     const proteinPace = paceFor("protein");
+    const fiberPace = paceFor("fiber");
 
     const projection = planProjection({
       consumedCalories: dayTotals.calories,
@@ -475,6 +490,7 @@ export function useFuelPlan(
       }),
       caloriePace,
       proteinPace,
+      fiberPace,
       projection,
       goals,
       dayTotals,
