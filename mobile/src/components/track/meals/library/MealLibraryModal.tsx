@@ -367,20 +367,80 @@ export function MealLibraryModal({
     [data, todayDate, onLogged, load, run],
   );
 
+  // E1. Concept links are the curation chore the whole loop is gated on, and
+  // the builder — the one moment you are already thinking about what an
+  // ingredient IS — was saving meals with none at all. This asks the existing
+  // matcher for proposals over the meal's unlinked items.
+  //
+  // `dryRun: true`, so the function proposes and writes NOTHING. Linking here
+  // happens in a foreground moment the owner is looking at, which makes the
+  // right shape a suggestion to accept rather than a silent write; and it is
+  // the owner's concept graph, not the model's.
+  const suggestLinksFor = useCallback(async (mealId: string) => {
+    const library = await fetchMealLibrary();
+    const meal = library.meals.find((m) => m.id === mealId);
+    if (!meal) return;
+    const unlinked = meal.items
+      .map((it) => it.saved_food_id)
+      .filter((id) => (library.conceptIdsBySavedFoodId.get(id) ?? []).length === 0);
+    if (unlinked.length === 0) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("inventory-intelligence", {
+        body: { savedFoodIds: unlinked, dryRun: true },
+      });
+      if (error) throw error;
+      const proposals = ((data?.results ?? []) as Array<{
+        id: string; name: string; concept: { id: string; name: string } | null;
+      }>).filter((r) => r.concept !== null);
+      if (proposals.length === 0) return;
+      const summary = proposals
+        .map((r) => `${r.name} → ${r.concept!.name}`)
+        .join("\n");
+      Alert.alert(
+        proposals.length === 1 ? "Link this ingredient?" : `Link ${proposals.length} ingredients?`,
+        `${summary}\n\nLinking lets the app check your kitchen for them.`,
+        [
+          { text: "Not now", style: "cancel" },
+          {
+            text: "Link",
+            onPress: () => {
+              void run("Couldn't link those", async () => {
+                const userId = await getUserId();
+                for (const r of proposals) {
+                  await createUserLink(userId, r.concept!.id, { savedFoodId: r.id });
+                }
+              });
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      // Silent: this is an offer, and a matcher that is down should not
+      // interrupt saving a meal.
+      console.error("suggestLinksFor:", e);
+    }
+  }, [run]);
+
   const handleSave = useCallback(
     async (input: MealInput) => {
       const editingId = view.mode === "builder" ? view.mealId : null;
+      let savedMealId: string | null = editingId;
       const ok = await run(
         editingId ? "Failed to save meal" : "Failed to create meal",
         async () => {
           const userId = await getUserId();
           if (editingId) await updateMeal(userId, editingId, input);
-          else await createMeal(userId, input);
+          else savedMealId = await createMeal(userId, input);
         },
       );
-      if (ok) setView({ mode: "list" });
+      if (ok) {
+        setView({ mode: "list" });
+        // E1: offered after the save lands, so a matcher that is slow or down
+        // never delays or blocks saving a meal.
+        if (savedMealId) void suggestLinksFor(savedMealId);
+      }
     },
-    [view, run],
+    [view, run, suggestLinksFor],
   );
 
   // B2. Name-only rows on purpose: an unresolved ingredient has no inventory

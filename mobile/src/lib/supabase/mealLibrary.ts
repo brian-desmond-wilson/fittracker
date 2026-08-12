@@ -341,7 +341,9 @@ export interface MealInput {
   items: MealItemInput[];
 }
 
-export async function createMeal(userId: string, input: MealInput): Promise<void> {
+/** Returns the new meal's id, so a caller can act on what it just made
+ *  (E1 offers concept links for it). */
+export async function createMeal(userId: string, input: MealInput): Promise<string> {
   invalidateMealLibrary(); // D1: this write changes what a read would return
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
@@ -380,6 +382,7 @@ export async function createMeal(userId: string, input: MealInput): Promise<void
     await supabase.from("meals").delete().eq("id", data.id);
     throw itemsError;
   }
+  return data.id;
 }
 
 export async function updateMeal(
