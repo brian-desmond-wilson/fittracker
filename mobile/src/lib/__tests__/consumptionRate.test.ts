@@ -265,3 +265,63 @@ describe("netConsumeEvents — undone taps must not teach the estimator", () => 
     expect(netConsumeEvents([])).toEqual([]);
   });
 });
+
+// D3. `inventory_items` records what a log CLAIMED against inventory, written
+// before the consume RPC runs — so it can name a unit that was never removed,
+// and the estimator inherited that as phantom demand. `consumed_inventory_ids`
+// is what the RPC confirmed it took.
+describe("expandDecrementEvents — confirmed decrements", () => {
+  it("prefers the confirmed list over the claim", () => {
+    // The claim says two units; the decrement actually took one.
+    expect(expandDecrementEvents([{
+      date: "2026-08-01",
+      inventory_items: [{ id: "a", quantity: 1 }, { id: "b", quantity: 1 }],
+      consumed_inventory_ids: ["a"],
+    }])).toEqual([{ inventoryId: "a", dateLocal: "2026-08-01" }]);
+  });
+
+  it("treats a confirmed empty list as 'took nothing', not as unknown", () => {
+    expect(expandDecrementEvents([{
+      date: "2026-08-01",
+      inventory_items: [{ id: "a", quantity: 1 }],
+      consumed_inventory_ids: [],
+    }])).toEqual([]);
+  });
+
+  it("falls back to the claim when the column is null — a pre-column row", () => {
+    // null means UNKNOWN, never "nothing taken": zeroing those would erase
+    // every log written before the column existed.
+    expect(expandDecrementEvents([{
+      date: "2026-08-01",
+      inventory_items: [{ id: "a", quantity: 1 }],
+      consumed_inventory_ids: null,
+    }])).toEqual([{ inventoryId: "a", dateLocal: "2026-08-01" }]);
+  });
+
+  it("falls back when the field is absent entirely", () => {
+    expect(expandDecrementEvents([{
+      date: "2026-08-01",
+      inventory_items: [{ id: "a", quantity: 1 }],
+    }])).toEqual([{ inventoryId: "a", dateLocal: "2026-08-01" }]);
+  });
+
+  it("emits one event per confirmed id", () => {
+    expect(expandDecrementEvents([{
+      date: "2026-08-02",
+      inventory_items: null,
+      consumed_inventory_ids: ["a", "b", "a"],
+    }])).toEqual([
+      { inventoryId: "a", dateLocal: "2026-08-02" },
+      { inventoryId: "b", dateLocal: "2026-08-02" },
+      { inventoryId: "a", dateLocal: "2026-08-02" },
+    ]);
+  });
+
+  it("ignores junk inside the confirmed list rather than throwing", () => {
+    expect(expandDecrementEvents([{
+      date: "2026-08-02",
+      inventory_items: null,
+      consumed_inventory_ids: ["a", "", null as unknown as string],
+    }])).toEqual([{ inventoryId: "a", dateLocal: "2026-08-02" }]);
+  });
+});

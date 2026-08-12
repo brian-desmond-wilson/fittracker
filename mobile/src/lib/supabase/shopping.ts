@@ -52,7 +52,9 @@ export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   const [logs, events] = await Promise.all([
     supabase
       .from("meal_logs")
-      .select("date, inventory_items")
+      // D3: `consumed_inventory_ids` is the truthful record; the expander
+      // prefers it and falls back to the claim for rows that predate it.
+      .select("date, inventory_items, consumed_inventory_ids")
       .eq("uses_inventory", true)
       .gte("date", sinceLocal),
     supabase
@@ -64,7 +66,11 @@ export async function fetchDecrementEvents(): Promise<DecrementEvent[]> {
   if (logs.error) throw logs.error;
   if (events.error) throw events.error;
   const fromLogs = expandDecrementEvents(
-    (logs.data ?? []) as Array<{ date: string; inventory_items: InventoryUsage[] | null }>,
+    (logs.data ?? []) as Array<{
+      date: string;
+      inventory_items: InventoryUsage[] | null;
+      consumed_inventory_ids: string[] | null;
+    }>,
   );
   // Expand to one row per unit, mirroring expandDecrementEvents' shape, then
   // let netConsumeEvents cancel each undone tap against its consume. Quantity

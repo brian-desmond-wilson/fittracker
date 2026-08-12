@@ -533,6 +533,24 @@ export async function logMeal(
     const results = (data ?? []) as Array<{ inventory_id: string; consumed: number }>;
     consumedIds = results.filter(r => r.consumed > 0).map(r => r.inventory_id);
   }
+
+  // D3. Record what the decrement ACTUALLY took, beside the claim written
+  // above. `inventory_items` is intent — it is written before this RPC runs
+  // and can name a unit that was never removed — and the consumption
+  // estimator, reading those claims, inherits the error as phantom demand.
+  // The truthful ids were already in hand and were being thrown away after
+  // undo used them.
+  //
+  // Best-effort, and deliberately after the log rows are committed: failing
+  // to annotate history must never fail the log itself, or roll one back.
+  // Scoped by `logged_at`, the same key undo uses to identify this batch.
+  const { error: stampError } = await supabase
+    .from("meal_logs")
+    .update({ consumed_inventory_ids: consumedIds })
+    .eq("meal_id", meal.id)
+    .eq("logged_at", loggedAt);
+  if (stampError) console.error("logMeal: could not record confirmed decrements:", stampError);
+
   return { loggedAt, consumedIds };
 }
 
