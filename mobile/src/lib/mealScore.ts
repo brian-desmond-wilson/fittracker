@@ -30,9 +30,29 @@ export const COMPONENT_MAX = {
   calories: 10,
 } as const;
 
-/** Chip bands (spec §6): >= CORE green, >= MID neutral, below dim. */
-export const SCORE_BAND_CORE_MIN = 95;
-export const SCORE_BAND_MID_MIN = 71;
+/**
+ * Chip bands: >= CORE green, >= MID neutral, below that flagged.
+ *
+ * RECALIBRATED (A8) against the real library rather than the round numbers the
+ * spec guessed at. The core line sat at 95, which is 90.25 of a possible 95
+ * raw — near-perfect — while the seventeen meals actually in the library score
+ * 77 to 95. Two of them were green and the other fifteen, including every
+ * Brian Approved meal, wore the same amber chip as the worst thing in the
+ * library. A badge that says "not the best" about almost everything is not
+ * grading, it is decoration.
+ *
+ * 85 is where the observed distribution genuinely separates: the approved,
+ * high-protein, low-prep meals cluster at 87 and up, and the ones held back by
+ * thin protein or an unrated concept sit at 77 to 80. The floor moves 71 → 70
+ * for no cleverer reason than that a round number is easier to reason about,
+ * and nothing real lands between them.
+ *
+ * These are policy, and policy is expected to move as the library grows —
+ * which is exactly why they are constants under test rather than literals in
+ * the chip's style function.
+ */
+export const SCORE_BAND_CORE_MIN = 85;
+export const SCORE_BAND_MID_MIN = 70;
 
 export type ScoreBand = "core" | "mid" | "low";
 

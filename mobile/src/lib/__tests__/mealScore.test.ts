@@ -387,7 +387,7 @@ describe("scoreBand", () => {
 
   it("puts one below SCORE_BAND_CORE_MIN in the mid band", () => {
     expect(scoreBand(SCORE_BAND_CORE_MIN - 1)).toBe("mid");
-    expect(scoreBand(94)).toBe("mid");
+    expect(scoreBand(84)).toBe("mid");
   });
 
   it("puts SCORE_BAND_MID_MIN in the mid band", () => {
@@ -397,8 +397,19 @@ describe("scoreBand", () => {
 
   it("puts one below SCORE_BAND_MID_MIN in the low band", () => {
     expect(scoreBand(SCORE_BAND_MID_MIN - 1)).toBe("low");
-    expect(scoreBand(70)).toBe("low");
+    expect(scoreBand(69)).toBe("low");
     expect(scoreBand(0)).toBe("low");
+  });
+
+  it("separates the real library instead of lumping it into one band", () => {
+    // A8's whole point. These are the scores actually in the library: before
+    // the recalibration only the two 95s were green and everything else —
+    // including three Brian Approved meals — wore the same amber chip.
+    const observed = [95, 95, 93, 93, 88, 87, 80, 77, 77, 77];
+    const bands = observed.map(scoreBand);
+    expect(bands.filter((b) => b === "core")).toHaveLength(6);
+    expect(bands.filter((b) => b === "mid")).toHaveLength(4);
+    expect(bands).not.toContain("low");
   });
 });
 
