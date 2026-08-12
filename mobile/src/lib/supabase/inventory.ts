@@ -155,6 +155,37 @@ export async function consumeOneUnit(itemId: string): Promise<ConsumeResult> {
 }
 
 /**
+ * The stepper's "+": one more unit arrived.
+ *
+ * Same arithmetic as an undo, opposite meaning. A restock is not consumption,
+ * so it is recorded as its own kind and the rate estimator never sees it —
+ * collapsing the two would make every grocery run cancel a real meal. Adds to
+ * the ready-to-consume location when there is one, else the first by id, which
+ * is the same tie-break the shopping restock target uses.
+ */
+export async function restockOneUnit(
+  itemId: string,
+  locations: ReadonlyArray<{ id: string; is_ready_to_consume: boolean }>,
+): Promise<number> {
+  const sorted = [...locations].sort((a, b) => a.id.localeCompare(b.id));
+  const target = sorted.find((l) => l.is_ready_to_consume) ?? sorted[0];
+  const { data, error } = await supabase.rpc("restore_inventory_unit", {
+    p_inventory_id: itemId,
+    p_location_id: target?.id ?? null,
+  });
+  if (error) throw error;
+  touchVerified(itemId);
+  const added = (data as number | null) ?? 0;
+  if (added > 0) {
+    const { error: evErr } = await supabase.from("inventory_events").insert({
+      food_inventory_id: itemId, kind: "restock", quantity: added,
+    });
+    if (evErr) console.error("restockOneUnit: event insert failed:", evErr);
+  }
+  return added;
+}
+
+/**
  * Undo for `consumeOneUnit`: put the unit back where it came from.
  *
  * The trail is append-only, so this does NOT delete the consume event — it
