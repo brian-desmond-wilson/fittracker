@@ -57,6 +57,13 @@ import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal } from "./MealLogEditorModal";
 import { MealLibraryModal } from "./meals/library/MealLibraryModal";
+import {
+  fetchMealLibrary,
+  logMeal,
+  undoMealLog,
+  MealLoggedButDecrementFailed,
+} from "@/src/lib/supabase/mealLibrary";
+import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { MealsInsightsCard } from "./MealsInsightsCard";
 import {
   buildDailyTotalsByDate,
@@ -1169,6 +1176,72 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   };
 
+  // B3. Accepting a suggestion used to be chip → library modal → detail →
+  // Log: three screens to say yes to an answer the app had already computed.
+  //
+  // Reuses `logMeal` — the same function the library detail calls, with the
+  // same two failure branches — rather than reimplementing the write. The
+  // meal and the concept maps come from `fetchMealLibrary`, which since D1
+  // serves this out of the cache the recommender itself just populated, so
+  // this costs no extra round trip in practice.
+  const [quickLoggingMealId, setQuickLoggingMealId] = useState<string | null>(null);
+  const handleQuickLogSuggestion = async (mealId: string) => {
+    if (quickLoggingMealId) return;
+    setQuickLoggingMealId(mealId);
+    try {
+      const library = await fetchMealLibrary();
+      const meal = library.meals.find((m) => m.id === mealId);
+      if (!meal) throw new Error("That meal is no longer in your library.");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const result = await logMeal(user.id, meal, {
+        date: viewingDateStr,
+        mealType: defaultMealTypeFor(meal),
+        conceptIdsBySavedFoodId: library.conceptIdsBySavedFoodId,
+        inventory: library.inventory,
+      });
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      await fetchRecentAndFavorites();
+      eatNext.refetch();
+      Alert.alert("Logged", `${meal.name} → ${defaultMealTypeFor(meal)}`, [
+        {
+          text: "Undo",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                await undoMealLog(meal.id, result.loggedAt, result.consumedIds);
+                await fetchMealsForDate(viewingDate, true);
+                eatNext.refetch();
+              } catch (e) {
+                console.error("undo quick log:", e);
+                Alert.alert("Couldn't undo", "The meal is still logged.");
+              }
+            })();
+          },
+        },
+        { text: "OK", style: "default" },
+      ]);
+    } catch (e) {
+      // `MealLoggedButDecrementFailed` carries its own explanatory message and
+      // means the log DID commit — never presented as a failure to log.
+      if (e instanceof MealLoggedButDecrementFailed) {
+        await fetchMealsForDate(viewingDate, true);
+        Alert.alert("Logged (inventory not updated)", e.message);
+      } else {
+        console.error("quick log suggestion:", e);
+        Alert.alert("Couldn't log that", e instanceof Error ? e.message : "Unknown error");
+      }
+    } finally {
+      setQuickLoggingMealId(null);
+    }
+  };
+
   const handleDeleteMeal = async (mealId: string) => {
     Alert.alert("Delete Meal", "Are you sure you want to delete this meal log?", [
       { text: "Cancel", style: "cancel" },
@@ -1548,6 +1621,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                         setLibraryInitialMealId(mealId);
                         setLibraryVisible(true);
                       }}
+                      onQuickLog={handleQuickLogSuggestion}
+                      loggingMealId={quickLoggingMealId}
                     />
                   </View>
                 )}
