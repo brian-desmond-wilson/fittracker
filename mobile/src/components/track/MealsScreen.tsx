@@ -65,6 +65,7 @@ import {
   MealLoggedButDecrementFailed,
 } from "@/src/lib/supabase/mealLibrary";
 import { tasteAskFor } from "@/src/lib/tasteAsk";
+import { markSuggestionActedOn } from "@/src/lib/supabase/eatNextLog";
 import type { ConceptRating } from "@/src/types/nutrition-preferences";
 import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { MealsInsightsCard } from "./MealsInsightsCard";

@@ -18,6 +18,7 @@ import {
   fetchMealLibrary,
 } from "@/src/lib/supabase/mealLibrary";
 import { getLocalDateString } from "@/src/lib/dates";
+import { recordSuggestions } from "@/src/lib/supabase/eatNextLog";
 import { shouldRetire } from "@/src/lib/mealRetirement";
 import { daysBetweenLocalDates } from "@/src/lib/stockState";
 
@@ -366,6 +367,20 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
       setError(null);
       setResult(next);
       setComputedAt(now);
+
+      // D5. Telemetry, deliberately after the state is set and deliberately
+      // unawaited: this is a record of what was offered, and it must never
+      // delay a render or surface an error to someone trying to eat. The
+      // daily grain (see `recordSuggestions`) is what keeps a recommender
+      // that recomputes on every focus from writing thousands of rows a week.
+      void (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) await recordSuggestions(user.id, next, today);
+        } catch (e) {
+          console.error("useEatNext: suggestion log:", e);
+        }
+      })();
     } catch (e) {
       console.error("useEatNext:", e);
       if (runId !== runIdRef.current) return;
