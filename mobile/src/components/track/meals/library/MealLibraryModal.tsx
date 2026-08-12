@@ -13,6 +13,7 @@ import {
 import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
 import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
+import { addSuggestions } from "@/src/lib/supabase/shopping";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import {
   computeMealTotals, createMeal, createUserLink, deleteMeal,
@@ -314,6 +315,40 @@ export function MealLibraryModal({
     [view, run],
   );
 
+  // B2. Name-only rows on purpose: an unresolved ingredient has no inventory
+  // row to point at — that is what makes it missing — so `food_inventory_id`
+  // is null and the demand engine's name-based suppression is what stops it
+  // suggesting the same thing again. Priority 1: you asked for this one
+  // explicitly, which outranks anything the engine inferred.
+  const [addingToList, setAddingToList] = useState(false);
+  const [addedToListMealId, setAddedToListMealId] = useState<string | null>(null);
+  const handleAddMissing = useCallback(
+    async (names: string[]) => {
+      if (names.length === 0 || view.mode !== "detail") return;
+      const mealId = view.mealId;
+      setAddingToList(true);
+      try {
+        const userId = await getUserId();
+        await addSuggestions(userId, names.map((name) => ({
+          name,
+          foodInventoryId: null,
+          vendorId: null,
+          quantity: 1,
+          unit: null,
+          priority: 1 as const,
+          reasons: ["needed for a meal you opened"],
+        })));
+        setAddedToListMealId(mealId);
+      } catch (e) {
+        console.error("add missing to shopping list:", e);
+        Alert.alert("Couldn't add to the list", "Nothing was added — try again.");
+      } finally {
+        setAddingToList(false);
+      }
+    },
+    [view],
+  );
+
   const handleDelete = useCallback(
     async (meal: MealWithItems) => {
       const ok = await run("Failed to delete meal", () => deleteMeal(meal.id));
@@ -395,6 +430,9 @@ export function MealLibraryModal({
         score={scores.get(detailMeal.id)!}
         assemblability={assemblabilityById.get(detailMeal.id)}
         logging={busy}
+        onAddMissing={handleAddMissing}
+        addingToList={addingToList}
+        addedToList={addedToListMealId === detailMeal.id}
         onLog={handleLog}
         onEdit={(m) => setView({ mode: "builder", mealId: m.id })}
         onDelete={handleDelete}

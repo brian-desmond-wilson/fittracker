@@ -70,6 +70,16 @@ export interface EatNextStockInfo {
   assemblable: boolean;
   /** Ingredients we looked for and did not find. Real groceries. */
   missingCount: number;
+  /**
+   * Which ones (B2). `missingCount` stays the summary every consumer reads
+   * for the number; this is the detail, so "Missing 2" can name the two and
+   * offer to buy them instead of being a dead end.
+   *
+   * Optional because `EatNextStockInfo` is a public input and every existing
+   * caller and fixture predates it — `buildStockByMealId` always populates it,
+   * and always consistently with the count.
+   */
+  missingNames?: string[];
   /** Ingredients we could not look for at all — no barcode, no concept link.
    *  A records gap, not a shopping need, and ranked as ignorance rather than
    *  as a confirmed shortfall (see `stockRank` in `candidate`). */
@@ -186,6 +196,7 @@ export function buildStockByMealId(library: {
     map.set(meal.id, {
       assemblable: a.assemblable,
       missingCount: a.missing.length,
+      missingNames: a.missing,
       unlinkedCount: a.unlinked.length,
       expiringItemName: a.expiringItemName,
       expiringDaysLeft: a.expiringDaysLeft,
@@ -359,6 +370,24 @@ function expiryClause(daysLeft: number | null): string {
  * nothing below it is either (nothing to offer). Reads the TYPED `stock`
  * verdict, never `reasons`, whose entries have no fixed position.
  */
+/**
+ * "Missing 2" said how many and never which (B2). This is the line that names
+ * them, capped so a five-ingredient gap does not run off the card.
+ *
+ * Null when there is nothing missing, or when the builder did not supply
+ * names — an absent list is not an empty one, and inventing "Missing: " with
+ * nothing after it is the failure mode this replaces.
+ */
+export const MISSING_NAMES_SHOWN = 3;
+
+export function eatNextMissingLine(stock: EatNextStockInfo | undefined): string | null {
+  const names = stock?.missingNames;
+  if (!names || names.length === 0) return null;
+  const shown = names.slice(0, MISSING_NAMES_SHOWN).join(", ");
+  const rest = names.length - MISSING_NAMES_SHOWN;
+  return rest > 0 ? `Missing: ${shown} +${rest} more` : `Missing: ${shown}`;
+}
+
 export function eatNextReadyAlternative(
   recommendations: readonly EatNextRecommendation[],
 ): EatNextRecommendation | null {

@@ -19,6 +19,7 @@ import {
   EMPTY_LIBRARY_MESSAGE,
   eatNextStockBadge,
   eatNextExpiringLine,
+  eatNextMissingLine,
   eatNextReadyAlternative,
 } from "@/src/lib/eatNext";
 // `scoreTone` is the ONE band → Badge-tone lookup (it resolves spec §6's
@@ -158,6 +159,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // whether or not the meal is assemblable, because the user already owns the
   // item that is about to spoil (Task 8's DECISION, Task 9 FIX 3).
   const expiringLine = eatNextExpiringLine(top.stock);
+  const missingLine = eatNextMissingLine(top.stock);
   // B1. This card shows ONE meal, so when the engine's pick is not makeable
   // the whole card is an instruction the owner cannot follow. The ranking
   // stays as designed — role above availability is deliberate and tested —
@@ -192,6 +194,14 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       <Text style={styles.reason} numberOfLines={2}>
         {top.reasons[0]}
       </Text>
+      {/* B2. The badge says how many; this says which. Without it "Missing 2"
+          is a number you cannot act on — you have to open the meal to find out
+          what it even wants. */}
+      {missingLine && (
+        <Text style={styles.mutedText} numberOfLines={2}>
+          {missingLine}
+        </Text>
+      )}
       {expiringLine && (
         <Text style={styles.expiringText} numberOfLines={2}>
           {expiringLine}

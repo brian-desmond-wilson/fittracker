@@ -8,6 +8,7 @@ import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
 import type { MealAssemblability } from "@/src/lib/stockState";
 import { spacing } from "@/src/theme/tokens";
+import { ShoppingCart } from "lucide-react-native";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { lib, scoreTone } from "./styles";
 
@@ -19,6 +20,10 @@ interface MealDetailProps {
   score: BrianScoreResult;
   assemblability?: MealAssemblability;
   logging: boolean;
+  /** B2: hand the missing ingredient names to the shopping list. */
+  onAddMissing: (names: string[]) => void;
+  addingToList: boolean;
+  addedToList: boolean;
   onLog: (meal: MealWithItems, mealType: MealType) => void;
   onEdit: (meal: MealWithItems) => void;
   onDelete: (meal: MealWithItems) => void;
@@ -39,7 +44,8 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
 }
 
 export function MealDetail({
-  meal, totals, score, assemblability, logging, onLog, onEdit, onDelete,
+  meal, totals, score, assemblability, logging, onAddMissing, addingToList,
+  addedToList, onLog, onEdit, onDelete,
 }: MealDetailProps) {
   const [mealType, setMealType] = useState<MealType>(defaultMealTypeFor(meal));
 
@@ -104,9 +110,29 @@ export function MealDetail({
             only by unlinked ingredients — and the verdict gate would render a
             bare "Missing:" with nothing after it. */}
         {assemblability && assemblability.missing.length > 0 && (
-          <Text style={[lib.smallMuted, lib.warnText, { marginTop: spacing.sm }]}>
-            Missing: {assemblability.missing.join(", ")}
-          </Text>
+          <>
+            <Text style={[lib.smallMuted, lib.warnText, { marginTop: spacing.sm }]}>
+              Missing: {assemblability.missing.join(", ")}
+            </Text>
+            {/* B2. Naming the gap and then making you retype it into the
+                shopping list by hand is most of the dead end. These are
+                name-only rows: an unresolved ingredient has no inventory row
+                to point at, which is exactly what makes it missing. */}
+            <View style={{ alignSelf: "flex-start", marginTop: spacing.sm }}>
+              <Button
+                label={
+                  addedToList
+                    ? "Added to shopping list"
+                    : `Add ${assemblability.missing.length} to shopping list`
+                }
+                onPress={() => onAddMissing(assemblability.missing)}
+                variant="secondary"
+                size="sm"
+                icon={ShoppingCart}
+                disabled={addedToList || addingToList}
+              />
+            </View>
+          </>
         )}
         {/* The other half of the old "Missing" line. Muted rather than amber,
             and worded as a records gap, because these are ingredients nothing

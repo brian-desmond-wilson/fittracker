@@ -5,6 +5,7 @@ import {
   eatNextExpiringLine,
   nudgeFireDate,
   eatNextReadyAlternative,
+  eatNextMissingLine,
   prepBudgetVerdict,
   prepBudgetLabel,
   EMERGENCY_MIN_GAP_CAL,
@@ -1250,6 +1251,7 @@ describe("buildStockByMealId", () => {
     expect(stockByMealId.get(m.meal.id)).toEqual({
       assemblable: false,
       missingCount: 2,
+      missingNames: ["Korean BBQ Sauce", "Rice"],
       unlinkedCount: 0,
       expiringItemName: "Kefir",
       expiringDaysLeft: 4,
@@ -1362,6 +1364,7 @@ describe("buildStockByMealId — paths the first round of tests never executed",
     expect(stockByMealId.get(rescue.meal.id)).toEqual({
       assemblable: true,
       missingCount: 0,
+      missingNames: [],
       unlinkedCount: 0,
       expiringItemName: "Kefir",
       expiringDaysLeft: 3,
@@ -1398,6 +1401,7 @@ describe("buildStockByMealId — paths the first round of tests never executed",
     expect(stockByMealId.get(m.meal.id)).toEqual({
       assemblable: true,
       missingCount: 0,
+      missingNames: [],
       unlinkedCount: 0,
       expiringItemName: null,
       expiringDaysLeft: null,
@@ -1916,5 +1920,64 @@ describe("eatNextReadyAlternative", () => {
 
   it("is empty-safe", () => {
     expect(eatNextReadyAlternative([])).toBeNull();
+  });
+});
+
+// B2. "Missing 2" said how many and never which, so the badge was a number you
+// could not act on without opening the meal to find out what it wanted.
+describe("eatNextMissingLine", () => {
+  const withNames = (missingNames: string[]): EatNextStockInfo => ({
+    assemblable: false, missingCount: missingNames.length, missingNames,
+    unlinkedCount: 0, expiringItemName: null, expiringDaysLeft: null,
+  });
+
+  it("names them", () => {
+    expect(eatNextMissingLine(withNames(["Banana", "Peanut Butter"])))
+      .toBe("Missing: Banana, Peanut Butter");
+  });
+
+  it("caps a long list rather than running off the card", () => {
+    expect(eatNextMissingLine(withNames(["A", "B", "C", "D", "E"])))
+      .toBe("Missing: A, B, C +2 more");
+  });
+
+  it("says nothing when nothing is missing", () => {
+    expect(eatNextMissingLine(withNames([]))).toBeNull();
+  });
+
+  it("says nothing when the names were never supplied", () => {
+    // An ABSENT list is not an empty one. Rendering "Missing: " with nothing
+    // after it is the failure this helper exists to avoid.
+    expect(eatNextMissingLine({
+      assemblable: false, missingCount: 2, unlinkedCount: 0,
+      expiringItemName: null, expiringDaysLeft: null,
+    })).toBeNull();
+  });
+
+  it("says nothing for unknown stock", () => {
+    expect(eatNextMissingLine(undefined)).toBeNull();
+  });
+});
+
+describe("buildStockByMealId — the names behind the count", () => {
+  it("keeps the count and the names in step", () => {
+    const m = scored({ category: "dinner" });
+    const map = buildStockByMealId({
+      meals: [{
+        id: m.meal.id,
+        items: [
+          { saved_food_id: "sf-a", savedFood: { name: "Have It", barcode: null } },
+          { saved_food_id: "sf-b", savedFood: { name: "Want It", barcode: null } },
+        ],
+      }],
+      conceptIdsBySavedFoodId: new Map([["sf-a", ["a"]], ["sf-b", ["b"]]]),
+      inventory: [{
+        id: "inv1", name: "A thing", barcode: null,
+        totalQuantity: 3, conceptIds: ["a"], daysLeft: null,
+      }],
+    });
+    const info = map.get(m.meal.id)!;
+    expect(info.missingNames).toEqual(["Want It"]);
+    expect(info.missingCount).toBe(info.missingNames!.length);
   });
 });

@@ -48,6 +48,7 @@ import { Badge, Card } from "@/src/components/ui";
 import {
   eatNextStockBadge,
   eatNextExpiringLine,
+  eatNextMissingLine,
   type EatNextResult,
 } from "@/src/lib/eatNext";
 
@@ -83,6 +84,8 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
         // Eat Next surfaces back in the state this task exists to fix, one
         // naming the rescue and one silently not.
         const expiringLine = eatNextExpiringLine(rec.stock);
+        // B2: which ones, not just how many.
+        const missingLine = eatNextMissingLine(rec.stock);
         return (
           <Card
             key={rec.mealId}
@@ -99,6 +102,11 @@ export function EatNextRow({ result, onMealPress }: EatNextRowProps) {
             <Text style={styles.chipStats} numberOfLines={1}>
               {rec.calories} cal · {rec.prepMinutes} min
             </Text>
+            {missingLine && (
+              <Text style={styles.chipStats} numberOfLines={1}>
+                {missingLine}
+              </Text>
+            )}
             {expiringLine && (
               <Text style={styles.chipExpiring} numberOfLines={1}>
                 {expiringLine}
