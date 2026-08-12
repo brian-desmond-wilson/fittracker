@@ -19,11 +19,6 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  refreshIndicator: {
-    paddingVertical: spacing.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   backButton: {
     padding: spacing.xs,
   },
@@ -52,9 +47,8 @@ export const styles = StyleSheet.create({
   },
   /**
    * Paired with `mealsSection`'s `flexGrow`, this gives the scroller a
-   * definite height so `MealsDayList`'s `EmptyState`/`LoadingState` (both
-   * `flex: 1`) can fill the list region rather than collapsing onto their own
-   * padding. Same pairing Tasks 5-6 put on their list content containers.
+   * definite height so the rail region's `EmptyState` (`flex: 1`) can fill it
+   * rather than collapsing onto its own padding.
    */
   scrollContent: {
     flexGrow: 1,
@@ -126,11 +120,6 @@ export const styles = StyleSheet.create({
   actionRow: {
     marginHorizontal: spacing.screenGutter,
     marginBottom: spacing.lg,
-  },
-  /** Gutter + spacing for the pace-coach / suggested-now block. */
-  paceWrap: {
-    marginHorizontal: spacing.screenGutter,
-    marginBottom: spacing.md,
   },
   addSection: {
     paddingHorizontal: spacing.screenGutter,
@@ -225,46 +214,6 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.screenGutter,
   },
-  // Matches "SUGGESTED NOW" and "QUICK ADD" above it, so the tab reads as
-  // three labelled groups instead of a stack of unrelated blocks.
-  loggedHeader: {
-    ...typography.section,
-    marginBottom: spacing.md,
-  },
-  mealTypeSection: {
-    marginBottom: spacing.xl,
-  },
-  mealTypeSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  // Not a `Badge`: the fill is the meal type's own identity color, which the
-  // primitive's tone set cannot express. Geometry matches `Badge`.
-  mealTypeBadge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-  },
-  mealTypeBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  /** Placement the `Card row` primitive can't express. */
-  mealCardSpacing: {
-    marginBottom: spacing.md,
-  },
-  mealCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  mealTime: {
-    ...typography.caption,
-  },
   searchResultsSpacing: {
     marginHorizontal: spacing.screenGutter,
     marginBottom: spacing.md,
@@ -296,19 +245,5 @@ export const styles = StyleSheet.create({
   },
   distributionWrap: {
     marginHorizontal: spacing.screenGutter,
-  },
-  mealName: {
-    ...typography.rowTitle,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  mealNutrition: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md,
-  },
-  nutritionText: {
-    ...typography.body,
-    color: colors.textMuted,
   },
 });

@@ -601,16 +601,16 @@ describe("station 6: shopping + assembly", () => {
   // strings will ever get.
   it("each station deep-links to its own screen", () => {
     expect(computeLoopStatus(baseInputs()).stations.map((s) => [s.key, s.destination])).toEqual([
-      ["inventory", "/(tabs)/track/food-inventory"], ["library", "/(tabs)/track/meals"],
-      ["eatNext", "/(tabs)/track/meals"], ["pace", "/(tabs)/track/meals"],
+      ["inventory", "/(tabs)/track/food-inventory"], ["library", "/(tabs)/track/fuel"],
+      ["eatNext", "/(tabs)/track/fuel"], ["pace", "/(tabs)/track/fuel"],
       ["forecast", "/(tabs)/track/shopping"], ["shopping", "/(tabs)/track/shopping"],
     ]);
   });
   it("each station carries its own title and destination label", () => {
     expect(computeLoopStatus(baseInputs()).stations.map((s) => [s.title, s.destinationLabel]))
       .toEqual([
-        ["Inventory", "Open Inventory"], ["Meal Library", "Open Meals"],
-        ["Eat Next", "Open Meals"], ["Today's Pace", "Open Meals"],
+        ["Inventory", "Open Inventory"], ["Meal Library", "Open Fuel"],
+        ["Eat Next", "Open Fuel"], ["Today's Pace", "Open Fuel"],
         ["Forecast", "Open Shopping"], ["Shopping", "Open Shopping"],
       ]);
   });

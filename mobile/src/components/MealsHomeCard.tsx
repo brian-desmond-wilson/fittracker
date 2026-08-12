@@ -83,10 +83,10 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
     <Card
       variant="panel"
       style={styles.cardSizing}
-      onPress={() => router.push("/(tabs)/track/meals")}
+      onPress={() => router.push("/(tabs)/track/fuel")}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Meals</Text>
+        <Text style={styles.cardTitle}>Fuel</Text>
         <View style={styles.iconContainer}>
           <Flame size={icons.md} color={colors.accents.meals} strokeWidth={icons.strokeWidth} />
         </View>

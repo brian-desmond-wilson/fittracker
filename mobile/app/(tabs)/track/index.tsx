@@ -28,7 +28,7 @@ export default function Track() {
     // Nutrition & Food Section
     {
       id: "meals",
-      title: "Meals & Snacks",
+      title: "Fuel",
       icon: "Utensils",
       accent: "meals",
       section: "nutrition",

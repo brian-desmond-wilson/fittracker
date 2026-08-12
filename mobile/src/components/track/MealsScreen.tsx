@@ -35,7 +35,8 @@ import {
   X,
 } from "lucide-react-native";
 import { colors, icons, spacing } from "@/src/theme/tokens";
-import { Button, Card, IconButton } from "@/src/components/ui";
+import { Button, Card, EmptyState, IconButton } from "@/src/components/ui";
+import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import {
@@ -76,8 +77,10 @@ import {
   computeMealsRollingStats,
   buildMealsSeries,
 } from "@/src/lib/mealStats";
-import { computeMealPace, MealPaceState } from "@/src/lib/mealPace";
-import { MealsPaceLines } from "./MealsPaceLines";
+import { useFuelPlan } from "@/src/hooks/useFuelPlan";
+import { FuelVerdictStrip } from "./meals/FuelVerdictStrip";
+import { FuelRail } from "./meals/FuelRail";
+import type { FuelWindow } from "@/src/lib/fuelPlan";
 import { MealUndoSnackbar } from "./MealUndoSnackbar";
 import { QuickAdjustmentModal } from "./QuickAdjustmentModal";
 import { MealsDistributionBar } from "./MealsDistributionBar";
@@ -101,11 +104,7 @@ import { useSavedFoodsSearch } from "./meals/useSavedFoodsSearch";
 import { useMealSearch } from "./meals/useMealSearch";
 import { useHistoricalMeals } from "./meals/useHistoricalMeals";
 import { useMealAddForm } from "./meals/useMealAddForm";
-import { MealsDayList } from "./meals/MealsDayList";
 import { MealAddForm } from "./meals/MealAddForm";
-import { EatNextRow } from "./meals/EatNextRow";
-import { RescueRow } from "./meals/RescueRow";
-import { useRescuePlan } from "./meals/useRescuePlan";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 
@@ -130,8 +129,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const addForm = useMealAddForm();
 
   // Macro goals + eating-window / meal times from profile (loaded on mount).
-  const { goals, windowStart, windowEnd, breakfastTime, lunchTime, dinnerTime } =
-    useMacroGoals();
+  // Times and window bounds now live inside useFuelPlan's own profile read;
+  // this screen only needs the goals.
+  const { goals } = useMacroGoals();
 
   // Edit-meal modal
   const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
@@ -185,7 +185,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const eatNext = useEatNext();
 
   // Deep link from `EatNextHomeCard` (spec §7.1: `router.push({ pathname:
-  // "/(tabs)/track/meals", params: { suggestMealId: top.mealId } })`) and the
+  // "/(tabs)/track/fuel", params: { suggestMealId: top.mealId } })`) and the
   // target of the "Suggested now" chips below — both open the Meal Library
   // modal directly on a meal's detail.
   const [libraryInitialMealId, setLibraryInitialMealId] = useState<string | null>(null);
@@ -229,11 +229,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   } = useRecentAndFavorites();
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  // Bumped after every forced day refetch so the Fuel sources (library,
+  // profile, windows, prep budget) reload alongside the logs they plan over.
+  const [fuelRefreshKey, setFuelRefreshKey] = useState(0);
+  // When a rail ghost opens the add form for a missed window, the log is
+  // backdated to that window's midpoint so the receipt lands where the meal
+  // actually happened (R5). Null = a normal, now-stamped log.
+  const retroLoggedAtRef = useRef<string | null>(null);
 
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
   const { mealResults } = useMealSearch(searchQuery);
-  const { rescues } = useRescuePlan();
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -318,6 +324,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // `eatNext.result`, because the value in THIS closure is the
       // pre-refetch one and would sync a stale decision.
       if (force && dateStr === todayStr) eatNext.refetch();
+      // Same trigger for the Fuel rail's sources: a write can change stock
+      // (quick-log decrements inventory), which changes picks and rescues.
+      if (force) setFuelRefreshKey((k) => k + 1);
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
@@ -999,8 +1008,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         fiber_g: fiberG ? parseFloat(fiberG) : null,
         uses_inventory: false,
         inventory_items: null,
-        logged_at: new Date().toISOString(),
+        // Backdated when this form was opened from a missed window's ghost
+        // row — the rail then shows the receipt in that window's slot.
+        logged_at: retroLoggedAtRef.current ?? new Date().toISOString(),
       };
+      retroLoggedAtRef.current = null;
 
       const { data: inserted, error } = await supabase
         .from("meal_logs")
@@ -1329,35 +1341,28 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // intake is shown regardless of search query.
   const dayTotals = useMemo(() => sumNutrition(dayMeals), [dayMeals]);
 
-  // Pace coach for today's view only. (`isViewingToday` is a function
-  // defined above; cache its result here for memo deps.)
+  // (`isViewingToday` is a function defined above; cache its result here for
+  // memo deps.)
   const viewingToday = viewingDateStr === todayStr;
-  const mealTimes = useMemo(
-    () => ({ breakfast: breakfastTime, lunch: lunchTime, dinner: dinnerTime }),
-    [breakfastTime, lunchTime, dinnerTime]
-  );
-  const caloriePace: MealPaceState | null = useMemo(() => {
-    if (!viewingToday) return null;
-    return computeMealPace({
-      currentValue: dayTotals.calories,
-      goal: goals.calories,
-      windowStart,
-      windowEnd,
-      mealTimes,
-      macro: "calories",
-    });
-  }, [viewingToday, dayTotals.calories, goals.calories, windowStart, windowEnd, mealTimes]);
-  const proteinPace: MealPaceState | null = useMemo(() => {
-    if (!viewingToday) return null;
-    return computeMealPace({
-      currentValue: dayTotals.protein,
-      goal: goals.protein,
-      windowStart,
-      windowEnd,
-      mealTimes,
-      macro: "protein",
-    });
-  }, [viewingToday, dayTotals.protein, goals.protein, windowStart, windowEnd, mealTimes]);
+
+  // The Fuel engine: one hook, one clock, rendered-ready rail rows. Replaces
+  // the pace-line memos, the rescue row and the Eat Next row this screen used
+  // to compose separately — and with them, their three separate clocks.
+  const fuel = useFuelPlan(dayMeals, viewingToday, fuelRefreshKey);
+
+  const handleRetro = (w: FuelWindow | null) => {
+    addForm.setSelectedDate(viewingDate);
+    if (w) {
+      addForm.setMealType(w.mealType);
+      const mid = Math.round((w.startMinutes + w.endMinutes) / 2);
+      const d = new Date();
+      d.setHours(Math.floor(mid / 60), mid % 60, 0, 0);
+      retroLoggedAtRef.current = d.toISOString();
+    } else {
+      retroLoggedAtRef.current = null;
+    }
+    setShowAddForm(true);
+  };
 
   // Second of the eat-nudge family's two resync points (spec §8.1; the Home
   // card is the other, covering app open/foreground). Sited here, rather than
@@ -1401,12 +1406,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     });
   }, [viewingToday, eatNext.result, eatNext.computedAt]);
 
-  // Search-filtered subset of dayMeals (used for the list rendering only).
-  const filteredDayMeals = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (q === "") return dayMeals;
-    return dayMeals.filter((m) => m.name.toLowerCase().includes(q));
-  }, [dayMeals, searchQuery]);
 
   // Insights data — derived from the 365-day historical fetch.
   const totalsByDate = useMemo(
@@ -1437,25 +1436,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     () => buildMealsSeries(totalsByDate, 14, goals),
     [totalsByDate, goals]
   );
-
-  // Group meals by meal type
-  const getMealsGroupedByType = (): Record<MealType, MealLog[]> => {
-    const grouped: Record<MealType, MealLog[]> = {
-      breakfast: [],
-      lunch: [],
-      dinner: [],
-      snack: [],
-      dessert: [],
-    };
-
-    filteredDayMeals.forEach((meal) => {
-      grouped[meal.meal_type].push(meal);
-    });
-
-    return grouped;
-  };
-
-  const groupedMealsByType = getMealsGroupedByType();
 
   return (
     <>
@@ -1513,20 +1493,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           />
         </View>
 
-        {/* Fixed Refresh Indicator */}
-        {refreshing && (
-          <View style={styles.refreshIndicator}>
-            <ActivityIndicator size="small" color={colors.brand} />
-          </View>
-        )}
+        {/* App-drawn refresh indicator — the system spinner never renders in
+            this app, so the primitive sits as a sibling above the scroll. */}
+        <RefreshIndicator visible={refreshing} />
 
         <ScrollView
           style={styles.content}
           showsVerticalScrollIndicator={false}
           // `flexGrow: 1` (with the matching grow on `mealsSection`) is what
-          // lets `MealsDayList`'s `EmptyState`/`LoadingState` — both `flex: 1`
-          // — resolve to a real height instead of collapsing onto their own
-          // padding. Inert once the day has enough content to scroll.
+          // lets the rail region's `EmptyState` — `flex: 1` — resolve to a
+          // real height instead of collapsing onto its own padding. Inert
+          // once the day has enough content to scroll.
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: insets.bottom + spacing.xxl },
@@ -1547,7 +1524,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               color={colors.accents.meals}
               strokeWidth={icons.strokeWidth}
             />
-            <Text style={styles.pageTitle}>Meals & Snacks</Text>
+            <Text style={styles.pageTitle}>Fuel</Text>
             <TouchableOpacity
               onPress={handleExportCsv}
               disabled={exporting}
@@ -1646,46 +1623,25 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </View>
             )}
 
-            {/* ── TODAY TAB ── logging surface */}
+            {/* ── TODAY TAB ── the day's eating plan */}
             {!showAddForm && activeTab === "today" && (
               <>
-                {/* Nutrition Summary (rings + bars + compact tier C) */}
-                <MealsNutritionCard
-                  label={getNutritionLabel(viewingDate)}
-                  totals={dayTotals}
-                  goals={goals}
-                />
-
-                {/* Pace coach (today only) */}
-                {viewingToday && (
-                  <View style={styles.paceWrap}>
-                    <MealsPaceLines
-                      caloriePace={caloriePace}
-                      proteinPace={proteinPace}
-                    />
-                    {/* "Suggested now" (spec §7.2) — directly under the pace
-                        lines, inside the same `viewingToday` guard and gutter.
-                        Renders nothing when there are no recommendations. */}
-                    {/* E3: from the other end — the food that is about to go,
-                        and what would use it. Renders nothing when nothing is
-                        expiring, which is most days. */}
-                    <RescueRow
-                      suggestions={rescues}
-                      onMealPress={(mealId) => {
-                        setLibraryInitialMealId(mealId);
-                        setLibraryVisible(true);
-                      }}
-                    />
-                    <EatNextRow
-                      result={eatNext.result}
-                      onMealPress={(mealId) => {
-                        setLibraryInitialMealId(mealId);
-                        setLibraryVisible(true);
-                      }}
-                      onQuickLog={handleQuickLogSuggestion}
-                      loggingMealId={quickLoggingMealId}
-                    />
-                  </View>
+                {/* Today wears the verdict strip — chip, bars, and what the
+                    rail below lands the day at. A finished (past) day is a
+                    record, not a plan, so it keeps the full nutrition card. */}
+                {viewingToday && fuel.model?.verdict ? (
+                  <FuelVerdictStrip
+                    verdict={fuel.model.verdict}
+                    projection={fuel.model.projection}
+                    dayTotals={dayTotals}
+                    goals={goals}
+                  />
+                ) : (
+                  <MealsNutritionCard
+                    label={getNutritionLabel(viewingDate)}
+                    totals={dayTotals}
+                    goals={goals}
+                  />
                 )}
 
                 {/* Search Results — from your saved foods library */}
@@ -1831,36 +1787,43 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               onChipPress={addForm.fillFromChip}
               onCancel={() => {
                 resetForm();
+                retroLoggedAtRef.current = null;
                 setShowAddForm(false);
               }}
               onSubmit={handleAddMeal}
             />
           )}
 
-            {/* Meals Section - Grouped by Type (Today tab only; on Insights
-                the logged-food list is hidden to keep that view reflective) */}
+            {/* The rail — the day in one chronological read. Today: receipts,
+                the NOW line, then the plan. Past days: receipts only. */}
             {(showAddForm || activeTab === "today") && (
-              <MealsDayList
-                loadingDay={loadingDay}
-                dayMeals={dayMeals}
-                groupedMealsByType={groupedMealsByType}
-                onEditMeal={setEditingMeal}
-                onDeleteMeal={handleDeleteMeal}
-                // B8. Only on today, and only when there is a suggestion —
-                // the recommender's answer is the useful thing to say under
-                // "nothing logged", and on a past day there is no such thing.
-                suggestedMealName={
-                  viewingToday
-                    ? eatNext.result?.recommendations[0]?.name ?? null
-                    : null
-                }
-                onOpenSuggestion={() => {
-                  const mealId = eatNext.result?.recommendations[0]?.mealId;
-                  if (!mealId) return;
-                  setLibraryInitialMealId(mealId);
-                  setLibraryVisible(true);
-                }}
-              />
+              <View style={styles.mealsSection}>
+                {loadingDay && dayMeals.length === 0 ? (
+                  <ActivityIndicator color={colors.brand} />
+                ) : !viewingToday && dayMeals.length === 0 ? (
+                  <EmptyState
+                    icon={Utensils}
+                    title="No meals logged"
+                    body="Nothing was logged on this day."
+                  />
+                ) : (
+                  <FuelRail
+                    rows={fuel.model?.rows ?? []}
+                    loggingMealId={quickLoggingMealId}
+                    onPressLog={(logId) => {
+                      const m = dayMeals.find((x) => x.id === logId);
+                      if (m) setEditingMeal(m);
+                    }}
+                    onDeleteLog={handleDeleteMeal}
+                    onRetro={handleRetro}
+                    onQuickLog={handleQuickLogSuggestion}
+                    onOpenLibrary={(mealId) => {
+                      setLibraryInitialMealId(mealId);
+                      setLibraryVisible(true);
+                    }}
+                  />
+                )}
+              </View>
             )}
           </ScrollView>
       </View>
