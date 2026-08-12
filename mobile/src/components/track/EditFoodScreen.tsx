@@ -17,6 +17,7 @@ import { ChevronLeft, Camera, Barcode, Trash2, Plus, ChevronDown, Circle, CheckC
 import { colors, icons } from "@/src/theme/tokens";
 import { Button } from "@/src/components/ui";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
 import {
   replaceItemLocations,
@@ -31,6 +32,7 @@ import { styles } from "./edit-food/styles";
 import { SectionHeader } from "./edit-food/SectionHeader";
 import { SuggestField } from "./edit/SuggestField";
 import { NumberStepper } from "./edit/NumberStepper";
+import { CategoryPickerSheet } from "./edit/CategoryPickerSheet";
 import { fetchInventoryVocab, type InventoryVocab } from "@/src/lib/supabase/inventoryVocab";
 import {
   basicSummary, storageSummary, nutritionSummary, expirySummary,
@@ -187,6 +189,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   // UI State
   const [showUnitPicker, setShowUnitPicker] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingProductData, setLoadingProductData] = useState(false);
 
@@ -261,6 +264,49 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     subcategoryIds: selectedSubcategoryIds,
   });
   const isDirty = pendingChanges > 0;
+
+  // Photograph the panel instead of typing six numbers off it. The function
+  // transcribes and returns; nothing is written until Save, and anything it
+  // could not read stays null rather than being guessed — a nutrition panel is
+  // read literally, so an invented figure would flow into the day's targets
+  // as fact.
+  const [scanningLabel, setScanningLabel] = useState(false);
+  const scanNutritionLabel = async () => {
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    setScanningLabel(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("nutrition-label", {
+        body: { imageBase64: result.assets[0].base64 },
+      });
+      if (error) throw error;
+      if (!data?.found) {
+        Alert.alert(
+          "No panel found",
+          data?.note ?? "That doesn't look like a Nutrition Facts panel.",
+        );
+        return;
+      }
+      // Only overwrite what was actually read. A null means the panel did not
+      // show it, which must not wipe a figure you already had.
+      if (data.servingSize !== null) setServingSize(String(data.servingSize));
+      if (data.calories !== null) setCalories(String(data.calories));
+      if (data.protein !== null) setProtein(String(data.protein));
+      if (data.carbs !== null) setCarbs(String(data.carbs));
+      if (data.fats !== null) setFats(String(data.fats));
+      if (data.sugars !== null) setSugars(String(data.sugars));
+      if (data.note) Alert.alert("Read the panel", data.note);
+    } catch (e) {
+      console.error("nutrition label scan failed:", e);
+      Alert.alert("Couldn't read it", "Try again with more light and the panel filling the frame.");
+    } finally {
+      setScanningLabel(false);
+    }
+  };
 
   // Cancel only interrupts when there is genuinely something to lose.
   const handleCancel = () => {
@@ -1133,6 +1179,20 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
             {expandedSection === "basic" && (
               <View style={styles.sectionContent}>
+                {/* Identity, not management: enough to know you are editing
+                    the right packet. The full photo manager is its own section
+                    directly below — the top of an EDIT form belongs to
+                    scanning, which is what saves you the typing. */}
+                {[imagePrimary, imageFront, imageBack, imageSide].filter(Boolean).length > 0 && (
+                  <View style={styles.identityRow}>
+                    {[imagePrimary, imageFront, imageBack, imageSide]
+                      .filter((u): u is string => !!u)
+                      .map((uri, i) => (
+                        <Image key={`${uri}:${i}`} source={{ uri }} style={styles.identityThumb} />
+                      ))}
+                  </View>
+                )}
+
                 <View style={styles.field}>
                   <Text style={styles.label}>
                     Product Name <Text style={styles.required}>*</Text>
@@ -1174,98 +1234,123 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   scopeNote={flavorScope}
                 />
 
-                {/* Categories & Subcategories */}
+                {/* Categories & Subcategories — chips first. The accordion
+                    opened on Produce with the item's real category buried
+                    twelve rows down, so the one thing you most needed to see
+                    was the one thing it never showed. */}
                 <View style={styles.field}>
                   <Text style={styles.label}>
-                    Categories & Subcategories <Text style={styles.required}>*</Text>
+                    Categories &amp; Subcategories <Text style={styles.required}>*</Text>
+                    {selectedCategoryIds.length > 0 && selectedSubcategoryIds.length > 0 && (
+                      <Text style={styles.satisfied}>  ✓</Text>
+                    )}
                   </Text>
                   <Text style={styles.helpText}>
                     Select at least one category and subcategory
                   </Text>
 
-                  {categories.length === 0 ? (
+                  <View style={styles.chipWrap}>
+                    {categories
+                      .filter((c) => selectedCategoryIds.includes(c.id))
+                      .map((c) => (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[styles.pickChip, styles.pickChipCategory]}
+                          onPress={() => toggleCategorySelection(c.id)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${c.name}`}
+                        >
+                          <Text style={[styles.pickChipText, styles.pickChipTextCategory]}>
+                            {c.name}  ✕
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    {subcategories
+                      .filter((sub) => selectedSubcategoryIds.includes(sub.id))
+                      .map((sub) => (
+                        <TouchableOpacity
+                          key={sub.id}
+                          style={styles.pickChip}
+                          onPress={() => toggleSubcategorySelection(sub.id, sub.category_id)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${qualifiedSubcategory(sub)}`}
+                        >
+                          <Text style={styles.pickChipText}>
+                            {qualifiedSubcategory(sub)}  ✕
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    <TouchableOpacity
+                      style={[styles.pickChip, styles.pickChipAdd]}
+                      onPress={() => setShowCategoryPicker(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add a category"
+                    >
+                      <Text style={styles.pickChipText}>+ Add</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {categories.length === 0 && (
                     <Text style={styles.emptyText}>Loading categories...</Text>
-                  ) : (
-                    <View style={styles.categoryList}>
-                      {categories.map((category) => {
-                        const isCategorySelected = selectedCategoryIds.includes(category.id);
-                        const isCategoryExpanded = expandedCategoryIds.has(category.id);
-                        const categorySubcategories = subcategories.filter(
-                          sub => sub.category_id === category.id
-                        );
-
-                        return (
-                          <View key={category.id} style={styles.categoryItem}>
-                            {/* Category Row */}
-                            <View style={styles.categoryRow}>
-                              <TouchableOpacity
-                                style={styles.categoryCheckbox}
-                                onPress={() => toggleCategorySelection(category.id)}
-                              >
-                                {isCategorySelected ? (
-                                  <CheckCircle size={icons.lg} color={colors.brand} />
-                                ) : (
-                                  <Circle size={icons.lg} color={colors.textMuted} />
-                                )}
-                                <Text style={[
-                                  styles.categoryName,
-                                  isCategorySelected && styles.categoryNameSelected
-                                ]}>
-                                  {category.name}
-                                </Text>
-                              </TouchableOpacity>
-
-                              {categorySubcategories.length > 0 && (
-                                <TouchableOpacity
-                                  onPress={() => toggleCategory(category.id)}
-                                  style={styles.expandButton}
-                                >
-                                  <ChevronDown
-                                    size={20}
-                                    color={colors.textMuted}
-                                    style={{
-                                      transform: [{ rotate: isCategoryExpanded ? '180deg' : '0deg' }]
-                                    }}
-                                  />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-
-                            {/* Subcategories (shown when expanded) */}
-                            {isCategoryExpanded && categorySubcategories.length > 0 && (
-                              <View style={styles.subcategoryList}>
-                                {categorySubcategories.map((subcategory) => {
-                                  const isSubSelected = selectedSubcategoryIds.includes(subcategory.id);
-
-                                  return (
-                                    <TouchableOpacity
-                                      key={subcategory.id}
-                                      style={styles.subcategoryRow}
-                                      onPress={() => toggleSubcategorySelection(subcategory.id, category.id)}
-                                    >
-                                      {isSubSelected ? (
-                                        <CheckCircle size={icons.md} color={colors.brand} />
-                                      ) : (
-                                        <Circle size={icons.md} color={colors.textMuted} />
-                                      )}
-                                      <Text style={[
-                                        styles.subcategoryName,
-                                        isSubSelected && styles.subcategoryNameSelected
-                                      ]}>
-                                        {subcategory.name}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  );
-                                })}
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
                   )}
                 </View>
 
+              </View>
+            )}
+          </View>
+
+          {/* Images Section */}
+          <View style={styles.section}>
+            <SectionHeader
+              title="Product Images"
+              summary={photosSummary([imagePrimary, imageFront, imageBack, imageSide].filter(Boolean).length)}
+              sectionKey="images"
+              isExpanded={expandedSection === "images"}
+              hasError={false}
+              onPress={() => toggleSection("images")}
+            />
+
+            {expandedSection === "images" && (
+              <View style={styles.sectionContent}>
+                <Text style={styles.sectionSubtitle}>Add photos to easily identify your products</Text>
+
+                <View style={styles.imageGrid}>
+                  {[
+                    { label: "Primary", image: imagePrimary, type: "primary" as const },
+                    { label: "Front", image: imageFront, type: "front" as const },
+                    { label: "Back", image: imageBack, type: "back" as const },
+                    { label: "Side", image: imageSide, type: "side" as const },
+                  ].map(({ label, image, type }) => (
+                    <View key={label} style={styles.imageContainer}>
+                      <TouchableOpacity
+                        style={[styles.imagePlaceholder, image && styles.imageWithPhoto]}
+                        onPress={() => pickImage(type)}
+                      >
+                        {image ? (
+                          <Image source={{ uri: image }} style={styles.productImage} />
+                        ) : (
+                          <>
+                            <Camera size={32} color={colors.textFaint} />
+                            <Text style={styles.imagePlaceholderText}>{label}</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                      {image && (
+                        <TouchableOpacity
+                          style={styles.removeImageButton}
+                          onPress={() => {
+                            if (type === "primary") setImagePrimary(null);
+                            else if (type === "front") setImageFront(null);
+                            else if (type === "back") setImageBack(null);
+                            else if (type === "side") setImageSide(null);
+                          }}
+                        >
+                          <Trash2 size={icons.sm} color={colors.text} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                </View>
               </View>
             )}
           </View>
@@ -1650,6 +1735,24 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
 
             {expandedSection === "nutrition" && (
               <View style={styles.sectionContent}>
+                {/* The app already reads groceries off a photograph; a panel
+                    is an easier read than a shelf. Typing six numbers off the
+                    back of a packet is the clearest waste on this form. */}
+                <TouchableOpacity
+                  style={styles.hintRow}
+                  onPress={scanNutritionLabel}
+                  disabled={scanningLabel}
+                  accessibilityRole="button"
+                  accessibilityLabel="Photograph the nutrition panel"
+                >
+                  <Text style={styles.hintText}>
+                    {scanningLabel
+                      ? "Reading the panel…"
+                      : "Photograph the panel and I'll fill these in"}
+                  </Text>
+                  <Text style={styles.hintAction}>{scanningLabel ? "" : "Scan"}</Text>
+                </TouchableOpacity>
+
                 <View style={styles.row}>
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Calories</Text>
@@ -1726,6 +1829,18 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     />
                   </View>
                 </View>
+
+                {/* What the numbers become downstream: the panel on the item
+                    page, the total standing in your kitchen, and the share of
+                    a day. None of that is obvious from six input boxes. */}
+                {Number.parseInt(calories, 10) > 0 && (
+                  <Text style={styles.previewText}>
+                    {Number.parseInt(calories, 10)} kcal a serving
+                    {(Number.parseInt(quantity, 10) || 0) > 1
+                      ? ` · ${(Number.parseInt(calories, 10) * (Number.parseInt(quantity, 10) || 0)).toLocaleString()} kcal across your ${Number.parseInt(quantity, 10)}`
+                      : ""}
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -1835,62 +1950,6 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
             )}
           </View>
 
-          {/* Images Section */}
-          <View style={styles.section}>
-            <SectionHeader
-              title="Product Images"
-              summary={photosSummary([imagePrimary, imageFront, imageBack, imageSide].filter(Boolean).length)}
-              sectionKey="images"
-              isExpanded={expandedSection === "images"}
-              hasError={false}
-              onPress={() => toggleSection("images")}
-            />
-
-            {expandedSection === "images" && (
-              <View style={styles.sectionContent}>
-                <Text style={styles.sectionSubtitle}>Add photos to easily identify your products</Text>
-
-                <View style={styles.imageGrid}>
-                  {[
-                    { label: "Primary", image: imagePrimary, type: "primary" as const },
-                    { label: "Front", image: imageFront, type: "front" as const },
-                    { label: "Back", image: imageBack, type: "back" as const },
-                    { label: "Side", image: imageSide, type: "side" as const },
-                  ].map(({ label, image, type }) => (
-                    <View key={label} style={styles.imageContainer}>
-                      <TouchableOpacity
-                        style={[styles.imagePlaceholder, image && styles.imageWithPhoto]}
-                        onPress={() => pickImage(type)}
-                      >
-                        {image ? (
-                          <Image source={{ uri: image }} style={styles.productImage} />
-                        ) : (
-                          <>
-                            <Camera size={32} color={colors.textFaint} />
-                            <Text style={styles.imagePlaceholderText}>{label}</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                      {image && (
-                        <TouchableOpacity
-                          style={styles.removeImageButton}
-                          onPress={() => {
-                            if (type === "primary") setImagePrimary(null);
-                            else if (type === "front") setImageFront(null);
-                            else if (type === "back") setImageBack(null);
-                            else if (type === "side") setImageSide(null);
-                          }}
-                        >
-                          <Trash2 size={icons.sm} color={colors.text} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-          </View>
-
           {/* Notes Section */}
           <View style={styles.section}>
             <SectionHeader
@@ -1964,6 +2023,17 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
             </View>
           </View>
         </Modal>
+
+        <CategoryPickerSheet
+          visible={showCategoryPicker}
+          categories={categories}
+          subcategories={subcategories}
+          selectedCategoryIds={selectedCategoryIds}
+          selectedSubcategoryIds={selectedSubcategoryIds}
+          onToggleCategory={toggleCategorySelection}
+          onToggleSubcategory={toggleSubcategorySelection}
+          onClose={() => setShowCategoryPicker(false)}
+        />
 
         {/* Barcode Scanner Modal */}
         <BarcodeScannerModal

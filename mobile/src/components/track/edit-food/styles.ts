@@ -157,6 +157,26 @@ export const styles = StyleSheet.create({
   // size to their own text like every other chip row in the app.
   // A stepper does not want the full width — 3 digits is the widest it gets.
   thresholdRow: { maxWidth: 180 },
+  identityRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
+  identityThumb: {
+    width: 52, height: 52, borderRadius: radii.control,
+    backgroundColor: colors.imageWell,
+  },
+  satisfied: { color: colors.brand },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
+  pickChip: {
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.lg,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  pickChipCategory: {
+    backgroundColor: tint(colors.accents.inventory),
+    borderColor: tint(colors.accents.inventory, 0.4),
+  },
+  pickChipAdd: { borderStyle: "dashed" },
+  pickChipText: { ...typography.caption, fontWeight: "600", color: colors.textMuted },
+  pickChipTextCategory: { color: colors.accents.inventory },
   scanBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     gap: spacing.md,
