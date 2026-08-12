@@ -1370,6 +1370,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </TouchableOpacity>
             )}
           </View>
+          {/* B5. The Meal Library is the loop's second station and its door
+              was at the bottom of the scroll, below the pace lines, the
+              suggestions, the search results and the quick-add row — four
+              scrolls from the top. It belongs beside the other two things you
+              can do from here. */}
+          <IconButton
+            icon={Utensils}
+            weight="secondary"
+            onPress={() => setLibraryVisible(true)}
+            accessibilityLabel="Open your meal library"
+          />
           <IconButton
             icon={Plus}
             onPress={handleOpenAddForm}
@@ -1586,16 +1597,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   loading={loadingRecent}
                 />
 
-                {/* Meal Library entry point */}
-                <View style={styles.actionRow}>
-                  <Button
-                    variant="secondary"
-                    label="Meal Library"
-                    icon={Utensils}
-                    onPress={() => setLibraryVisible(true)}
-                    fluid
-                  />
-                </View>
+                {/* The Meal Library button that used to sit here has moved to
+                    the header (B5), where it is reachable without scrolling
+                    past everything else on the tab. Keeping both would be two
+                    doors to one room. */}
               </>
             )}
 
