@@ -1642,7 +1642,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               <>
                 {/* Today wears the verdict strip — chip, bars, and what the
                     rail below lands the day at. A finished (past) day is a
-                    record, not a plan, so it keeps the full nutrition card. */}
+                    record, not a plan, so it keeps the full nutrition card.
+                    While today's plan is still loading this renders NOTHING:
+                    falling back to the ring card would flash a different
+                    summary of the same day for a beat on every entry, which
+                    reads as the page changing its mind. The strip appears
+                    when it can be right. The ring card does come back if the
+                    plan FAILS — then it is the honest best available. */}
                 {viewingToday && fuel.model?.verdict ? (
                   <FuelVerdictStrip
                     verdict={fuel.model.verdict}
@@ -1656,7 +1662,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                       fiber: fuel.model.fiberPace,
                     }}
                   />
-                ) : (
+                ) : viewingToday && !fuel.error ? null : (
                   <MealsNutritionCard
                     label={getNutritionLabel(viewingDate)}
                     totals={dayTotals}
