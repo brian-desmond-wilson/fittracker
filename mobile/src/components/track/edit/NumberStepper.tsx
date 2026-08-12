@@ -8,6 +8,7 @@ import React from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Minus, Plus } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { sanitizeInteger } from "@/src/lib/numericInput";
 
 interface NumberStepperProps {
   value: string;
@@ -40,10 +41,13 @@ export function NumberStepper({ value, onChange, min = 0, label }: NumberStepper
         <Minus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
       </TouchableOpacity>
 
+      {/* Sanitised, not merely hinted: `keyboardType` picks a keyboard and
+          constrains nothing, so a hardware keyboard or a paste could otherwise
+          leave letters in a field that `nudge` then reads as `min`. */}
       <TextInput
         style={styles.value}
         value={value}
-        onChangeText={onChange}
+        onChangeText={(t) => onChange(sanitizeInteger(t))}
         keyboardType="number-pad"
         selectTextOnFocus
         accessibilityLabel={label}

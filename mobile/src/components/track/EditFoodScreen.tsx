@@ -1635,7 +1635,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                                 placeholder="0"
                                 placeholderTextColor={colors.textFaint}
                                 value={entry.quantity}
-                                onChangeText={(value) => updateLocationEntry(entry.id, { quantity: value })}
+                                onChangeText={(value) => updateLocationEntry(entry.id, { quantity: sanitizeInteger(value) })}
                                 keyboardType="numeric"
                               />
                             </View>
@@ -1702,7 +1702,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                           placeholder="Min ready qty"
                           placeholderTextColor={colors.textFaint}
                           value={fridgeRestockThreshold}
-                          onChangeText={setFridgeRestockThreshold}
+                          onChangeText={(t) => setFridgeRestockThreshold(sanitizeInteger(t))}
                           keyboardType="numeric"
                         />
                         <Text style={styles.helpText}>
@@ -1717,7 +1717,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                           placeholder="Min total qty"
                           placeholderTextColor={colors.textFaint}
                           value={totalRestockThreshold}
-                          onChangeText={setTotalRestockThreshold}
+                          onChangeText={(t) => setTotalRestockThreshold(sanitizeInteger(t))}
                           keyboardType="numeric"
                         />
                         <Text style={styles.helpText}>
