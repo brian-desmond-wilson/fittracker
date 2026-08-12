@@ -133,14 +133,6 @@ export default function Home() {
         {/* Ramp advance banner (renders nothing unless actionable) */}
         <RampHomeBanner refreshKey={refreshKey} />
 
-        {/* Today's Workout Section */}
-        <Text style={styles.sectionTitle}>Today's Workout</Text>
-        <TodaysWorkoutCard key={`workout-${refreshKey}`} />
-
-        {/* Eat Next Section */}
-        <Text style={styles.sectionTitle}>Eat Next</Text>
-        <EatNextHomeCard refreshKey={refreshKey} />
-
         {/* Today's Summary Section */}
         <Text style={styles.sectionTitle}>Today's Summary</Text>
 
@@ -152,6 +144,14 @@ export default function Home() {
           {/* Water Intake Card */}
           <WaterIntakeHomeCard refreshKey={refreshKey} />
         </View>
+
+        {/* Eat Next Section */}
+        <Text style={styles.sectionTitle}>Eat Next</Text>
+        <EatNextHomeCard refreshKey={refreshKey} />
+
+        {/* Today's Workout Section */}
+        <Text style={styles.sectionTitle}>Today's Workout</Text>
+        <TodaysWorkoutCard key={`workout-${refreshKey}`} />
       </ScrollView>
 
       {/* Sticky Refresh Indicator */}
