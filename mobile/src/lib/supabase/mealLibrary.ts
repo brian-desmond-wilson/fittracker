@@ -3,6 +3,8 @@
 import { supabase } from "../supabase";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
 import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
+import { buildBorrowedFoodImages, withBorrowedImage } from "../foodImageBorrow";
+import { invalidateBorrowedFoodImages } from "./borrowedFoodImages";
 import { getLocalDateString } from "../dates";
 import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
@@ -28,6 +30,9 @@ interface InventoryRowRaw {
   name: string;
   barcode: string | null;
   expiration_date: string | null;
+  /** Read for `buildBorrowedFoodImages` only — the eating half of the app has
+   *  no photographs of its own, and this is where they live. */
+  image_primary_url: string | null;
   /** `is_ready_to_consume` is NOT dead payload despite nothing here reading
    *  the ready/storage split: `projectItemStock` takes a `StockQuantityRow`
    *  (`Pick<StockLocationRow, "quantity" | "is_ready_to_consume">`), so the
@@ -132,7 +137,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       // reads it, and an absent column means the removed fallback cannot be
       // re-added without also editing this query — one more step between a
       // future reader and re-arming the divergence Phase 4 closed.
-      .select("id, name, barcode, expiration_date, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      .select("id, name, barcode, expiration_date, image_primary_url, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -175,9 +180,21 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
   // Library plan's Task 12 builder (`MealBuilder`, `setServings`) does
   // `+ delta` (string concatenation) and `.toFixed()` (throws). NB: a
   // different plan's Task 12 — not this phase's migration apply.
+  const invRows = (inventory.data ?? []) as unknown as InventoryRowRaw[];
+  // A vendor meal exists twice — as the thing you own and as the thing you eat
+  // — and only the owned half carries a photograph. Resolved once here, at the
+  // single place `MealItemWithFood` values are constructed, so every meal
+  // surface (library rows, meal detail, Eat Next's borrowed face) shows the
+  // picture without each of them re-deriving the link.
+  const borrowedImages = buildBorrowedFoodImages(
+    linkRows,
+    new Map(invRows.map((r) => [r.id, r.image_primary_url])),
+  );
+
   const itemRows = ((items.data ?? []) as MealItemWithFood[]).map((it) => ({
     ...it,
     servings: Number(it.servings),
+    savedFood: withBorrowedImage(it.savedFood, borrowedImages),
   }));
   const byMeal = new Map<string, MealItemWithFood[]>();
   for (const it of itemRows) {
@@ -186,7 +203,6 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     byMeal.set(it.meal_id, arr);
   }
 
-  const invRows = (inventory.data ?? []) as unknown as InventoryRowRaw[];
   // ONE clock for the whole map: `getLocalDateString()` inside the callback
   // would sample a fresh `new Date()` per row and could straddle local
   // midnight mid-list, banding two items against different "today"s.
@@ -627,6 +643,8 @@ export async function createUserLink(
   target: { savedFoodId: string } | { foodInventoryId: string },
 ): Promise<void> {
   invalidateMealLibrary(); // D1: links change what every read means
+  // A new link can be the one that lends a saved food its picture.
+  invalidateBorrowedFoodImages();
   const { error } = await supabase.from("food_concept_links").insert({
     user_id: userId,
     concept_id: conceptId,
@@ -656,6 +674,8 @@ export async function confirmConceptRating(
 
 export async function deleteLink(linkId: string): Promise<void> {
   invalidateMealLibrary(); // D1: links change what every read means
+  // Removing a link can take a borrowed picture away again.
+  invalidateBorrowedFoodImages();
   const { error } = await supabase.from("food_concept_links").delete().eq("id", linkId);
   if (error) throw error;
 }

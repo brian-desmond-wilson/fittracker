@@ -37,6 +37,7 @@ import { NumberStepper } from "./edit/NumberStepper";
 import { CategoryPickerSheet } from "./edit/CategoryPickerSheet";
 import { VendorTiles } from "./edit/VendorTiles";
 import { fetchInventoryVocab, type InventoryVocab } from "@/src/lib/supabase/inventoryVocab";
+import { invalidateBorrowedFoodImages } from "@/src/lib/supabase/borrowedFoodImages";
 import {
   basicSummary, storageSummary, nutritionSummary, expirySummary,
   photosSummary, notesSummary, changeCount, changeLabel, relativeDays,
@@ -900,6 +901,12 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       if (imageSide && imageSide.startsWith("file://")) {
         sideUrl = await uploadImage(imageSide, "side");
       }
+
+      // This screen owns the app's only food photographs, and the eating half
+      // of the app borrows them through a cached map — so a new or replaced
+      // picture has to drop that cache or Quick Add and the Meal Library keep
+      // showing the old one for up to a minute.
+      invalidateBorrowedFoodImages();
 
       const itemData = {
         user_id: user.id,
