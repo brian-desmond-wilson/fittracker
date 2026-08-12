@@ -36,9 +36,16 @@ export function RecentFoodsRow({
   const combinedFoods: SavedFood[] = [];
   const seenIds = new Set<string>();
 
+  // B9. A case of water led the FOOD quick-add row while the app has a whole
+  // Water station of its own, pushing a real food off the visible end.
+  // Excluded on `=== 0` and never on falsiness: a saved food whose calories
+  // were never recorded is `null`, which means unknown, not zero, and hiding
+  // those would quietly shrink the row for the opposite reason.
+  const carriesCalories = (food: SavedFood) => food.calories !== 0;
+
   // Add favorites first
   favorites.forEach((food) => {
-    if (!seenIds.has(food.id)) {
+    if (!seenIds.has(food.id) && carriesCalories(food)) {
       combinedFoods.push(food);
       seenIds.add(food.id);
     }
@@ -46,7 +53,7 @@ export function RecentFoodsRow({
 
   // Add recent foods (excluding any that are already in favorites)
   recentFoods.forEach(({ savedFood }) => {
-    if (!seenIds.has(savedFood.id)) {
+    if (!seenIds.has(savedFood.id) && carriesCalories(savedFood)) {
       combinedFoods.push(savedFood);
       seenIds.add(savedFood.id);
     }
