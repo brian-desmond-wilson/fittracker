@@ -58,11 +58,14 @@ import { sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal } from "./MealLogEditorModal";
 import { MealLibraryModal } from "./meals/library/MealLibraryModal";
 import {
+  confirmConceptRating,
   fetchMealLibrary,
   logMeal,
   undoMealLog,
   MealLoggedButDecrementFailed,
 } from "@/src/lib/supabase/mealLibrary";
+import { tasteAskFor } from "@/src/lib/tasteAsk";
+import type { ConceptRating } from "@/src/types/nutrition-preferences";
 import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { MealsInsightsCard } from "./MealsInsightsCard";
 import {
@@ -1187,6 +1190,16 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // serves this out of the cache the recommender itself just populated, so
   // this costs no extra round trip in practice.
   const [quickLoggingMealId, setQuickLoggingMealId] = useState<string | null>(null);
+  // Fire-and-report: a failed rating must not disturb a log that succeeded.
+  const rateConcept = async (conceptId: string, rating: ConceptRating) => {
+    try {
+      await confirmConceptRating(conceptId, rating);
+      eatNext.refetch();
+    } catch (e) {
+      console.error("confirm concept rating:", e);
+      Alert.alert("Couldn't save that rating", "The meal is still logged.");
+    }
+  };
   const handleQuickLogSuggestion = async (mealId: string) => {
     if (quickLoggingMealId) return;
     setQuickLoggingMealId(mealId);
@@ -1210,6 +1223,38 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       await fetchMealsForDate(viewingDate, true);
       await fetchRecentAndFavorites();
       eatNext.refetch();
+      // C3/E2. The one moment the answer is free: the food is in front of you
+      // and the question is one tap. Only fires when exactly one of the meal's
+      // concepts has never been rated by hand — see `tasteAskFor` for why the
+      // multi-unrated case stays silent.
+      const ask = tasteAskFor(
+        meal.items
+          .flatMap((it) => library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
+          .map((id) => library.conceptsById.get(id))
+          .filter((c): c is NonNullable<typeof c> => !!c)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            ratingConfirmedAt: c.rating_confirmed_at ?? null,
+          })),
+      );
+      // Fired from the confirmation's OK, never alongside it: two alerts
+      // raised in the same tick stack, and the second covers the first. Not
+      // fired after Undo either — undoing means you did not eat it, so there
+      // is nothing to have an opinion about.
+      const askTaste = () => {
+        if (!ask) return;
+        Alert.alert(
+          `How was ${ask.name}?`,
+          "Your answer replaces the rating the app guessed, which is 30% of every meal's score.",
+          [
+            { text: "Loved it", onPress: () => void rateConcept(ask.id, "love") },
+            { text: "Fine", onPress: () => void rateConcept(ask.id, "like") },
+            { text: "Not again", style: "destructive", onPress: () => void rateConcept(ask.id, "dislike") },
+            { text: "Skip", style: "cancel" },
+          ],
+        );
+      };
       Alert.alert("Logged", `${meal.name} → ${defaultMealTypeFor(meal)}`, [
         {
           text: "Undo",
@@ -1227,7 +1272,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             })();
           },
         },
-        { text: "OK", style: "default" },
+        { text: "OK", style: "default", onPress: askTaste },
       ]);
     } catch (e) {
       // `MealLoggedButDecrementFailed` carries its own explanatory message and

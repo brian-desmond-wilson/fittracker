@@ -4,7 +4,7 @@ import { supabase } from "../supabase";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
 import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
 import { getLocalDateString } from "../dates";
-import type { FoodConcept } from "@/src/types/nutrition-preferences";
+import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
   MealItemWithFood,
@@ -617,6 +617,23 @@ export async function createUserLink(
     food_inventory_id: "foodInventoryId" in target ? target.foodInventoryId : null,
     matched_by: "user",
   });
+  if (error) throw error;
+}
+
+/**
+ * C3/E2. Record the owner's actual opinion of a concept, and mark it as
+ * theirs rather than ours. Both halves matter: without the timestamp the app
+ * cannot tell an answer from the default it invented, and would keep asking.
+ */
+export async function confirmConceptRating(
+  conceptId: string,
+  rating: ConceptRating,
+): Promise<void> {
+  invalidateMealLibrary(); // taste feeds the score, which feeds every ranking
+  const { error } = await supabase
+    .from("food_concepts")
+    .update({ rating, rating_confirmed_at: new Date().toISOString() })
+    .eq("id", conceptId);
   if (error) throw error;
 }
 
