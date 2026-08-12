@@ -22,6 +22,7 @@ import {
 } from "@/src/lib/timeFields";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { Button, Card, Screen, SectionHeader } from "@/src/components/ui";
+import { EatingWindowsSection } from "./EatingWindowsSection";
 
 interface TrackingSettingsScreenProps {
   userId: string;
@@ -150,7 +151,8 @@ export function TrackingSettingsScreen({
           <Card variant="panel" style={styles.sectionCard}>
             <Text style={styles.fieldHelp}>
               When you typically eat. The pace coach uses these to suggest catch-up
-              amounts by your next meal.
+              amounts by your next meal, and Fuel derives its default eating
+              windows from them until you add windows of your own below.
             </Text>
             <View style={styles.row}>
               {timeField("Breakfast", "breakfast")}
@@ -161,6 +163,8 @@ export function TrackingSettingsScreen({
               <View style={styles.halfField} />
             </View>
           </Card>
+
+          <EatingWindowsSection userId={userId} />
 
           <SectionHeader title="Water" />
           <Card variant="panel" style={styles.sectionCard}>
