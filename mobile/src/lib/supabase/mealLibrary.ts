@@ -46,10 +46,19 @@ export interface MealLibraryData {
   inventory: AssemblabilityInventoryRow[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
+  /** nutrition_constraints.max_prep_minutes — the budget the recommender
+   *  filters on. Carried here so the library can SAY that a meal is over it
+   *  (C7) instead of the meal silently never being suggested. */
+  maxPrepMinutes: number;
 }
 
+/** Mirrors the column's own schema default, so a missing constraints row
+ *  behaves exactly like an untouched one — same constant and reasoning as
+ *  `useEatNext`'s. */
+const DEFAULT_MAX_PREP_MINUTES = 5;
+
 export async function fetchMealLibrary(): Promise<MealLibraryData> {
-  const [meals, items, concepts, links, inventory, profile] = await Promise.all([
+  const [meals, items, concepts, links, inventory, profile, constraints] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     supabase
       .from("meal_items")
@@ -68,8 +77,11 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
     supabase.from("profiles").select("target_calories").maybeSingle(),
+    // Same single-row reasoning as profiles: `nutrition_constraints` is
+    // unique on user_id and its RLS select policy is owner-only.
+    supabase.from("nutrition_constraints").select("max_prep_minutes").maybeSingle(),
   ]);
-  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error]
+  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));
@@ -159,6 +171,9 @@ export async function fetchMealLibrary(): Promise<MealLibraryData> {
     ),
     conceptIdsBySavedFoodId,
     inventory: resolutionInventory,
+    maxPrepMinutes:
+      (constraints.data as { max_prep_minutes: number } | null)
+        ?.max_prep_minutes ?? DEFAULT_MAX_PREP_MINUTES,
     targetCalories:
       (profile.data as { target_calories: number | null } | null)
         ?.target_calories ?? null,

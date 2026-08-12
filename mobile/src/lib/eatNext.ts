@@ -475,13 +475,47 @@ function stockReasons(info: EatNextStockInfo | undefined): string[] {
   return out;
 }
 
+/**
+ * Where a meal's prep time sits relative to the budget (C7).
+ *
+ * Both consequences of that number used to be expressed only as inline
+ * comparisons inside this file: `over` earns a caveat but still gets
+ * suggested, `excluded` is dropped from the running entirely. The second is
+ * invisible — a meal simply never appears, and nothing in the library where
+ * you browse it explains why — so the rule is named and exported, and the
+ * Meal Library states it on the row rather than re-deriving the arithmetic.
+ */
+export type PrepBudgetVerdict = "within" | "over" | "excluded";
+
+export function prepBudgetVerdict(
+  prepMinutes: number,
+  maxPrepMinutes: number,
+): PrepBudgetVerdict {
+  if (prepMinutes > maxPrepMinutes * PREP_HARD_CAP_FACTOR) return "excluded";
+  if (prepMinutes > maxPrepMinutes) return "over";
+  return "within";
+}
+
+/** The words for that verdict, or null when there is nothing to say. One
+ *  definition, so the library badge and any future surface agree. */
+export function prepBudgetLabel(
+  prepMinutes: number,
+  maxPrepMinutes: number,
+): string | null {
+  switch (prepBudgetVerdict(prepMinutes, maxPrepMinutes)) {
+    case "excluded": return "Too long to suggest";
+    case "over": return `Over your ${maxPrepMinutes} min budget`;
+    default: return null;
+  }
+}
+
 function baseEligible(m: ScoredMeal, maxPrepMinutes: number): boolean {
   if (m.score.containsNever) return false;
-  return m.meal.prep_minutes <= maxPrepMinutes * PREP_HARD_CAP_FACTOR;
+  return prepBudgetVerdict(m.meal.prep_minutes, maxPrepMinutes) !== "excluded";
 }
 
 function prepReason(m: ScoredMeal, maxPrepMinutes: number): string[] {
-  return m.meal.prep_minutes > maxPrepMinutes
+  return prepBudgetVerdict(m.meal.prep_minutes, maxPrepMinutes) === "over"
     ? [`${m.meal.prep_minutes} min — over your prep budget`]
     : [];
 }

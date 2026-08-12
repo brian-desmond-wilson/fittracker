@@ -150,6 +150,11 @@ export function MealLibraryModal({
     return map;
   }, [data]);
 
+  // Falls back to the schema default while the library is still loading, so
+  // the memo below has a stable primitive rather than churning between
+  // undefined and a number on first paint.
+  const maxPrepMinutes = data?.maxPrepMinutes ?? 5;
+
   // Built alongside `scores` and keyed the same way, so `renderItem` can hand
   // MealRow a STABLE totals object. Recomputing `computeMealTotals(item.items)`
   // inside renderItem produced a fresh object every invocation, which made
@@ -357,11 +362,12 @@ export function MealLibraryModal({
           totals={totals}
           score={score}
           assemblability={assemblabilityById.get(item.id)}
+          maxPrepMinutes={maxPrepMinutes}
           onPress={handleOpenDetail}
         />
       );
     },
-    [scores, totalsById, assemblabilityById, handleOpenDetail],
+    [scores, totalsById, assemblabilityById, maxPrepMinutes, handleOpenDetail],
   );
 
   const detailMeal =

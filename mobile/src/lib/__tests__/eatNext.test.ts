@@ -4,6 +4,8 @@ import {
   eatNextStockBadge,
   eatNextExpiringLine,
   nudgeFireDate,
+  prepBudgetVerdict,
+  prepBudgetLabel,
   EMERGENCY_MIN_GAP_CAL,
   PREP_HARD_CAP_FACTOR,
   POST_WORKOUT_WINDOW_MIN,
@@ -1841,5 +1843,38 @@ describe("stock helpers tolerate a null the type system forbids", () => {
   });
   it("eatNextExpiringLine(null) is null, not a crash", () => {
     expect(eatNextExpiringLine(asStock)).toBeNull();
+  });
+});
+
+// C7. Both consequences of the prep budget used to live as inline comparisons:
+// "over" earns a caveat but is still suggested, "excluded" is dropped from the
+// running entirely. The second is invisible — the meal simply never appears —
+// so the rule is named, exported, and stated in the library.
+describe("prepBudgetVerdict / prepBudgetLabel", () => {
+  it("is within budget at and below the limit", () => {
+    expect(prepBudgetVerdict(0, 5)).toBe("within");
+    expect(prepBudgetVerdict(5, 5)).toBe("within");
+    expect(prepBudgetLabel(5, 5)).toBeNull();
+  });
+
+  it("is over budget above the limit, up to the hard cap", () => {
+    expect(prepBudgetVerdict(6, 5)).toBe("over");
+    expect(prepBudgetVerdict(10, 5)).toBe("over");
+    expect(prepBudgetLabel(6, 5)).toBe("Over your 5 min budget");
+  });
+
+  it("is excluded past the hard cap — the silent case", () => {
+    expect(prepBudgetVerdict(11, 5)).toBe("excluded");
+    expect(prepBudgetLabel(11, 5)).toBe("Too long to suggest");
+  });
+
+  it("agrees with the filter the recommender actually applies", () => {
+    // The point of extracting it: one rule, not two that can drift.
+    const overCap = scored({ category: "dinner", prep: 11 });
+    const atCap = scored({ category: "dinner", prep: 10 });
+    const r = recommendEatNext({ ...input({ maxPrepMinutes: 5 }, [overCap, atCap]) });
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([atCap.meal.id]);
+    expect(prepBudgetVerdict(11, 5)).toBe("excluded");
+    expect(prepBudgetVerdict(10, 5)).toBe("over");
   });
 });
