@@ -297,7 +297,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
     if (expiration === null || daysLeft === null) return null;
     const review = reviewExpiry(item.state, item.categories.map((c) => c.name));
     if (review === "stale") {
-      return { label: "Was expired", tone: "neutral" as const, detail: `${relativeDays(daysLeft)} ago` };
+      return { label: "Long expired", tone: "neutral" as const, detail: `${relativeDays(daysLeft)} ago` };
     }
     if (expiration === "expired") {
       return { label: "Expired", tone: "danger" as const, detail: `${relativeDays(daysLeft)} ago` };

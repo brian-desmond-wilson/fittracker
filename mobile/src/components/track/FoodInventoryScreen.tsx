@@ -837,7 +837,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // A non-null `tone` renders as a Badge; `null` is the plain muted date line.
   // A1: the urgency ladder, driven by the shared expiry policy — danger only
   // for actionably-expired (within grace), warning for today/soon, and a
-  // deliberately QUIET neutral "Was expired" for stale items so a wall of
+  // deliberately QUIET neutral "Long expired" for stale items so a wall of
   // year-old red no longer drowns the one thing expiring tomorrow.
   const formatExpirationDate = (
     item: InventoryItemWithState,
@@ -845,7 +845,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     const { expiration, daysLeft } = item.state;
     if (!item.expiration_date || expiration === null) return null;
     const review = reviewExpiry(item.state, item.categories.map((c) => c.name));
-    if (review === "stale") return { text: "Was expired", tone: "neutral" };
+    if (review === "stale") {
+      // Past holds two different populations, and the badge is only worth
+      // printing for one of them. An out-of-stock row already says "Out of
+      // stock" on the line above — repeating that it also expired tells you
+      // nothing you can act on, since there is none of it left either way.
+      //
+      // A row with stock still in it is the case that needs explaining: two
+      // cartons of milk sitting under Past looks like a bug until something
+      // says the date is why. That is the only time this appears.
+      if (item.state.isOut) return null;
+      return { text: "Long expired", tone: "neutral" };
+    }
     if (expiration === "expired") return { text: "Expired", tone: "danger" };
     if (expiration === "today") return { text: "Expires today", tone: "warning" };
     if (expiration === "soon") return { text: `Exp: ${daysLeft}d left`, tone: "warning" };
