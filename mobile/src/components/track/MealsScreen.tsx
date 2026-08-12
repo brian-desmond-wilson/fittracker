@@ -104,6 +104,8 @@ import { useMealAddForm } from "./meals/useMealAddForm";
 import { MealsDayList } from "./meals/MealsDayList";
 import { MealAddForm } from "./meals/MealAddForm";
 import { EatNextRow } from "./meals/EatNextRow";
+import { RescueRow } from "./meals/RescueRow";
+import { useRescuePlan } from "./meals/useRescuePlan";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 
@@ -231,6 +233,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
   const { mealResults } = useMealSearch(searchQuery);
+  const { rescues } = useRescuePlan();
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -1663,6 +1666,16 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                     {/* "Suggested now" (spec §7.2) — directly under the pace
                         lines, inside the same `viewingToday` guard and gutter.
                         Renders nothing when there are no recommendations. */}
+                    {/* E3: from the other end — the food that is about to go,
+                        and what would use it. Renders nothing when nothing is
+                        expiring, which is most days. */}
+                    <RescueRow
+                      suggestions={rescues}
+                      onMealPress={(mealId) => {
+                        setLibraryInitialMealId(mealId);
+                        setLibraryVisible(true);
+                      }}
+                    />
                     <EatNextRow
                       result={eatNext.result}
                       onMealPress={(mealId) => {
