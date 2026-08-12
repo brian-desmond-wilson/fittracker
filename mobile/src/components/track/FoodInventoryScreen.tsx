@@ -359,7 +359,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     // etc.) can never take down the inventory render that just succeeded.
     // The forecast line is decoration; the grid is not.
     try {
-      const totalsById = new Map(items.map((it) => [it.id, it.state.totalQuantity]));
+      // Scheduled-supply items are left out: their pace is a delivery
+      // calendar, not a consumption rate, and the menu rotates too fast for
+      // any single dish to accumulate a history worth reading.
+      const totalsById = new Map(
+        items
+          .filter((it) => !it.is_scheduled_supply)
+          .map((it) => [it.id, it.state.totalQuantity]),
+      );
       const rates = await fetchConsumptionRates(todayLocalDate, totalsById);
       if (generation !== fetchGenerationRef.current) return; // stale — a later call superseded this one
       setRatesById(rates);

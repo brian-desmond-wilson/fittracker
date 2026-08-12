@@ -289,6 +289,13 @@ export const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  // The refrigeration toggle's caption is four words and fits without help.
+  // A caption that runs to two lines needs the text side to claim the leftover
+  // width explicitly, or it pushes the switch past the right edge.
+  toggleLabel: {
+    flex: 1,
+    paddingRight: spacing.md,
+  },
   toggle: {
     width: 51,
     height: 31,

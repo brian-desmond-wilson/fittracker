@@ -48,6 +48,10 @@ export default function AddFoodItemPage() {
     carbs: barcodeData?.carbs || null,
     fats: barcodeData?.fats || null,
     sugars: barcodeData?.sugars || null,
+    // Open Food Facts carries fiber, but the scan adapter does not read it
+    // yet; a new item starts blank and the owner fills it in.
+    fiber_g: null,
+    is_scheduled_supply: false,
     serving_size: barcodeData?.servingSize || null,
     image_primary_url: barcodeData?.imagePrimaryUrl || null,
     image_front_url: barcodeData?.imageFrontUrl || null,

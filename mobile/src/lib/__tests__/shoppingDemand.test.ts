@@ -169,3 +169,58 @@ describe("merge + suppression", () => {
     expect(got.map((s) => s.name)).toEqual(["Mango", "Zebra", "Apple"]);
   });
 });
+
+describe("scheduled supply", () => {
+  // Stock that arrives on a delivery cadence — a Thistle meal, not a grocery.
+  // Every suggestion the engine could raise about one is a false alarm: you
+  // do not buy it when it runs low, you wait until Tuesday.
+  const delivered = (over: Partial<DemandInventoryItem> = {}) =>
+    item({ scheduledSupply: true, ...over });
+
+  it("stays silent when it runs out", () => {
+    expect(run({ items: [delivered({ totalQuantity: 0, isOut: true })] })).toEqual([]);
+  });
+
+  it("stays silent when it falls below its threshold", () => {
+    expect(run({ items: [delivered({ totalQuantity: 1, isLow: true, lowThreshold: 3 })] })).toEqual([]);
+  });
+
+  it("stays silent when the forecast says it is nearly gone", () => {
+    const it0 = delivered();
+    expect(run({
+      items: [it0],
+      rates: new Map([[it0.id, { ratePerDay: 1, daysUntilOut: FORECAST_LEAD_DAYS }]]),
+    })).toEqual([]);
+  });
+
+  it("stays silent when a meal names it as missing", () => {
+    // The case that motivated suppressing the name-keyed source too: a
+    // prepared meal IS its own meal, so an eaten one reads as both out of
+    // stock and missing from the meal that contains it.
+    const bowl = delivered({ name: "Ruby Rice Bowl", totalQuantity: 0, isOut: true });
+    expect(run({
+      items: [bowl],
+      mealGaps: [{ mealName: "Ruby Rice Bowl", missing: ["Ruby Rice Bowl"] }],
+    })).toEqual([]);
+  });
+
+  it("suppresses by name regardless of case or padding", () => {
+    const bowl = delivered({ name: "Ruby Rice Bowl" });
+    expect(run({
+      items: [bowl],
+      mealGaps: [{ mealName: "Dinner", missing: ["  ruby rice bowl "] }],
+    })).toEqual([]);
+  });
+
+  it("leaves ordinary groceries alone in the same list", () => {
+    const milk = item({ name: "Milk", totalQuantity: 0, isOut: true });
+    const bowl = delivered({ name: "Ruby Rice Bowl", totalQuantity: 0, isOut: true });
+    expect(run({ items: [bowl, milk] }).map((s) => s.name)).toEqual(["Milk"]);
+  });
+
+  it("treats an absent flag as an ordinary grocery", () => {
+    // Every pre-existing caller omits the field; absence must not silence it.
+    const [s] = run({ items: [item({ name: "Milk", totalQuantity: 0, isOut: true })] });
+    expect(s.name).toBe("Milk");
+  });
+});

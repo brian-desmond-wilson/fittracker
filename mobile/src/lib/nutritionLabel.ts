@@ -1,6 +1,6 @@
 // The Nutrition Facts panel, as a data structure.
 //
-// The app stores six nutrition fields; a real FDA panel carries about
+// The app stores seven nutrition fields; a real FDA panel carries about
 // fifteen. This module decides what can honestly be printed from what we
 // have, and — importantly — what must be left off. A panel that invents a
 // sodium figure is worse than a panel that admits it doesn't know one, and a
@@ -49,6 +49,10 @@ export interface LabelSource {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  /** Optional so the two synthetic callers that predate the column (the
+   *  add/preview routes' stub items) still typecheck; absent reads the same
+   *  as null — the row is left off and named among the missing. */
+  fiber_g?: number | null;
 }
 
 const pctOf = (value: number, dv: number): number => Math.round((value / dv) * 100);
@@ -72,6 +76,16 @@ export function buildNutritionLabel(item: LabelSource): NutritionLabel {
       dv: pctOf(item.carbs, DAILY_VALUES.totalCarbohydrate),
     });
   }
+  if (item.fiber_g !== null && item.fiber_g !== undefined) {
+    // Fiber precedes sugars on the printed panel and carries a real %DV —
+    // unlike total sugars, the FDA sets a reference value for it.
+    rows.push({
+      label: "Dietary Fiber",
+      amount: grams(item.fiber_g),
+      dv: pctOf(item.fiber_g, DAILY_VALUES.dietaryFiber),
+      indented: true,
+    });
+  }
   if (item.sugars !== null && item.sugars !== undefined) {
     // No %DV: the printed panel gives one only for ADDED sugars, and this
     // column does not distinguish added from naturally occurring.
@@ -86,7 +100,8 @@ export function buildNutritionLabel(item: LabelSource): NutritionLabel {
   if (item.fats === null || item.fats === undefined) missing.push("total fat");
   missing.push("saturated fat", "trans fat", "cholesterol", "sodium");
   if (item.carbs === null || item.carbs === undefined) missing.push("total carbohydrate");
-  missing.push("dietary fiber", "added sugars");
+  if (item.fiber_g === null || item.fiber_g === undefined) missing.push("dietary fiber");
+  missing.push("added sugars");
   if (item.protein === null || item.protein === undefined) missing.push("protein");
   missing.push("vitamin D", "calcium", "iron", "potassium");
 

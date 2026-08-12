@@ -30,10 +30,17 @@ export async function fetchItemDetailContext(
   itemId: string,
   totalQuantity: number,
   todayLocalDate: string,
+  /** Defaults false so the two existing call sites keep their signature. When
+   *  true the rate query is skipped entirely — an item that arrives on a
+   *  cadence has no meaningful pace, and "runs out Tuesday" would be a
+   *  forecast about a rotating menu rather than about this dish. */
+  isScheduledSupply = false,
 ): Promise<ItemDetailContext> {
   const [library, rates, listRes] = await Promise.all([
     fetchMealLibrary(),
-    fetchConsumptionRates(todayLocalDate, new Map([[itemId, totalQuantity]])),
+    isScheduledSupply
+      ? Promise.resolve(new Map<string, ConsumptionEstimate>())
+      : fetchConsumptionRates(todayLocalDate, new Map([[itemId, totalQuantity]])),
     supabase
       .from("shopping_list")
       .select("id")

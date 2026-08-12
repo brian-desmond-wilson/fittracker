@@ -148,6 +148,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           item.id,
           item.state.totalQuantity,
           getLocalDateString(),
+          item.is_scheduled_supply,
         );
         if (!cancelled) setCtx(next);
       } catch (e) {
@@ -543,7 +544,13 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                 {formatQuantity(item.state.totalQuantity, item.unit)}
               </Text>
               <Text style={styles.stripLede}>
-                {paceLine ?? "no pace learned yet — use it a few times"}
+                {/* "Use it a few times" is advice that would never pay off on
+                    a delivered meal: nothing is estimating its pace, and the
+                    dish is unlikely to come back before the menu rotates. */}
+                {paceLine
+                  ?? (item.is_scheduled_supply
+                    ? "delivered, so no pace to learn"
+                    : "no pace learned yet — use it a few times")}
               </Text>
             </View>
           )}
@@ -574,16 +581,28 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   <Plus size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />
                 </TouchableOpacity>
               </View>
+              {/* The slot is kept either way so the stepper and the overflow
+                  button stay where they are between items. You cannot add a
+                  delivered meal to a shopping list in any useful sense — the
+                  next one is already coming — so the button is replaced by
+                  what is actually true about it rather than left there to be
+                  tapped for nothing. */}
               <View style={styles.actionFill}>
-                <Button
-                  label={ctx?.onShoppingList ? "On your list" : "Add to list"}
-                  onPress={handleAddToList}
-                  variant="secondary"
-                  size="sm"
-                  icon={ShoppingCart}
-                  disabled={ctx?.onShoppingList === true}
-                  fluid
-                />
+                {item.is_scheduled_supply ? (
+                  <Text style={styles.scheduledNote} numberOfLines={2}>
+                    Arrives on a schedule
+                  </Text>
+                ) : (
+                  <Button
+                    label={ctx?.onShoppingList ? "On your list" : "Add to list"}
+                    onPress={handleAddToList}
+                    variant="secondary"
+                    size="sm"
+                    icon={ShoppingCart}
+                    disabled={ctx?.onShoppingList === true}
+                    fluid
+                  />
+                )}
               </View>
               <TouchableOpacity
                 onPress={() => setShowMore(true)}
@@ -623,7 +642,9 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   </Text>
                 )}
                 {ctx.runsOutOn && renderDetailRow("Runs out around", formatCalendarDate(ctx.runsOutOn))}
-                {renderDetailRow("On shopping list", ctx.onShoppingList ? "Yes" : "Not yet")}
+                {item.is_scheduled_supply
+                  ? renderDetailRow("Restocking", "Arrives on a schedule")
+                  : renderDetailRow("On shopping list", ctx.onShoppingList ? "Yes" : "Not yet")}
               </>,
             )}
 
@@ -680,7 +701,8 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           )}
 
           {/* Per serving, per shelf, and against the day you already track. */}
-          {(item.calories || item.protein || item.carbs || item.fats || item.sugars) && renderSection(
+          {(item.calories || item.protein || item.carbs || item.fats || item.sugars
+            || item.fiber_g) && renderSection(
             "Nutrition",
             <>
               <View style={styles.detailRow}>
@@ -714,6 +736,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                 </View>
               )}
               {targetShare !== null && renderDetailRow("Share of today's target", `${targetShare}%`)}
+              {item.fiber_g ? renderDetailRow("Fiber", `${item.fiber_g}g`) : null}
               {item.sugars ? renderDetailRow("Sugars", `${item.sugars}g`) : null}
             </>
           )}
@@ -979,6 +1002,11 @@ const styles = StyleSheet.create({
   },
   mealName: { ...typography.body, color: colors.text, flex: 1, minWidth: 0 },
   emptyNote: { ...typography.caption, color: colors.textMuted, paddingVertical: spacing.sm },
+  // Occupies the slot a small button would, so the row keeps its height and
+  // the overflow control does not shift left on delivered items.
+  scheduledNote: {
+    ...typography.caption, color: colors.textMuted, textAlign: "center",
+  },
   locValue: { alignItems: "flex-end" },
   locNote: { ...typography.caption, color: colors.textFaint },
   discloseRow: {

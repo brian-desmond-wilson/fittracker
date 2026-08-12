@@ -150,7 +150,19 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   const [carbs, setCarbs] = useState(item.carbs?.toString() || "");
   const [fats, setFats] = useState(item.fats?.toString() || "");
   const [sugars, setSugars] = useState(item.sugars?.toString() || "");
+  // `?? null` for the same reason preferred_vendor_id needs it below: rows
+  // fetched before the column landed come back undefined through the untyped
+  // client, and `undefined?.toString()` would be fine but `item.fiber_g` being
+  // absent must still seed "".
+  const [fiber, setFiber] = useState(item.fiber_g?.toString() || "");
   const [servingSize, setServingSize] = useState(item.serving_size || "");
+
+  // Resupplied on a cadence rather than bought when low — a delivered meal,
+  // not a grocery. Everything the app would otherwise say about restocking it
+  // is noise, so this flag silences those signals rather than describing food.
+  const [isScheduledSupply, setIsScheduledSupply] = useState(
+    item.is_scheduled_supply ?? false,
+  );
 
   // Expiration. `parseLocalDate`, not `new Date(str)`: the bare constructor
   // reads a YYYY-MM-DD DATE column as UTC midnight, so the picker's label
@@ -246,6 +258,8 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     carbs: item.carbs?.toString() || "",
     fats: item.fats?.toString() || "",
     sugars: item.sugars?.toString() || "",
+    fiber: item.fiber_g?.toString() || "",
+    isScheduledSupply: item.is_scheduled_supply ?? false,
     servingSize: item.serving_size || "",
     notes: item.notes || "",
     expiration: item.expiration_date ?? "",
@@ -260,7 +274,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     quantity, unit,
     location: (location ?? null) as string | null,
     restockThreshold, requiresRefrigeration,
-    calories, protein, carbs, fats, sugars, servingSize, notes,
+    calories, protein, carbs, fats, sugars, fiber, isScheduledSupply, servingSize, notes,
     expiration: expirationDate ? getLocalDateString(expirationDate) : "",
     preferredVendorId,
     categoryIds: selectedCategoryIds,
@@ -321,6 +335,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       if (data.carbs !== null) setCarbs(String(data.carbs));
       if (data.fats !== null) setFats(String(data.fats));
       if (data.sugars !== null) setSugars(String(data.sugars));
+      if (data.fiber !== null && data.fiber !== undefined) setFiber(String(data.fiber));
       if (data.note) Alert.alert("Read the panel", data.note);
     } catch (e) {
       console.error("nutrition label scan failed:", e);
@@ -820,6 +835,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       dec("carbs", carbs, "Carbohydrates"),
       dec("fats", fats, "Fats"),
       dec("sugars", sugars, "Sugars"),
+      dec("fiber", fiber, "Fiber"),
     ];
     for (const { key, raw, section, label, parse, rule } of visibleNumericFields) {
       // Empty means "not set" and stays null — only a non-empty value has to parse.
@@ -912,6 +928,8 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         carbs: parseDecimalInput(carbs),
         fats: parseDecimalInput(fats),
         sugars: parseDecimalInput(sugars),
+        fiber_g: parseDecimalInput(fiber),
+        is_scheduled_supply: isScheduledSupply,
         serving_size: servingSize.trim() || null,
         // `getLocalDateString`, not `.toISOString().split("T")[0]`: the picker
         // returns the chosen date carrying a TIME component (iOS spinner keeps
@@ -1728,6 +1746,38 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   </>
                 )}
 
+                {/* Sits directly above "Usually bought from" because it is the
+                    answer to the same question. Some stock is not bought when
+                    it runs low — it arrives on a cadence — and for those every
+                    restock signal the app can raise is a false alarm. Rendered
+                    for both storage types: a delivery can land in one place or
+                    several. */}
+                <View style={styles.field}>
+                  <View style={styles.toggleRow}>
+                    <View style={styles.toggleLabel}>
+                      <Text style={styles.label}>Arrives on a schedule</Text>
+                      <Text style={styles.helpText}>
+                        Delivered on a set cadence, so never suggest buying more
+                        and don't estimate when it runs out.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.toggle, isScheduledSupply && styles.toggleActive]}
+                      onPress={() => setIsScheduledSupply(!isScheduledSupply)}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: isScheduledSupply }}
+                      accessibilityLabel="Arrives on a schedule"
+                    >
+                      <View
+                        style={[
+                          styles.toggleThumb,
+                          isScheduledSupply && styles.toggleThumbActive,
+                        ]}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
                 {/* Preferred vendor — filed here rather than under Notes
                     (where the plan's literal text placed it): it drives the
                     quantity/vendor math this whole section already owns
@@ -1766,7 +1816,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               isExpanded={expandedSection === "nutrition"}
               hasError={validationErrors.has("calories") || validationErrors.has("protein")
                 || validationErrors.has("carbs") || validationErrors.has("fats")
-                || validationErrors.has("sugars")}
+                || validationErrors.has("sugars") || validationErrors.has("fiber")}
               onPress={() => toggleSection("nutrition")}
             />
 
@@ -1865,6 +1915,24 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       keyboardType="decimal-pad"
                     />
                   </View>
+                </View>
+
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Fiber (g)</Text>
+                    <TextInput
+                      style={[styles.input, validationErrors.has("fiber") && styles.inputError]}
+                      placeholder="0"
+                      placeholderTextColor={colors.textFaint}
+                      value={fiber}
+                      onChangeText={(t) => setFiber(sanitizeDecimal(t))}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  {/* Five macro fields do not divide into pairs. An empty half
+                      keeps Fiber the same width as every other input rather
+                      than letting it stretch across the row on its own. */}
+                  <View style={[styles.field, styles.fieldHalf]} />
                 </View>
 
                 {/* What the numbers become downstream: the panel on the item

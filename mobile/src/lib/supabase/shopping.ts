@@ -119,9 +119,18 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
 
   const listRows = (listRes.data ?? []) as ShoppingListItem[];
 
+  // Scheduled-supply items are left out of the totals map, which is what
+  // stops an estimate existing for them at all. Their history is real but
+  // meaningless: a delivered menu rotates, so no single dish is ever seen
+  // often enough to say anything about, and the answer to "when does this run
+  // out" is a delivery date rather than a rate.
   const ratesById = estimateConsumption({
     events,
-    totalsById: new Map(inventory.map((it) => [it.id, it.state.totalQuantity])),
+    totalsById: new Map(
+      inventory
+        .filter((it) => !it.is_scheduled_supply)
+        .map((it) => [it.id, it.state.totalQuantity]),
+    ),
     todayLocalDate,
   });
 
@@ -153,6 +162,7 @@ export async function fetchShoppingData(todayLocalDate: string): Promise<Shoppin
       totalQuantity: it.state.totalQuantity,
       isOut: it.state.isOut,
       isLow: it.state.isLow,
+      scheduledSupply: it.is_scheduled_supply,
     })),
     mealGaps,
     rates: ratesById,

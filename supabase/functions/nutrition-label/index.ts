@@ -29,8 +29,10 @@ Return ONLY what is legibly printed on the panel. Rules:
 - "serving_size" is the text beside "Serving size", verbatim, including the
   parenthetical weight if printed: "1 bowl (210g)", "2 tbsp (32g)".
 - "calories" is the large number beside "Calories", per serving.
-- protein/carbs/fats/sugars are grams per serving as printed. fats means
-  "Total Fat"; carbs means "Total Carbohydrate"; sugars means "Total Sugars".
+- protein/carbs/fats/sugars/fiber are grams per serving as printed. fats means
+  "Total Fat"; carbs means "Total Carbohydrate"; sugars means "Total Sugars";
+  fiber means "Dietary Fiber" (not "Soluble Fiber" or "Insoluble Fiber", which
+  are sub-rows some panels print beneath it).
 - If the panel shows two columns (per serving / per container), read the PER
   SERVING column.
 - If the image is not a Nutrition Facts panel at all, set "found" to false and
@@ -39,7 +41,7 @@ Return ONLY what is legibly printed on the panel. Rules:
 Respond as JSON:
 {"found": boolean, "serving_size": string|null, "calories": number|null,
  "protein": number|null, "carbs": number|null, "fats": number|null,
- "sugars": number|null, "note": string|null}
+ "sugars": number|null, "fiber": number|null, "note": string|null}
 
 "note" is a short human sentence only when something is worth flagging —
 "the fat row is cut off", "this looks like an ingredients list". Otherwise null.`;
@@ -110,6 +112,7 @@ Deno.serve(async (req) => {
         carbs: num(parsed.carbs),
         fats: num(parsed.fats),
         sugars: num(parsed.sugars),
+        fiber: num(parsed.fiber),
         note: typeof parsed.note === "string" ? parsed.note : null,
       }),
       { headers: { ...CORS, "Content-Type": "application/json" } },

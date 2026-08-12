@@ -17,6 +17,9 @@ export interface FoodInventoryItem {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  /** Grams per serving. Feeds the Nutrition Facts panel — daily totals still
+   *  come from `saved_foods` via meal logs, so this is a display figure. */
+  fiber_g: number | null;
   serving_size: string | null;
   expiration_date: string | null; // YYYY-MM-DD
   location: FoodLocation | null;
@@ -37,6 +40,11 @@ export interface FoodInventoryItem {
   /** D6 freshness signal: the last time a verb attested this row is real.
    *  Nullable for rows written before the column landed. */
   last_verified_at: string | null;
+  /** True when stock arrives on a delivery cadence rather than being bought
+   *  when it runs low — a Thistle meal, not a jar of peanut butter. Every
+   *  restock signal is a false one for these, so the demand engine, the
+   *  shopping list and the run-out estimate all stand down. */
+  is_scheduled_supply: boolean;
 }
 
 export interface FoodInventoryLocation {

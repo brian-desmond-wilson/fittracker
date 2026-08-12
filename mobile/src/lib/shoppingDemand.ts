@@ -17,6 +17,18 @@ export interface DemandInventoryItem {
   totalQuantity: number;
   isOut: boolean;
   isLow: boolean;
+  /**
+   * Resupplied on a delivery cadence rather than bought when low. Optional so
+   * every existing caller and test keeps compiling; absent reads as false.
+   *
+   * These items are excluded from ALL FOUR sources, not just the three that
+   * read stock. A meal gap naming one would otherwise resurrect it through
+   * the name-keyed path, which is exactly the case a Thistle meal hits: the
+   * meal IS the item, so an eaten one is simultaneously out of stock and
+   * missing from its own meal. Both readings are true and neither is worth
+   * telling you about — the next delivery is already on its way.
+   */
+  scheduledSupply?: boolean;
 }
 
 export interface MealGap {
@@ -52,7 +64,16 @@ export function computeShoppingSuggestions(opts: {
   rates: Map<string, ConsumptionEstimate>;
   unpurchased: UnpurchasedRow[];
 }): ShoppingSuggestion[] {
-  const { items, mealGaps, rates, unpurchased } = opts;
+  const { items: allItems, mealGaps, rates, unpurchased } = opts;
+
+  // Split once, at the top: the three stock-driven sources below simply never
+  // see a scheduled-supply item, and the name set catches the fourth (meal
+  // gaps), which keys on a name rather than an id. Names are folded the same
+  // way the suppression layer at the foot of this function folds them.
+  const items = allItems.filter((it) => it.scheduledSupply !== true);
+  const scheduledNames = new Set(
+    allItems.filter((it) => it.scheduledSupply === true).map((it) => fold(it.name)),
+  );
   // last-wins on a folded-name collision between two inventory items: the
   // meal-gap reason attaches to whichever came later in `items`. Defensible
   // under the id-first merge identity (two distinct items still produce two
@@ -146,7 +167,8 @@ export function computeShoppingSuggestions(opts: {
     .filter(
       (d) =>
         !(d.foodInventoryId !== null && suppressedIds.has(d.foodInventoryId)) &&
-        !suppressedNames.has(fold(d.name)),
+        !suppressedNames.has(fold(d.name)) &&
+        !scheduledNames.has(fold(d.name)),
     )
     .map(({ thresholdQuantity: _tq, ...s }) => s)
     .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));

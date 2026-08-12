@@ -87,3 +87,39 @@ describe("buildNutritionLabel", () => {
     expect(buildNutritionLabel(src({ serving_size: null })).servingSize).toBeNull();
   });
 });
+
+describe("buildNutritionLabel — dietary fiber", () => {
+  it("sits between carbohydrate and sugars, where the panel prints it", () => {
+    const label = buildNutritionLabel(src({ fiber_g: 9, sugars: 2 }));
+    expect(label.rows.map((r) => r.label)).toEqual([
+      "Total Fat", "Total Carbohydrate", "Dietary Fiber", "Total Sugars", "Protein",
+    ]);
+  });
+
+  it("carries a real %DV, unlike total sugars", () => {
+    // Thistle's Citrus Vanilla Cream Muesli: 10g fiber = 36% of 28g.
+    const label = buildNutritionLabel(src({ fiber_g: 10 }));
+    expect(label.rows.find((r) => r.label === "Dietary Fiber")?.dv).toBe(36);
+  });
+
+  it("is indented — it is a sub-nutrient of carbohydrate", () => {
+    const label = buildNutritionLabel(src({ fiber_g: 9 }));
+    expect(label.rows.find((r) => r.label === "Dietary Fiber")?.indented).toBe(true);
+  });
+
+  it("stops being named as missing once we hold a value", () => {
+    expect(buildNutritionLabel(src()).missing).toContain("dietary fiber");
+    expect(buildNutritionLabel(src({ fiber_g: 9 })).missing).not.toContain("dietary fiber");
+  });
+
+  it("treats an absent field the same as an explicit null", () => {
+    // The add/preview routes build stub items that predate the column.
+    expect(buildNutritionLabel(src({ fiber_g: null })).rows.map((r) => r.label))
+      .toEqual(buildNutritionLabel(src()).rows.map((r) => r.label));
+  });
+
+  it("keeps a genuine zero fiber", () => {
+    expect(buildNutritionLabel(src({ fiber_g: 0 })).rows.find((r) => r.label === "Dietary Fiber")?.amount)
+      .toBe("0g");
+  });
+});
