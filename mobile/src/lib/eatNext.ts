@@ -664,6 +664,23 @@ function candidate(
   };
 }
 
+/**
+ * Fresh-first (owner decision, 2026-08-12): an expiring rescue the owner can
+ * make RIGHT NOW passes the context's role/category preference (roleRank 0)
+ * instead of queueing behind it — the ingredient's clock is a harder deadline
+ * than the slot's shape. Only the MAKEABLE ones: an unmakeable rescue still
+ * joins its context as a plain candidate, so the pinned doctrine that an
+ * unmakeable rescue never outranks a makeable meal (the stockRank tests)
+ * survives. That restriction is load-bearing — `roleRank` sits ABOVE
+ * `stockRank` in `rank`, so boosting an unmakeable rescue here would put a
+ * meal you cannot cook above one you can.
+ */
+function boostMakeableRescue(c: Candidate): Candidate {
+  return c.stock?.assemblable && c.stock.expiringItemName != null
+    ? { ...c, roleRank: 0 }
+    : c;
+}
+
 /** Calorie half of the goal_hit rule (spec §5.3.2): calories at/over goal,
  * with a null/zero goal never counting as "hit" (mirrors `computeMealPace`'s
  * `goal == null || goal <= 0` treatment in mealPace.ts). Extracted so Task 2's
@@ -686,7 +703,10 @@ function catchUpCandidates(
     .map((m) => candidate(m, ["bridge"], maxPrepMinutes, [], stockByMealId));
 }
 
-/** Next main-meal slot strictly after now, else snack (mealPace's milestone rule). */
+/** Next main-meal slot strictly after now, else snack (mealPace's milestone
+ *  rule). Since the owner decision of 2026-08-12 this is the NUDGE's clock
+ *  only — "when is the next milestone to fire after" is genuinely a
+ *  strictly-future question. The next_meal context reads `currentSlot`. */
 function nextSlot(
   nowMinutes: number,
   mealTimesMinutes: EatNextInput["mealTimesMinutes"],
@@ -699,6 +719,56 @@ function nextSlot(
     .filter((e) => e.atMinutes > nowMinutes)
     .sort((a, b) => a.atMinutes - b.atMinutes);
   return entries[0] ?? { slot: "snack", atMinutes: null };
+}
+
+/**
+ * The meal slot to recommend for RIGHT NOW (owner decision, 2026-08-12 —
+ * supersedes spec §5.3.6's "strictly after now" reading for the next_meal
+ * context).
+ *
+ * `nextSlot` reads the clock the way a timetable does: the moment a meal time
+ * passes, that meal is over. Applied to recommendations it meant lunch
+ * stopped existing at 12:01 — the engine was already shopping for dinner and
+ * a lunch-category meal could not be suggested at all. The case that exposed
+ * it: an in-stock pasta expiring tomorrow vanished at lunchtime in favor of a
+ * bridge snack for a dinner six hours away.
+ *
+ * This reads the clock the way a person does: it is still lunchtime until you
+ * are closer to dinner than to lunch. A slot keeps counting past its own time
+ * up to the midpoint to the next meal (the midpoint itself tips forward);
+ * dinner's grace runs to the midpoint of what remains of the eating window,
+ * after which the evening is snack territory exactly as before. Before the
+ * day's first meal, that meal is simply upcoming — unchanged.
+ *
+ * `atMinutes` stays the slot's OWN clock time even when that time has passed.
+ * Its one reader (`farFromMeal`) asks "is the target meal ≥2 h away", and a
+ * past target never is — which is right: during a slot's grace the meal
+ * itself is the suggestion, not a bridge toward it.
+ */
+function currentSlot(
+  nowMinutes: number,
+  mealTimesMinutes: EatNextInput["mealTimesMinutes"],
+  windowEndMinutes: number,
+): { slot: "breakfast" | "lunch" | "dinner" | "snack"; atMinutes: number | null } {
+  const entries = [
+    { slot: "breakfast" as const, atMinutes: mealTimesMinutes.breakfast },
+    { slot: "lunch" as const, atMinutes: mealTimesMinutes.lunch },
+    { slot: "dinner" as const, atMinutes: mealTimesMinutes.dinner },
+  ].sort((a, b) => a.atMinutes - b.atMinutes);
+  const prev = [...entries].reverse().find((e) => e.atMinutes <= nowMinutes);
+  const next = entries.find((e) => e.atMinutes > nowMinutes);
+  if (!prev) {
+    // Before the day's first meal. `next` cannot be undefined here (no prev
+    // means now precedes every entry), but `??` keeps this total without a
+    // non-null assertion.
+    return next ?? { slot: "snack", atMinutes: null };
+  }
+  if (next) {
+    return nowMinutes - prev.atMinutes < next.atMinutes - nowMinutes ? prev : next;
+  }
+  return nowMinutes - prev.atMinutes < windowEndMinutes - nowMinutes
+    ? prev
+    : { slot: "snack", atMinutes: null };
 }
 
 export function recommendEatNext(input: EatNextInput): EatNextResult {
@@ -837,13 +907,33 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
 
   // 5. catch_up — falls through when empty.
   if (behind && gap > 0) {
-    const cands = catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId);
+    const inBand = catchUpCandidates(eligible, gap, maxPrepMinutes, stockByMealId);
+    const bandIds = new Set(inBand.map((c) => c.meal.id));
+    // Fresh-first (owner decision, 2026-08-12): the band asks "does this meal
+    // fit the remaining gap"; an expiring rescue is exempt from that fit. The
+    // gap survives the evening — the ingredient does not. As the day wore on
+    // and the gap grew, the band walked upward PAST the expiring meal and the
+    // engine dropped it in favor of nothing. Its reason states the partial
+    // contribution honestly instead of borrowing the closes-the-gap copy.
+    // The merge lives HERE, not in `catchUpCandidates`: the nudge's body pick
+    // shares that helper, and a static notification should keep suggesting
+    // the meal sized to the gap it names.
+    const rescues = eligible
+      .filter(
+        (m) =>
+          !bandIds.has(m.meal.id) &&
+          stockByMealId?.get(m.meal.id)?.expiringItemName != null,
+      )
+      .map((m) => candidate(m, [], maxPrepMinutes, [], stockByMealId));
+    const cands = [...inBand, ...rescues].map(boostMakeableRescue);
     if (cands.length > 0) {
       return {
         context: "catch_up",
         message: `${gap} cal behind pace`,
         recommendations: toRecs(rank(cands), (c) => [
-          `closes the ~${gap} cal gap (${Math.round(c.totals.calories)} cal, ${c.meal.prep_minutes} min)`,
+          bandIds.has(c.meal.id)
+            ? `closes the ~${gap} cal gap (${Math.round(c.totals.calories)} cal, ${c.meal.prep_minutes} min)`
+            : `~${Math.round(c.totals.calories)} cal toward the ~${gap} cal gap (${c.meal.prep_minutes} min)`,
         ]),
         nudge,
       };
@@ -851,7 +941,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   }
 
   // 6. next_meal — default.
-  const { slot, atMinutes } = nextSlot(nowMinutes, mealTimesMinutes);
+  const { slot, atMinutes } = currentSlot(nowMinutes, mealTimesMinutes, windowEndMinutes);
   const slotCategories: ReadonlyArray<MealCategory> =
     slot === "snack" ? ["snack", "shake"] : [slot];
   const farFromMeal =
@@ -867,8 +957,24 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
             m.meal.category === "snack"),
       )
     : eligible.filter((m) => slotCategories.includes(m.meal.category));
-  const cands = pool.map((m) =>
-    candidate(m, preferredRoles, maxPrepMinutes, preferredCategories, stockByMealId));
+  const poolIds = new Set(pool.map((m) => m.meal.id));
+  // Fresh-first (owner decision, 2026-08-12): a meal that would use an
+  // ingredient about to expire is a candidate whatever the slot says. The
+  // slot filter matches food to the time of day; left alone it also meant a
+  // lunch meal whose ingredient turns tomorrow could spend the whole
+  // afternoon invisible while the app suggested shelf-stable snacks.
+  // Emergency-category meals stay out, as everywhere in next_meal (spec
+  // §5.3.6). Its reason names the urgency rather than claiming the slot.
+  const rescues = eligible.filter(
+    (m) =>
+      !poolIds.has(m.meal.id) &&
+      m.meal.category !== "emergency" &&
+      stockByMealId?.get(m.meal.id)?.expiringItemName != null,
+  );
+  const cands = [...pool, ...rescues]
+    .map((m) =>
+      candidate(m, preferredRoles, maxPrepMinutes, preferredCategories, stockByMealId))
+    .map(boostMakeableRescue);
   return {
     context: "next_meal",
     message:
@@ -877,8 +983,10 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
           ? EMPTY_LIBRARY_MESSAGE
           : `Nothing in the library fits ${slot} right now.`
         : null,
-    recommendations: toRecs(rank(cands), () => [
-      slot === "snack" ? "between meals" : `next: ${slot}`,
+    recommendations: toRecs(rank(cands), (c) => [
+      poolIds.has(c.meal.id)
+        ? slot === "snack" ? "between meals" : `next: ${slot}`
+        : slot === "snack" ? "worth eating tonight" : `worth eating before ${slot}`,
     ]),
     nudge,
   };
