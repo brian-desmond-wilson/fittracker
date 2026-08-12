@@ -126,7 +126,9 @@ export function FuelVerdictStrip({
 }
 
 const s = StyleSheet.create({
-  gutter: { marginHorizontal: spacing.screenGutter },
+  // The rail starts immediately below with no top margin of its own, so the
+  // strip owns the gap between the two.
+  gutter: { marginHorizontal: spacing.screenGutter, marginBottom: spacing.lg },
   headRow: {
     flexDirection: "row",
     alignItems: "center",
