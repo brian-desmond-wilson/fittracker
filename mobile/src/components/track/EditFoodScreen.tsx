@@ -267,6 +267,16 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     preferredVendorId: (item.preferred_vendor_id ?? null) as string | null,
     categoryIds: item.categories.map((c) => c.id),
     subcategoryIds: item.subcategories.map((s) => s.id),
+    // The photos belong here as much as any other field. Left out, adding a
+    // picture changed nothing the dirty tracker could see: the header kept
+    // saying no changes and Save stayed disabled, so a photo on its own could
+    // not be saved at all. `?? null` on both sides because a row fetched
+    // before one of these columns existed comes back undefined through the
+    // untyped client, which would otherwise read as an edit on open.
+    imagePrimary: item.image_primary_url ?? null,
+    imageFront: item.image_front_url ?? null,
+    imageBack: item.image_back_url ?? null,
+    imageSide: item.image_side_url ?? null,
   }));
 
   const pendingChanges = changeCount(baseline, {
@@ -280,6 +290,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     preferredVendorId,
     categoryIds: selectedCategoryIds,
     subcategoryIds: selectedSubcategoryIds,
+    imagePrimary: imagePrimary ?? null,
+    imageFront: imageFront ?? null,
+    imageBack: imageBack ?? null,
+    imageSide: imageSide ?? null,
   });
   const isDirty = pendingChanges > 0;
 
