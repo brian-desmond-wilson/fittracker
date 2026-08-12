@@ -8,7 +8,7 @@ import type { BrianScoreResult } from "@/src/lib/mealScore";
 import { COMPONENT_MAX, RAW_MAX } from "@/src/lib/mealScore";
 import type { MealAssemblability } from "@/src/lib/stockState";
 import { spacing } from "@/src/theme/tokens";
-import { ShoppingCart } from "lucide-react-native";
+import { Link2, ShoppingCart } from "lucide-react-native";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { lib, scoreTone } from "./styles";
 
@@ -22,6 +22,8 @@ interface MealDetailProps {
   logging: boolean;
   /** B2: hand the missing ingredient names to the shopping list. */
   onAddMissing: (names: string[]) => void;
+  /** D4: open the concept picker for an ingredient nothing could match. */
+  onLinkIngredient: (savedFoodName: string) => void;
   addingToList: boolean;
   addedToList: boolean;
   onLog: (meal: MealWithItems, mealType: MealType) => void;
@@ -45,7 +47,7 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
 
 export function MealDetail({
   meal, totals, score, assemblability, logging, onAddMissing, addingToList,
-  addedToList, onLog, onEdit, onDelete,
+  addedToList, onLinkIngredient, onLog, onEdit, onDelete,
 }: MealDetailProps) {
   const [mealType, setMealType] = useState<MealType>(defaultMealTypeFor(meal));
 
@@ -139,11 +141,31 @@ export function MealDetail({
             could have matched — saying "missing" here sent people shopping for
             food that was already in the fridge. */}
         {assemblability && assemblability.unlinked.length > 0 && (
-          <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
-            Not linked to anything in your kitchen yet:{" "}
-            {assemblability.unlinked.join(", ")} — so this meal can't be checked
-            against your stock.
-          </Text>
+          <>
+            <Text style={[lib.smallMuted, { marginTop: spacing.sm }]}>
+              Not linked to anything in your kitchen yet — so this meal can&apos;t
+              be checked against your stock.
+            </Text>
+            {/* D4. Concept links decide what "ready", "missing" and "in stock"
+                MEAN, and they were invisible and unrepairable from the app: a
+                meal could sit permanently un-makeable with no hint that the fix
+                was one link. The repair is offered here, on the named
+                ingredient, which is the only place the gap is visible. */}
+            {assemblability.unlinked.map((name) => (
+              <View key={name} style={[lib.rowBetween, { marginTop: spacing.sm }]}>
+                <Text style={[lib.bodyText, { flexShrink: 1 }]} numberOfLines={1}>
+                  {name}
+                </Text>
+                <Button
+                  label="Link"
+                  onPress={() => onLinkIngredient(name)}
+                  variant="secondary"
+                  size="sm"
+                  icon={Link2}
+                />
+              </View>
+            ))}
+          </>
         )}
         {/* Gated on `expiringItemName != null`, NOT on the truthiness of
             `expiringDaysLeft`: 0 means "expires today" — a retained rescue

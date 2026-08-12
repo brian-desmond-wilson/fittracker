@@ -609,6 +609,7 @@ export async function createUserLink(
   conceptId: string,
   target: { savedFoodId: string } | { foodInventoryId: string },
 ): Promise<void> {
+  invalidateMealLibrary(); // D1: links change what every read means
   const { error } = await supabase.from("food_concept_links").insert({
     user_id: userId,
     concept_id: conceptId,
@@ -620,6 +621,7 @@ export async function createUserLink(
 }
 
 export async function deleteLink(linkId: string): Promise<void> {
+  invalidateMealLibrary(); // D1: links change what every read means
   const { error } = await supabase.from("food_concept_links").delete().eq("id", linkId);
   if (error) throw error;
 }

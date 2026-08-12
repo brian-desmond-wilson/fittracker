@@ -27,6 +27,7 @@ import { Button, EmptyState, LoadingState } from "@/src/components/ui";
 import { MealRow } from "./MealRow";
 import { MealDetail } from "./MealDetail";
 import { MealBuilder } from "./MealBuilder";
+import { ConceptPickerSheet } from "./ConceptPickerSheet";
 import { lib } from "./styles";
 
 type View_ =
@@ -379,6 +380,36 @@ export function MealLibraryModal({
     [view],
   );
 
+  // D4. Repairing a concept link from the meal that is broken by its absence.
+  // Resolves the ingredient NAME back to its saved-food id here rather than
+  // threading ids through `MealAssemblability`, which deliberately reports
+  // display names — the verdict is about what to tell the reader, not about
+  // identity.
+  const [linkTarget, setLinkTarget] = useState<
+    { savedFoodId: string; name: string } | null
+  >(null);
+  const handleLinkIngredient = useCallback(
+    (savedFoodName: string) => {
+      if (view.mode !== "detail" || !data) return;
+      const meal = data.meals.find((m) => m.id === view.mealId);
+      const item = meal?.items.find((it) => it.savedFood.name === savedFoodName);
+      if (!item) return;
+      setLinkTarget({ savedFoodId: item.saved_food_id, name: savedFoodName });
+    },
+    [view, data],
+  );
+  const handlePickConcept = useCallback(
+    async (conceptId: string) => {
+      if (!linkTarget) return;
+      const ok = await run("Couldn't link that", async () => {
+        const userId = await getUserId();
+        await createUserLink(userId, conceptId, { savedFoodId: linkTarget.savedFoodId });
+      });
+      if (ok) setLinkTarget(null);
+    },
+    [linkTarget, run],
+  );
+
   const handleDelete = useCallback(
     async (meal: MealWithItems) => {
       const ok = await run("Failed to delete meal", () => deleteMeal(meal.id));
@@ -461,6 +492,7 @@ export function MealLibraryModal({
         assemblability={assemblabilityById.get(detailMeal.id)}
         logging={busy}
         onAddMissing={handleAddMissing}
+        onLinkIngredient={handleLinkIngredient}
         addingToList={addingToList}
         addedToList={addedToListMealId === detailMeal.id}
         onLog={handleLog}
@@ -597,6 +629,14 @@ export function MealLibraryModal({
           </>
         )}
         {body}
+        <ConceptPickerSheet
+          visible={linkTarget !== null}
+          subject={linkTarget?.name ?? ""}
+          concepts={data ? [...data.conceptsById.values()] : []}
+          busy={busy}
+          onPick={handlePickConcept}
+          onClose={() => setLinkTarget(null)}
+        />
       </View>
     </Modal>
   );
