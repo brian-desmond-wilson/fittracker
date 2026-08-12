@@ -27,7 +27,7 @@ export default function Track() {
   const trackingCategories: TrackingCategoryConfig[] = [
     // Nutrition & Food Section
     {
-      id: "meals",
+      id: "fuel",
       title: "Fuel",
       icon: "Utensils",
       accent: "meals",
