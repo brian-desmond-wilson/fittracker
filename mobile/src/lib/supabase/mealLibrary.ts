@@ -57,7 +57,63 @@ export interface MealLibraryData {
  *  `useEatNext`'s. */
 const DEFAULT_MAX_PREP_MINUTES = 5;
 
-export async function fetchMealLibrary(): Promise<MealLibraryData> {
+/**
+ * D1. Seven independent call sites pull this — the Loop Hub, the Home card's
+ * recommender, the Meals screen's recommender, the Meal Library modal, the
+ * shopping engine, the item-detail page and the inventory screen — and on a
+ * cold app open several fire within the same tick, each issuing the same seven
+ * queries. Nothing shared them.
+ *
+ * TWO mechanisms, and the first is the one that matters:
+ *
+ *   • `inFlight` coalesces concurrent callers onto one round trip. This is
+ *     the mount storm, and it is exact: there is no staleness window at all,
+ *     because everyone waits on the same promise.
+ *   • `cache` collapses a burst that arrives just after one settles, for a
+ *     deliberately short window.
+ *
+ * The TTL is SMALL on purpose. A long one would need every write in the app
+ * to remember to invalidate, and a missed call would show stale stock
+ * indefinitely — the failure mode is silent and the write paths are spread
+ * across screens. At five seconds a missed invalidation self-heals before
+ * anyone reads the screen, so `invalidateMealLibrary` is an optimisation for
+ * immediacy after a known write rather than a correctness requirement.
+ */
+const MEAL_LIBRARY_TTL_MS = 5_000;
+let cached: { data: MealLibraryData; at: number } | null = null;
+let inFlight: Promise<MealLibraryData> | null = null;
+
+/** Drop the cache after a write that changes meals, links or stock. Cheap and
+ *  safe to over-call; see the TTL note above for why missing one is survivable. */
+export function invalidateMealLibrary(): void {
+  cached = null;
+}
+
+export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibraryData> {
+  if (opts?.force) {
+    cached = null;
+    inFlight = null;
+  } else {
+    if (cached && Date.now() - cached.at < MEAL_LIBRARY_TTL_MS) {
+      return Promise.resolve(cached.data);
+    }
+    if (inFlight) return inFlight;
+  }
+  const run = fetchMealLibraryUncached()
+    .then((data) => {
+      cached = { data, at: Date.now() };
+      return data;
+    })
+    .finally(() => {
+      // Cleared whether it resolved or threw: a failed load must not pin every
+      // future caller to the same rejected promise.
+      if (inFlight === run) inFlight = null;
+    });
+  inFlight = run;
+  return run;
+}
+
+async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
   const [meals, items, concepts, links, inventory, profile, constraints] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     supabase
@@ -272,6 +328,7 @@ export interface MealInput {
 }
 
 export async function createMeal(userId: string, input: MealInput): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
@@ -316,6 +373,7 @@ export async function updateMeal(
   mealId: string,
   input: MealInput,
 ): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
@@ -351,6 +409,7 @@ export async function updateMeal(
 }
 
 export async function deleteMeal(mealId: string): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const { error } = await supabase.from("meals").delete().eq("id", mealId);
   if (error) throw error;
 }
@@ -382,6 +441,7 @@ export async function logMeal(
     inventory: ResolutionInventoryRow[];
   },
 ): Promise<LogMealResult> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   // An item-less meal must not log "successfully". `rows` would be [],
   // PostgREST accepts an empty insert without error, and the caller would show
   // a "Logged" toast plus a working Undo for zero rows written — a silent lie
@@ -481,6 +541,7 @@ export async function undoMealLog(
   loggedAt: string,
   consumedIds: string[],
 ): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
   const { error } = await supabase
     .from("meal_logs")
     .delete()
