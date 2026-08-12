@@ -58,12 +58,28 @@ const BRIDGE_CAL_MAX = 400;
 /** Calories-component full-score threshold: "this meal hits its calorie
  * target" (spec §6, Calories /10). */
 const CALORIES_FULL_POINTS_MIN = 500;
+
+/**
+ * The same threshold for a meal that arrives already portioned.
+ *
+ * The 500 above is calibrated for meals you ASSEMBLE, where falling short is a
+ * choice you made: a 440-kcal plate you built really is a partial meal because
+ * you could have put more on it. A delivered meal is not that — its portion
+ * was set by whoever made it and cannot be topped up — so the same 440 is a
+ * complete breakfast, and scoring it as 70% of a meal judges the wrong thing.
+ * Dropped by exactly one band rather than removed: portion size still matters
+ * on a calorie ramp, and a 200-kcal cup is still a snack whoever made it.
+ */
+export const COMPLETE_PORTION_FULL_POINTS_MIN = 400;
 /** Brian Approved calorie admission bar: "this is a substantial meal"
  * (spec §6, Brian Approved). Spec §6 states these as two INDEPENDENT
  * clauses that merely coincide at 500 today — this bar could drop to 450
  * without retuning the scoring ladder — so it stays a distinct knob, while
  * the alias keeps them from drifting apart by accident. */
 const APPROVED_MIN_CALORIES = CALORIES_FULL_POINTS_MIN;
+/** The admission bar for an already-portioned meal, aliased to its own band
+ *  for the same reason: two knobs that coincide today, not one knob. */
+const APPROVED_MIN_CALORIES_COMPLETE_PORTION = COMPLETE_PORTION_FULL_POINTS_MIN;
 
 /** Round away float-epsilon noise (e.g. 21.999999999999996 instead of 22)
  * from summing/dividing decimal nutrition values, so threshold comparisons
@@ -94,6 +110,10 @@ export interface BrianScoreInput {
   role: MealRole | null;
   tasteOverride: ConceptRating | null;
   items: ScoreItemInput[];
+  /** `meals.is_complete_portion` — sold as one finished portion. Optional so
+   *  every existing caller and fixture keeps compiling; absent reads false,
+   *  which is the pre-existing behaviour exactly. */
+  completePortion?: boolean;
 }
 
 export interface BrianScoreResult {
@@ -113,7 +133,18 @@ export interface BrianScoreResult {
 }
 
 export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
-  const { prepMinutes, role, tasteOverride, items } = input;
+  const { prepMinutes, role, tasteOverride, items, completePortion = false } = input;
+  // Two thresholds, kept distinct on purpose (see the constants): the calorie
+  // COMPONENT's full-points line and the Brian Approved admission bar coincide
+  // today but are separate policy knobs. Both shift together for a meal that
+  // arrives already portioned, because both are asking the same question —
+  // "is this a whole meal?" — of an object whose size someone else chose.
+  const caloriesFullPointsMin = completePortion
+    ? COMPLETE_PORTION_FULL_POINTS_MIN
+    : CALORIES_FULL_POINTS_MIN;
+  const approvedMinCalories = completePortion
+    ? APPROVED_MIN_CALORIES_COMPLETE_PORTION
+    : APPROVED_MIN_CALORIES;
 
   const totalCalories = round(
     items.reduce((sum, it) => sum + it.servings * (it.calories ?? 0), 0),
@@ -190,10 +221,20 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
       totalCalories >= BRIDGE_CAL_MIN && totalCalories <= BRIDGE_CAL_MAX
         ? 10
         : 4;
-  } else if (totalCalories >= CALORIES_FULL_POINTS_MIN) calories = 10;
-  else if (totalCalories >= 400) calories = 7;
-  else if (totalCalories >= 300) calories = 4;
-  else calories = 2;
+  } else {
+    // The WHOLE ladder shifts for an already-portioned meal, not just its top
+    // rung. Moving only the 10-point line would leave the 7 stranded above it
+    // and drop a 399-kcal delivered meal straight from 10 to 4 — a cliff at a
+    // one-calorie difference, and a harsher verdict than the assembled ladder
+    // gives the same food.
+    const [full, most, some] = completePortion
+      ? [COMPLETE_PORTION_FULL_POINTS_MIN, 300, 200]
+      : [CALORIES_FULL_POINTS_MIN, 400, 300];
+    if (totalCalories >= full) calories = 10;
+    else if (totalCalories >= most) calories = 7;
+    else if (totalCalories >= some) calories = 4;
+    else calories = 2;
+  }
 
   const raw = round(taste + convenience + protein + eoe + calories, 1);
   // Deliberately derived from the ROUNDED raw, not the exact component sum:
@@ -207,7 +248,7 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
   const approved =
     prepMinutes <= APPROVED_MAX_PREP_MINUTES &&
     totalProtein >= APPROVED_MIN_PROTEIN_G &&
-    (totalCalories >= APPROVED_MIN_CALORIES || role === "bridge") &&
+    (totalCalories >= approvedMinCalories || role === "bridge") &&
     eoe === COMPONENT_MAX.eoe &&
     taste >= APPROVED_MIN_TASTE &&
     !containsNever;

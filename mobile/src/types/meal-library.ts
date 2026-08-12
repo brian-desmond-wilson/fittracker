@@ -78,6 +78,10 @@ export interface Meal {
   default_meal_type: MealType | null;
   prep_minutes: number;
   taste_override: ConceptRating | null;
+  /** Sold as one finished portion — a delivered meal rather than something you
+   *  assemble. Shifts the calorie band and the Brian Approved bar down one
+   *  step, because its size was chosen by whoever made it. */
+  is_complete_portion: boolean;
   notes: string | null;
   created_at: string;
   updated_at: string;

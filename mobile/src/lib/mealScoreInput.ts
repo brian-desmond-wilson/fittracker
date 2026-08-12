@@ -36,6 +36,10 @@ export function brianScoreInputFor(
     prepMinutes: meal.prep_minutes,
     role: meal.role,
     tasteOverride: meal.taste_override,
+    // `?? false` rather than a bare read: the Supabase client is untyped, so a
+    // row fetched before the column landed arrives with the field absent, and
+    // `undefined` would flow into the score as a third state.
+    completePortion: meal.is_complete_portion ?? false,
     items: meal.items.map((it) => ({
       calories: it.savedFood.calories,
       protein: it.savedFood.protein,

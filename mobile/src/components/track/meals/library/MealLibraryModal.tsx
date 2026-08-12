@@ -12,6 +12,7 @@ import {
 } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
+import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import {
   computeMealTotals, createMeal, createUserLink, deleteMeal,
@@ -128,31 +129,22 @@ export function MealLibraryModal({
     [load],
   );
 
+  // `brianScoreInputFor`, not a hand-rolled copy of it. This screen carried a
+  // third inline transcription of that mapping — the exact duplication the
+  // builder was extracted to end — and it had already drifted: the builder
+  // learned `completePortion` and this copy did not, so a delivered meal
+  // scored as a whole meal everywhere in the app EXCEPT the one screen where
+  // you read its score breakdown. The mapping is under test; an inline copy
+  // never can be.
   const scores = useMemo(() => {
     const map = new Map<string, BrianScoreResult>();
     if (!data) return map;
     for (const meal of data.meals) {
       map.set(
         meal.id,
-        computeBrianScore({
-          prepMinutes: meal.prep_minutes,
-          role: meal.role,
-          tasteOverride: meal.taste_override,
-          items: meal.items.map((it) => ({
-            calories: it.savedFood.calories,
-            protein: it.savedFood.protein,
-            servings: it.servings,
-            smallPiecesOk: it.small_pieces_ok,
-            concepts: (data.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [])
-              .map((id) => data.conceptsById.get(id))
-              .filter((c): c is NonNullable<typeof c> => !!c)
-              .map((c) => ({
-                rating: c.rating,
-                requiresSmallPieces: c.requires_small_pieces,
-                prepIntensive: c.prep_intensive,
-              })),
-          })),
-        }),
+        computeBrianScore(
+          brianScoreInputFor(meal, data.conceptIdsBySavedFoodId, data.conceptsById),
+        ),
       );
     }
     return map;

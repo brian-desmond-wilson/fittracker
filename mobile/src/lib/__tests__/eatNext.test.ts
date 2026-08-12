@@ -75,6 +75,7 @@ function scored(over: {
       default_meal_type: null,
       prep_minutes: over.prep ?? 5,
       taste_override: null,
+      is_complete_portion: false,
       notes: null,
       created_at: "",
       updated_at: "",
