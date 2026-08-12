@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
   Alert,
+  Animated,
+  Easing,
   Platform,
   View,
   Text,
@@ -17,12 +19,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Minus, MoreHorizontal, Package, Pencil,
+  ChevronDown, ChevronLeft, ChevronRight, FlipHorizontal, Minus, MoreHorizontal, Package, Pencil,
   Plus, ScanBarcode, ShoppingCart, Trash2,
 } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
 import { ItemActionsSheet, type ItemAction } from "./ItemActionsSheet";
+import { NutritionFactsCard } from "./NutritionFactsCard";
+import { buildNutritionLabel } from "@/src/lib/nutritionLabel";
 import {
   consumeOneUnit,
   restockOneUnit,
@@ -84,6 +88,33 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   const [showDetails, setShowDetails] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const addingToList = useRef(false);
+
+  // Card flip. Two faces stacked in the same box, each hiding its own back,
+  // rotated half a turn apart: at any moment exactly one is facing you. The
+  // driver is native (transform only), so the turn does not compete with the
+  // JS thread while the front face's scroll view settles.
+  //
+  // `showingBack` is a separate boolean flipped at the halfway point rather
+  // than derived per frame: it decides which face may receive touches, and
+  // backface-hidden alone does not stop an invisible face from swallowing
+  // taps on Android.
+  const flip = useRef(new Animated.Value(0)).current;
+  const [showingBack, setShowingBack] = useState(false);
+  const nutrition = buildNutritionLabel(item);
+
+  const toggleFlip = () => {
+    const next = !showingBack;
+    setShowingBack(next);
+    Animated.timing(flip, {
+      toValue: next ? 1 : 0,
+      duration: 480,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const frontSpin = flip.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
+  const backSpin = flip.interpolate({ inputRange: [0, 1], outputRange: ["180deg", "360deg"] });
 
   // D5: learned restock threshold, derived from the same estimate the pace
   // line uses rather than a second round trip.
@@ -319,6 +350,21 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
       ? Math.round((item.calories / ctx.targetCalories) * 100)
       : null;
 
+  // The same control in the same place on both faces, so flipping back never
+  // means hunting for it. Dark disc because it sits on white in both
+  // positions — the image well and the panel.
+  const flipButton = nutrition.isEmpty ? null : (
+    <TouchableOpacity
+      onPress={toggleFlip}
+      style={styles.flipBtn}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      accessibilityRole="button"
+      accessibilityLabel={showingBack ? "Back to product details" : "Show nutrition facts"}
+    >
+      <FlipHorizontal size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+    </TouchableOpacity>
+  );
+
   const moreActions = (): ItemAction[] => [
     { label: "Toss item…", icon: Trash2, destructive: true, onPress: handleToss },
   ];
@@ -368,7 +414,14 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           ) : null}
         </View>
 
-        {/* Scrollable Content */}
+        {/* Two faces in one box, half a turn apart. The header sits outside
+            it deliberately: Back and Edit belong to the screen, not to the
+            card, and a nav bar that spun would be disorienting. */}
+        <View style={styles.flipArea}>
+        <Animated.View
+          style={[styles.face, { transform: [{ perspective: 1200 }, { rotateY: frontSpin }] }]}
+          pointerEvents={showingBack ? "none" : "auto"}
+        >
         <ScrollView
           style={styles.content}
           showsVerticalScrollIndicator={false}
@@ -425,6 +478,9 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                 <Package size={80} color={colors.textFaint} />
               </View>
             )}
+            {/* Top-right of the hero, because that is the corner you reach for
+                to turn a packet over. */}
+            {flipButton && <View style={styles.flipCorner}>{flipButton}</View>}
           </View>
 
           {/* Product Name & Brand */}
@@ -705,6 +761,15 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
 
           <View style={{ height: 40 }} />
         </ScrollView>
+        </Animated.View>
+
+        <Animated.View
+          style={[styles.face, styles.backFace, { transform: [{ perspective: 1200 }, { rotateY: backSpin }] }]}
+          pointerEvents={showingBack ? "auto" : "none"}
+        >
+          <NutritionFactsCard item={item} corner={flipButton} />
+        </Animated.View>
+        </View>
 
         <ItemActionsSheet
           visible={showMore}
@@ -730,6 +795,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    // Opaque and above the flip's compositing context — see `flipArea`.
+    backgroundColor: colors.bg,
+    zIndex: 1,
   },
   backButton: {
     flexDirection: "row",
@@ -794,6 +862,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand,
     width: 8,
     height: 8,
+  },
+  // The rotated faces establish a 3D compositing context, and on iOS that
+  // context bled onto the sibling header above it — Edit vanished and the
+  // header's rule stopped halfway across. Clipping the context to its own box
+  // and lifting the header above it in the stack confines the effect.
+  flipArea: { flex: 1, overflow: "hidden", zIndex: 0 },
+  face: { ...StyleSheet.absoluteFillObject, backfaceVisibility: "hidden" },
+  backFace: { padding: spacing.screenGutter },
+  flipCorner: { position: "absolute", top: spacing.md, right: spacing.md },
+  flipBtn: {
+    width: 34, height: 34, borderRadius: radii.pill,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
   chip: {
