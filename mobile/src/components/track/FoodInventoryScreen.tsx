@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, Undo2, X, Tag } from "lucide-react-native";
+import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, Truck, Undo2, X, Tag } from "lucide-react-native";
 import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import type { BadgeTone } from "@/src/components/ui";
@@ -389,6 +389,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const addActions = (): ItemAction[] => [
     { label: "Scan Barcode", icon: ScanBarcode, onPress: () => setShowBarcodeScanner(true) },
     { label: "Photograph Shelf or Receipt", icon: Camera, onPress: () => setShowCaptureModal(true) },
+    // A delivery is a different act from adding an item: eight things arrive
+    // at once sharing a vendor and a date, and the per-item form asks all of
+    // that eight times. Filed above the manual form because it is the faster
+    // path whenever it applies.
+    { label: "Log a Delivery", icon: Truck, onPress: () => router.push("/(tabs)/track/food-inventory/delivery") },
     { label: "Enter Manually", icon: Pencil, onPress: () => router.push("/(tabs)/track/food-inventory/add") },
   ];
 

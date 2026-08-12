@@ -13,6 +13,7 @@ export default function TrackLayout() {
       <Stack.Screen name="food-inventory/edit/[id]" />
       <Stack.Screen name="food-inventory/add" />
       <Stack.Screen name="food-inventory/preview" />
+      <Stack.Screen name="food-inventory/delivery" />
       <Stack.Screen name="shopping/index" />
       <Stack.Screen name="loop" />
       <Stack.Screen name="meals" />

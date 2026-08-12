@@ -18,6 +18,10 @@ interface VendorTilesProps {
   vendors: NutritionVendor[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** "No preference" is right on the item form, where a vendor is a
+   *  preference. It is wrong on the delivery form, where somebody
+   *  demonstrably delivered the box. */
+  allowNone?: boolean;
 }
 
 const TILE = 60;
@@ -66,7 +70,9 @@ function VendorTile({
   );
 }
 
-export function VendorTiles({ vendors, selectedId, onSelect }: VendorTilesProps) {
+export function VendorTiles({
+  vendors, selectedId, onSelect, allowNone = true,
+}: VendorTilesProps) {
   return (
     <ScrollView
       horizontal
@@ -79,23 +85,25 @@ export function VendorTiles({ vendors, selectedId, onSelect }: VendorTilesProps)
       {/* "Nowhere in particular" leads, the way a share sheet leads with Copy
           link: it is the choice you make most and the one that means "skip
           this". Neutral disc, so it never competes with a real mark. */}
-      <TouchableOpacity
-        style={styles.tile}
-        onPress={() => onSelect(null)}
-        accessibilityRole="button"
-        accessibilityState={{ selected: selectedId === null }}
-        accessibilityLabel="No preferred vendor"
-      >
-        <View style={[styles.disc, styles.discNone, selectedId === null && styles.discSelected]}>
-          <Ban size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-        </View>
-        <Text
-          style={[styles.label, selectedId === null && styles.labelSelected]}
-          numberOfLines={2}
+      {allowNone && (
+        <TouchableOpacity
+          style={styles.tile}
+          onPress={() => onSelect(null)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: selectedId === null }}
+          accessibilityLabel="No preferred vendor"
         >
-          No preference
-        </Text>
-      </TouchableOpacity>
+          <View style={[styles.disc, styles.discNone, selectedId === null && styles.discSelected]}>
+            <Ban size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+          </View>
+          <Text
+            style={[styles.label, selectedId === null && styles.labelSelected]}
+            numberOfLines={2}
+          >
+            No preference
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {vendors.map((v) => (
         <VendorTile
