@@ -1,10 +1,10 @@
 // mobile/src/components/track/meals/library/MealLibraryModal.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert, Modal, SectionList, StatusBar, Text, TouchableOpacity, View,
+  Alert, Modal, SectionList, StatusBar, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft, Plus } from "lucide-react-native";
+import { ChevronLeft, Plus, X } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
 import type { MealCategory, MealTotals, MealWithItems } from "@/src/types/meal-library";
 import {
@@ -14,6 +14,7 @@ import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
 import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { addSuggestions } from "@/src/lib/supabase/shopping";
+import { matchesQuery } from "@/src/lib/mealSearch";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import {
   computeMealTotals, createMeal, createUserLink, deleteMeal,
@@ -21,7 +22,7 @@ import {
   undoMealLog, updateMeal,
   type MealInput, type MealLibraryData,
 } from "@/src/lib/supabase/mealLibrary";
-import { spacing } from "@/src/theme/tokens";
+import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button, EmptyState, LoadingState } from "@/src/components/ui";
 import { MealRow } from "./MealRow";
 import { MealDetail } from "./MealDetail";
@@ -58,6 +59,11 @@ export function MealLibraryModal({
   const [view, setView] = useState<View_>({ mode: "list" });
   const [busy, setBusy] = useState(false);
   const [inStockOnly, setInStockOnly] = useState(false);
+  // B4. The library was un-searchable inside its own modal — seventeen meals
+  // across six category sections, and the only way to a specific one was to
+  // scroll. Local filtering, because the library is tens of rows and already
+  // in memory.
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     try {
@@ -207,6 +213,11 @@ export function MealLibraryModal({
       if (inStockOnly) {
         meals = meals.filter((m) => assemblabilityById.get(m.id)?.assemblable);
       }
+      // Composes with the stock filter the same way: narrow in place, and the
+      // empty-section drop below removes any category left with nothing.
+      if (query.trim().length > 0) {
+        meals = meals.filter((m) => matchesQuery(m.name, query));
+      }
       if (category === "emergency") {
         // Biggest rescue first (spec §9.1).
         meals = [...meals].sort(
@@ -235,7 +246,7 @@ export function MealLibraryModal({
       }
       return { category, data: meals };
     }).filter((s) => s.data.length > 0);
-  }, [data, inStockOnly, assemblabilityById, scores]);
+  }, [data, inStockOnly, query, assemblabilityById, scores]);
 
   const remaining =
     data?.targetCalories != null && dayCalories != null
@@ -552,6 +563,27 @@ export function MealLibraryModal({
             so it can't scroll away while it is hiding rows — the state that
             most needs to stay visible is the one that shortens the list. */}
         {view.mode === "list" && data && (
+          <>
+          <View style={lib.searchBar}>
+            <TextInput
+              style={lib.searchInput}
+              placeholder="Search your meals…"
+              placeholderTextColor={colors.textMuted}
+              value={query}
+              onChangeText={setQuery}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {query.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setQuery("")}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <X size={icons.md} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={lib.filterBar}>
             <TouchableOpacity
               style={[lib.chip, { marginBottom: 0 }, inStockOnly && lib.chipFilterActive]}
@@ -562,6 +594,7 @@ export function MealLibraryModal({
               </Text>
             </TouchableOpacity>
           </View>
+          </>
         )}
         {body}
       </View>

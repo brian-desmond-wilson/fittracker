@@ -94,6 +94,7 @@ import {
 import { useMacroGoals } from "./meals/useMacroGoals";
 import { useRecentAndFavorites } from "./meals/useRecentAndFavorites";
 import { useSavedFoodsSearch } from "./meals/useSavedFoodsSearch";
+import { useMealSearch } from "./meals/useMealSearch";
 import { useHistoricalMeals } from "./meals/useHistoricalMeals";
 import { useMealAddForm } from "./meals/useMealAddForm";
 import { MealsDayList } from "./meals/MealsDayList";
@@ -225,6 +226,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
+  const { mealResults } = useMealSearch(searchQuery);
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -1630,11 +1632,46 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 {/* Search Results — from your saved foods library */}
                 {searchQuery.trim().length >= 2 && (
                   <Card variant="row" style={styles.searchResultsSpacing}>
+                    {/* B4. Search used to cover saved foods only, so every meal
+                        you had assembled was invisible to it — you could search
+                        "oats" and be told nothing matched while Protein Oatmeal
+                        Bowl sat two taps away. Both kinds now, each labelled,
+                        meals first because a meal is the bigger unit and the
+                        one you are usually reaching for. */}
+                    {mealResults.length > 0 && (
+                      <>
+                        <Text style={styles.searchResultsHeader}>
+                          {`Meals matching "${searchQuery.trim()}"`}
+                        </Text>
+                        {mealResults.slice(0, 5).map((m) => (
+                          <TouchableOpacity
+                            key={m.id}
+                            onPress={() => {
+                              setLibraryInitialMealId(m.id);
+                              setLibraryVisible(true);
+                            }}
+                            style={styles.searchResultRow}
+                            activeOpacity={0.7}
+                          >
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.searchResultName} numberOfLines={1}>
+                                {m.name}
+                              </Text>
+                              <Text style={styles.searchResultBrand} numberOfLines={1}>
+                                {m.items.length} ingredient{m.items.length === 1 ? "" : "s"} · {m.prep_minutes} min
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </>
+                    )}
                     <Text style={styles.searchResultsHeader}>
                       {searching
                         ? "Searching…"
                         : searchResults.length === 0
-                          ? `No saved foods match "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
+                          ? mealResults.length > 0
+                            ? "No saved foods match — scan a barcode or tap + to add one."
+                            : `Nothing matches "${searchQuery.trim()}". Scan a barcode or tap + to add it.`
                           : `Saved foods matching "${searchQuery.trim()}"`}
                     </Text>
                     {searchResults.slice(0, 8).map((f) => (
