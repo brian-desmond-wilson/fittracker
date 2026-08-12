@@ -59,9 +59,22 @@ export function BulkCaptureModal({ visible, onClose, onApplied, attachBarcode }:
       quality: 0.7,
       base64: true,
     };
-    const result = source === "camera"
-      ? await ImagePicker.launchCameraAsync(opts)
-      : await ImagePicker.launchImageLibraryAsync(opts);
+    // Both launchers REJECT when the camera is absent (simulator) or refused,
+    // rather than returning a canceled result — uncaught, that surfaces as a
+    // red console error with no explanation of what went wrong.
+    const result = await (source === "camera"
+      ? ImagePicker.launchCameraAsync(opts)
+      : ImagePicker.launchImageLibraryAsync(opts)
+    ).catch(() => null);
+    if (!result) {
+      Alert.alert(
+        source === "camera" ? "No camera available" : "Couldn't open your photos",
+        source === "camera"
+          ? "Use “Choose photo” instead, or allow camera access in Settings."
+          : "Allow photo access in Settings and try again.",
+      );
+      return;
+    }
     if (result.canceled || !result.assets[0]?.base64) return;
     setPhase("processing");
     try {

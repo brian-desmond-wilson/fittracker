@@ -274,16 +274,35 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   // as fact.
   const [scanningLabel, setScanningLabel] = useState(false);
   const scanNutritionLabel = async () => {
-    const result = await ImagePicker.launchCameraAsync({
+    const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,
       base64: true,
-    });
-    if (result.canceled || !result.assets[0]?.base64) return;
+    };
+
+    // The camera is the point — you are standing in front of the packet — but
+    // it can be absent (simulator) or refused, and `launchCameraAsync` REJECTS
+    // in both cases rather than returning a canceled result. Left uncaught
+    // that surfaces as a red console error; caught, the photo library is the
+    // honest fallback, since a panel photographed earlier reads just as well.
+    let base64: string | null = null;
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) throw new Error("camera permission not granted");
+      const shot = await ImagePicker.launchCameraAsync(opts);
+      if (shot.canceled) return;
+      base64 = shot.assets[0]?.base64 ?? null;
+    } catch {
+      const picked = await ImagePicker.launchImageLibraryAsync(opts).catch(() => null);
+      if (!picked || picked.canceled) return;
+      base64 = picked.assets[0]?.base64 ?? null;
+    }
+    if (!base64) return;
+
     setScanningLabel(true);
     try {
       const { data, error } = await supabase.functions.invoke("nutrition-label", {
-        body: { imageBase64: result.assets[0].base64 },
+        body: { imageBase64: base64 },
       });
       if (error) throw error;
       if (!data?.found) {
