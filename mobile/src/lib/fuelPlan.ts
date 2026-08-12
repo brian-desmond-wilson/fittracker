@@ -296,6 +296,8 @@ export interface FuelCandidate {
   rescueCount: number;
   rescueSoonestDays: number | null;
   faceUrl: string | null;
+  /** For the AI tier's variety judgement; the rules tier never reads it. */
+  lastLoggedDaysAgo?: number | null;
 }
 
 export interface FuelPick {
@@ -385,6 +387,93 @@ export function pickForWindows(opts: {
       faceUrl: best.faceUrl,
       reasons,
     });
+  }
+  return picks;
+}
+
+// ---------------------------------------------------------------------------
+// AI tier merge
+
+/** One assignment from the fuel-plan edge function, already shape-validated
+ *  by that function; this side validates AGAIN because a client must not
+ *  trust the network's manners. */
+export interface AiAssignment {
+  windowId: string;
+  mealId: string;
+  reason: string | null;
+}
+
+/**
+ * Merge the AI tier's assignments over the rules tier's picks, per window and
+ * defensively. An assignment is honored only when its meal exists, hasn't
+ * been used yet, and respects the live-window prep gate; any window the AI
+ * skipped — or whose assignment failed validation — keeps its rules pick.
+ * Portions and rescue/portion reasons are ALWAYS recomputed by rules; the
+ * model contributes the assignment and one sentence, nothing numeric.
+ */
+export function mergeAiPicks(opts: {
+  states: WindowState[];
+  targets: WindowTarget[];
+  candidates: FuelCandidate[];
+  rulesPicks: FuelPick[];
+  ai: AiAssignment[];
+  maxPrepMinutes: number;
+}): FuelPick[] {
+  const candidateById = new Map(opts.candidates.map((c) => [c.mealId, c]));
+  const targetById = new Map(opts.targets.map((t) => [t.windowId, t]));
+  const rulesByWindow = new Map(opts.rulesPicks.map((p) => [p.windowId, p]));
+  const aiByWindow = new Map(opts.ai.map((a) => [a.windowId, a]));
+  const used = new Set<string>();
+  const picks: FuelPick[] = [];
+
+  const open = opts.states
+    .filter((s) => s.status === "live" || s.status === "upcoming")
+    .sort((a, b) => a.window.startMinutes - b.window.startMinutes);
+
+  for (const s of open) {
+    const target = targetById.get(s.window.id);
+    if (!target) continue;
+
+    const ai = aiByWindow.get(s.window.id);
+    const aiCandidate = ai ? candidateById.get(ai.mealId) : undefined;
+    const aiValid =
+      ai !== undefined &&
+      aiCandidate !== undefined &&
+      !used.has(ai.mealId) &&
+      (s.status !== "live" || aiCandidate.prepMinutes <= opts.maxPrepMinutes);
+
+    if (aiValid) {
+      const portion = portionFactor(target.targetCalories, aiCandidate.calories);
+      const reasons: string[] = [];
+      if (ai.reason) reasons.push(ai.reason);
+      if (aiCandidate.rescueCount > 0 && aiCandidate.rescueSoonestDays != null) {
+        reasons.push(
+          aiCandidate.rescueSoonestDays === 0
+            ? "uses food expiring today"
+            : `uses food expiring in ${aiCandidate.rescueSoonestDays}d`,
+        );
+      }
+      const pl = portionLabel(portion);
+      if (pl) reasons.push(`${pl} to close the gap`);
+      used.add(ai.mealId);
+      picks.push({
+        windowId: s.window.id,
+        mealId: aiCandidate.mealId,
+        name: aiCandidate.name,
+        calories: aiCandidate.calories,
+        protein: aiCandidate.protein,
+        portion,
+        faceUrl: aiCandidate.faceUrl,
+        reasons,
+      });
+      continue;
+    }
+
+    const rules = rulesByWindow.get(s.window.id);
+    if (rules && !used.has(rules.mealId)) {
+      used.add(rules.mealId);
+      picks.push(rules);
+    }
   }
   return picks;
 }

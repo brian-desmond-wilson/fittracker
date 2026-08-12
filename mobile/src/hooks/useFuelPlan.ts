@@ -19,6 +19,7 @@ import {
   attributeLogs,
   buildFuelRail,
   fuelVerdict,
+  mergeAiPicks,
   pickForWindows,
   planProjection,
   timeToMinutes,
@@ -26,6 +27,7 @@ import {
   windowsFromRows,
   windowStates,
   windowTargets,
+  type AiAssignment,
   type EatingWindowRow,
   type FuelCandidate,
   type FuelPick,
@@ -115,6 +117,18 @@ export interface FuelDayModel {
   dayTotals: MacroTotals;
   /** The clock the whole model was computed against. */
   computedAt: Date;
+  /** True once the AI tier's assignments are merged into `picks`. */
+  aiApplied: boolean;
+  /** What the AI tier would be asked, and the identity of that ask. The
+   *  effect below reads these; consumers should not. */
+  aiSignature: string | null;
+  aiRequest: { windows: object[]; candidates: object[] } | null;
+}
+
+/** One AI response, pinned to the exact plan-state it answered. */
+interface AiResult {
+  signature: string;
+  assignments: AiAssignment[];
 }
 
 export interface UseFuelPlanValue {
@@ -157,7 +171,9 @@ export function useFuelPlan(
   const [sources, setSources] = useState<FuelSources | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [aiResult, setAiResult] = useState<AiResult | null>(null);
   const runIdRef = useRef(0);
+  const aiInFlightRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
@@ -262,6 +278,9 @@ export function useFuelPlan(
         goals,
         dayTotals,
         computedAt: now,
+        aiApplied: false,
+        aiSignature: null,
+        aiRequest: null,
       };
     }
 
@@ -348,10 +367,66 @@ export function useFuelPlan(
             calories: (it.savedFood.calories ?? 0) * it.servings,
           })),
         ),
+        lastLoggedDaysAgo: library.lastLoggedByMealId.has(meal.id)
+          ? daysBetweenLocalDates(library.lastLoggedByMealId.get(meal.id)!, today)
+          : null,
       };
     });
 
-    const picks = pickForWindows({ states, targets, candidates, maxPrepMinutes });
+    const rulesPicks = pickForWindows({ states, targets, candidates, maxPrepMinutes });
+
+    // The identity of this plan-state: same open windows, same targets, same
+    // candidate set → same AI question, so a cached answer still applies.
+    // Anything that changes the question (a log, a miss, fresh sources)
+    // changes the string and triggers exactly one new ask.
+    const aiSignature = [
+      targets.map((t) => `${t.windowId}=${t.targetCalories}/${t.targetProtein}`).join("|"),
+      candidates.map((c) => c.mealId).sort().join(","),
+    ].join("::");
+
+    // Merge the AI tier over rules when its answer matches this exact
+    // plan-state; otherwise rules stand (and the effect below re-asks).
+    const aiFresh = aiResult !== null && aiResult.signature === aiSignature;
+    const picks = aiFresh
+      ? mergeAiPicks({
+          states,
+          targets,
+          candidates,
+          rulesPicks,
+          ai: aiResult.assignments,
+          maxPrepMinutes,
+        })
+      : rulesPicks;
+
+    const aiRequest =
+      targets.length > 0 && candidates.length > 0
+        ? {
+            windows: states
+              .filter((s) => s.status === "live" || s.status === "upcoming")
+              .map((s) => {
+                const t = targets.find((x) => x.windowId === s.window.id);
+                return {
+                  windowId: s.window.id,
+                  label: s.window.label,
+                  mealType: s.window.mealType,
+                  targetCalories: t?.targetCalories ?? 0,
+                  targetProtein: t?.targetProtein ?? 0,
+                };
+              }),
+            candidates: candidates.map((c) => ({
+              mealId: c.mealId,
+              name: c.name,
+              calories: Math.round(c.calories),
+              protein: Math.round(c.protein),
+              prepMinutes: c.prepMinutes,
+              score: Math.round(c.score),
+              mealType: c.mealType,
+              assemblable: c.assemblable,
+              expiresInDays: c.rescueSoonestDays,
+              lastLoggedDaysAgo: c.lastLoggedDaysAgo ?? null,
+            })),
+          }
+        : null;
 
     const windowStart = hhmm(profile.water_window_start);
     const windowEnd = hhmm(profile.water_window_end);
@@ -404,8 +479,39 @@ export function useFuelPlan(
       goals,
       dayTotals,
       computedAt: now,
+      aiApplied: aiFresh,
+      aiSignature,
+      aiRequest,
     };
-  }, [sources, dayLogs, viewingToday]);
+  }, [sources, dayLogs, viewingToday, aiResult]);
+
+  // The AI tier, asked at events only: whenever the plan-state signature
+  // changes (a log, a miss crossing a window edge at recompute, fresh
+  // sources), and never twice for the same question. Failure is silent by
+  // design — the rules picks are already on screen and stay there.
+  useEffect(() => {
+    if (!model || !viewingToday) return;
+    const { aiSignature: sig, aiRequest } = model;
+    if (!sig || !aiRequest || model.aiApplied) return;
+    if (aiInFlightRef.current === sig) return;
+    aiInFlightRef.current = sig;
+    (async () => {
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke("fuel-plan", {
+          body: aiRequest,
+        });
+        if (fnError) throw fnError;
+        const assignments = (Array.isArray(data?.picks) ? data.picks : []) as AiAssignment[];
+        // Publish even an empty answer: it marks the question as asked, so a
+        // model that genuinely assigns nothing doesn't get re-asked forever.
+        setAiResult({ signature: sig, assignments });
+      } catch (e) {
+        console.error("useFuelPlan ai:", e);
+      } finally {
+        if (aiInFlightRef.current === sig) aiInFlightRef.current = null;
+      }
+    })();
+  }, [model, viewingToday]);
 
   return { model, loading, error, refetch: load };
 }

@@ -125,7 +125,7 @@ function SuggestionRow({
           </View>
         </View>
         {pick.reasons.length > 0 && (
-          <Text style={s.reasons} numberOfLines={2}>
+          <Text style={s.reasons} numberOfLines={3}>
             {pick.reasons.join(" · ")}
           </Text>
         )}

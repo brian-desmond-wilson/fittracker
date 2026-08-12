@@ -5,6 +5,7 @@ import {
   DEFAULT_BUDGET_WEIGHTS,
   fuelVerdict,
   LEGACY_WINDOW_SPAN_MIN,
+  mergeAiPicks,
   pickForWindows,
   planProjection,
   portionFactor,
@@ -350,6 +351,76 @@ describe("pickForWindows", () => {
     });
     expect(picks[0].portion).toBe(1.35); // 1200/900 = 1.33, nearest kitchen step up
     expect(picks[0].reasons.join(" ")).toContain("portion 1.35× to close the gap");
+  });
+});
+
+// -- AI merge ---------------------------------------------------------------
+
+describe("mergeAiPicks", () => {
+  const states = windowStates(DAY, attributeLogs([log()], DAY), 11 * 60);
+  const targets = windowTargets({
+    states, goalCalories: 2300, goalProtein: 160,
+    consumedCalories: 440, consumedProtein: 24,
+  });
+  const candidates = [
+    cand({ mealId: "pasta", name: "Pasta", mealType: "lunch" }),
+    cand({ mealId: "bowl", name: "Bowl", mealType: "dinner", calories: 990 }),
+    cand({ mealId: "slow", name: "Slow", prepMinutes: 30 }),
+  ];
+  const rulesPicks = pickForWindows({ states, targets, candidates, maxPrepMinutes: 5 });
+
+  it("honors a valid assignment and carries the model's sentence", () => {
+    const merged = mergeAiPicks({
+      states, targets, candidates, rulesPicks,
+      ai: [{ windowId: "w-lunch", mealId: "bowl", reason: "protein now beats protein at nine" }],
+      maxPrepMinutes: 5,
+    });
+    const lunch = merged.find((p) => p.windowId === "w-lunch");
+    expect(lunch?.mealId).toBe("bowl");
+    expect(lunch?.reasons[0]).toBe("protein now beats protein at nine");
+    // Bowl is taken, so dinner falls back to a different rules-consistent meal.
+    const dinner = merged.find((p) => p.windowId === "w-dinner");
+    expect(dinner?.mealId).not.toBe("bowl");
+  });
+
+  it("an unknown meal id falls back to the rules pick", () => {
+    const merged = mergeAiPicks({
+      states, targets, candidates, rulesPicks,
+      ai: [{ windowId: "w-lunch", mealId: "ghost", reason: null }],
+      maxPrepMinutes: 5,
+    });
+    expect(merged.find((p) => p.windowId === "w-lunch")?.mealId).toBe(
+      rulesPicks.find((p) => p.windowId === "w-lunch")?.mealId,
+    );
+  });
+
+  it("the live-window prep gate outranks the model", () => {
+    const liveStates = windowStates(DAY, attributeLogs([log()], DAY), 12.5 * 60);
+    const liveTargets = windowTargets({
+      states: liveStates, goalCalories: 2300, goalProtein: 160,
+      consumedCalories: 440, consumedProtein: 24,
+    });
+    const liveRules = pickForWindows({
+      states: liveStates, targets: liveTargets, candidates, maxPrepMinutes: 5,
+    });
+    const merged = mergeAiPicks({
+      states: liveStates, targets: liveTargets, candidates, rulesPicks: liveRules,
+      ai: [{ windowId: "w-lunch", mealId: "slow", reason: "worth the wait" }],
+      maxPrepMinutes: 5,
+    });
+    expect(merged.find((p) => p.windowId === "w-lunch")?.mealId).not.toBe("slow");
+  });
+
+  it("portions stay rules-owned even on AI picks", () => {
+    const bigTargets = [{ windowId: "w-dinner", targetCalories: 1400, targetProtein: 80 }];
+    const dinnerStates = windowStates([DAY[2]], [], 17 * 60);
+    const merged = mergeAiPicks({
+      states: dinnerStates, targets: bigTargets, candidates,
+      rulesPicks: [],
+      ai: [{ windowId: "w-dinner", mealId: "bowl", reason: null }],
+      maxPrepMinutes: 5,
+    });
+    expect(merged[0].portion).toBe(1.4); // 1400/990 → 1.414 → nearest 0.05 down
   });
 });
 
