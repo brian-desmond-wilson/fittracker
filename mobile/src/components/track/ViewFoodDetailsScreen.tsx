@@ -26,6 +26,7 @@ import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tok
 import { Badge, Button, Card } from "@/src/components/ui";
 import { ItemActionsSheet, type ItemAction } from "./ItemActionsSheet";
 import { NutritionFactsCard } from "./NutritionFactsCard";
+import { ImageLightbox } from "./ImageLightbox";
 import { buildNutritionLabel } from "@/src/lib/nutritionLabel";
 import {
   consumeOneUnit,
@@ -87,6 +88,8 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
   const [ctx, setCtx] = useState<ItemDetailContext | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const addingToList = useRef(false);
 
   // Card flip. Two faces stacked in the same box, each hiding its own back,
@@ -448,13 +451,25 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   style={styles.imageCarousel}
                 >
                   {images.map((imageUrl, index) => (
-                    <View key={index} style={styles.imageContainer}>
+                    // The well is deliberately small — a white band must not
+                    // flood a dark theme — but too small to read a packet.
+                    // Tapping opens the photo full size. activeOpacity 1: the
+                    // carousel still pages, and a flash on every swipe would
+                    // read as a mis-tap.
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.imageContainer}
+                      activeOpacity={1}
+                      onPress={() => { setLightboxIndex(index); setLightboxOpen(true); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View photo ${index + 1} full screen`}
+                    >
                       <Image
                         source={{ uri: imageUrl }}
                         style={styles.productImage}
                         resizeMode="contain"
                       />
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </ScrollView>
 
@@ -770,6 +785,13 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
           <NutritionFactsCard item={item} corner={flipButton} />
         </Animated.View>
         </View>
+
+        <ImageLightbox
+          visible={lightboxOpen}
+          images={images}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxOpen(false)}
+        />
 
         <ItemActionsSheet
           visible={showMore}
