@@ -161,6 +161,56 @@ function localMinutes(iso: string): number {
 }
 
 /**
+ * Ask the AI tier, with ONE retry.
+ *
+ * The retry is not optimism, it is a specific race: the call takes several
+ * seconds, and a Supabase access token that expires mid-flight (or a session
+ * still being restored on a cold start) comes back as a flat 401 that a
+ * second attempt, with the refreshed token supabase-js now holds, simply
+ * succeeds at. One retry only — a genuinely failing function must be allowed
+ * to fail rather than be hammered while the user waits on rules picks that
+ * are already correct.
+ */
+const AI_RETRY_DELAY_MS = 1_200;
+
+async function askFuelPlan(body: object): Promise<AiAssignment[]> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, AI_RETRY_DELAY_MS));
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("fuel-plan", { body });
+      if (fnError) throw fnError;
+      return (Array.isArray(data?.picks) ? data.picks : []) as AiAssignment[];
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * `FunctionsHttpError` carries the whole `Response` on `.context` and puts
+ * nothing useful in `.message`, so the default log is the string
+ * "FunctionsHttpError: Edge Function returned a non-2xx status code" and no
+ * indication of WHICH non-2xx. This reads the status and the body out.
+ */
+async function describeFnError(e: unknown): Promise<string> {
+  const ctx = (e as { context?: unknown })?.context;
+  if (ctx && typeof ctx === "object" && "status" in ctx) {
+    const res = ctx as Response;
+    let body = "";
+    try {
+      body = (await res.text()).slice(0, 200);
+    } catch {
+      // A body can only be read once; if something already consumed it the
+      // status alone is still worth reporting.
+    }
+    return `HTTP ${res.status}${body ? ` — ${body}` : ""}`;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+/**
  * @param dayLogs   The viewed day's `meal_logs`, already fetched and kept
  *                  fresh by the screen. Order does not matter.
  * @param viewingToday  Past days get receipts only: no picks, no ghosts.
@@ -513,16 +563,17 @@ export function useFuelPlan(
     aiInFlightRef.current = sig;
     (async () => {
       try {
-        const { data, error: fnError } = await supabase.functions.invoke("fuel-plan", {
-          body: aiRequest,
-        });
-        if (fnError) throw fnError;
-        const assignments = (Array.isArray(data?.picks) ? data.picks : []) as AiAssignment[];
+        const assignments = await askFuelPlan(aiRequest);
         // Publish even an empty answer: it marks the question as asked, so a
         // model that genuinely assigns nothing doesn't get re-asked forever.
         setAiResult({ signature: sig, assignments });
       } catch (e) {
-        console.error("useFuelPlan ai:", e);
+        // WARN, not error: the rules picks are already on screen and stay
+        // there, so this is a missed upgrade rather than a broken page — and
+        // a red dev banner over a working plan misreports that. The status
+        // and body are read out of the response because "FunctionsHttpError"
+        // alone says nothing about which failure this was.
+        console.warn("useFuelPlan: AI picks unavailable, keeping rules picks.", await describeFnError(e));
       } finally {
         if (aiInFlightRef.current === sig) aiInFlightRef.current = null;
       }

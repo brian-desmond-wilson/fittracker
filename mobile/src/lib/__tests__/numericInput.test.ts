@@ -1,4 +1,31 @@
-import { sanitizeInteger, sanitizeDecimal } from "../numericInput";
+import { sanitizeInteger, sanitizeDecimal, nudgeOnGrid } from "../numericInput";
+
+describe("nudgeOnGrid", () => {
+  it("with step 1 it simply adds and subtracts", () => {
+    expect(nudgeOnGrid(3, 1)).toBe(4);
+    expect(nudgeOnGrid(3, -1)).toBe(2);
+  });
+
+  it("clamps at the floor and the ceiling", () => {
+    expect(nudgeOnGrid(0, -1)).toBe(0);
+    expect(nudgeOnGrid(100, 1, { step: 5, max: 100 })).toBe(100);
+    expect(nudgeOnGrid(0, -1, { step: 5, max: 100 })).toBe(0);
+  });
+
+  it("snaps an off-grid value onto the grid instead of carrying its offset", () => {
+    expect(nudgeOnGrid(83, 1, { step: 5, max: 100 })).toBe(85);
+    expect(nudgeOnGrid(83, -1, { step: 5, max: 100 })).toBe(80);
+  });
+
+  it("steps by the step once on the grid", () => {
+    expect(nudgeOnGrid(100, -1, { step: 5, max: 100 })).toBe(95);
+    expect(nudgeOnGrid(95, 1, { step: 5, max: 100 })).toBe(100);
+  });
+
+  it("a non-numeric value starts from the floor", () => {
+    expect(nudgeOnGrid(NaN, 1, { step: 5, min: 10 })).toBe(15);
+  });
+});
 
 describe("sanitizeInteger", () => {
   it("keeps digits and drops everything else", () => {

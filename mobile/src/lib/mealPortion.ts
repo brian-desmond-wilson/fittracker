@@ -56,16 +56,6 @@ export function clampPercent(pct: number): number {
   return Math.max(0, Math.min(PORTION_MAX, Math.round(pct)));
 }
 
-/** Step down/up, snapped to the step grid so repeated taps stay on round
- *  numbers even when the stored value started off-grid (an 85% from a
- *  previous version of the control, say). */
-export function stepPercent(pct: number, direction: 1 | -1): number {
-  const snapped = direction > 0
-    ? Math.floor(pct / PORTION_STEP) * PORTION_STEP + PORTION_STEP
-    : Math.ceil(pct / PORTION_STEP) * PORTION_STEP - PORTION_STEP;
-  return clampPercent(snapped);
-}
-
 /**
  * The 100% amounts, recovered from what is stored.
  *

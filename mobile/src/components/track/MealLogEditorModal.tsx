@@ -30,14 +30,16 @@ import {
   baseMacros,
   clampPercent,
   isDeletion,
+  PORTION_MAX,
   PORTION_PRESETS,
+  PORTION_STEP,
   portionImpactLine,
   portionPercentOf,
   scaleMacros,
   servingsForPercent,
-  stepPercent,
   type PortionMacros,
 } from "@/src/lib/mealPortion";
+import { NumberStepper } from "./edit/NumberStepper";
 
 export interface MealLogEdit extends PortionMacros {
   name: string;
@@ -293,26 +295,18 @@ export function MealLogEditorModal({
               })}
             </View>
 
-            <View style={styles.stepperRow}>
-              <TouchableOpacity
-                style={styles.stepButton}
-                onPress={() => setPercent((p) => stepPercent(p, -1))}
-                disabled={saving || percent === 0}
-                accessibilityRole="button"
-                accessibilityLabel="Less"
-              >
-                <Text style={styles.stepGlyph}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.percentValue}>{clampPercent(percent)}%</Text>
-              <TouchableOpacity
-                style={styles.stepButton}
-                onPress={() => setPercent((p) => stepPercent(p, 1))}
-                disabled={saving || percent >= 100}
-                accessibilityRole="button"
-                accessibilityLabel="More"
-              >
-                <Text style={styles.stepGlyph}>＋</Text>
-              </TouchableOpacity>
+            {/* The same stepper Food Inventory uses for quantity — one
+                component, so the two screens can't drift apart. */}
+            <View style={styles.stepperWrap}>
+              <NumberStepper
+                value={String(clampPercent(percent))}
+                onChange={(next) => setPercent(next === "" ? 0 : clampPercent(Number(next)))}
+                min={0}
+                max={PORTION_MAX}
+                step={PORTION_STEP}
+                suffix="%"
+                label="portion percentage"
+              />
             </View>
 
             {/* Derived, never typed — with the original struck through beside
@@ -337,31 +331,13 @@ export function MealLogEditorModal({
             <Text style={styles.label}>Eaten at</Text>
             <TouchableOpacity
               style={styles.input}
-              onPress={() => setShowTimePicker((v) => !v)}
+              onPress={() => setShowTimePicker(true)}
               disabled={saving}
               accessibilityRole="button"
               accessibilityLabel={`Eaten at ${fmtClock(loggedAt)}`}
             >
               <Text style={styles.inputText}>{fmtClock(loggedAt)}</Text>
             </TouchableOpacity>
-            {/* Inline, not a nested modal — stacked modals on iOS fight over
-                the presentation layer. */}
-            {showTimePicker && (
-              <DateTimePicker
-                value={loggedAt}
-                mode="time"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={(_e, picked) => {
-                  if (Platform.OS !== "ios") setShowTimePicker(false);
-                  if (!picked) return;
-                  // Keep the log's own date; only the clock time moves.
-                  const next = new Date(loggedAt);
-                  next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
-                  setLoggedAt(next);
-                }}
-                textColor={colors.text}
-              />
-            )}
 
             {showExact && (
               <>
@@ -441,6 +417,40 @@ export function MealLogEditorModal({
             </TouchableOpacity>
           )}
         </Card>
+
+        {/* Time picker as a bottom action sheet. Rendered INSIDE this modal
+            rather than as a second `Modal`: nesting modals on iOS makes the
+            two fight over the presentation layer, and the sheet has to sit
+            over the card it belongs to anyway. */}
+        {showTimePicker && (
+          <>
+            <TouchableOpacity
+              style={styles.sheetScrim}
+              activeOpacity={1}
+              onPress={() => setShowTimePicker(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close the time picker"
+            />
+            <View style={styles.timeSheet}>
+              <Text style={styles.timeSheetTitle}>Eaten at</Text>
+              <DateTimePicker
+                value={loggedAt}
+                mode="time"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_e, picked) => {
+                  if (Platform.OS !== "ios") setShowTimePicker(false);
+                  if (!picked) return;
+                  // Keep the log's own date; only the clock time moves.
+                  const next = new Date(loggedAt);
+                  next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+                  setLoggedAt(next);
+                }}
+                textColor={colors.text}
+              />
+              <Button label="Done" onPress={() => setShowTimePicker(false)} fluid />
+            </View>
+          </>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -488,22 +498,25 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: spacing.md },
   halfField: { flex: 1 },
 
-  // Rule 21, segmented control: surface2 track, brand fill on the active one.
-  // 12pt labels and a 2pt gutter are what let five segments hold one line at
-  // 393pt; below that the labels ellipsize rather than the targets shrinking.
+  // Same segmented control as Edit Product's Location, down to the pill
+  // radius and the bordered trough — copied deliberately so the two screens
+  // read as one app. Only the label size differs: five segments where that
+  // one has four, so 12pt is what holds a single line at 393pt.
   segTrack: {
     flexDirection: "row",
     backgroundColor: colors.surface2,
-    borderRadius: radii.control,
-    padding: spacing.xs / 2,
-    gap: spacing.xs / 2,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xs,
   },
   segment: {
     flex: 1,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: 2,
-    borderRadius: radii.control - 2,
     alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    paddingHorizontal: 2,
+    borderRadius: radii.pill,
   },
   segmentActive: { backgroundColor: colors.brand },
   segmentText: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
@@ -524,25 +537,7 @@ const styles = StyleSheet.create({
   presetText: { ...typography.buttonSm, color: colors.text },
   presetTextActive: { color: colors.brand },
 
-  stepperRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: spacing.md,
-  },
-  stepButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.control,
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepGlyph: { fontSize: 20, color: colors.text },
-  // Rule 17: the one dominant number this block is built around.
-  percentValue: { ...typography.titleRoot, color: colors.text },
+  stepperWrap: { marginTop: spacing.sm },
 
   derivedRow: {
     flexDirection: "row",
@@ -590,4 +585,23 @@ const styles = StyleSheet.create({
   actionButton: { flex: 1 },
   exactLink: { alignItems: "center", paddingTop: spacing.md, paddingBottom: spacing.xs },
   exactLinkText: { ...typography.buttonSm, color: colors.brand },
+
+  // Bottom action sheet for the time picker. Absolute inside the modal root,
+  // so it covers the card without a second Modal.
+  sheetScrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: colors.scrim },
+  timeSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    borderTopLeftRadius: radii.panel,
+    borderTopRightRadius: radii.panel,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
+  },
+  timeSheetTitle: { ...typography.titleBar, color: colors.text, textAlign: "center" },
 });

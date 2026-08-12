@@ -7,7 +7,6 @@ import {
   portionPercentOf,
   scaleMacros,
   servingsForPercent,
-  stepPercent,
   type PortionMacros,
 } from "../mealPortion";
 
@@ -80,23 +79,13 @@ describe("baseMacros / scaleMacros", () => {
   });
 });
 
-describe("clampPercent / stepPercent", () => {
+describe("clampPercent", () => {
   it("cannot exceed all of it, or go below none", () => {
     expect(clampPercent(140)).toBe(PORTION_MAX);
     expect(clampPercent(-20)).toBe(0);
   });
-
-  it("steps on the grid", () => {
-    expect(stepPercent(100, -1)).toBe(95);
-    expect(stepPercent(95, 1)).toBe(100);
-    expect(stepPercent(100, 1)).toBe(100);
-    expect(stepPercent(0, -1)).toBe(0);
-  });
-
-  it("an off-grid value snaps onto the grid rather than staying off it", () => {
-    expect(stepPercent(83, 1)).toBe(85);
-    expect(stepPercent(83, -1)).toBe(80);
-  });
+  // Stepping is `nudgeOnGrid` in numericInput, shared with the quantity
+  // steppers and covered by that file's tests.
 });
 
 describe("servingsForPercent", () => {
