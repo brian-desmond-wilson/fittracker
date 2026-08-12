@@ -80,7 +80,9 @@ export function FuelVerdictStrip({
   computedAt,
 }: FuelVerdictStripProps) {
   return (
-    <Card variant="panel">
+    // This screen's elements each carry the gutter (no container owns it) —
+    // same as MealsNutritionCard beside it in the past-day branch.
+    <Card variant="panel" style={s.gutter}>
       <View style={s.headRow}>
         <Badge
           tone={TONE_FOR[verdict.tone]}
@@ -124,6 +126,7 @@ export function FuelVerdictStrip({
 }
 
 const s = StyleSheet.create({
+  gutter: { marginHorizontal: spacing.screenGutter },
   headRow: {
     flexDirection: "row",
     alignItems: "center",
