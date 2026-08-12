@@ -15,6 +15,9 @@ import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
 import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { addSuggestions } from "@/src/lib/supabase/shopping";
 import { matchesQuery } from "@/src/lib/mealSearch";
+import { shouldRetire } from "@/src/lib/mealRetirement";
+import { daysBetweenLocalDates } from "@/src/lib/stockState";
+import { getLocalDateString } from "@/src/lib/dates";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import {
   computeMealTotals, createMeal, createUserLink, deleteMeal,
@@ -203,10 +206,44 @@ export function MealLibraryModal({
     return map;
   }, [data]);
 
+  // C1. A rotating delivery menu adds a permanent one-item meal per dish —
+  // about eight a week — so the library doubles roughly monthly with dishes
+  // that may never return, diluting every screen that is about deciding what
+  // to eat. Retired meals are HIDDEN, never deleted: you ate them, their logs
+  // point at them, and a favourite comes back next season. Stock returning
+  // un-retires a meal on its own, with no state to keep in sync.
+  const retiredIds = useMemo(() => {
+    const out = new Set<string>();
+    if (!data) return out;
+    const today = getLocalDateString();
+    for (const meal of data.meals) {
+      const lastLogged = data.lastLoggedByMealId.get(meal.id) ?? null;
+      out.add(meal.id);
+      if (!shouldRetire({
+        isCompletePortion: meal.is_complete_portion ?? false,
+        // For a one-item prepared meal, "assemblable" IS "a unit is in the
+        // kitchen" — the verdict is already computed, so no second stock read.
+        totalQuantity: assemblabilityById.get(meal.id)?.assemblable ? 1 : 0,
+        daysSinceLastLogged: lastLogged
+          ? daysBetweenLocalDates(lastLogged, today)
+          : null,
+        daysSinceCreated: daysBetweenLocalDates(
+          getLocalDateString(new Date(meal.created_at)),
+          today,
+        ),
+      })) {
+        out.delete(meal.id);
+      }
+    }
+    return out;
+  }, [data, assemblabilityById]);
+
   const sections = useMemo(() => {
     if (!data) return [];
     return CATEGORY_SECTION_ORDER.map((category) => {
-      let meals = data.meals.filter((m) => m.category === category);
+      let meals = data.meals.filter(
+        (m) => m.category === category && !retiredIds.has(m.id),
+      );
       // Composes with the category split rather than replacing it: each
       // section is narrowed in place, and `.filter((s) => s.data.length > 0)`
       // below then drops any section left empty — so a category with no
@@ -247,7 +284,7 @@ export function MealLibraryModal({
       }
       return { category, data: meals };
     }).filter((s) => s.data.length > 0);
-  }, [data, inStockOnly, query, assemblabilityById, scores]);
+  }, [data, inStockOnly, query, assemblabilityById, scores, retiredIds]);
 
   const remaining =
     data?.targetCalories != null && dayCalories != null

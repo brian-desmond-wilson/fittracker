@@ -46,6 +46,10 @@ export interface MealLibraryData {
   inventory: AssemblabilityInventoryRow[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
+  /** C1: meal id → the most recent local date it was logged on. Absent means
+   *  never. Drives retirement, which is what stops a rotating delivery menu
+   *  burying the meals you actually assembled. */
+  lastLoggedByMealId: Map<string, string>;
   /** nutrition_constraints.max_prep_minutes — the budget the recommender
    *  filters on. Carried here so the library can SAY that a meal is over it
    *  (C7) instead of the meal silently never being suggested. */
@@ -114,7 +118,7 @@ export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibrar
 }
 
 async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
-  const [meals, items, concepts, links, inventory, profile, constraints] = await Promise.all([
+  const [meals, items, concepts, links, inventory, profile, constraints, logs] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     supabase
       .from("meal_items")
@@ -136,8 +140,10 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     // Same single-row reasoning as profiles: `nutrition_constraints` is
     // unique on user_id and its RLS select policy is owner-only.
     supabase.from("nutrition_constraints").select("max_prep_minutes").maybeSingle(),
+    // C1. Only rows that name a meal — a free-typed log has nothing to date.
+    supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null),
   ]);
-  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error]
+  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));
@@ -227,6 +233,14 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     ),
     conceptIdsBySavedFoodId,
     inventory: resolutionInventory,
+    // Max per meal. String comparison is sound and cheap here: these are
+    // YYYY-MM-DD, which sorts lexicographically exactly as it sorts by date.
+    lastLoggedByMealId: ((logs.data ?? []) as Array<{ meal_id: string; date: string }>)
+      .reduce((acc, r) => {
+        const prev = acc.get(r.meal_id);
+        if (!prev || r.date > prev) acc.set(r.meal_id, r.date);
+        return acc;
+      }, new Map<string, string>()),
     maxPrepMinutes:
       (constraints.data as { max_prep_minutes: number } | null)
         ?.max_prep_minutes ?? DEFAULT_MAX_PREP_MINUTES,
