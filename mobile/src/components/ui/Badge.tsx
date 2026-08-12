@@ -15,11 +15,27 @@ const toneColor = (tone: BadgeTone): string => {
   }
 };
 
-export function Badge({ label, tone }: { label: string; tone: BadgeTone }) {
+export function Badge({
+  label,
+  tone,
+  suffix,
+}: {
+  label: string;
+  tone: BadgeTone;
+  /**
+   * Quiet trailing text inside the same pill — a unit or a scale ("/100"),
+   * not a second label. Smaller and dimmer so the value still reads first,
+   * and nested so it inherits the tone colour rather than picking its own.
+   */
+  suffix?: string;
+}) {
   const c = toneColor(tone);
   return (
     <View style={[styles.pill, { backgroundColor: tint(c) }]}>
-      <Text style={[styles.label, { color: c }]}>{label}</Text>
+      <Text style={[styles.label, { color: c }]}>
+        {label}
+        {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
+      </Text>
     </View>
   );
 }
@@ -30,4 +46,5 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   label: { fontSize: 12, fontWeight: "600" },
+  suffix: { fontSize: 10, fontWeight: "500", opacity: 0.6 },
 });

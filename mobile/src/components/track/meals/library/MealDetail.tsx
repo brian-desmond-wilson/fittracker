@@ -56,7 +56,7 @@ export function MealDetail({
       <Card variant="row" style={lib.cardSpacing}>
         <View style={lib.rowBetween}>
           <Text style={lib.mealName}>{meal.name}</Text>
-          <Badge label={String(score.score)} tone={scoreTone(score.score)} />
+          <Badge label={String(score.score)} suffix="/100" tone={scoreTone(score.score)} />
         </View>
         <Text style={[lib.mutedText, { marginTop: spacing.xs }]}>
           {Math.round(totals.calories)} cal · {Math.round(totals.protein)}g protein · {meal.prep_minutes} min
@@ -98,12 +98,11 @@ export function MealDetail({
           </Text>
         )}
         {/* Gated on the LIST, not on the `assemblable` verdict. They are not
-            the same predicate: `assemblable` is
-            `items.length > 0 && missing.length === 0`, so an item-less meal
-            is not-assemblable with an EMPTY missing list and the verdict gate
-            renders a bare "Missing:" with nothing after it. Item-less meals
-            are a live state — `updateMeal`'s non-atomic replace documents
-            leaving one behind. */}
+            the same predicate: a meal can be un-assemblable with an EMPTY
+            `missing` list — an item-less one (`updateMeal`'s non-atomic
+            replace documents leaving those behind), or since C4 one held back
+            only by unlinked ingredients — and the verdict gate would render a
+            bare "Missing:" with nothing after it. */}
         {assemblability && assemblability.missing.length > 0 && (
           <Text style={[lib.smallMuted, lib.warnText, { marginTop: spacing.sm }]}>
             Missing: {assemblability.missing.join(", ")}

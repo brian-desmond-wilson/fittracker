@@ -31,7 +31,7 @@ export const MealRow = React.memo(function MealRow({
     <Card variant="row" style={lib.cardSpacing} onPress={() => onPress(meal)}>
       <View style={lib.rowBetween}>
         <Text style={lib.mealName} numberOfLines={1}>{meal.name}</Text>
-        <Badge label={String(score.score)} tone={scoreTone(score.score)} />
+        <Badge label={String(score.score)} suffix="/100" tone={scoreTone(score.score)} />
       </View>
       <View style={[lib.row, { marginTop: spacing.sm, gap: spacing.sm, flexWrap: "wrap" }]}>
         <Text style={lib.mutedText}>

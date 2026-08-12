@@ -194,7 +194,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         <Text style={styles.statsText} numberOfLines={1}>
           {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
         </Text>
-        <Badge label={String(top.score)} tone={scoreTone(top.score)} />
+        <Badge label={String(top.score)} suffix="/100" tone={scoreTone(top.score)} />
       </View>
       {showMessage && <Text style={styles.mutedText}>{result.message}</Text>}
     </Card>
