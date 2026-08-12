@@ -34,6 +34,9 @@ export interface FoodInventoryItem {
   total_restock_threshold: number | null;
   created_at: string;
   updated_at: string;
+  /** D6 freshness signal: the last time a verb attested this row is real.
+   *  Nullable for rows written before the column landed. */
+  last_verified_at: string | null;
 }
 
 export interface FoodInventoryLocation {
