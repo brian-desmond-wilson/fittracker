@@ -1,11 +1,13 @@
 // mobile/src/components/track/meals/library/MealRow.tsx
 import React from "react";
-import { Text, View } from "react-native";
+import { Image, Text, View } from "react-native";
 import type { MealTotals, MealWithItems } from "@/src/types/meal-library";
 import { ROLE_LABELS } from "@/src/types/meal-library";
 import type { BrianScoreResult } from "@/src/lib/mealScore";
 import type { MealAssemblability } from "@/src/lib/stockState";
 import { prepBudgetLabel, prepBudgetVerdict } from "@/src/lib/eatNext";
+import { mealFaceUrl } from "@/src/lib/mealFace";
+import { monogram } from "@/src/lib/vendorMonogram";
 import { spacing } from "@/src/theme/tokens";
 import { Badge, Card } from "@/src/components/ui";
 import { lib, scoreTone } from "./styles";
@@ -38,10 +40,30 @@ export const MealRow = React.memo(function MealRow({
   const prepNote = prepBudgetLabel(meal.prep_minutes, maxPrepMinutes);
   const prepExcluded =
     prepBudgetVerdict(meal.prep_minutes, maxPrepMinutes) === "excluded";
+  // C5. A meal has no picture of its own and should not — it is an assembly,
+  // and its identity is its parts — so it borrows the one from its biggest
+  // contributor. Falls back to initials rather than a shared glyph, the same
+  // way the quick-add tiles do.
+  const faceUrl = mealFaceUrl(
+    meal.items.map((it) => ({
+      displayOrder: it.display_order,
+      imageUrl: it.savedFood.image_primary_url,
+      calories: (it.savedFood.calories ?? 0) * it.servings,
+    })),
+  );
   return (
     <Card variant="row" style={lib.cardSpacing} onPress={() => onPress(meal)}>
       <View style={lib.rowBetween}>
-        <Text style={lib.mealName} numberOfLines={1}>{meal.name}</Text>
+        <View style={lib.faceRow}>
+          <View style={lib.face}>
+            {faceUrl ? (
+              <Image source={{ uri: faceUrl }} style={lib.faceImage} resizeMode="cover" />
+            ) : (
+              <Text style={lib.faceMonogram}>{monogram(meal.name)}</Text>
+            )}
+          </View>
+          <Text style={lib.mealName} numberOfLines={1}>{meal.name}</Text>
+        </View>
         <Badge label={String(score.score)} suffix="/100" tone={scoreTone(score.score)} />
       </View>
       <View style={[lib.row, { marginTop: spacing.sm, gap: spacing.sm, flexWrap: "wrap" }]}>

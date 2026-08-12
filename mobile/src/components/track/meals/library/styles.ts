@@ -43,6 +43,18 @@ export const lib = StyleSheet.create({
     justifyContent: "space-between",
   },
   mealName: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
+  // C5. The thumbnail and the name are one unit that shrinks together, so a
+  // long meal name truncates instead of pushing the score badge off the row.
+  faceRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1,
+  },
+  face: {
+    width: 36, height: 36, borderRadius: radii.control,
+    backgroundColor: colors.surface2,
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  faceImage: { width: "100%", height: "100%" },
+  faceMonogram: { ...typography.caption, fontWeight: "700", color: colors.textFaint },
   mutedText: { ...typography.body, color: colors.textMuted },
   smallMuted: { ...typography.caption, color: colors.textFaint },
   bodyText: { ...typography.body, color: colors.text },
