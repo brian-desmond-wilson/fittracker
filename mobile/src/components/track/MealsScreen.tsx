@@ -91,7 +91,7 @@ import {
   InventoryMatchSummary,
 } from "@/src/services/foodInventoryMatchService";
 import { Share } from "react-native";
-import { styles } from "./meals/mealsScreenStyles";
+import { SLIM_BAR_HEIGHT, styles } from "./meals/mealsScreenStyles";
 import {
   getLocalDateString,
   formatViewingDate,
@@ -237,6 +237,54 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // The bottom chip row's Search chip focuses this instead of duplicating a
   // second search field.
   const searchInputRef = useRef<TextInput>(null);
+
+  // Collapsing header, the same mechanism Food Inventory uses: the search row
+  // and the title slide up under a condensed bar as you scroll, handing their
+  // space to the day. Transform only, never height — `useNativeDriver` cannot
+  // animate height, and a JS-driven height on a scrolling list is where jank
+  // comes from. The scroller translates by the same amount and is extended
+  // past the bottom edge by that distance, so it gains real estate rather
+  // than dragging a gap up behind it.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
+  const [collapsibleHeight, setCollapsibleHeight] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const collapseDistance = Math.max(0, collapsibleHeight - SLIM_BAR_HEIGHT);
+  const headerTranslate = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [0, collapseDistance],
+        outputRange: [0, -collapseDistance],
+        extrapolate: "clamp",
+      })
+    : 0;
+  // Fades in over the back half of the travel, so the condensed bar arrives
+  // just as the rows it replaces finish disappearing behind it.
+  const slimBarOpacity = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [collapseDistance / 2, collapseDistance],
+        outputRange: [0, 1],
+        extrapolate: "clamp",
+      })
+    : 0;
+
+  // The bar must not swallow taps while it is invisible. One boolean flipped
+  // at the threshold — not a per-frame state update.
+  useEffect(() => {
+    if (collapseDistance <= 0) return;
+    const id = scrollY.addListener(({ value }) => {
+      const next = value >= collapseDistance - 1;
+      setCollapsed((prev) => (prev === next ? prev : next));
+    });
+    return () => scrollY.removeListener(id);
+  }, [collapseDistance, scrollY]);
+
+  // Search lives in the row that scrolls away, so the condensed bar's search
+  // icon brings it back rather than duplicating the field.
+  const openSearch = () => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    setTimeout(() => searchInputRef.current?.focus(), 300);
+  };
 
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
@@ -1454,6 +1502,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* The two rows that stand down while you scroll. */}
+        <Animated.View
+          onLayout={(e) => setCollapsibleHeight(e.nativeEvent.layout.height)}
+          style={{ transform: [{ translateY: headerTranslate }] }}
+        >
         {/* Header — back, search (with barcode), add — mirrors Food Inventory */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
@@ -1507,12 +1560,49 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           />
         </View>
 
+        {/* Title (Share moved here from header). Outside the scroller and
+            inside the collapsing group, so it folds into the condensed bar
+            rather than merely scrolling out of sight. */}
+        <View style={styles.titleContainer}>
+          <Utensils
+            size={icons.xl}
+            color={colors.accents.meals}
+            strokeWidth={icons.strokeWidth}
+          />
+          <Text style={styles.pageTitle}>Fuel</Text>
+          <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={exporting}
+            style={styles.titleShareButton}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Export this day as CSV"
+          >
+            <Share2
+              size={icons.lg}
+              color={exporting ? colors.textMuted : colors.text}
+            />
+          </TouchableOpacity>
+        </View>
+        </Animated.View>
+
         {/* App-drawn refresh indicator — the system spinner never renders in
             this app, so the primitive sits as a sibling above the scroll. */}
         <RefreshIndicator visible={refreshing} />
 
-        <ScrollView
-          style={styles.content}
+        {/* Rides up with the header. Extended below the screen edge by exactly
+            the collapse distance so the day gains that space. */}
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true },
+          )}
+          scrollEventThrottle={16}
+          style={[
+            styles.content,
+            { marginBottom: -collapseDistance, transform: [{ translateY: headerTranslate }] },
+          ]}
           showsVerticalScrollIndicator={false}
           // `flexGrow: 1` (with the matching grow on `mealsSection`) is what
           // lets the rail region's `EmptyState` — `flex: 1` — resolve to a
@@ -1531,27 +1621,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             />
           }
         >
-          {/* Title (Share moved here from header) */}
-          <View style={styles.titleContainer}>
-            <Utensils
-              size={icons.xl}
-              color={colors.accents.meals}
-              strokeWidth={icons.strokeWidth}
-            />
-            <Text style={styles.pageTitle}>Fuel</Text>
-            <TouchableOpacity
-              onPress={handleExportCsv}
-              disabled={exporting}
-              style={styles.titleShareButton}
-              activeOpacity={0.7}
-            >
-              <Share2
-                size={icons.lg}
-                color={exporting ? colors.textMuted : colors.text}
-              />
-            </TouchableOpacity>
-          </View>
-
           {/* Date Navigation - with swipe gesture */}
           <Animated.View
             style={{ transform: [{ translateX }] }}
@@ -1878,8 +1947,66 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                 )}
               </View>
             )}
-          </ScrollView>
+          </Animated.ScrollView>
       </View>
+
+      {/* Condensed bar. A sibling of the container, not a child, so top:0 is
+          the true top of the screen and it can own the safe-area inset itself.
+          Everything the scrolled-away rows offered is here. */}
+      <Animated.View
+        style={[styles.slimBar, { paddingTop: insets.top, opacity: slimBarOpacity }]}
+        pointerEvents={collapsed ? "auto" : "none"}
+      >
+        <View style={styles.slimBarRow}>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <ChevronLeft size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <Text style={styles.slimBarTitle} numberOfLines={1}>Fuel</Text>
+          <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={exporting}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Export this day as CSV"
+          >
+            <Share2
+              size={icons.md}
+              color={exporting ? colors.textMuted : colors.text}
+              strokeWidth={icons.strokeWidth}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={openSearch}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Search foods"
+          >
+            <Search size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setLibraryVisible(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Open your meal library"
+          >
+            <Utensils size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleOpenAddForm}
+            disabled={showAddForm}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Log a meal"
+          >
+            <Plus size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
 
       {/* Barcode Scanner Modal */}
       <BarcodeScannerModal

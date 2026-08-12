@@ -5,6 +5,11 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 // MealsScreen does NOT adopt `ui/Screen` (its ScrollView owns a RefreshControl),
 // so per the plan's gutter rule each top-level block carries the gutter itself,
 // uniformly at `spacing.screenGutter`.
+/** Height of the condensed bar the header folds into on scroll. Lives here
+ *  rather than in the screen because the style below needs it too; same value
+ *  as Food Inventory's, so the two screens condense alike. */
+export const SLIM_BAR_HEIGHT = 48;
+
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -246,6 +251,25 @@ export const styles = StyleSheet.create({
   distributionWrap: {
     marginHorizontal: spacing.screenGutter,
   },
+  /** The condensed bar the header folds into on scroll. Absolute and a
+   *  sibling of the container so `top: 0` is the true top of the screen. */
+  slimBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  slimBarRow: {
+    height: SLIM_BAR_HEIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    paddingHorizontal: spacing.screenGutter,
+  },
+  slimBarTitle: { ...typography.titleBar, color: colors.text, flex: 1 },
   /** The mock's bottom quick-add chips (＋ Meal · ＋ Snack · ＋ Dessert · Search). */
   quickChipsRow: {
     flexDirection: "row",
