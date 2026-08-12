@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,10 +11,11 @@ import {
   Image,
   LayoutAnimation,
   StatusBar,
+  type LayoutChangeEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Camera, Barcode, Trash2, Plus, ChevronDown, Circle, CheckCircle } from "lucide-react-native";
-import { colors, icons } from "@/src/theme/tokens";
+import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button } from "@/src/components/ui";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
@@ -580,10 +581,31 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     setLocationEntries(locationEntries.filter(entry => entry.id !== id));
   };
 
+  // Opening a section brings it to the top of the view, so the whole card is
+  // visible instead of hanging off the bottom edge.
+  //
+  // The scroll cannot happen here: this accordion opens one section at a time,
+  // so expanding a lower one collapses an upper one and every position below
+  // it moves. The target's own onLayout is the first moment its new position
+  // is known, so the request is recorded now and acted on there.
+  const scrollRef = useRef<ScrollView>(null);
+  const [pendingScrollTo, setPendingScrollTo] = useState<SectionKey | null>(null);
+
+  const onSectionLayout = (section: SectionKey) => (e: LayoutChangeEvent) => {
+    if (pendingScrollTo !== section) return;
+    const y = e.nativeEvent.layout.y;
+    // A little above the card, so it does not sit flush against the header.
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - spacing.md), animated: true });
+    setPendingScrollTo(null);
+  };
+
   const toggleSection = (section: SectionKey) => {
     if (Platform.OS === 'ios') {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     }
+    // Only on open. Re-tapping the open section is a no-op today, and
+    // scrolling on a close would yank the page for no reason.
+    if (expandedSection !== section) setPendingScrollTo(section);
     setExpandedSection(expandedSection === section ? expandedSection : section);
   };
 
@@ -1131,6 +1153,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
             (accordion headers, Scan, the location add/remove actions), so
             without it the first tap on any of them only dismisses the keyboard. */}
         <ScrollView
+          ref={scrollRef}
           style={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1168,7 +1191,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           </View>
 
           {/* Basic Information Section */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={onSectionLayout("basic")}>
             <SectionHeader
               title="Basic Information"
               summary={basicSummary(brand || null, categoryPath)}
@@ -1301,7 +1324,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           </View>
 
           {/* Images Section */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={onSectionLayout("images")}>
             <SectionHeader
               title="Product Images"
               summary={photosSummary([imagePrimary, imageFront, imageBack, imageSide].filter(Boolean).length)}
@@ -1357,7 +1380,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           </View>
 
           {/* Quantity & Storage Section */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={onSectionLayout("storage")}>
             <SectionHeader
               title="Quantity & Storage"
               summary={storageSummary({
@@ -1712,7 +1735,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           </View>
 
           {/* Nutritional Information Section */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={onSectionLayout("nutrition")}>
             <SectionHeader
               title="Nutritional Information"
               summary={nutritionSummary({
@@ -1840,7 +1863,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           </View>
 
           {/* Expiration Section */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={onSectionLayout("expiration")}>
             <SectionHeader
               title="Expiration"
               summary={expirySummary(
@@ -1945,7 +1968,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           </View>
 
           {/* Notes Section */}
-          <View style={styles.section}>
+          <View style={styles.section} onLayout={onSectionLayout("notes")}>
             <SectionHeader
               title="Notes"
               summary={notesSummary(notes)}
