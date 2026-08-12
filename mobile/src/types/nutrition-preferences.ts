@@ -43,6 +43,8 @@ export interface NutritionVendor {
   name: string;
   slug: string;
   app_url: string | null;
+  /** Brand mark for the picker tiles; null falls back to a monogram. */
+  logo_url: string | null;
   display_order: number;
   is_active: boolean;
   notes: string | null;
