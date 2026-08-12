@@ -55,6 +55,10 @@ export const styles = StyleSheet.create({
   sectionHeaderError: {
     backgroundColor: tint(colors.danger),
   },
+  headerState: { ...typography.caption, color: colors.textFaint, minWidth: 72, textAlign: "right" },
+  headerStateDirty: { color: colors.brand, fontWeight: "600" },
+  sectionHeaderText: { flex: 1, minWidth: 0, paddingRight: spacing.md },
+  sectionSummary: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   sectionTitle: {
     ...typography.rowTitle,
     color: colors.text,
@@ -107,6 +111,9 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
+  // Grows to fit rather than truncating. minHeight keeps a one-line name the
+  // same height as every other field.
+  inputMultiline: { minHeight: 48, textAlignVertical: "top" },
   inputError: {
     borderColor: colors.danger,
     borderWidth: 2,
@@ -143,6 +150,50 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
+  },
+  // Vendors reuse the location button's look but NOT its `flex: 1`. In a
+  // wrapping row that flex stretches every chip to an equal share of the line,
+  // which is what broke "Costco (Instacart)" across two lines mid-word. These
+  // size to their own text like every other chip row in the app.
+  // A stepper does not want the full width — 3 digits is the widest it gets.
+  thresholdRow: { maxWidth: 180 },
+  scanBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: spacing.md,
+    marginHorizontal: spacing.screenGutter, marginTop: spacing.lg,
+    padding: spacing.lg, borderRadius: radii.row,
+    backgroundColor: tint(colors.brand),
+    borderWidth: 1, borderColor: tint(colors.brand, 0.4),
+  },
+  scanBarText: { flex: 1, minWidth: 0 },
+  scanBarAction: { width: 116, flexShrink: 0 },
+  scanBarCode: { ...typography.rowTitle, color: colors.text },
+  scanBarNote: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  quickDates: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
+  quickDate: {
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.lg,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  quickDateText: { ...typography.caption, fontWeight: "600", color: colors.textMuted },
+  hintRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: spacing.md, marginTop: spacing.md,
+    padding: spacing.md, borderRadius: radii.row,
+    backgroundColor: tint(colors.accents.inventory),
+    borderWidth: 1, borderColor: tint(colors.accents.inventory, 0.3),
+  },
+  hintText: { ...typography.caption, color: colors.text, flexShrink: 1 },
+  hintAction: { ...typography.buttonSm, color: colors.accents.inventory },
+  previewText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md },
+  vendorChip: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   locationButtonActive: {
     backgroundColor: colors.brand,

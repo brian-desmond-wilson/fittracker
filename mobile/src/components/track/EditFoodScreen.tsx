@@ -29,6 +29,14 @@ import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { getProductByBarcode } from "@/src/services/openFoodFactsApi";
 import { styles } from "./edit-food/styles";
 import { SectionHeader } from "./edit-food/SectionHeader";
+import { SuggestField } from "./edit/SuggestField";
+import { NumberStepper } from "./edit/NumberStepper";
+import { fetchInventoryVocab, type InventoryVocab } from "@/src/lib/supabase/inventoryVocab";
+import {
+  basicSummary, storageSummary, nutritionSummary, expirySummary,
+  photosSummary, notesSummary, changeCount, changeLabel, relativeDays,
+} from "@/src/lib/editSummaries";
+import { estimateShelfLifeDays } from "@/src/lib/expiryPolicy";
 import { SectionKey, UNITS, LocationEntry } from "./edit-food/constants";
 import { useFoodImages } from "./edit-food/useFoodImages";
 
@@ -199,6 +207,115 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   useEffect(() => {
     fetchVendors();
   }, []);
+
+  // The brands and varieties already in the inventory, so the pickers can
+  // offer an existing spelling instead of inviting a fourth way to write
+  // "Kirkland". Decoration: a failure leaves both fields as plain text entry.
+  const [vocab, setVocab] = useState<InventoryVocab | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchInventoryVocab()
+      .then((v) => { if (!cancelled) setVocab(v); })
+      .catch((e) => console.error("vocab fetch failed:", e));
+    return () => { cancelled = true; };
+  }, []);
+
+  // What the form looked like when it opened, so Save can tell whether there
+  // is anything to write. Captured once with a ref-like initial state rather
+  // than diffed against `item` field by field, which would drift every time a
+  // field is added.
+  const [baseline] = useState(() => ({
+    name: item.name,
+    brand: item.brand || "",
+    flavor: item.flavor || "",
+    barcode: item.barcode || "",
+    storageType: item.storage_type as string,
+    quantity: item.state.totalQuantity.toString(),
+    unit: item.unit,
+    location: (item.location ?? null) as string | null,
+    restockThreshold: item.restock_threshold.toString(),
+    requiresRefrigeration: item.requires_refrigeration,
+    calories: item.calories?.toString() || "",
+    protein: item.protein?.toString() || "",
+    carbs: item.carbs?.toString() || "",
+    fats: item.fats?.toString() || "",
+    sugars: item.sugars?.toString() || "",
+    servingSize: item.serving_size || "",
+    notes: item.notes || "",
+    expiration: item.expiration_date ?? "",
+    preferredVendorId: (item.preferred_vendor_id ?? null) as string | null,
+    categoryIds: item.categories.map((c) => c.id),
+    subcategoryIds: item.subcategories.map((s) => s.id),
+  }));
+
+  const pendingChanges = changeCount(baseline, {
+    name, brand, flavor, barcode,
+    storageType: storageType as string,
+    quantity, unit,
+    location: (location ?? null) as string | null,
+    restockThreshold, requiresRefrigeration,
+    calories, protein, carbs, fats, sugars, servingSize, notes,
+    expiration: expirationDate ? getLocalDateString(expirationDate) : "",
+    preferredVendorId,
+    categoryIds: selectedCategoryIds,
+    subcategoryIds: selectedSubcategoryIds,
+  });
+  const isDirty = pendingChanges > 0;
+
+  // Cancel only interrupts when there is genuinely something to lose.
+  const handleCancel = () => {
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    Alert.alert(
+      "Discard changes?",
+      `${changeLabel(pendingChanges)} will be lost.`,
+      [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: onClose },
+      ],
+    );
+  };
+
+  // Subcategory names carry their parent — "Frozen › Breakfast Foods" — which
+  // is the only thing separating that from the standalone Breakfast Foods
+  // category with the same name.
+  const qualifiedSubcategory = (sub: FoodSubcategory): string => {
+    const parent = categories.find((c) => c.id === sub.category_id);
+    return parent ? `${parent.name} › ${sub.name}` : sub.name;
+  };
+
+  const categoryPath = (() => {
+    const chosenSubs = subcategories.filter((s) => selectedSubcategoryIds.includes(s.id));
+    if (chosenSubs.length > 0) return qualifiedSubcategory(chosenSubs[0]);
+    const chosenCats = categories.filter((c) => selectedCategoryIds.includes(c.id));
+    return chosenCats.length > 0 ? chosenCats[0].name : null;
+  })();
+
+  const brandOptions = (vocab?.brands ?? []).map((b) => ({
+    value: b.name,
+    note: `${b.count} item${b.count === 1 ? "" : "s"}`,
+  }));
+
+  // Varieties narrow to the chosen brand: picking Kirkland should not offer
+  // every flavour word in the database. With no brand yet, offer them all.
+  const flavorOptions = (() => {
+    if (!vocab) return [];
+    const scoped = vocab.flavorsByBrand.get(brand.trim().toLowerCase());
+    return (scoped ?? vocab.allFlavors).map((f) => ({ value: f }));
+  })();
+  const flavorScope = brand.trim().length > 0 && vocab?.flavorsByBrand.has(brand.trim().toLowerCase())
+    ? `Already used for ${brand.trim()}`
+    : "Used elsewhere in your inventory";
+
+  const daysUntilExpiry = expirationDate
+    ? Math.round((expirationDate.getTime() - new Date().setHours(0, 0, 0, 0)) / 86_400_000)
+    : null;
+
+  const shelfLifeHint = estimateShelfLifeDays(
+    categories.filter((c) => selectedCategoryIds.includes(c.id)).map((c) => c.name),
+  );
 
   const fetchCategoriesAndSubcategories = async () => {
     try {
@@ -955,7 +1072,11 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{isNew ? "Add Product" : "Edit Product"}</Text>
-          <View style={{ width: 24 }} />
+          {/* Makes Save honest: you can see whether the form thinks anything
+              moved, and how much, before you commit to it. */}
+          <Text style={[styles.headerState, isDirty && styles.headerStateDirty]} numberOfLines={1}>
+            {isNew ? "" : changeLabel(pendingChanges)}
+          </Text>
         </View>
 
         {/* Form */}
@@ -967,10 +1088,43 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Scan leads the form. The fastest way to fill this in correctly
+              is not to fill it in by hand, and the barcode used to be the LAST
+              field of Basic Information, below a twelve-category accordion —
+              nobody scrolls past all that to scan first. */}
+          <View style={styles.scanBar}>
+            <View style={styles.scanBarText}>
+              <Text style={styles.scanBarCode} numberOfLines={1}>
+                {barcode || "No barcode yet"}
+              </Text>
+              <Text style={styles.scanBarNote}>
+                {loadingProductData
+                  ? "Reading the product…"
+                  : barcode
+                    ? "Rescan to refresh name, brand and nutrition"
+                    : "Scan to fill in the name, brand and nutrition"}
+              </Text>
+            </View>
+            {/* Fixed width, not intrinsic: Button grows to its content, which
+                in a flex row starves the text column beside it. */}
+            <View style={styles.scanBarAction}>
+              <Button
+                label={barcode ? "Rescan" : "Scan"}
+                onPress={() => setShowBarcodeScanner(true)}
+                size="sm"
+                icon={Barcode}
+                loading={loadingProductData}
+                disabled={loadingProductData}
+                fluid
+              />
+            </View>
+          </View>
+
           {/* Basic Information Section */}
           <View style={styles.section}>
             <SectionHeader
               title="Basic Information"
+              summary={basicSummary(brand || null, categoryPath)}
               sectionKey="basic"
               isExpanded={expandedSection === "basic"}
               hasError={validationErrors.has("name")}
@@ -983,39 +1137,42 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   <Text style={styles.label}>
                     Product Name <Text style={styles.required}>*</Text>
                   </Text>
+                  {/* Multiline: this is the field that identifies the item,
+                      and it was the one field you could not read — a long
+                      product name truncated with an ellipsis in a single line
+                      box, so you could not check what you were editing. */}
                   <TextInput
                     style={[
                       styles.input,
+                      styles.inputMultiline,
                       validationErrors.has("name") && styles.inputError,
                     ]}
                     placeholder="e.g., Greek Yogurt"
                     placeholderTextColor={colors.textFaint}
                     value={name}
                     onChangeText={setName}
+                    multiline
                   />
                 </View>
 
-                <View style={styles.field}>
-                  <Text style={styles.label}>Brand</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., Chobani"
-                    placeholderTextColor={colors.textFaint}
-                    value={brand}
-                    onChangeText={setBrand}
-                  />
-                </View>
+                <SuggestField
+                  label="Brand"
+                  noun="brand"
+                  value={brand}
+                  onChange={setBrand}
+                  placeholder="e.g., Chobani"
+                  options={brandOptions}
+                />
 
-                <View style={styles.field}>
-                  <Text style={styles.label}>Flavor / Variety</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., Vanilla, Strawberry"
-                    placeholderTextColor={colors.textFaint}
-                    value={flavor}
-                    onChangeText={setFlavor}
-                  />
-                </View>
+                <SuggestField
+                  label="Flavor / Variety"
+                  noun="variety"
+                  value={flavor}
+                  onChange={setFlavor}
+                  placeholder="e.g., Vanilla, Strawberry"
+                  options={flavorOptions}
+                  scopeNote={flavorScope}
+                />
 
                 {/* Categories & Subcategories */}
                 <View style={styles.field}>
@@ -1109,32 +1266,6 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                   )}
                 </View>
 
-                <View style={styles.field}>
-                  <View style={styles.labelRow}>
-                    <Text style={styles.label}>Barcode</Text>
-                    <Button
-                      label="Scan"
-                      onPress={() => setShowBarcodeScanner(true)}
-                      variant="secondary"
-                      size="sm"
-                      icon={Barcode}
-                      loading={loadingProductData}
-                      disabled={loadingProductData}
-                    />
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter or scan barcode"
-                    placeholderTextColor={colors.textFaint}
-                    value={barcode}
-                    onChangeText={setBarcode}
-                    keyboardType="numeric"
-                    editable={!loadingProductData}
-                  />
-                  {loadingProductData && (
-                    <Text style={styles.loadingText}>Loading product information...</Text>
-                  )}
-                </View>
               </View>
             )}
           </View>
@@ -1143,6 +1274,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           <View style={styles.section}>
             <SectionHeader
               title="Quantity & Storage"
+              summary={storageSummary({
+                storageType,
+                quantity: Number.parseInt(quantity, 10) || 0,
+                unit,
+                location,
+                locationCount: locationEntries.length,
+                restockThreshold: Number.parseInt(restockThreshold, 10) || 0,
+              })}
               sectionKey="storage"
               isExpanded={expandedSection === "storage"}
               hasError={validationErrors.has("quantity") || validationErrors.has("locationEntries")
@@ -1200,16 +1339,13 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                         <Text style={styles.label}>
                           Quantity <Text style={styles.required}>*</Text>
                         </Text>
-                        <TextInput
-                          style={[
-                            styles.input,
-                            validationErrors.has("quantity") && styles.inputError,
-                          ]}
-                          placeholder="0"
-                          placeholderTextColor={colors.textFaint}
+                        {/* A stepper, not a keyboard: this is a small integer
+                            you nudge by one. The field inside stays typable
+                            for the occasional jump from 2 to 24. */}
+                        <NumberStepper
                           value={quantity}
-                          onChangeText={setQuantity}
-                          keyboardType="numeric"
+                          onChange={setQuantity}
+                          label="quantity"
                         />
                       </View>
 
@@ -1244,15 +1380,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     </View>
 
                     <View style={styles.field}>
-                      <Text style={styles.label}>Restock Threshold</Text>
-                      <TextInput
-                        style={[styles.input, validationErrors.has("restockThreshold") && styles.inputError]}
-                        placeholder="Notify when quantity reaches..."
-                        placeholderTextColor={colors.textFaint}
-                        value={restockThreshold}
-                        onChangeText={setRestockThreshold}
-                        keyboardType="numeric"
-                      />
+                      <Text style={styles.label}>Tell me to restock at</Text>
+                      <View style={styles.thresholdRow}>
+                        <NumberStepper
+                          value={restockThreshold}
+                          onChange={setRestockThreshold}
+                          label="restock threshold"
+                        />
+                      </View>
                     </View>
                   </>
                 )}
@@ -1480,11 +1615,13 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       return (
                         <TouchableOpacity
                           key={v?.id ?? "none"}
-                          style={[styles.locationButton, selected && styles.locationButtonActive]}
+                          style={[styles.vendorChip, selected && styles.locationButtonActive]}
                           onPress={() => setPreferredVendorId(v?.id ?? null)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
                         >
                           <Text style={[styles.locationButtonText, selected && styles.locationButtonTextActive]}>
-                            {v?.name ?? "None"}{v && !v.is_active ? " (inactive)" : ""}
+                            {v?.name ?? "Nowhere in particular"}{v && !v.is_active ? " (inactive)" : ""}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -1499,6 +1636,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           <View style={styles.section}>
             <SectionHeader
               title="Nutritional Information"
+              summary={nutritionSummary({
+                calories: Number.parseInt(calories, 10) || null,
+                servingSize: servingSize || null,
+              })}
               sectionKey="nutrition"
               isExpanded={expandedSection === "nutrition"}
               hasError={validationErrors.has("calories") || validationErrors.has("protein")
@@ -1593,6 +1734,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           <View style={styles.section}>
             <SectionHeader
               title="Expiration"
+              summary={expirySummary(
+                expirationDate ? expirationDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : null,
+                daysUntilExpiry,
+              )}
               sectionKey="expiration"
               isExpanded={expandedSection === "expiration"}
               hasError={false}
@@ -1617,13 +1762,73 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                         : "Select date"}
                     </Text>
                   </TouchableOpacity>
-                  {expirationDate && (
+                  {/* Most dates are "about N from now", and a calendar picker
+                      makes you count. These are the common spans, measured
+                      from today rather than from whatever is already set — a
+                      relative nudge off a stale date compounds the staleness. */}
+                  <View style={styles.quickDates}>
+                    {([
+                      { label: "＋1 week", days: 7 },
+                      { label: "＋1 month", days: 30 },
+                      { label: "＋6 months", days: 182 },
+                      { label: "＋1 year", days: 365 },
+                    ] as const).map((q) => (
+                      <TouchableOpacity
+                        key={q.label}
+                        style={styles.quickDate}
+                        onPress={() => {
+                          const d = new Date();
+                          d.setHours(12, 0, 0, 0);
+                          d.setDate(d.getDate() + q.days);
+                          setExpirationDate(d);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Expires ${q.label.replace("＋", "in ")}`}
+                      >
+                        <Text style={styles.quickDateText}>{q.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {expirationDate && (
+                      <TouchableOpacity
+                        style={styles.quickDate}
+                        onPress={() => setExpirationDate(null)}
+                        accessibilityRole="button"
+                        accessibilityLabel="No expiration date"
+                      >
+                        <Text style={styles.quickDateText}>No date</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* E4: the category's typical shelf life, offered rather than
+                      assumed — a fabricated date would flow into the aging
+                      bands as if a human had read it off the packet. */}
+                  {!expirationDate && shelfLifeHint !== null && (
                     <TouchableOpacity
-                      style={styles.clearButton}
-                      onPress={() => setExpirationDate(null)}
+                      style={styles.hintRow}
+                      onPress={() => {
+                        const d = new Date();
+                        d.setHours(12, 0, 0, 0);
+                        d.setDate(d.getDate() + shelfLifeHint);
+                        setExpirationDate(d);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use the typical shelf life of ${shelfLifeHint} days`}
                     >
-                      <Text style={styles.clearButtonText}>Clear</Text>
+                      <Text style={styles.hintText}>
+                        This kind of food usually keeps about {shelfLifeHint} days
+                      </Text>
+                      <Text style={styles.hintAction}>Use</Text>
                     </TouchableOpacity>
+                  )}
+
+                  {/* What the date will actually DO — the part nobody can work
+                      out from a calendar date alone. */}
+                  {expirationDate && daysUntilExpiry !== null && (
+                    <Text style={styles.previewText}>
+                      Shows as {daysUntilExpiry < 0 ? "expired" : "fresh"} ·{" "}
+                      {relativeDays(daysUntilExpiry)}
+                    </Text>
                   )}
                 </View>
               </View>
@@ -1634,6 +1839,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           <View style={styles.section}>
             <SectionHeader
               title="Product Images"
+              summary={photosSummary([imagePrimary, imageFront, imageBack, imageSide].filter(Boolean).length)}
               sectionKey="images"
               isExpanded={expandedSection === "images"}
               hasError={false}
@@ -1689,6 +1895,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           <View style={styles.section}>
             <SectionHeader
               title="Notes"
+              summary={notesSummary(notes)}
               sectionKey="notes"
               isExpanded={expandedSection === "notes"}
               hasError={false}
@@ -1699,7 +1906,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               <View style={styles.sectionContent}>
                 <TextInput
                   style={[styles.input, styles.textArea]}
-                  placeholder="Additional notes..."
+                  placeholder="Anything worth remembering — how you like it cooked, who it's for, whether to buy it again."
                   placeholderTextColor={colors.textFaint}
                   value={notes}
                   onChangeText={setNotes}
@@ -1717,10 +1924,18 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         {/* Footer Buttons */}
         <View style={styles.footer}>
           <View style={styles.footerButton}>
-            <Button label="Cancel" onPress={onClose} variant="secondary" disabled={saving} fluid />
+            <Button label="Cancel" onPress={handleCancel} variant="secondary" disabled={saving} fluid />
           </View>
           <View style={styles.footerButton}>
-            <Button label="Save" onPress={handleSave} loading={saving} disabled={saving} fluid />
+            {/* Inert until something actually moved. A new item is dirty by
+                definition — there is nothing yet to compare it against. */}
+            <Button
+              label="Save"
+              onPress={handleSave}
+              loading={saving}
+              disabled={saving || (!isNew && !isDirty)}
+              fluid
+            />
           </View>
         </View>
 
