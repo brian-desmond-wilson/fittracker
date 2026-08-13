@@ -11,7 +11,9 @@
 // Edit Meal's, so create and edit read as siblings.
 import React from "react";
 import {
+  Animated,
   Image,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -39,6 +41,14 @@ const MEAL_TYPES: { value: MealType; label: string }[] = [
 /** Enough to cover the usual suspects without the grid becoming a list. */
 const RECENTS_SHOWN = 6;
 const RESULTS_SHOWN = 5;
+
+/** How far down you must drag before releasing dismisses rather than
+ *  springing back. A flick past `DISMISS_VELOCITY` counts regardless — the
+ *  gesture people actually make is fast and short, not slow and long. */
+const DISMISS_DISTANCE = 110;
+const DISMISS_VELOCITY = 0.7;
+/** Enough to carry any sheet fully off-screen on the way out. */
+const EXIT_TRAVEL = 900;
 
 interface LogMealSheetProps {
   visible: boolean;
@@ -110,6 +120,62 @@ export function LogMealSheet({
 }: LogMealSheetProps) {
   const [contextOpen, setContextOpen] = React.useState(false);
 
+  // Swipe down to dismiss.
+  //
+  // The handlers sit on the sheet's HEAD — grab handle, title row, context
+  // pill — and never on the scroller below it. A responder spanning both
+  // would have to guess, on every touch, whether a downward drag means
+  // "close this" or "scroll the recents up", and it would guess wrong at the
+  // top of the list where the two gestures are identical. The head is the
+  // part with nothing to scroll, so there is nothing to disambiguate.
+  const dragY = React.useRef(new Animated.Value(0)).current;
+  // The responder is built once, so it must not close over a stale `onClose`.
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+  const pan = React.useRef(
+    PanResponder.create({
+      // Claim only a deliberate DOWNWARD drag, so a tap on the context pill
+      // still registers as a tap.
+      onMoveShouldSetPanResponder: (_e, g) => g.dy > 6 && g.dy > Math.abs(g.dx),
+      onPanResponderMove: (_e, g) => {
+        // Downward only: dragging up would lift the sheet off its own bottom
+        // edge and show the page behind it.
+        dragY.setValue(Math.max(0, g.dy));
+      },
+      onPanResponderRelease: (_e, g) => {
+        const dismiss = g.dy > DISMISS_DISTANCE || g.vy > DISMISS_VELOCITY;
+        if (dismiss) {
+          Animated.timing(dragY, {
+            toValue: EXIT_TRAVEL,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => {
+            dragY.setValue(0);
+            onCloseRef.current();
+          });
+        } else {
+          Animated.spring(dragY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      },
+    }),
+  ).current;
+
+  // Opening always starts from rest, and from the quick paths rather than
+  // wherever the last visit left the context panel.
+  React.useEffect(() => {
+    if (visible) {
+      dragY.setValue(0);
+      setContextOpen(false);
+    }
+  }, [visible, dragY]);
+
   if (!visible) return null;
 
   const searchingNow = query.trim().length >= 2;
@@ -148,45 +214,74 @@ export function LogMealSheet({
 
   return (
     <>
-      <TouchableOpacity
-        style={styles.scrim}
-        activeOpacity={1}
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Close"
-      />
-      <View style={[styles.sheet, manualOpen && styles.sheetTall]}>
-        <View style={styles.grab} />
-        <View style={styles.headRow}>
-          <Text style={styles.title}>{manualOpen ? "Type something new" : "Log something"}</Text>
+      {/* The scrim thins as the sheet is dragged away, so the drag reads as
+          one movement rather than a card sliding under a fixed pane. */}
+      <Animated.View
+        style={[
+          styles.scrim,
+          {
+            opacity: dragY.interpolate({
+              inputRange: [0, DISMISS_DISTANCE * 2],
+              outputRange: [1, 0.15],
+              extrapolate: "clamp",
+            }),
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.scrimFill}
+          activeOpacity={1}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        />
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.sheet,
+          manualOpen && styles.sheetTall,
+          { transform: [{ translateY: dragY }] },
+        ]}
+      >
+        {/* Everything above the scroller drags the sheet — see the responder. */}
+        <View {...pan.panHandlers}>
+          <View
+            style={styles.grab}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel="Drag down to close"
+          />
+          <View style={styles.headRow}>
+            <Text style={styles.title}>{manualOpen ? "Type something new" : "Log something"}</Text>
+            <TouchableOpacity
+              onPress={manualOpen ? () => onManualOpenChange(false) : onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={manualOpen ? "Back" : "Cancel"}
+            >
+              <Text style={styles.headAction}>{manualOpen ? "Back" : "Cancel"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* The context the opener already knew, as a statement rather than
+              two fields. Tapping it opens the only two things worth changing. */}
           <TouchableOpacity
-            onPress={manualOpen ? () => onManualOpenChange(false) : onClose}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={styles.ctxPill}
+            onPress={() => setContextOpen((v) => !v)}
+            activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel={manualOpen ? "Back" : "Cancel"}
+            accessibilityLabel={`Logging to ${labelFor(mealType)}, ${dayLabel} at ${fmtClock(loggedAt)}. Tap to change.`}
           >
-            <Text style={styles.headAction}>{manualOpen ? "Back" : "Cancel"}</Text>
+            <Text style={styles.ctxText}>
+              {labelFor(mealType)} · {dayLabel}, {fmtClock(loggedAt)}
+            </Text>
+            <ChevronRight
+              size={icons.sm}
+              color={colors.textFaint}
+              strokeWidth={icons.strokeWidth}
+            />
           </TouchableOpacity>
         </View>
-
-        {/* The context the opener already knew, as a statement rather than
-            two fields. Tapping it opens the only two things worth changing. */}
-        <TouchableOpacity
-          style={styles.ctxPill}
-          onPress={() => setContextOpen((v) => !v)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={`Logging to ${labelFor(mealType)}, ${dayLabel} at ${fmtClock(loggedAt)}. Tap to change.`}
-        >
-          <Text style={styles.ctxText}>
-            {labelFor(mealType)} · {dayLabel}, {fmtClock(loggedAt)}
-          </Text>
-          <ChevronRight
-            size={icons.sm}
-            color={colors.textFaint}
-            strokeWidth={icons.strokeWidth}
-          />
-        </TouchableOpacity>
 
         {contextOpen && (
           <View style={styles.ctxPanel}>
@@ -457,13 +552,14 @@ export function LogMealSheet({
             </TouchableOpacity>
           </View>
         )}
-      </View>
+      </Animated.View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
   scrim: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: colors.scrim },
+  scrimFill: { flex: 1 },
   sheet: {
     position: "absolute",
     left: 0,
