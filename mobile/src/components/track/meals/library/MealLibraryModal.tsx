@@ -51,11 +51,23 @@ interface MealLibraryModalProps {
    *  id is safe: `detailMeal` then resolves to `undefined` and the body chain
    *  falls through to the list. */
   initialMealId?: string | null;
+  /** How the library is being presented.
+   *
+   *  `"modal"` (the default) is the sheet Fuel raises over itself: it slides up,
+   *  covers the tab bar, and leaves by a "Done" button.
+   *
+   *  `"screen"` is the Track hub's Meal Library station — a route pushed into
+   *  the Track stack, so it must look like the page it is: no `Modal` wrapper,
+   *  and a back chevron on the left where every other pushed page keeps one.
+   *  `visible` is ignored in this mode; a route is mounted or it isn't. */
+  presentation?: "modal" | "screen";
 }
 
 export function MealLibraryModal({
   visible, savedFoods, todayDate, onClose, onLogged, initialMealId,
+  presentation = "modal",
 }: MealLibraryModalProps) {
+  const asScreen = presentation === "screen";
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<MealLibraryData | null>(null);
   const [dayCalories, setDayCalories] = useState<number | null>(null);
@@ -655,38 +667,60 @@ export function MealLibraryModal({
     : view.mode === "detail" ? detailMeal?.name ?? "Meal"
     : "Meal Library";
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      statusBarTranslucent={false}
-      onRequestClose={onClose}
-    >
+  // Back out of the inner views first, leave the library only from its list —
+  // the same "one screen back" the chevron promises on any pushed page.
+  const back = () =>
+    view.mode === "list" ? onClose() : setView({ mode: "list" });
+
+  const newMealButton = (
+    <Button
+      label="New"
+      icon={Plus}
+      variant="ghost"
+      size="sm"
+      onPress={() => setView({ mode: "builder", mealId: null })}
+    />
+  );
+
+  // A sheet leaves by "Done" on the right and keeps "New" on the left; a pushed
+  // page leaves by a chevron on the left, which pushes "New" to the right.
+  const headerLeading = asScreen ? (
+    <Button
+      label={view.mode === "list" ? "Track" : "Library"}
+      icon={ChevronLeft}
+      variant="ghost"
+      size="sm"
+      onPress={back}
+    />
+  ) : view.mode === "list" ? (
+    newMealButton
+  ) : (
+    <Button
+      label="Library"
+      icon={ChevronLeft}
+      variant="ghost"
+      size="sm"
+      onPress={() => setView({ mode: "list" })}
+    />
+  );
+
+  // Detail and builder have no trailing action as a page, so the bar drops
+  // `space-between` and reads back-chevron-then-title rather than stranding the
+  // title against the right edge.
+  const headerTrailing = asScreen
+    ? (view.mode === "list" ? newMealButton : null)
+    : <Button label="Done" variant="ghost" size="sm" onPress={onClose} />;
+
+  const content = (
+    <>
       <StatusBar barStyle="light-content" />
       <View style={[lib.screen, { paddingTop: insets.top }]}>
         {/* Header renders unconditionally: fullScreen modals have no iOS
             swipe-to-dismiss, so no load state may strand the user. */}
-        <View style={lib.header}>
-          {view.mode === "list" ? (
-            <Button
-              label="New"
-              icon={Plus}
-              variant="ghost"
-              size="sm"
-              onPress={() => setView({ mode: "builder", mealId: null })}
-            />
-          ) : (
-            <Button
-              label="Library"
-              icon={ChevronLeft}
-              variant="ghost"
-              size="sm"
-              onPress={() => setView({ mode: "list" })}
-            />
-          )}
+        <View style={[lib.header, !headerTrailing && lib.headerLeftAligned]}>
+          {headerLeading}
           <Text style={lib.headerTitle} numberOfLines={1}>{headerTitle}</Text>
-          <Button label="Done" variant="ghost" size="sm" onPress={onClose} />
+          {headerTrailing}
         </View>
         {/* Filter bar, list mode only. Kept OUT of the scrolling SectionList
             so it can't scroll away while it is hiding rows — the state that
@@ -735,6 +769,20 @@ export function MealLibraryModal({
           onClose={() => setLinkTarget(null)}
         />
       </View>
+    </>
+  );
+
+  if (asScreen) return content;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      statusBarTranslucent={false}
+      onRequestClose={onClose}
+    >
+      {content}
     </Modal>
   );
 }

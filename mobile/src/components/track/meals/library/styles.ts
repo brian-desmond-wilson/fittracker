@@ -15,6 +15,10 @@ export const lib = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  // Used when the bar has no trailing action (the library as a pushed page, in
+  // detail or builder): `space-between` with two children would throw the title
+  // against the right edge, so the pair sits together after the back chevron.
+  headerLeftAligned: { justifyContent: "flex-start", gap: spacing.sm },
   // `flexShrink: 1` so a long meal name ellipsizes instead of pushing the
   // flanking header buttons off the bar — same guard `Screen`'s `barTitle` has.
   headerTitle: { ...typography.titleBar, color: colors.text, flexShrink: 1 },
