@@ -22,21 +22,17 @@ const corsHeaders = {
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY');
 const MODEL = 'gpt-5.6-terra';
 
-const SYSTEM = `You transcribe a prepared-meal delivery menu from a photograph.
-
-Return ONLY what is legibly printed. Rules:
+const SHARED_RULES = `Return ONLY what is legibly printed. Rules:
 - Every meal you list must appear in the image. Never invent a dish, and
   never complete a partially visible one from what it looks like it might be.
 - "name" is the dish name as printed, without the vendor's name.
-- "slot" is one of breakfast, lunch, dinner, snack — taken from how the menu
-  labels the dish. If the menu does not say, use null; do not guess from the
-  food.
+- "slot" is one of breakfast, lunch, dinner, snack, dessert — taken from how
+  the menu labels the dish. If the menu does not say, use null; do not guess
+  from the food.
 - calories, protein and fiber are per meal, as printed. Any that is not
   shown is null. Never derive one from another or from the food type.
 - "quantity" is how many of that dish the box contains, if the menu says so;
   otherwise null.
-- If the image is not a food menu at all, return an empty meals array and
-  explain in "note".
 
 Respond as JSON:
 {"meals": [{"name": string, "slot": string|null, "quantity": number|null,
@@ -46,7 +42,26 @@ Respond as JSON:
 "note" is one short human sentence only when something is worth flagging —
 "the third dish is cut off", "this looks like a receipt". Otherwise null.`;
 
-const SLOTS = new Set(['breakfast', 'lunch', 'dinner', 'snack']);
+const SYSTEM_MENU = `You transcribe a prepared-meal delivery menu from a photograph.
+
+${SHARED_RULES}
+- If the image is not a food menu at all, return an empty meals array and
+  explain in "note".`;
+
+// One lid, not the box. The owner is photographing a single container to fill
+// a single row, so a second dish caught at the edge of the frame — the next
+// meal in the stack, the menu card behind it — would fill that row with the
+// wrong meal. Hence: the dish whose label fills the frame, and nothing else.
+const SYSTEM_ONE = `You transcribe ONE prepared meal from a photograph of its label.
+
+Read only the dish whose label fills the frame. If another meal or menu is
+partly visible at the edge, ignore it entirely.
+
+${SHARED_RULES}
+- Return exactly one meal, or an empty array with a "note" if no label is
+  legible.`;
+
+const SLOTS = new Set(['breakfast', 'lunch', 'dinner', 'snack', 'dessert']);
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -55,8 +70,10 @@ serve(async (req) => {
     if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
     if (!req.headers.get('Authorization')) throw new Error('missing Authorization header');
 
-    const { imageBase64 } = await req.json();
+    const { imageBase64, single } = await req.json();
     if (!imageBase64) throw new Error('imageBase64 is required');
+
+    const oneDish = single === true;
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -68,11 +85,16 @@ serve(async (req) => {
         model: MODEL,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: SYSTEM },
+          { role: 'system', content: oneDish ? SYSTEM_ONE : SYSTEM_MENU },
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Transcribe this delivery menu.' },
+              {
+                type: 'text',
+                text: oneDish
+                  ? "Transcribe this meal's label."
+                  : 'Transcribe this delivery menu.',
+              },
               { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
             ],
           },
@@ -108,7 +130,10 @@ serve(async (req) => {
         fiber: num(m.fiber),
       }))
       .filter((m: { name: string }) => m.name.length > 0)
-      .slice(0, 20);
+      // One lid fills one row. Capping here rather than trusting the prompt
+      // means a stray second dish can never overwrite a row the owner is not
+      // looking at.
+      .slice(0, oneDish ? 1 : 20);
 
     return new Response(
       JSON.stringify({
