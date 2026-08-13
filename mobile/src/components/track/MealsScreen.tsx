@@ -690,11 +690,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         if (consumed) consumedInventoryId = inventoryMatch.id;
       }
 
-      // Clear state
+      // Clear state. `closeLogSheet` covers the scan-from-the-sheet path:
+      // the food is logged, so the sheet that started the scan is done too.
       setShowFoodPreview(false);
       setPreviewFood(null);
       setScannedBarcode(null);
       setInventoryMatch(null);
+      closeLogSheet();
 
       // Trigger undo snackbar
       if (inserted?.id) {
@@ -932,9 +934,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         );
       }
 
-      // Clear state
+      // Clear state — including the sheet, if this entry began with its
+      // "Scan a barcode" on a product the library had never seen.
       setShowManualEntry(false);
       setScannedBarcode(null);
+      closeLogSheet();
 
       // Invalidate cache and refetch
       setMealsCache((prev) => {
@@ -2195,10 +2199,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           setLibraryInitialMealId(mealId);
           setLibraryVisible(true);
         }}
-        onScan={() => {
-          closeLogSheet();
-          setShowBarcodeScanner(true);
-        }}
+        // The scanner is a full-screen modal that covers the sheet anyway, so
+        // the sheet stays open underneath it: backing out of the camera
+        // returns you to where you were, rather than making you re-open the
+        // sheet to try again. The paths that finish the job — logging from
+        // the preview, or saving a manual entry — close it themselves.
+        onScan={() => setShowBarcodeScanner(true)}
         form={addForm}
         manualOpen={logSheetManual}
         onManualOpenChange={setLogSheetManual}
