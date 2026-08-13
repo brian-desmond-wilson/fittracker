@@ -332,40 +332,58 @@ export function MealLibraryScreen({
               shelves ARE the categories, and two controls fighting over one
               job is worse than one. */}
           {!showShelves && categoryTabs.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              // A horizontal scroller inside a `flexGrow: 1` content container
-              // stretches to whatever height is going spare, which on a short
-              // list is most of the screen. It should be exactly as tall as
-              // its tabs.
-              style={s.hScroller}
-              contentContainerStyle={s.tabsRow}
-            >
-              <TouchableOpacity
-                style={[s.tab, category === null && s.tabActive]}
-                onPress={() => setCategory(null)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: category === null }}
+            <View style={s.tabsBand}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                // A horizontal scroller inside a `flexGrow: 1` content container
+                // stretches to whatever height is going spare, which on a short
+                // list is most of the screen. It should be exactly as tall as
+                // its tabs.
+                style={s.hScroller}
+                contentContainerStyle={s.tabsRow}
               >
-                <Text style={[s.tabText, category === null && s.tabTextActive]}>
-                  All {segment === "archive" ? counts.archive : counts.all}
-                </Text>
-              </TouchableOpacity>
-              {categoryTabs.map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  style={[s.tab, category === c && s.tabActive]}
-                  onPress={() => setCategory(category === c ? null : c)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: category === c }}
-                >
-                  <Text style={[s.tabText, category === c && s.tabTextActive]}>
-                    {CATEGORY_LABELS[c]} {counts.byCategory.get(c) ?? 0}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                {[
+                  {
+                    key: "all" as const,
+                    label: "All Meals",
+                    count: segment === "archive" ? counts.archive : counts.all,
+                    selected: category === null,
+                    press: () => setCategory(null),
+                  },
+                  ...categoryTabs.map((c) => ({
+                    key: c,
+                    label: CATEGORY_LABELS[c],
+                    count: counts.byCategory.get(c) ?? 0,
+                    selected: category === c,
+                    press: () => setCategory(category === c ? null : c),
+                  })),
+                ].map((tab) => (
+                  <TouchableOpacity
+                    key={tab.key}
+                    style={s.tab}
+                    onPress={tab.press}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: tab.selected }}
+                    accessibilityLabel={`${tab.label}, ${tab.count} meals`}
+                  >
+                    {/* Food Inventory's tab shape: the count is a badge, not
+                        trailing digits, so a name and a quantity don't share
+                        one text run. */}
+                    <View style={s.tabRow}>
+                      <Text style={[s.tabText, tab.selected && s.tabTextActive]}>{tab.label}</Text>
+                      <View style={[s.countBadge, tab.selected && s.countBadgeActive]}>
+                        <Text style={[s.countText, tab.selected && s.countTextActive]}>
+                          {tab.count}
+                        </Text>
+                      </View>
+                    </View>
+                    {tab.selected && <View style={s.tabIndicator} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
           )}
 
           <View style={s.lane}>
@@ -386,7 +404,7 @@ export function MealLibraryScreen({
                     accessibilityLabel={`${SEGMENT_LABELS[seg]}, ${n} meals`}
                   >
                     <Text style={[s.segmentText, active && s.segmentTextActive]} numberOfLines={1}>
-                      {SEGMENT_LABELS[seg]} {n}
+                      {SEGMENT_LABELS[seg]} ({n})
                     </Text>
                   </TouchableOpacity>
                 );
@@ -577,16 +595,47 @@ const s = StyleSheet.create({
   /** See the note at the call sites: horizontal scrollers must not absorb
    *  the vertical space `flexGrow: 1` hands out. */
   hScroller: { flexGrow: 0 },
+  // The Food Inventory tab band, to the letter: hairline under the row,
+  // gutter from the screen edge, count as a pill, brand underline for the
+  // selected tab (a control state, not the meals accent — spec §6).
+  tabsBand: {
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.md,
+  },
   tabsRow: {
     flexDirection: "row",
-    gap: spacing.lg,
-    paddingHorizontal: spacing.screenGutter,
-    paddingBottom: spacing.sm,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
   },
-  tab: { paddingVertical: spacing.sm, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  tabActive: { borderBottomColor: colors.brand },
-  tabText: { ...typography.buttonSm, color: colors.textMuted },
-  tabTextActive: { color: colors.text },
+  tab: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    position: "relative",
+  },
+  tabRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  tabText: { fontSize: 15, fontWeight: "500", color: colors.textMuted },
+  tabTextActive: { fontWeight: "600", color: colors.text },
+  countBadge: {
+    minWidth: spacing.xl,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    alignItems: "center",
+  },
+  countBadgeActive: { backgroundColor: tint(colors.brand) },
+  countText: { ...typography.caption, fontWeight: "600" },
+  countTextActive: { color: colors.brand },
+  tabIndicator: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.brand,
+  },
 
   lane: {
     flexDirection: "row",
