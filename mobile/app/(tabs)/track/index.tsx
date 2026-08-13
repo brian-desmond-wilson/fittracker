@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter } from "expo-router";
 import {
   Utensils,
+  BookOpen,
   Droplets,
   Package,
   Scale,
@@ -25,10 +26,26 @@ export default function Track() {
 
   // Category configuration with prioritized ordering
   const trackingCategories: TrackingCategoryConfig[] = [
-    // Nutrition & Food Section
+    // Nutrition & Food Section — ordered along the loop the section describes:
+    // what you have, what you can make of it, when you eat it, water, and what
+    // you still need to buy.
+    {
+      id: "food-inventory",
+      title: "Food Inventory",
+      icon: "Package",
+      accent: "inventory",
+      section: "nutrition",
+    },
+    {
+      id: "meal-library",
+      title: "Meal Library",
+      icon: "BookOpen",
+      accent: "mealLibrary",
+      section: "nutrition",
+    },
     {
       id: "fuel",
-      title: "Fuel",
+      title: "Fuel Schedule",
       icon: "Utensils",
       accent: "meals",
       section: "nutrition",
@@ -38,13 +55,6 @@ export default function Track() {
       title: "Water",
       icon: "Droplets",
       accent: "water",
-      section: "nutrition",
-    },
-    {
-      id: "food-inventory",
-      title: "Food Inventory",
-      icon: "Package",
-      accent: "inventory",
       section: "nutrition",
     },
     {
@@ -88,6 +98,7 @@ export default function Track() {
 
   const iconMap: Record<string, any> = {
     Utensils,
+    BookOpen,
     Droplets,
     Package,
     Scale,

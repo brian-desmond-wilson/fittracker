@@ -246,6 +246,7 @@ export type TrackingCategory =
   // Each id doubles as the hub tile's route segment (`/(tabs)/track/<id>`),
   // so renaming a route means renaming its id here.
   | "fuel"
+  | "meal-library"
   | "water"
   | "food-inventory"
   | "weight"

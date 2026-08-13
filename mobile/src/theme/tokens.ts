@@ -28,6 +28,12 @@ export const colors = {
   scrim: "rgba(0,0,0,0.5)",
   accents: {
     meals: "#F97316",
+    // The library is Fuel's sibling station — a warm amber one step off
+    // `meals` orange, so the two tiles read as family without either one
+    // borrowing the other's identity. Its own key (not `photos`) because a
+    // camera tile and a recipe book are unrelated things that happen to be
+    // amber; either may move without dragging the other.
+    mealLibrary: "#FBBF24",
     water: "#3B82F6",
     inventory: "#8B5CF6",
     shopping: "#14B8A6",
