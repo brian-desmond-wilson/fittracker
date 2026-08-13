@@ -362,7 +362,7 @@ export function computeMealTotals(items: MealItemWithFood[]): MealTotals {
   }, zero);
   // Round for the same reason computeBrianScore does (see mealScore.ts): the
   // underlying nutrition data is decimal, so summing servings × macros leaves
-  // float epsilon (1234.5600000000002) that MealRow/MealDetail render
+  // float epsilon (1234.5600000000002) that the library rows and MealDetail render
   // verbatim. These are two independent implementations of the same sum and
   // MUST agree on rounding — mealScore.ts rounds its totals to 2dp too, so a
   // meal's calories cannot read differently in the row and in the score card.

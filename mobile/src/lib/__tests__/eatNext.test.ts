@@ -1834,7 +1834,7 @@ describe("eatNextStockBadge", () => {
   it("assemblable → the green 'In stock' badge", () => {
     expect(eatNextStockBadge(info())).toEqual({ assemblable: true, tone: "success", label: "In stock" });
     // Pinned as an exact string, not a regex: this is the same copy
-    // `MealRow` already shows in the Meal Library, and the two are supposed
+    // the Meal Library rows already show, and the two are supposed
     // to read identically.
     expect(eatNextStockBadge(info())!.label).toBe("In stock");
   });

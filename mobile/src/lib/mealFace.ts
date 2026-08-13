@@ -28,7 +28,7 @@ export interface FaceCandidate {
  *
  * Display order breaks ties so the choice is stable between renders, which
  * matters more than it sounds: an unstable face would flicker as the list
- * re-renders and defeat `MealRow`'s memoisation.
+ * re-renders and defeat the meal rows' memoisation.
  */
 export function mealFaceUrl(items: readonly FaceCandidate[]): string | null {
   const withImages = items.filter((it) => it.imageUrl !== null && it.imageUrl !== "");

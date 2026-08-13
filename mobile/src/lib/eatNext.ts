@@ -157,7 +157,7 @@ export interface StockAssessmentMeal {
  *   row across everything the meal resolved to.
  * A `meals`/`inventory` inconsistency is absorbed as "missing", never thrown.
  *
- * **Why `MealLibraryModal` computes its own `assemblabilityById` instead of
+ * **Why `MealPage` computes its own `assemblabilityById` instead of
  * sharing this** (the one home for this argument — the call site in
  * `useEatNext.ts` and the modal both point here rather than restating it).
  * They run the same predicate over the same inputs but are not the same value:
@@ -605,7 +605,7 @@ function rank(cands: Candidate[]): Candidate[] {
 }
 
 /** The one place a recommendation's picture is chosen, so both the `toRecs`
- *  path and the protein-short site below cannot diverge. Mirrors `MealRow`'s
+ *  path and the protein-short site below cannot diverge. Mirrors the library row's
  *  mapping exactly — calories are per-item TOTALS (unit calories × servings),
  *  which is what `mealFaceUrl` ranks on. */
 function faceOf(meal: MealWithItems): string | null {

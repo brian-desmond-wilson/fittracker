@@ -296,7 +296,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
 
       // The score input assembly lives in `mealScoreInput.ts` (pure, tested).
       // `MealBuilder` still carries its own copy — migrating it is a recorded
-      // follow-up (`MealLibraryModal`'s was retired by C2).
+      // follow-up (`MealPage`'s predecessor retired its own by C2).
       const meals: ScoredMeal[] = live.map((meal) => ({
         meal,
         totals: computeMealTotals(meal.items),
@@ -319,7 +319,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
       // Task 10 fence had it) because this file is a hook and gets no Jest
       // coverage, while the `meal.id` lookup key and the item-less-meal
       // decision are both seams that fail SILENTLY. Rationale for those, the
-      // input contract, and why `MealLibraryModal` deliberately computes its
+      // input contract, and why `MealPage` deliberately computes its
       // own copy all live in that function's doc comment — one home, so this
       // pointer cannot drift from it.
       const stockByMealId = buildStockByMealId(library);

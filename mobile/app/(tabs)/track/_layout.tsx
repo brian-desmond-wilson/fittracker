@@ -17,7 +17,9 @@ export default function TrackLayout() {
       <Stack.Screen name="shopping/index" />
       <Stack.Screen name="loop" />
       <Stack.Screen name="fuel" />
-      <Stack.Screen name="meal-library" />
+      <Stack.Screen name="meal-library/index" />
+      <Stack.Screen name="meal-library/[id]" />
+      <Stack.Screen name="meal-library/new" />
       <Stack.Screen name="water" />
       <Stack.Screen name="weight" />
       <Stack.Screen name="measurements" />

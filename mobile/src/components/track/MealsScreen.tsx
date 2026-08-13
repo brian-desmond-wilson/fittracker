@@ -21,7 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // comment saying exactly that); the global hook returns
 // `useRouteInfo().params` raw. Same choice, for the same reason, as the
 // `?modal=nutrition` link in `app/(tabs)/profile.tsx:67`.
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   ChevronLeft,
   ChevronRight,
@@ -57,7 +57,6 @@ import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
 import { MealLogEditorModal, type MealLogEdit } from "./MealLogEditorModal";
-import { MealLibraryModal } from "./meals/library/MealLibraryModal";
 import {
   confirmConceptRating,
   fetchMealLibrary,
@@ -168,39 +167,42 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // input/results land where they expect.
   const [activeTab, setActiveTab] = useState<"today" | "insights">("today");
 
-  // Meal Library modal + savedFoods cache
-  const [libraryVisible, setLibraryVisible] = useState(false);
   const [allSavedFoods, setAllSavedFoods] = useState<SavedFood[]>([]);
+
+  // The library and a meal within it are pushed routes, not sheets raised over
+  // this screen: one library, one back button, and the stack says where you
+  // are. Everything that used to open a modal here navigates instead.
+  const openLibrary = useCallback(() => router.push("/(tabs)/track/meal-library"), []);
+  const openMeal = useCallback(
+    (mealId: string) => router.push(`/(tabs)/track/meal-library/${mealId}`),
+    [],
+  );
 
   // Eat Next recommender (spec §7.2). Declared here rather than beside the
   // pace `useMemo`s further down because `fetchMealsForDate` below reads
   // `eatNext.refetch` — same shape as `useHistoricalMeals`'s `refreshHistory`
-  // just below, which that function already calls. No `refreshKey`: this
-  // screen has no `useFocusEffect` (verified — the only focus reloads in the
-  // app are on the Home cards), so the hook's own mount effect is the single
-  // initial load, and every subsequent reload comes from the write path in
-  // `fetchMealsForDate`. Nothing here can double-load the way Task 8's card
-  // could.
+  // just below, which that function already calls. No `refreshKey`: the hook's
+  // own mount effect is the single initial load, and every subsequent reload
+  // comes from the write path in `fetchMealsForDate`. The focus reload added
+  // further down goes through that same function and deliberately skips the
+  // first focus, so nothing here double-loads the way Task 8's card could.
   const eatNext = useEatNext();
 
   // Deep link from `EatNextHomeCard` (spec §7.1: `router.push({ pathname:
   // "/(tabs)/track/fuel", params: { suggestMealId: top.mealId } })`) and the
-  // target of the "Suggested now" chips below — both open the Meal Library
-  // modal directly on a meal's detail.
-  const [libraryInitialMealId, setLibraryInitialMealId] = useState<string | null>(null);
+  // target of the "Suggested now" chips below — both land on a meal's page.
   const params = useLocalSearchParams<{ suggestMealId?: string }>();
   useEffect(() => {
     if (params.suggestMealId) {
-      setLibraryInitialMealId(params.suggestMealId);
-      setLibraryVisible(true);
+      openMeal(params.suggestMealId);
       // Consume once, so returning to this screen later doesn't re-open the
-      // modal. Settles in one extra render rather than looping: the effect
+      // meal. Settles in one extra render rather than looping: the effect
       // re-fires when `params.suggestMealId` flips to `undefined`, and the
       // guard above is then false (the identical lifecycle Task 9 traced for
       // `?modal=nutrition`).
       router.setParams({ suggestMealId: undefined });
     }
-  }, [params.suggestMealId]);
+  }, [params.suggestMealId, openMeal]);
 
   // Historical meals (last 365 days) for insights/streaks/chart. refreshHistory
   // is called on writes so insights refetch, but NOT on plain date navigation.
@@ -445,6 +447,32 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     ]);
     setRefreshing(false);
   }, [viewingDate, viewingDateStr, fetchRecentAndFavorites]);
+
+  // Logging a meal used to happen in a sheet this screen owned, which told it
+  // to re-read afterwards. The meal is a pushed route now, so nobody is left to
+  // tell it: what it missed while it was off-stack is whatever came back
+  // changed. Held in a ref because `fetchMealsForDate` is re-made every render
+  // — as a dependency it would re-run this on every render instead of on every
+  // focus. The first focus is skipped: the mount fetches already ran, and
+  // repeating them here is the double-load the Eat Next hook was written to
+  // avoid.
+  const refreshAfterReturn = useRef<() => void>(() => {});
+  refreshAfterReturn.current = () => {
+    setMealsCache((prev) => {
+      const next = new Map(prev);
+      next.delete(viewingDateStr);
+      return next;
+    });
+    void fetchMealsForDate(viewingDate, true);
+    void fetchRecentAndFavorites();
+  };
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedBefore.current) refreshAfterReturn.current();
+      focusedBefore.current = true;
+    }, []),
+  );
 
   // Handle barcode scanned
   const handleBarcodeScanned = async (barcode: string) => {
@@ -1643,7 +1671,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           <IconButton
             icon={BookOpen}
             weight="secondary"
-            onPress={() => setLibraryVisible(true)}
+            onPress={openLibrary}
             accessibilityLabel="Open your meal library"
           />
           <IconButton
@@ -1849,10 +1877,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                         {mealResults.slice(0, 5).map((m) => (
                           <TouchableOpacity
                             key={m.id}
-                            onPress={() => {
-                              setLibraryInitialMealId(m.id);
-                              setLibraryVisible(true);
-                            }}
+                            onPress={() => openMeal(m.id)}
                             style={styles.searchResultRow}
                             activeOpacity={0.7}
                           >
@@ -1980,10 +2005,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                     onDeleteLog={handleDeleteMeal}
                     onRetro={handleRetro}
                     onQuickLog={handleQuickLogSuggestion}
-                    onOpenLibrary={(mealId) => {
-                      setLibraryInitialMealId(mealId);
-                      setLibraryVisible(true);
-                    }}
+                    // The rail asks for a meal, or for the library itself when
+                    // it has no pick to point at.
+                    onOpenLibrary={(mealId) => (mealId ? openMeal(mealId) : openLibrary())}
                   />
                 )}
 
@@ -2066,7 +2090,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             <Search size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => setLibraryVisible(true)}
+            onPress={openLibrary}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Open your meal library"
@@ -2140,30 +2164,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         }}
       />
 
-      {/* Meal Library Modal */}
-      <MealLibraryModal
-        visible={libraryVisible}
-        savedFoods={allSavedFoods}
-        todayDate={viewingDateStr}
-        initialMealId={libraryInitialMealId}
-        // Cleared alongside `visible` so the next open — from the "Meal
-        // Library" button, which sets no target — lands on the list rather
-        // than re-opening the last suggested meal's detail.
-        onClose={() => {
-          setLibraryVisible(false);
-          setLibraryInitialMealId(null);
-        }}
-        onLogged={async () => {
-          setMealsCache((prev) => {
-            const next = new Map(prev);
-            next.delete(viewingDateStr);
-            return next;
-          });
-          await fetchMealsForDate(viewingDate, true);
-          await fetchRecentAndFavorites();
-        }}
-      />
-
       {/* Quick Adjustment Modal */}
       <QuickAdjustmentModal
         visible={quickAdjustVisible}
@@ -2200,8 +2200,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         mealResults={sheetMealResults}
         onOpenMeal={(mealId) => {
           closeLogSheet();
-          setLibraryInitialMealId(mealId);
-          setLibraryVisible(true);
+          openMeal(mealId);
         }}
         // The scanner is a full-screen modal that covers the sheet anyway, so
         // the sheet stays open underneath it: backing out of the camera

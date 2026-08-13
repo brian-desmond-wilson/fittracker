@@ -1,64 +1,51 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { Check } from "lucide-react-native";
-import { useRouter } from "expo-router";
-import { UndoToast, type UndoToastContent } from "@/src/components/ui";
+import { useFocusEffect, useRouter } from "expo-router";
 import { MealLibraryScreen } from "@/src/components/track/meals/library/MealLibraryScreen";
-import { MealLibraryModal } from "@/src/components/track/meals/library/MealLibraryModal";
 import { BarcodeScannerModal } from "@/src/components/track/BarcodeScannerModal";
-import { getSavedFoods } from "@/src/services/savedFoodsService";
+import { UndoToast, type UndoToastContent } from "@/src/components/ui";
 import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
 import { fetchMealLibrary, logMeal, undoMealLog, MealLoggedButDecrementFailed } from "@/src/lib/supabase/mealLibrary";
 import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { supabase } from "@/src/lib/supabase";
 import type { MealCard } from "@/src/lib/mealLibraryView";
-import type { SavedFood } from "@/src/types/track";
 
 /**
- * The Meal Library station off the Track hub.
+ * The Meal Library station off the Track hub — the catalog itself.
  *
- * The catalog itself is `MealLibraryScreen`; this route owns the sub-views it
- * hands off to. A meal's detail and the builder still come from
- * `MealLibraryModal`, which keeps every write path that already works —
- * logging, editing, deleting, linking an ingredient — in one place rather than
- * reimplemented here. Fuel raises that same component as a sheet, so the two
- * entry points cannot drift apart.
+ * A meal and the builder are sibling routes rather than sub-views of this page,
+ * so the stack is Track › Meal Library › meal and the back chevron means what
+ * it says on every page of it.
  */
 export default function MealLibraryPage() {
   const router = useRouter();
-  const [savedFoods, setSavedFoods] = useState<SavedFood[]>([]);
-  const [openMealId, setOpenMealId] = useState<string | null>(null);
-  const [building, setBuilding] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [toast, setToast] = useState<UndoToastContent | null>(null);
-  // Bumped whenever a sub-view closes, so the catalog re-reads what changed.
+  // Bumped whenever we come back from a sub-page, so the catalog re-reads what
+  // changed there — a meal logged, edited, built or deleted all move the
+  // shelves.
   const [refreshKey, setRefreshKey] = useState(0);
+  const focusedBefore = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const all = await getSavedFoods();
-        if (!cancelled) setSavedFoods(all);
-      } catch (error) {
-        console.error("Error fetching saved foods:", error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      // The catalog loads itself on mount, so only a RETURN needs to re-read;
+      // skipping the first focus keeps that from fetching the same rows twice.
+      if (focusedBefore.current) setRefreshKey((k) => k + 1);
+      focusedBefore.current = true;
+    }, []),
+  );
 
   // Always land on Track index — router.back() would walk linear history if
   // entered from outside the Track tab. Mirrors Fuel's exit.
   const close = () =>
     router.canGoBack() ? router.back() : router.replace("/(tabs)/track");
 
-  const closeSubView = useCallback(() => {
-    setOpenMealId(null);
-    setBuilding(false);
-    setRefreshKey((k) => k + 1);
-  }, []);
+  const openMeal = useCallback(
+    (mealId: string) => router.push(`/(tabs)/track/meal-library/${mealId}`),
+    [router],
+  );
 
   /**
    * Undo the log a toast is still offering: delete the rows this write made and
@@ -80,8 +67,8 @@ export default function MealLibraryPage() {
   );
 
   /**
-   * Log straight from a card. Reuses `logMeal` — the same function the detail
-   * view calls, with the same inventory decrement and the same two failure
+   * Log straight from a card. Reuses `logMeal` — the same function the meal
+   * page calls, with the same inventory decrement and the same two failure
    * branches — so a one-tap log from the shelf is not a second, thinner way
    * of writing the same row.
    *
@@ -143,7 +130,7 @@ export default function MealLibraryPage() {
         return;
       }
       if (matches.length === 1) {
-        setOpenMealId(matches[0].id);
+        openMeal(matches[0].id);
         return;
       }
       Alert.alert(
@@ -154,46 +141,27 @@ export default function MealLibraryPage() {
       console.error("scan in library:", e);
       Alert.alert("Couldn't check that", "Try again.");
     }
-  }, []);
-
-  const subViewOpen = openMealId !== null || building;
+  }, [openMeal]);
 
   return (
     <>
-      {subViewOpen ? (
-        <MealLibraryModal
-          presentation="screen"
-          visible
-          savedFoods={savedFoods}
-          todayDate={getLocalDateString(new Date())}
-          initialMealId={openMealId}
-          initialBuilder={building}
-          onClose={closeSubView}
-          onLogged={() => setRefreshKey((k) => k + 1)}
-        />
-      ) : (
-        <MealLibraryScreen
-          onBack={close}
-          onOpenMeal={(card) => setOpenMealId(card.meal.id)}
-          onNewMeal={() => setBuilding(true)}
-          onLogMeal={handleLog}
-          onScan={() => setScanning(true)}
-          refreshKey={refreshKey}
-        />
-      )}
+      <MealLibraryScreen
+        onBack={close}
+        onOpenMeal={(card) => openMeal(card.meal.id)}
+        onNewMeal={() => router.push("/(tabs)/track/meal-library/new")}
+        onLogMeal={handleLog}
+        onScan={() => setScanning(true)}
+        refreshKey={refreshKey}
+      />
 
-      {/* Only over the catalog: a sub-view covers the whole screen, and an Undo
-          floating on top of the detail it no longer describes is worse than no
-          Undo at all. Four seconds rather than the inventory screen's default —
-          this bar names a meal, so there is more to read before deciding. */}
-      {!subViewOpen && (
-        <UndoToast
-          toast={toast}
-          onDismissed={() => setToast(null)}
-          icon={Check}
-          durationMs={4000}
-        />
-      )}
+      {/* Four seconds rather than the inventory screen's default — this bar
+          names a meal, so there is more to read before deciding. */}
+      <UndoToast
+        toast={toast}
+        onDismissed={() => setToast(null)}
+        icon={Check}
+        durationMs={4000}
+      />
 
       <BarcodeScannerModal
         visible={scanning}
