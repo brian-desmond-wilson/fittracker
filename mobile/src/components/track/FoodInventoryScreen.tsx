@@ -19,10 +19,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, Truck, Undo2, X, Tag } from "lucide-react-native";
-import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Badge, Button, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
-import type { BadgeTone } from "@/src/components/ui";
+import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Tag } from "lucide-react-native";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Badge, Button, Card, EmptyState, IconButton, LoadingState, UndoToast } from "@/src/components/ui";
+import type { BadgeTone, UndoToastContent } from "@/src/components/ui";
 import {
   FoodCategory,
   FoodSubcategory,
@@ -212,36 +212,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // what is left, then leaves — and carries the correction for the mis-tap the
   // small target invites, which otherwise means opening the item to edit a
   // quantity back up.
-  const [toast, setToast] = useState<{
-    title: string;
-    detail: string;
-    /** Present only when the action is reversible. */
-    undo?: () => void;
-  } | null>(null);
-  const toastAnim = useRef(new Animated.Value(0)).current;
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The bar itself — animation, clock, exit — belongs to `UndoToast`; this
+  // screen only decides what it says and when.
+  const [toast, setToast] = useState<UndoToastContent | null>(null);
 
-  const hideToast = () => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    Animated.timing(toastAnim, {
-      toValue: 0, duration: 180, useNativeDriver: true,
-    }).start(({ finished }) => { if (finished) setToast(null); });
-  };
+  const hideToast = () => setToast(null);
 
   const showToast = (title: string, detail: string, undo?: () => void) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ title, detail, undo });
-    Animated.timing(toastAnim, {
-      toValue: 1, duration: 180, useNativeDriver: true,
-    }).start();
-    toastTimer.current = setTimeout(() => {
-      Animated.timing(toastAnim, {
-        toValue: 0, duration: 180, useNativeDriver: true,
-      }).start(({ finished }) => { if (finished) setToast(null); });
-    }, 2400);
   };
-  // A pending timer outliving the screen would set state on an unmounted tree.
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   // Pull-to-refresh feedback. The gesture and the `refreshing` lifecycle still
   // come from RefreshControl, but on iOS its own spinner does not render in
@@ -1387,47 +1366,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         />
         </View>
 
-        {toast && (
-          <Animated.View
-            // "box-none", not "none": the bar itself must stay transparent to
-            // taps aimed at the tiles beneath it, but Undo has to be reachable.
-            pointerEvents="box-none"
-            style={[
-              styles.toast,
-              {
-                // This screen is laid out inside the tab navigator's content
-                // area, so its own bottom edge already sits above the tab bar
-                // — no clearance for it, and no safe-area inset either.
-                bottom: spacing.xl,
-                opacity: toastAnim,
-                transform: [{
-                  translateY: toastAnim.interpolate({
-                    inputRange: [0, 1], outputRange: [12, 0],
-                  }),
-                }],
-              },
-            ]}
-            accessibilityLiveRegion="polite"
-          >
-            <Minus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
-            <View style={styles.toastText}>
-              <Text style={styles.toastTitle} numberOfLines={1}>{toast.title}</Text>
-              <Text style={typography.caption} numberOfLines={1}>{toast.detail}</Text>
-            </View>
-            {toast.undo && (
-              <TouchableOpacity
-                onPress={toast.undo}
-                style={styles.toastUndo}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                accessibilityRole="button"
-                accessibilityLabel="Undo"
-              >
-                <Undo2 size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
-                <Text style={styles.toastUndoLabel}>Undo</Text>
-              </TouchableOpacity>
-            )}
-          </Animated.View>
-        )}
+        <UndoToast toast={toast} onDismissed={() => setToast(null)} icon={Minus} />
 
         {/* Condensed bar. A sibling of the container, not a child, so top:0 is
             the true top of the screen and it can own the safe-area inset
@@ -1508,29 +1447,6 @@ const styles = StyleSheet.create({
   },
   belowHeader: { flex: 1 },
   gridWrap: { flex: 1 },
-  // Fill alone could not separate this from the page: the palette has three
-  // neutrals and `surface2`, the lightest, is what every other raised panel
-  // already uses. `elevation.overlay` is the answer — the toast floats rather
-  // than sits. The outline is brand at low alpha rather than `border`, which on
-  // this fill differs by about one step per channel and would contribute
-  // nothing; it also ties the edge to the green glyph.
-  toast: {
-    position: "absolute",
-    left: spacing.screenGutter, right: spacing.screenGutter,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.row,
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    borderColor: tint(colors.brand, 0.4),
-    ...elevation.overlay,
-  },
-  toastText: { flex: 1, minWidth: 0 },
-  toastTitle: { ...typography.buttonSm, color: colors.text },
-  toastUndo: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  toastUndoLabel: { ...typography.buttonSm, color: colors.brand },
   // Overlaid rather than inserted: the grid must not jump down and back as the
   // refresh starts and finishes.
   refreshRow: {

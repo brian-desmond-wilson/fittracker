@@ -8,3 +8,5 @@ export { Card } from "./Card";
 export { Screen } from "./Screen";
 export { SectionHeader } from "./SectionHeader";
 export { EmptyState, LoadingState } from "./EmptyState";
+export { UndoToast } from "./UndoToast";
+export type { UndoToastContent } from "./UndoToast";
