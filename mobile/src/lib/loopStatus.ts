@@ -28,7 +28,7 @@ export interface StationDetail {
 
 export type LoopDestination =
   | "/(tabs)/track/food-inventory"
-  | "/(tabs)/track/meals"
+  | "/(tabs)/track/fuel"
   | "/(tabs)/track/shopping";
 
 export interface StationStatus {
@@ -209,8 +209,8 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
       })),
       footnote: null,
     },
-    destination: "/(tabs)/track/meals",
-    destinationLabel: "Open Meals",
+    destination: "/(tabs)/track/fuel",
+    destinationLabel: "Open Fuel",
   };
 }
 
@@ -264,8 +264,8 @@ function eatNextStation(inp: LoopStatusInputs): StationStatus {
         ? `Runner-up: ${runnerUp.name} · ${runnerUp.calories} cal${runnerUpBadge ? ` · ${runnerUpBadge.label}` : ""}`
         : null,
     },
-    destination: "/(tabs)/track/meals",
-    destinationLabel: "Open Meals",
+    destination: "/(tabs)/track/fuel",
+    destinationLabel: "Open Fuel",
   };
 }
 
@@ -317,8 +317,8 @@ function paceStation(inp: LoopStatusInputs): StationStatus {
     attention: behind,
     connector: "what you log becomes your pace",
     detail: { lines, chips: [], footnote: null },
-    destination: "/(tabs)/track/meals",
-    destinationLabel: "Open Meals",
+    destination: "/(tabs)/track/fuel",
+    destinationLabel: "Open Fuel",
   };
 }
 

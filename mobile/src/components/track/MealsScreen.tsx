@@ -26,6 +26,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Utensils,
+  BookOpen,
   Calendar,
   Plus,
   Share2,
@@ -35,7 +36,8 @@ import {
   X,
 } from "lucide-react-native";
 import { colors, icons, spacing } from "@/src/theme/tokens";
-import { Button, Card, IconButton } from "@/src/components/ui";
+import { Button, Card, EmptyState, IconButton } from "@/src/components/ui";
+import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import {
@@ -51,11 +53,10 @@ import {
 } from "@/src/services/savedFoodsService";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
 import { FoodPreviewModal } from "./FoodPreviewModal";
-import { RecentFoodsRow } from "./meals/RecentFoodsRow";
 import { ManualFoodEntryModal } from "./meals/ManualFoodEntryModal";
 import { MealsNutritionCard } from "./MealsNutritionCard";
 import { sumNutrition } from "@/src/lib/mealMacros";
-import { MealLogEditorModal } from "./MealLogEditorModal";
+import { MealLogEditorModal, type MealLogEdit } from "./MealLogEditorModal";
 import { MealLibraryModal } from "./meals/library/MealLibraryModal";
 import {
   confirmConceptRating,
@@ -76,8 +77,10 @@ import {
   computeMealsRollingStats,
   buildMealsSeries,
 } from "@/src/lib/mealStats";
-import { computeMealPace, MealPaceState } from "@/src/lib/mealPace";
-import { MealsPaceLines } from "./MealsPaceLines";
+import { useFuelPlan } from "@/src/hooks/useFuelPlan";
+import { FuelVerdictStrip } from "./meals/FuelVerdictStrip";
+import { FuelRail } from "./meals/FuelRail";
+import { mealTypeForMinutes, type FuelWindow } from "@/src/lib/fuelPlan";
 import { MealUndoSnackbar } from "./MealUndoSnackbar";
 import { QuickAdjustmentModal } from "./QuickAdjustmentModal";
 import { MealsDistributionBar } from "./MealsDistributionBar";
@@ -89,7 +92,7 @@ import {
   InventoryMatchSummary,
 } from "@/src/services/foodInventoryMatchService";
 import { Share } from "react-native";
-import { styles } from "./meals/mealsScreenStyles";
+import { SLIM_BAR_HEIGHT, styles } from "./meals/mealsScreenStyles";
 import {
   getLocalDateString,
   formatViewingDate,
@@ -101,11 +104,7 @@ import { useSavedFoodsSearch } from "./meals/useSavedFoodsSearch";
 import { useMealSearch } from "./meals/useMealSearch";
 import { useHistoricalMeals } from "./meals/useHistoricalMeals";
 import { useMealAddForm } from "./meals/useMealAddForm";
-import { MealsDayList } from "./meals/MealsDayList";
-import { MealAddForm } from "./meals/MealAddForm";
-import { EatNextRow } from "./meals/EatNextRow";
-import { RescueRow } from "./meals/RescueRow";
-import { useRescuePlan } from "./meals/useRescuePlan";
+import { LogMealSheet } from "./meals/LogMealSheet";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 
@@ -115,7 +114,6 @@ interface MealsScreenProps {
 
 export function MealsScreen({ onClose }: MealsScreenProps) {
   const insets = useSafeAreaInsets();
-  const [showAddForm, setShowAddForm] = useState(false);
 
   // Date navigation state
   const [viewingDate, setViewingDate] = useState(new Date());
@@ -130,8 +128,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const addForm = useMealAddForm();
 
   // Macro goals + eating-window / meal times from profile (loaded on mount).
-  const { goals, windowStart, windowEnd, breakfastTime, lunchTime, dinnerTime } =
-    useMacroGoals();
+  // Times and window bounds now live inside useFuelPlan's own profile read;
+  // this screen only needs the goals.
+  const { goals } = useMacroGoals();
 
   // Edit-meal modal
   const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
@@ -185,7 +184,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const eatNext = useEatNext();
 
   // Deep link from `EatNextHomeCard` (spec §7.1: `router.push({ pathname:
-  // "/(tabs)/track/meals", params: { suggestMealId: top.mealId } })`) and the
+  // "/(tabs)/track/fuel", params: { suggestMealId: top.mealId } })`) and the
   // target of the "Suggested now" chips below — both open the Meal Library
   // modal directly on a meal's detail.
   const [libraryInitialMealId, setLibraryInitialMealId] = useState<string | null>(null);
@@ -224,16 +223,81 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const {
     recentFoods,
     favorites,
-    loadingRecent,
     refetch: fetchRecentAndFavorites,
   } = useRecentAndFavorites();
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  // Bumped after every forced day refetch so the Fuel sources (library,
+  // profile, windows, prep budget) reload alongside the logs they plan over.
+  const [fuelRefreshKey, setFuelRefreshKey] = useState(0);
+  // The sheet's own state: which slot and instant a log will land on. Set by
+  // whoever opened it — the header, a missed window's ghost, a quick chip —
+  // so the form never asks for what the entry point already knew.
+  const [logSheetOpen, setLogSheetOpen] = useState(false);
+  const [logSheetManual, setLogSheetManual] = useState(false);
+  const [logSheetAt, setLogSheetAt] = useState<Date>(new Date());
+  const [logSheetQuery, setLogSheetQuery] = useState("");
+  const [loggingFoodId, setLoggingFoodId] = useState<string | null>(null);
+  // The bottom chip row's Search chip focuses this instead of duplicating a
+  // second search field.
+  const searchInputRef = useRef<TextInput>(null);
+
+  // Collapsing header, the same mechanism Food Inventory uses: the search row
+  // and the title slide up under a condensed bar as you scroll, handing their
+  // space to the day. Transform only, never height — `useNativeDriver` cannot
+  // animate height, and a JS-driven height on a scrolling list is where jank
+  // comes from. The scroller translates by the same amount and is extended
+  // past the bottom edge by that distance, so it gains real estate rather
+  // than dragging a gap up behind it.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
+  const [collapsibleHeight, setCollapsibleHeight] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const collapseDistance = Math.max(0, collapsibleHeight - SLIM_BAR_HEIGHT);
+  const headerTranslate = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [0, collapseDistance],
+        outputRange: [0, -collapseDistance],
+        extrapolate: "clamp",
+      })
+    : 0;
+  // Fades in over the back half of the travel, so the condensed bar arrives
+  // just as the rows it replaces finish disappearing behind it.
+  const slimBarOpacity = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [collapseDistance / 2, collapseDistance],
+        outputRange: [0, 1],
+        extrapolate: "clamp",
+      })
+    : 0;
+
+  // The bar must not swallow taps while it is invisible. One boolean flipped
+  // at the threshold — not a per-frame state update.
+  useEffect(() => {
+    if (collapseDistance <= 0) return;
+    const id = scrollY.addListener(({ value }) => {
+      const next = value >= collapseDistance - 1;
+      setCollapsed((prev) => (prev === next ? prev : next));
+    });
+    return () => scrollY.removeListener(id);
+  }, [collapseDistance, scrollY]);
+
+  // Search lives in the row that scrolls away, so the condensed bar's search
+  // icon brings it back rather than duplicating the field.
+  const openSearch = () => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    setTimeout(() => searchInputRef.current?.focus(), 300);
+  };
 
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
   const { mealResults } = useMealSearch(searchQuery);
-  const { rescues } = useRescuePlan();
+  // The sheet searches the same two sources through its own query, so typing
+  // in it never leaves results behind on the page when it closes.
+  const { searchResults: sheetFoodResults, searching: sheetSearching } =
+    useSavedFoodsSearch(logSheetQuery);
+  const { mealResults: sheetMealResults } = useMealSearch(logSheetQuery);
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -318,6 +382,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       // `eatNext.result`, because the value in THIS closure is the
       // pre-refetch one and would sync a stale decision.
       if (force && dateStr === todayStr) eatNext.refetch();
+      // Same trigger for the Fuel rail's sources: a write can change stock
+      // (quick-log decrements inventory), which changes picks and rescues.
+      if (force) setFuelRefreshKey((k) => k + 1);
     } catch (error: any) {
       console.error("Error fetching meals:", error);
       Alert.alert("Error", "Failed to load meals");
@@ -349,10 +416,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // in the search bar or opening the add form. Otherwise results/input
   // would land off-screen on the Insights tab.
   useEffect(() => {
-    if (activeTab !== "today" && (searchQuery.trim().length >= 2 || showAddForm)) {
+    if (activeTab !== "today" && searchQuery.trim().length >= 2) {
       setActiveTab("today");
     }
-  }, [activeTab, searchQuery, showAddForm]);
+  }, [activeTab, searchQuery]);
 
   const handleSearchResultPress = (food: SavedFood) => {
     setPreviewFood(food);
@@ -624,11 +691,13 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         if (consumed) consumedInventoryId = inventoryMatch.id;
       }
 
-      // Clear state
+      // Clear state. `closeLogSheet` covers the scan-from-the-sheet path:
+      // the food is logged, so the sheet that started the scan is done too.
       setShowFoodPreview(false);
       setPreviewFood(null);
       setScannedBarcode(null);
       setInventoryMatch(null);
+      closeLogSheet();
 
       // Trigger undo snackbar
       if (inserted?.id) {
@@ -866,9 +935,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         );
       }
 
-      // Clear state
+      // Clear state — including the sheet, if this entry began with its
+      // "Scan a barcode" on a product the library had never seen.
       setShowManualEntry(false);
       setScannedBarcode(null);
+      closeLogSheet();
 
       // Invalidate cache and refetch
       setMealsCache((prev) => {
@@ -888,15 +959,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       console.error("Error logging manual meal:", error);
       Alert.alert("Error", "Failed to log meal");
     }
-  };
-
-  // Handle recent food selection
-  const handleRecentFoodPress = (food: SavedFood) => {
-    setPreviewFood(food);
-    setPreviewSource("saved");
-    setScannedBarcode(food.barcode);
-    setPreviewWasEdited(false);
-    setShowFoodPreview(true);
   };
 
   // Swipe gesture handler
@@ -951,10 +1013,40 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   const resetForm = () => addForm.reset(viewingDate);
 
-  // Open form with viewing date as default
-  const handleOpenAddForm = () => {
+  /**
+   * The one door into logging. Every caller passes what it already knows —
+   * the header knows only the day, a missed window's ghost knows the slot and
+   * roughly when, a quick chip knows the kind of thing — and the sheet
+   * inherits it instead of asking.
+   */
+  const openLogSheet = (opts: { mealType?: MealType; at?: Date; manual?: boolean } = {}) => {
+    resetForm();
     addForm.setSelectedDate(viewingDate);
-    setShowAddForm(true);
+    // On a past day the clock time is meaningless, so a log lands at midday
+    // rather than at whatever o'clock it happens to be now.
+    const fallbackAt = viewingToday
+      ? new Date()
+      : new Date(new Date(viewingDate).setHours(12, 0, 0, 0));
+    const at = opts.at ?? fallbackAt;
+    // With no slot named by the caller, the clock names one: the window that
+    // instant falls in. Otherwise every log would open on breakfast.
+    addForm.setMealType(
+      opts.mealType ??
+        mealTypeForMinutes(
+          fuel.model?.windows ?? [],
+          at.getHours() * 60 + at.getMinutes(),
+        ),
+    );
+    setLogSheetAt(at);
+    setLogSheetQuery("");
+    setLogSheetManual(opts.manual ?? false);
+    setLogSheetOpen(true);
+  };
+
+  const closeLogSheet = () => {
+    setLogSheetOpen(false);
+    setLogSheetManual(false);
+    setLogSheetQuery("");
   };
 
   const handleAddMeal = async () => {
@@ -999,7 +1091,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         fiber_g: fiberG ? parseFloat(fiberG) : null,
         uses_inventory: false,
         inventory_items: null,
-        logged_at: new Date().toISOString(),
+        // The sheet's own clock — set from the entry point, so a log written
+        // through a missed window's ghost lands in that window's slot.
+        logged_at: logSheetAt.toISOString(),
       };
 
       const { data: inserted, error } = await supabase
@@ -1030,7 +1124,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       });
 
       resetForm();
-      setShowAddForm(false);
+      closeLogSheet();
 
       // Refetch if the meal was added for the viewing date
       if (mealDate === viewingDateStr) {
@@ -1150,17 +1244,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   };
 
-  const handleSaveMealEdit = async (updates: {
-    name: string;
-    meal_type: MealType;
-    calories: number | null;
-    protein: number | null;
-    carbs: number | null;
-    fats: number | null;
-    sugars: number | null;
-    sodium_mg: number | null;
-    fiber_g: number | null;
-  }) => {
+  const handleSaveMealEdit = async (updates: MealLogEdit) => {
     if (!editingMeal) return;
     try {
       setSavingEdit(true);
@@ -1329,35 +1413,108 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // intake is shown regardless of search query.
   const dayTotals = useMemo(() => sumNutrition(dayMeals), [dayMeals]);
 
-  // Pace coach for today's view only. (`isViewingToday` is a function
-  // defined above; cache its result here for memo deps.)
+  // (`isViewingToday` is a function defined above; cache its result here for
+  // memo deps.)
   const viewingToday = viewingDateStr === todayStr;
-  const mealTimes = useMemo(
-    () => ({ breakfast: breakfastTime, lunch: lunchTime, dinner: dinnerTime }),
-    [breakfastTime, lunchTime, dinnerTime]
-  );
-  const caloriePace: MealPaceState | null = useMemo(() => {
-    if (!viewingToday) return null;
-    return computeMealPace({
-      currentValue: dayTotals.calories,
-      goal: goals.calories,
-      windowStart,
-      windowEnd,
-      mealTimes,
-      macro: "calories",
-    });
-  }, [viewingToday, dayTotals.calories, goals.calories, windowStart, windowEnd, mealTimes]);
-  const proteinPace: MealPaceState | null = useMemo(() => {
-    if (!viewingToday) return null;
-    return computeMealPace({
-      currentValue: dayTotals.protein,
-      goal: goals.protein,
-      windowStart,
-      windowEnd,
-      mealTimes,
-      macro: "protein",
-    });
-  }, [viewingToday, dayTotals.protein, goals.protein, windowStart, windowEnd, mealTimes]);
+
+  // The Fuel engine: one hook, one clock, rendered-ready rail rows. Replaces
+  // the pace-line memos, the rescue row and the Eat Next row this screen used
+  // to compose separately — and with them, their three separate clocks.
+  const fuel = useFuelPlan(dayMeals, viewingToday, fuelRefreshKey);
+
+  const handleRetro = (w: FuelWindow | null) => {
+    if (!w) return openLogSheet();
+    // A window's ghost logs into the middle of that window, which is both a
+    // fair guess and enough to make the rail file the receipt in the right
+    // place — the exact minute is editable in the sheet.
+    const mid = Math.round((w.startMinutes + w.endMinutes) / 2);
+    const at = new Date(viewingDate);
+    at.setHours(Math.floor(mid / 60), mid % 60, 0, 0);
+    openLogSheet({ mealType: w.mealType, at });
+  };
+
+  /**
+   * One tap on a recent or a search result writes the log outright — the
+   * whole reason recents come first. Mirrors the preview flow's semantics
+   * (one serving, inventory decremented when the barcode matches something in
+   * stock, undoable) minus the preview screen in between.
+   */
+  const handleLogFoodDirect = async (food: SavedFood) => {
+    if (loggingFoodId) return;
+    setLoggingFoodId(food.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+      const match = food.barcode ? await findInventoryMatchByBarcode(food.barcode) : null;
+      const willUseInventory = !!match && match.quantity > 0;
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: addForm.mealType,
+          name: food.name,
+          calories: food.calories,
+          protein: food.protein,
+          carbs: food.carbs,
+          fats: food.fats,
+          sugars: food.sugars,
+          sodium_mg: (food as { sodium_mg?: number | null }).sodium_mg ?? null,
+          fiber_g: (food as { fiber_g?: number | null }).fiber_g ?? null,
+          saved_food_id: food.id,
+          servings: 1,
+          uses_inventory: willUseInventory,
+          inventory_items: willUseInventory && match ? [{ id: match.id, quantity: 1 }] : null,
+          logged_at: logSheetAt.toISOString(),
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      // Armed on outcome, never on intent — same rule as the preview path.
+      let consumedInventoryId: string | null = null;
+      if (willUseInventory && match) {
+        const consumed = await consumeOneInventoryUnit(match.id);
+        if (consumed) consumedInventoryId = match.id;
+      }
+
+      closeLogSheet();
+      if (inserted?.id) {
+        showUndoFor(
+          inserted.id,
+          food.calories ? `Logged ${food.name} · ${food.calories} cal` : `Logged ${food.name}`,
+          consumedInventoryId,
+        );
+      }
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      await fetchRecentAndFavorites();
+    } catch (e) {
+      console.error("Error logging food:", e);
+      Alert.alert("Error", "Failed to log that");
+    } finally {
+      setLoggingFoodId(null);
+    }
+  };
+
+  // Receipts borrow their saved food's photo, same as meals borrow their
+  // biggest item's (C5) — a rail of grey initials would waste pictures the
+  // library already holds.
+  const logFaceById = useMemo(() => {
+    const foodById = new Map(allSavedFoods.map((f) => [f.id, f.image_primary_url ?? null]));
+    const m = new Map<string, string | null>();
+    for (const l of dayMeals) {
+      m.set(l.id, l.saved_food_id ? (foodById.get(l.saved_food_id) ?? null) : null);
+    }
+    return m;
+  }, [dayMeals, allSavedFoods]);
 
   // Second of the eat-nudge family's two resync points (spec §8.1; the Home
   // card is the other, covering app open/foreground). Sited here, rather than
@@ -1401,12 +1558,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     });
   }, [viewingToday, eatNext.result, eatNext.computedAt]);
 
-  // Search-filtered subset of dayMeals (used for the list rendering only).
-  const filteredDayMeals = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (q === "") return dayMeals;
-    return dayMeals.filter((m) => m.name.toLowerCase().includes(q));
-  }, [dayMeals, searchQuery]);
 
   // Insights data — derived from the 365-day historical fetch.
   const totalsByDate = useMemo(
@@ -1438,29 +1589,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     [totalsByDate, goals]
   );
 
-  // Group meals by meal type
-  const getMealsGroupedByType = (): Record<MealType, MealLog[]> => {
-    const grouped: Record<MealType, MealLog[]> = {
-      breakfast: [],
-      lunch: [],
-      dinner: [],
-      snack: [],
-      dessert: [],
-    };
-
-    filteredDayMeals.forEach((meal) => {
-      grouped[meal.meal_type].push(meal);
-    });
-
-    return grouped;
-  };
-
-  const groupedMealsByType = getMealsGroupedByType();
-
   return (
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* The two rows that stand down while you scroll. */}
+        <Animated.View
+          onLayout={(e) => setCollapsibleHeight(e.nativeEvent.layout.height)}
+          style={{ transform: [{ translateY: headerTranslate }] }}
+        >
         {/* Header — back, search (with barcode), add — mirrors Food Inventory */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
@@ -1469,6 +1606,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           <View style={styles.searchBar}>
             <Search size={icons.md} color={colors.textMuted} />
             <TextInput
+              ref={searchInputRef}
               style={styles.searchInput}
               placeholder="Search foods..."
               placeholderTextColor={colors.textMuted}
@@ -1499,34 +1637,70 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               suggestions, the search results and the quick-add row — four
               scrolls from the top. It belongs beside the other two things you
               can do from here. */}
+          {/* A book, not a fork: the fork is this page's own identity glyph,
+              and a control wearing the screen's mark reads as "you are here"
+              rather than "go there". */}
           <IconButton
-            icon={Utensils}
+            icon={BookOpen}
             weight="secondary"
             onPress={() => setLibraryVisible(true)}
             accessibilityLabel="Open your meal library"
           />
           <IconButton
             icon={Plus}
-            onPress={handleOpenAddForm}
-            disabled={showAddForm}
+            onPress={() => openLogSheet()}
             accessibilityLabel="Log a meal"
           />
         </View>
 
-        {/* Fixed Refresh Indicator */}
-        {refreshing && (
-          <View style={styles.refreshIndicator}>
-            <ActivityIndicator size="small" color={colors.brand} />
-          </View>
-        )}
+        {/* Title (Share moved here from header). Outside the scroller and
+            inside the collapsing group, so it folds into the condensed bar
+            rather than merely scrolling out of sight. */}
+        <View style={styles.titleContainer}>
+          <Utensils
+            size={icons.xl}
+            color={colors.accents.meals}
+            strokeWidth={icons.strokeWidth}
+          />
+          <Text style={styles.pageTitle}>Fuel</Text>
+          <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={exporting}
+            style={styles.titleShareButton}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Export this day as CSV"
+          >
+            <Share2
+              size={icons.lg}
+              color={exporting ? colors.textMuted : colors.text}
+            />
+          </TouchableOpacity>
+        </View>
+        </Animated.View>
 
-        <ScrollView
-          style={styles.content}
+        {/* App-drawn refresh indicator — the system spinner never renders in
+            this app, so the primitive sits as a sibling above the scroll. */}
+        <RefreshIndicator visible={refreshing} />
+
+        {/* Rides up with the header. Extended below the screen edge by exactly
+            the collapse distance so the day gains that space. */}
+        <Animated.ScrollView
+          ref={scrollRef}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true },
+          )}
+          scrollEventThrottle={16}
+          style={[
+            styles.content,
+            { marginBottom: -collapseDistance, transform: [{ translateY: headerTranslate }] },
+          ]}
           showsVerticalScrollIndicator={false}
           // `flexGrow: 1` (with the matching grow on `mealsSection`) is what
-          // lets `MealsDayList`'s `EmptyState`/`LoadingState` — both `flex: 1`
-          // — resolve to a real height instead of collapsing onto their own
-          // padding. Inert once the day has enough content to scroll.
+          // lets the rail region's `EmptyState` — `flex: 1` — resolve to a
+          // real height instead of collapsing onto its own padding. Inert
+          // once the day has enough content to scroll.
           contentContainerStyle={[
             styles.scrollContent,
             { paddingBottom: insets.bottom + spacing.xxl },
@@ -1540,27 +1714,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             />
           }
         >
-          {/* Title (Share moved here from header) */}
-          <View style={styles.titleContainer}>
-            <Utensils
-              size={icons.xl}
-              color={colors.accents.meals}
-              strokeWidth={icons.strokeWidth}
-            />
-            <Text style={styles.pageTitle}>Meals & Snacks</Text>
-            <TouchableOpacity
-              onPress={handleExportCsv}
-              disabled={exporting}
-              style={styles.titleShareButton}
-              activeOpacity={0.7}
-            >
-              <Share2
-                size={icons.lg}
-                color={exporting ? colors.textMuted : colors.text}
-              />
-            </TouchableOpacity>
-          </View>
-
           {/* Date Navigation - with swipe gesture */}
           <Animated.View
             style={{ transform: [{ translateX }] }}
@@ -1605,7 +1758,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
             {/* Tab pills: Today / Insights. Hidden while the add form is
                 up — that flow takes over the surface. */}
-            {!showAddForm && (
+            {(
               <View style={styles.tabsContainer}>
                 <View style={styles.tabsTrack}>
                   <TouchableOpacity
@@ -1646,46 +1799,37 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </View>
             )}
 
-            {/* ── TODAY TAB ── logging surface */}
-            {!showAddForm && activeTab === "today" && (
+            {/* ── TODAY TAB ── the day's eating plan */}
+            {activeTab === "today" && (
               <>
-                {/* Nutrition Summary (rings + bars + compact tier C) */}
-                <MealsNutritionCard
-                  label={getNutritionLabel(viewingDate)}
-                  totals={dayTotals}
-                  goals={goals}
-                />
-
-                {/* Pace coach (today only) */}
-                {viewingToday && (
-                  <View style={styles.paceWrap}>
-                    <MealsPaceLines
-                      caloriePace={caloriePace}
-                      proteinPace={proteinPace}
-                    />
-                    {/* "Suggested now" (spec §7.2) — directly under the pace
-                        lines, inside the same `viewingToday` guard and gutter.
-                        Renders nothing when there are no recommendations. */}
-                    {/* E3: from the other end — the food that is about to go,
-                        and what would use it. Renders nothing when nothing is
-                        expiring, which is most days. */}
-                    <RescueRow
-                      suggestions={rescues}
-                      onMealPress={(mealId) => {
-                        setLibraryInitialMealId(mealId);
-                        setLibraryVisible(true);
-                      }}
-                    />
-                    <EatNextRow
-                      result={eatNext.result}
-                      onMealPress={(mealId) => {
-                        setLibraryInitialMealId(mealId);
-                        setLibraryVisible(true);
-                      }}
-                      onQuickLog={handleQuickLogSuggestion}
-                      loggingMealId={quickLoggingMealId}
-                    />
-                  </View>
+                {/* Today wears the verdict strip — chip, bars, and what the
+                    rail below lands the day at. A finished (past) day is a
+                    record, not a plan, so it keeps the full nutrition card.
+                    While today's plan is still loading this renders NOTHING:
+                    falling back to the ring card would flash a different
+                    summary of the same day for a beat on every entry, which
+                    reads as the page changing its mind. The strip appears
+                    when it can be right. The ring card does come back if the
+                    plan FAILS — then it is the honest best available. */}
+                {viewingToday && fuel.model?.verdict ? (
+                  <FuelVerdictStrip
+                    verdict={fuel.model.verdict}
+                    projection={fuel.model.projection}
+                    dayTotals={dayTotals}
+                    goals={goals}
+                    computedAt={fuel.model.computedAt}
+                    paceByMacro={{
+                      calories: fuel.model.caloriePace,
+                      protein: fuel.model.proteinPace,
+                      fiber: fuel.model.fiberPace,
+                    }}
+                  />
+                ) : viewingToday && !fuel.error ? null : (
+                  <MealsNutritionCard
+                    label={getNutritionLabel(viewingDate)}
+                    totals={dayTotals}
+                    goals={goals}
+                  />
                 )}
 
                 {/* Search Results — from your saved foods library */}
@@ -1758,25 +1902,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                   </Card>
                 )}
 
-                {/* Recent Foods (Quick Add) — promoted above meal sections
-                    so the fastest path to logging is one tap from here. */}
-                <RecentFoodsRow
-                  recentFoods={recentFoods}
-                  favorites={favorites}
-                  onFoodPress={handleRecentFoodPress}
-                  onFoodLongPress={handleToggleFavorite}
-                  loading={loadingRecent}
-                />
-
-                {/* The Meal Library button that used to sit here has moved to
-                    the header (B5), where it is reachable without scrolling
-                    past everything else on the tab. Keeping both would be two
-                    doors to one room. */}
+                {/* Quick add lives BELOW the rail as the mock's chip row —
+                    the plan is the page; adding something unplanned is the
+                    escape hatch, not the headline. Recent-food one-tap chips
+                    still live inside the add form. */}
               </>
             )}
 
             {/* ── INSIGHTS TAB ── reflective stats */}
-            {!showAddForm && activeTab === "insights" && (
+            {activeTab === "insights" && (
               <>
                 <MealsInsightsCard
                   calorieStreak={calorieStreak}
@@ -1822,48 +1956,133 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </>
             )}
 
-          {/* Add Form */}
-          {showAddForm && (
-            <MealAddForm
-              form={addForm}
-              recentFoods={recentFoods}
-              favorites={favorites}
-              onChipPress={addForm.fillFromChip}
-              onCancel={() => {
-                resetForm();
-                setShowAddForm(false);
-              }}
-              onSubmit={handleAddMeal}
-            />
-          )}
+            {/* The rail — the day in one chronological read. Today: receipts,
+                the NOW line, then the plan. Past days: receipts only. */}
+            {activeTab === "today" && (
+              <View style={styles.mealsSection}>
+                {loadingDay && dayMeals.length === 0 ? (
+                  <ActivityIndicator color={colors.brand} />
+                ) : !viewingToday && dayMeals.length === 0 ? (
+                  <EmptyState
+                    icon={Utensils}
+                    title="No meals logged"
+                    body="Nothing was logged on this day."
+                  />
+                ) : (
+                  <FuelRail
+                    rows={fuel.model?.rows ?? []}
+                    loggingMealId={quickLoggingMealId}
+                    logFaceById={logFaceById}
+                    onPressLog={(logId) => {
+                      const m = dayMeals.find((x) => x.id === logId);
+                      if (m) setEditingMeal(m);
+                    }}
+                    onDeleteLog={handleDeleteMeal}
+                    onRetro={handleRetro}
+                    onQuickLog={handleQuickLogSuggestion}
+                    onOpenLibrary={(mealId) => {
+                      setLibraryInitialMealId(mealId);
+                      setLibraryVisible(true);
+                    }}
+                  />
+                )}
 
-            {/* Meals Section - Grouped by Type (Today tab only; on Insights
-                the logged-food list is hidden to keep that view reflective) */}
-            {(showAddForm || activeTab === "today") && (
-              <MealsDayList
-                loadingDay={loadingDay}
-                dayMeals={dayMeals}
-                groupedMealsByType={groupedMealsByType}
-                onEditMeal={setEditingMeal}
-                onDeleteMeal={handleDeleteMeal}
-                // B8. Only on today, and only when there is a suggestion —
-                // the recommender's answer is the useful thing to say under
-                // "nothing logged", and on a past day there is no such thing.
-                suggestedMealName={
-                  viewingToday
-                    ? eatNext.result?.recommendations[0]?.name ?? null
-                    : null
-                }
-                onOpenSuggestion={() => {
-                  const mealId = eatNext.result?.recommendations[0]?.mealId;
-                  if (!mealId) return;
-                  setLibraryInitialMealId(mealId);
-                  setLibraryVisible(true);
-                }}
-              />
+                {/* Quick add chips — the mock's bottom row. Anything the plan
+                    didn't suggest is one tap into the form (R13). */}
+                {(
+                  <View style={styles.quickChipsRow}>
+                    {(
+                      [
+                        ["Meal", null],
+                        ["Snack", "snack"],
+                        ["Dessert", "dessert"],
+                      ] as Array<[string, MealType | null]>
+                    ).map(([label, type]) => (
+                      <TouchableOpacity
+                        key={label}
+                        style={styles.quickChip}
+                        onPress={() => openLogSheet(type ? { mealType: type } : {})}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add a ${label.toLowerCase()}`}
+                      >
+                        <Plus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                        <Text style={styles.quickChipText}>{label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={styles.quickChip}
+                      onPress={() => searchInputRef.current?.focus()}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="Search foods"
+                    >
+                      <Search size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                      <Text style={styles.quickChipText}>Search</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             )}
-          </ScrollView>
+          </Animated.ScrollView>
       </View>
+
+      {/* Condensed bar. A sibling of the container, not a child, so top:0 is
+          the true top of the screen and it can own the safe-area inset itself.
+          Everything the scrolled-away rows offered is here. */}
+      <Animated.View
+        style={[styles.slimBar, { paddingTop: insets.top, opacity: slimBarOpacity }]}
+        pointerEvents={collapsed ? "auto" : "none"}
+      >
+        <View style={styles.slimBarRow}>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <ChevronLeft size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <Text style={styles.slimBarTitle} numberOfLines={1}>Fuel</Text>
+          <TouchableOpacity
+            onPress={handleExportCsv}
+            disabled={exporting}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Export this day as CSV"
+          >
+            <Share2
+              size={icons.md}
+              color={exporting ? colors.textMuted : colors.text}
+              strokeWidth={icons.strokeWidth}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={openSearch}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Search foods"
+          >
+            <Search size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setLibraryVisible(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Open your meal library"
+          >
+            <BookOpen size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => openLogSheet()}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Log a meal"
+          >
+            <Plus size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
 
       {/* Barcode Scanner Modal */}
       <BarcodeScannerModal
@@ -1910,8 +2129,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         visible={editingMeal !== null}
         meal={editingMeal}
         saving={savingEdit}
+        faceUrl={editingMeal ? (logFaceById.get(editingMeal.id) ?? null) : null}
+        dayCalories={dayTotals.calories}
+        goalCalories={goals.calories}
         onClose={() => setEditingMeal(null)}
         onSave={handleSaveMealEdit}
+        onDelete={(mealId) => {
+          setEditingMeal(null);
+          handleDeleteMeal(mealId);
+        }}
       />
 
       {/* Meal Library Modal */}
@@ -1952,6 +2178,42 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         historicalLogs={historicalLogs}
         goals={goals}
         onClose={() => setWeeklySummaryVisible(false)}
+      />
+
+      {/* Log something — over the rail, never inside it. */}
+      <LogMealSheet
+        visible={logSheetOpen}
+        onClose={closeLogSheet}
+        mealType={addForm.mealType}
+        onMealTypeChange={addForm.setMealType}
+        loggedAt={logSheetAt}
+        onLoggedAtChange={setLogSheetAt}
+        dayLabel={viewingToday ? "today" : formatViewingDate(viewingDate)}
+        recentFoods={recentFoods.map((r) => r.savedFood)}
+        favorites={favorites}
+        onLogFood={handleLogFoodDirect}
+        loggingFoodId={loggingFoodId}
+        query={logSheetQuery}
+        onQueryChange={setLogSheetQuery}
+        searching={sheetSearching}
+        searchResults={sheetFoodResults}
+        mealResults={sheetMealResults}
+        onOpenMeal={(mealId) => {
+          closeLogSheet();
+          setLibraryInitialMealId(mealId);
+          setLibraryVisible(true);
+        }}
+        // The scanner is a full-screen modal that covers the sheet anyway, so
+        // the sheet stays open underneath it: backing out of the camera
+        // returns you to where you were, rather than making you re-open the
+        // sheet to try again. The paths that finish the job — logging from
+        // the preview, or saving a manual entry — close it themselves.
+        onScan={() => setShowBarcodeScanner(true)}
+        form={addForm}
+        manualOpen={logSheetManual}
+        onManualOpenChange={setLogSheetManual}
+        onSubmitManual={handleAddMeal}
+        submitting={loggingFoodId !== null}
       />
 
       {/* Undo snackbar */}

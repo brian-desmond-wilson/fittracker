@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router";
 import { MealsScreen } from "@/src/components/track/MealsScreen";
 
-export default function MealsPage() {
+export default function FuelPage() {
   const router = useRouter();
 
   // Always land on Track index — router.back() would walk linear

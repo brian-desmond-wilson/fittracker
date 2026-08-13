@@ -121,7 +121,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       <Card
         variant="panel"
         style={styles.cardSpacing}
-        onPress={() => router.push("/(tabs)/track/meals")}
+        onPress={() => router.push("/(tabs)/track/fuel")}
       >
         <View style={styles.headerRow}>
           <UtensilsCrossed size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
@@ -173,7 +173,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
       style={[styles.cardSpacing, emergency && styles.cardEmergency]}
       onPress={() =>
         router.push({
-          pathname: "/(tabs)/track/meals",
+          pathname: "/(tabs)/track/fuel",
           params: { suggestMealId: top.mealId },
         })
       }
@@ -239,7 +239,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
           numberOfLines={2}
           onPress={() =>
             router.push({
-              pathname: "/(tabs)/track/meals",
+              pathname: "/(tabs)/track/fuel",
               params: { suggestMealId: readyAlternative.mealId },
             })
           }

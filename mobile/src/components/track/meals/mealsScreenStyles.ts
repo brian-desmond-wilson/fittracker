@@ -5,6 +5,11 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 // MealsScreen does NOT adopt `ui/Screen` (its ScrollView owns a RefreshControl),
 // so per the plan's gutter rule each top-level block carries the gutter itself,
 // uniformly at `spacing.screenGutter`.
+/** Height of the condensed bar the header folds into on scroll. Lives here
+ *  rather than in the screen because the style below needs it too; same value
+ *  as Food Inventory's, so the two screens condense alike. */
+export const SLIM_BAR_HEIGHT = 48;
+
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -18,11 +23,6 @@ export const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  refreshIndicator: {
-    paddingVertical: spacing.md,
-    alignItems: "center",
-    justifyContent: "center",
   },
   backButton: {
     padding: spacing.xs,
@@ -52,9 +52,8 @@ export const styles = StyleSheet.create({
   },
   /**
    * Paired with `mealsSection`'s `flexGrow`, this gives the scroller a
-   * definite height so `MealsDayList`'s `EmptyState`/`LoadingState` (both
-   * `flex: 1`) can fill the list region rather than collapsing onto their own
-   * padding. Same pairing Tasks 5-6 put on their list content containers.
+   * definite height so the rail region's `EmptyState` (`flex: 1`) can fill it
+   * rather than collapsing onto its own padding.
    */
   scrollContent: {
     flexGrow: 1,
@@ -127,20 +126,6 @@ export const styles = StyleSheet.create({
     marginHorizontal: spacing.screenGutter,
     marginBottom: spacing.lg,
   },
-  /** Gutter + spacing for the pace-coach / suggested-now block. */
-  paceWrap: {
-    marginHorizontal: spacing.screenGutter,
-    marginBottom: spacing.md,
-  },
-  addSection: {
-    paddingHorizontal: spacing.screenGutter,
-    marginBottom: spacing.xxl,
-  },
-  subsectionTitle: {
-    ...typography.section,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-  },
   field: {
     marginBottom: spacing.lg,
   },
@@ -160,21 +145,6 @@ export const styles = StyleSheet.create({
   },
   required: {
     color: colors.danger,
-  },
-  dateButton: {
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.control,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: colors.text,
   },
   mealTypeButtons: {
     flexDirection: "row",
@@ -212,58 +182,9 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
-  formButtons: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
-  formButton: {
-    flex: 1,
-  },
   mealsSection: {
     flexGrow: 1,
     paddingHorizontal: spacing.screenGutter,
-  },
-  // Matches "SUGGESTED NOW" and "QUICK ADD" above it, so the tab reads as
-  // three labelled groups instead of a stack of unrelated blocks.
-  loggedHeader: {
-    ...typography.section,
-    marginBottom: spacing.md,
-  },
-  mealTypeSection: {
-    marginBottom: spacing.xl,
-  },
-  mealTypeSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  // Not a `Badge`: the fill is the meal type's own identity color, which the
-  // primitive's tone set cannot express. Geometry matches `Badge`.
-  mealTypeBadge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-  },
-  mealTypeBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  /** Placement the `Card row` primitive can't express. */
-  mealCardSpacing: {
-    marginBottom: spacing.md,
-  },
-  mealCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  mealTime: {
-    ...typography.caption,
   },
   searchResultsSpacing: {
     marginHorizontal: spacing.screenGutter,
@@ -297,18 +218,44 @@ export const styles = StyleSheet.create({
   distributionWrap: {
     marginHorizontal: spacing.screenGutter,
   },
-  mealName: {
-    ...typography.rowTitle,
-    color: colors.text,
-    marginBottom: spacing.sm,
+  /** The condensed bar the header folds into on scroll. Absolute and a
+   *  sibling of the container so `top: 0` is the true top of the screen. */
+  slimBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  mealNutrition: {
+  slimBarRow: {
+    height: SLIM_BAR_HEIGHT,
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md,
+    alignItems: "center",
+    gap: spacing.lg,
+    paddingHorizontal: spacing.screenGutter,
   },
-  nutritionText: {
-    ...typography.body,
-    color: colors.textMuted,
+  slimBarTitle: { ...typography.titleBar, color: colors.text, flex: 1 },
+  /** The mock's bottom quick-add chips (＋ Meal · ＋ Snack · ＋ Dessert · Search). */
+  quickChipsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  quickChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickChipText: {
+    ...typography.buttonSm,
+    color: colors.text,
   },
 });
