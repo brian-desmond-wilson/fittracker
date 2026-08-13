@@ -150,7 +150,11 @@ export function LogMealSheet({
             duration: 180,
             useNativeDriver: true,
           }).start(() => {
-            dragY.setValue(0);
+            // Close ONLY. Resetting the offset here would snap the sheet back
+            // to its resting position for the frame or two before `visible`
+            // turns false and unmounts it — which is exactly the flash of a
+            // sheet you have just thrown away. The reset happens on the way
+            // IN instead, below.
             onCloseRef.current();
           });
         } else {
@@ -169,7 +173,12 @@ export function LogMealSheet({
 
   // Opening always starts from rest, and from the quick paths rather than
   // wherever the last visit left the context panel.
-  React.useEffect(() => {
+  //
+  // `useLayoutEffect`, not `useEffect`: a dismissed sheet is left parked at
+  // `EXIT_TRAVEL`, and a passive effect would run after the next open had
+  // already painted — one frame with the sheet still off-screen, the mirror
+  // image of the flash this replaced.
+  React.useLayoutEffect(() => {
     if (visible) {
       dragY.setValue(0);
       setContextOpen(false);
