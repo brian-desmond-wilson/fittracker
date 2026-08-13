@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
+import { Check } from "lucide-react-native";
 import { useRouter } from "expo-router";
+import { UndoToast, type UndoToastContent } from "@/src/components/ui";
 import { MealLibraryScreen } from "@/src/components/track/meals/library/MealLibraryScreen";
 import { MealLibraryModal } from "@/src/components/track/meals/library/MealLibraryModal";
 import { BarcodeScannerModal } from "@/src/components/track/BarcodeScannerModal";
 import { getSavedFoods } from "@/src/services/savedFoodsService";
 import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
-import { fetchMealLibrary, logMeal, MealLoggedButDecrementFailed } from "@/src/lib/supabase/mealLibrary";
+import { fetchMealLibrary, logMeal, undoMealLog, MealLoggedButDecrementFailed } from "@/src/lib/supabase/mealLibrary";
 import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { supabase } from "@/src/lib/supabase";
 import type { MealCard } from "@/src/lib/mealLibraryView";
@@ -28,6 +30,7 @@ export default function MealLibraryPage() {
   const [openMealId, setOpenMealId] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [toast, setToast] = useState<UndoToastContent | null>(null);
   // Bumped whenever a sub-view closes, so the catalog re-reads what changed.
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -58,10 +61,33 @@ export default function MealLibraryPage() {
   }, []);
 
   /**
+   * Undo the log a toast is still offering: delete the rows this write made and
+   * put back only the units it actually took. The shelves then re-read, because
+   * the refund changes what is available and what each meal scores.
+   */
+  const handleUndoLog = useCallback(
+    async (mealId: string, loggedAt: string, consumedIds: string[]) => {
+      setToast(null);
+      try {
+        await undoMealLog(mealId, loggedAt, consumedIds);
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        console.error("undo log from library:", e);
+        Alert.alert("Couldn't undo that", "The meal is still on today.");
+      }
+    },
+    [],
+  );
+
+  /**
    * Log straight from a card. Reuses `logMeal` — the same function the detail
    * view calls, with the same inventory decrement and the same two failure
    * branches — so a one-tap log from the shelf is not a second, thinner way
    * of writing the same row.
+   *
+   * A one-tap log on a small target needs an acknowledgement, and the same tap
+   * that logs the wrong meal needs a way back, so the confirmation is a toast
+   * carrying Undo rather than an alert demanding a dismissal.
    */
   const handleLog = useCallback(async (card: MealCard) => {
     try {
@@ -73,13 +99,17 @@ export default function MealLibraryPage() {
       const library = await fetchMealLibrary();
       const meal = library.meals.find((m) => m.id === card.meal.id);
       if (!meal) return;
-      await logMeal(user.id, meal, {
+      const result = await logMeal(user.id, meal, {
         date: getLocalDateString(new Date()),
         mealType: defaultMealTypeFor(meal),
         conceptIdsBySavedFoodId: library.conceptIdsBySavedFoodId,
         inventory: library.inventory,
       });
-      Alert.alert("Logged", `${meal.name} — added to today.`);
+      setToast({
+        title: "Logged",
+        detail: `${meal.name} — added to today.`,
+        undo: () => handleUndoLog(meal.id, result.loggedAt, result.consumedIds),
+      });
     } catch (e) {
       if (e instanceof MealLoggedButDecrementFailed) {
         Alert.alert("Logged (inventory not updated)", "The meal was logged, but stock didn't change.");
@@ -88,7 +118,7 @@ export default function MealLibraryPage() {
       console.error("log from library:", e);
       Alert.alert("Couldn't log that", e instanceof Error ? e.message : "Unknown error");
     }
-  }, []);
+  }, [handleUndoLog]);
 
   /**
    * The library's own reading of a barcode: not "add this food" but "which of
@@ -149,6 +179,19 @@ export default function MealLibraryPage() {
           onLogMeal={handleLog}
           onScan={() => setScanning(true)}
           refreshKey={refreshKey}
+        />
+      )}
+
+      {/* Only over the catalog: a sub-view covers the whole screen, and an Undo
+          floating on top of the detail it no longer describes is worse than no
+          Undo at all. Four seconds rather than the inventory screen's default —
+          this bar names a meal, so there is more to read before deciding. */}
+      {!subViewOpen && (
+        <UndoToast
+          toast={toast}
+          onDismissed={() => setToast(null)}
+          icon={Check}
+          durationMs={4000}
         />
       )}
 
