@@ -254,12 +254,26 @@ describe("filterLibrary", () => {
     card({ meal: meal({ id: "c", name: "Gamma" }), category: "breakfast", isArchived: true }),
   ];
 
-  it("stacks segment, category, favorites and query", () => {
+  it("stacks segment, category and favorites when nothing is being searched for", () => {
     expect(filterLibrary({ cards, segment: "available", category: null, favoritesOnly: false, query: "" }).map((c) => c.meal.id)).toEqual(["a"]);
     expect(filterLibrary({ cards, segment: "all", category: "lunch", favoritesOnly: false, query: "" }).map((c) => c.meal.id)).toEqual(["b"]);
     expect(filterLibrary({ cards, segment: "all", category: null, favoritesOnly: true, query: "" }).map((c) => c.meal.id)).toEqual(["a"]);
     expect(filterLibrary({ cards, segment: "archive", category: null, favoritesOnly: false, query: "" }).map((c) => c.meal.id)).toEqual(["c"]);
-    expect(filterLibrary({ cards, segment: "all", category: null, favoritesOnly: false, query: "bet" }).map((c) => c.meal.id)).toEqual(["b"]);
+  });
+
+  it("searches the whole library, ignoring every filter", () => {
+    // "Beta" is unavailable and in another category; "Gamma" is archived.
+    // A search that respected the filters would find neither.
+    const found = (query: string) =>
+      filterLibrary({ cards, segment: "available", category: "breakfast", favoritesOnly: true, query })
+        .map((c) => c.meal.id);
+    expect(found("bet")).toEqual(["b"]);
+    expect(found("gamma")).toEqual(["c"]);
+    expect(found("a")).toEqual(["a", "b", "c"]);
+  });
+
+  it("restores the filters the moment the query goes back to blank", () => {
+    expect(filterLibrary({ cards, segment: "available", category: null, favoritesOnly: false, query: "   " }).map((c) => c.meal.id)).toEqual(["a"]);
   });
 });
 

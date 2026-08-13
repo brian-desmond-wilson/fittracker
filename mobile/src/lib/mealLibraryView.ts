@@ -264,6 +264,17 @@ export function matchesLibraryQuery(card: MealCard, query: string): boolean {
   return q.split(/\s+/).every((w) => hay.includes(w));
 }
 
+/**
+ * A search asks the whole library, and every filter stands aside while it does
+ * — including the archive, which is still your library and is where a meal you
+ * half-remember is most likely to have gone.
+ *
+ * Stacking the query on top of the filters was the obvious reading and the
+ * wrong one: a search from the Available segment could only ever find the six
+ * meals already on screen, so the one question you type a name to ask — "do I
+ * have this at all?" — was the one it could not answer. The filters are not
+ * cleared, only ignored; they come back intact the moment the field does.
+ */
 export function filterLibrary(opts: {
   cards: MealCard[];
   segment: LibrarySegment;
@@ -271,11 +282,14 @@ export function filterLibrary(opts: {
   favoritesOnly: boolean;
   query: string;
 }): MealCard[] {
+  if (opts.query.trim() !== "") {
+    return opts.cards.filter((c) => matchesLibraryQuery(c, opts.query));
+  }
   return opts.cards.filter((c) => {
     if (!inSegment(c, opts.segment)) return false;
     if (opts.category && c.category !== opts.category) return false;
     if (opts.favoritesOnly && !c.isFavorite) return false;
-    return matchesLibraryQuery(c, opts.query);
+    return true;
   });
 }
 

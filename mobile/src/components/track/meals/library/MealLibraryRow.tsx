@@ -19,6 +19,12 @@ interface MealLibraryRowProps {
   onAddMissing: (card: MealCard) => void;
   /** Meal currently being written, so its control can show it. */
   busyMealId: string | null;
+  /**
+   * Say so when this meal is retired. Off in the Archive segment, where every
+   * row is archived and the badge would only repeat the tab; on in a search,
+   * which returns retired and current meals side by side.
+   */
+  markArchived?: boolean;
 }
 
 function initials(name: string): string {
@@ -48,6 +54,7 @@ function MealLibraryRowInner({
   onLog,
   onAddMissing,
   busyMealId,
+  markArchived = false,
 }: MealLibraryRowProps) {
   const { meal, nutrition, source } = card;
   const unavailable = card.availability === "unavailable";
@@ -97,6 +104,7 @@ function MealLibraryRowInner({
             </TouchableOpacity>
             <Badge tone={card.score >= 85 ? "success" : card.score >= 70 ? "warning" : "neutral"} label={`${card.score}`} />
           </View>
+          {markArchived && card.isArchived && <Badge tone="neutral" label="Archived" />}
           {card.availability === "not_tracked" ? (
             <Badge tone="neutral" label="Eaten out" />
           ) : unavailable ? null : (

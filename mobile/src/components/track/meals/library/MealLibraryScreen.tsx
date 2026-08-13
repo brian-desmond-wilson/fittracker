@@ -330,8 +330,9 @@ export function MealLibraryScreen({
         >
           {/* Category tabs belong to rows mode only: in shelf mode the
               shelves ARE the categories, and two controls fighting over one
-              job is worse than one. */}
-          {!showShelves && categoryTabs.length > 0 && (
+              job is worse than one. A search ignores the category, so the tabs
+              step aside rather than sit there looking as if they still bite. */}
+          {!showShelves && !searching && categoryTabs.length > 0 && (
             <View style={s.tabsBand}>
               <ScrollView
                 horizontal
@@ -387,8 +388,17 @@ export function MealLibraryScreen({
           )}
 
           <View style={s.lane}>
-            <View style={s.segTrack}>
-              {SEGMENTS.map((seg) => {
+            {searching ? (
+              // The segment strip is gone rather than disabled: with a query in
+              // the field it names three subsets none of which is what you are
+              // looking at. What replaces it has to say so out loud, or the
+              // pills simply vanishing reads as a bug.
+              <Text style={s.scopeNote} accessibilityLiveRegion="polite">
+                Searching all {counts.all + counts.archive} meals
+              </Text>
+            ) : (
+              <View style={s.segTrack}>
+                {SEGMENTS.map((seg) => {
                 const active = segment === seg;
                 const n = seg === "available" ? counts.available : seg === "all" ? counts.all : counts.archive;
                 return (
@@ -408,35 +418,39 @@ export function MealLibraryScreen({
                     </Text>
                   </TouchableOpacity>
                 );
-              })}
-            </View>
-            {/* Favourites and sort are rows-mode ideas: the shelf view leads
-                with a favourites shelf and has one fixed order. */}
+                })}
+              </View>
+            )}
+            {/* Favourites narrows, so it stands aside with the rest of them.
+                Sort only reorders what is already on screen, and a long list of
+                matches still wants ordering — so it stays. Both are rows-mode
+                ideas anyway: the shelf view leads with a favourites shelf and
+                has one fixed order. */}
+            {!showShelves && !searching && (
+              <TouchableOpacity
+                style={[s.toolButton, favoritesOnly && s.toolButtonActive]}
+                onPress={() => setFavoritesOnly((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: favoritesOnly }}
+                accessibilityLabel="Show favorites only"
+              >
+                <Star
+                  size={icons.sm}
+                  color={favoritesOnly ? colors.brand : colors.textMuted}
+                  fill={favoritesOnly ? colors.brand : "transparent"}
+                  strokeWidth={icons.strokeWidth}
+                />
+              </TouchableOpacity>
+            )}
             {!showShelves && (
-              <>
-                <TouchableOpacity
-                  style={[s.toolButton, favoritesOnly && s.toolButtonActive]}
-                  onPress={() => setFavoritesOnly((v) => !v)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: favoritesOnly }}
-                  accessibilityLabel="Show favorites only"
-                >
-                  <Star
-                    size={icons.sm}
-                    color={favoritesOnly ? colors.brand : colors.textMuted}
-                    fill={favoritesOnly ? colors.brand : "transparent"}
-                    strokeWidth={icons.strokeWidth}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={s.toolButton}
-                  onPress={() => setSortOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Sort meals, currently ${SORT_LABELS[sort]}`}
-                >
-                  <ArrowUpDown size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity
+                style={s.toolButton}
+                onPress={() => setSortOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Sort meals, currently ${SORT_LABELS[sort]}`}
+              >
+                <ArrowUpDown size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+              </TouchableOpacity>
             )}
           </View>
 
@@ -492,6 +506,7 @@ export function MealLibraryScreen({
                   onLog={handleLog}
                   onAddMissing={handleAddMissing}
                   busyMealId={busyMealId}
+                  markArchived={searching}
                 />
               ))}
             </View>
@@ -645,6 +660,9 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.screenGutter,
     paddingBottom: spacing.md,
   },
+  // Takes the segment strip's place in the lane, so the sort button beside it
+  // does not jump when a query starts or ends.
+  scopeNote: { ...typography.caption, color: colors.textMuted, flex: 1 },
   segTrack: {
     flex: 1,
     flexDirection: "row",
