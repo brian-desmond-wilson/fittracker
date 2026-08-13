@@ -1,13 +1,22 @@
-// Home surface for the Eat Next recommender (spec §7.1). Full-width card,
-// TodaysWorkoutCard pattern: self-fetching, refreshKey prop-driven reload
-// (no remount — the same component instance re-fetches when refreshKey
-// changes), loading / error+retry / contextual-empty states. Also the
-// app-open resync point for the eat-nudge family.
+// Home surface for Eat Next. Full-width card, TodaysWorkoutCard pattern:
+// self-fetching, refreshKey prop-driven reload (no remount — the same
+// component instance re-fetches when refreshKey changes), loading /
+// error+retry / contextual-empty states. Also the app-open resync point for
+// the eat-nudge family.
+//
+// WHAT IT SHOWS (owner decision 2026-08-13): the Fuel plan's next window
+// pick, verbatim — the same meal the rail's first suggestion row renders on
+// Track → Fuel. The recommender (spec §7.1) is the FALLBACK, for the states
+// the plan has no row for (day closed, goals hit, emergency after the last
+// window, empty library) — and it still runs unconditionally because this
+// card is the app-open resync point for the nudge family, which is the
+// recommender's job regardless of which engine painted the card.
 import React, { useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { UtensilsCrossed } from "lucide-react-native";
 import { useEatNext } from "@/src/hooks/useEatNext";
+import { useNextFuelPick } from "@/src/hooks/useNextFuelPick";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 import { Badge, Card } from "@/src/components/ui";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
@@ -35,6 +44,7 @@ interface EatNextHomeCardProps {
 
 export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   const { result, loading, error, refetch, computedAt } = useEatNext(refreshKey);
+  const fuel = useNextFuelPick(refreshKey);
 
   // `useEatNext`'s own mount effect already issues the first load — this
   // ref skips ONLY the focus callback that fires alongside that same first
@@ -48,6 +58,7 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
   // listener, and `app/_layout.tsx`'s AppState handler only logs. See the
   // corrected spec §8.1 parenthetical for the consequence.
   const firstFocus = useRef(true);
+  const fuelRefetch = fuel.refetch;
   useFocusEffect(
     useCallback(() => {
       if (firstFocus.current) {
@@ -55,7 +66,10 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
         return;
       }
       refetch();
-    }, [refetch]),
+      // The plan's inputs change off-screen — a meal logged on Track must
+      // move this card to the NEXT window by the time Home is looked at.
+      fuelRefetch();
+    }, [refetch, fuelRefetch]),
   );
 
   // App-open / focus resync point for the nudge family (spec §8.1). `result`
@@ -85,10 +99,62 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
     });
   }, [result, computedAt]);
 
-  if (loading && !result) {
+  // The plan's answer, when it has one — same meal, same order, same words as
+  // the rail's first suggestion row on Track → Fuel. Everything below this
+  // block is the recommender fallback for the plan's silent states.
+  if (fuel.suggestion) {
+    const { window, pick, closingSoon } = fuel.suggestion;
+    return (
+      <Card
+        variant="panel"
+        style={styles.cardSpacing}
+        onPress={() => router.push("/(tabs)/track/fuel")}
+      >
+        <View style={styles.headerRow}>
+          <View style={styles.face}>
+            {pick.faceUrl ? (
+              <Image source={{ uri: pick.faceUrl }} style={styles.faceImage} resizeMode="cover" />
+            ) : (
+              <UtensilsCrossed size={icons.lg} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            )}
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.title} numberOfLines={2}>
+              {pick.name}
+            </Text>
+            <Text style={styles.reason} numberOfLines={1}>
+              {closingSoon ? `${window.label} — closes soon` : window.label}
+            </Text>
+            <View style={styles.badgeRow}>
+              {/* Green only, deliberately: a FuelPick carries the verdict but
+                  not the missing-count detail, so the amber "Missing N" half
+                  of eatNextStockBadge's pair cannot be said honestly here.
+                  The plan already ranks unmakeable meals down; when one still
+                  wins, its reasons say why. */}
+              {pick.assemblable && <Badge label="In stock" tone="success" />}
+              <Badge label={String(Math.round(pick.score))} suffix="/100" tone={scoreTone(pick.score)} />
+            </View>
+          </View>
+        </View>
+        {pick.reasons.length > 0 && (
+          <Text style={styles.expiringText} numberOfLines={3}>
+            {pick.reasons.join(" · ")}
+          </Text>
+        )}
+        <Text style={styles.statsText} numberOfLines={1}>
+          {Math.round(pick.calories)} cal · {Math.round(pick.protein)}g P
+          {pick.prepMinutes === 0 ? " · ready to eat" : ` · ${pick.prepMinutes} min prep`}
+        </Text>
+      </Card>
+    );
+  }
+
+  if ((loading && !result) || fuel.loading) {
     // In-card loading is a bare brand `ActivityIndicator`, not `LoadingState`
     // — that primitive is full-bleed (`flex: 1` + opaque `bg`) and hardcodes a
-    // "Loading..." label, neither of which belongs inside a `Card`.
+    // "Loading..." label, neither of which belongs inside a `Card`. The plan
+    // gates this too: painting the recommender's answer first and swapping to
+    // the plan's a beat later would flash one meal and land on another.
     return (
       <Card variant="panel" style={styles.cardSpacing}>
         <ActivityIndicator color={colors.brand} />

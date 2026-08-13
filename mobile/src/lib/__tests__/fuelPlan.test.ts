@@ -457,8 +457,8 @@ describe("planProjection", () => {
       consumedCalories: 560,
       consumedProtein: 44,
       picks: [
-        { windowId: "w", mealId: "m", name: "x", calories: 470, protein: 28, portion: 1, prepMinutes: 0, faceUrl: null, reasons: [] },
-        { windowId: "w2", mealId: "m2", name: "y", calories: 990, protein: 64, portion: 1.25, prepMinutes: 0, faceUrl: null, reasons: [] },
+        { windowId: "w", mealId: "m", name: "x", calories: 470, protein: 28, portion: 1, prepMinutes: 0, faceUrl: null, reasons: [], assemblable: true, score: 80 },
+        { windowId: "w2", mealId: "m2", name: "y", calories: 990, protein: 64, portion: 1.25, prepMinutes: 0, faceUrl: null, reasons: [], assemblable: true, score: 80 },
       ],
       goalCalories: 2300,
       goalProtein: 160,

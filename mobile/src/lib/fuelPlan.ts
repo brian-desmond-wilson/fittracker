@@ -337,6 +337,11 @@ export interface FuelPick {
   faceUrl: string | null;
   /** Short chips: "uses food expiring in 1d", "portion 1.25×". */
   reasons: string[];
+  /** Carried from the candidate for the Home card's badges (owner decision
+   *  2026-08-13: Eat Next renders THIS pick, so it needs what it renders).
+   *  The rail itself reads neither. */
+  assemblable: boolean;
+  score: number;
 }
 
 const AFFINITY_BONUS = 12; // in score points: right-meal-for-the-slot beats a
@@ -414,6 +419,8 @@ export function pickForWindows(opts: {
       prepMinutes: best.prepMinutes,
       faceUrl: best.faceUrl,
       reasons,
+      assemblable: best.assemblable,
+      score: best.score,
     });
   }
   return picks;
@@ -494,6 +501,8 @@ export function mergeAiPicks(opts: {
         prepMinutes: aiCandidate.prepMinutes,
         faceUrl: aiCandidate.faceUrl,
         reasons,
+        assemblable: aiCandidate.assemblable,
+        score: aiCandidate.score,
       });
       continue;
     }
