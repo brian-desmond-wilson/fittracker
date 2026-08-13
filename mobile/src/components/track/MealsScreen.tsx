@@ -26,6 +26,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Utensils,
+  BookOpen,
   Calendar,
   Plus,
   Share2,
@@ -1636,8 +1637,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               suggestions, the search results and the quick-add row — four
               scrolls from the top. It belongs beside the other two things you
               can do from here. */}
+          {/* A book, not a fork: the fork is this page's own identity glyph,
+              and a control wearing the screen's mark reads as "you are here"
+              rather than "go there". */}
           <IconButton
-            icon={Utensils}
+            icon={BookOpen}
             weight="secondary"
             onPress={() => setLibraryVisible(true)}
             accessibilityLabel="Open your meal library"
@@ -2067,7 +2071,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             accessibilityRole="button"
             accessibilityLabel="Open your meal library"
           >
-            <Utensils size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+            <BookOpen size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => openLogSheet()}
