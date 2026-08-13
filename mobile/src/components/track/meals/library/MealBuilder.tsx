@@ -7,7 +7,7 @@ import type { FoodConcept, ConceptRating } from "@/src/types/nutrition-preferenc
 import type {
   MealCategory, MealRole, MealWithItems,
 } from "@/src/types/meal-library";
-import { CATEGORY_LABELS, ROLE_LABELS } from "@/src/types/meal-library";
+import { ROLE_LABELS, toggleCategory } from "@/src/types/meal-library";
 import type { SavedFood } from "@/src/types/track";
 import { computeBrianScore } from "@/src/lib/mealScore";
 import {
@@ -21,9 +21,9 @@ import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
 import { Minus, Plus, X } from "lucide-react-native";
 import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Badge, Button, Card } from "@/src/components/ui";
+import { CategoryRail } from "./CategoryRail";
 import { lib, scoreTone } from "./styles";
 
-const CATEGORIES: MealCategory[] = ["breakfast", "lunch", "dinner", "snack", "shake", "emergency"];
 const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const RATINGS: ConceptRating[] = ["love", "like", "neutral", "dislike", "never"];
 // The ± / ✕ controls are bare `icons.sm` glyphs in a `spacing.md` row, and the
@@ -58,7 +58,12 @@ export function MealBuilder({
   onSave, onQuickLink,
 }: MealBuilderProps) {
   const [name, setName] = useState(initial?.name ?? "");
-  const [category, setCategory] = useState<MealCategory>(initial?.category ?? "lunch");
+  // A SET, not one value. Writing a single category from here silently
+  // refiled a meal that had been put on two shelves — the save wrote the
+  // primary and the join table was replaced with just that.
+  const [categories, setCategories] = useState<MealCategory[]>(
+    initial?.categories ?? ["lunch"],
+  );
   const [role, setRole] = useState<MealRole | null>(initial?.role ?? null);
   const [prepMinutes, setPrepMinutes] = useState(String(initial?.prep_minutes ?? DEFAULT_PREP_MINUTES));
   const [tasteOverride, setTasteOverride] = useState<ConceptRating | null>(
@@ -143,7 +148,10 @@ export function MealBuilder({
     }
     onSave({
       name: name.trim(),
-      category,
+      // Head of the set: the primary, which is what the default logging slot
+      // reads and what `set_meal_categories` keeps.
+      category: categories[0],
+      categories,
       role,
       default_meal_type: initial?.default_meal_type ?? null,
       prep_minutes: prep,
@@ -173,19 +181,15 @@ export function MealBuilder({
           value={name}
           onChangeText={setName}
         />
-        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.md }]}>Category</Text>
-        <View style={[lib.row, { flexWrap: "wrap", marginTop: spacing.sm }]}>
-          {CATEGORIES.map((c) => (
-            <TouchableOpacity
-              key={c}
-              style={[lib.chip, category === c && lib.chipActive]}
-              onPress={() => setCategory(c)}
-            >
-              <Text style={[lib.chipText, category === c && lib.chipTextActive]}>
-                {CATEGORY_LABELS[c]}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.md }]}>
+          Eaten as
+        </Text>
+        <View style={{ marginTop: spacing.sm }}>
+          <CategoryRail
+            selected={categories}
+            primary={categories[0]}
+            onToggle={(c) => setCategories((prev) => toggleCategory(prev, c))}
+          />
         </View>
         <Text style={[lib.mutedText, { fontWeight: "700", marginTop: spacing.sm }]}>Role (optional)</Text>
         <View style={[lib.row, { flexWrap: "wrap", marginTop: spacing.sm }]}>
