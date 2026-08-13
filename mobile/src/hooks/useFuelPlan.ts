@@ -173,6 +173,17 @@ function localMinutes(iso: string): number {
  */
 const AI_RETRY_DELAY_MS = 1_200;
 
+// One AI answer per QUESTION, app-wide. Two plan instances can be mounted at
+// once — the Fuel rail and Home's Eat Next card render the same plan — and
+// the AI tier is a model: asked the identical question twice it can assign
+// differently, which would put one meal on Home and another on Track (the
+// exact inconsistency the Home card's plan integration exists to remove).
+// Module scope makes the answer a property of the signature, not of whichever
+// component asked first; the in-flight map coalesces concurrent asks onto one
+// network call, same shape as fetchMealLibrary's D1 reasoning.
+const aiAnswerBySignature = new Map<string, AiAssignment[]>();
+const aiAskInFlight = new Map<string, Promise<AiAssignment[]>>();
+
 async function askFuelPlan(body: object): Promise<AiAssignment[]> {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -226,7 +237,6 @@ export function useFuelPlan(
   const [error, setError] = useState<Error | null>(null);
   const [aiResult, setAiResult] = useState<AiResult | null>(null);
   const runIdRef = useRef(0);
-  const aiInFlightRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
@@ -559,25 +569,43 @@ export function useFuelPlan(
     if (!model || !viewingToday) return;
     const { aiSignature: sig, aiRequest } = model;
     if (!sig || !aiRequest || model.aiApplied) return;
-    if (aiInFlightRef.current === sig) return;
-    aiInFlightRef.current = sig;
-    (async () => {
-      try {
-        const assignments = await askFuelPlan(aiRequest);
-        // Publish even an empty answer: it marks the question as asked, so a
-        // model that genuinely assigns nothing doesn't get re-asked forever.
-        setAiResult({ signature: sig, assignments });
-      } catch (e) {
+    const answered = aiAnswerBySignature.get(sig);
+    if (answered) {
+      // Another instance already asked this exact question — adopt its answer
+      // rather than asking a model that might answer differently this time.
+      setAiResult({ signature: sig, assignments: answered });
+      return;
+    }
+    let ask = aiAskInFlight.get(sig);
+    if (!ask) {
+      ask = askFuelPlan(aiRequest)
+        .then((assignments) => {
+          // Publish even an empty answer: it marks the question as asked, so a
+          // model that genuinely assigns nothing doesn't get re-asked forever.
+          aiAnswerBySignature.set(sig, assignments);
+          return assignments;
+        })
+        .finally(() => {
+          aiAskInFlight.delete(sig);
+        });
+      aiAskInFlight.set(sig, ask);
+    }
+    let cancelled = false;
+    ask
+      .then((assignments) => {
+        if (!cancelled) setAiResult({ signature: sig, assignments });
+      })
+      .catch(async (e) => {
         // WARN, not error: the rules picks are already on screen and stay
         // there, so this is a missed upgrade rather than a broken page — and
         // a red dev banner over a working plan misreports that. The status
         // and body are read out of the response because "FunctionsHttpError"
         // alone says nothing about which failure this was.
         console.warn("useFuelPlan: AI picks unavailable, keeping rules picks.", await describeFnError(e));
-      } finally {
-        if (aiInFlightRef.current === sig) aiInFlightRef.current = null;
-      }
-    })();
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [model, viewingToday]);
 
   return { model, loading, error, refetch: load };
