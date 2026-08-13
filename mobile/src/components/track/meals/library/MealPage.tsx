@@ -11,22 +11,27 @@
 // an ingredient — now mounted by a route rather than raised as a sheet, so
 // Track › Meal Library › meal is a real stack and back means back.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, StatusBar, Text, View } from "react-native";
+import { Alert, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft } from "lucide-react-native";
+import { ChevronLeft, Pencil } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
-import type { MealWithItems } from "@/src/types/meal-library";
+import type { MealCategory, MealWithItems } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore, type BrianScoreResult } from "@/src/lib/mealScore";
 import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { addSuggestions } from "@/src/lib/supabase/shopping";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
+import { mealIngredients, mealNutrition } from "@/src/lib/mealLibraryView";
+import { mealFaceUrl } from "@/src/lib/mealFace";
+import { getLocalDateString } from "@/src/lib/dates";
 import {
-  computeMealTotals, createMeal, createUserLink, deleteMeal,
+  createMeal, createUserLink, deleteMeal,
   fetchMealLibrary, logMeal, MealLoggedButDecrementFailed,
+  setMealArchived, setMealCategories, setMealFavorite,
   undoMealLog, updateMeal,
   type MealInput, type MealLibraryData,
 } from "@/src/lib/supabase/mealLibrary";
+import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button, EmptyState, LoadingState } from "@/src/components/ui";
 import { MealDetail } from "./MealDetail";
 import { MealBuilder } from "./MealBuilder";
@@ -44,9 +49,11 @@ interface MealPageProps {
   todayDate: string; // the viewed local date — logs land on this day
   /** Leave the page: pop back to the library. */
   onClose: () => void;
+  /** Open an ingredient's product in Food Inventory. */
+  onOpenProduct: (inventoryId: string) => void;
 }
 
-export function MealPage({ mealId, savedFoods, todayDate, onClose }: MealPageProps) {
+export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct }: MealPageProps) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<MealLibraryData | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -159,14 +166,23 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose }: MealPagePro
   };
 
   const handleLog = useCallback(
-    async (meal: MealWithItems, mealType: MealType) => {
+    async (
+      meal: MealWithItems,
+      { mealType, portion, daysAgo }: { mealType: MealType; portion: number; daysAgo: number },
+    ) => {
       if (!data) return;
       setBusy(true);
       try {
         const userId = await getUserId();
+        // `todayDate` is the day the page was opened on; the picker moves back
+        // from it, never forward — you cannot have eaten it yet.
+        const date = daysAgo === 0
+          ? todayDate
+          : getLocalDateString(new Date(Date.now() - daysAgo * 86_400_000));
         const result = await logMeal(userId, meal, {
-          date: todayDate,
+          date,
           mealType,
+          portion,
           conceptIdsBySavedFoodId: data.conceptIdsBySavedFoodId,
           inventory: data.inventory,
         });
@@ -363,6 +379,31 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose }: MealPagePro
     [linkTarget, run],
   );
 
+  const handleToggleFavorite = useCallback(
+    (meal: MealWithItems) =>
+      run("Couldn't save that", () => setMealFavorite(meal.id, !meal.is_favorite)),
+    [run],
+  );
+
+  /** Writes straight through — the rail is a control, not a form. `run`
+   *  reloads, so the chips settle on what the database actually holds rather
+   *  than on what was tapped. */
+  const handleSetCategories = useCallback(
+    (meal: MealWithItems, next: MealCategory[]) =>
+      run("Couldn't file that", async () => {
+        const { error } = await setMealCategories(meal.id, next);
+        if (error) throw error;
+      }),
+    [run],
+  );
+
+  const handleArchive = useCallback(
+    (meal: MealWithItems, archived: boolean) =>
+      run(archived ? "Couldn't archive that" : "Couldn't unarchive that",
+        () => setMealArchived(meal.id, archived)),
+    [run],
+  );
+
   const handleDelete = useCallback(
     async (meal: MealWithItems) => {
       const ok = await run("Failed to delete meal", () => deleteMeal(meal.id));
@@ -402,16 +443,40 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose }: MealPagePro
     body = (
       <MealDetail
         meal={detailMeal}
-        totals={computeMealTotals(detailMeal.items)}
+        // Priced from the fridge, not from the build — the same numbers the
+        // shelves show, so a card and its page can never disagree.
+        nutrition={mealNutrition({
+          meal: detailMeal,
+          inventory: data.inventory,
+          conceptIdsBySavedFoodId: data.conceptIdsBySavedFoodId,
+          nutritionByInventoryId: data.nutritionByInventoryId,
+        })}
+        ingredients={mealIngredients({
+          meal: detailMeal,
+          inventory: data.inventory,
+          conceptIdsBySavedFoodId: data.conceptIdsBySavedFoodId,
+        })}
         score={scores.get(detailMeal.id)!}
         assemblability={assemblabilityById.get(detailMeal.id)}
+        timesLogged={data.timesLoggedByMealId.get(detailMeal.id) ?? 0}
+        lastLoggedDate={data.lastLoggedByMealId.get(detailMeal.id) ?? null}
+        faceUrl={mealFaceUrl(detailMeal.items.map((it) => ({
+          displayOrder: it.display_order,
+          imageUrl: it.savedFood.image_primary_url,
+          calories: (it.savedFood.calories ?? 0) * it.servings,
+        })))}
         logging={busy}
+        saving={busy}
+        onToggleFavorite={() => handleToggleFavorite(detailMeal)}
+        onToggleCategory={(next) => handleSetCategories(detailMeal, next)}
         onAddMissing={handleAddMissing}
         onLinkIngredient={handleLinkIngredient}
+        onOpenProduct={onOpenProduct}
         addingToList={addingToList}
         addedToList={addedToListMealId === detailMeal.id}
         onLog={handleLog}
         onEdit={(m) => setView({ mode: "builder", mealId: m.id })}
+        onArchive={handleArchive}
         onDelete={handleDelete}
       />
     );
@@ -453,15 +518,31 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose }: MealPagePro
       <View style={[lib.screen, { paddingTop: insets.top }]}>
         {/* Header renders unconditionally: no load state may strand the user
             on a page whose only way out is its own back button. */}
-        <View style={[lib.header, lib.headerLeftAligned]}>
-          <Button
-            label={editing ? "Meal" : "Library"}
-            icon={ChevronLeft}
-            variant="ghost"
-            size="sm"
+        {/* The Food Inventory product page's bar, to the pixel: a 24pt
+            chevron and the word Back at 17pt, with Edit as the one trailing
+            action. Two sibling detail pages that read differently make the
+            app feel assembled from parts. */}
+        <View style={lib.header}>
+          <TouchableOpacity
             onPress={back}
-          />
-          <Text style={lib.headerTitle} numberOfLines={1}>{headerTitle}</Text>
+            style={s.backButton}
+            accessibilityRole="button"
+            accessibilityLabel={editing ? "Back to the meal" : "Back to the library"}
+          >
+            <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
+            <Text style={s.backText}>Back</Text>
+          </TouchableOpacity>
+          {view.mode === "detail" && detailMeal ? (
+            <Button
+              label="Edit"
+              icon={Pencil}
+              variant="ghost"
+              size="sm"
+              onPress={() => setView({ mode: "builder", mealId: detailMeal.id })}
+            />
+          ) : (
+            <Text style={lib.headerTitle} numberOfLines={1}>{headerTitle}</Text>
+          )}
         </View>
         {body}
         <ConceptPickerSheet
@@ -476,3 +557,8 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose }: MealPagePro
     </>
   );
 }
+
+const s = StyleSheet.create({
+  backButton: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  backText: { fontSize: 17, color: colors.text },
+});

@@ -42,6 +42,10 @@ export default function MealDetailPage() {
       savedFoods={savedFoods}
       todayDate={getLocalDateString(new Date())}
       onClose={close}
+      // Leaves the library's stack for the kitchen record behind an
+      // ingredient; back returns here.
+      onOpenProduct={(inventoryId) =>
+        router.push(`/(tabs)/track/food-inventory/${inventoryId}`)}
     />
   );
 }
