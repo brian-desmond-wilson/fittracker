@@ -40,6 +40,7 @@ import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shoppi
 import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
 import { isExpiringSoon, reviewExpiry } from "@/src/lib/expiryPolicy";
 import { formatQuantity } from "@/src/lib/units";
+import { matchesInventoryQuery } from "@/src/lib/inventorySearch";
 import { mealsUsingConcepts } from "@/src/lib/useItUp";
 import { fetchMealLibrary } from "@/src/lib/supabase/mealLibrary";
 import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
@@ -95,6 +96,9 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // A typed query outranks every filter on the screen; a blank one hands the
+  // screen straight back to them.
+  const searching = searchQuery.trim().length > 0;
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   // Consumption-forecast map ("~Nd left"); decoration only — a failed fetch
@@ -767,6 +771,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // Filter items
   const filteredItems = items
     .filter((item) => {
+      // A search asks the whole inventory: the category tab, the subcategory
+      // filter and (below, via `visibleItems`) the segment all stand aside
+      // while there is a query in the field. See inventorySearch.ts.
+      if (searching) return matchesInventoryQuery(item, searchQuery);
+
       // Get the selected category
       const selectedCategory = categories.find(cat => cat.id === selectedCategoryId);
 
@@ -796,11 +805,7 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         }
       }
 
-      // Search filter
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (item.brand && item.brand.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      return matchesCategory && matchesSearch;
+      return matchesCategory;
     })
     .sort((a, b) => {
       // B4: user-selectable order. Expiry stays keyed off state.daysLeft (the
@@ -927,8 +932,14 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const expiringItems = activeItems.filter((it) =>
     isExpiringSoon(it.state, it.categories.map((c) => c.name)));
   const lowItems = activeItems.filter((it) => it.state.isLow);
+  // Matches reach the grid whatever segment they belong to — including Past,
+  // which is still your inventory and is where a half-remembered item has most
+  // likely gone. Nothing extra marks those matches out: an out-of-stock tile
+  // already reads "Out of stock" where the quantity goes, and a long-expired
+  // one still carries its badge, so the tiles say it themselves.
   const visibleItems =
-    view === "active" ? activeItems
+    searching ? filteredItems
+    : view === "active" ? activeItems
     : view === "expiring" ? expiringItems
     : view === "low" ? lowItems
     : archiveItems;
@@ -1127,20 +1138,32 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             ]}
           >
 
-          {/* Category Tabs */}
-          <CategoryTabs
-            countsByCategoryId={categoryCounts}
-            categories={categories}
-            selectedCategoryId={selectedCategoryId}
-            onSelectCategory={(categoryId) => {
-              setSelectedCategoryId(categoryId);
-              setSelectedSubcategoryIds([]); // Clear subcategory filters when changing category
-            }}
-          />
+          {/* Category Tabs. A search ignores the category, so the tabs step
+              aside rather than sit there looking as if they still bite. */}
+          {!searching && (
+            <CategoryTabs
+              countsByCategoryId={categoryCounts}
+              categories={categories}
+              selectedCategoryId={selectedCategoryId}
+              onSelectCategory={(categoryId) => {
+                setSelectedCategoryId(categoryId);
+                setSelectedSubcategoryIds([]); // Clear subcategory filters when changing category
+              }}
+            />
+          )}
 
           {/* A7: stock-state segments. Interactive control -> brand
               (style rule 2); counts keep the hidden rows honest. */}
           <View style={styles.viewSegments}>
+            {searching ? (
+              // The strip is gone rather than disabled: with a query in the
+              // field it names four subsets, none of which is what you are
+              // looking at. What replaces it has to say so out loud, or pills
+              // that silently stopped biting would read as a bug.
+              <Text style={styles.scopeNote} accessibilityLiveRegion="polite">
+                Searching all {items.length} items
+              </Text>
+            ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentStrip}>
             {(["active", "expiring", "low", "archive"] as const).map((v) => {
               const n = v === "active" ? activeItems.length
@@ -1166,14 +1189,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               );
             })}
             </ScrollView>
+            )}
             {/* Pinned tools, fenced off from the scrolling chips by a rule so
                 the strip visibly ends instead of colliding with them.
                 Subcategory filtering used to own a whole third lane; it is now
                 this button plus a sheet. The filter hides itself when the
                 current category has no subcategories, so the lane never
-                carries a dead control. */}
+                carries a dead control — and a search, which ignores it, is one
+                more way for it to be dead. Sort stays either way: it only
+                reorders what already matched, and a long list of matches wants
+                ordering as much as a browsed one does. */}
             <View style={styles.segmentTools}>
-              {categorySubcategories.length > 0 && (
+              {!searching && categorySubcategories.length > 0 && (
                 <TouchableOpacity
                   style={[styles.sortButton, selectedSubcategoryIds.length > 0 && styles.sortButtonActive]}
                   onPress={() => setShowFilterSheet(true)}
@@ -1256,23 +1283,27 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             ) : (
               // B9: the empty state names its cause and carries the next
               // action. A no-results search offers to clear itself; a truly
-              // empty inventory points at the fastest add path (scan).
+              // empty inventory points at the fastest add path (scan). It
+              // turns on `searching`, not on the raw field, so a stray space
+              // does not accuse a perfectly full segment of having no matches.
               <EmptyState
                 icon={Package}
                 title={
-                  searchQuery.length > 0 ? `No matches for “${searchQuery}”`
+                  searching ? `No matches for “${searchQuery.trim()}”`
                   : view !== "active" ? `Nothing in ${SEGMENT_LABELS[view]}`
                   : "No items yet"
                 }
                 body={
-                  searchQuery.length > 0 ? "Try a shorter search, or clear it."
+                  // Nothing left to widen — the search already covered every
+                  // item — so the advice is about the words, not the filters.
+                  searching ? "Nothing in your inventory matches. Try fewer letters, or clear it."
                   : view === "archive" ? "Out-of-stock and long-expired items land here."
                   : view === "expiring" ? "Nothing needs rescuing right now."
                   : view === "low" ? "Nothing is running low."
                   : "Scan a barcode to add your first item in seconds."
                 }
                 action={
-                  searchQuery.length > 0
+                  searching
                     ? { label: "Clear search", onPress: () => setSearchQuery("") }
                     : view === "active"
                       ? { label: "Scan an item", onPress: () => setShowBarcodeScanner(true) }
@@ -1618,6 +1649,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     paddingHorizontal: spacing.screenGutter,
+  },
+  // Takes the segment strip's place in the lane, so the sort button beside it
+  // does not jump when a query starts or ends. The vertical padding is the
+  // chips' own, for the same reason.
+  scopeNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    flex: 1,
+    paddingHorizontal: spacing.screenGutter,
+    paddingVertical: spacing.sm,
   },
   segmentTools: {
     flexDirection: "row",
