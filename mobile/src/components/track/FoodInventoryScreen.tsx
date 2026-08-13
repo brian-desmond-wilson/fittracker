@@ -71,7 +71,7 @@ const NUM_COLUMNS = 2;
 // both, and the tile badge says which is which. "Past" is what falls out of
 // that grace, plus anything run down to zero.
 const SEGMENT_LABELS = {
-  active: "On hand", expiring: "Expiring", low: "Low", archive: "Past",
+  active: "Available", expiring: "Expiring", low: "Low", archive: "Past",
 } as const;
 const ITEM_WIDTH = (SCREEN_WIDTH - (GRID_PADDING * 2) - (GRID_GAP * (NUM_COLUMNS - 1))) / NUM_COLUMNS;
 
