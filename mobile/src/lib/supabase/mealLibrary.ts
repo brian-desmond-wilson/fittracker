@@ -11,6 +11,7 @@ import type { AdHocLogRow } from "../adHocMeals";
 import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
+  MealCategory,
   MealItemWithFood,
   MealTotals,
   MealWithItems,
@@ -145,8 +146,12 @@ export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibrar
 }
 
 async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
-  const [meals, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
+  const [meals, mealCategories, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
+    // A meal is filed under one or more categories and appears on every shelf
+    // it holds. `meals.category` survives as the PRIMARY one — the single
+    // answer the default logging slot needs — and is always among these.
+    supabase.from("meal_categories").select("meal_id, category"),
     supabase
       .from("meal_items")
       .select("*, savedFood:saved_foods(*)")
@@ -182,7 +187,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       .select("name, date, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, saved_food_id")
       .is("meal_id", null),
   ]);
-  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
+  const errors = [meals.error, mealCategories.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));
@@ -299,9 +304,20 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     timesLoggedByMealId.set(r.meal_id, (timesLoggedByMealId.get(r.meal_id) ?? 0) + 1);
   }
 
+  const categoriesByMealId = new Map<string, MealCategory[]>();
+  for (const r of (mealCategories.data ?? []) as Array<{ meal_id: string; category: MealCategory }>) {
+    const arr = categoriesByMealId.get(r.meal_id) ?? [];
+    arr.push(r.category);
+    categoriesByMealId.set(r.meal_id, arr);
+  }
+
   return {
     meals: ((meals.data ?? []) as Meal[]).map((m) => ({
       ...m,
+      // Falls back to the primary rather than to []: a meal with no join rows
+      // would appear on no shelf and vanish from the library entirely, which
+      // is a worse answer than the one category we already know it has.
+      categories: categoriesByMealId.get(m.id) ?? [m.category],
       items: byMeal.get(m.id) ?? [],
     })),
     conceptsById: new Map(
@@ -411,7 +427,11 @@ export interface MealItemInput {
 
 export interface MealInput {
   name: string;
+  /** The primary category — what the default logging slot reads. */
   category: Meal["category"];
+  /** Every category the meal is filed under. Absent means "just the primary",
+   *  which is what the builder passes until the Edit page learns the set. */
+  categories?: MealCategory[];
   role: Meal["role"];
   default_meal_type: Meal["default_meal_type"];
   prep_minutes: number;
@@ -427,7 +447,7 @@ export async function createMeal(userId: string, input: MealInput): Promise<stri
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
-  const { items, ...meal } = input;
+  const { items, categories, ...meal } = input;
   // Ordering is load-bearing: meal_items carries a composite FK
   // (meal_id, user_id) -> meals(id, user_id), so the parent row must be
   // committed with a MATCHING user_id before any item can reference it.
@@ -461,7 +481,62 @@ export async function createMeal(userId: string, input: MealInput): Promise<stri
     await supabase.from("meals").delete().eq("id", data.id);
     throw itemsError;
   }
+  // The shelves read the join table, so a meal without rows here would be
+  // filed nowhere. Best-effort and after the items: the read falls back to the
+  // primary category, so a failure costs a shelf placement, not the meal.
+  const { error: catError } = await setMealCategories(
+    data.id,
+    normalizeCategories(input.category, categories),
+  );
+  if (catError) console.error("createMeal: could not file categories:", catError);
   return data.id;
+}
+
+/** The set to write, with the primary at its head — the order
+ *  `set_meal_categories` reads to decide which one stays primary. */
+function normalizeCategories(
+  primary: MealCategory,
+  categories: MealCategory[] | undefined,
+): MealCategory[] {
+  const set = categories && categories.length > 0 ? categories : [primary];
+  return set.includes(primary) ? [primary, ...set.filter((c) => c !== primary)] : set;
+}
+
+/**
+ * Replace a meal's categories, primary first.
+ *
+ * One RPC rather than a delete and an insert: the set is constrained both ways
+ * — at least one, and `emergency` only alone — and from the client those two
+ * calls are two transactions, the first of which commits an empty set. Returns
+ * the error rather than throwing so a best-effort caller can log it.
+ */
+export async function setMealCategories(
+  mealId: string,
+  categories: MealCategory[],
+): Promise<{ error: unknown }> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
+  const { error } = await supabase.rpc("set_meal_categories", {
+    p_meal_id: mealId,
+    p_categories: categories,
+  });
+  return { error };
+}
+
+/**
+ * Retire a meal by hand, or hand it back to the automatic rule.
+ *
+ * Archiving was computed and only computed — complete portion, out of stock,
+ * idle long enough — so a meal could neither be retired deliberately nor
+ * brought back. Setting `archived_at` pins it; clearing it restores the
+ * automatic verdict rather than forcing the meal to be current.
+ */
+export async function setMealArchived(mealId: string, archived: boolean): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
+  const { error } = await supabase
+    .from("meals")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", mealId);
+  if (error) throw error;
 }
 
 /**
@@ -566,7 +641,7 @@ export async function updateMeal(
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
-  const { items, ...meal } = input;
+  const { items, categories, ...meal } = input;
   const { error } = await supabase
     .from("meals")
     .update({ ...meal, name: input.name.trim(), slug })
@@ -575,6 +650,13 @@ export async function updateMeal(
     if (error.code === UNIQUE_VIOLATION) throw duplicateMealNameError(input.name);
     throw error;
   }
+  // Keeps the join table in step with the primary the update above wrote: an
+  // edit that moves a meal from lunch to dinner must move its shelf too.
+  const { error: catError } = await setMealCategories(
+    mealId,
+    normalizeCategories(input.category, categories),
+  );
+  if (catError) console.error("updateMeal: could not file categories:", catError);
   // Full replace: delete + reinsert. Two client writes, not atomic — a
   // failure between them leaves an item-less meal, which is visible in the
   // UI and recoverable by re-editing (unlike silent divergence). An RPC is
@@ -628,6 +710,12 @@ export async function logMeal(
     mealType: MealType;
     conceptIdsBySavedFoodId: Map<string, string[]>;
     inventory: ResolutionInventoryRow[];
+    /**
+     * How much of the meal was eaten. Scales the servings and macros written,
+     * and NOTHING else: the stock decrement stays one unit per resolved row,
+     * because half a smoothie still opens the whole container. Defaults to 1.
+     */
+    portion?: number;
   },
 ): Promise<LogMealResult> {
   invalidateMealLibrary(); // D1: this write changes what a read would return
@@ -658,9 +746,10 @@ export async function logMeal(
   // assert two units were taken when one was, and any refund driven off those
   // rows would over-credit stock.
   const claimedInventoryIds = new Set<string>();
+  const portion = opts.portion ?? 1;
   const rows = meal.items.map((it) => {
     const f = it.savedFood;
-    const s = it.servings;
+    const s = it.servings * portion;
     const matchedId = matches.get(it.saved_food_id) ?? null;
     const inventoryId =
       matchedId !== null && !claimedInventoryIds.has(matchedId) ? matchedId : null;

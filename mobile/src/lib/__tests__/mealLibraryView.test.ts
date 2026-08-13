@@ -1,5 +1,6 @@
 import {
   buildShelves,
+  mealIngredients,
   filterLibrary,
   inSegment,
   libraryCounts,
@@ -76,10 +77,14 @@ const conceptMap = new Map<string, string[]>([
   ["sf-bread", ["c-bread"]],
 ]);
 
-const card = (over: Partial<MealCard> = {}): MealCard =>
-  ({
+const card = (over: Partial<MealCard> = {}): MealCard => {
+  const primary = over.category ?? "lunch";
+  return ({
     meal: meal(),
-    category: "lunch",
+    category: primary,
+    // Defaults to just the primary, so a test that only sets `category` reads
+    // the way it always did.
+    categories: over.categories ?? [primary],
     source: { kind: "home", name: null },
     isFavorite: false,
     availability: "available",
@@ -95,6 +100,50 @@ const card = (over: Partial<MealCard> = {}): MealCard =>
     isArchived: false,
     ...over,
   }) as MealCard;
+};
+
+// -- ingredients ------------------------------------------------------------
+
+describe("mealIngredients", () => {
+  const invRows = [
+    { id: "inv-pb", name: "Skippy Peanut Butter", barcode: null, totalQuantity: 1, conceptIds: ["c-pb"], daysLeft: null },
+    { id: "inv-bread", name: "Dave's Bread", barcode: null, totalQuantity: 1, conceptIds: ["c-bread"], daysLeft: 2 },
+  ];
+
+  it("says in stock, and says so louder when the row is about to turn", () => {
+    const rows = mealIngredients({ meal: meal(), inventory: invRows, conceptIdsBySavedFoodId: conceptMap });
+    expect(rows.map((r) => r.state.kind)).toEqual(["in_stock", "expiring"]);
+    expect(rows[1].state.daysLeft).toBe(2);
+    expect(rows[1].state.inventoryId).toBe("inv-bread");
+  });
+
+  it("separates what you need to buy from what we cannot check", () => {
+    // Bread has a concept link and nothing in stock: go shopping. Peanut
+    // butter here has neither barcode nor link, so failing says something
+    // about our records, not the kitchen.
+    const rows = mealIngredients({
+      meal: meal(),
+      inventory: [],
+      conceptIdsBySavedFoodId: new Map([["sf-bread", ["c-bread"]]]),
+    });
+    expect(rows.map((r) => r.state.kind)).toEqual(["unlinked", "missing"]);
+  });
+
+  it("an already-expired row is a throw-out, not a rescue", () => {
+    const rows = mealIngredients({
+      meal: meal(),
+      inventory: [invRows[0], { ...invRows[1], daysLeft: -2 }],
+      conceptIdsBySavedFoodId: conceptMap,
+    });
+    expect(rows[1].state.kind).toBe("in_stock");
+  });
+
+  it("agrees with the meal-level verdict about what is missing", () => {
+    const rows = mealIngredients({ meal: meal(), inventory: [invRows[0]], conceptIdsBySavedFoodId: conceptMap });
+    const missing = rows.filter((r) => r.state.kind === "missing").map((r) => r.item.savedFood.name);
+    expect(missing).toEqual(["Dave's Bread"]);
+  });
+});
 
 // -- source -----------------------------------------------------------------
 
@@ -272,6 +321,21 @@ describe("filterLibrary", () => {
     expect(found("a")).toEqual(["a", "b", "c"]);
   });
 
+  it("a category filter matches any category the meal holds", () => {
+    const both = card({
+      meal: meal({ id: "d" } as Partial<MealWithItems>),
+      category: "breakfast",
+      categories: ["breakfast", "snack"],
+    });
+    const all = [...cards, both];
+    const ids = (category: MealCategory) =>
+      filterLibrary({ cards: all, segment: "all", category, favoritesOnly: false, query: "" })
+        .map((c) => c.meal.id);
+    expect(ids("breakfast")).toContain("d");
+    expect(ids("snack")).toContain("d");
+    expect(ids("dinner")).not.toContain("d");
+  });
+
   it("restores the filters the moment the query goes back to blank", () => {
     expect(filterLibrary({ cards, segment: "available", category: null, favoritesOnly: false, query: "   " }).map((c) => c.meal.id)).toEqual(["a"]);
   });
@@ -316,6 +380,22 @@ describe("libraryCounts", () => {
 
 // -- shelves ----------------------------------------------------------------
 
+describe("libraryCounts with several categories", () => {
+  it("counts a meal in every category it holds, so the tabs stop summing to the total", () => {
+    const counts = libraryCounts([
+      card({ meal: meal({ id: "a" } as Partial<MealWithItems>), category: "breakfast", categories: ["breakfast", "snack"] }),
+      card({ meal: meal({ id: "b" } as Partial<MealWithItems>), category: "lunch", categories: ["lunch"] }),
+    ]);
+    expect(counts.all).toBe(2);
+    expect(counts.byCategory.get("breakfast")).toBe(1);
+    expect(counts.byCategory.get("snack")).toBe(1);
+    expect(counts.byCategory.get("lunch")).toBe(1);
+    // 3 category placements over 2 meals — deliberate, per the design.
+    const placed = [...counts.byCategory.values()].reduce((a, b) => a + b, 0);
+    expect(placed).toBe(3);
+  });
+});
+
 describe("buildShelves", () => {
   const order: MealCategory[] = ["breakfast", "lunch", "dinner"];
   const labels = { breakfast: "Breakfasts", lunch: "Lunches", dinner: "Dinners", snack: "Snacks", shake: "Shakes", emergency: "Emergency" } as Record<MealCategory, string>;
@@ -328,6 +408,19 @@ describe("buildShelves", () => {
     ];
     const shelves = buildShelves(cards, order, labels);
     expect(shelves.map((s) => s.key)).toEqual(["favorites", "use_it_up", "breakfast", "lunch", "dinner"]);
+  });
+
+  it("a meal filed under two categories stands on both shelves", () => {
+    // The point of the whole change: a lunch-or-dinner meal is found in both
+    // places and considered in both eating windows.
+    const both = card({
+      meal: meal({ id: "x", name: "Chili" }),
+      category: "lunch",
+      categories: ["lunch", "dinner"],
+    });
+    const shelves = buildShelves([both], order, labels);
+    expect(shelves.map((s) => s.key)).toEqual(["lunch", "dinner"]);
+    expect(shelves.every((s) => s.cards[0].meal.id === "x")).toBe(true);
   });
 
   it("a favorite that also rescues appears on both shelves", () => {

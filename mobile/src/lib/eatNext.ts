@@ -632,6 +632,23 @@ function toRecs(cands: Candidate[], contextReason: (c: Candidate) => string[]): 
   }));
 }
 
+/**
+ * Does this meal hold any of these categories?
+ *
+ * The whole point of letting a meal be filed under several: a meal you would
+ * eat for lunch OR dinner used to have to pick, and was then invisible to the
+ * other window for good. Every read of `category` in this file that asked
+ * "is this a dinner" now asks "is dinner among its categories" — the single
+ * exception being the emergency tests, where holding the category at all is
+ * disqualifying and `emergency` is exclusive anyway.
+ */
+function inAnyCategory(
+  m: ScoredMeal,
+  categories: ReadonlyArray<MealCategory>,
+): boolean {
+  return m.meal.categories.some((c) => categories.includes(c));
+}
+
 function candidate(
   m: ScoredMeal,
   preferredRoles: ReadonlyArray<MealRole>,
@@ -640,7 +657,7 @@ function candidate(
   stockByMealId?: Map<string, EatNextStockInfo>,
 ): Candidate {
   const roleMatch = m.meal.role !== null && preferredRoles.includes(m.meal.role);
-  const categoryMatch = preferredCategories.includes(m.meal.category);
+  const categoryMatch = inAnyCategory(m, preferredCategories);
   const info = stockByMealId?.get(m.meal.id);
   return {
     ...m,
@@ -874,7 +891,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
     const cands = eligible
       .filter(
         (m) =>
-          m.meal.category === "emergency" ||
+          m.meal.categories.includes("emergency") ||
           m.meal.role === "emergency_catchup" ||
           m.meal.role === "calorie_booster",
       )
@@ -951,12 +968,12 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   const pool = farFromMeal
     ? eligible.filter(
         (m) =>
-          m.meal.category !== "emergency" &&
-          (slotCategories.includes(m.meal.category) ||
+          !m.meal.categories.includes("emergency") &&
+          (inAnyCategory(m, slotCategories) ||
             m.meal.role === "bridge" ||
-            m.meal.category === "snack"),
+            m.meal.categories.includes("snack")),
       )
-    : eligible.filter((m) => slotCategories.includes(m.meal.category));
+    : eligible.filter((m) => inAnyCategory(m, slotCategories));
   const poolIds = new Set(pool.map((m) => m.meal.id));
   // Fresh-first (owner decision, 2026-08-12): a meal that would use an
   // ingredient about to expire is a candidate whatever the slot says. The
@@ -968,7 +985,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
   const rescues = eligible.filter(
     (m) =>
       !poolIds.has(m.meal.id) &&
-      m.meal.category !== "emergency" &&
+      !m.meal.categories.includes("emergency") &&
       stockByMealId?.get(m.meal.id)?.expiringItemName != null,
   );
   const cands = [...pool, ...rescues]

@@ -97,6 +97,7 @@ export function useMealLibraryCards(): UseMealLibraryCards {
       return {
         meal,
         category: meal.category,
+        categories: meal.categories,
         source,
         isFavorite: meal.is_favorite ?? false,
         availability: mealAvailability({
@@ -125,7 +126,10 @@ export function useMealLibraryCards(): UseMealLibraryCards {
         // for is telling you to go shopping to avoid waste.
         rescueDaysLeft:
           assemblability?.assemblable ? assemblability.expiringDaysLeft : null,
-        isArchived: shouldRetire({
+        // Archived by hand OR by the rule. The hand-set flag wins because it
+        // is a statement about intent; clearing it hands the meal back to the
+        // rule rather than forcing it to be current.
+        isArchived: meal.archived_at !== null || shouldRetire({
           isCompletePortion: meal.is_complete_portion ?? false,
           totalQuantity: assemblability?.assemblable ? 1 : 0,
           daysSinceLastLogged: lastLoggedDate

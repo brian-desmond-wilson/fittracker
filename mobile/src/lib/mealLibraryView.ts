@@ -13,7 +13,7 @@
 // you would actually make today — and when that differs from the product the
 // meal was built with, the card says so rather than letting the figure drift
 // silently between weeks.
-import type { MealCategory, MealWithItems } from "../types/meal-library";
+import type { MealCategory, MealItemWithFood, MealWithItems } from "../types/meal-library";
 import type { MacroTotals } from "./mealMacros";
 import { EMPTY_TOTALS } from "./mealMacros";
 import { resolveInventoryMatches } from "./inventoryResolution";
@@ -181,13 +181,96 @@ export function substitutionLine(n: MealNutrition): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Ingredients, one row at a time
+
+/**
+ * What an ingredient row says about itself.
+ *
+ * `assessAssemblability` answers the meal's question — can I make this — and
+ * reports the two failure buckets as flat lists of NAMES. A row has to say
+ * which of them IT is, and a row that is fine still has something to say when
+ * the thing resolving it is about to turn. Same predicates, per item, so a row
+ * can never contradict the verdict above it.
+ */
+export type IngredientStateKind = "in_stock" | "expiring" | "missing" | "unlinked";
+
+/** The columns a row needs to be resolved and dated. Structural rather than
+ *  the imported `AssemblabilityInventoryRow`, so the same call works from the
+ *  library's projection and from anything else carrying these fields. */
+export interface IngredientInventoryRow {
+  id: string;
+  name: string;
+  barcode: string | null;
+  totalQuantity: number;
+  conceptIds: string[];
+  daysLeft: number | null;
+}
+
+export interface IngredientState {
+  kind: IngredientStateKind;
+  /** The inventory row currently resolving this ingredient, when one does. */
+  inventoryId: string | null;
+  /** Days until that row turns — only meaningful for `expiring`. */
+  daysLeft: number | null;
+}
+
+export interface MealIngredient {
+  item: MealItemWithFood;
+  state: IngredientState;
+}
+
+/** Within how many days an ingredient is worth calling out on its own row.
+ *  The rescue horizon the shelves use, not `EXPIRING_SOON_DAYS` (7): a row
+ *  that says "7d left" on half a fridge is noise. */
+export const INGREDIENT_EXPIRING_DAYS = 3;
+
+export function mealIngredients(opts: {
+  meal: MealWithItems;
+  inventory: IngredientInventoryRow[];
+  conceptIdsBySavedFoodId: Map<string, string[]>;
+}): MealIngredient[] {
+  const resolverItems = opts.meal.items.map((it) => ({
+    savedFoodId: it.saved_food_id,
+    barcode: it.savedFood.barcode,
+    conceptIds: opts.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
+  }));
+  const matches = resolveInventoryMatches(resolverItems, opts.inventory);
+  const byId = new Map(opts.inventory.map((r) => [r.id, r]));
+
+  return opts.meal.items.map((item, idx) => {
+    const invId = matches.get(item.saved_food_id) ?? null;
+    if (invId === null) {
+      // Same test `assessAssemblability` uses: an ingredient with neither a
+      // barcode nor a concept link could not have matched ANY row, so failing
+      // says something about our records rather than about the kitchen. The
+      // falsy barcode check mirrors the resolver's, which reads "" as none.
+      const r = resolverItems[idx];
+      const uncheckable = !r.barcode && r.conceptIds.length === 0;
+      return { item, state: { kind: uncheckable ? "unlinked" : "missing", inventoryId: null, daysLeft: null } };
+    }
+    const daysLeft = byId.get(invId)?.daysLeft ?? null;
+    // Bounded below at 0 exactly as the meal-level signal is: an already-
+    // expired row is a throw-out, not a rescue, and cannot share the copy.
+    const expiring = daysLeft !== null && daysLeft >= 0 && daysLeft <= INGREDIENT_EXPIRING_DAYS;
+    return {
+      item,
+      state: { kind: expiring ? "expiring" : "in_stock", inventoryId: invId, daysLeft },
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // The card
 
 export type MealAvailability = "available" | "unavailable" | "not_tracked";
 
 export interface MealCard {
   meal: MealWithItems;
+  /** The primary category — the one the default logging slot reads. */
   category: MealCategory;
+  /** Every category the meal is filed under. It appears on each one's shelf,
+   *  and the recommender considers it in each one's window. */
+  categories: MealCategory[];
   source: MealSource;
   isFavorite: boolean;
   availability: MealAvailability;
@@ -287,7 +370,7 @@ export function filterLibrary(opts: {
   }
   return opts.cards.filter((c) => {
     if (!inSegment(c, opts.segment)) return false;
-    if (opts.category && c.category !== opts.category) return false;
+    if (opts.category && !c.categories.includes(opts.category)) return false;
     if (opts.favoritesOnly && !c.isFavorite) return false;
     return true;
   });
@@ -330,7 +413,8 @@ export interface LibraryCounts {
 }
 
 /** Counts are over the whole library, never the current filter — their job is
- *  to tell you what the filter is HIDING. */
+ *  to tell you what the filter is HIDING. `byCategory` counts a meal once per
+ *  category it holds, so its values sum to more than `all`. */
 export function libraryCounts(cards: MealCard[]): LibraryCounts {
   const byCategory = new Map<MealCategory, number>();
   let available = 0;
@@ -343,7 +427,13 @@ export function libraryCounts(cards: MealCard[]): LibraryCounts {
     }
     all += 1;
     if (c.availability !== "unavailable") available += 1;
-    byCategory.set(c.category, (byCategory.get(c.category) ?? 0) + 1);
+    // Counted once per category it holds, so a breakfast-and-snack meal is in
+    // both tallies and the tabs no longer sum to `all`. Deliberate: a tab
+    // reads as "meals filed here", and a shelf that under-reports its own
+    // contents is worse than arithmetic that doesn't close.
+    for (const category of c.categories) {
+      byCategory.set(category, (byCategory.get(category) ?? 0) + 1);
+    }
   }
   return { available, all, archive, byCategory };
 }
@@ -389,8 +479,11 @@ export function buildShelves(cards: MealCard[], categoryOrder: MealCategory[], l
     shelves.push({ kind: "use_it_up", key: "use_it_up", title: "Use it up", cards: useItUp });
   }
 
+  // A meal appears on the shelf of EVERY category it holds — the same way a
+  // favourite that also rescues something expiring is on both shelves above.
+  // Categories stopped being a meal's single home when they went plural.
   for (const category of categoryOrder) {
-    const inCat = cards.filter((c) => c.category === category).sort(byScore);
+    const inCat = cards.filter((c) => c.categories.includes(category)).sort(byScore);
     if (inCat.length === 0) continue;
     shelves.push({ kind: "category", key: category, title: labels[category], cards: inCat });
   }

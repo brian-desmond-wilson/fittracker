@@ -10,8 +10,36 @@ export type MealCategory =
   | "lunch"
   | "dinner"
   | "snack"
+  | "dessert"
   | "shake"
   | "emergency";
+
+/** Emergency Calories is held ALONE. It is deliberately excluded from ordinary
+ *  suggestions, so "this is an emergency meal and also a breakfast" has no
+ *  defined meaning for the recommender. Enforced in the database by trigger;
+ *  this is the same rule where the UI can act on it. */
+export const EXCLUSIVE_CATEGORY: MealCategory = "emergency";
+
+/** A meal is filed under one or more of these, and appears on every shelf it
+ *  holds. Returns the set the picker should end up with after `next` is
+ *  toggled — the exclusivity rule in one place rather than in each caller. */
+export function toggleCategory(
+  current: readonly MealCategory[],
+  next: MealCategory,
+): MealCategory[] {
+  if (next === EXCLUSIVE_CATEGORY) {
+    // Selecting it clears everything else; tapping it again would leave the
+    // meal filed nowhere, so it stays.
+    return [EXCLUSIVE_CATEGORY];
+  }
+  const without = current.filter((c) => c !== next && c !== EXCLUSIVE_CATEGORY);
+  if (current.includes(next)) {
+    // Never down to nothing: a meal filed nowhere appears on no shelf and the
+    // database refuses it at commit.
+    return without.length > 0 ? without : current.filter((c) => c === next);
+  }
+  return [...without, next];
+}
 
 /** Library display order: Emergency pinned first (spec §9.1). */
 export const CATEGORY_SECTION_ORDER: MealCategory[] = [
@@ -20,6 +48,7 @@ export const CATEGORY_SECTION_ORDER: MealCategory[] = [
   "lunch",
   "dinner",
   "snack",
+  "dessert",
   "shake",
 ];
 
@@ -29,8 +58,32 @@ export const CATEGORY_LABELS: Record<MealCategory, string> = {
   lunch: "Lunches",
   dinner: "Dinners",
   snack: "Snacks",
+  dessert: "Desserts",
   shake: "Shakes",
 };
+
+/** Singular, for a chip that files ONE meal rather than a shelf holding many.
+ *  "Breakfasts" on a picker would read as a quantity. */
+export const CATEGORY_CHIP_LABELS: Record<MealCategory, string> = {
+  emergency: "Emergency",
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snack: "Snack",
+  dessert: "Dessert",
+  shake: "Shake",
+};
+
+/** Picker order — the day, then the two kinds that aren't times of day. */
+export const CATEGORY_PICKER_ORDER: MealCategory[] = [
+  "breakfast",
+  "lunch",
+  "dinner",
+  "snack",
+  "dessert",
+  "shake",
+  "emergency",
+];
 
 export type MealRole =
   | "pre_workout"
@@ -64,6 +117,7 @@ export const CATEGORY_DEFAULT_MEAL_TYPE: Record<MealCategory, MealType> = {
   lunch: "lunch",
   dinner: "dinner",
   snack: "snack",
+  dessert: "dessert",
   shake: "snack",
   emergency: "snack",
 };
@@ -73,7 +127,12 @@ export interface Meal {
   user_id: string;
   name: string;
   slug: string;
+  /** The PRIMARY category — the single answer the default logging slot needs.
+   *  Where the meal is FOUND is `categories`, which always contains this. */
   category: MealCategory;
+  /** Every category this meal is filed under; it appears on each one's shelf.
+   *  Never empty (database trigger), and holds `emergency` only alone. */
+  categories: MealCategory[];
   role: MealRole | null;
   default_meal_type: MealType | null;
   prep_minutes: number;
@@ -92,6 +151,10 @@ export interface Meal {
    *  Null exactly when `source_kind` is `home` (DB check constraint). */
   source_name: string | null;
   notes: string | null;
+  /** Set by hand from the meal page. A meal is archived when this is set OR
+   *  when the retirement rule says so; clearing it hands the meal back to the
+   *  automatic rule. */
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }

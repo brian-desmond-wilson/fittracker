@@ -50,6 +50,8 @@ let nextId = 0;
 function scored(over: {
   name?: string;
   category?: MealCategory;
+  /** Every category the meal is filed under; defaults to just `category`. */
+  categories?: MealCategory[];
   role?: MealRole | null;
   prep?: number;
   calories?: number;
@@ -75,6 +77,7 @@ function scored(over: {
       // makes that mutant die. (Nothing in eatNext.ts reads `slug`.)
       slug: `${id}-slug`,
       category: over.category ?? "lunch",
+      categories: over.categories ?? [over.category ?? "lunch"],
       role: over.role ?? null,
       default_meal_type: null,
       prep_minutes: over.prep ?? 5,
@@ -84,6 +87,7 @@ function scored(over: {
       source_kind: "home",
       source_name: null,
       notes: null,
+      archived_at: null,
       created_at: "",
       updated_at: "",
       items: [],
@@ -379,6 +383,22 @@ describe("next_meal", () => {
     const r = recommendEatNext(input(DINNER_SLOT, [breakfast, dinner]));
     expect(r.context).toBe("next_meal");
     expect(r.recommendations[0].mealId).toBe(dinner.meal.id);
+  });
+  it("a meal filed lunch AND dinner is eligible in the dinner window", () => {
+    // The reason categories went plural: filed under one, the meal was
+    // invisible to the other window for good.
+    const both = scored({ category: "lunch", categories: ["lunch", "dinner"] });
+    const r = recommendEatNext(input(DINNER_SLOT, [both]));
+    expect(r.context).toBe("next_meal");
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([both.meal.id]);
+  });
+  it("holding a second category does not smuggle an emergency meal into a slot", () => {
+    // Emergency is exclusive in the database; if a row ever holds it beside
+    // another category, the slot filter still refuses it.
+    const smuggled = scored({ category: "dinner", categories: ["dinner", "emergency"], score: 100 });
+    const plain = scored({ category: "dinner", score: 60 });
+    const r = recommendEatNext(input(DINNER_SLOT, [smuggled, plain]));
+    expect(r.recommendations.map((x) => x.mealId)).toEqual([plain.meal.id]);
   });
   it("≥120 min before next meal prefers bridge/snack", () => {
     // 16:00, dinner 18:00 → 120 min out
