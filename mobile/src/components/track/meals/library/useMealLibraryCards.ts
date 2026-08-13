@@ -23,9 +23,12 @@ import {
   fetchMealLibrary,
   type MealLibraryData,
 } from "@/src/lib/supabase/mealLibrary";
+import { adHocCandidates, type AdHocCandidate } from "@/src/lib/adHocMeals";
 
 export interface UseMealLibraryCards {
   cards: MealCard[];
+  /** Repeatedly-logged entries the library has never held. */
+  adHoc: AdHocCandidate[];
   /** The raw payload, for the detail and builder views that still want it. */
   data: MealLibraryData | null;
   loading: boolean;
@@ -137,5 +140,14 @@ export function useMealLibraryCards(): UseMealLibraryCards {
     });
   }, [data]);
 
-  return { cards, data, loading, failed, reload };
+  // Names already in the library are not candidates — promoting one would
+  // create a duplicate of a meal you already have.
+  const adHoc = useMemo<AdHocCandidate[]>(() => {
+    if (!data) return [];
+    return adHocCandidates(data.adHocLogs, {
+      exclude: new Set(data.meals.map((m) => m.name.trim().toLowerCase())),
+    });
+  }, [data]);
+
+  return { cards, adHoc, data, loading, failed, reload };
 }

@@ -57,7 +57,8 @@ import {
   CATEGORY_SECTION_ORDER,
   type MealCategory,
 } from "@/src/types/meal-library";
-import { setMealFavorite } from "@/src/lib/supabase/mealLibrary";
+import { promoteAdHocMeal, setMealFavorite } from "@/src/lib/supabase/mealLibrary";
+import { AdHocSection } from "./AdHocSection";
 import { addMealGapToShoppingList } from "@/src/lib/supabase/shopping";
 import { supabase } from "@/src/lib/supabase";
 import { useMealLibraryCards } from "./useMealLibraryCards";
@@ -96,7 +97,7 @@ export function MealLibraryScreen({
   refreshKey,
 }: MealLibraryScreenProps) {
   const insets = useSafeAreaInsets();
-  const { cards, loading, failed, reload } = useMealLibraryCards();
+  const { cards, adHoc, loading, failed, reload } = useMealLibraryCards();
 
   const [segment, setSegment] = useState<LibrarySegment>("available");
   const [category, setCategory] = useState<MealCategory | null>(null);
@@ -231,6 +232,27 @@ export function MealLibraryScreen({
       }
     },
     [busyMealId],
+  );
+
+  const handlePromote = useCallback(
+    async (
+      candidate: Parameters<React.ComponentProps<typeof AdHocSection>["onPromote"]>[0],
+      meta: Parameters<React.ComponentProps<typeof AdHocSection>["onPromote"]>[1],
+    ) => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not signed in");
+        await promoteAdHocMeal(user.id, candidate, meta);
+        await reload({ force: true });
+      } catch (e) {
+        console.error("promote ad-hoc meal:", e);
+        Alert.alert(
+          "Couldn't save that as a meal",
+          e instanceof Error ? e.message : "Try again.",
+        );
+      }
+    },
+    [reload],
   );
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -454,6 +476,13 @@ export function MealLibraryScreen({
                 />
               ))}
             </View>
+          )}
+
+          {/* Only under All, and only unfiltered: this is the catalog
+              admitting what it is missing, which would be a non-sequitur
+              under a category tab or a search. */}
+          {segment === "all" && !searching && !favoritesOnly && category === null && (
+            <AdHocSection candidates={adHoc} onPromote={handlePromote} />
           )}
         </Animated.ScrollView>
       </View>

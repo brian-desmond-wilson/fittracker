@@ -7,6 +7,7 @@ import { buildBorrowedFoodImages, withBorrowedImage } from "../foodImageBorrow";
 import { invalidateBorrowedFoodImages } from "./borrowedFoodImages";
 import { getLocalDateString } from "../dates";
 import type { InventoryNutrition } from "../mealLibraryView";
+import type { AdHocLogRow } from "../adHocMeals";
 import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
@@ -68,6 +69,8 @@ export interface MealLibraryData {
   nutritionByInventoryId: Map<string, InventoryNutrition>;
   /** meal id -> how many times it has ever been logged. */
   timesLoggedByMealId: Map<string, number>;
+  /** Logs that name no meal — the raw material for `adHocCandidates`. */
+  adHocLogs: AdHocLogRow[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
   /** C1: meal id → the most recent local date it was logged on. Absent means
@@ -142,7 +145,7 @@ export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibrar
 }
 
 async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
-  const [meals, items, concepts, links, inventory, profile, constraints, logs] = await Promise.all([
+  const [meals, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     supabase
       .from("meal_items")
@@ -172,8 +175,14 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     // Every row, not a distinct date: the library counts HOW OFTEN as well as
     // how recently, and one meal logged twice in a day is twice eaten.
     supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null),
+    // The other half of "every meal you have ever eaten": logs that never
+    // became meals. Repeat ones are offered for promotion (`adHocCandidates`).
+    supabase
+      .from("meal_logs")
+      .select("name, date, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, saved_food_id")
+      .is("meal_id", null),
   ]);
-  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error]
+  const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));
@@ -302,6 +311,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     inventory: resolutionInventory,
     nutritionByInventoryId,
     timesLoggedByMealId,
+    adHocLogs: (adHocLogs.data ?? []) as AdHocLogRow[],
     // Max per meal. String comparison is sound and cheap here: these are
     // YYYY-MM-DD, which sorts lexicographically exactly as it sorts by date.
     lastLoggedByMealId: logRows
@@ -452,6 +462,82 @@ export async function createMeal(userId: string, input: MealInput): Promise<stri
     throw itemsError;
   }
   return data.id;
+}
+
+/**
+ * Promote a repeatedly-logged ad-hoc entry into a real meal.
+ *
+ * A meal needs at least one ingredient, and a hand-typed log has none — so
+ * when the logs don't already point at a saved food, one is created from the
+ * numbers they agreed on. That food IS the meal's ingredient: the meal is
+ * "the thing you keep typing", recorded once so it can be scored, favourited,
+ * checked for stock and suggested like everything else.
+ *
+ * Category and source are the caller's decision, not a guess made here: the
+ * screen asks, because "is this a lunch, and did you cook it or order it" is
+ * exactly what the logs never recorded.
+ */
+export async function promoteAdHocMeal(
+  userId: string,
+  candidate: {
+    name: string;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+    savedFoodId: string | null;
+  },
+  meta: {
+    category: Meal["category"];
+    source_kind: Meal["source_kind"];
+    source_name: string | null;
+  },
+): Promise<string> {
+  invalidateMealLibrary();
+  let savedFoodId = candidate.savedFoodId;
+  if (!savedFoodId) {
+    const { data, error } = await supabase
+      .from("saved_foods")
+      .insert({
+        user_id: userId,
+        name: candidate.name.trim(),
+        brand: null,
+        barcode: null,
+        calories: candidate.calories,
+        protein: candidate.protein,
+        carbs: candidate.carbs,
+        fats: candidate.fats,
+        sugars: candidate.sugars,
+        sodium_mg: candidate.sodium_mg,
+        fiber_g: candidate.fiber_g,
+        is_favorite: false,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    savedFoodId = data.id as string;
+  }
+  const mealId = await createMeal(userId, {
+    name: candidate.name.trim(),
+    category: meta.category,
+    role: null,
+    default_meal_type: null,
+    prep_minutes: 0,
+    taste_override: null,
+    notes: null,
+    items: [{ saved_food_id: savedFoodId, servings: 1, small_pieces_ok: false }],
+  });
+  // Source is not on `MealInput` — it is a property of the meal the builder
+  // has never asked for — so it is stamped straight after.
+  const { error: srcError } = await supabase
+    .from("meals")
+    .update({ source_kind: meta.source_kind, source_name: meta.source_name })
+    .eq("id", mealId);
+  if (srcError) throw srcError;
+  return mealId;
 }
 
 /**
