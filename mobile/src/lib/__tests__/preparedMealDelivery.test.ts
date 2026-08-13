@@ -1,11 +1,19 @@
 import {
   addLocalDays,
+  addRecent,
   deliverySummary,
+  dishSlug,
+  draftFromRecent,
   emptyDraft,
   namedDrafts,
+  orderVendorsByUse,
+  recentCounts,
+  removeRecent,
   toDeliveryPayload,
   validateDelivery,
+  DELIVERY_SLOTS,
   type PreparedMealDraft,
+  type RecentDish,
 } from "../preparedMealDelivery";
 
 const draft = (over: Partial<PreparedMealDraft> = {}): PreparedMealDraft => ({
@@ -14,6 +22,18 @@ const draft = (over: Partial<PreparedMealDraft> = {}): PreparedMealDraft => ({
   calories: "650",
   protein: "21",
   fiber: "13",
+  ...over,
+});
+
+const dish = (over: Partial<RecentDish> = {}): RecentDish => ({
+  vendorId: "v1",
+  slug: "almond-dream-smoothie",
+  name: "Almond Dream Smoothie",
+  slot: "breakfast",
+  calories: 420,
+  protein: 18,
+  fiber: 7,
+  lastDeliveredOn: "2026-08-06",
   ...over,
 });
 
@@ -93,6 +113,133 @@ describe("toDeliveryPayload", () => {
   it("carries the slot through", () => {
     const [meal] = toDeliveryPayload([draft({ slot: "breakfast" })]);
     expect(meal.slot).toBe("breakfast");
+  });
+});
+
+describe("DELIVERY_SLOTS", () => {
+  it("offers every slot the app files a meal under, dessert included", () => {
+    expect(DELIVERY_SLOTS).toEqual(["breakfast", "lunch", "dinner", "snack", "dessert"]);
+  });
+});
+
+describe("dishSlug", () => {
+  it("folds case and punctuation the way the database does", () => {
+    expect(dishSlug("  Almond Dream Smoothie ")).toBe("almond-dream-smoothie");
+    expect(dishSlug("PB & J Bowl")).toBe("pb-j-bowl");
+  });
+  it("trims the dashes a leading symbol would leave", () => {
+    expect(dishSlug("*** Ruby Rice Bowl!")).toBe("ruby-rice-bowl");
+  });
+  it("is empty for a name with nothing in it", () => {
+    expect(dishSlug("   ")).toBe("");
+  });
+});
+
+describe("orderVendorsByUse", () => {
+  const vendors = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const use = (vendorId: string, deliveryCount: number, lastDeliveredOn: string) =>
+    ({ vendorId, deliveryCount, lastDeliveredOn });
+
+  it("puts the most-delivered vendor first", () => {
+    const ordered = orderVendorsByUse(vendors, [
+      use("a", 2, "2026-08-01"),
+      use("b", 9, "2026-08-01"),
+    ]);
+    expect(ordered.map((v) => v.id)).toEqual(["b", "a", "c"]);
+  });
+  it("breaks a tie on who delivered most recently", () => {
+    const ordered = orderVendorsByUse(vendors, [
+      use("a", 3, "2026-07-01"),
+      use("b", 3, "2026-08-10"),
+    ]);
+    expect(ordered.map((v) => v.id)).toEqual(["b", "a", "c"]);
+  });
+  it("leaves never-used vendors behind the ranked ones, in their own order", () => {
+    const ordered = orderVendorsByUse(vendors, [use("c", 1, "2026-08-01")]);
+    expect(ordered.map((v) => v.id)).toEqual(["c", "a", "b"]);
+  });
+  it("changes nothing when there is no history at all", () => {
+    expect(orderVendorsByUse(vendors, []).map((v) => v.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("draftFromRecent", () => {
+  it("prefills the name, slot and macros", () => {
+    expect(draftFromRecent(dish())).toMatchObject({
+      name: "Almond Dream Smoothie",
+      slot: "breakfast",
+      quantity: "1",
+      calories: "420",
+      protein: "18",
+      fiber: "7",
+    });
+  });
+  it("leaves a macro blank where the history never knew it", () => {
+    expect(draftFromRecent(dish({ fiber: null })).fiber).toBe("");
+  });
+});
+
+describe("recentCounts", () => {
+  it("reads the stepper's number off the row's quantity", () => {
+    expect(recentCounts([draft({ name: "Almond Dream Smoothie", quantity: "3" })]))
+      .toEqual({ "almond-dream-smoothie": 3 });
+  });
+  it("ignores the blank row", () => {
+    expect(recentCounts([emptyDraft()])).toEqual({});
+  });
+  it("counts a half-typed quantity as none rather than crashing", () => {
+    expect(recentCounts([draft({ name: "Almond Dream Smoothie", quantity: "" })]))
+      .toEqual({ "almond-dream-smoothie": 0 });
+  });
+});
+
+describe("addRecent", () => {
+  it("fills the blank row the screen starts with", () => {
+    const next = addRecent([emptyDraft()], dish());
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({ name: "Almond Dream Smoothie", quantity: "1" });
+  });
+  it("appends when every row is spoken for", () => {
+    const next = addRecent([draft()], dish());
+    expect(next.map((d) => d.name)).toEqual(["Ruby Rice Bowl", "Almond Dream Smoothie"]);
+  });
+  it("increments rather than adding the dish twice", () => {
+    const once = addRecent([emptyDraft()], dish());
+    const twice = addRecent(once, dish());
+    expect(twice).toHaveLength(1);
+    expect(twice[0].quantity).toBe("2");
+  });
+  it("adopts a row typed by hand that names the same dish", () => {
+    const typed = [draft({ name: "almond dream SMOOTHIE", quantity: "1" })];
+    const next = addRecent(typed, dish());
+    expect(next).toHaveLength(1);
+    expect(next[0].quantity).toBe("2");
+  });
+  it("counts up from a row whose quantity was left half-typed", () => {
+    const next = addRecent([draft({ name: "Almond Dream Smoothie", quantity: "" })], dish());
+    expect(next[0].quantity).toBe("1");
+  });
+});
+
+describe("removeRecent", () => {
+  it("walks the quantity back down", () => {
+    const two = addRecent(addRecent([emptyDraft()], dish()), dish());
+    expect(removeRecent(two, dish())[0].quantity).toBe("1");
+  });
+  it("takes the row away with the last one", () => {
+    const one = addRecent([draft()], dish());
+    const next = removeRecent(one, dish());
+    expect(next.map((d) => d.name)).toEqual(["Ruby Rice Bowl"]);
+  });
+  it("never empties the list — there would be nothing to type into", () => {
+    const only = addRecent([emptyDraft()], dish());
+    const next = removeRecent(only, dish());
+    expect(next).toHaveLength(1);
+    expect(next[0].name).toBe("");
+  });
+  it("does nothing for a dish that is not in the box", () => {
+    const rows = [draft()];
+    expect(removeRecent(rows, dish())).toEqual(rows);
   });
 });
 

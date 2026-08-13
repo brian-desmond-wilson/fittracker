@@ -12,10 +12,11 @@
 // exactly once, in `toDeliveryPayload`.
 import type { MealType } from "@/src/types/track";
 
-/** The slots a delivered meal can be filed under. `dessert` is deliberately
- *  absent — nobody subscribes to a dessert delivery service, and a shorter
- *  control is a faster one. */
-export const DELIVERY_SLOTS: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
+/** The slots a delivered meal can be filed under — every slot the app has.
+ *  `dessert` was left out on the theory that nobody subscribes to a dessert
+ *  service; boxes arrive with a brownie in them anyway, and filing one as a
+ *  snack loses the distinction the rest of the app draws. */
+export const DELIVERY_SLOTS: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
 
 export interface PreparedMealDraft {
   /** Local-only key for the list; never written. */
@@ -125,6 +126,164 @@ export function toDeliveryPayload(
     protein: toNumber(d.protein),
     fiber: toNumber(d.fiber),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// What the last delivery knew
+// ---------------------------------------------------------------------------
+//
+// A subscription rotates a fixed menu, so most of a box is dishes that have
+// arrived before. These turn that history into two affordances: vendors
+// ordered by how much they are actually used, and a list of repeat dishes
+// with a stepper each.
+//
+// A stepper is not a second kind of meal. It creates and edits an ordinary
+// draft row, so validation and the save payload never learn it exists.
+
+/** The name fold the database uses (`prepared_meal_slug`): lowered, every run
+ *  of non-alphanumerics collapsed to one dash, dashes trimmed. Both sides must
+ *  agree on when two spellings are the same dish. */
+export function dishSlug(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** A dish this vendor has delivered before, with its macros as most recently
+ *  printed. Nulls are real: a dish whose fiber was never typed still has
+ *  unknown fiber. */
+export interface RecentDish {
+  vendorId: string;
+  slug: string;
+  name: string;
+  slot: MealType;
+  calories: number | null;
+  protein: number | null;
+  fiber: number | null;
+  /** Local YYYY-MM-DD of the last delivery that contained it. */
+  lastDeliveredOn: string;
+}
+
+/** How much a vendor is used, for ordering the tiles. */
+export interface VendorUse {
+  vendorId: string;
+  deliveryCount: number;
+  lastDeliveredOn: string;
+}
+
+/**
+ * Vendors most-used first, ties broken by whoever delivered most recently.
+ * Vendors never ordered from keep their configured order behind the ranked
+ * ones — an unused vendor has no claim on the first tile, but it has not
+ * earned last place either.
+ */
+export function orderVendorsByUse<T extends { id: string }>(
+  vendors: readonly T[],
+  use: readonly VendorUse[],
+): T[] {
+  const byId = new Map(use.map((u) => [u.vendorId, u]));
+  return vendors
+    .map((v, index) => ({ v, index, use: byId.get(v.id) }))
+    .sort((a, b) => {
+      if (!a.use && !b.use) return a.index - b.index;
+      if (!a.use) return 1;
+      if (!b.use) return -1;
+      if (a.use.deliveryCount !== b.use.deliveryCount) {
+        return b.use.deliveryCount - a.use.deliveryCount;
+      }
+      if (a.use.lastDeliveredOn !== b.use.lastDeliveredOn) {
+        return a.use.lastDeliveredOn < b.use.lastDeliveredOn ? 1 : -1;
+      }
+      return a.index - b.index;
+    })
+    .map((entry) => entry.v);
+}
+
+/** A row prefilled from a dish that has come before. Blank where the history
+ *  is blank — a macro nobody ever typed is not zero. */
+export function draftFromRecent(dish: RecentDish): PreparedMealDraft {
+  const num = (n: number | null) => (n == null ? "" : String(n));
+  return {
+    ...emptyDraft(dish.slot),
+    name: dish.name,
+    quantity: "1",
+    calories: num(dish.calories),
+    protein: num(dish.protein),
+    fiber: num(dish.fiber),
+  };
+}
+
+/**
+ * How many of each dish the drafts currently hold, keyed by folded name — the
+ * number each stepper shows. Reading it off the rows rather than tracking it
+ * separately is what keeps a stepper honest when its row's Qty field is edited
+ * by hand.
+ */
+export function recentCounts(drafts: readonly PreparedMealDraft[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const d of drafts) {
+    const slug = dishSlug(d.name);
+    if (slug === "") continue;
+    counts[slug] = (counts[slug] ?? 0) + (toNumber(d.quantity) ?? 0);
+  }
+  return counts;
+}
+
+/**
+ * One more of this dish. An existing row for it — however it was created —
+ * gains a unit; otherwise the dish fills the first blank row, or is appended
+ * when there is none.
+ *
+ * Filling the blank row matters on the first tap of a fresh screen, which
+ * always has exactly one empty row waiting. Appending instead would leave it
+ * stranded above the meal just added.
+ */
+export function addRecent(
+  drafts: readonly PreparedMealDraft[],
+  dish: RecentDish,
+): PreparedMealDraft[] {
+  const slug = dish.slug || dishSlug(dish.name);
+  const existing = drafts.find((d) => dishSlug(d.name) === slug);
+  if (existing) {
+    return drafts.map((d) =>
+      d.key === existing.key
+        ? { ...d, quantity: String(Math.max(0, toNumber(d.quantity) ?? 0) + 1) }
+        : d,
+    );
+  }
+  const blank = drafts.find((d) => d.name.trim() === "");
+  const fresh = draftFromRecent(dish);
+  if (blank) {
+    return drafts.map((d) => (d.key === blank.key ? { ...fresh, key: d.key } : d));
+  }
+  return [...drafts, fresh];
+}
+
+/**
+ * One fewer. The last one takes the row with it, because a row for a dish you
+ * decided against is a row you would have to delete by hand.
+ *
+ * Never returns an empty list: an empty list has nothing to type into, and the
+ * screen's own remove button holds the same invariant.
+ */
+export function removeRecent(
+  drafts: readonly PreparedMealDraft[],
+  dish: RecentDish,
+): PreparedMealDraft[] {
+  const slug = dish.slug || dishSlug(dish.name);
+  const existing = drafts.find((d) => dishSlug(d.name) === slug);
+  if (!existing) return [...drafts];
+
+  const quantity = toNumber(existing.quantity) ?? 0;
+  if (quantity > 1) {
+    return drafts.map((d) =>
+      d.key === existing.key ? { ...d, quantity: String(quantity - 1) } : d,
+    );
+  }
+  const next = drafts.filter((d) => d.key !== existing.key);
+  return next.length > 0 ? next : [emptyDraft()];
 }
 
 /** Local YYYY-MM-DD `days` after `todayLocalDate`. Same local-calendar walk
