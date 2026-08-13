@@ -473,6 +473,7 @@ export function MealLibraryScreen({
                       key={`${shelf.key}-${card.meal.id}`}
                       card={card}
                       onPress={onOpenMeal}
+                      onToggleFavorite={handleToggleFavorite}
                       onLog={handleLog}
                       busyMealId={busyMealId}
                     />

@@ -7,12 +7,14 @@
 // ate it are questions for All mode, where there is room to answer them.
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { Star } from "lucide-react-native";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import type { MealCard } from "@/src/lib/mealLibraryView";
 
 interface MealShelfCardProps {
   card: MealCard;
   onPress: (card: MealCard) => void;
+  onToggleFavorite: (card: MealCard) => void;
   onLog: (card: MealCard) => void;
   busyMealId: string | null;
 }
@@ -23,7 +25,7 @@ function initials(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 }
 
-function MealShelfCardInner({ card, onPress, onLog, busyMealId }: MealShelfCardProps) {
+function MealShelfCardInner({ card, onPress, onToggleFavorite, onLog, busyMealId }: MealShelfCardProps) {
   const busy = busyMealId === card.meal.id;
   const expiring = card.rescueDaysLeft !== null && card.rescueDaysLeft <= 3;
 
@@ -46,6 +48,23 @@ function MealShelfCardInner({ card, onPress, onLog, busyMealId }: MealShelfCardP
         <View style={s.scorePill}>
           <Text style={s.scoreText}>{card.score}</Text>
         </View>
+        {/* Mirrors the score across the cover: both are one-glance state, and
+            the star needs the same opaque chip to stay readable over a photo. */}
+        <TouchableOpacity
+          onPress={() => onToggleFavorite(card)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={s.starPill}
+          accessibilityRole="button"
+          accessibilityState={{ selected: card.isFavorite }}
+          accessibilityLabel={card.isFavorite ? `Unfavorite ${card.meal.name}` : `Favorite ${card.meal.name}`}
+        >
+          <Star
+            size={icons.sm}
+            color={card.isFavorite ? colors.warning : colors.textFaint}
+            fill={card.isFavorite ? colors.warning : "transparent"}
+            strokeWidth={icons.strokeWidth}
+          />
+        </TouchableOpacity>
         {expiring && (
           <View style={s.expiryPill}>
             <Text style={s.expiryText}>
@@ -110,6 +129,14 @@ const s = StyleSheet.create({
     paddingVertical: 2,
   },
   scoreText: { ...typography.caption, color: colors.brand, fontWeight: "700" },
+  starPill: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    backgroundColor: tint(colors.bg, 0.85),
+    borderRadius: radii.pill,
+    padding: 4,
+  },
   expiryPill: {
     position: "absolute",
     bottom: spacing.sm,
