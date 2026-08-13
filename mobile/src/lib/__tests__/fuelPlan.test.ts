@@ -5,6 +5,7 @@ import {
   DEFAULT_BUDGET_WEIGHTS,
   fuelVerdict,
   LEGACY_WINDOW_SPAN_MIN,
+  mealTypeForMinutes,
   mergeAiPicks,
   pickForWindows,
   planProjection,
@@ -87,6 +88,30 @@ describe("windowsFromRows", () => {
     expect(w[0].budgetWeight).toBe(2);
     expect(w[1].budgetWeight).toBe(DEFAULT_BUDGET_WEIGHTS.dinner);
     expect(w[1].startMinutes).toBe(timeToMinutes("18:00"));
+  });
+});
+
+describe("mealTypeForMinutes", () => {
+  it("names the slot you are standing in", () => {
+    expect(mealTypeForMinutes(DAY, 12 * 60 + 30)).toBe("lunch");
+    expect(mealTypeForMinutes(DAY, 18 * 60 + 15)).toBe("dinner");
+  });
+
+  it("between windows, the nearest one wins — including the one just passed", () => {
+    // 9:40, an hour after breakfast closed and two before lunch opens: what
+    // you just ate was breakfast, not the lunch you have not had.
+    expect(mealTypeForMinutes(DAY, 9 * 60 + 40)).toBe("breakfast");
+    // 11:30 is closer to lunch.
+    expect(mealTypeForMinutes(DAY, 11 * 60 + 30)).toBe("lunch");
+  });
+
+  it("late at night the last window is still the nearest", () => {
+    expect(mealTypeForMinutes(DAY, 22 * 60)).toBe("dinner");
+  });
+
+  it("falls back when there are no windows at all", () => {
+    expect(mealTypeForMinutes([], 12 * 60)).toBe("snack");
+    expect(mealTypeForMinutes([], 12 * 60, "lunch")).toBe("lunch");
   });
 });
 

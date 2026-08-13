@@ -84,6 +84,32 @@ export function windowsFromLegacyTimes(mealTimes: {
   ];
 }
 
+/**
+ * Which slot a log made at `nowMinutes` belongs to — the window it lands
+ * inside, or failing that the nearest one.
+ *
+ * This is what makes "log something" arrive already saying "Dinner" at 7 PM
+ * instead of asking, or worse defaulting to breakfast because breakfast is
+ * first in the list. Nearest rather than next, deliberately: at 9:40 with a
+ * 7–9 breakfast window the thing you just ate was breakfast, not the lunch
+ * you have not had yet — the same asymmetry `attributeLogs` applies.
+ */
+export function mealTypeForMinutes(
+  windows: FuelWindow[],
+  nowMinutes: number,
+  fallback: MealType = "snack",
+): MealType {
+  if (windows.length === 0) return fallback;
+  const inside = windows.find(
+    (w) => nowMinutes >= w.startMinutes && nowMinutes <= w.endMinutes,
+  );
+  if (inside) return inside.mealType;
+  const nearest = [...windows].sort(
+    (a, b) => distanceToWindow(nowMinutes, a) - distanceToWindow(nowMinutes, b),
+  )[0];
+  return nearest.mealType;
+}
+
 /** Row shape of `eating_windows` as the client reads it. */
 export interface EatingWindowRow {
   id: string;

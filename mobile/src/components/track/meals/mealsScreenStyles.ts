@@ -126,15 +126,6 @@ export const styles = StyleSheet.create({
     marginHorizontal: spacing.screenGutter,
     marginBottom: spacing.lg,
   },
-  addSection: {
-    paddingHorizontal: spacing.screenGutter,
-    marginBottom: spacing.xxl,
-  },
-  subsectionTitle: {
-    ...typography.section,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-  },
   field: {
     marginBottom: spacing.lg,
   },
@@ -154,21 +145,6 @@ export const styles = StyleSheet.create({
   },
   required: {
     color: colors.danger,
-  },
-  dateButton: {
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.control,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  dateButtonText: {
-    fontSize: 16,
-    color: colors.text,
   },
   mealTypeButtons: {
     flexDirection: "row",
@@ -205,15 +181,6 @@ export const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     fontSize: 16,
     color: colors.text,
-  },
-  formButtons: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  /** `Button` can stretch (`fluid`) but cannot flex; the wrapper supplies it. */
-  formButton: {
-    flex: 1,
   },
   mealsSection: {
     flexGrow: 1,

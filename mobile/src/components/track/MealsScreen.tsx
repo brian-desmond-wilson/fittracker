@@ -79,7 +79,7 @@ import {
 import { useFuelPlan } from "@/src/hooks/useFuelPlan";
 import { FuelVerdictStrip } from "./meals/FuelVerdictStrip";
 import { FuelRail } from "./meals/FuelRail";
-import type { FuelWindow } from "@/src/lib/fuelPlan";
+import { mealTypeForMinutes, type FuelWindow } from "@/src/lib/fuelPlan";
 import { MealUndoSnackbar } from "./MealUndoSnackbar";
 import { QuickAdjustmentModal } from "./QuickAdjustmentModal";
 import { MealsDistributionBar } from "./MealsDistributionBar";
@@ -103,7 +103,7 @@ import { useSavedFoodsSearch } from "./meals/useSavedFoodsSearch";
 import { useMealSearch } from "./meals/useMealSearch";
 import { useHistoricalMeals } from "./meals/useHistoricalMeals";
 import { useMealAddForm } from "./meals/useMealAddForm";
-import { MealAddForm } from "./meals/MealAddForm";
+import { LogMealSheet } from "./meals/LogMealSheet";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
 
@@ -113,7 +113,6 @@ interface MealsScreenProps {
 
 export function MealsScreen({ onClose }: MealsScreenProps) {
   const insets = useSafeAreaInsets();
-  const [showAddForm, setShowAddForm] = useState(false);
 
   // Date navigation state
   const [viewingDate, setViewingDate] = useState(new Date());
@@ -230,10 +229,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Bumped after every forced day refetch so the Fuel sources (library,
   // profile, windows, prep budget) reload alongside the logs they plan over.
   const [fuelRefreshKey, setFuelRefreshKey] = useState(0);
-  // When a rail ghost opens the add form for a missed window, the log is
-  // backdated to that window's midpoint so the receipt lands where the meal
-  // actually happened (R5). Null = a normal, now-stamped log.
-  const retroLoggedAtRef = useRef<string | null>(null);
+  // The sheet's own state: which slot and instant a log will land on. Set by
+  // whoever opened it — the header, a missed window's ghost, a quick chip —
+  // so the form never asks for what the entry point already knew.
+  const [logSheetOpen, setLogSheetOpen] = useState(false);
+  const [logSheetManual, setLogSheetManual] = useState(false);
+  const [logSheetAt, setLogSheetAt] = useState<Date>(new Date());
+  const [logSheetQuery, setLogSheetQuery] = useState("");
+  const [loggingFoodId, setLoggingFoodId] = useState<string | null>(null);
   // The bottom chip row's Search chip focuses this instead of duplicating a
   // second search field.
   const searchInputRef = useRef<TextInput>(null);
@@ -289,6 +292,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Debounced saved-foods search results, derived from searchQuery.
   const { searchResults, searching } = useSavedFoodsSearch(searchQuery);
   const { mealResults } = useMealSearch(searchQuery);
+  // The sheet searches the same two sources through its own query, so typing
+  // in it never leaves results behind on the page when it closes.
+  const { searchResults: sheetFoodResults, searching: sheetSearching } =
+    useSavedFoodsSearch(logSheetQuery);
+  const { mealResults: sheetMealResults } = useMealSearch(logSheetQuery);
 
   // Get the string for viewing date
   const viewingDateStr = getLocalDateString(viewingDate);
@@ -407,10 +415,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // in the search bar or opening the add form. Otherwise results/input
   // would land off-screen on the Insights tab.
   useEffect(() => {
-    if (activeTab !== "today" && (searchQuery.trim().length >= 2 || showAddForm)) {
+    if (activeTab !== "today" && searchQuery.trim().length >= 2) {
       setActiveTab("today");
     }
-  }, [activeTab, searchQuery, showAddForm]);
+  }, [activeTab, searchQuery]);
 
   const handleSearchResultPress = (food: SavedFood) => {
     setPreviewFood(food);
@@ -1000,10 +1008,40 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
   const resetForm = () => addForm.reset(viewingDate);
 
-  // Open form with viewing date as default
-  const handleOpenAddForm = () => {
+  /**
+   * The one door into logging. Every caller passes what it already knows —
+   * the header knows only the day, a missed window's ghost knows the slot and
+   * roughly when, a quick chip knows the kind of thing — and the sheet
+   * inherits it instead of asking.
+   */
+  const openLogSheet = (opts: { mealType?: MealType; at?: Date; manual?: boolean } = {}) => {
+    resetForm();
     addForm.setSelectedDate(viewingDate);
-    setShowAddForm(true);
+    // On a past day the clock time is meaningless, so a log lands at midday
+    // rather than at whatever o'clock it happens to be now.
+    const fallbackAt = viewingToday
+      ? new Date()
+      : new Date(new Date(viewingDate).setHours(12, 0, 0, 0));
+    const at = opts.at ?? fallbackAt;
+    // With no slot named by the caller, the clock names one: the window that
+    // instant falls in. Otherwise every log would open on breakfast.
+    addForm.setMealType(
+      opts.mealType ??
+        mealTypeForMinutes(
+          fuel.model?.windows ?? [],
+          at.getHours() * 60 + at.getMinutes(),
+        ),
+    );
+    setLogSheetAt(at);
+    setLogSheetQuery("");
+    setLogSheetManual(opts.manual ?? false);
+    setLogSheetOpen(true);
+  };
+
+  const closeLogSheet = () => {
+    setLogSheetOpen(false);
+    setLogSheetManual(false);
+    setLogSheetQuery("");
   };
 
   const handleAddMeal = async () => {
@@ -1048,11 +1086,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         fiber_g: fiberG ? parseFloat(fiberG) : null,
         uses_inventory: false,
         inventory_items: null,
-        // Backdated when this form was opened from a missed window's ghost
-        // row — the rail then shows the receipt in that window's slot.
-        logged_at: retroLoggedAtRef.current ?? new Date().toISOString(),
+        // The sheet's own clock — set from the entry point, so a log written
+        // through a missed window's ghost lands in that window's slot.
+        logged_at: logSheetAt.toISOString(),
       };
-      retroLoggedAtRef.current = null;
 
       const { data: inserted, error } = await supabase
         .from("meal_logs")
@@ -1082,7 +1119,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       });
 
       resetForm();
-      setShowAddForm(false);
+      closeLogSheet();
 
       // Refetch if the meal was added for the viewing date
       if (mealDate === viewingDateStr) {
@@ -1381,26 +1418,85 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const fuel = useFuelPlan(dayMeals, viewingToday, fuelRefreshKey);
 
   const handleRetro = (w: FuelWindow | null) => {
-    addForm.setSelectedDate(viewingDate);
-    if (w) {
-      addForm.setMealType(w.mealType);
-      const mid = Math.round((w.startMinutes + w.endMinutes) / 2);
-      const d = new Date();
-      d.setHours(Math.floor(mid / 60), mid % 60, 0, 0);
-      retroLoggedAtRef.current = d.toISOString();
-    } else {
-      retroLoggedAtRef.current = null;
-    }
-    setShowAddForm(true);
+    if (!w) return openLogSheet();
+    // A window's ghost logs into the middle of that window, which is both a
+    // fair guess and enough to make the rail file the receipt in the right
+    // place — the exact minute is editable in the sheet.
+    const mid = Math.round((w.startMinutes + w.endMinutes) / 2);
+    const at = new Date(viewingDate);
+    at.setHours(Math.floor(mid / 60), mid % 60, 0, 0);
+    openLogSheet({ mealType: w.mealType, at });
   };
 
-  // The chip row under the rail (mock position 6): add something the plan
-  // didn't suggest, typed straight into the form.
-  const handleQuickChip = (mealType: MealType | null) => {
-    addForm.setSelectedDate(viewingDate);
-    if (mealType) addForm.setMealType(mealType);
-    retroLoggedAtRef.current = null;
-    setShowAddForm(true);
+  /**
+   * One tap on a recent or a search result writes the log outright — the
+   * whole reason recents come first. Mirrors the preview flow's semantics
+   * (one serving, inventory decremented when the barcode matches something in
+   * stock, undoable) minus the preview screen in between.
+   */
+  const handleLogFoodDirect = async (food: SavedFood) => {
+    if (loggingFoodId) return;
+    setLoggingFoodId(food.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+      const match = food.barcode ? await findInventoryMatchByBarcode(food.barcode) : null;
+      const willUseInventory = !!match && match.quantity > 0;
+      const { data: inserted, error } = await supabase
+        .from("meal_logs")
+        .insert({
+          user_id: user.id,
+          date: viewingDateStr,
+          meal_type: addForm.mealType,
+          name: food.name,
+          calories: food.calories,
+          protein: food.protein,
+          carbs: food.carbs,
+          fats: food.fats,
+          sugars: food.sugars,
+          sodium_mg: (food as { sodium_mg?: number | null }).sodium_mg ?? null,
+          fiber_g: (food as { fiber_g?: number | null }).fiber_g ?? null,
+          saved_food_id: food.id,
+          servings: 1,
+          uses_inventory: willUseInventory,
+          inventory_items: willUseInventory && match ? [{ id: match.id, quantity: 1 }] : null,
+          logged_at: logSheetAt.toISOString(),
+        })
+        .select()
+        .single();
+      if (error) throw error;
+
+      // Armed on outcome, never on intent — same rule as the preview path.
+      let consumedInventoryId: string | null = null;
+      if (willUseInventory && match) {
+        const consumed = await consumeOneInventoryUnit(match.id);
+        if (consumed) consumedInventoryId = match.id;
+      }
+
+      closeLogSheet();
+      if (inserted?.id) {
+        showUndoFor(
+          inserted.id,
+          food.calories ? `Logged ${food.name} · ${food.calories} cal` : `Logged ${food.name}`,
+          consumedInventoryId,
+        );
+      }
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      await fetchRecentAndFavorites();
+    } catch (e) {
+      console.error("Error logging food:", e);
+      Alert.alert("Error", "Failed to log that");
+    } finally {
+      setLoggingFoodId(null);
+    }
   };
 
   // Receipts borrow their saved food's photo, same as meals borrow their
@@ -1544,8 +1640,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           />
           <IconButton
             icon={Plus}
-            onPress={handleOpenAddForm}
-            disabled={showAddForm}
+            onPress={() => openLogSheet()}
             accessibilityLabel="Log a meal"
           />
         </View>
@@ -1655,7 +1750,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
             {/* Tab pills: Today / Insights. Hidden while the add form is
                 up — that flow takes over the surface. */}
-            {!showAddForm && (
+            {(
               <View style={styles.tabsContainer}>
                 <View style={styles.tabsTrack}>
                   <TouchableOpacity
@@ -1697,7 +1792,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             )}
 
             {/* ── TODAY TAB ── the day's eating plan */}
-            {!showAddForm && activeTab === "today" && (
+            {activeTab === "today" && (
               <>
                 {/* Today wears the verdict strip — chip, bars, and what the
                     rail below lands the day at. A finished (past) day is a
@@ -1807,7 +1902,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             )}
 
             {/* ── INSIGHTS TAB ── reflective stats */}
-            {!showAddForm && activeTab === "insights" && (
+            {activeTab === "insights" && (
               <>
                 <MealsInsightsCard
                   calorieStreak={calorieStreak}
@@ -1853,25 +1948,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               </>
             )}
 
-          {/* Add Form */}
-          {showAddForm && (
-            <MealAddForm
-              form={addForm}
-              recentFoods={recentFoods}
-              favorites={favorites}
-              onChipPress={addForm.fillFromChip}
-              onCancel={() => {
-                resetForm();
-                retroLoggedAtRef.current = null;
-                setShowAddForm(false);
-              }}
-              onSubmit={handleAddMeal}
-            />
-          )}
-
             {/* The rail — the day in one chronological read. Today: receipts,
                 the NOW line, then the plan. Past days: receipts only. */}
-            {(showAddForm || activeTab === "today") && (
+            {activeTab === "today" && (
               <View style={styles.mealsSection}>
                 {loadingDay && dayMeals.length === 0 ? (
                   <ActivityIndicator color={colors.brand} />
@@ -1902,7 +1981,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
                 {/* Quick add chips — the mock's bottom row. Anything the plan
                     didn't suggest is one tap into the form (R13). */}
-                {!showAddForm && (
+                {(
                   <View style={styles.quickChipsRow}>
                     {(
                       [
@@ -1914,7 +1993,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
                       <TouchableOpacity
                         key={label}
                         style={styles.quickChip}
-                        onPress={() => handleQuickChip(type)}
+                        onPress={() => openLogSheet(type ? { mealType: type } : {})}
                         activeOpacity={0.7}
                         accessibilityRole="button"
                         accessibilityLabel={`Add a ${label.toLowerCase()}`}
@@ -1987,8 +2066,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             <Utensils size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={handleOpenAddForm}
-            disabled={showAddForm}
+            onPress={() => openLogSheet()}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Log a meal"
@@ -2092,6 +2170,40 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         historicalLogs={historicalLogs}
         goals={goals}
         onClose={() => setWeeklySummaryVisible(false)}
+      />
+
+      {/* Log something — over the rail, never inside it. */}
+      <LogMealSheet
+        visible={logSheetOpen}
+        onClose={closeLogSheet}
+        mealType={addForm.mealType}
+        onMealTypeChange={addForm.setMealType}
+        loggedAt={logSheetAt}
+        onLoggedAtChange={setLogSheetAt}
+        dayLabel={viewingToday ? "today" : formatViewingDate(viewingDate)}
+        recentFoods={recentFoods.map((r) => r.savedFood)}
+        favorites={favorites}
+        onLogFood={handleLogFoodDirect}
+        loggingFoodId={loggingFoodId}
+        query={logSheetQuery}
+        onQueryChange={setLogSheetQuery}
+        searching={sheetSearching}
+        searchResults={sheetFoodResults}
+        mealResults={sheetMealResults}
+        onOpenMeal={(mealId) => {
+          closeLogSheet();
+          setLibraryInitialMealId(mealId);
+          setLibraryVisible(true);
+        }}
+        onScan={() => {
+          closeLogSheet();
+          setShowBarcodeScanner(true);
+        }}
+        form={addForm}
+        manualOpen={logSheetManual}
+        onManualOpenChange={setLogSheetManual}
+        onSubmitManual={handleAddMeal}
+        submitting={loggingFoodId !== null}
       />
 
       {/* Undo snackbar */}
