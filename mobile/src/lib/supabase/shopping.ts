@@ -233,6 +233,38 @@ export async function addSuggestions(
   if (error) throw error;
 }
 
+/**
+ * "Missing: Jelly — add to shopping list", from the library.
+ *
+ * Wraps `addSuggestions` rather than duplicating the insert, and always
+ * carries provenance: the D2 columns exist precisely so a row born from a
+ * meal gap can say which meal wanted it, and the older library path dropped
+ * that on the floor. The reason line names the meal for the same purpose —
+ * a shopping list that says "needed for a meal you opened" a week later is
+ * useless.
+ */
+export async function addMealGapToShoppingList(
+  userId: string,
+  meal: { id: string; name: string },
+  missing: Array<{ name: string; savedFoodId: string | null }>,
+): Promise<void> {
+  if (missing.length === 0) return;
+  await addSuggestions(
+    userId,
+    missing.map((m) => ({
+      name: m.name,
+      foodInventoryId: null,
+      vendorId: null,
+      quantity: 1,
+      unit: null,
+      priority: 1 as const,
+      reasons: [`needed for ${meal.name}`],
+      sourceMealId: meal.id,
+      sourceSavedFoodId: m.savedFoodId,
+    })),
+  );
+}
+
 export async function updateListItem(
   id: string,
   patch: Partial<Pick<ShoppingListItem, "vendor_id" | "quantity" | "notes">>,

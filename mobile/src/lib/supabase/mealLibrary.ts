@@ -6,6 +6,7 @@ import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState
 import { buildBorrowedFoodImages, withBorrowedImage } from "../foodImageBorrow";
 import { invalidateBorrowedFoodImages } from "./borrowedFoodImages";
 import { getLocalDateString } from "../dates";
+import type { InventoryNutrition } from "../mealLibraryView";
 import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
@@ -38,6 +39,16 @@ interface InventoryRowRaw {
    *  (`Pick<StockLocationRow, "quantity" | "is_ready_to_consume">`), so the
    *  field is required by the call below. Spec §9 prescribes selecting it too. */
   locations: Array<{ quantity: number; is_ready_to_consume: boolean }>;
+  /** This product's own nutrition, per serving — the input to dynamic
+   *  meal pricing. Nullable throughout: plenty of inventory rows were added
+   *  by hand and never got numbers. */
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fats: number | null;
+  sugars: number | null;
+  sodium_mg: number | null;
+  fiber_g: number | null;
 }
 
 export interface MealLibraryData {
@@ -49,6 +60,12 @@ export interface MealLibraryData {
    *  (`AssemblabilityInventoryRow extends ResolutionInventoryRow`), so
    *  resolution-only consumers such as `logMeal` are unaffected. */
   inventory: AssemblabilityInventoryRow[];
+  /** Every inventory row's own nutrition, for pricing meals from the fridge
+   *  (`mealNutrition`). Keyed by inventory id — the same key
+   *  `resolveInventoryMatches` returns. */
+  nutritionByInventoryId: Map<string, InventoryNutrition>;
+  /** meal id -> how many times it has ever been logged. */
+  timesLoggedByMealId: Map<string, number>;
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
   /** C1: meal id → the most recent local date it was logged on. Absent means
@@ -137,7 +154,11 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       // reads it, and an absent column means the removed fallback cannot be
       // re-added without also editing this query — one more step between a
       // future reader and re-arming the divergence Phase 4 closed.
-      .select("id, name, barcode, expiration_date, image_primary_url, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      // The macro columns are new here: they are what lets a meal be priced
+      // from the product actually in the fridge rather than the one it was
+      // built with (`mealNutrition`). `food_inventory` carries its own
+      // nutrition — an inventory row IS a product — so no join is needed.
+      .select("id, name, barcode, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -146,6 +167,8 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     // unique on user_id and its RLS select policy is owner-only.
     supabase.from("nutrition_constraints").select("max_prep_minutes").maybeSingle(),
     // C1. Only rows that name a meal — a free-typed log has nothing to date.
+    // Every row, not a distinct date: the library counts HOW OFTEN as well as
+    // how recently, and one meal logged twice in a day is twice eaten.
     supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null),
   ]);
   const errors = [meals.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error]
@@ -239,6 +262,32 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     };
   });
 
+  // Built from the same rows, keyed the same way `resolveInventoryMatches`
+  // returns — so a meal's price and its availability can never be computed
+  // from different stock.
+  const nutritionByInventoryId = new Map<string, InventoryNutrition>(
+    invRows.map((r) => [
+      r.id,
+      {
+        id: r.id,
+        name: r.name,
+        calories: r.calories,
+        protein: r.protein,
+        carbs: r.carbs,
+        fats: r.fats,
+        sugars: r.sugars,
+        sodium_mg: r.sodium_mg,
+        fiber_g: r.fiber_g,
+      },
+    ]),
+  );
+
+  const logRows = (logs.data ?? []) as Array<{ meal_id: string; date: string }>;
+  const timesLoggedByMealId = new Map<string, number>();
+  for (const r of logRows) {
+    timesLoggedByMealId.set(r.meal_id, (timesLoggedByMealId.get(r.meal_id) ?? 0) + 1);
+  }
+
   return {
     meals: ((meals.data ?? []) as Meal[]).map((m) => ({
       ...m,
@@ -249,9 +298,11 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     ),
     conceptIdsBySavedFoodId,
     inventory: resolutionInventory,
+    nutritionByInventoryId,
+    timesLoggedByMealId,
     // Max per meal. String comparison is sound and cheap here: these are
     // YYYY-MM-DD, which sorts lexicographically exactly as it sorts by date.
-    lastLoggedByMealId: ((logs.data ?? []) as Array<{ meal_id: string; date: string }>)
+    lastLoggedByMealId: logRows
       .reduce((acc, r) => {
         const prev = acc.get(r.meal_id);
         if (!prev || r.date > prev) acc.set(r.meal_id, r.date);
@@ -399,6 +450,23 @@ export async function createMeal(userId: string, input: MealInput): Promise<stri
     throw itemsError;
   }
   return data.id;
+}
+
+/**
+ * Star or unstar a meal.
+ *
+ * Its own call rather than a trip through `updateMeal`: that one replaces the
+ * whole item list on every save, so using it to flip one boolean would delete
+ * and reinsert every ingredient — two non-atomic writes, and a failed reinsert
+ * would leave a favourite with no ingredients. This touches one column.
+ */
+export async function setMealFavorite(mealId: string, isFavorite: boolean): Promise<void> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
+  const { error } = await supabase
+    .from("meals")
+    .update({ is_favorite: isFavorite })
+    .eq("id", mealId);
+  if (error) throw error;
 }
 
 export async function updateMeal(
