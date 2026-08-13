@@ -37,6 +37,7 @@ function meal(over: Partial<MealWithItems> = {}): MealWithItems {
     id: "m1", user_id: "u", name: "Meal", slug: "meal",
     category: "lunch", role: "bridge", default_meal_type: null,
     prep_minutes: 7, taste_override: "like", is_complete_portion: false, notes: null,
+    is_favorite: false, source_kind: "home", source_name: null,
     created_at: "2026-07-29T00:00:00Z", updated_at: "2026-07-29T00:00:00Z",
     items: [item()],
     ...over,

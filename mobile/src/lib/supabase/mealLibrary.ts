@@ -47,7 +47,9 @@ interface InventoryRowRaw {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
-  sodium_mg: number | null;
+  /** NB: `food_inventory` records no sodium — the column simply does not
+   *  exist there. Meals priced from stock therefore fall back to the
+   *  as-built product for sodium alone; see `mealNutrition`. */
   fiber_g: number | null;
 }
 
@@ -158,7 +160,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       // from the product actually in the fridge rather than the one it was
       // built with (`mealNutrition`). `food_inventory` carries its own
       // nutrition — an inventory row IS a product — so no join is needed.
-      .select("id, name, barcode, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      .select("id, name, barcode, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, fiber_g, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -276,7 +278,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
         carbs: r.carbs,
         fats: r.fats,
         sugars: r.sugars,
-        sodium_mg: r.sodium_mg,
+        sodium_mg: null, // not a column on food_inventory
         fiber_g: r.fiber_g,
       },
     ]),

@@ -51,6 +51,9 @@ interface MealLibraryModalProps {
    *  id is safe: `detailMeal` then resolves to `undefined` and the body chain
    *  falls through to the list. */
   initialMealId?: string | null;
+  /** Open straight into a blank builder — the catalog page's + button, which
+   *  owns the list itself and uses this component only for the sub-views. */
+  initialBuilder?: boolean;
   /** How the library is being presented.
    *
    *  `"modal"` (the default) is the sheet Fuel raises over itself: it slides up,
@@ -66,6 +69,7 @@ interface MealLibraryModalProps {
 export function MealLibraryModal({
   visible, savedFoods, todayDate, onClose, onLogged, initialMealId,
   presentation = "modal",
+  initialBuilder = false,
 }: MealLibraryModalProps) {
   const asScreen = presentation === "screen";
   const insets = useSafeAreaInsets();
@@ -106,11 +110,15 @@ export function MealLibraryModal({
       setView(
         initialMealId
           ? { mode: "detail", mealId: initialMealId }
-          : { mode: "list" },
+          // The catalog page owns the list now and opens this component only
+          // to land on something: a meal, or a blank builder.
+          : initialBuilder
+            ? { mode: "builder", mealId: null }
+            : { mode: "list" },
       );
       load();
     }
-  }, [visible, initialMealId, load]);
+  }, [visible, initialMealId, initialBuilder, load]);
 
   // Stale-target recovery, and it has to run HERE rather than in the effect
   // above: at that point `load()` hasn't resolved, so `data` is null and there

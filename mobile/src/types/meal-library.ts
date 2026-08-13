@@ -82,6 +82,15 @@ export interface Meal {
    *  assemble. Shifts the calorie band and the Brian Approved bar down one
    *  step, because its size was chosen by whoever made it. */
   is_complete_portion: boolean;
+  /** Starred in the library. Its own signal, not a derivative of the Brian
+   *  score: "I reach for this" and "this scores well" are different claims. */
+  is_favorite: boolean;
+  /** Where the meal comes from. `out` meals are never in or out of stock —
+   *  see `tracksAvailability`. */
+  source_kind: "home" | "packaged" | "out";
+  /** Venue or brand as you'd say it ("Thistle", "DoorDash · Chipotle").
+   *  Null exactly when `source_kind` is `home` (DB check constraint). */
+  source_name: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;

@@ -1,24 +1,35 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Alert } from "react-native";
 import { useRouter } from "expo-router";
+import { MealLibraryScreen } from "@/src/components/track/meals/library/MealLibraryScreen";
 import { MealLibraryModal } from "@/src/components/track/meals/library/MealLibraryModal";
+import { BarcodeScannerModal } from "@/src/components/track/BarcodeScannerModal";
 import { getSavedFoods } from "@/src/services/savedFoodsService";
 import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { fetchMealLibrary, logMeal, MealLoggedButDecrementFailed } from "@/src/lib/supabase/mealLibrary";
+import { defaultMealTypeFor } from "@/src/types/meal-library";
+import { supabase } from "@/src/lib/supabase";
+import type { MealCard } from "@/src/lib/mealLibraryView";
 import type { SavedFood } from "@/src/types/track";
 
 /**
- * The Meal Library as its own station off the Track hub, rather than a door
- * inside Fuel. It renders in `presentation="screen"` mode, so it is a page
- * pushed into the Track stack — sliding in from the side under a back chevron,
- * like Food Inventory and Fuel Schedule — not a sheet raised over one.
+ * The Meal Library station off the Track hub.
  *
- * `savedFoods` is fetched here for the same reason Fuel fetches it: the meal
- * builder's food picker needs the full list. A failure leaves the list empty —
- * the library itself still loads, and only the builder's picker is thinner —
- * so it is logged rather than raised as an alert over the library.
+ * The catalog itself is `MealLibraryScreen`; this route owns the sub-views it
+ * hands off to. A meal's detail and the builder still come from
+ * `MealLibraryModal`, which keeps every write path that already works —
+ * logging, editing, deleting, linking an ingredient — in one place rather than
+ * reimplemented here. Fuel raises that same component as a sheet, so the two
+ * entry points cannot drift apart.
  */
 export default function MealLibraryPage() {
   const router = useRouter();
   const [savedFoods, setSavedFoods] = useState<SavedFood[]>([]);
+  const [openMealId, setOpenMealId] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  // Bumped whenever a sub-view closes, so the catalog re-reads what changed.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,16 +51,112 @@ export default function MealLibraryPage() {
   const close = () =>
     router.canGoBack() ? router.back() : router.replace("/(tabs)/track");
 
-  // No wrapper view: in screen mode the library already renders its own
-  // full-bleed page, and a second flex container would only add a layer.
+  const closeSubView = useCallback(() => {
+    setOpenMealId(null);
+    setBuilding(false);
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  /**
+   * Log straight from a card. Reuses `logMeal` — the same function the detail
+   * view calls, with the same inventory decrement and the same two failure
+   * branches — so a one-tap log from the shelf is not a second, thinner way
+   * of writing the same row.
+   */
+  const handleLog = useCallback(async (card: MealCard) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+      const library = await fetchMealLibrary();
+      const meal = library.meals.find((m) => m.id === card.meal.id);
+      if (!meal) return;
+      await logMeal(user.id, meal, {
+        date: getLocalDateString(new Date()),
+        mealType: defaultMealTypeFor(meal),
+        conceptIdsBySavedFoodId: library.conceptIdsBySavedFoodId,
+        inventory: library.inventory,
+      });
+      Alert.alert("Logged", `${meal.name} — added to today.`);
+    } catch (e) {
+      if (e instanceof MealLoggedButDecrementFailed) {
+        Alert.alert("Logged (inventory not updated)", "The meal was logged, but stock didn't change.");
+        return;
+      }
+      console.error("log from library:", e);
+      Alert.alert("Couldn't log that", e instanceof Error ? e.message : "Unknown error");
+    }
+  }, []);
+
+  /**
+   * The library's own reading of a barcode: not "add this food" but "which of
+   * my meals use it". Resolved against the same concept links the
+   * availability check uses, so the answer agrees with the shelves.
+   */
+  const handleScanned = useCallback(async (barcode: string) => {
+    setScanning(false);
+    try {
+      const library = await fetchMealLibrary();
+      const inv = library.inventory.find((r) => r.barcode === barcode);
+      const conceptIds = new Set(inv?.conceptIds ?? []);
+      const matches = library.meals.filter((m) =>
+        m.items.some((it) => {
+          if (it.savedFood.barcode === barcode) return true;
+          const ids = library.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [];
+          return ids.some((c) => conceptIds.has(c));
+        }),
+      );
+      if (matches.length === 0) {
+        Alert.alert("No meals use that", "Nothing in your library lists this product.");
+        return;
+      }
+      if (matches.length === 1) {
+        setOpenMealId(matches[0].id);
+        return;
+      }
+      Alert.alert(
+        `${matches.length} meals use that`,
+        matches.map((m) => m.name).join("\n"),
+      );
+    } catch (e) {
+      console.error("scan in library:", e);
+      Alert.alert("Couldn't check that", "Try again.");
+    }
+  }, []);
+
+  const subViewOpen = openMealId !== null || building;
+
   return (
-    <MealLibraryModal
-      presentation="screen"
-      visible
-      savedFoods={savedFoods}
-      todayDate={getLocalDateString(new Date())}
-      onClose={close}
-      onLogged={() => {}}
-    />
+    <>
+      {subViewOpen ? (
+        <MealLibraryModal
+          presentation="screen"
+          visible
+          savedFoods={savedFoods}
+          todayDate={getLocalDateString(new Date())}
+          initialMealId={openMealId}
+          initialBuilder={building}
+          onClose={closeSubView}
+          onLogged={() => setRefreshKey((k) => k + 1)}
+        />
+      ) : (
+        <MealLibraryScreen
+          onBack={close}
+          onOpenMeal={(card) => setOpenMealId(card.meal.id)}
+          onNewMeal={() => setBuilding(true)}
+          onLogMeal={handleLog}
+          onScan={() => setScanning(true)}
+          refreshKey={refreshKey}
+        />
+      )}
+
+      <BarcodeScannerModal
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onBarcodeScanned={handleScanned}
+      />
+    </>
   );
 }

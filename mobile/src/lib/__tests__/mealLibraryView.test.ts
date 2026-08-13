@@ -165,6 +165,18 @@ describe("mealNutrition", () => {
     expect(n.substitutions).toEqual([]);
   });
 
+  it("a macro the stocked product doesn't record falls back per field", () => {
+    // Unknown is not zero. `food_inventory` has no sodium column at all, so
+    // every meal priced from stock takes this path for sodium — zeroing it
+    // would quietly deflate the total.
+    const sparse = new Map(byId);
+    sparse.set("inv-pb", nutrition({ name: "Jif Peanut Butter", calories: 230, fiber_g: null, sodium_mg: null }));
+    const n = mealNutrition({ meal: meal(), inventory, conceptIdsBySavedFoodId: conceptMap, nutritionByInventoryId: sparse });
+    expect(n.totals.calories).toBe(450); // from the fridge
+    expect(n.totals.fiber_g).toBe(10);   // 2 (as built) + 2×4
+    expect(n.totals.sodium_mg).toBe(420); // 140 + 2×140, all as-built
+  });
+
   it("out-of-stock rows do not price the meal", () => {
     const n = mealNutrition({
       meal: meal(),

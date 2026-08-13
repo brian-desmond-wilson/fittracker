@@ -122,14 +122,26 @@ export function mealNutrition(opts: {
     const matchedId = matches.get(item.saved_food_id);
     const stocked = matchedId ? nutritionByInventoryId.get(matchedId) : undefined;
 
-    const priced = stocked ?? built;
-    totals.calories += num(priced.calories) * servings;
-    totals.protein += num(priced.protein) * servings;
-    totals.carbs += num(priced.carbs) * servings;
-    totals.fats += num(priced.fats) * servings;
-    totals.sugars += num(priced.sugars) * servings;
-    totals.sodium_mg += num((priced as { sodium_mg?: number | null }).sodium_mg) * servings;
-    totals.fiber_g += num((priced as { fiber_g?: number | null }).fiber_g) * servings;
+    // Per FIELD, not per product: an inventory row that records calories but
+    // no fibre must not zero the meal's fibre. Unknown is not zero — the
+    // as-built product's figure is the best estimate available, and using it
+    // keeps the total honest instead of quietly deflating it. (Sodium takes
+    // this path for every meal priced from stock: `food_inventory` has no
+    // sodium column at all.)
+    type MacroField = "calories" | "protein" | "carbs" | "fats" | "sugars" | "sodium_mg" | "fiber_g";
+    const pick = (key: MacroField) => {
+      const fromStock = stocked?.[key];
+      if (fromStock !== null && fromStock !== undefined) return Number(fromStock);
+      const asBuilt = (built as Partial<Record<MacroField, number | null>>)[key];
+      return num(asBuilt);
+    };
+    totals.calories += pick("calories") * servings;
+    totals.protein += pick("protein") * servings;
+    totals.carbs += pick("carbs") * servings;
+    totals.fats += pick("fats") * servings;
+    totals.sugars += pick("sugars") * servings;
+    totals.sodium_mg += pick("sodium_mg") * servings;
+    totals.fiber_g += pick("fiber_g") * servings;
 
     if (!stocked) {
       unresolvedCount += 1;
