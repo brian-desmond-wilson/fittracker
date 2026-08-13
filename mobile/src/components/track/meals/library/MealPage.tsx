@@ -475,7 +475,6 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
         addingToList={addingToList}
         addedToList={addedToListMealId === detailMeal.id}
         onLog={handleLog}
-        onEdit={(m) => setView({ mode: "builder", mealId: m.id })}
         onArchive={handleArchive}
         onDelete={handleDelete}
       />

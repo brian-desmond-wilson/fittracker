@@ -56,7 +56,6 @@ interface MealDetailProps {
   addingToList: boolean;
   addedToList: boolean;
   onLog: (meal: MealWithItems, opts: { mealType: MealType; portion: number; daysAgo: number }) => void;
-  onEdit: (meal: MealWithItems) => void;
   onArchive: (meal: MealWithItems, archived: boolean) => void;
   onDelete: (meal: MealWithItems) => void;
 }
@@ -78,7 +77,7 @@ const FLIP_MS = 320;
 export function MealDetail({
   meal, nutrition, ingredients, score, assemblability, timesLogged, lastLoggedDate,
   faceUrl, logging, saving, onToggleFavorite, onToggleCategory, onAddMissing,
-  onLinkIngredient, onOpenProduct, addingToList, addedToList, onLog, onEdit,
+  onLinkIngredient, onOpenProduct, addingToList, addedToList, onLog,
   onArchive, onDelete,
 }: MealDetailProps) {
   const [mealType, setMealType] = useState<MealType>(defaultMealTypeFor(meal));
@@ -325,8 +324,11 @@ export function MealDetail({
               onLog={() => onLog(meal, { mealType, portion, daysAgo })}
             />
 
+            {/* No Edit here: the header carries it, in the same slot the
+                product page keeps its own. Two of them made the footer read
+                as three equal choices when one of them is where you go to
+                change the meal and the other two end its life. */}
             <View style={s.actions}>
-              <Button label="Edit" variant="secondary" onPress={() => onEdit(meal)} />
               <Button
                 label={archived ? "Unarchive" : "Archive"}
                 variant="secondary"
