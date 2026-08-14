@@ -22,7 +22,7 @@ import {
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from "react-native-draggable-flatlist";
 import { Swipeable } from "react-native-gesture-handler";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, Link2, Plus, ScanBarcode, Store, Trash2 } from "lucide-react-native";
+import { Camera, Images, ImageOff, Link2, Plus, ScanBarcode, Store, Trash2 } from "lucide-react-native";
 import type { FoodConcept, ConceptRating } from "@/src/types/nutrition-preferences";
 import type { MealCategory, MealRole, MealWithItems } from "@/src/types/meal-library";
 import { MEAL_TYPE_LABELS, ROLE_LABELS, toggleCategory } from "@/src/types/meal-library";
@@ -38,6 +38,7 @@ import { uploadImage } from "@/src/lib/imageUpload";
 import type { MealInput, MealItemInput, SourceSuggestion } from "@/src/lib/supabase/mealLibrary";
 import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge } from "@/src/components/ui";
+import { ItemActionsSheet, type ItemAction } from "@/src/components/track/ItemActionsSheet";
 import { CategoryRail } from "./CategoryRail";
 import { NewFoodSheet } from "./NewFoodSheet";
 import { scoreTone } from "./styles";
@@ -140,6 +141,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
     const [newFood, setNewFood] = useState<{ name: string; barcode: string | null } | null>(null);
     const [creatingFood, setCreatingFood] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
 
     const conceptsFor = useCallback(
       (savedFoodId: string): FoodConcept[] =>
@@ -243,6 +245,12 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       [items],
     );
     const shownFace = photo ?? borrowedFace;
+    // A one-item meal IS its ingredient — a Thistle dish and the packet of it
+    // are the same object, so the product shot is already a picture of the
+    // meal. Only a meal assembled from several things is borrowing, and only
+    // that case is worth dimming or offering to replace: a PB&J showing a jar
+    // of peanut butter is not a picture of a sandwich.
+    const borrowing = photo === null && borrowedFace !== null && items.length > 1;
 
     const results = useMemo(() => {
       const q = search.trim().toLowerCase();
@@ -347,16 +355,19 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       }
     };
 
-    const choosePhoto = () =>
-      Alert.alert("Meal photo", undefined, [
-        { text: "Take a photo", onPress: () => void pickPhoto(true) },
-        { text: "Choose from library", onPress: () => void pickPhoto(false) },
-        // Not "remove": clearing it falls back to the borrowed ingredient
-        // picture, which is what the meal had before and never leaves it
-        // faceless.
-        ...(photo ? [{ text: "Use an ingredient's photo", onPress: () => setPhoto(null) }] : []),
-        { text: "Cancel", style: "cancel" as const },
-      ]);
+    // The house sheet, not `Alert`: the system menu renders light chrome over a
+    // dark app and cannot be themed — the same reason the inventory long-press
+    // menu was replaced.
+    const photoActions = (): ItemAction[] => [
+      { label: "Take a photo", icon: Camera, onPress: () => void pickPhoto(true) },
+      { label: "Choose from library", icon: Images, onPress: () => void pickPhoto(false) },
+      // Not "remove": clearing it falls back to the borrowed ingredient
+      // picture, which is what the meal had before and never leaves it
+      // faceless.
+      ...(photo
+        ? [{ label: "Use an ingredient's photo", icon: ImageOff, onPress: () => setPhoto(null) }]
+        : []),
+    ];
 
     // ── Adding foods ───────────────────────────────────────────────────────
     const handleScan = async () => {
@@ -623,7 +634,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         <View style={s.card}>
           <View style={s.identity}>
             <TouchableOpacity
-              onPress={choosePhoto}
+              onPress={() => setPhotoMenuOpen(true)}
               disabled={uploading}
               style={s.face}
               accessibilityRole="button"
@@ -632,17 +643,23 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
               {shownFace ? (
                 <Image
                   source={{ uri: shownFace }}
-                  // Dimmed while it is only borrowed, so the well shows what the
-                  // meal looks like without claiming the picture is its own.
-                  style={[s.faceImage, photo === null && s.faceBorrowed]}
+                  // Dimmed only while it is genuinely borrowed, so the well
+                  // shows what the meal looks like without claiming a picture
+                  // of one ingredient is a picture of the dish.
+                  style={[s.faceImage, borrowing && s.faceBorrowed]}
                   resizeMode="cover"
                 />
               ) : (
                 <Camera size={icons.lg} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
               )}
               <View style={s.faceTag}>
+                {/* Says what tapping it DOES. The first version labelled the
+                    state — "Borrowed" — which meant nothing to anyone who
+                    hadn't read the code, and the caption beside it already
+                    explains the borrowing. Dimming carries that; the tag
+                    carries the verb. */}
                 <Text style={s.faceTagText}>
-                  {uploading ? "…" : photo ? "Photo" : shownFace ? "Borrowed" : "Photo"}
+                  {uploading ? "…" : shownFace && !borrowing ? "Change" : "Add photo"}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -661,8 +678,9 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
                 <Text style={s.errorText}>A meal needs a name before it can be saved.</Text>
               ) : (
                 <Text style={s.sub}>
-                  Its own photo. Without one, the meal keeps borrowing the first
-                  ingredient&apos;s.
+                  {items.length === 1
+                    ? "The ingredient's photo — which is a photo of this meal. Replace it if you'd rather use your own."
+                    : "Its own photo. Without one, the meal keeps borrowing the first ingredient's."}
                 </Text>
               )}
             </View>
@@ -974,6 +992,13 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
             {Math.round(score.totalCalories)} cal · {Math.round(score.totalProtein)}g P
           </Text>
         </View>
+
+        <ItemActionsSheet
+          visible={photoMenuOpen}
+          title="Meal photo"
+          actions={photoActions()}
+          onClose={() => setPhotoMenuOpen(false)}
+        />
 
         <NewFoodSheet
           visible={newFood !== null}
