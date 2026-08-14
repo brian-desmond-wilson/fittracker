@@ -1,10 +1,10 @@
 // The Nutrition Facts panel, as a data structure.
 //
-// The app stores seven nutrition fields; a real FDA panel carries about
+// The app stores nine nutrition fields; a real FDA panel carries about
 // fifteen. This module decides what can honestly be printed from what we
 // have, and — importantly — what must be left off. A panel that invents a
-// sodium figure is worse than a panel that admits it doesn't know one, and a
-// panel is exactly the artifact people trust literally.
+// figure is worse than a panel that admits it doesn't know one, and a panel is
+// exactly the artifact people trust literally.
 //
 // Percent Daily Values use the FDA reference amounts for adults and children
 // 4+ (21 CFR 101.9(c)(8)(iv)), the same 2,000-calorie basis the printed panel
@@ -53,6 +53,11 @@ export interface LabelSource {
    *  add/preview routes' stub items) still typecheck; absent reads the same
    *  as null — the row is left off and named among the missing. */
   fiber_g?: number | null;
+  /** Grams, like the fat it sits under. Optional for the same reason. */
+  saturated_fat_g?: number | null;
+  /** Milligrams, as the panel prints sodium — the one figure here that is
+   *  not in grams. Optional for the same reason. */
+  sodium_mg?: number | null;
 }
 
 const pctOf = (value: number, dv: number): number => Math.round((value / dv) * 100);
@@ -60,14 +65,41 @@ const pctOf = (value: number, dv: number): number => Math.round((value / dv) * 1
 /** Trailing ".0" is noise on a panel: 0.5g stays, 6.0g becomes 6g. */
 const grams = (n: number): string => `${Number.isInteger(n) ? n : Number(n.toFixed(1))}g`;
 
+/** The same rounding for the one nutrient the panel prints in milligrams. */
+const milligrams = (n: number): string => `${Number.isInteger(n) ? n : Number(n.toFixed(1))}mg`;
+
+/** Absent and null both mean "we hold no figure" — see LabelSource. */
+const has = (v: number | null | undefined): v is number => v !== null && v !== undefined;
+
 export function buildNutritionLabel(item: LabelSource): NutritionLabel {
   const rows: LabelRow[] = [];
 
   // Panel order is fixed by regulation: fat, then carbohydrate and its
   // sub-nutrients, then protein. Ours is a subset of that sequence, not a
   // rearrangement of it.
-  if (item.fats !== null && item.fats !== undefined) {
+  if (has(item.fats)) {
     rows.push({ label: "Total Fat", amount: grams(item.fats), dv: pctOf(item.fats, DAILY_VALUES.totalFat) });
+  }
+  if (has(item.saturated_fat_g)) {
+    // A sub-nutrient of total fat, and one of the few the FDA sets a real
+    // reference value for. It prints even when total fat is missing: the panel
+    // reads a row at a time, and a saturated figure we hold is worth more than
+    // the tidiness of only showing it under its parent.
+    rows.push({
+      label: "Saturated Fat",
+      amount: grams(item.saturated_fat_g),
+      dv: pctOf(item.saturated_fat_g, DAILY_VALUES.saturatedFat),
+      indented: true,
+    });
+  }
+  if (has(item.sodium_mg)) {
+    // Top-level, between the fats and the carbohydrate block, and the only
+    // row here in milligrams.
+    rows.push({
+      label: "Sodium",
+      amount: milligrams(item.sodium_mg),
+      dv: pctOf(item.sodium_mg, DAILY_VALUES.sodiumMg),
+    });
   }
   if (item.carbs !== null && item.carbs !== undefined) {
     rows.push({
@@ -97,8 +129,12 @@ export function buildNutritionLabel(item: LabelSource): NutritionLabel {
   }
 
   const missing: string[] = [];
-  if (item.fats === null || item.fats === undefined) missing.push("total fat");
-  missing.push("saturated fat", "trans fat", "cholesterol", "sodium");
+  if (!has(item.fats)) missing.push("total fat");
+  if (!has(item.saturated_fat_g)) missing.push("saturated fat");
+  // Trans fat and cholesterol have no column anywhere in the app, so nothing
+  // can ever fill these two — they are named unconditionally.
+  missing.push("trans fat", "cholesterol");
+  if (!has(item.sodium_mg)) missing.push("sodium");
   if (item.carbs === null || item.carbs === undefined) missing.push("total carbohydrate");
   if (item.fiber_g === null || item.fiber_g === undefined) missing.push("dietary fiber");
   missing.push("added sugars");

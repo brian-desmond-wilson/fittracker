@@ -67,6 +67,12 @@ describe("buildNutritionLabel", () => {
     ]));
   });
 
+  it("names trans fat and cholesterol as missing whatever else it holds", () => {
+    // Neither has a column anywhere, so no value can ever fill these two.
+    const label = buildNutritionLabel(src({ saturated_fat_g: 6, sodium_mg: 480 }));
+    expect(label.missing).toEqual(expect.arrayContaining(["trans fat", "cholesterol"]));
+  });
+
   it("drops a trailing .0 but keeps a real decimal", () => {
     expect(buildNutritionLabel(src({ fats: 6.0 })).rows[0].amount).toBe("6g");
     expect(buildNutritionLabel(src({ fats: 0.5 })).rows[0].amount).toBe("0.5g");
@@ -121,5 +127,63 @@ describe("buildNutritionLabel — dietary fiber", () => {
   it("keeps a genuine zero fiber", () => {
     expect(buildNutritionLabel(src({ fiber_g: 0 })).rows.find((r) => r.label === "Dietary Fiber")?.amount)
       .toBe("0g");
+  });
+});
+
+describe("buildNutritionLabel — saturated fat and sodium", () => {
+  it("puts both where the regulated panel prints them", () => {
+    // Saturated fat indents under total fat; sodium is a top-level row between
+    // the fats and the carbohydrate block.
+    const label = buildNutritionLabel(src({
+      saturated_fat_g: 6, sodium_mg: 480, fiber_g: 9, sugars: 2,
+    }));
+    expect(label.rows.map((r) => r.label)).toEqual([
+      "Total Fat", "Saturated Fat", "Sodium",
+      "Total Carbohydrate", "Dietary Fiber", "Total Sugars", "Protein",
+    ]);
+  });
+
+  it("prints sodium in milligrams, not grams", () => {
+    const label = buildNutritionLabel(src({ sodium_mg: 480 }));
+    expect(label.rows.find((r) => r.label === "Sodium")?.amount).toBe("480mg");
+  });
+
+  it("carries the FDA %DV for both", () => {
+    // 6g of 20g saturated fat = 30%; 480mg of 2300mg sodium = 21%.
+    const label = buildNutritionLabel(src({ saturated_fat_g: 6, sodium_mg: 480 }));
+    expect(label.rows.find((r) => r.label === "Saturated Fat")?.dv).toBe(30);
+    expect(label.rows.find((r) => r.label === "Sodium")?.dv).toBe(21);
+  });
+
+  it("indents saturated fat but not sodium", () => {
+    const label = buildNutritionLabel(src({ saturated_fat_g: 6, sodium_mg: 480 }));
+    expect(label.rows.find((r) => r.label === "Saturated Fat")?.indented).toBe(true);
+    expect(label.rows.find((r) => r.label === "Sodium")?.indented).toBeUndefined();
+  });
+
+  it("stops naming each as missing once we hold a value", () => {
+    expect(buildNutritionLabel(src()).missing).toContain("saturated fat");
+    expect(buildNutritionLabel(src()).missing).toContain("sodium");
+    expect(buildNutritionLabel(src({ saturated_fat_g: 6 })).missing).not.toContain("saturated fat");
+    expect(buildNutritionLabel(src({ sodium_mg: 480 })).missing).not.toContain("sodium");
+  });
+
+  it("keeps a genuine zero of either", () => {
+    const label = buildNutritionLabel(src({ saturated_fat_g: 0, sodium_mg: 0 }));
+    expect(label.rows.find((r) => r.label === "Saturated Fat")?.amount).toBe("0g");
+    expect(label.rows.find((r) => r.label === "Sodium")?.amount).toBe("0mg");
+  });
+
+  it("drops a trailing .0 on milligrams too", () => {
+    // The column is NUMERIC(6,2), so a whole number arrives as 480.00.
+    expect(buildNutritionLabel(src({ sodium_mg: 480.0 })).rows.find((r) => r.label === "Sodium")?.amount)
+      .toBe("480mg");
+    expect(buildNutritionLabel(src({ sodium_mg: 2.5 })).rows.find((r) => r.label === "Sodium")?.amount)
+      .toBe("2.5mg");
+  });
+
+  it("treats an absent field the same as an explicit null", () => {
+    expect(buildNutritionLabel(src({ saturated_fat_g: null, sodium_mg: null })).rows.map((r) => r.label))
+      .toEqual(buildNutritionLabel(src()).rows.map((r) => r.label));
   });
 });
