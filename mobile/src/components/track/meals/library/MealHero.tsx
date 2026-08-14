@@ -14,6 +14,7 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Star } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 interface MealHeroProps {
   name: string;
@@ -30,9 +31,6 @@ interface MealHeroProps {
   corner?: React.ReactNode;
 }
 
-function initials(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-}
 
 export function MealHero({
   name, score, faceUrl, isFavorite, onToggleFavorite, macroLine, sourceLine, corner,
@@ -43,7 +41,7 @@ export function MealHero({
         <Image source={{ uri: faceUrl }} style={s.photo} resizeMode="cover" />
       ) : (
         <View style={s.well}>
-          <Text style={s.initials}>{initials(name)}</Text>
+          <Text style={s.initials}>{monogram(name)}</Text>
         </View>
       )}
       {/* Read off an arbitrary photograph, so the text needs its own ground.

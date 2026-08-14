@@ -40,6 +40,7 @@ import {
   type PortionMacros,
 } from "@/src/lib/mealPortion";
 import { NumberStepper } from "./edit/NumberStepper";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 export interface MealLogEdit extends PortionMacros {
   name: string;
@@ -91,9 +92,6 @@ function fmtClock(d: Date): string {
   return `${display}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
 }
 
-function initials(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-}
 
 export function MealLogEditorModal({
   visible,
@@ -228,7 +226,7 @@ export function MealLogEditorModal({
                 {faceUrl ? (
                   <Image source={{ uri: faceUrl }} style={styles.faceImage} resizeMode="cover" />
                 ) : (
-                  <Text style={styles.faceInitials}>{initials(name || "?")}</Text>
+                  <Text style={styles.faceInitials}>{monogram(name || "?")}</Text>
                 )}
               </View>
               <View style={styles.identityBody}>

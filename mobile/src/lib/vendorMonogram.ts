@@ -1,4 +1,9 @@
-// The fallback mark for a vendor with no logo, or whose logo failed to load.
+// The fallback mark for anything with no picture: a vendor with no logo, and
+// a meal whose photo is missing or failed to load.
+//
+// The meal surfaces each carried their own `initials`, which split on
+// whitespace only — so "Boost + Cashews" came out "B+" and "PB&J" came out
+// "P". This handles the punctuation, which is the whole reason it exists.
 //
 // Lives here rather than beside the tile component because that file imports
 // react-native, which cannot load in the node test environment — and the

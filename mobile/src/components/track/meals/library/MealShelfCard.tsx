@@ -10,6 +10,7 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Star } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import type { MealCard } from "@/src/lib/mealLibraryView";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 interface MealShelfCardProps {
   card: MealCard;
@@ -21,9 +22,6 @@ interface MealShelfCardProps {
 
 const CARD_WIDTH = 150;
 
-function initials(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-}
 
 function MealShelfCardInner({ card, onPress, onToggleFavorite, onLog, busyMealId }: MealShelfCardProps) {
   const busy = busyMealId === card.meal.id;
@@ -41,7 +39,7 @@ function MealShelfCardInner({ card, onPress, onToggleFavorite, onLog, busyMealId
         {card.faceUrl ? (
           <Image source={{ uri: card.faceUrl }} style={s.coverImage} resizeMode="cover" />
         ) : (
-          <Text style={s.initials}>{initials(card.meal.name)}</Text>
+          <Text style={s.initials}>{monogram(card.meal.name)}</Text>
         )}
         {/* Over the picture rather than beside it — the cover is the biggest
             thing on this card and giving state its own row would shrink it. */}

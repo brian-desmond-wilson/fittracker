@@ -9,6 +9,7 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Check, Trash2 } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, IconButton } from "@/src/components/ui";
+import { monogram } from "@/src/lib/vendorMonogram";
 import type {
   AttributedLog,
   FuelPick,
@@ -43,13 +44,6 @@ function fmtMinutes(totalMinutes: number): string {
   return `${display}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 function Face({ url, name, small }: { url: string | null; name: string; small?: boolean }) {
   return (
@@ -57,7 +51,7 @@ function Face({ url, name, small }: { url: string | null; name: string; small?: 
       {url ? (
         <Image source={{ uri: url }} style={s.faceImage} resizeMode="cover" />
       ) : (
-        <Text style={s.faceInitials}>{initials(name)}</Text>
+        <Text style={s.faceInitials}>{monogram(name)}</Text>
       )}
     </View>
   );

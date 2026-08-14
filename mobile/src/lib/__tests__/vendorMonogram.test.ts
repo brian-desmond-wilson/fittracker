@@ -28,3 +28,22 @@ describe("monogram — the fallback when a vendor has no logo", () => {
     expect(monogram("99 Ranch Market")).toBe("9R");
   });
 });
+
+describe("monogram, on meal names", () => {
+  it("ignores a joining symbol rather than printing it", () => {
+    // These are real meals in the library; splitting on whitespace alone gave
+    // "B+" and "P".
+    expect(monogram("Boost + Cashews")).toBe("BC");
+    expect(monogram("PB&J")).toBe("PJ");
+  });
+
+  it("handles the long ones", () => {
+    expect(monogram("Pasta Trapanese With Pulled Chicken")).toBe("PT");
+    expect(monogram("Almond Dream Smoothie")).toBe("AD");
+  });
+
+  it("has a mark for a name it cannot read", () => {
+    expect(monogram("")).toBe("?");
+    expect(monogram("   ")).toBe("?");
+  });
+});

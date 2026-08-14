@@ -10,6 +10,7 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { ChevronRight } from "lucide-react-native";
 import type { MealIngredient } from "@/src/lib/mealLibraryView";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 interface MealIngredientRowProps {
   ingredient: MealIngredient;
@@ -18,9 +19,6 @@ interface MealIngredientRowProps {
   onOpenProduct?: (inventoryId: string) => void;
 }
 
-function initials(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-}
 
 /** Deliberately not a `Badge`: these four are a closed set with their own
  *  vocabulary, and "3d left" needs a number in it. */
@@ -55,7 +53,7 @@ function MealIngredientRowInner({ ingredient, onOpenProduct }: MealIngredientRow
         {food.image_primary_url ? (
           <Image source={{ uri: food.image_primary_url }} style={s.thumbImage} resizeMode="cover" />
         ) : (
-          <Text style={s.thumbText}>{initials(food.name)}</Text>
+          <Text style={s.thumbText}>{monogram(food.name)}</Text>
         )}
       </View>
       <View style={s.body}>

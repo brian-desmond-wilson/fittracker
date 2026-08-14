@@ -10,6 +10,7 @@ import { Star } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Card } from "@/src/components/ui";
 import { substitutionLine, type MealCard } from "@/src/lib/mealLibraryView";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 interface MealLibraryRowProps {
   card: MealCard;
@@ -27,9 +28,6 @@ interface MealLibraryRowProps {
   markArchived?: boolean;
 }
 
-function initials(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
-}
 
 /** "31× · last Tue" — absent until it has actually been eaten, because "0× ·
  *  never" is noise on a meal you just built. */
@@ -69,7 +67,7 @@ function MealLibraryRowInner({
           {card.faceUrl ? (
             <Image source={{ uri: card.faceUrl }} style={s.wellImage} resizeMode="cover" />
           ) : (
-            <Text style={s.initials}>{initials(meal.name)}</Text>
+            <Text style={s.initials}>{monogram(meal.name)}</Text>
           )}
         </View>
 
