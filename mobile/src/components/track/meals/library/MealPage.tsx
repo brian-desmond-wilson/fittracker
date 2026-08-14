@@ -53,9 +53,16 @@ interface MealPageProps {
   onClose: () => void;
   /** Open an ingredient's product in Food Inventory. */
   onOpenProduct: (inventoryId: string) => void;
+  /** Slot and time chosen before this page opened — the quick-log sheet's
+   *  context, so it doesn't have to be set twice. */
+  initialMealType?: MealType;
+  initialLoggedAt?: Date;
 }
 
-export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct }: MealPageProps) {
+export function MealPage({
+  mealId, savedFoods, todayDate, onClose, onOpenProduct,
+  initialMealType, initialLoggedAt,
+}: MealPageProps) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<MealLibraryData | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -212,7 +219,8 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
   const handleLog = useCallback(
     async (
       meal: MealWithItems,
-      { mealType, portion, daysAgo }: { mealType: MealType; portion: number; daysAgo: number },
+      { mealType, portion, daysAgo, loggedAt }:
+        { mealType: MealType; portion: number; daysAgo: number; loggedAt: Date },
     ) => {
       if (!data) return;
       setBusy(true);
@@ -227,6 +235,12 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
           date,
           mealType,
           portion,
+          // The clock the picker holds, on the day the stepper chose.
+          loggedAt: (() => {
+            const at = new Date(Date.now() - daysAgo * 86_400_000);
+            at.setHours(loggedAt.getHours(), loggedAt.getMinutes(), 0, 0);
+            return at;
+          })(),
           conceptIdsBySavedFoodId: data.conceptIdsBySavedFoodId,
           inventory: data.inventory,
         });

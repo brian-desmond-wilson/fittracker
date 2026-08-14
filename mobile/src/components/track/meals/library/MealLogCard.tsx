@@ -8,8 +8,13 @@
 // The button says what it will write rather than what it is: "Log 400 cal to
 // breakfast" changes as the portion and the slot change, which is the only
 // confirmation you get before the row exists.
-import React from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+//
+// Time is here because the quick-log sheet has always had it: the same act
+// logged two ways was recording two different kinds of truth, one of which
+// silently claimed you ate at the moment you tapped.
+import React, { useState } from "react";
+import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Button } from "@/src/components/ui";
@@ -39,6 +44,9 @@ interface MealLogCardProps {
   onDaysAgo: (daysAgo: number) => void;
   mealType: MealType;
   onMealType: (mealType: MealType) => void;
+  /** When it was eaten. Time only — the day comes from `daysAgo`. */
+  loggedAt: Date;
+  onLoggedAt: (at: Date) => void;
   calories: number;
   logging: boolean;
   onLog: () => void;
@@ -52,10 +60,17 @@ export function dayLabel(daysAgo: number, today: Date = new Date()): string {
   return d.toLocaleDateString(undefined, { weekday: "long" });
 }
 
+/** "6:14 PM" — the clock as it reads on the phone. */
+function clockLabel(at: Date): string {
+  return at.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function MealLogCard({
   portion, onPortion, daysAgo, onDaysAgo, mealType, onMealType,
-  calories, logging, onLog,
+  loggedAt, onLoggedAt, calories, logging, onLog,
 }: MealLogCardProps) {
+  const [pickingTime, setPickingTime] = useState(false);
+
   return (
     <View style={s.card}>
       <Text style={s.cardTitle}>LOG THIS MEAL</Text>
@@ -112,6 +127,34 @@ export function MealLogCard({
           </TouchableOpacity>
         </View>
       </View>
+
+      <TouchableOpacity
+        style={s.timeRow}
+        onPress={() => setPickingTime((v) => !v)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: pickingTime }}
+        accessibilityLabel={`Eaten at ${clockLabel(loggedAt)}. Tap to change.`}
+      >
+        <Text style={s.timeLabel}>Eaten at</Text>
+        <Text style={s.timeValue}>{clockLabel(loggedAt)}</Text>
+      </TouchableOpacity>
+
+      {pickingTime && (
+        <DateTimePicker
+          value={loggedAt}
+          mode="time"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={(_e, picked) => {
+            if (Platform.OS !== "ios") setPickingTime(false);
+            if (!picked) return;
+            // Only the clock moves — the DAY is the stepper's business, and a
+            // picker that carried its own date would fight it.
+            const next = new Date(loggedAt);
+            next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+            onLoggedAt(next);
+          }}
+        />
+      )}
 
       <ScrollView
         horizontal
@@ -173,6 +216,9 @@ const s = StyleSheet.create({
   portionTextOn: { color: colors.brand, fontWeight: "700" },
 
   day: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginLeft: "auto" },
+  timeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  timeLabel: { ...typography.body, color: colors.textMuted },
+  timeValue: { ...typography.body, color: colors.text, fontWeight: "600" },
   dayText: { ...typography.body, color: colors.textMuted, minWidth: 78, textAlign: "center" },
 
   scroller: { flexGrow: 0 },

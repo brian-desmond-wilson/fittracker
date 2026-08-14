@@ -55,7 +55,14 @@ interface MealDetailProps {
   onOpenProduct: (inventoryId: string) => void;
   addingToList: boolean;
   addedToList: boolean;
-  onLog: (meal: MealWithItems, opts: { mealType: MealType; portion: number; daysAgo: number }) => void;
+  onLog: (
+    meal: MealWithItems,
+    opts: { mealType: MealType; portion: number; daysAgo: number; loggedAt: Date },
+  ) => void;
+  /** Slot and time the opener already chose — the quick-log sheet carries its
+   *  own context in rather than making you set it twice. */
+  initialMealType?: MealType;
+  initialLoggedAt?: Date;
   onArchive: (meal: MealWithItems, archived: boolean) => void;
   onDelete: (meal: MealWithItems) => void;
 }
@@ -78,11 +85,12 @@ export function MealDetail({
   meal, nutrition, ingredients, score, assemblability, timesLogged, lastLoggedDate,
   faceUrl, logging, saving, onToggleFavorite, onToggleCategory, onAddMissing,
   onLinkIngredient, onOpenProduct, addingToList, addedToList, onLog,
-  onArchive, onDelete,
+  onArchive, onDelete, initialMealType, initialLoggedAt,
 }: MealDetailProps) {
-  const [mealType, setMealType] = useState<MealType>(defaultMealTypeFor(meal));
+  const [mealType, setMealType] = useState<MealType>(initialMealType ?? defaultMealTypeFor(meal));
   const [portion, setPortion] = useState<Portion>(PORTIONS[1]);
   const [daysAgo, setDaysAgo] = useState(0);
+  const [loggedAt, setLoggedAt] = useState<Date>(() => initialLoggedAt ?? new Date());
   const [scoreOpen, setScoreOpen] = useState(false);
 
   // Two faces in one box, each hiding its own back. `showingBack` flips at the
@@ -319,9 +327,11 @@ export function MealDetail({
               onDaysAgo={setDaysAgo}
               mealType={mealType}
               onMealType={setMealType}
+              loggedAt={loggedAt}
+              onLoggedAt={setLoggedAt}
               calories={Math.round(totals.calories * portion)}
               logging={logging}
-              onLog={() => onLog(meal, { mealType, portion, daysAgo })}
+              onLog={() => onLog(meal, { mealType, portion, daysAgo, loggedAt })}
             />
 
             {/* No Edit here: the header carries it, in the same slot the

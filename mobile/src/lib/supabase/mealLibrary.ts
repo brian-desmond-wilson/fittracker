@@ -753,6 +753,12 @@ export async function logMeal(
      * because half a smoothie still opens the whole container. Defaults to 1.
      */
     portion?: number;
+    /**
+     * When it was eaten. The quick-log sheet has always let you say so; the
+     * meal page could not, so the two paths wrote different kinds of truth for
+     * the same act. Defaults to now.
+     */
+    loggedAt?: Date;
   },
 ): Promise<LogMealResult> {
   invalidateMealLibrary(); // D1: this write changes what a read would return
@@ -774,7 +780,18 @@ export async function logMeal(
     opts.inventory,
   );
 
-  const loggedAt = new Date().toISOString();
+  // `logged_at` is doing two jobs: it is when you ate, and it is the key undo
+  // deletes this batch by. A time you PICKED has no seconds of its own, so two
+  // logs of one meal at the same chosen minute would share a key and undo would
+  // take both — the chosen minute is kept and the current seconds are borrowed
+  // to tell them apart.
+  const chosen = opts.loggedAt;
+  const stamp = chosen ? new Date(chosen) : new Date();
+  if (chosen) {
+    const now = new Date();
+    stamp.setSeconds(now.getSeconds(), now.getMilliseconds());
+  }
+  const loggedAt = stamp.toISOString();
   // Two meal items can resolve to the SAME inventory row (two saved foods
   // sharing one concept, one in-stock product). The consume call below
   // de-duplicates, so only ONE unit comes off that container — therefore only

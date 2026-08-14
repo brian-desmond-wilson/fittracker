@@ -9,7 +9,7 @@
 // eaten before logs it outright — that is most logs. Typing something new is
 // a step down, because it is the rarer thing. Inside, the card styling is
 // Edit Meal's, so create and edit read as siblings.
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Animated,
   Image,
@@ -28,6 +28,9 @@ import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tok
 import { Button } from "@/src/components/ui";
 import type { MealType, SavedFood } from "@/src/types/track";
 import type { MealWithItems } from "@/src/types/meal-library";
+import { mergeLogResults } from "@/src/lib/logResults";
+import { mealFaceUrlFor } from "@/src/lib/mealFace";
+import { computeMealTotals } from "@/src/lib/supabase/mealLibrary";
 import type { MealAddFormState } from "./useMealAddForm";
 
 const MEAL_TYPES: { value: MealType; label: string }[] = [
@@ -73,7 +76,13 @@ interface LogMealSheetProps {
   searching: boolean;
   searchResults: SavedFood[];
   mealResults: MealWithItems[];
+  /** Log this meal here and now, with the slot and time above. The common
+   *  case, and the one that records WHICH MEAL you ate. */
+  onLogMeal: (meal: MealWithItems) => void;
+  /** Open the meal's own page, for a half portion or another day. */
   onOpenMeal: (mealId: string) => void;
+  /** Id of the meal currently being written, for its spinner. */
+  loggingMealId?: string | null;
   onScan: () => void;
 
   /** The manual path: same form state the old inline version used. */
@@ -82,6 +91,29 @@ interface LogMealSheetProps {
   onManualOpenChange: (open: boolean) => void;
   onSubmitManual: () => void;
   submitting: boolean;
+}
+
+/** The picture the shelves would show for this meal — its own, else the first
+ *  ingredient's. Computed here so the sheet and the library never disagree
+ *  about what a meal looks like. */
+function faceOf(meal: MealWithItems): string | null {
+  return mealFaceUrlFor(meal.image_primary_url, meal.items.map((it) => ({
+    displayOrder: it.display_order,
+    imageUrl: it.savedFood.image_primary_url,
+    calories: (it.savedFood.calories ?? 0) * it.servings,
+  })));
+}
+
+/** Initials, for a meal or food with no photograph — the shelves' fallback. */
+function monogram(name: string): string {
+  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+}
+
+/** What you actually choose on: the calories, and the protein when there is
+ *  any. "1 ingredient · 0 min" described the recipe, not the food. */
+function macroLine(totals: { calories: number; protein: number }): string {
+  const cals = `${Math.round(totals.calories)} cal`;
+  return totals.protein > 0 ? `${cals} · ${Math.round(totals.protein)}g protein` : cals;
 }
 
 function fmtClock(d: Date): string {
@@ -110,7 +142,9 @@ export function LogMealSheet({
   searching,
   searchResults,
   mealResults,
+  onLogMeal,
   onOpenMeal,
+  loggingMealId = null,
   onScan,
   form,
   manualOpen,
@@ -184,6 +218,15 @@ export function LogMealSheet({
       setContextOpen(false);
     }
   }, [visible, dragY]);
+
+  // One list, and which row survives a collision is a rule with a test:
+  // `mergeLogResults`. ABOVE the early return: a hook after it runs on some
+  // renders and not others, which is the "more hooks than during the previous
+  // render" crash — the sheet renders once closed and again open.
+  const mergedResults = useMemo(
+    () => mergeLogResults({ meals: mealResults, foods: searchResults, limit: RESULTS_SHOWN }),
+    [mealResults, searchResults],
+  );
 
   if (!visible) return null;
 
@@ -462,39 +505,96 @@ export function LogMealSheet({
 
               {searchingNow ? (
                 <>
-                  {mealResults.length > 0 && (
-                    <>
-                      <Text style={styles.label}>Meals</Text>
-                      {mealResults.slice(0, RESULTS_SHOWN).map((m) => (
-                        <TouchableOpacity
-                          key={m.id}
-                          style={styles.resultRow}
-                          onPress={() => onOpenMeal(m.id)}
-                          activeOpacity={0.7}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Open ${m.name}`}
-                        >
-                          <View style={styles.resultBody}>
-                            <Text style={styles.resultName} numberOfLines={1}>{m.name}</Text>
-                            <Text style={styles.resultMeta}>
-                              {m.items.length} ingredient{m.items.length === 1 ? "" : "s"} · {m.prep_minutes} min
-                            </Text>
-                          </View>
-                          <ChevronRight size={icons.sm} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
-                        </TouchableOpacity>
-                      ))}
-                    </>
-                  )}
+                  {/* One list, because a Thistle dish is ONE thing that happens
+                      to be stored twice — as a meal and as the food that is its
+                      only ingredient. Split under two headings it read as two
+                      choices, and the one that looked quicker was the one that
+                      never recorded which meal you had eaten. */}
                   <Text style={styles.label}>
                     {searching
                       ? "Searching…"
-                      : searchResults.length === 0
-                        ? `Nothing else matches "${query.trim()}"`
-                        : "Foods"}
+                      : mergedResults.length === 0
+                        ? `Nothing matches "${query.trim()}"`
+                        : "Results"}
                   </Text>
-                  <View style={styles.grid}>
-                    {searchResults.slice(0, RESULTS_SHOWN * 2).map((f) => foodChip(f, false))}
-                  </View>
+                  {mergedResults.map((r) =>
+                    r.kind === "meal" ? (
+                      <View key={`meal-${r.meal.id}`} style={styles.resultRow}>
+                        {/* Two jobs, two controls. The row reads as navigation
+                            — it ends in a chevron — so that is what the row
+                            does, and logging gets a labelled button of its own.
+                            One tap either way, and neither is a guess. */}
+                        <TouchableOpacity
+                          style={styles.resultTap}
+                          onPress={() => onOpenMeal(r.meal.id)}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open ${r.meal.name} to change the portion, day or time`}
+                        >
+                          <View style={styles.resultThumbWell}>
+                            {faceOf(r.meal) ? (
+                              <Image source={{ uri: faceOf(r.meal)! }} style={styles.resultThumb} />
+                            ) : (
+                              <Text style={styles.resultMonogram}>{monogram(r.meal.name)}</Text>
+                            )}
+                          </View>
+                          <View style={styles.resultBody}>
+                            <Text style={styles.resultName} numberOfLines={1}>{r.meal.name}</Text>
+                            <Text style={styles.resultMeta} numberOfLines={1}>
+                              {macroLine(computeMealTotals(r.meal.items))}
+                            </Text>
+                          </View>
+                          <ChevronRight size={icons.md} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.logButton, loggingMealId !== null && styles.logButtonBusy]}
+                          onPress={() => onLogMeal(r.meal)}
+                          disabled={loggingMealId !== null}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Log ${r.meal.name} to ${labelFor(mealType)}, ${dayLabel} at ${fmtClock(loggedAt)}`}
+                        >
+                          <Text style={styles.logButtonText}>
+                            {loggingMealId === r.meal.id ? "…" : "Log"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      // A food has no page behind it, so there is nothing to
+                      // navigate to and no chevron to promise it: the whole row
+                      // and its button do the one thing.
+                      <TouchableOpacity
+                        key={`food-${r.food.id}`}
+                        style={styles.resultRow}
+                        onPress={() => onLogFood(r.food)}
+                        disabled={loggingFoodId !== null}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Log ${r.food.name} to ${labelFor(mealType)}, ${dayLabel} at ${fmtClock(loggedAt)}`}
+                      >
+                        <View style={styles.resultThumbWell}>
+                          {r.food.image_primary_url ? (
+                            <Image source={{ uri: r.food.image_primary_url }} style={styles.resultThumb} />
+                          ) : (
+                            <Text style={styles.resultMonogram}>{monogram(r.food.name)}</Text>
+                          )}
+                        </View>
+                        <View style={styles.resultBody}>
+                          <Text style={styles.resultName} numberOfLines={1}>{r.food.name}</Text>
+                          <Text style={styles.resultMeta} numberOfLines={1}>
+                            {macroLine({
+                              calories: r.food.calories ?? 0,
+                              protein: r.food.protein ?? 0,
+                            })}
+                          </Text>
+                        </View>
+                        <View style={[styles.logButton, loggingFoodId !== null && styles.logButtonBusy]}>
+                          <Text style={styles.logButtonText}>
+                            {loggingFoodId === r.food.id ? "…" : "Log"}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ),
+                  )}
                 </>
               ) : (
                 <>
@@ -696,7 +796,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  resultBody: { flex: 1 },
+  resultBody: { flex: 1, minWidth: 0 },
+  // The row's body is the log target and the chevron is its own; they are
+  // separate touchables so their labels can say different things.
+  resultTap: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: spacing.md },
+  resultThumbWell: {
+    width: 40, height: 40, borderRadius: radii.control, overflow: "hidden",
+    backgroundColor: colors.imageWell, alignItems: "center", justifyContent: "center",
+  },
+  resultThumb: { width: "100%", height: "100%" },
+  resultMonogram: { ...typography.caption, fontWeight: "700", color: colors.textFaint },
+  // Labelled, because the row beside it navigates: an unlabelled second target
+  // is what made one row look like one button.
+  logButton: {
+    marginLeft: spacing.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: radii.control,
+    backgroundColor: tint(colors.brand),
+    borderWidth: 1, borderColor: tint(colors.brand, 0.4),
+  },
+  logButtonBusy: { opacity: 0.6 },
+  logButtonText: { ...typography.buttonSm, color: colors.brand },
   resultName: { ...typography.rowTitle, color: colors.text },
   resultMeta: { ...typography.caption, marginTop: 2 },
 

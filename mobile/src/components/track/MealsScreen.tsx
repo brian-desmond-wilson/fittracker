@@ -68,6 +68,7 @@ import { tasteAskFor } from "@/src/lib/tasteAsk";
 import { markSuggestionActedOn } from "@/src/lib/supabase/eatNextLog";
 import type { ConceptRating } from "@/src/types/nutrition-preferences";
 import { defaultMealTypeFor } from "@/src/types/meal-library";
+import type { MealWithItems } from "@/src/types/meal-library";
 import { MealsInsightsCard } from "./MealsInsightsCard";
 import {
   buildDailyTotalsByDate,
@@ -240,6 +241,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [logSheetAt, setLogSheetAt] = useState<Date>(new Date());
   const [logSheetQuery, setLogSheetQuery] = useState("");
   const [loggingFoodId, setLoggingFoodId] = useState<string | null>(null);
+  const [loggingMealId, setLoggingMealId] = useState<string | null>(null);
   // The bottom chip row's Search chip focuses this instead of duplicating a
   // second search field.
   const searchInputRef = useRef<TextInput>(null);
@@ -1467,6 +1469,68 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
    * (one serving, inventory decremented when the barcode matches something in
    * stock, undoable) minus the preview screen in between.
    */
+  /**
+   * Log a whole meal straight from the sheet, with the slot and time already
+   * showing at the top of it.
+   *
+   * The sheet used to offer the meal and the saved food inside it as two
+   * results, and only the food could be logged in one tap — but a food log
+   * names no meal, so the library's "31× · last Tuesday" never moved and the
+   * recommender went on suggesting something you eat constantly. This is the
+   * same `logMeal` the meal page calls: same rows, same decrement, same undo.
+   */
+  const handleQuickLogMeal = async (meal: MealWithItems) => {
+    if (loggingMealId) return;
+    setLoggingMealId(meal.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to log meals");
+        return;
+      }
+      const library = await fetchMealLibrary();
+      const result = await logMeal(user.id, meal, {
+        date: viewingDateStr,
+        mealType: addForm.mealType,
+        loggedAt: logSheetAt,
+        conceptIdsBySavedFoodId: library.conceptIdsBySavedFoodId,
+        inventory: library.inventory,
+      });
+      closeLogSheet();
+      Alert.alert("Logged", `${meal.name} → ${addForm.mealType}`, [
+        {
+          text: "Undo",
+          style: "destructive",
+          onPress: () => {
+            void undoMealLog(meal.id, result.loggedAt, result.consumedIds)
+              .then(() => fetchMealsForDate(viewingDate, true))
+              .catch((e) => {
+                console.error("undo quick meal log:", e);
+                Alert.alert("Couldn't undo that", "The meal is still on today.");
+              });
+          },
+        },
+        { text: "OK", style: "default" },
+      ]);
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(viewingDateStr);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      await fetchRecentAndFavorites();
+    } catch (e) {
+      if (e instanceof MealLoggedButDecrementFailed) {
+        Alert.alert("Logged (inventory not updated)", "The meal was logged, but stock didn't change.");
+        return;
+      }
+      console.error("quick log meal:", e);
+      Alert.alert("Couldn't log that", e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoggingMealId(null);
+    }
+  };
+
   const handleLogFoodDirect = async (food: SavedFood) => {
     if (loggingFoodId) return;
     setLoggingFoodId(food.id);
@@ -2198,9 +2262,16 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         searching={sheetSearching}
         searchResults={sheetFoodResults}
         mealResults={sheetMealResults}
+        onLogMeal={handleQuickLogMeal}
+        loggingMealId={loggingMealId}
+        // Carries what the sheet already asked — the slot and the clock — so
+        // the page opens on the log you were about to write rather than making
+        // you set it a second time.
         onOpenMeal={(mealId) => {
+          const slot = addForm.mealType;
+          const at = logSheetAt.toISOString();
           closeLogSheet();
-          openMeal(mealId);
+          router.push(`/(tabs)/track/meal-library/${mealId}?slot=${slot}&at=${encodeURIComponent(at)}`);
         }}
         // The scanner is a full-screen modal that covers the sheet anyway, so
         // the sheet stays open underneath it: backing out of the camera
