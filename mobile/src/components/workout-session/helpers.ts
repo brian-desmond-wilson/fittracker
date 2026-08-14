@@ -7,12 +7,8 @@ export const SCREEN_WIDTH = Dimensions.get("window").width;
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
 // Local date string (YYYY-MM-DD) — avoids UTC timezone issues.
-export function getLocalDateString(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate()
-  ).padStart(2, "0")}`;
-}
+/** Re-exported from the date lib, which is where this lives now. */
+export { getLocalDateString } from "@/src/lib/dates";
 
 // Difficulty color scale: green (easy) → red (very hard).
 export const DIFFICULTY_COLORS: Record<string, string> = {

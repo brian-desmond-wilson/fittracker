@@ -16,6 +16,7 @@ import { X, Calendar } from "lucide-react-native";
 import { EventCategory } from "@/src/types/schedule";
 import { supabase } from "@/src/lib/supabase";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { getLocalDateString } from "@/src/lib/dates";
 
 interface AddEventModalProps {
   visible: boolean;
@@ -105,13 +106,6 @@ const isTimeAfter = (time1: TimeValue, time2: TimeValue): boolean => {
   return date1.getTime() > date2.getTime();
 };
 
-// Get local date string in YYYY-MM-DD format
-const getLocalDateString = (date: Date = new Date()): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 export function AddEventModal({
   visible,

@@ -5,16 +5,10 @@
 // and a chart computed against two different days if it repainted across
 // local midnight — and it left them untestable, since the answer depended on
 // when the suite ran.
-import { getLocalDateString, parseLocalDate } from "./dates";
+import { addDays, getLocalDateString, parseLocalDate } from "./dates";
 
 export type TotalsByDate = Record<string, number>;
 export type GoalForDate = (dateKey: string) => number;
-
-function addDays(d: Date, days: number): Date {
-  const result = new Date(d);
-  result.setDate(result.getDate() + days);
-  return result;
-}
 
 /**
  * Current streak: consecutive days hitting the per-day effective goal,

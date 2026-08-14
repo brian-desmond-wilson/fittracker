@@ -7,6 +7,7 @@ import { supabase } from "@/src/lib/supabase";
 import { Card } from "@/src/components/ui";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { computePace, PaceState } from "@/src/lib/waterStats";
+import { getLocalDateString } from "@/src/lib/dates";
 import {
   WaterUnit,
   formatVolume,
@@ -14,9 +15,6 @@ import {
   formatAmount,
 } from "@/src/lib/waterUnits";
 
-function getLocalDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 interface Settings {
   goalOz: number;
@@ -51,7 +49,7 @@ export function WaterIntakeHomeCard({ refreshKey }: WaterIntakeHomeCardProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const today = getLocalDate();
+      const today = getLocalDateString();
 
       const [profileRes, logsRes, workoutRes] = await Promise.all([
         supabase

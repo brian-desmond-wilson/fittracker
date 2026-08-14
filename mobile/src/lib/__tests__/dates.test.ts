@@ -1,4 +1,4 @@
-import { getLocalDateString, parseLocalDate } from "../dates";
+import { addDays, getLocalDateString, parseLocalDate } from "../dates";
 
 describe("getLocalDateString", () => {
   it("reads the local calendar date, not the UTC one", () => {
@@ -44,5 +44,31 @@ describe("parseLocalDate", () => {
       const key = `2026-03-${String(day).padStart(2, "0")}`;
       expect(getLocalDateString(parseLocalDate(key))).toBe(key);
     }
+  });
+});
+
+describe("addDays", () => {
+  it("moves forward and back", () => {
+    expect(getLocalDateString(addDays(new Date(2026, 7, 14), 1))).toBe("2026-08-15");
+    expect(getLocalDateString(addDays(new Date(2026, 7, 14), -1))).toBe("2026-08-13");
+    expect(getLocalDateString(addDays(new Date(2026, 7, 14), 0))).toBe("2026-08-14");
+  });
+
+  it("rolls the month and the year", () => {
+    expect(getLocalDateString(addDays(new Date(2026, 7, 31), 1))).toBe("2026-09-01");
+    expect(getLocalDateString(addDays(new Date(2026, 11, 31), 1))).toBe("2027-01-01");
+    expect(getLocalDateString(addDays(new Date(2026, 0, 1), -1))).toBe("2025-12-31");
+  });
+
+  it("counts calendar days across a clock change, not 24-hour blocks", () => {
+    // US DST ends 2026-11-01: that day is 25 hours long.
+    expect(getLocalDateString(addDays(new Date(2026, 9, 31, 12), 1))).toBe("2026-11-01");
+    expect(getLocalDateString(addDays(new Date(2026, 10, 1, 12), 1))).toBe("2026-11-02");
+  });
+
+  it("leaves the date it was given alone", () => {
+    const original = new Date(2026, 7, 14);
+    addDays(original, 5);
+    expect(getLocalDateString(original)).toBe("2026-08-14");
   });
 });

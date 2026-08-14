@@ -15,16 +15,9 @@ import { MealLog } from "@/src/types/track";
 import { MacroGoals, MacroTotals, EMPTY_TOTALS, sumNutrition } from "@/src/lib/mealMacros";
 import { computeMacroSplit } from "@/src/lib/mealStats";
 import { supabase } from "@/src/lib/supabase";
+import { addDays, getLocalDateString } from "@/src/lib/dates";
 
-function getLocalDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
-function addDays(d: Date, days: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + days);
-  return r;
-}
 
 interface MealsWeeklySummaryModalProps {
   visible: boolean;
@@ -49,7 +42,7 @@ export function MealsWeeklySummaryModal({
   const dailyTotals: { date: string; totals: MacroTotals; weekday: string }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = addDays(today, -i);
-    const key = getLocalDate(d);
+    const key = getLocalDateString(d);
     const dayLogs = historicalLogs.filter((l) => l.date === key);
     dailyTotals.push({
       date: key,

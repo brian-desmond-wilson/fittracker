@@ -7,6 +7,7 @@ import { Flame } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
 import { Card } from "@/src/components/ui";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { getLocalDateString } from "@/src/lib/dates";
 import {
   MacroGoals,
   MacroTotals,
@@ -17,9 +18,6 @@ import {
   macroColor,
 } from "@/src/lib/mealMacros";
 
-function getLocalDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 interface MealsHomeCardProps {
   refreshKey?: number;
@@ -42,7 +40,7 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const today = getLocalDate();
+      const today = getLocalDateString();
       const [profileRes, mealsRes] = await Promise.all([
         supabase
           .from("profiles")

@@ -42,14 +42,12 @@ import { WaterGoalEditorModal } from "./WaterGoalEditorModal";
 import { WaterQuickAddEditorModal } from "./WaterQuickAddEditorModal";
 import { WaterCalendarModal } from "./WaterCalendarModal";
 import { WaterLogEditorModal } from "./WaterLogEditorModal";
+import { addDays, getLocalDateString } from "@/src/lib/dates";
 
 const DEFAULT_QUICK_ADD: number[] = [8, 12, 16, 20];
 const DEFAULT_QUICK_ADD_NAMES: string[] = ["", "", "", ""];
 const DEFAULT_QUICK_ADD_TYPES: BeverageType[] = ["water", "water", "water", "water"];
 
-function getLocalDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function parseLocalDate(dateStr: string): Date {
   const [year, month, day] = dateStr.split("-").map(Number);
@@ -62,11 +60,6 @@ function startOfWeek(d: Date): Date {
   return result;
 }
 
-function addDays(d: Date, days: number): Date {
-  const result = new Date(d);
-  result.setDate(result.getDate() + days);
-  return result;
-}
 
 interface WaterScreenProps {
   onClose: () => void;
@@ -124,7 +117,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Date navigation
-  const todayString = getLocalDate();
+  const todayString = getLocalDateString();
   const [selectedDate, setSelectedDate] = useState<string>(todayString);
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -183,7 +176,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       if (!user) return;
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 365);
-      const cutoffStr = getLocalDate(cutoff);
+      const cutoffStr = getLocalDateString(cutoff);
       const { data, error } = await supabase
         .from("workout_instances")
         .select("scheduled_date")
@@ -211,7 +204,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       }
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 365);
-      const startDate = getLocalDate(cutoff);
+      const startDate = getLocalDateString(cutoff);
 
       const { data, error } = await supabase
         .from("water_logs")
@@ -246,7 +239,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
   const weekDates = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = addDays(weekStart, i);
-      return { date: d, key: getLocalDate(d) };
+      return { date: d, key: getLocalDateString(d) };
     });
   }, [weekStart]);
 
@@ -469,7 +462,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       setDatePickerVisible(false);
       return;
     }
-    const dateKey = getLocalDate(picked);
+    const dateKey = getLocalDateString(picked);
     setSelectedDate(dateKey);
     setWeekStart(startOfWeek(picked));
   };
@@ -577,7 +570,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
       const csv = header + rows + "\n";
       await Share.share({
         message: csv,
-        title: `Water Logs ${getLocalDate()}`,
+        title: `Water Logs ${getLocalDateString()}`,
       });
     } catch (error) {
       console.error("CSV export failed:", error);
@@ -592,7 +585,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     if (isViewingToday) return "Today";
     const d = parseLocalDate(selectedDate);
     const yesterday = addDays(new Date(), -1);
-    if (selectedDate === getLocalDate(yesterday)) return "Yesterday";
+    if (selectedDate === getLocalDateString(yesterday)) return "Yesterday";
     return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   };
   const formatWeekRangeLabel = (): string => {
@@ -625,7 +618,7 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     const date = parseLocalDate(dateStr);
     const yesterday = addDays(new Date(), -1);
     if (dateStr === todayString) return "Today";
-    if (dateStr === getLocalDate(yesterday)) return "Yesterday";
+    if (dateStr === getLocalDateString(yesterday)) return "Yesterday";
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
   return (

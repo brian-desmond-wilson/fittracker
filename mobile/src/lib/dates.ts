@@ -33,3 +33,17 @@ export const parseLocalDate = (dateStr: string): Date => {
   const [y, m, d] = dateStr.split("-").map((s) => parseInt(s, 10));
   return new Date(y, m - 1, d, 12);
 };
+
+/**
+ * A calendar day either side of `d`, as a new `Date`.
+ *
+ * `setDate` past the end of a month rolls the month and year, and it moves by
+ * calendar days rather than by 24 hours — so a day that gains or loses an hour
+ * to a clock change still counts as one day. Four copies of this lived beside
+ * the four copies of `getLocalDateString`.
+ */
+export const addDays = (d: Date, days: number): Date => {
+  const result = new Date(d);
+  result.setDate(result.getDate() + days);
+  return result;
+};

@@ -4,15 +4,9 @@
 // one screen's insights are all computed against the same day — and so the
 // answers can be tested at all.
 import { MacroGoals, MacroTotals, EMPTY_TOTALS, sumNutrition } from "./mealMacros";
-import { getLocalDateString, parseLocalDate } from "./dates";
+import { addDays, getLocalDateString, parseLocalDate } from "./dates";
 
 export type DailyTotalsByDate = Record<string, MacroTotals>;
-
-function addDays(d: Date, days: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + days);
-  return r;
-}
 
 /**
  * Build per-date totals from a flat list of meal_logs.
