@@ -968,16 +968,20 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
         onPress={() => (selectMode ? toggleSelected(item.id) : handleViewItem(item))}
         onLongPress={() => (selectMode ? undefined : handleLongPress(item))}
       >
-        {/* Product Image */}
+        {/* Product Image. An empty item fades: the photo is the loudest thing
+            on a tile, and at full strength a shelf of food you no longer have
+            looks exactly like a shelf of food you do — most of all in a search,
+            which mixes the two. The dim rides on the photo alone, so the
+            selection circle and the category flag over it stay legible. */}
         <View style={styles.gridImageContainer}>
           {item.image_primary_url ? (
             <Image
               source={{ uri: item.image_primary_url }}
-              style={styles.gridImage}
+              style={[styles.gridImage, item.state.isOut && styles.gridImageOut]}
               resizeMode="cover"
             />
           ) : (
-            <View style={styles.gridImagePlaceholder}>
+            <View style={[styles.gridImagePlaceholder, item.state.isOut && styles.gridImageOut]}>
               <Package size={40} color={colors.textFaint} />
             </View>
           )}
@@ -1585,6 +1589,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.imageWell,
   },
+  // The app's existing "you cannot have this" fade, borrowed from the meal
+  // library's unavailable rows so the two screens say it the same way.
+  gridImageOut: { opacity: 0.4 },
   sortButton: {
     flexShrink: 0,
     flexDirection: "row", gap: spacing.xs,
