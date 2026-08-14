@@ -42,6 +42,7 @@ import { ItemActionsSheet, type ItemAction } from "@/src/components/track/ItemAc
 import { CategoryRail } from "./CategoryRail";
 import { NewFoodSheet } from "./NewFoodSheet";
 import { scoreTone } from "./styles";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
@@ -535,10 +536,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
                       resizeMode="cover"
                     />
                   ) : (
-                    <Text style={s.thumbText}>
-                      {item.savedFood.name.split(/\s+/).slice(0, 2)
-                        .map((w) => w[0]?.toUpperCase() ?? "").join("")}
-                    </Text>
+                    <Text style={s.thumbText}>{monogram(item.savedFood.name)}</Text>
                   )}
                 </View>
 

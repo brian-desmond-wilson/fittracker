@@ -31,6 +31,7 @@ import { mergeLogResults } from "@/src/lib/logResults";
 import { mealFaceUrlFor } from "@/src/lib/mealFace";
 import { computeMealTotals } from "@/src/lib/supabase/mealLibrary";
 import type { MealAddFormState } from "./useMealAddForm";
+import { monogram } from "@/src/lib/vendorMonogram";
 
 const MEAL_TYPES: { value: MealType; label: string }[] = [
   { value: "breakfast", label: "Breakfast" },
@@ -101,11 +102,6 @@ function faceOf(meal: MealWithItems): string | null {
     imageUrl: it.savedFood.image_primary_url,
     calories: (it.savedFood.calories ?? 0) * it.servings,
   })));
-}
-
-/** Initials, for a meal or food with no photograph — the shelves' fallback. */
-function monogram(name: string): string {
-  return name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
 }
 
 /** What you actually choose on: the calories, and the protein when there is
