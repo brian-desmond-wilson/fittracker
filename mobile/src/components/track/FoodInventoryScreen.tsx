@@ -840,17 +840,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   ): { text: string; tone: BadgeTone | null } | null => {
     const { expiration, daysLeft } = item.state;
     if (!item.expiration_date || expiration === null) return null;
+    // Nothing left cannot go off. The date on an out-of-stock item describes
+    // food that is already gone, so "Expired" or "2d left" beside "Out of
+    // stock" is a warning about nothing — and in a search, which mixes empty
+    // items in with full ones, a wall of red on the empties buries the one
+    // carton that really is about to turn. The date still lives on the item
+    // and comes back with the next restock; the tile just stops shouting it.
+    if (item.state.isOut) return null;
     const review = reviewExpiry(item.state, item.categories.map((c) => c.name));
     if (review === "stale") {
-      // Past holds two different populations, and the badge is only worth
-      // printing for one of them. An out-of-stock row already says "Out of
-      // stock" on the line above — repeating that it also expired tells you
-      // nothing you can act on, since there is none of it left either way.
-      //
       // A row with stock still in it is the case that needs explaining: two
       // cartons of milk sitting under Past looks like a bug until something
-      // says the date is why. That is the only time this appears.
-      if (item.state.isOut) return null;
+      // says the date is why.
       return { text: "Long expired", tone: "neutral" };
     }
     if (expiration === "expired") return { text: "Expired", tone: "danger" };
