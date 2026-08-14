@@ -46,7 +46,17 @@ export function TabBand({
     layouts.current.set(key, { x, width });
   }, []);
 
+  // Identity of the tab set, so the scroll re-runs when the tabs themselves
+  // change and not merely when the selection does. Switching segment can swap
+  // the whole row, which moves the selected tab without changing its key.
+  const itemKeys = items.map((i) => i.key).join("\u0000");
+
   useEffect(() => {
+    // Measurements for tabs that have gone are worse than none: a key that
+    // returns later would be scrolled to where it used to be.
+    for (const key of layouts.current.keys()) {
+      if (!items.some((i) => i.key === key)) layouts.current.delete(key);
+    }
     if (!selectedKey || viewportWidth === 0) return;
     const spot = layouts.current.get(selectedKey);
     if (!spot) return;
@@ -54,7 +64,10 @@ export function TabBand({
     // rather than drag empty space into view.
     const centred = spot.x + spot.width / 2 - viewportWidth / 2;
     scrollRef.current?.scrollTo({ x: Math.max(0, centred), animated: true });
-  }, [selectedKey, viewportWidth]);
+    // `items` is covered by `itemKeys`; depending on the array itself would
+    // re-run this on every render, since callers build it inline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey, viewportWidth, itemKeys]);
 
   return (
     <View style={[s.band, style]}>
