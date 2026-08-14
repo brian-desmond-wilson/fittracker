@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchAllExercises, searchAllExercises, computeMovementTier } from '@/src/lib/supabase/crossfit';
+import { fetchAllExercises, searchAllExercises, fetchTierMap } from '@/src/lib/supabase/crossfit';
 import { AddExerciseWizard } from './crossfit/AddExerciseWizard';
 import { SwipeableMovementCard } from './crossfit/SwipeableMovementCard';
 
@@ -36,15 +36,13 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
   const loadExercises = async () => {
     try {
       setLoading(true);
-      const data = await fetchAllExercises();
-
-      // Compute tier for each exercise
-      const exercisesWithTiers = await Promise.all(
-        data.map(async (exercise) => {
-          const tier = await computeMovementTier(exercise.id);
-          return { ...exercise, tier };
-        })
-      );
+      // One query for the hierarchy, not one per row: this used to fire an
+      // RPC for every exercise on the list before it could draw a single badge.
+      const [data, tiers] = await Promise.all([fetchAllExercises(), fetchTierMap()]);
+      const exercisesWithTiers = data.map((exercise) => ({
+        ...exercise,
+        tier: tiers.get(exercise.id) ?? 0,
+      }));
 
       setExercises(exercisesWithTiers);
       onCountUpdate(exercisesWithTiers.length);
@@ -63,15 +61,17 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
 
     try {
       setSearching(true);
-      const results = await searchAllExercises(searchQuery.trim());
-
-      // Compute tier for each exercise
-      const resultsWithTiers = await Promise.all(
-        results.map(async (exercise) => {
-          const tier = await computeMovementTier(exercise.id);
-          return { ...exercise, tier };
-        })
-      );
+      // The tier map covers the whole table, so it answers for a filtered
+      // result set too — a variation's parent is in it even when the search
+      // that found the variation did not match the parent.
+      const [results, tiers] = await Promise.all([
+        searchAllExercises(searchQuery.trim()),
+        fetchTierMap(),
+      ]);
+      const resultsWithTiers = results.map((exercise) => ({
+        ...exercise,
+        tier: tiers.get(exercise.id) ?? 0,
+      }));
 
       setExercises(resultsWithTiers);
       onCountUpdate(resultsWithTiers.length);

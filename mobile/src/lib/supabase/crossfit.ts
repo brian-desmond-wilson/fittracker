@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { computeTiers, type TierRow } from '../movementTier';
 import type {
   GoalType,
   Exercise,
@@ -902,6 +903,28 @@ export async function createVariationOption(
  * Compute the tier/depth of a movement in the hierarchy
  * Returns 0 for core movements, 1-4 for variation tiers
  */
+/**
+ * Tier for every movement in one query.
+ *
+ * `computeMovementTier` costs a round trip per movement, and the lists asked
+ * for one per row — 43 RPCs to draw the Movements tab. The hierarchy is just
+ * `parent_exercise_id`, so fetching those pairs once answers the whole screen.
+ *
+ * The whole table on purpose, never a filtered slice: a variation's parent
+ * has to be present or the walk stops early and the badge reads low.
+ */
+export async function fetchTierMap(): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id, parent_exercise_id');
+
+  if (error) {
+    console.error('Error fetching movement hierarchy:', error);
+    return new Map();
+  }
+  return computeTiers((data ?? []) as TierRow[]);
+}
+
 export async function computeMovementTier(exerciseId: string): Promise<number> {
   const { data, error } = await supabase
     .rpc('get_movement_tier', { exercise_id_param: exerciseId });
@@ -939,10 +962,11 @@ export async function searchMovementsWithTier(query: string): Promise<ExerciseWi
 
     if (!movements) return [];
 
-    // Compute tier for each movement
+    // One hierarchy query rather than one RPC per result.
+    const tiers = await fetchTierMap();
     const movementsWithTier: ExerciseWithTier[] = await Promise.all(
       movements.map(async (movement) => {
-        const tier = await computeMovementTier(movement.id);
+        const tier = tiers.get(movement.id) ?? 0;
         return {
           ...movement,
           tier,

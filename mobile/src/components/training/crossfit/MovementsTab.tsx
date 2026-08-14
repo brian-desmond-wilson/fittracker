@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchMovements, searchMovements, computeMovementTier } from '@/src/lib/supabase/crossfit';
+import { fetchMovements, searchMovements, fetchTierMap } from '@/src/lib/supabase/crossfit';
 import { AddMovementWizard } from './AddMovementWizard';
 import { SwipeableMovementCard } from './SwipeableMovementCard';
 
@@ -36,15 +36,13 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
   const loadMovements = async () => {
     try {
       setLoading(true);
-      const data = await fetchMovements();
-
-      // Compute tier for each movement
-      const movementsWithTiers = await Promise.all(
-        data.map(async (movement) => {
-          const tier = await computeMovementTier(movement.id);
-          return { ...movement, tier };
-        })
-      );
+      // One query for the hierarchy, not one per row: this used to fire an
+      // RPC for every movement on the list before it could draw a single badge.
+      const [data, tiers] = await Promise.all([fetchMovements(), fetchTierMap()]);
+      const movementsWithTiers = data.map((movement) => ({
+        ...movement,
+        tier: tiers.get(movement.id) ?? 0,
+      }));
 
       setMovements(movementsWithTiers);
       onCountUpdate(movementsWithTiers.length);
@@ -63,15 +61,17 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
 
     try {
       setSearching(true);
-      const results = await searchMovements(searchQuery.trim());
-
-      // Compute tier for each movement
-      const resultsWithTiers = await Promise.all(
-        results.map(async (movement) => {
-          const tier = await computeMovementTier(movement.id);
-          return { ...movement, tier };
-        })
-      );
+      // The tier map covers the whole table, so it answers for a filtered
+      // result set too — a variation's parent is in it even when the search
+      // that found the variation did not match the parent.
+      const [results, tiers] = await Promise.all([
+        searchMovements(searchQuery.trim()),
+        fetchTierMap(),
+      ]);
+      const resultsWithTiers = results.map((movement) => ({
+        ...movement,
+        tier: tiers.get(movement.id) ?? 0,
+      }));
 
       setMovements(resultsWithTiers);
       onCountUpdate(resultsWithTiers.length);
