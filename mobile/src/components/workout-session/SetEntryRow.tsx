@@ -7,6 +7,7 @@ import { styles } from "./styles";
 import { getDifficultyColor } from "./helpers";
 import { SetEntry } from "./types";
 import { DifficultyPicker } from "./DifficultyPicker";
+import { TickingDuration } from "./TickingDuration";
 
 interface SetEntryRowProps {
   set: SetEntry;
@@ -21,7 +22,8 @@ interface SetEntryRowProps {
   isTimerRunning: boolean;
   onStartTimer: () => void;
   onStopTimer: () => void;
-  timerSeconds: number;
+  /** When the active set's timer started, or null when it isn't running. */
+  timerStartedAt: number | null;
 }
 
 export function SetEntryRow({
@@ -37,7 +39,7 @@ export function SetEntryRow({
   isTimerRunning,
   onStartTimer,
   onStopTimer,
-  timerSeconds,
+  timerStartedAt,
 }: SetEntryRowProps) {
   const [localWeight, setLocalWeight] = useState(set.weight_lbs?.toString() || '');
   const [localReps, setLocalReps] = useState(set.actual_reps?.toString() || '');
@@ -47,7 +49,8 @@ export function SetEntryRow({
     if (set.actual_reps !== null) setLocalReps(set.actual_reps.toString());
   }, [set.weight_lbs, set.actual_reps]);
 
-  const formatDuration = (seconds: number | null) => {
+  /** A recorded duration, or a dash when there is nothing to show. */
+  const durationOrDash = (seconds: number | null) => {
     if (seconds === null || seconds === 0) return '--';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -114,7 +117,7 @@ export function SetEntryRow({
               )}
               <View style={styles.setDurationBadge}>
                 <Timer size={12} color={colors.mutedForeground} />
-                <Text style={styles.setDurationText}>{formatDuration(setDuration)}</Text>
+                <Text style={styles.setDurationText}>{durationOrDash(setDuration)}</Text>
               </View>
             </View>
             {/* Rest indicator */}
@@ -122,7 +125,7 @@ export function SetEntryRow({
               <View style={styles.restIndicator}>
                 <Moon size={12} color="#6b7280" />
                 <Text style={styles.restIndicatorText}>
-                  {formatDuration(set.rest_seconds)} rest
+                  {durationOrDash(set.rest_seconds)} rest
                 </Text>
               </View>
             )}
@@ -174,7 +177,10 @@ export function SetEntryRow({
         ) : (
           <View style={styles.timerRunning}>
             <Timer size={14} color="#fbbf24" />
-            <Text style={styles.timerRunningText}>{formatDuration(timerSeconds)}</Text>
+            <TickingDuration
+              since={timerStartedAt ?? Date.now()}
+              style={styles.timerRunningText}
+            />
             <TouchableOpacity onPress={onStopTimer}>
               <Square size={14} color="#ef4444" />
             </TouchableOpacity>

@@ -1,4 +1,9 @@
-import { formatClockTime, formatDuration, formatInstantTime } from "../timeFormat";
+import {
+  elapsedSecondsSince,
+  formatClockTime,
+  formatDuration,
+  formatInstantTime,
+} from "../timeFormat";
 
 describe("formatClockTime", () => {
   it("formats morning and afternoon", () => {
@@ -69,5 +74,23 @@ describe("formatDuration", () => {
 
   it("floors fractional seconds", () => {
     expect(formatDuration(65.9)).toBe("1:05");
+  });
+});
+
+describe("elapsedSecondsSince", () => {
+  it("counts whole seconds from the start", () => {
+    const now = Date.now();
+    expect(elapsedSecondsSince(now)).toBe(0);
+    expect(elapsedSecondsSince(now - 1000)).toBe(1);
+    expect(elapsedSecondsSince(now - 65_000)).toBe(65);
+  });
+
+  it("floors a partial second rather than rounding up", () => {
+    expect(elapsedSecondsSince(Date.now() - 1900)).toBe(1);
+  });
+
+  it("clamps a start in the future to zero", () => {
+    // A device clock adjustment can put "now" behind a stored timestamp.
+    expect(elapsedSecondsSince(Date.now() + 5000)).toBe(0);
   });
 });

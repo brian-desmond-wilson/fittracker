@@ -60,3 +60,13 @@ export function formatDuration(totalSeconds: number): string {
   const ss = String(s).padStart(2, "0");
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 }
+
+/**
+ * Whole seconds elapsed since a `Date.now()`-style timestamp, never negative.
+ *
+ * A start in the future clamps to zero rather than counting backwards — a
+ * device clock adjustment can put "now" behind a timestamp already stored.
+ */
+export function elapsedSecondsSince(since: number): number {
+  return Math.max(0, Math.floor((Date.now() - since) / 1000));
+}

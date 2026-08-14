@@ -58,7 +58,8 @@ import {
 import { styles } from '@/src/components/workout-session/styles';
 import { DifficultyPicker } from '@/src/components/workout-session/DifficultyPicker';
 import { SetEntryRow } from '@/src/components/workout-session/SetEntryRow';
-import { formatDuration } from '@/src/lib/timeFormat';
+import { elapsedSecondsSince, formatDuration } from '@/src/lib/timeFormat';
+import { TickingDuration } from '@/src/components/workout-session/TickingDuration';
 
 // ============================================================
 // Main Workout Session Component
@@ -88,19 +89,16 @@ export default function WorkoutSessionPage() {
   const exerciseInstanceIdsRef = React.useRef<Record<number, string>>({});
   const creatingExerciseInstance = React.useRef<Record<number, boolean>>({});
   const [startedAt, setStartedAt] = useState<Date | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   
   const [exerciseStates, setExerciseStates] = useState<ExerciseState[]>([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   
   const [showRestTimer, setShowRestTimer] = useState(false);
-  const [restSeconds, setRestSeconds] = useState(0);
   const [generatingImage, setGeneratingImage] = useState(false);
   const [exerciseImages, setExerciseImages] = useState<Record<string, string>>({});
   
   // Set timer state
   const [activeSetTimer, setActiveSetTimer] = useState<number | null>(null); // timestamp when started
-  const [setTimerSeconds, setSetTimerSeconds] = useState(0);
   const [lastSetCompletedAt, setLastSetCompletedAt] = useState<number | null>(null);
   
   // Summary view state (index === exerciseStates.length means we're on summary)
@@ -243,32 +241,23 @@ export default function WorkoutSessionPage() {
     loadWorkout();
   }, [id, userId]);
 
-  // Elapsed time ticker
-  useEffect(() => {
-    if (!startedAt) return;
-    const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAt.getTime()) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [startedAt]);
+  // The three timers tick inside `TickingDuration` now, so a running clock
+  // re-renders one Text rather than this whole screen. What the screen still
+  // owns is the start times, which is all the save paths need.
+  //
+  // `startedAt` is the workout's start even when resuming — a paused session
+  // sets it back by the duration already banked — so elapsed time is always
+  // derivable and never needs storing.
+  const elapsedSeconds = () => (startedAt ? elapsedSecondsSince(startedAt.getTime()) : 0);
 
-  // Rest timer ticker (global rest modal)
+  // The rest modal counts from the moment it opens. Nothing opens it today —
+  // there is no `setShowRestTimer(true)` anywhere in the app — but if it is
+  // wired up again it should start from zero rather than from whenever this
+  // screen mounted.
+  const [restStartedAt, setRestStartedAt] = useState<number>(() => Date.now());
   useEffect(() => {
-    if (!showRestTimer) return;
-    const interval = setInterval(() => {
-      setRestSeconds(s => s + 1);
-    }, 1000);
-    return () => clearInterval(interval);
+    if (showRestTimer) setRestStartedAt(Date.now());
   }, [showRestTimer]);
-
-  // Set timer ticker
-  useEffect(() => {
-    if (!activeSetTimer) return;
-    const interval = setInterval(() => {
-      setSetTimerSeconds(Math.floor((Date.now() - activeSetTimer) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeSetTimer]);
 
   const handleStartSetTimer = () => {
     const now = Date.now();
@@ -285,7 +274,6 @@ export default function WorkoutSessionPage() {
     }
     
     setActiveSetTimer(now);
-    setSetTimerSeconds(0);
   };
 
   const handleStopSetTimer = () => {
@@ -296,7 +284,6 @@ export default function WorkoutSessionPage() {
     const now = Date.now();
     setLastSetCompletedAt(now);
     setActiveSetTimer(null);
-    setSetTimerSeconds(0);
   };
 
   const loadWorkout = async () => {
@@ -1159,7 +1146,7 @@ export default function WorkoutSessionPage() {
           .from('workout_sessions')
           .update({
             ended_at: new Date().toISOString(),
-            duration_seconds: elapsedSeconds,
+            duration_seconds: elapsedSeconds(),
           })
           .eq('id', workoutSessionIdRef.current);
         if (error) throw error;
@@ -1174,7 +1161,7 @@ export default function WorkoutSessionPage() {
           .update({
             status: 'in_progress',
             completion_status: completedCount === exerciseStates.length ? 'completed' : 'partial',
-            duration_seconds: elapsedSeconds,
+            duration_seconds: elapsedSeconds(),
           })
           .eq('id', workoutInstanceId);
         if (error) throw error;
@@ -1183,7 +1170,7 @@ export default function WorkoutSessionPage() {
       const completedCount = exerciseStates.filter(e => e.completed).length;
       Alert.alert(
         '💪 Progress Saved!',
-        `${completedCount}/${exerciseStates.length} exercises completed.\nDuration: ${formatDuration(elapsedSeconds)}\nYou can continue this workout later.`,
+        `${completedCount}/${exerciseStates.length} exercises completed.\nDuration: ${formatDuration(elapsedSeconds())}\nYou can continue this workout later.`,
         [{ text: 'Done', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -1211,7 +1198,7 @@ export default function WorkoutSessionPage() {
           .from('workout_sessions')
           .update({
             ended_at: new Date().toISOString(),
-            duration_seconds: elapsedSeconds,
+            duration_seconds: elapsedSeconds(),
           })
           .eq('id', workoutSessionIdRef.current);
         if (error) throw error;
@@ -1227,7 +1214,7 @@ export default function WorkoutSessionPage() {
           .select('duration_seconds')
           .eq('workout_instance_id', workoutInstanceId);
         
-        const totalDuration = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || elapsedSeconds;
+        const totalDuration = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || elapsedSeconds();
         
         const { error } = await supabase
           .from('workout_instances')
@@ -1243,7 +1230,7 @@ export default function WorkoutSessionPage() {
 
       Alert.alert(
         '🎉 Workout Complete!',
-        `Duration: ${formatDuration(elapsedSeconds)}\nExercises: ${exerciseStates.filter(e => e.completed).length}/${exerciseStates.length}`,
+        `Duration: ${formatDuration(elapsedSeconds())}\nExercises: ${exerciseStates.filter(e => e.completed).length}/${exerciseStates.length}`,
         [{ text: 'Done', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -1312,7 +1299,9 @@ export default function WorkoutSessionPage() {
         
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>{template.name}</Text>
-          <Text style={styles.headerSubtitle}>{formatDuration(elapsedSeconds)}</Text>
+          {startedAt && (
+            <TickingDuration since={startedAt.getTime()} style={styles.headerSubtitle} />
+          )}
         </View>
         
         <TouchableOpacity style={styles.headerButton} onPress={goToSummary}>
@@ -1540,7 +1529,7 @@ export default function WorkoutSessionPage() {
                   isTimerRunning={isActiveSet && activeSetTimer !== null}
                   onStartTimer={handleStartSetTimer}
                   onStopTimer={handleStopSetTimer}
-                  timerSeconds={isActiveSet ? setTimerSeconds : 0}
+                  timerStartedAt={isActiveSet ? activeSetTimer : null}
                 />
               );
             })}
@@ -1572,7 +1561,7 @@ export default function WorkoutSessionPage() {
                   isTimerRunning={isActiveSet && activeSetTimer !== null}
                   onStartTimer={handleStartSetTimer}
                   onStopTimer={handleStopSetTimer}
-                  timerSeconds={isActiveSet ? setTimerSeconds : 0}
+                  timerStartedAt={isActiveSet ? activeSetTimer : null}
                 />
               );
             })}
@@ -1651,12 +1640,11 @@ export default function WorkoutSessionPage() {
         <View style={styles.modalOverlay}>
           <View style={styles.restTimerModal}>
             <Text style={styles.restTimerTitle}>REST TIME</Text>
-            <Text style={styles.restTimerTime}>{formatDuration(restSeconds)}</Text>
+            <TickingDuration since={restStartedAt} style={styles.restTimerTime} />
             <TouchableOpacity
               style={styles.restTimerButton}
               onPress={() => {
                 setShowRestTimer(false);
-                setRestSeconds(0);
               }}
             >
               <Text style={styles.restTimerButtonText}>Done Resting</Text>
