@@ -27,6 +27,10 @@ export interface PreparedMealDraft {
   calories: string;
   protein: string;
   fiber: string;
+  /** Grams, as printed on the lid. */
+  saturatedFat: string;
+  /** Milligrams — the one figure on a delivery row that is not grams. */
+  sodium: string;
 }
 
 export interface DeliveryPayloadMeal {
@@ -36,6 +40,8 @@ export interface DeliveryPayloadMeal {
   calories: number | null;
   protein: number | null;
   fiber: number | null;
+  saturated_fat: number | null;
+  sodium: number | null;
 }
 
 let draftSeq = 0;
@@ -52,6 +58,8 @@ export function emptyDraft(slot: MealType = "lunch"): PreparedMealDraft {
     calories: "",
     protein: "",
     fiber: "",
+    saturatedFat: "",
+    sodium: "",
   };
 }
 
@@ -92,6 +100,7 @@ export function validateDelivery(opts: {
     }
     for (const [label, raw] of [
       ["Calories", d.calories], ["Protein", d.protein], ["Fiber", d.fiber],
+      ["Saturated fat", d.saturatedFat], ["Sodium", d.sodium],
     ] as const) {
       if (raw.trim() !== "" && toNumber(raw) === null) {
         return `${label} on “${d.name.trim()}” must be a number of 0 or more.`;
@@ -125,6 +134,8 @@ export function toDeliveryPayload(
     calories: toNumber(d.calories),
     protein: toNumber(d.protein),
     fiber: toNumber(d.fiber),
+    saturated_fat: toNumber(d.saturatedFat),
+    sodium: toNumber(d.sodium),
   }));
 }
 
@@ -162,6 +173,8 @@ export interface RecentDish {
   calories: number | null;
   protein: number | null;
   fiber: number | null;
+  saturatedFat: number | null;
+  sodium: number | null;
   /** Local YYYY-MM-DD of the last delivery that contained it. */
   lastDeliveredOn: string;
 }
@@ -212,6 +225,8 @@ export function draftFromRecent(dish: RecentDish): PreparedMealDraft {
     calories: num(dish.calories),
     protein: num(dish.protein),
     fiber: num(dish.fiber),
+    saturatedFat: num(dish.saturatedFat),
+    sodium: num(dish.sodium),
   };
 }
 

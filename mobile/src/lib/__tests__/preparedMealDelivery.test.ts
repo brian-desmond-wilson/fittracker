@@ -22,6 +22,8 @@ const draft = (over: Partial<PreparedMealDraft> = {}): PreparedMealDraft => ({
   calories: "650",
   protein: "21",
   fiber: "13",
+  saturatedFat: "4.5",
+  sodium: "620",
   ...over,
 });
 
@@ -33,6 +35,8 @@ const dish = (over: Partial<RecentDish> = {}): RecentDish => ({
   calories: 420,
   protein: 18,
   fiber: 7,
+  saturatedFat: 2.5,
+  sodium: 310,
   lastDeliveredOn: "2026-08-06",
   ...over,
 });
@@ -100,12 +104,25 @@ describe("validateDelivery", () => {
 describe("toDeliveryPayload", () => {
   it("trims the name and parses the numbers", () => {
     expect(toDeliveryPayload([draft({ name: "  Ruby Rice Bowl " })])).toEqual([
-      { name: "Ruby Rice Bowl", slot: "lunch", quantity: 1, calories: 650, protein: 21, fiber: 13 },
+      {
+        name: "Ruby Rice Bowl", slot: "lunch", quantity: 1,
+        calories: 650, protein: 21, fiber: 13, saturated_fat: 4.5, sodium: 620,
+      },
     ]);
   });
   it("keeps an untyped macro null rather than calling it zero", () => {
-    const [meal] = toDeliveryPayload([draft({ fiber: "" })]);
+    const [meal] = toDeliveryPayload([draft({ fiber: "", saturatedFat: "", sodium: "" })]);
     expect(meal.fiber).toBeNull();
+    expect(meal.saturated_fat).toBeNull();
+    expect(meal.sodium).toBeNull();
+  });
+
+  it("names the two newest fields the way the database keys them", () => {
+    // The payload goes straight into a plpgsql function that reads
+    // `v_meal->>'saturated_fat'` and `v_meal->>'sodium'` — a camelCase key
+    // here would be read as a null by a function that cannot complain.
+    const [meal] = toDeliveryPayload([draft()]);
+    expect(Object.keys(meal)).toEqual(expect.arrayContaining(["saturated_fat", "sodium"]));
   });
   it("omits the blank row", () => {
     expect(toDeliveryPayload([draft(), emptyDraft()])).toHaveLength(1);

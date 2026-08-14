@@ -98,11 +98,18 @@ export function DeliveryMealRow({
         })}
       </View>
 
+      {/* Six fields do not fit across a phone in one line, so the row wraps
+          into two of three rather than shrinking every input past reading
+          width. */}
       <View style={styles.macroRow}>
         {([
           ["Cal", draft.calories, (t: string) => onPatch({ calories: sanitizeInteger(t) })],
           ["Protein", draft.protein, (t: string) => onPatch({ protein: sanitizeDecimal(t) })],
           ["Fiber", draft.fiber, (t: string) => onPatch({ fiber: sanitizeDecimal(t) })],
+          ["Sat fat", draft.saturatedFat, (t: string) => onPatch({ saturatedFat: sanitizeDecimal(t) })],
+          // Milligrams, and the label has to fit a sixth of the row — "Sodium"
+          // alone would read as grams beside five gram fields.
+          ["Na mg", draft.sodium, (t: string) => onPatch({ sodium: sanitizeInteger(t) })],
           ["Qty", draft.quantity, (t: string) => onPatch({ quantity: sanitizeInteger(t) })],
         ] as const).map(([label, value, onChange]) => (
           <View key={label} style={styles.macroField}>
@@ -113,7 +120,11 @@ export function DeliveryMealRow({
               placeholderTextColor={colors.textFaint}
               value={value}
               onChangeText={onChange}
-              keyboardType={label === "Cal" || label === "Qty" ? "number-pad" : "decimal-pad"}
+              keyboardType={
+                label === "Cal" || label === "Qty" || label === "Na mg"
+                  ? "number-pad"
+                  : "decimal-pad"
+              }
               accessibilityLabel={`${label} for meal ${index}`}
             />
           </View>
@@ -153,8 +164,10 @@ const styles = StyleSheet.create({
   segItemActive: { backgroundColor: colors.brand },
   segText: { ...typography.caption, color: colors.textMuted },
   segTextActive: { color: colors.onBrand, fontWeight: "600" },
-  macroRow: { flexDirection: "row", gap: spacing.sm },
-  macroField: { flex: 1, gap: spacing.xs },
+  macroRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  // Three to a line: a third of the width minus its share of two gaps, and
+  // free to grow into the slack a shorter line leaves.
+  macroField: { flexBasis: "30%", flexGrow: 1, gap: spacing.xs },
   macroLabel: { ...typography.caption, color: colors.textFaint },
   macroInput: {
     ...typography.body, color: colors.text, textAlign: "center",

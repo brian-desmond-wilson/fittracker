@@ -164,6 +164,7 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
   interface ReadMeal {
     name: string; slot: MealType | null; quantity: number | null;
     calories: number | null; protein: number | null; fiber: number | null;
+    saturatedFat: number | null; sodium: number | null;
   }
 
   /** One lid, filling one row. No confirmation and no effect on any other
@@ -195,6 +196,8 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
         ...(meal.calories != null ? { calories: String(Math.round(meal.calories)) } : {}),
         ...(meal.protein != null ? { protein: String(meal.protein) } : {}),
         ...(meal.fiber != null ? { fiber: String(meal.fiber) } : {}),
+        ...(meal.saturatedFat != null ? { saturatedFat: String(meal.saturatedFat) } : {}),
+        ...(meal.sodium != null ? { sodium: String(Math.round(meal.sodium)) } : {}),
       });
       if (data?.note) Alert.alert("Read the label", data.note);
     } catch (e) {
@@ -233,6 +236,8 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
           calories: m.calories != null ? String(Math.round(m.calories)) : "",
           protein: m.protein != null ? String(m.protein) : "",
           fiber: m.fiber != null ? String(m.fiber) : "",
+          saturatedFat: m.saturatedFat != null ? String(m.saturatedFat) : "",
+          sodium: m.sodium != null ? String(Math.round(m.sodium)) : "",
         })));
         if (data?.note) Alert.alert("Read the menu", data.note);
       };

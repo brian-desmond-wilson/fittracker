@@ -60,6 +60,8 @@ export async function fetchDeliveryHistory(): Promise<DeliveryHistory> {
       calories: num(row.calories),
       protein: num(row.protein),
       fiber: num(row.fiber_g),
+      saturatedFat: num(row.saturated_fat_g),
+      sodium: num(row.sodium_mg),
       lastDeliveredOn: (row.last_delivered_on as string | null) ?? "",
     });
 

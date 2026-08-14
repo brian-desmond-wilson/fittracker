@@ -29,14 +29,18 @@ const SHARED_RULES = `Return ONLY what is legibly printed. Rules:
 - "slot" is one of breakfast, lunch, dinner, snack, dessert — taken from how
   the menu labels the dish. If the menu does not say, use null; do not guess
   from the food.
-- calories, protein and fiber are per meal, as printed. Any that is not
+- calories, protein, fiber and saturated_fat are per meal in grams (calories
+  in kcal), as printed. "sodium" is MILLIGRAMS per meal — the milligram
+  figure, never the % Daily Value beside it. saturated_fat means the
+  "Saturated Fat" row alone, not it plus trans fat. Any figure that is not
   shown is null. Never derive one from another or from the food type.
 - "quantity" is how many of that dish the box contains, if the menu says so;
   otherwise null.
 
 Respond as JSON:
 {"meals": [{"name": string, "slot": string|null, "quantity": number|null,
- "calories": number|null, "protein": number|null, "fiber": number|null}],
+ "calories": number|null, "protein": number|null, "fiber": number|null,
+ "saturated_fat": number|null, "sodium": number|null}],
  "note": string|null}
 
 "note" is one short human sentence only when something is worth flagging —
@@ -128,6 +132,8 @@ serve(async (req) => {
         calories: num(m.calories),
         protein: num(m.protein),
         fiber: num(m.fiber),
+        saturatedFat: num(m.saturated_fat),
+        sodium: num(m.sodium),
       }))
       .filter((m: { name: string }) => m.name.length > 0)
       // One lid fills one row. Capping here rather than trusting the prompt
