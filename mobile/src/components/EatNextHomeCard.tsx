@@ -295,8 +295,12 @@ export function EatNextHomeCard({ refreshKey }: EatNextHomeCardProps) {
           {expiringLine}
         </Text>
       )}
+      {/* Same notation as the plan branch above. Which branch renders depends
+          on whether the plan has an answer, and the card should not change
+          how it writes protein depending on that. */}
       <Text style={styles.statsText} numberOfLines={1}>
-        {top.calories} cal · {top.protein}g protein · {top.prepMinutes} min
+        {top.calories} cal · {top.protein}g P
+        {top.prepMinutes === 0 ? " · ready to eat" : ` · ${top.prepMinutes} min prep`}
       </Text>
       {showMessage && <Text style={styles.mutedText}>{result.message}</Text>}
       {readyAlternative && (
