@@ -1673,30 +1673,28 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     () => buildDailyTotalsByDate(historicalLogs),
     [historicalLogs]
   );
-  const calorieStreak = useMemo(
-    () => computeMacroStreak(totalsByDate, goals, "calories"),
-    [totalsByDate, goals]
-  );
-  const calorieBestStreak = useMemo(
-    () => computeMacroBestStreak(totalsByDate, goals, "calories"),
-    [totalsByDate, goals]
-  );
-  const proteinStreak = useMemo(
-    () => computeMacroStreak(totalsByDate, goals, "protein"),
-    [totalsByDate, goals]
-  );
-  const proteinBestStreak = useMemo(
-    () => computeMacroBestStreak(totalsByDate, goals, "protein"),
-    [totalsByDate, goals]
-  );
-  const rolling = useMemo(
-    () => computeMealsRollingStats(totalsByDate, goals),
-    [totalsByDate, goals]
-  );
-  const series14 = useMemo(
-    () => buildMealsSeries(totalsByDate, 14, goals),
-    [totalsByDate, goals]
-  );
+  // One clock for every insight on the page: sampled once here rather than
+  // separately inside each function, so a repaint across local midnight can't
+  // show a streak counted against yesterday next to a chart ending today.
+  const insights = useMemo(() => {
+    const today = new Date();
+    return {
+      calorieStreak: computeMacroStreak(totalsByDate, goals, "calories", today),
+      calorieBestStreak: computeMacroBestStreak(totalsByDate, goals, "calories", today),
+      proteinStreak: computeMacroStreak(totalsByDate, goals, "protein", today),
+      proteinBestStreak: computeMacroBestStreak(totalsByDate, goals, "protein", today),
+      rolling: computeMealsRollingStats(totalsByDate, goals, today),
+      series14: buildMealsSeries(totalsByDate, 14, goals, today),
+    };
+  }, [totalsByDate, goals]);
+  const {
+    calorieStreak,
+    calorieBestStreak,
+    proteinStreak,
+    proteinBestStreak,
+    rolling,
+    series14,
+  } = insights;
 
   return (
     <>

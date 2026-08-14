@@ -1,10 +1,12 @@
+// Per-day nutrition arithmetic: streaks, rolling averages, chart series.
+//
+// Every calendar walk takes `today` rather than sampling the clock itself, so
+// one screen's insights are all computed against the same day — and so the
+// answers can be tested at all.
 import { MacroGoals, MacroTotals, EMPTY_TOTALS, sumNutrition } from "./mealMacros";
+import { getLocalDateString, parseLocalDate } from "./dates";
 
 export type DailyTotalsByDate = Record<string, MacroTotals>;
-
-function getLocalDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function addDays(d: Date, days: number): Date {
   const r = new Date(d);
@@ -50,18 +52,18 @@ export function computeMacroStreak(
   totalsByDate: DailyTotalsByDate,
   goals: MacroGoals,
   macro: MacroForStreak,
+  today: Date = new Date(),
 ): number {
   const goal = goalFor(goals, macro);
   if (goal == null || goal <= 0) return 0;
-  const today = new Date();
-  const todayKey = getLocalDate(today);
+  const todayKey = getLocalDateString(today);
   const todayTotal = totalsByDate[todayKey] ?? EMPTY_TOTALS;
   const todayHit = valueFor(todayTotal, macro) >= goal;
 
   let streak = 0;
   let cursor = todayHit ? 0 : 1;
   while (true) {
-    const key = getLocalDate(addDays(today, -cursor));
+    const key = getLocalDateString(addDays(today, -cursor));
     const t = totalsByDate[key] ?? EMPTY_TOTALS;
     if (valueFor(t, macro) >= goal) {
       streak++;
@@ -82,18 +84,20 @@ export function computeMacroBestStreak(
   totalsByDate: DailyTotalsByDate,
   goals: MacroGoals,
   macro: MacroForStreak,
+  today: Date = new Date(),
 ): number {
   const goal = goalFor(goals, macro);
   if (goal == null || goal <= 0) return 0;
   const dates = Object.keys(totalsByDate);
   if (dates.length === 0) return 0;
   dates.sort();
-  const earliest = new Date(dates[0]);
-  const today = new Date();
+  // `new Date("2026-08-01")` is UTC midnight — the previous local day west of
+  // Greenwich, which would start the walk a day early.
+  const earliest = parseLocalDate(dates[0]);
   let best = 0;
   let running = 0;
   for (let d = new Date(earliest); d <= today; d = addDays(d, 1)) {
-    const key = getLocalDate(d);
+    const key = getLocalDateString(d);
     const t = totalsByDate[key] ?? EMPTY_TOTALS;
     if (valueFor(t, macro) >= goal) {
       running++;
@@ -112,14 +116,14 @@ export function computeMacroBestStreak(
 export function computeMealsRollingStats(
   totalsByDate: DailyTotalsByDate,
   goals: MacroGoals,
+  today: Date = new Date(),
 ): { avgCalsPerDay: number; daysHit: number; daysInWindow: number } {
   const days = 7;
-  const today = new Date();
   let sum = 0;
   let daysHit = 0;
   const goal = goals.calories ?? 0;
   for (let i = 0; i < days; i++) {
-    const key = getLocalDate(addDays(today, -i));
+    const key = getLocalDateString(addDays(today, -i));
     const t = totalsByDate[key] ?? EMPTY_TOTALS;
     sum += t.calories;
     if (goal > 0 && t.calories >= goal) daysHit++;
@@ -149,12 +153,12 @@ export function buildMealsSeries(
   totalsByDate: DailyTotalsByDate,
   days: number,
   goals: MacroGoals,
+  today: Date = new Date(),
 ): MealsSeriesEntry[] {
-  const today = new Date();
   const calGoal = goals.calories ?? 0;
   const out: MealsSeriesEntry[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    const key = getLocalDate(addDays(today, -i));
+    const key = getLocalDateString(addDays(today, -i));
     const t = totalsByDate[key] ?? EMPTY_TOTALS;
     out.push({
       date: key,

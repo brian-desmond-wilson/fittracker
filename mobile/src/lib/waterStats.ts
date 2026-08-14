@@ -1,9 +1,14 @@
+// Pure water arithmetic: streaks, rolling averages, pace against the day.
+//
+// Every function that walks the calendar takes `today`. They used to call
+// `new Date()` each on their own, which meant a screen could render a streak
+// and a chart computed against two different days if it repainted across
+// local midnight — and it left them untestable, since the answer depended on
+// when the suite ran.
+import { getLocalDateString, parseLocalDate } from "./dates";
+
 export type TotalsByDate = Record<string, number>;
 export type GoalForDate = (dateKey: string) => number;
-
-function getLocalDate(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function addDays(d: Date, days: number): Date {
   const result = new Date(d);
@@ -20,9 +25,9 @@ function addDays(d: Date, days: number): Date {
 export function computeCurrentStreak(
   totalsByDate: TotalsByDate,
   goalForDate: GoalForDate,
+  today: Date = new Date(),
 ): number {
-  const today = new Date();
-  const todayKey = getLocalDate(today);
+  const todayKey = getLocalDateString(today);
   const todayGoal = goalForDate(todayKey);
   if (todayGoal <= 0) return 0;
   const todayHit = (totalsByDate[todayKey] || 0) >= todayGoal;
@@ -30,7 +35,7 @@ export function computeCurrentStreak(
   let streak = 0;
   let cursor = todayHit ? 0 : 1;
   while (true) {
-    const key = getLocalDate(addDays(today, -cursor));
+    const key = getLocalDateString(addDays(today, -cursor));
     const dayGoal = goalForDate(key);
     if (dayGoal <= 0) break;
     if ((totalsByDate[key] || 0) >= dayGoal) {
@@ -51,17 +56,19 @@ export function computeCurrentStreak(
 export function computeBestStreak(
   totalsByDate: TotalsByDate,
   goalForDate: GoalForDate,
+  today: Date = new Date(),
 ): number {
   const dates = Object.keys(totalsByDate);
   if (dates.length === 0) return 0;
 
   dates.sort();
-  const earliest = new Date(dates[0]);
-  const today = new Date();
+  // `new Date("2026-08-01")` is UTC midnight, which is the previous calendar
+  // day everywhere west of Greenwich — the walk would start a day early.
+  const earliest = parseLocalDate(dates[0]);
   let best = 0;
   let running = 0;
   for (let d = new Date(earliest); d <= today; d = addDays(d, 1)) {
-    const key = getLocalDate(d);
+    const key = getLocalDateString(d);
     const goal = goalForDate(key);
     if (goal > 0 && (totalsByDate[key] || 0) >= goal) {
       running++;
@@ -80,13 +87,13 @@ export function computeBestStreak(
 export function computeRollingStats(
   totalsByDate: TotalsByDate,
   goalForDate: GoalForDate,
+  today: Date = new Date(),
 ): { avgOzPerDay: number; daysHit: number; daysInWindow: number } {
   const days = 7;
-  const today = new Date();
   let sum = 0;
   let daysHit = 0;
   for (let i = 0; i < days; i++) {
-    const key = getLocalDate(addDays(today, -i));
+    const key = getLocalDateString(addDays(today, -i));
     const total = totalsByDate[key] || 0;
     const goal = goalForDate(key);
     sum += total;
@@ -200,12 +207,12 @@ export function buildDailySeries(
   totalsByDate: TotalsByDate,
   days: number,
   goalForDate: GoalForDate,
+  today: Date = new Date(),
 ): DailySeriesEntry[] {
-  const today = new Date();
   const result: DailySeriesEntry[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = addDays(today, -i);
-    const key = getLocalDate(d);
+    const key = getLocalDateString(d);
     result.push({
       date: key,
       total: totalsByDate[key] || 0,

@@ -273,22 +273,19 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     [goalOz, workoutBonusOz, workoutDates]
   );
 
-  const currentStreak = useMemo(
-    () => computeCurrentStreak(totalsByDate, goalForDate),
-    [totalsByDate, goalForDate]
-  );
-  const bestStreak = useMemo(
-    () => computeBestStreak(totalsByDate, goalForDate),
-    [totalsByDate, goalForDate]
-  );
-  const rolling = useMemo(
-    () => computeRollingStats(totalsByDate, goalForDate),
-    [totalsByDate, goalForDate]
-  );
-  const chartSeries = useMemo(
-    () => buildDailySeries(totalsByDate, 14, goalForDate),
-    [totalsByDate, goalForDate]
-  );
+  // One clock for all four. Sampled per render rather than per function, so a
+  // repaint that straddles local midnight can't show a streak counted against
+  // yesterday beside a chart ending today.
+  const insights = useMemo(() => {
+    const today = new Date();
+    return {
+      currentStreak: computeCurrentStreak(totalsByDate, goalForDate, today),
+      bestStreak: computeBestStreak(totalsByDate, goalForDate, today),
+      rolling: computeRollingStats(totalsByDate, goalForDate, today),
+      chartSeries: buildDailySeries(totalsByDate, 14, goalForDate, today),
+    };
+  }, [totalsByDate, goalForDate]);
+  const { currentStreak, bestStreak, rolling, chartSeries } = insights;
 
   // Undo
   const showUndoFor = (id: string, label: string) => {
