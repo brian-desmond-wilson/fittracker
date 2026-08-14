@@ -1306,14 +1306,25 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             the answer is about what you own. */}
         {!searching && pending.map((row) => (
           <View key={row.id} style={styles.pendingRow}>
-            <Truck size={icons.sm} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
-            <Text style={styles.pendingText} numberOfLines={1}>
-              <Text style={styles.pendingCount}>
-                {row.mealCount} {row.mealCount === 1 ? "meal" : "meals"}
+            <Truck size={icons.sm} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
+            {/* The line says how much is coming; the page it opens says what,
+                when, and lets it be changed. Only the text is the tap target —
+                the X beside it cancels the box, and one accidental hit on the
+                wrong half of a shared target is a delivery gone. */}
+            <TouchableOpacity
+              style={styles.pendingTap}
+              onPress={() => router.push("/(tabs)/track/deliveries")}
+              accessibilityRole="button"
+              accessibilityLabel={`See the delivery arriving ${formatArrival(row.arrivesAt)}`}
+            >
+              <Text style={styles.pendingText} numberOfLines={1}>
+                <Text style={styles.pendingCount}>
+                  {row.mealCount} {row.mealCount === 1 ? "meal" : "meals"}
+                </Text>
+                {row.vendorName ? ` from ${row.vendorName}` : ""}
+                {` arriving ${formatArrival(row.arrivesAt, new Date(), { midSentence: true })}`}
               </Text>
-              {row.vendorName ? ` from ${row.vendorName}` : ""}
-              {` arriving ${formatArrival(row.arrivesAt, new Date(), { midSentence: true })}`}
-            </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => cancelPending(row)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1752,9 +1763,13 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radii.control,
-    backgroundColor: tint(colors.accents.inventory),
+    // Indigo, not inventory purple: this line is the one thing on the screen
+    // that is NOT inventory, and wearing the grid's colour was always the wrong
+    // claim. It now also leads to the page that owns that colour.
+    backgroundColor: tint(colors.accents.deliveries),
   },
-  pendingText: { ...typography.caption, color: colors.textMuted, flex: 1 },
+  pendingTap: { flex: 1 },
+  pendingText: { ...typography.caption, color: colors.textMuted },
   pendingCount: { color: colors.text },
   segmentStrip: {
     flexDirection: "row",
