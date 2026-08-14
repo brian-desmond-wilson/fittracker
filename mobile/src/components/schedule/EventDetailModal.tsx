@@ -19,6 +19,7 @@ import {
 } from "lucide-react-native";
 import { ScheduleEvent } from "../../types/schedule";
 import * as LucideIcons from "lucide-react-native";
+import { formatClockTime } from "@/src/lib/timeFormat";
 
 interface EventDetailModalProps {
   visible: boolean;
@@ -38,14 +39,6 @@ export function EventDetailModal({
   onUpdateStatus,
 }: EventDetailModalProps) {
   if (!event) return null;
-
-  const formatTime = (time: string) => {
-    const [hours, minutes] = time.split(":");
-    const h = parseInt(hours);
-    const ampm = h >= 12 ? "PM" : "AM";
-    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${displayHour}:${minutes} ${ampm}`;
-  };
 
   const getRecurrenceText = () => {
     if (!event.is_recurring) return null;
@@ -126,7 +119,7 @@ export function EventDetailModal({
             <View style={styles.infoRow}>
               <Clock size={16} color="#9CA3AF" />
               <Text style={styles.infoText}>
-                {formatTime(event.start_time)} - {formatTime(event.end_time)}
+                {formatClockTime(event.start_time)} - {formatClockTime(event.end_time)}
               </Text>
             </View>
 

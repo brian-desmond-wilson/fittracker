@@ -16,7 +16,8 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Trash2 } from "lucide-react-native";
 import { supabase } from "@/src/lib/supabase";
-import { dateFromHhmm, formatTimeLabel, hhmmFromDate } from "@/src/lib/timeFields";
+import { dateFromHhmm, hhmmFromDate } from "@/src/lib/timeFields";
+import { formatClockTime } from "@/src/lib/timeFormat";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, IconButton, SectionHeader } from "@/src/components/ui";
 import type { MealType } from "@/src/types/track";
@@ -162,7 +163,7 @@ export function EatingWindowsSection({ userId }: { userId: string }) {
             <View style={s.windowBody}>
               <Text style={s.windowLabel}>{w.label}</Text>
               <Text style={s.windowMeta}>
-                {formatTimeLabel(hhmm(w.start_time))} – {formatTimeLabel(hhmm(w.end_time))}
+                {formatClockTime(hhmm(w.start_time))} – {formatClockTime(hhmm(w.end_time))}
               </Text>
             </View>
             <Badge tone="neutral" label={w.meal_type} />
@@ -228,11 +229,11 @@ export function EatingWindowsSection({ userId }: { userId: string }) {
                     disabled={saving}
                     accessibilityRole="button"
                     accessibilityLabel={`${which === "start" ? "Opens" : "Closes"} at ${
-                      draft ? formatTimeLabel(draft[which]) : ""
+                      draft ? formatClockTime(draft[which]) : ""
                     }`}
                   >
                     <Text style={s.inputText}>
-                      {draft ? formatTimeLabel(draft[which]) : ""}
+                      {draft ? formatClockTime(draft[which]) : ""}
                     </Text>
                   </TouchableOpacity>
                 </View>

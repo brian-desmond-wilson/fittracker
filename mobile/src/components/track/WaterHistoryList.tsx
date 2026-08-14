@@ -10,6 +10,7 @@ import {
   SectionHeader,
 } from "@/src/components/ui";
 import { WaterLog } from "@/src/types/track";
+import { formatInstantTime } from "@/src/lib/timeFormat";
 import {
   WaterUnit,
   formatVolume,
@@ -25,7 +26,6 @@ interface WaterHistoryListProps {
   groupedLogs: Record<string, WaterLog[]>;
   displayUnit: WaterUnit;
   formatHistoryDate: (dateStr: string) => string;
-  formatTime: (timestamp: string) => string;
   onDelete: (id: string) => void;
   onEdit?: (log: WaterLog) => void;
 }
@@ -36,7 +36,6 @@ export function WaterHistoryList({
   groupedLogs,
   displayUnit,
   formatHistoryDate,
-  formatTime,
   onDelete,
   onEdit,
 }: WaterHistoryListProps) {
@@ -102,7 +101,7 @@ export function WaterHistoryList({
                           </Text>
                         </View>
                       )}
-                      <Text style={styles.logTime}>{formatTime(log.logged_at)}</Text>
+                      <Text style={styles.logTime}>{formatInstantTime(log.logged_at)}</Text>
                     </View>
                     <IconButton
                       icon={Trash2}

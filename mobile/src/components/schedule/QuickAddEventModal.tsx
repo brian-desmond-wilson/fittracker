@@ -13,6 +13,7 @@ import {
 import { X } from "lucide-react-native";
 import { EventCategory } from "@/src/types/schedule";
 import { supabase } from "@/src/lib/supabase";
+import { formatClockTime } from "@/src/lib/timeFormat";
 
 interface QuickAddEventModalProps {
   visible: boolean;
@@ -22,17 +23,6 @@ interface QuickAddEventModalProps {
   startTime: string; // HH:MM format
   onEventCreated: () => void;
 }
-
-// Convert 24-hour time string to 12-hour format for display
-const formatTime = (time24: string): string => {
-  const [hours, minutes] = time24.split(":").map(Number);
-  const isPM = hours >= 12;
-  let hour = hours % 12;
-  if (hour === 0) hour = 12;
-  const meridiem = isPM ? "PM" : "AM";
-  const minuteStr = minutes.toString().padStart(2, "0");
-  return `${hour}:${minuteStr} ${meridiem}`;
-};
 
 // Calculate end time (30 minutes after start)
 const calculateEndTime = (startTime: string): string => {
@@ -172,7 +162,7 @@ export function QuickAddEventModal({
               {/* Time Display */}
               <View style={styles.timeDisplay}>
                 <Text style={styles.timeText}>
-                  {formatTime(startTime)} - {formatTime(endTime)}
+                  {formatClockTime(startTime)} - {formatClockTime(endTime)}
                 </Text>
                 <Text style={styles.durationText}>{duration} minutes</Text>
               </View>

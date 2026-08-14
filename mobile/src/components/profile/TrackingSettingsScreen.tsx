@@ -16,10 +16,10 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { supabase } from "@/src/lib/supabase";
 import {
   dateFromHhmm,
-  formatTimeLabel,
   hhmmAscending,
   hhmmFromDate,
 } from "@/src/lib/timeFields";
+import { formatClockTime } from "@/src/lib/timeFormat";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { Button, Card, Screen, SectionHeader } from "@/src/components/ui";
 import { EatingWindowsSection } from "./EatingWindowsSection";
@@ -126,9 +126,9 @@ export function TrackingSettingsScreen({
         onPress={() => setPickerTarget(target)}
         disabled={saving}
         accessibilityRole="button"
-        accessibilityLabel={`${PICKER_TITLES[target]}: ${formatTimeLabel(pickerValue(target))}`}
+        accessibilityLabel={`${PICKER_TITLES[target]}: ${formatClockTime(pickerValue(target))}`}
       >
-        <Text style={styles.timeButtonText}>{formatTimeLabel(pickerValue(target))}</Text>
+        <Text style={styles.timeButtonText}>{formatClockTime(pickerValue(target))}</Text>
       </TouchableOpacity>
     </View>
   );

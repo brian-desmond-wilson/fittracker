@@ -631,11 +631,6 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
     if (dateStr === getLocalDate(yesterday)) return "Yesterday";
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  };
-
   return (
     <>
       <StatusBar barStyle="light-content" />
@@ -738,7 +733,6 @@ export function WaterScreen({ onClose }: WaterScreenProps) {
             groupedLogs={groupedLogs}
             displayUnit={displayUnit}
             formatHistoryDate={formatHistoryDate}
-            formatTime={formatTime}
             onDelete={handleDeleteLog}
             onEdit={openLogEditor}
           />

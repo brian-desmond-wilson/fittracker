@@ -58,6 +58,7 @@ import {
 import { styles } from '@/src/components/workout-session/styles';
 import { DifficultyPicker } from '@/src/components/workout-session/DifficultyPicker';
 import { SetEntryRow } from '@/src/components/workout-session/SetEntryRow';
+import { formatDuration } from '@/src/lib/timeFormat';
 
 // ============================================================
 // Main Workout Session Component
@@ -572,14 +573,6 @@ export default function WorkoutSessionPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   const currentExercise = exerciseStates[currentExerciseIndex];
@@ -1190,7 +1183,7 @@ export default function WorkoutSessionPage() {
       const completedCount = exerciseStates.filter(e => e.completed).length;
       Alert.alert(
         '💪 Progress Saved!',
-        `${completedCount}/${exerciseStates.length} exercises completed.\nDuration: ${formatTime(elapsedSeconds)}\nYou can continue this workout later.`,
+        `${completedCount}/${exerciseStates.length} exercises completed.\nDuration: ${formatDuration(elapsedSeconds)}\nYou can continue this workout later.`,
         [{ text: 'Done', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -1250,7 +1243,7 @@ export default function WorkoutSessionPage() {
 
       Alert.alert(
         '🎉 Workout Complete!',
-        `Duration: ${formatTime(elapsedSeconds)}\nExercises: ${exerciseStates.filter(e => e.completed).length}/${exerciseStates.length}`,
+        `Duration: ${formatDuration(elapsedSeconds)}\nExercises: ${exerciseStates.filter(e => e.completed).length}/${exerciseStates.length}`,
         [{ text: 'Done', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -1319,7 +1312,7 @@ export default function WorkoutSessionPage() {
         
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>{template.name}</Text>
-          <Text style={styles.headerSubtitle}>{formatTime(elapsedSeconds)}</Text>
+          <Text style={styles.headerSubtitle}>{formatDuration(elapsedSeconds)}</Text>
         </View>
         
         <TouchableOpacity style={styles.headerButton} onPress={goToSummary}>
@@ -1658,7 +1651,7 @@ export default function WorkoutSessionPage() {
         <View style={styles.modalOverlay}>
           <View style={styles.restTimerModal}>
             <Text style={styles.restTimerTitle}>REST TIME</Text>
-            <Text style={styles.restTimerTime}>{formatTime(restSeconds)}</Text>
+            <Text style={styles.restTimerTime}>{formatDuration(restSeconds)}</Text>
             <TouchableOpacity
               style={styles.restTimerButton}
               onPress={() => {

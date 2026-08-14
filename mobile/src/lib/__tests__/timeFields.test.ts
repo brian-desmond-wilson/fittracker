@@ -1,22 +1,9 @@
+// Rendering these strings for display lives in `timeFormat.test.ts`.
 import {
   dateFromHhmm,
-  formatTimeLabel,
   hhmmAscending,
   hhmmFromDate,
 } from "../timeFields";
-
-describe("formatTimeLabel", () => {
-  it("formats morning times", () => {
-    expect(formatTimeLabel("08:05")).toBe("8:05 AM");
-  });
-  it("formats afternoon times", () => {
-    expect(formatTimeLabel("13:30")).toBe("1:30 PM");
-  });
-  it("formats midnight and noon", () => {
-    expect(formatTimeLabel("00:00")).toBe("12:00 AM");
-    expect(formatTimeLabel("12:00")).toBe("12:00 PM");
-  });
-});
 
 describe("hhmmFromDate / dateFromHhmm", () => {
   it("round-trips through a Date", () => {

@@ -30,6 +30,8 @@ import {
   sendTestEatNudge,
 } from "@/src/services/eatNudgeService";
 import { requestPermissions } from "@/src/services/notificationService";
+import { dateFromHhmm, hhmmFromDate } from "@/src/lib/timeFields";
+import { formatClockTime } from "@/src/lib/timeFormat";
 import { MealType } from "@/src/types/track";
 
 const MEAL_TYPE_OPTIONS: MealType[] = [
@@ -42,25 +44,6 @@ const MEAL_TYPE_OPTIONS: MealType[] = [
 
 interface NotificationsScreenProps {
   onClose: () => void;
-}
-
-function formatTimeLabel(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map((s) => parseInt(s, 10));
-  if (isNaN(h)) return hhmm;
-  const ampm = h >= 12 ? "PM" : "AM";
-  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${display}:${String(m || 0).padStart(2, "0")} ${ampm}`;
-}
-
-function hhmmFromDate(d: Date): string {
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-function dateFromHhmm(hhmm: string): Date {
-  const [h, m] = hhmm.split(":").map((s) => parseInt(s, 10));
-  const d = new Date();
-  d.setHours(h, m || 0, 0, 0);
-  return d;
 }
 
 function sortTimes(times: string[]): string[] {
@@ -531,7 +514,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
                         style={styles.timeButton}
                         disabled={saving}
                       >
-                        <Text style={styles.timeButtonText}>{formatTimeLabel(t)}</Text>
+                        <Text style={styles.timeButtonText}>{formatClockTime(t)}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handleRemoveTime(i)}
@@ -595,7 +578,7 @@ export function NotificationsScreen({ onClose }: NotificationsScreenProps) {
                         disabled={mealSaving}
                       >
                         <Text style={styles.timeButtonText}>
-                          {formatTimeLabel(t)}
+                          {formatClockTime(t)}
                         </Text>
                         <Text style={styles.mealTypeBadgeInline}>
                           {mealTypes[i] ?? "snack"}

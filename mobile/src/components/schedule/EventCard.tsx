@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { ScheduleEvent } from "../../types/schedule";
 import * as LucideIcons from "lucide-react-native";
 import { Clock, Repeat, Check, X } from "lucide-react-native";
+import { formatClockTime } from "@/src/lib/timeFormat";
 
 interface EventCardProps {
   event: ScheduleEvent;
@@ -15,14 +16,6 @@ export const EventCard = memo(function EventCard({
   style,
   onClick,
 }: EventCardProps) {
-  const formatTime = (time: string) => {
-    const [hours, minutes] = time.split(":");
-    const h = parseInt(hours);
-    const ampm = h >= 12 ? "PM" : "AM";
-    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${displayHour}:${minutes} ${ampm}`;
-  };
-
   const getStatusIcon = () => {
     switch (event.status) {
       case "completed":
@@ -92,7 +85,7 @@ export const EventCard = memo(function EventCard({
               <Repeat size={10} color="#6B7280" style={styles.icon} />
             )}
             <Text style={styles.shortTime} numberOfLines={1}>
-              {formatTime(event.start_time)} - {formatTime(event.end_time)}
+              {formatClockTime(event.start_time)} - {formatClockTime(event.end_time)}
             </Text>
           </View>
           {getStatusIcon() && (
@@ -123,7 +116,7 @@ export const EventCard = memo(function EventCard({
               <Repeat size={10} color="#6B7280" style={styles.icon} />
             )}
             <Text style={styles.timeInline} numberOfLines={1}>
-              {formatTime(event.start_time)} - {formatTime(event.end_time)}
+              {formatClockTime(event.start_time)} - {formatClockTime(event.end_time)}
             </Text>
           </View>
           {getStatusIcon() && (
@@ -160,7 +153,7 @@ export const EventCard = memo(function EventCard({
             )}
           </View>
           <Text style={styles.time} numberOfLines={1}>
-            {formatTime(event.start_time)} - {formatTime(event.end_time)}
+            {formatClockTime(event.start_time)} - {formatClockTime(event.end_time)}
           </Text>
           {showCategory && event.category && (
             <Text style={styles.category} numberOfLines={1}>

@@ -28,6 +28,7 @@ import * as Notifications from "expo-notifications";
 import { colors } from "@/src/lib/colors";
 import { WeightLog, TimeOfDay } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { formatInstantTime } from "@/src/lib/timeFormat";
 
 interface WeightScreenProps {
   onClose: () => void;
@@ -346,11 +347,6 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
     }
   };
 
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  };
-
   const formatTimeOfDay = (timeOfDay: string | null) => {
     if (!timeOfDay) return "";
     return timeOfDay.charAt(0).toUpperCase() + timeOfDay.slice(1);
@@ -661,7 +657,7 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
                                 </Text>
                               </View>
                             )}
-                            <Text style={styles.logTime}>{formatTime(log.logged_at)}</Text>
+                            <Text style={styles.logTime}>{formatInstantTime(log.logged_at)}</Text>
                           </View>
                           <TouchableOpacity
                             onPress={() => handleDeleteLog(log.id)}

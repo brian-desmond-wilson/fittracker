@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ScheduleEvent } from '../types/schedule';
+import { formatClockTime } from '../lib/timeFormat';
 
 const NOTIFICATION_SETTINGS_KEY = '@notification_settings';
 const LAST_RESCHEDULE_KEY = '@last_notification_reschedule';
@@ -178,7 +179,7 @@ export async function scheduleEventNotification(
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: event.title,
-        body: `${formatTime(event.start_time)} - ${formatTime(event.end_time)}${
+        body: `${formatClockTime(event.start_time)} - ${formatClockTime(event.end_time)}${
           event.category ? ` • ${event.category.name}` : ''
         }`,
         data: {
@@ -354,17 +355,6 @@ export async function rescheduleAllNotifications(
   } catch (error) {
     console.error('Error rescheduling notifications:', error);
   }
-}
-
-/**
- * Format time for display
- */
-function formatTime(time: string): string {
-  const [hours, minutes] = time.split(':');
-  const h = parseInt(hours);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${displayHour}:${minutes} ${ampm}`;
 }
 
 /**
