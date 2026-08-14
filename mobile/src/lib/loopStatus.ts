@@ -28,6 +28,7 @@ export interface StationDetail {
 
 export type LoopDestination =
   | "/(tabs)/track/food-inventory"
+  | "/(tabs)/track/meal-library"
   | "/(tabs)/track/fuel"
   | "/(tabs)/track/shopping";
 
@@ -209,8 +210,11 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
       })),
       footnote: null,
     },
-    destination: "/(tabs)/track/fuel",
-    destinationLabel: "Open Fuel",
+    // The library has its own page now. It used to open Fuel, which is the
+    // station AFTER this one — the loop's own arrow pointed one step ahead of
+    // where you tapped.
+    destination: "/(tabs)/track/meal-library",
+    destinationLabel: "Open Meal Library",
   };
 }
 

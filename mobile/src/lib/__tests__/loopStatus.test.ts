@@ -595,13 +595,13 @@ describe("station 6: shopping + assembly", () => {
     expect(computeLoopStatus(baseInputs()).stations[5].detail.footnote)
       .toBe("restock returns units to Inventory ↺");
   });
-  // All three LoopDestination values typecheck in any station, so a
+  // Every LoopDestination value typechecks in any station, so a
   // copy-paste error routes the user to the wrong screen with a green suite.
   // Node-env Jest means this assertion is the only automated protection these
   // strings will ever get.
   it("each station deep-links to its own screen", () => {
     expect(computeLoopStatus(baseInputs()).stations.map((s) => [s.key, s.destination])).toEqual([
-      ["inventory", "/(tabs)/track/food-inventory"], ["library", "/(tabs)/track/fuel"],
+      ["inventory", "/(tabs)/track/food-inventory"], ["library", "/(tabs)/track/meal-library"],
       ["eatNext", "/(tabs)/track/fuel"], ["pace", "/(tabs)/track/fuel"],
       ["forecast", "/(tabs)/track/shopping"], ["shopping", "/(tabs)/track/shopping"],
     ]);
@@ -609,7 +609,7 @@ describe("station 6: shopping + assembly", () => {
   it("each station carries its own title and destination label", () => {
     expect(computeLoopStatus(baseInputs()).stations.map((s) => [s.title, s.destinationLabel]))
       .toEqual([
-        ["Inventory", "Open Inventory"], ["Meal Library", "Open Fuel"],
+        ["Inventory", "Open Inventory"], ["Meal Library", "Open Meal Library"],
         ["Eat Next", "Open Fuel"], ["Today's Pace", "Open Fuel"],
         ["Forecast", "Open Shopping"], ["Shopping", "Open Shopping"],
       ]);

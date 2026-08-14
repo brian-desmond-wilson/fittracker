@@ -10,7 +10,7 @@
 // `StationTone` instead of importing `BadgeTone`). Keyed by `StationKey`, so
 // adding a seventh station fails to compile here until it is given both.
 import {
-  ClipboardList, Package, ShoppingCart, TrendingUp, Utensils, Zap,
+  BookOpen, Package, ShoppingCart, TrendingUp, Utensils, Zap,
 } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import type { AccentKey } from "@/src/theme/tokens";
@@ -22,6 +22,8 @@ export const STATION_ACCENTS: Record<StationKey, AccentKey> = {
 };
 
 export const STATION_ICONS: Record<StationKey, LucideIcon> = {
-  inventory: Package, library: Utensils, eatNext: Zap,
-  pace: ClipboardList, forecast: TrendingUp, shopping: ShoppingCart,
+  // The book is the Meal Library's mark on the Track grid and on its own
+  // page header; the fork and knife belong to Fuel.
+  inventory: Package, library: BookOpen, eatNext: Zap,
+  pace: Utensils, forecast: TrendingUp, shopping: ShoppingCart,
 };
