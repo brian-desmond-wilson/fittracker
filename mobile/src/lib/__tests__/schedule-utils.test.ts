@@ -182,11 +182,24 @@ describe("formatDateHeader", () => {
 });
 
 describe("isToday", () => {
-  it("is true for now and false for a day either side", () => {
-    const now = new Date();
-    expect(isToday(now)).toBe(true);
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    expect(isToday(tomorrow)).toBe(false);
+  const today = new Date(2026, 7, 14, 9, 0);
+
+  it("is true anywhere inside the same calendar day", () => {
+    expect(isToday(new Date(2026, 7, 14, 0, 1), today)).toBe(true);
+    expect(isToday(new Date(2026, 7, 14, 23, 59), today)).toBe(true);
+  });
+
+  it("is false either side of it", () => {
+    expect(isToday(new Date(2026, 7, 13, 23, 59), today)).toBe(false);
+    expect(isToday(new Date(2026, 7, 15, 0, 1), today)).toBe(false);
+  });
+
+  it("does not confuse the same day of another month or year", () => {
+    expect(isToday(new Date(2026, 8, 14), today)).toBe(false);
+    expect(isToday(new Date(2025, 7, 14), today)).toBe(false);
+  });
+
+  it("falls back to the real clock when no day is given", () => {
+    expect(isToday(new Date())).toBe(true);
   });
 });

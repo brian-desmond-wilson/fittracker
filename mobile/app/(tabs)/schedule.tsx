@@ -43,6 +43,7 @@ import {
 } from "@/src/types/schedule";
 import {
   formatDateHeader,
+  isToday,
   getEventsForDate,
   detectOverlappingEvents,
 } from "@/src/lib/schedule-utils";
@@ -262,15 +263,6 @@ export default function Schedule() {
     setSelectedDate(new Date());
   };
 
-  const isToday = () => {
-    const today = new Date();
-    return (
-      selectedDate.getFullYear() === today.getFullYear() &&
-      selectedDate.getMonth() === today.getMonth() &&
-      selectedDate.getDate() === today.getDate()
-    );
-  };
-
   const handleEventClick = (event: ScheduleEvent) => {
     setSelectedEvent(event);
     setShowEventModal(true);
@@ -484,7 +476,7 @@ export default function Schedule() {
             >
               <ChevronLeft size={20} color="#9CA3AF" />
             </TouchableOpacity>
-            {!isToday() && (
+            {!isToday(selectedDate) && (
               <TouchableOpacity onPress={goToToday} style={styles.todayButton}>
                 <Text style={styles.todayText}>Today</Text>
               </TouchableOpacity>

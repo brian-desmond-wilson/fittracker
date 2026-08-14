@@ -135,8 +135,9 @@ export function formatDateHeader(date: Date): string {
   });
 }
 
-export function isToday(date: Date): boolean {
-  const today = new Date();
+/** Takes `today` like everything else here, so a screen can hand the same
+ *  instant to every question it asks. */
+export function isToday(date: Date, today: Date = new Date()): boolean {
   return (
     date.getFullYear() === today.getFullYear() &&
     date.getMonth() === today.getMonth() &&
