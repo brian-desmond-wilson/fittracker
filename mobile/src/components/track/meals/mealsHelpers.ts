@@ -24,7 +24,6 @@ export const MEAL_TYPE_ORDER: MealType[] = [
 // it moved because `src/lib/**` must not depend on `src/components/**`, and
 // `lib/supabase/mealLibrary.ts` importing it from this file was the app's only
 // such edge. New non-component callers should import from `@/src/lib/dates`.
-export { getLocalDateString };
 
 export const getMealTypeColor = (type: MealType): string =>
   MEAL_TYPES.find((t) => t.value === type)?.color || "#6B7280";

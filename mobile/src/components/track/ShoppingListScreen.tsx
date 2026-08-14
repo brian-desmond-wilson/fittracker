@@ -21,7 +21,7 @@ import {
   markPurchased, unmarkPurchased, updateListItem, type ShoppingData,
 } from "@/src/lib/supabase/shopping";
 import { transferInventoryUnits } from "@/src/lib/supabase/inventory";
-import { getLocalDateString } from "./meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 
 const ANYWHERE = "__anywhere__";
 

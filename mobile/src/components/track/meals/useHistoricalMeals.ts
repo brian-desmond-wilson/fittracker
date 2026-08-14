@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { MealLog } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
-import { getLocalDateString } from "./mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 
 // Last 365 days of meal logs, used for insights (streaks / charts / weekly
 // summary / CSV export). Call `refreshHistory` after a write to refetch;

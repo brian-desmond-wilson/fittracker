@@ -5,7 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { MealLibraryScreen } from "@/src/components/track/meals/library/MealLibraryScreen";
 import { BarcodeScannerModal } from "@/src/components/track/BarcodeScannerModal";
 import { UndoToast, type UndoToastContent } from "@/src/components/ui";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 import { fetchMealLibrary, logMeal, undoMealLog, MealLoggedButDecrementFailed } from "@/src/lib/supabase/mealLibrary";
 import { defaultMealTypeFor } from "@/src/types/meal-library";
 import { supabase } from "@/src/lib/supabase";

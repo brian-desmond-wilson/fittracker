@@ -11,7 +11,7 @@ import {
   fetchRecentWeighIns,
 } from "@/src/lib/supabase/nutritionPreferences";
 import { assessRampProgress } from "@/src/lib/rampProgress";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 
 // Must match NutritionPreferencesScreen.tsx's own TREND_WINDOW_DAYS — both

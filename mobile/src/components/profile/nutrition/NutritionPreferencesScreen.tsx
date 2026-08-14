@@ -31,7 +31,7 @@ import {
   type NutritionPreferencesData,
 } from "@/src/lib/supabase/nutritionPreferences";
 import { assessRampProgress, type RampAssessment } from "@/src/lib/rampProgress";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import {
   Button,

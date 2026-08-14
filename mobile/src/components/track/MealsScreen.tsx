@@ -95,7 +95,6 @@ import {
 import { Share } from "react-native";
 import { SLIM_BAR_HEIGHT, styles } from "./meals/mealsScreenStyles";
 import {
-  getLocalDateString,
   formatViewingDate,
   getNutritionLabel,
 } from "./meals/mealsHelpers";
@@ -108,6 +107,7 @@ import { useMealAddForm } from "./meals/useMealAddForm";
 import { LogMealSheet } from "./meals/LogMealSheet";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { syncEatNudge } from "@/src/services/eatNudgeService";
+import { getLocalDateString } from "@/src/lib/dates";
 
 interface MealsScreenProps {
   onClose: () => void;

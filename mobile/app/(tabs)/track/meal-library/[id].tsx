@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MealPage } from "@/src/components/track/meals/library/MealPage";
 import { getSavedFoods } from "@/src/services/savedFoodsService";
-import { getLocalDateString } from "@/src/components/track/meals/mealsHelpers";
+import { getLocalDateString } from "@/src/lib/dates";
 import type { MealType, SavedFood } from "@/src/types/track";
 
 /**
