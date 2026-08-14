@@ -3,19 +3,23 @@
 // Every other `src/lib` cross-import is relative for the same reason.
 import { colors, tint } from "../theme/tokens";
 
-// Priority tiers for the user's macros (calories + protein > carbs + sodium > fats + sugars + fiber)
+// Priority tiers for the user's macros (calories + protein > carbs + sodium >
+// fats + saturated fat + sugars + fiber)
 export type MacroKey =
   | "calories"
   | "protein"
   | "carbs"
   | "sodium"
   | "fats"
+  | "saturatedFat"
   | "sugars"
   | "fiber";
 
 export const MACRO_TIER_A: MacroKey[] = ["calories", "protein"];
 export const MACRO_TIER_B: MacroKey[] = ["carbs", "sodium"];
-export const MACRO_TIER_C: MacroKey[] = ["fats", "sugars", "fiber"];
+// Saturated fat rides with the fat it comes out of rather than at the end,
+// so the bottom tier reads in panel order.
+export const MACRO_TIER_C: MacroKey[] = ["fats", "saturatedFat", "sugars", "fiber"];
 
 export interface MacroTotals {
   calories: number;
@@ -23,6 +27,7 @@ export interface MacroTotals {
   carbs: number;
   sodium_mg: number;
   fats: number;
+  saturated_fat_g: number;
   sugars: number;
   fiber_g: number;
 }
@@ -33,6 +38,7 @@ export interface MacroGoals {
   carbs: number | null;
   sodium_mg: number | null;
   fats: number | null;
+  saturated_fat_g: number | null;
   sugars: number | null;
   fiber_g: number | null;
 }
@@ -43,6 +49,7 @@ export const EMPTY_TOTALS: MacroTotals = {
   carbs: 0,
   sodium_mg: 0,
   fats: 0,
+  saturated_fat_g: 0,
   sugars: 0,
   fiber_g: 0,
 };
@@ -55,6 +62,7 @@ export function totalForMacro(t: MacroTotals, m: MacroKey): number {
     case "carbs": return t.carbs;
     case "sodium": return t.sodium_mg;
     case "fats": return t.fats;
+    case "saturatedFat": return t.saturated_fat_g;
     case "sugars": return t.sugars;
     case "fiber": return t.fiber_g;
   }
@@ -67,6 +75,7 @@ export function goalForMacro(g: MacroGoals, m: MacroKey): number | null {
     case "carbs": return g.carbs;
     case "sodium": return g.sodium_mg;
     case "fats": return g.fats;
+    case "saturatedFat": return g.saturated_fat_g;
     case "sugars": return g.sugars;
     case "fiber": return g.fiber_g;
   }
@@ -79,6 +88,9 @@ export function macroLabel(m: MacroKey): string {
     case "carbs": return "Carbs";
     case "sodium": return "Sodium";
     case "fats": return "Fats";
+    // "Sat. Fat" beside "Fats" would read as an abbreviation of the row above
+    // it; the full words are worth the width on a two-column meter.
+    case "saturatedFat": return "Saturated Fat";
     case "sugars": return "Sugars";
     case "fiber": return "Fiber";
   }
@@ -145,7 +157,9 @@ export function macroColor(
   m: MacroKey,
 ): string {
   // Cap-type macros: hitting the goal is fine, exceeding is a warning.
-  const isCap = m === "sodium" || m === "sugars";
+  // Saturated fat joins them — it is a ceiling on every dietary guideline
+  // that names it, never something to finish the day short of.
+  const isCap = m === "sodium" || m === "sugars" || m === "saturatedFat";
   if (!goal || goal <= 0) return colors.macros.under;
   const ratio = value / goal;
   if (isCap) {
@@ -170,6 +184,7 @@ export function sumNutrition<T extends Partial<{
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
 }>>(rows: T[]): MacroTotals {
@@ -180,6 +195,7 @@ export function sumNutrition<T extends Partial<{
     out.carbs += Number(r.carbs ?? 0);
     out.fats += Number(r.fats ?? 0);
     out.sugars += Number(r.sugars ?? 0);
+    out.saturated_fat_g += Number(r.saturated_fat_g ?? 0);
     out.sodium_mg += Number(r.sodium_mg ?? 0);
     out.fiber_g += Number(r.fiber_g ?? 0);
   }

@@ -49,9 +49,12 @@ interface InventoryRowRaw {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
-  /** NB: `food_inventory` records no sodium — the column simply does not
-   *  exist there. Meals priced from stock therefore fall back to the
-   *  as-built product for sodium alone; see `mealNutrition`. */
+  /** Both landed with the saturated-fat work; before that `food_inventory`
+   *  recorded no sodium at all and meals priced from stock fell back to the
+   *  as-built product for it. Still nullable — most rows predate the
+   *  columns. */
+  saturated_fat_g: number | null;
+  sodium_mg: number | null;
   fiber_g: number | null;
 }
 
@@ -183,7 +186,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       // from the product actually in the fridge rather than the one it was
       // built with (`mealNutrition`). `food_inventory` carries its own
       // nutrition — an inventory row IS a product — so no join is needed.
-      .select("id, name, barcode, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, fiber_g, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      .select("id, name, barcode, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, fiber_g, saturated_fat_g, sodium_mg, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -199,7 +202,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     // became meals. Repeat ones are offered for promotion (`adHocCandidates`).
     supabase
       .from("meal_logs")
-      .select("name, date, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, saved_food_id")
+      .select("name, date, calories, protein, carbs, fats, sugars, saturated_fat_g, sodium_mg, fiber_g, saved_food_id")
       .is("meal_id", null),
   ]);
   const errors = [meals.error, mealCategories.error, vendors.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
@@ -307,7 +310,11 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
         carbs: r.carbs,
         fats: r.fats,
         sugars: r.sugars,
-        sodium_mg: null, // not a column on food_inventory
+        // Both are columns on food_inventory now, so a meal priced from
+        // stock answers with the packet's own figures rather than falling
+        // back to the product it was built with.
+        saturated_fat_g: r.saturated_fat_g,
+        sodium_mg: r.sodium_mg,
         fiber_g: r.fiber_g,
       },
     ]),
@@ -394,7 +401,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function computeMealTotals(items: MealItemWithFood[]): MealTotals {
   const zero: MealTotals = {
-    calories: 0, protein: 0, carbs: 0, fats: 0, sugars: 0, sodium_mg: 0, fiber_g: 0,
+    calories: 0, protein: 0, carbs: 0, fats: 0, sugars: 0,
+    saturated_fat_g: 0, sodium_mg: 0, fiber_g: 0,
   };
   const totals = items.reduce((acc, it) => {
     const f = it.savedFood;
@@ -405,6 +413,7 @@ export function computeMealTotals(items: MealItemWithFood[]): MealTotals {
       carbs: acc.carbs + s * (f.carbs ?? 0),
       fats: acc.fats + s * (f.fats ?? 0),
       sugars: acc.sugars + s * (f.sugars ?? 0),
+      saturated_fat_g: acc.saturated_fat_g + s * (f.saturated_fat_g ?? 0),
       sodium_mg: acc.sodium_mg + s * (f.sodium_mg ?? 0),
       fiber_g: acc.fiber_g + s * (f.fiber_g ?? 0),
     };
@@ -421,6 +430,7 @@ export function computeMealTotals(items: MealItemWithFood[]): MealTotals {
     carbs: round2(totals.carbs),
     fats: round2(totals.fats),
     sugars: round2(totals.sugars),
+    saturated_fat_g: round2(totals.saturated_fat_g),
     sodium_mg: round2(totals.sodium_mg),
     fiber_g: round2(totals.fiber_g),
   };

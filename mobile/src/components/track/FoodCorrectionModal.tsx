@@ -21,6 +21,7 @@ export interface FoodCorrectionValues {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
 }
@@ -61,6 +62,7 @@ export function FoodCorrectionModal({
   const [sugars, setSugars] = useState("");
   const [sodiumMg, setSodiumMg] = useState("");
   const [fiberG, setFiberG] = useState("");
+  const [saturatedFatG, setSaturatedFatG] = useState("");
 
   useEffect(() => {
     if (visible) {
@@ -74,6 +76,7 @@ export function FoodCorrectionModal({
       setSugars(toStr(initialValues.sugars));
       setSodiumMg(toStr(initialValues.sodium_mg));
       setFiberG(toStr(initialValues.fiber_g));
+      setSaturatedFatG(toStr(initialValues.saturated_fat_g));
     }
   }, [visible, initialValues]);
 
@@ -87,6 +90,7 @@ export function FoodCorrectionModal({
       carbs: numOrNull(carbs),
       fats: numOrNull(fats),
       sugars: numOrNull(sugars),
+      saturated_fat_g: numOrNull(saturatedFatG),
       sodium_mg: numOrNull(sodiumMg),
       fiber_g: numOrNull(fiberG),
     });
@@ -239,6 +243,24 @@ export function FoodCorrectionModal({
                   editable={!saving}
                 />
               </View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Saturated Fat (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={saturatedFatG}
+                  onChangeText={setSaturatedFatG}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  editable={!saving}
+                />
+              </View>
+              {/* Nine fields do not divide into pairs; the empty half keeps
+                  this input the width of every other one. */}
+              <View style={styles.halfField} />
             </View>
           </ScrollView>
 

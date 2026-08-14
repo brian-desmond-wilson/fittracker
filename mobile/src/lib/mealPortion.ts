@@ -30,12 +30,14 @@ export interface PortionMacros {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
 }
 
 const MACRO_KEYS: Array<keyof PortionMacros> = [
-  "calories", "protein", "carbs", "fats", "sugars", "sodium_mg", "fiber_g",
+  "calories", "protein", "carbs", "fats", "sugars", "saturated_fat_g",
+  "sodium_mg", "fiber_g",
 ];
 
 /**

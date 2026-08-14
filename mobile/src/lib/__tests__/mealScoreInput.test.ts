@@ -14,7 +14,7 @@ function food(over: Partial<SavedFood> = {}): SavedFood {
   return {
     id: "f1", user_id: "u", name: "Food", brand: null, barcode: null,
     calories: 250, protein: 30, carbs: 20, fats: 8, sugars: 3,
-    sodium_mg: 400, fiber_g: 2, serving_size: null,
+    sodium_mg: 400, fiber_g: 2, saturated_fat_g: 3, serving_size: null,
     image_primary_url: null, image_front_url: null, image_back_url: null,
     is_favorite: false, user_corrected: false, auto_scaled: false,
     created_at: "2026-07-29T00:00:00Z", updated_at: "2026-07-29T00:00:00Z",

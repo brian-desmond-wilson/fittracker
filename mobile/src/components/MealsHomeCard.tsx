@@ -31,6 +31,7 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
     carbs: null,
     sodium_mg: null,
     fats: null,
+    saturated_fat_g: null,
     sugars: null,
     fiber_g: null,
   });
@@ -45,13 +46,13 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
         supabase
           .from("profiles")
           .select(
-            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g"
+            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_saturated_fat_g, target_sugars_g, target_fiber_g"
           )
           .eq("id", user.id)
           .single(),
         supabase
           .from("meal_logs")
-          .select("calories, protein, carbs, fats, sugars, sodium_mg, fiber_g")
+          .select("calories, protein, carbs, fats, sugars, saturated_fat_g, sodium_mg, fiber_g")
           .eq("user_id", user.id)
           .eq("date", today),
       ]);
@@ -62,6 +63,7 @@ export function MealsHomeCard({ refreshKey }: MealsHomeCardProps) {
         carbs: p?.target_carbs_g ?? null,
         sodium_mg: p?.target_sodium_mg ?? null,
         fats: p?.target_fats_g ?? null,
+        saturated_fat_g: p?.target_saturated_fat_g ?? null,
         sugars: p?.target_sugars_g ?? null,
         fiber_g: p?.target_fiber_g ?? null,
       });

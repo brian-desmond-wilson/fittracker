@@ -30,6 +30,7 @@ const food = (over: Partial<{ id: string; name: string; barcode: string | null; 
   carbs: 6,
   fats: 16,
   sugars: 3,
+  saturated_fat_g: 5,
   sodium_mg: 140,
   fiber_g: over.fiber_g ?? 2,
 });
@@ -69,6 +70,7 @@ const nutrition = (over: Partial<InventoryNutrition> = {}): InventoryNutrition =
   carbs: 6,
   fats: 16,
   sugars: 3,
+  saturated_fat_g: over.saturated_fat_g ?? 4,
   sodium_mg: 140,
   fiber_g: over.fiber_g ?? 2,
 });
@@ -193,6 +195,26 @@ describe("mealNutrition", () => {
     const n = mealNutrition({ meal: meal(), inventory, conceptIdsBySavedFoodId: conceptMap, nutritionByInventoryId: pricier });
     // (150−110) × 2 servings
     expect(n.substitutions[0].calorieDelta).toBe(80);
+  });
+
+  it("prices saturated fat and sodium from the stock too, not from the recipe", () => {
+    // The stocked jar says 4g saturated fat and 140mg sodium; the as-built
+    // saved food says 5g. Sodium used to fall back to the as-built figure for
+    // EVERY meal, because food_inventory had no sodium column.
+    const n = mealNutrition({ meal: meal(), inventory, conceptIdsBySavedFoodId: conceptMap, nutritionByInventoryId: byId });
+    expect(n.totals.saturated_fat_g).toBe(12); // 4 + 2×4
+    expect(n.totals.sodium_mg).toBe(420); // 140 + 2×140
+  });
+
+  it("keeps the as-built saturated fat when a slot resolves to nothing", () => {
+    // Unknown is not zero: an inventory row with no figure must not deflate
+    // the meal, so the product it was built with answers instead.
+    const blank = new Map(byId);
+    // Spread rather than the factory's `??`, which would read an explicit
+    // null as "not overridden" and hand back the default.
+    blank.set("inv-pb", { ...nutrition(), saturated_fat_g: null });
+    const n = mealNutrition({ meal: meal(), inventory, conceptIdsBySavedFoodId: conceptMap, nutritionByInventoryId: blank });
+    expect(n.totals.saturated_fat_g).toBe(13); // 5 as built + 2×4 from stock
   });
 
   it("the same product restocked is not a substitution", () => {

@@ -57,6 +57,7 @@ export function MealsWeeklySummaryModal({
       protein: acc.protein + d.totals.protein,
       carbs: acc.carbs + d.totals.carbs,
       fats: acc.fats + d.totals.fats,
+      saturated_fat_g: acc.saturated_fat_g + d.totals.saturated_fat_g,
       sugars: acc.sugars + d.totals.sugars,
       sodium_mg: acc.sodium_mg + d.totals.sodium_mg,
       fiber_g: acc.fiber_g + d.totals.fiber_g,

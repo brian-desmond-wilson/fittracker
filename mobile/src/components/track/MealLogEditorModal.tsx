@@ -114,7 +114,8 @@ export function MealLogEditorModal({
   // seed from the CURRENT scaled values, because that is what "exact" means
   // once a portion has been applied.
   const [exact, setExact] = useState<Record<keyof PortionMacros, string>>({
-    calories: "", protein: "", carbs: "", fats: "", sugars: "", sodium_mg: "", fiber_g: "",
+    calories: "", protein: "", carbs: "", fats: "", sugars: "",
+    saturated_fat_g: "", sodium_mg: "", fiber_g: "",
   });
 
   useEffect(() => {
@@ -146,6 +147,7 @@ export function MealLogEditorModal({
         carbs: scaled.carbs?.toString() ?? "",
         fats: scaled.fats?.toString() ?? "",
         sugars: scaled.sugars?.toString() ?? "",
+        saturated_fat_g: scaled.saturated_fat_g?.toString() ?? "",
         sodium_mg: scaled.sodium_mg?.toString() ?? "",
         fiber_g: scaled.fiber_g?.toString() ?? "",
       });
@@ -179,6 +181,7 @@ export function MealLogEditorModal({
           carbs: numOrNull(exact.carbs),
           fats: numOrNull(exact.fats),
           sugars: numOrNull(exact.sugars),
+          saturated_fat_g: numOrNull(exact.saturated_fat_g),
           sodium_mg: numOrNull(exact.sodium_mg),
           fiber_g: numOrNull(exact.fiber_g),
         }
@@ -363,6 +366,11 @@ export function MealLogEditorModal({
                 <View style={styles.row}>
                   {exactField("sodium_mg", "Sodium (mg)")}
                   {exactField("fiber_g", "Fiber (g)")}
+                </View>
+                <View style={styles.row}>
+                  {exactField("saturated_fat_g", "Saturated Fat (g)")}
+                  {/* Eight fields, seven of them paired. */}
+                  <View style={styles.halfField} />
                 </View>
               </>
             )}

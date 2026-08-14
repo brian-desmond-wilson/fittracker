@@ -20,6 +20,7 @@ export function useMacroGoals(): MacroGoalsData {
     carbs: null,
     sodium_mg: null,
     fats: null,
+    saturated_fat_g: null,
     sugars: null,
     fiber_g: null,
   });
@@ -39,7 +40,7 @@ export function useMacroGoals(): MacroGoalsData {
         const { data } = await supabase
           .from("profiles")
           .select(
-            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_sugars_g, target_fiber_g, water_window_start, water_window_end, breakfast_time, lunch_time, dinner_time"
+            "target_calories, target_protein_g, target_carbs_g, target_sodium_mg, target_fats_g, target_saturated_fat_g, target_sugars_g, target_fiber_g, water_window_start, water_window_end, breakfast_time, lunch_time, dinner_time"
           )
           .eq("id", user.id)
           .single();
@@ -50,6 +51,7 @@ export function useMacroGoals(): MacroGoalsData {
             carbs: data.target_carbs_g ?? null,
             sodium_mg: data.target_sodium_mg ?? null,
             fats: data.target_fats_g ?? null,
+            saturated_fat_g: data.target_saturated_fat_g ?? null,
             sugars: data.target_sugars_g ?? null,
             fiber_g: data.target_fiber_g ?? null,
           });

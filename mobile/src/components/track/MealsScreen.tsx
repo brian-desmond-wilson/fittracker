@@ -637,6 +637,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         "sodium_mg" in food ? (food as any).sodium_mg : null;
       const foodFiber =
         "fiber_g" in food ? (food as any).fiber_g : null;
+      const foodSaturatedFat =
+        "saturated_fat_g" in food ? (food as any).saturated_fat_g : null;
 
       // If from API, save to library first
       let savedFoodId: string | null = null;
@@ -651,6 +653,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: apiFood.carbs,
           fats: apiFood.fats,
           sugars: apiFood.sugars,
+          saturated_fat_g: apiFood.saturated_fat_g,
           sodium_mg: apiFood.sodium_mg,
           fiber_g: apiFood.fiber_g,
           serving_size: apiFood.servingSize,
@@ -688,6 +691,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         foodFiber != null
           ? Math.round(foodFiber * servings * 10) / 10
           : null;
+      const scaledSaturatedFat =
+        foodSaturatedFat != null
+          ? Math.round(foodSaturatedFat * servings * 10) / 10
+          : null;
 
       // Log the meal (with optional pantry decrement)
       const willUseInventory =
@@ -707,6 +714,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: scaledCarbs,
           fats: scaledFats,
           sugars: scaledSugars,
+          saturated_fat_g: scaledSaturatedFat,
           sodium_mg: scaledSodium,
           fiber_g: scaledFiber,
           saved_food_id: savedFoodId,
@@ -785,6 +793,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: food.carbs,
         fats: food.fats,
         sugars: food.sugars,
+        saturated_fat_g: food.saturated_fat_g,
         sodium_mg: food.sodium_mg,
         fiber_g: food.fiber_g,
         serving_size: food.servingSize,
@@ -820,6 +829,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     carbs: number | null;
     fats: number | null;
     sugars: number | null;
+    saturated_fat_g: number | null;
     sodium_mg: number | null;
     fiber_g: number | null;
   }) => {
@@ -838,6 +848,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             carbs: next.carbs,
             fats: next.fats,
             sugars: next.sugars,
+            saturated_fat_g: next.saturated_fat_g,
             sodium_mg: next.sodium_mg,
             fiber_g: next.fiber_g,
             user_corrected: true,
@@ -870,6 +881,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: next.carbs,
           fats: next.fats,
           sugars: next.sugars,
+          saturated_fat_g: next.saturated_fat_g,
           sodium_mg: next.sodium_mg,
           fiber_g: next.fiber_g,
         } as any;
@@ -897,6 +909,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       carbs: number | null;
       fats: number | null;
       sugars: number | null;
+      saturated_fat_g?: number | null;
       sodium_mg?: number | null;
       fiber_g?: number | null;
       serving_size: string | null;
@@ -927,6 +940,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: foodData.carbs,
           fats: foodData.fats,
           sugars: foodData.sugars,
+          saturated_fat_g: foodData.saturated_fat_g ?? null,
           sodium_mg: foodData.sodium_mg ?? null,
           fiber_g: foodData.fiber_g ?? null,
           serving_size: foodData.serving_size,
@@ -953,6 +967,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: foodData.carbs,
           fats: foodData.fats,
           sugars: foodData.sugars,
+          saturated_fat_g: foodData.saturated_fat_g ?? null,
           sodium_mg: foodData.sodium_mg ?? null,
           fiber_g: foodData.fiber_g ?? null,
           saved_food_id: savedFoodId,
@@ -1208,6 +1223,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: input.carbs,
           fats: input.fats,
           sugars: null,
+          saturated_fat_g: null,
           sodium_mg: null,
           fiber_g: null,
           saved_food_id: null,
@@ -1571,6 +1587,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: food.carbs,
           fats: food.fats,
           sugars: food.sugars,
+          saturated_fat_g: (food as { saturated_fat_g?: number | null }).saturated_fat_g ?? null,
           sodium_mg: (food as { sodium_mg?: number | null }).sodium_mg ?? null,
           fiber_g: (food as { fiber_g?: number | null }).fiber_g ?? null,
           saved_food_id: food.id,

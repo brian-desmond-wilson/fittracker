@@ -37,7 +37,7 @@ const BASE: Omit<EatNextInput, "meals"> = {
   dayTotals: { ...EMPTY_TOTALS, calories: 900, protein: 60 },
   goals: {
     calories: 2300, protein: 160, carbs: null, sodium_mg: null,
-    fats: null, sugars: null, fiber_g: null,
+    fats: null, saturated_fat_g: null, sugars: null, fiber_g: null,
   },
   caloriePace: { status: "on_pace" },
   proteinPace: { status: "on_pace" },
@@ -94,7 +94,8 @@ function scored(over: {
       items: [],
     },
     totals: {
-      calories, protein, carbs: 0, fats: 0, sugars: 0, sodium_mg: 0, fiber_g: 0,
+      calories, protein, carbs: 0, fats: 0, sugars: 0,
+      saturated_fat_g: 0, sodium_mg: 0, fiber_g: 0,
     },
     score: {
       taste: 22, convenience: 20, protein: 12, eoe: 15, calories: 10,

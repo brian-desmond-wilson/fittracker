@@ -34,6 +34,7 @@ interface ProfileRow {
   target_carbs_g: number | null;
   target_sodium_mg: number | null;
   target_fats_g: number | null;
+  target_saturated_fat_g: number | null;
   target_sugars_g: number | null;
   target_fiber_g: number | null;
   // All five time columns are `TIME NOT NULL DEFAULT …` — never null.
@@ -62,6 +63,7 @@ const PROFILE_COLUMNS = {
   target_carbs_g: true,
   target_sodium_mg: true,
   target_fats_g: true,
+  target_saturated_fat_g: true,
   target_sugars_g: true,
   target_fiber_g: true,
   breakfast_time: true,
@@ -247,6 +249,7 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
         carbs: p.target_carbs_g,
         sodium_mg: p.target_sodium_mg,
         fats: p.target_fats_g,
+        saturated_fat_g: p.target_saturated_fat_g,
         sugars: p.target_sugars_g,
         fiber_g: p.target_fiber_g,
       };

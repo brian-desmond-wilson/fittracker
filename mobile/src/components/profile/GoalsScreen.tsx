@@ -26,6 +26,7 @@ interface GoalsScreenProps {
     target_carbs_g: string;
     target_sodium_mg: string;
     target_fats_g: string;
+    target_saturated_fat_g: string;
     target_sugars_g: string;
     target_fiber_g: string;
     target_water_oz: string;
@@ -101,6 +102,7 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
           target_carbs_g: intOrNull(formData.target_carbs_g),
           target_sodium_mg: intOrNull(formData.target_sodium_mg),
           target_fats_g: intOrNull(formData.target_fats_g),
+          target_saturated_fat_g: intOrNull(formData.target_saturated_fat_g),
           target_sugars_g: intOrNull(formData.target_sugars_g),
           target_fiber_g: intOrNull(formData.target_fiber_g),
           ...(waterOz !== null && { target_water_oz: waterOz }),
@@ -221,16 +223,35 @@ export function GoalsScreen({ userId, initialData, onClose, onSave }: GoalsScree
                 />
               </View>
             </View>
-            <Text style={styles.label}>Fiber (g)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="30"
-              placeholderTextColor={colors.textMuted}
-              value={formData.target_fiber_g}
-              onChangeText={(t) => setFormData({ ...formData, target_fiber_g: t })}
-              keyboardType="number-pad"
-              editable={!saving}
-            />
+            <View style={styles.row}>
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Fiber (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="30"
+                  placeholderTextColor={colors.textMuted}
+                  value={formData.target_fiber_g}
+                  onChangeText={(t) => setFormData({ ...formData, target_fiber_g: t })}
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+              {/* A ceiling, not a target, like sodium and sugars above it —
+                  the placeholder is the FDA daily value rather than something
+                  to aim for. */}
+              <View style={styles.halfField}>
+                <Text style={styles.label}>Saturated Fat (g)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="20"
+                  placeholderTextColor={colors.textMuted}
+                  value={formData.target_saturated_fat_g}
+                  onChangeText={(t) => setFormData({ ...formData, target_saturated_fat_g: t })}
+                  keyboardType="number-pad"
+                  editable={!saving}
+                />
+              </View>
+            </View>
           </Card>
 
           <SectionHeader title="Hydration" />

@@ -18,6 +18,7 @@ const GOALS: MacroGoals = {
   carbs: null,
   sodium_mg: null,
   fats: null,
+  saturated_fat_g: null,
   sugars: null,
   fiber_g: null,
 };

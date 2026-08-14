@@ -12,6 +12,9 @@ import {
 
 const muesli: PortionMacros = {
   calories: 440, protein: 14, carbs: 0, fats: 0, sugars: 0, sodium_mg: 0, fiber_g: 10,
+  // Distinct from its neighbours so a scale that dropped or duplicated it
+  // would show up in the arithmetic rather than in a zero.
+  saturated_fat_g: 4,
 };
 
 describe("portionPercentOf", () => {

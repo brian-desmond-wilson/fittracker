@@ -1,7 +1,13 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { MacroTotals, MacroGoals, MacroKey } from "@/src/lib/mealMacros";
+import {
+  MacroTotals,
+  MacroGoals,
+  MacroKey,
+  totalForMacro,
+  goalForMacro,
+} from "@/src/lib/mealMacros";
 import { MacroRing } from "./MacroRing";
 import { MacroBar } from "./MacroBar";
 import { MacroPercentageBar } from "./MacroPercentageBar";
@@ -12,7 +18,7 @@ interface MealsNutritionCardProps {
   goals: MacroGoals;
 }
 
-const TIER_C: MacroKey[] = ["fats", "sugars", "fiber"];
+const TIER_C: MacroKey[] = ["fats", "saturatedFat", "sugars", "fiber"];
 
 export function MealsNutritionCard({
   label,
@@ -54,23 +60,18 @@ export function MealsNutritionCard({
           weight (A2). It used to be bare text, which made three tiers read as
           three different kinds of fact rather than one ranked set; fiber in
           particular had a goal and no way to show progress against it (A3),
-          while sodium — no more important — got a full bar. */}
+          while sodium — no more important — got a full bar. The per-macro
+          lookup is the shared one now: the inline ladder here silently paired
+          every key it did not name with fiber's number, which a fourth macro
+          would have turned into a wrong figure rather than a wrong label. */}
       <View style={styles.tierC}>
         {TIER_C.map((m) => (
           <MacroBar
             key={m}
             macro={m}
             compact
-            value={
-              m === "fats" ? totals.fats
-              : m === "sugars" ? totals.sugars
-              : totals.fiber_g
-            }
-            goal={
-              m === "fats" ? goals.fats
-              : m === "sugars" ? goals.sugars
-              : goals.fiber_g
-            }
+            value={totalForMacro(totals, m)}
+            goal={goalForMacro(goals, m)}
           />
         ))}
       </View>

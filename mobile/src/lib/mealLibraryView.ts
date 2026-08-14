@@ -50,6 +50,7 @@ export interface InventoryNutrition {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
 }
@@ -125,10 +126,13 @@ export function mealNutrition(opts: {
     // Per FIELD, not per product: an inventory row that records calories but
     // no fibre must not zero the meal's fibre. Unknown is not zero — the
     // as-built product's figure is the best estimate available, and using it
-    // keeps the total honest instead of quietly deflating it. (Sodium takes
-    // this path for every meal priced from stock: `food_inventory` has no
-    // sodium column at all.)
-    type MacroField = "calories" | "protein" | "carbs" | "fats" | "sugars" | "sodium_mg" | "fiber_g";
+    // keeps the total honest instead of quietly deflating it. (Sodium used to
+    // take this path for EVERY meal priced from stock, because
+    // `food_inventory` had no sodium column; it has one now, along with
+    // saturated fat, so a stocked product can answer for both.)
+    type MacroField =
+      | "calories" | "protein" | "carbs" | "fats" | "sugars"
+      | "saturated_fat_g" | "sodium_mg" | "fiber_g";
     const pick = (key: MacroField) => {
       const fromStock = stocked?.[key];
       if (fromStock !== null && fromStock !== undefined) return Number(fromStock);
@@ -140,6 +144,7 @@ export function mealNutrition(opts: {
     totals.carbs += pick("carbs") * servings;
     totals.fats += pick("fats") * servings;
     totals.sugars += pick("sugars") * servings;
+    totals.saturated_fat_g += pick("saturated_fat_g") * servings;
     totals.sodium_mg += pick("sodium_mg") * servings;
     totals.fiber_g += pick("fiber_g") * servings;
 
@@ -161,7 +166,7 @@ export function mealNutrition(opts: {
 
   // Round at the boundary, so the card and anything summing cards agree.
   totals.calories = Math.round(totals.calories);
-  for (const k of ["protein", "carbs", "fats", "sugars", "fiber_g"] as const) {
+  for (const k of ["protein", "carbs", "fats", "sugars", "saturated_fat_g", "fiber_g"] as const) {
     totals[k] = Math.round(totals[k] * 10) / 10;
   }
   totals.sodium_mg = Math.round(totals.sodium_mg);
