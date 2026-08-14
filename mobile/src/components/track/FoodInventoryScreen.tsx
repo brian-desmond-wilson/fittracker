@@ -628,7 +628,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       label: "Select Multiple…", icon: Check,
       onPress: () => { setSelectMode(true); setSelectedIds(new Set([item.id])); },
     });
-    if (item.state.needsFridgeRestock) {
+    // Same rule as the tile badge: restocking the fridge moves units from the
+    // pantry or the freezer, so with nothing left anywhere there is nothing to
+    // move and the sheet would open on a transfer that cannot be made. Adding
+    // it to the shopping list, two entries up, is the verb that applies.
+    if (item.state.needsFridgeRestock && !item.state.isOut) {
       actions.push({
         label: "Restock Fridge", icon: Package,
         onPress: () => { setRestockingItem(item); setShowRestockModal(true); },
@@ -950,8 +954,13 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const renderGridItem = ({ item }: { item: InventoryItemWithState }) => {
     const expiration = formatExpirationDate(item);
 
-    // Badge logic
-    const needsRestockFridge = item.state.needsFridgeRestock;
+    // Badge logic. "Restock Fridge" means move some from the pantry or the
+    // freezer to where you can eat it — an instruction that needs something to
+    // move. With nothing left anywhere, the honest next step is to buy more,
+    // which is the shopping list's job and not this badge's. The tile already
+    // says "Out of stock" where the quantity goes, so suppressing this leaves
+    // nothing unexplained. Same rule the expiry line follows on an empty row.
+    const needsRestockFridge = item.state.needsFridgeRestock && !item.state.isOut;
     const isLowTotalStock = item.state.isLow;
 
     const hasNoCategories = item.categories.length === 0;
