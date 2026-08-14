@@ -532,6 +532,7 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
         conceptsById={data.conceptsById}
         conceptIdsBySavedFoodId={data.conceptIdsBySavedFoodId}
         inventory={data.inventory}
+        sourceSuggestions={data.sourceSuggestions}
         saving={busy}
         onSave={handleSave}
         onQuickLink={handleQuickLink}

@@ -55,6 +55,13 @@ interface InventoryRowRaw {
   fiber_g: number | null;
 }
 
+export interface SourceSuggestion {
+  name: string;
+  /** True when it is one of your kept vendors rather than a name a meal
+   *  happens to carry. Vendors are offered first. */
+  isVendor: boolean;
+}
+
 export interface MealLibraryData {
   meals: MealWithItems[];
   conceptsById: Map<string, FoodConcept>;
@@ -72,6 +79,10 @@ export interface MealLibraryData {
   timesLoggedByMealId: Map<string, number>;
   /** Logs that name no meal — the raw material for `adHocCandidates`. */
   adHocLogs: AdHocLogRow[];
+  /** Every place a meal could have come from: the vendors you keep, plus any
+   *  source a meal already names. The edit page offers these rather than a
+   *  bare text field, so "Thistle" typed twice is one source and not two. */
+  sourceSuggestions: SourceSuggestion[];
   /** profiles.target_calories, for the Emergency header. Null if unset. */
   targetCalories: number | null;
   /** C1: meal id → the most recent local date it was logged on. Absent means
@@ -146,12 +157,16 @@ export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibrar
 }
 
 async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
-  const [meals, mealCategories, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
+  const [meals, mealCategories, vendors, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     // A meal is filed under one or more categories and appears on every shelf
     // it holds. `meals.category` survives as the PRIMARY one — the single
     // answer the default logging slot needs — and is always among these.
     supabase.from("meal_categories").select("meal_id, category"),
+    // The places food comes from. Read here rather than by the edit page, which
+    // is already holding this whole payload — one round trip, and the
+    // suggestions can never disagree with the meals they were derived from.
+    supabase.from("nutrition_vendors").select("name, is_active, display_order").order("display_order"),
     supabase
       .from("meal_items")
       .select("*, savedFood:saved_foods(*)")
@@ -187,7 +202,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       .select("name, date, calories, protein, carbs, fats, sugars, sodium_mg, fiber_g, saved_food_id")
       .is("meal_id", null),
   ]);
-  const errors = [meals.error, mealCategories.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
+  const errors = [meals.error, mealCategories.error, vendors.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));
@@ -311,6 +326,23 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     categoriesByMealId.set(r.meal_id, arr);
   }
 
+  // Vendors first and in their own display order, then anything else a meal
+  // already names — deduplicated case-insensitively, so "thistle" typed once
+  // does not sit beside the vendor called "Thistle".
+  const sourceSuggestions: SourceSuggestion[] = [];
+  const seenSources = new Set<string>();
+  for (const v of (vendors.data ?? []) as Array<{ name: string; is_active: boolean }>) {
+    if (!v.is_active || seenSources.has(v.name.toLowerCase())) continue;
+    seenSources.add(v.name.toLowerCase());
+    sourceSuggestions.push({ name: v.name, isVendor: true });
+  }
+  for (const m of (meals.data ?? []) as Meal[]) {
+    const nameOf = m.source_name?.trim();
+    if (!nameOf || seenSources.has(nameOf.toLowerCase())) continue;
+    seenSources.add(nameOf.toLowerCase());
+    sourceSuggestions.push({ name: nameOf, isVendor: false });
+  }
+
   return {
     meals: ((meals.data ?? []) as Meal[]).map((m) => ({
       ...m,
@@ -328,6 +360,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     nutritionByInventoryId,
     timesLoggedByMealId,
     adHocLogs: (adHocLogs.data ?? []) as AdHocLogRow[],
+    sourceSuggestions,
     // Max per meal. String comparison is sound and cheap here: these are
     // YYYY-MM-DD, which sorts lexicographically exactly as it sorts by date.
     lastLoggedByMealId: logRows

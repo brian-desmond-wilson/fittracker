@@ -22,7 +22,7 @@ import {
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from "react-native-draggable-flatlist";
 import { Swipeable } from "react-native-gesture-handler";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, Link2, Plus, ScanBarcode, Trash2 } from "lucide-react-native";
+import { Camera, Link2, Plus, ScanBarcode, Store, Trash2 } from "lucide-react-native";
 import type { FoodConcept, ConceptRating } from "@/src/types/nutrition-preferences";
 import type { MealCategory, MealRole, MealWithItems } from "@/src/types/meal-library";
 import { MEAL_TYPE_LABELS, ROLE_LABELS, toggleCategory } from "@/src/types/meal-library";
@@ -35,7 +35,7 @@ import { suggestConcepts } from "@/src/lib/conceptMatch";
 import { mealIngredients, type IngredientInventoryRow, type MealIngredient } from "@/src/lib/mealLibraryView";
 import { mealFaceUrl } from "@/src/lib/mealFace";
 import { uploadImage } from "@/src/lib/imageUpload";
-import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
+import type { MealInput, MealItemInput, SourceSuggestion } from "@/src/lib/supabase/mealLibrary";
 import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge } from "@/src/components/ui";
 import { CategoryRail } from "./CategoryRail";
@@ -86,6 +86,9 @@ interface MealBuilderProps {
   conceptIdsBySavedFoodId: Map<string, string[]>;
   /** Optional: omit to render no stock state on the rows at all. */
   inventory?: IngredientInventoryRow[];
+  /** Places a meal can come from — your vendors, plus any source already in
+   *  use. Offered under the vendor field so the name maps back to a real one. */
+  sourceSuggestions?: SourceSuggestion[];
   saving: boolean;
   onSave: (input: MealInput) => void;
   onQuickLink: (savedFoodId: string, conceptId: string) => void;
@@ -100,8 +103,8 @@ interface MealBuilderProps {
 
 export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
   function MealBuilder({
-    initial, savedFoods, conceptsById, conceptIdsBySavedFoodId, inventory, saving,
-    onSave, onQuickLink, onCreateFood, onScan,
+    initial, savedFoods, conceptsById, conceptIdsBySavedFoodId, inventory,
+    sourceSuggestions = [], saving, onSave, onQuickLink, onCreateFood, onScan,
   }, ref) {
     const [name, setName] = useState(initial?.name ?? "");
     const [nameTouched, setNameTouched] = useState(false);
@@ -133,6 +136,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       })) ?? [],
     );
     const [search, setSearch] = useState("");
+    const [sourceFocused, setSourceFocused] = useState(false);
     const [newFood, setNewFood] = useState<{ name: string; barcode: string | null } | null>(null);
     const [creatingFood, setCreatingFood] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -273,6 +277,16 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         rows.map((r) => [r.item.saved_food_id, r.state.kind === "in_stock" || r.state.kind === "expiring"]),
       );
     }, [inventory, results, conceptIdsBySavedFoodId]);
+
+    /** Whole list while the field is empty, narrowed as you type. An exact
+     *  match is dropped: the list would be offering what is already there. */
+    const sourceMatches = useMemo(() => {
+      const q = sourceName.trim().toLowerCase();
+      if (q !== "" && sourceSuggestions.some((v) => v.name.toLowerCase() === q)) return [];
+      return sourceSuggestions
+        .filter((v) => q === "" || v.name.toLowerCase().includes(q))
+        .slice(0, 6);
+    }, [sourceName, sourceSuggestions]);
 
     const addItem = useCallback((f: SavedFood) => {
       setItems((prev) => [
@@ -717,7 +731,36 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
                 placeholderTextColor={colors.textFaint}
                 value={sourceName}
                 onChangeText={setSourceName}
+                onFocus={() => setSourceFocused(true)}
+                // Blur is deferred: a tap on a suggestion below blurs the field
+                // first, and unmounting the list on blur would cancel the tap
+                // that was aimed at it.
+                onBlur={() => setTimeout(() => setSourceFocused(false), 150)}
               />
+              {/* Free text still works — a one-off restaurant is a real answer
+                  — but a place you already buy from should be the same string
+                  every time, or the library ends up with two Thistles. */}
+              {sourceFocused && sourceMatches.length > 0 && (
+                <View style={s.suggestions}>
+                  {sourceMatches.map((v) => (
+                    <TouchableOpacity
+                      key={v.name}
+                      style={s.suggestion}
+                      onPress={() => { setSourceName(v.name); setSourceFocused(false); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use ${v.name}`}
+                    >
+                      <Store
+                        size={icons.sm}
+                        color={v.isVendor ? colors.brand : colors.textFaint}
+                        strokeWidth={icons.strokeWidth}
+                      />
+                      <Text style={s.suggestionName} numberOfLines={1}>{v.name}</Text>
+                      {!v.isVendor && <Text style={s.suggestionTag}>used before</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
               <Text style={s.sub}>The brand or venue as you&apos;d say it.</Text>
             </View>
           )}
@@ -1010,6 +1053,17 @@ const s = StyleSheet.create({
     fontSize: 15,
   },
   inputError: { borderColor: colors.danger },
+  suggestions: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
+    backgroundColor: colors.surface2, overflow: "hidden",
+  },
+  suggestion: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  suggestionName: { ...typography.body, color: colors.text, flex: 1, minWidth: 0 },
+  suggestionTag: { ...typography.caption, color: colors.textFaint },
   notesInput: { minHeight: 66, textAlignVertical: "top" },
 
   seg: {
