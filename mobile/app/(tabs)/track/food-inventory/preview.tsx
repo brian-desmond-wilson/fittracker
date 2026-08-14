@@ -63,6 +63,8 @@ export default function FoodProductPreviewPage() {
     fats: productData.fats,
     sugars: productData.sugars,
     fiber_g: null,
+    saturated_fat_g: null,
+    sodium_mg: null,
     is_scheduled_supply: false,
     serving_size: productData.servingSize,
     image_primary_url: productData.imagePrimaryUrl,

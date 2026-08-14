@@ -158,6 +158,9 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   // client, and `undefined?.toString()` would be fine but `item.fiber_g` being
   // absent must still seed "".
   const [fiber, setFiber] = useState(item.fiber_g?.toString() || "");
+  // Grams, beside the fat it belongs to; milligrams, as the panel prints it.
+  const [saturatedFat, setSaturatedFat] = useState(item.saturated_fat_g?.toString() || "");
+  const [sodium, setSodium] = useState(item.sodium_mg?.toString() || "");
   const [servingSize, setServingSize] = useState(item.serving_size || "");
 
   // Resupplied on a cadence rather than bought when low — a delivered meal,
@@ -262,6 +265,8 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     fats: item.fats?.toString() || "",
     sugars: item.sugars?.toString() || "",
     fiber: item.fiber_g?.toString() || "",
+    saturatedFat: item.saturated_fat_g?.toString() || "",
+    sodium: item.sodium_mg?.toString() || "",
     isScheduledSupply: item.is_scheduled_supply ?? false,
     servingSize: item.serving_size || "",
     notes: item.notes || "",
@@ -287,7 +292,8 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     quantity, unit,
     location: (location ?? null) as string | null,
     restockThreshold, requiresRefrigeration,
-    calories, protein, carbs, fats, sugars, fiber, isScheduledSupply, servingSize, notes,
+    calories, protein, carbs, fats, sugars, fiber, saturatedFat, sodium,
+    isScheduledSupply, servingSize, notes,
     expiration: expirationDate ? getLocalDateString(expirationDate) : "",
     preferredVendorId,
     categoryIds: selectedCategoryIds,
@@ -353,6 +359,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       if (data.fats !== null) setFats(String(data.fats));
       if (data.sugars !== null) setSugars(String(data.sugars));
       if (data.fiber !== null && data.fiber !== undefined) setFiber(String(data.fiber));
+      // `!= null` on both: these two postdate the function's first version, so
+      // an older deployment answers with the key absent rather than null.
+      if (data.saturatedFat != null) setSaturatedFat(String(data.saturatedFat));
+      if (data.sodium != null) setSodium(String(data.sodium));
       if (data.note) Alert.alert("Read the panel", data.note);
     } catch (e) {
       console.error("nutrition label scan failed:", e);
@@ -522,6 +532,20 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         }
         if (productData.sugars !== null && !sugars) {
           setSugars(productData.sugars.toString());
+        }
+        // Fiber and sodium were fetched and then dropped on the floor here
+        // long before saturated fat existed: the lookup returned all three,
+        // and the form filled in only the first five fields. A number the
+        // database already had and did not offer you is worse than one it
+        // never knew.
+        if (productData.fiber_g !== null && !fiber) {
+          setFiber(productData.fiber_g.toString());
+        }
+        if (productData.saturated_fat_g !== null && !saturatedFat) {
+          setSaturatedFat(productData.saturated_fat_g.toString());
+        }
+        if (productData.sodium_mg !== null && !sodium) {
+          setSodium(productData.sodium_mg.toString());
         }
         if (productData.imagePrimaryUrl && !imagePrimary) {
           setImagePrimary(productData.imagePrimaryUrl);
@@ -794,6 +818,10 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       dec("fats", fats, "Fats"),
       dec("sugars", sugars, "Sugars"),
       dec("fiber", fiber, "Fiber"),
+      dec("saturatedFat", saturatedFat, "Saturated Fat"),
+      // Milligrams, but the same rule: a decimal of 0 or more. A panel that
+      // prints 2.5mg is rare and not our business to round away.
+      dec("sodium", sodium, "Sodium"),
     ];
     for (const { key, raw, section, label, parse, rule } of visibleNumericFields) {
       // Empty means "not set" and stays null — only a non-empty value has to parse.
@@ -893,6 +921,8 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
         fats: parseDecimalInput(fats),
         sugars: parseDecimalInput(sugars),
         fiber_g: parseDecimalInput(fiber),
+        saturated_fat_g: parseDecimalInput(saturatedFat),
+        sodium_mg: parseDecimalInput(sodium),
         is_scheduled_supply: isScheduledSupply,
         serving_size: servingSize.trim() || null,
         // `getLocalDateString`, not `.toISOString().split("T")[0]`: the picker
@@ -1780,15 +1810,16 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               isExpanded={expandedSection === "nutrition"}
               hasError={validationErrors.has("calories") || validationErrors.has("protein")
                 || validationErrors.has("carbs") || validationErrors.has("fats")
-                || validationErrors.has("sugars") || validationErrors.has("fiber")}
+                || validationErrors.has("sugars") || validationErrors.has("fiber")
+                || validationErrors.has("saturatedFat") || validationErrors.has("sodium")}
               onPress={() => toggleSection("nutrition")}
             />
 
             {expandedSection === "nutrition" && (
               <View style={styles.sectionContent}>
                 {/* The app already reads groceries off a photograph; a panel
-                    is an easier read than a shelf. Typing six numbers off the
-                    back of a packet is the clearest waste on this form. */}
+                    is an easier read than a shelf. Typing eight numbers off
+                    the back of a packet is the clearest waste on this form. */}
                 <TouchableOpacity
                   style={styles.scanAssist}
                   onPress={scanNutritionLabel}
@@ -1868,6 +1899,23 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                     />
                   </View>
 
+                  {/* Saturated fat sits beside the total it comes out of,
+                      where the panel prints it, rather than at the end with
+                      the fields that arrived last. */}
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Saturated Fat (g)</Text>
+                    <TextInput
+                      style={[styles.input, validationErrors.has("saturatedFat") && styles.inputError]}
+                      placeholder="0"
+                      placeholderTextColor={colors.textFaint}
+                      value={saturatedFat}
+                      onChangeText={(t) => setSaturatedFat(sanitizeDecimal(t))}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.row}>
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Sugars (g)</Text>
                     <TextInput
@@ -1879,9 +1927,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       keyboardType="decimal-pad"
                     />
                   </View>
-                </View>
 
-                <View style={styles.row}>
                   <View style={[styles.field, styles.fieldHalf]}>
                     <Text style={styles.label}>Fiber (g)</Text>
                     <TextInput
@@ -1893,9 +1939,27 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
                       keyboardType="decimal-pad"
                     />
                   </View>
-                  {/* Five macro fields do not divide into pairs. An empty half
-                      keeps Fiber the same width as every other input rather
-                      than letting it stretch across the row on its own. */}
+                </View>
+
+                <View style={styles.row}>
+                  {/* MILLIGRAMS, and the label has to say so: it is the one
+                      figure on this form that is not in grams, and a sodium
+                      typed as 0.48 would read as a rounding error rather than
+                      as the 480 the packet prints. */}
+                  <View style={[styles.field, styles.fieldHalf]}>
+                    <Text style={styles.label}>Sodium (mg)</Text>
+                    <TextInput
+                      style={[styles.input, validationErrors.has("sodium") && styles.inputError]}
+                      placeholder="0"
+                      placeholderTextColor={colors.textFaint}
+                      value={sodium}
+                      onChangeText={(t) => setSodium(sanitizeDecimal(t))}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  {/* Seven nutrition fields do not divide into pairs. An empty
+                      half keeps Sodium the same width as every other input
+                      rather than letting it stretch across the row alone. */}
                   <View style={[styles.field, styles.fieldHalf]} />
                 </View>
 

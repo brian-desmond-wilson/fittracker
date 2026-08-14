@@ -714,7 +714,7 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
 
           {/* Per serving, per shelf, and against the day you already track. */}
           {(item.calories || item.protein || item.carbs || item.fats || item.sugars
-            || item.fiber_g) && renderSection(
+            || item.fiber_g || item.saturated_fat_g || item.sodium_mg) && renderSection(
             "Nutrition",
             <>
               <View style={styles.detailRow}>
@@ -753,6 +753,9 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
               {targetShare !== null && renderDetailRow("Share of today's target", `${targetShare}%`)}
               {item.fiber_g ? renderDetailRow("Fiber", `${item.fiber_g}g`) : null}
               {item.sugars ? renderDetailRow("Sugars", `${item.sugars}g`) : null}
+              {item.saturated_fat_g
+                ? renderDetailRow("Saturated fat", `${item.saturated_fat_g}g`) : null}
+              {item.sodium_mg ? renderDetailRow("Sodium", `${item.sodium_mg}mg`) : null}
             </>
           )}
 

@@ -28,6 +28,9 @@ export interface OpenFoodFactsProduct {
     fat_serving?: number;
     sugars_100g?: number;
     sugars_serving?: number;
+    // Hyphenated in OFF's schema, unlike every other key here.
+    "saturated-fat_100g"?: number;
+    "saturated-fat_serving"?: number;
     fiber_100g?: number;
     fiber_serving?: number;
     sodium_100g?: number;
@@ -54,6 +57,7 @@ export interface ProductData {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
   imagePrimaryUrl: string | null;
@@ -207,6 +211,8 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
   const sugPer100 = nutriments.sugars_100g;
   const fibServing = nutriments.fiber_serving;
   const fibPer100 = nutriments.fiber_100g;
+  const satServing = nutriments["saturated-fat_serving"];
+  const satPer100 = nutriments["saturated-fat_100g"];
   // Sodium: OFF reports in grams; we convert to mg downstream. Fall back
   // to salt × 393 (salt ≈ sodium × 2.5).
   const sodServingG = nutriments.sodium_serving;
@@ -241,6 +247,7 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
   const fats = scale(fatServing, fatPer100);
   const sugars = scale(sugServing, sugPer100);
   const fiber = scale(fibServing, fibPer100);
+  const saturatedFat = scale(satServing, satPer100);
   const sodiumG = scale(sodServingG, sodPer100G);
   const saltG = scale(saltServingG, saltPer100G);
   const sodiumMg =
@@ -263,6 +270,7 @@ function parseProductData(product: OpenFoodFactsProduct): ProductData {
     carbs: carbs != null ? Math.round(carbs * 10) / 10 : null,
     fats: fats != null ? Math.round(fats * 10) / 10 : null,
     sugars: sugars != null ? Math.round(sugars * 10) / 10 : null,
+    saturated_fat_g: saturatedFat != null ? Math.round(saturatedFat * 10) / 10 : null,
     sodium_mg: sodiumMg != null ? Math.round(sodiumMg) : null,
     fiber_g: fiber != null ? Math.round(fiber * 10) / 10 : null,
     imagePrimaryUrl,
