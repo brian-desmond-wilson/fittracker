@@ -5,7 +5,7 @@
 // and Eat Next stock display goes through eatNextStockBadge rather than being
 // re-derived from `reasons` (the Phase 4 Task 14 lesson).
 import type { ItemStockState } from "./stockState";
-import { isExpiringSoon } from "./expiryPolicy";
+import { isExpiringSoon, reviewExpiry } from "./expiryPolicy";
 import type { EatNextResult, EatNextStockInfo } from "./eatNext";
 import { eatNextExpiringLine, eatNextStockBadge } from "./eatNext";
 import type { MealPaceState } from "./mealPace";
@@ -103,6 +103,14 @@ const capLines = (lines: StationDetailLine[]): { lines: StationDetailLine[]; ove
 
 function inventoryStation(inp: LoopStatusInputs, readyCount: number): StationStatus {
   const out = inp.inventory.filter((i) => i.state.isOut);
+  // The three populations the Inventory screen splits on, named the same way
+  // here so the two agree. `isArchived` there is out OR stale, which is why
+  // "35 items · 14 out" read as 21 usable when the page said 8: the other 13
+  // are still on the shelf but long past their date.
+  const past = inp.inventory.filter(
+    (i) => !i.state.isOut && reviewExpiry(i.state, i.categories) === "stale",
+  );
+  const usable = inp.inventory.length - out.length - past.length;
   // C3: the ONE "expiring" definition, shared with the Inventory screen —
   // excludes out-of-stock items and stale (aged-out) expired items. Never
   // re-derive from bands here; the policy module owns the semantics.
@@ -129,7 +137,9 @@ function inventoryStation(inp: LoopStatusInputs, readyCount: number): StationSta
   return {
     key: "inventory",
     title: "Inventory",
-    headline: `${inp.inventory.length} items · ${out.length} out · ${expiring.length} expiring`,
+    // Leads with what is actually usable, which is the number the page it
+    // links to leads with. The three sum to the whole shelf.
+    headline: `${usable} usable · ${out.length} out · ${past.length} past`,
     badge,
     attention: out.length > 0 || expiring.length > 0,
     // A10. These captions describe how one station feeds the next, and they

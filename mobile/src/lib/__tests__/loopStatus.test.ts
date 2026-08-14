@@ -63,10 +63,10 @@ const baseInputs = (): LoopStatusInputs => ({
 });
 
 describe("station 1: inventory", () => {
-  it("counts items, out, expiring; danger badge wins when anything is out", () => {
+  it("counts usable, out and past; danger badge wins when anything is out", () => {
     const s = computeLoopStatus(baseInputs()).stations[0];
     expect(s.key).toBe("inventory");
-    expect(s.headline).toBe("3 items · 1 out · 1 expiring");
+    expect(s.headline).toBe("2 usable · 1 out · 0 past");
     expect(s.badge).toEqual({ label: "1 out", tone: "danger" });
     expect(s.attention).toBe(true);
     expect(s.connector).toBe("what you have makes 1 of 2 meals");
@@ -90,7 +90,7 @@ describe("station 1: inventory", () => {
       { id: "a", name: "A", state: state({ expiration: "expired", daysLeft: null }) },
       { id: "b", name: "B", state: state({ expiration: "later", daysLeft: 20 }) },
     ];
-    expect(computeLoopStatus(inp).stations[0].headline).toBe("2 items · 0 out · 1 expiring");
+    expect(computeLoopStatus(inp).stations[0].headline).toBe("2 usable · 0 out · 0 past");
   });
   it("C1/C3: stale expired items and out-of-stock items leave the expiring count", () => {
     const inp = baseInputs();
@@ -105,10 +105,28 @@ describe("station 1: inventory", () => {
       { id: "d", name: "New Casualty", state: state({ expiration: "expired", daysLeft: -3 }) },
     ];
     const s = computeLoopStatus(inp).stations[0];
-    expect(s.headline).toBe("4 items · 1 out · 2 expiring");
+    // "Old Milk" is stocked but 273 days past — the population the old
+    // headline hid entirely, and the reason it implied more usable food than
+    // the Inventory page would show.
+    expect(s.headline).toBe("2 usable · 1 out · 1 past");
     // stale item also stays out of the detail-sheet expiring lines
     expect(s.detail.lines.find((l) => l.label === "Old Milk")).toBeUndefined();
     expect(s.detail.lines.find((l) => l.label === "Oats Overnight")).toBeDefined();
+  });
+  // The point of the wording: the three populations are the whole shelf, so a
+  // reader cannot infer more usable food than the Inventory page will show.
+  it("the three populations account for every item", () => {
+    const inp = baseInputs();
+    inp.inventory = [
+      { id: "a", name: "Old Milk", state: state({ expiration: "expired", daysLeft: -273 }) },
+      { id: "b", name: "Gone", state: state({ totalQuantity: 0, isOut: true }) },
+      { id: "c", name: "Fine", state: state({ expiration: "later", daysLeft: 20 }) },
+      { id: "d", name: "Soon", state: state({ expiration: "soon", daysLeft: 2 }) },
+    ];
+    const headline = computeLoopStatus(inp).stations[0].headline;
+    expect(headline).toBe("2 usable · 1 out · 1 past");
+    const [usable, out, past] = headline.match(/\d+/g)!.map(Number);
+    expect(usable + out + past).toBe(inp.inventory.length);
   });
   it("detail: out names as danger chips, expiring lines soonest-first, expired shows 'expired'", () => {
     const inp = baseInputs();
