@@ -3,6 +3,7 @@ import {
   mealIngredients,
   filterLibrary,
   inSegment,
+  categoryCountsFor,
   libraryCounts,
   libraryEmptyMessage,
   matchesLibraryQuery,
@@ -363,6 +364,38 @@ describe("sortLibrary", () => {
 });
 
 // -- counts -----------------------------------------------------------------
+
+describe("categoryCountsFor", () => {
+  // The tabs sit under the segment control and describe what it shows. Counted
+  // library-wide, Archive read "All Meals 0" beside "Emergency Calories 1".
+  const cards = [
+    card({ categories: ["breakfast"], isArchived: false }),
+    card({ categories: ["breakfast", "snack"], isArchived: false }),
+    card({ categories: ["dinner"], isArchived: true }),
+  ];
+
+  it("counts only what the segment holds", () => {
+    const all = categoryCountsFor(cards, "all");
+    expect(all.get("breakfast")).toBe(2);
+    expect(all.get("snack")).toBe(1);
+    expect(all.get("dinner")).toBeUndefined();
+  });
+
+  it("counts the archive's own meals, not the live ones", () => {
+    const archived = categoryCountsFor(cards, "archive");
+    expect(archived.get("dinner")).toBe(1);
+    expect(archived.get("breakfast")).toBeUndefined();
+  });
+
+  it("is empty when the segment is", () => {
+    expect(categoryCountsFor([cards[0]], "archive").size).toBe(0);
+  });
+
+  it("counts a two-category meal under both, as the tabs promise", () => {
+    expect(categoryCountsFor([cards[1]], "all").get("breakfast")).toBe(1);
+    expect(categoryCountsFor([cards[1]], "all").get("snack")).toBe(1);
+  });
+});
 
 describe("libraryCounts", () => {
   it("counts over the whole library, so the filters can say what they hide", () => {

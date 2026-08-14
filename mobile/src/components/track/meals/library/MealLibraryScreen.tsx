@@ -43,6 +43,7 @@ import { Badge, Button, Card, EmptyState, IconButton, LoadingState, TabBand } fr
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import {
   buildShelves,
+  categoryCountsFor,
   filterLibrary,
   libraryCounts,
   libraryEmptyMessage,
@@ -261,7 +262,10 @@ export function MealLibraryScreen({
   // ── Render ──────────────────────────────────────────────────────────────
   const empty = libraryEmptyMessage({ segment, counts, query, favoritesOnly, category });
 
-  const categoryTabs = CATEGORY_SECTION_ORDER.filter((c) => (counts.byCategory.get(c) ?? 0) > 0);
+  // Counted over the segment on screen, not the whole library: under Archive
+  // the library-wide tally put "All Meals 0" beside "Emergency Calories 1".
+  const categoryCounts = useMemo(() => categoryCountsFor(cards, segment), [cards, segment]);
+  const categoryTabs = CATEGORY_SECTION_ORDER.filter((c) => (categoryCounts.get(c) ?? 0) > 0);
 
   return (
     <>
@@ -346,7 +350,7 @@ export function MealLibraryScreen({
                 ...categoryTabs.map((c) => ({
                   key: c,
                   label: CATEGORY_LABELS[c],
-                  count: counts.byCategory.get(c) ?? 0,
+                  count: categoryCounts.get(c) ?? 0,
                 })),
               ]}
               selectedKey={category ?? ALL_CATEGORIES}

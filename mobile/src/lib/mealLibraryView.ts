@@ -440,6 +440,32 @@ export function libraryCounts(cards: MealCard[]): LibraryCounts {
   return { available, all, archive, byCategory };
 }
 
+/**
+ * Per-category counts for ONE segment.
+ *
+ * The tabs sit directly beneath the segment control and describe what it is
+ * showing, so they have to count the same set it does. `libraryCounts`
+ * tallies categories over the live library only, which under Archive put
+ * "All Meals 0" on the same row as "Emergency Calories 1" — a live meal
+ * counted into an empty archive.
+ *
+ * Same double-counting rule as `libraryCounts`: a meal filed under two
+ * categories is in both tallies, so these do not sum to the segment total.
+ */
+export function categoryCountsFor(
+  cards: MealCard[],
+  segment: LibrarySegment,
+): Map<MealCategory, number> {
+  const counts = new Map<MealCategory, number>();
+  for (const card of cards) {
+    if (!inSegment(card, segment)) continue;
+    for (const category of card.categories) {
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 // ---------------------------------------------------------------------------
 // Shelves (the Available posture)
 
