@@ -314,14 +314,18 @@ export function FuelRail({
                 <Card variant="row">
                   <View style={s.rowLine}>
                     <Text style={[s.rowMeta, s.rowBody]}>
-                      Nothing in your library fits this slot yet.
+                      {row.reason === "budget-spent"
+                        ? "Today's calories are already planned. This slot is spare."
+                        : "Nothing in your library fits this slot yet."}
                     </Text>
-                    <Button
-                      label="Open library"
-                      size="sm"
-                      variant="ghost"
-                      onPress={() => onOpenLibrary(null)}
-                    />
+                    {row.reason === "no-candidates" && (
+                      <Button
+                        label="Open library"
+                        size="sm"
+                        variant="ghost"
+                        onPress={() => onOpenLibrary(null)}
+                      />
+                    )}
                   </View>
                 </Card>
               </View>

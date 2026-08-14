@@ -13,6 +13,7 @@ import {
   portionLabel,
   redistributionNote,
   timeToMinutes,
+  trimToBudget,
   windowsFromLegacyTimes,
   windowsFromRows,
   windowStates,
@@ -292,7 +293,7 @@ describe("pickForWindows", () => {
         cand({ mealId: "rescue", name: "Rescue", score: 60, rescueCount: 1, rescueSoonestDays: 1 }),
       ],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     expect(picks[0].mealId).toBe("rescue");
     expect(picks[0].reasons).toContain("uses food expiring in 1d");
   });
@@ -306,7 +307,7 @@ describe("pickForWindows", () => {
         cand({ mealId: "today", name: "Saves one today", rescueCount: 1, rescueSoonestDays: 0 }),
       ],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     expect(picks[0].mealId).toBe("today");
     expect(picks[0].reasons).toContain("uses food expiring today");
   });
@@ -317,7 +318,7 @@ describe("pickForWindows", () => {
       targets,
       candidates: [cand({ mealId: "only", name: "Only meal" })],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     expect(picks).toHaveLength(1);
   });
 
@@ -330,7 +331,7 @@ describe("pickForWindows", () => {
         cand({ mealId: "dinnery", name: "Dinnery", mealType: "dinner", score: 85 }),
       ],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     // lunch window: 80+12 affinity beats 85 → Lunchy takes lunch
     expect(picks[0].mealId).toBe("lunchy");
     expect(picks[1].mealId).toBe("dinnery");
@@ -342,7 +343,7 @@ describe("pickForWindows", () => {
       targets,
       candidates: [cand({ mealId: "slow", name: "Slow", prepMinutes: 30 })],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     // No live windows at 11:00, so the slow meal is allowed for upcoming lunch.
     expect(picks[0].mealId).toBe("slow");
 
@@ -356,7 +357,7 @@ describe("pickForWindows", () => {
       targets: liveTargets,
       candidates: [cand({ mealId: "slow", name: "Slow", prepMinutes: 30 })],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     // Lunch is live now: the 30-minute meal is out for lunch, in for dinner.
     expect(livePicks.map((p) => p.windowId)).toEqual(["w-dinner"]);
   });
@@ -373,13 +374,116 @@ describe("pickForWindows", () => {
       targets: bigTarget,
       candidates: [cand({ mealId: "bowl", name: "Bowl", calories: 900, mealType: "dinner" })],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     expect(picks[0].portion).toBe(1.35); // 1200/900 = 1.33, nearest kitchen step up
     expect(picks[0].reasons.join(" ")).toContain("portion 1.35× to close the gap");
   });
 });
 
 // -- AI merge ---------------------------------------------------------------
+
+describe("trimToBudget", () => {
+  // The bug this closes: seven open windows, a budget divided seven ways for
+  // the TARGETS, and then a whole meal dropped into every one — 2,300 planned
+  // as 3,355, with portions unable to scale down to claw it back.
+  const sevenWindows = Array.from({ length: 7 }, (_, i) =>
+    win({
+      id: `w${i}`,
+      label: `W${i}`,
+      startMinutes: 7 * 60 + i * 120,
+      endMinutes: 7 * 60 + i * 120 + 90,
+    }),
+  );
+  const sevenStates = sevenWindows.map((w) => ({
+    window: w,
+    status: "upcoming" as const,
+    logs: [],
+  }));
+  const planned = (calories: number, portion = 1) =>
+    sevenWindows.map((w, i) => ({
+      windowId: w.id,
+      mealId: `m${i}`,
+      name: `Meal ${i}`,
+      calories,
+      protein: 30,
+      portion,
+      prepMinutes: 5,
+      faceUrl: null,
+      reasons: [],
+      assemblable: true,
+      score: 90,
+    }));
+
+  it("stops once the day's calories are spoken for", () => {
+    const { picks, budgetSkipped } = trimToBudget({
+      picks: planned(600),
+      states: sevenStates,
+      remainingCalories: 2300,
+    });
+    // 3 × 600 = 1,800 fits; a fourth would be 2,400 against 2,300.
+    expect(picks).toHaveLength(3);
+    expect(budgetSkipped).toEqual(["w3", "w4", "w5", "w6"]);
+    expect(picks.reduce((sum, p) => sum + p.calories * p.portion, 0)).toBeLessThanOrEqual(2300);
+  });
+
+  it("keeps the earlier windows, not a scattering of them", () => {
+    const { picks } = trimToBudget({
+      picks: planned(600),
+      states: sevenStates,
+      remainingCalories: 2300,
+    });
+    expect(picks.map((p) => p.windowId)).toEqual(["w0", "w1", "w2"]);
+  });
+
+  it("works from the day's order, whatever order the picks arrive in", () => {
+    const { picks } = trimToBudget({
+      picks: [...planned(600)].reverse(),
+      states: sevenStates,
+      remainingCalories: 1300,
+    });
+    expect(picks.map((p) => p.windowId)).toEqual(["w0", "w1"]);
+  });
+
+  it("counts the scaled-up portion, not the meal's own calories", () => {
+    const { picks } = trimToBudget({
+      // 600 × 1.5 = 900 apiece, so 1,000 carries exactly one.
+      picks: planned(600, 1.5),
+      states: sevenStates,
+      remainingCalories: 1000,
+    });
+    expect(picks).toHaveLength(1);
+  });
+
+  it("plans nothing at all once the goal is already met", () => {
+    const { picks, budgetSkipped } = trimToBudget({
+      picks: planned(600),
+      states: sevenStates,
+      remainingCalories: 0,
+    });
+    expect(picks).toEqual([]);
+    expect(budgetSkipped).toHaveLength(7);
+  });
+
+  it("keeps everything when there is no goal to spend against", () => {
+    const { picks, budgetSkipped } = trimToBudget({
+      picks: planned(600),
+      states: sevenStates,
+      remainingCalories: null,
+    });
+    expect(picks).toHaveLength(7);
+    expect(budgetSkipped).toEqual([]);
+  });
+
+  it("leaves a plan that already fits alone", () => {
+    const { picks, budgetSkipped } = trimToBudget({
+      picks: planned(300),
+      states: sevenStates,
+      remainingCalories: 2300,
+    });
+    expect(picks).toHaveLength(7);
+    expect(budgetSkipped).toEqual([]);
+  });
+});
 
 describe("mergeAiPicks", () => {
   const states = windowStates(DAY, attributeLogs([log()], DAY), 11 * 60);
@@ -392,7 +496,7 @@ describe("mergeAiPicks", () => {
     cand({ mealId: "bowl", name: "Bowl", mealType: "dinner", calories: 990 }),
     cand({ mealId: "slow", name: "Slow", prepMinutes: 30 }),
   ];
-  const rulesPicks = pickForWindows({ states, targets, candidates, maxPrepMinutes: 5 });
+  const rulesPicks = pickForWindows({ states, targets, candidates, maxPrepMinutes: 5 }).picks;
 
   it("honors a valid assignment and carries the model's sentence", () => {
     const merged = mergeAiPicks({
@@ -427,7 +531,7 @@ describe("mergeAiPicks", () => {
     });
     const liveRules = pickForWindows({
       states: liveStates, targets: liveTargets, candidates, maxPrepMinutes: 5,
-    });
+    }).picks;
     const merged = mergeAiPicks({
       states: liveStates, targets: liveTargets, candidates, rulesPicks: liveRules,
       ai: [{ windowId: "w-lunch", mealId: "slow", reason: "worth the wait" }],
@@ -598,7 +702,7 @@ describe("buildFuelRail", () => {
         cand({ mealId: "bowl", name: "Bowl", mealType: "dinner", calories: 990, protein: 64 }),
       ],
       maxPrepMinutes: 5,
-    });
+    }).picks;
     const projection = planProjection({
       consumedCalories: 560, consumedProtein: 44, picks,
       goalCalories: 2300, goalProtein: 160,
@@ -644,6 +748,24 @@ describe("buildFuelRail", () => {
     });
     expect(rows.every((r) => r.kind === "logged")).toBe(true);
     expect(rows).toHaveLength(2);
+  });
+
+  it("an empty slot says which of the two reasons applies", () => {
+    const rows = buildFuelRail({
+      states: [
+        { window: win({ id: "w1" }), status: "upcoming", logs: [] },
+        { window: win({ id: "w2", startMinutes: 12 * 60 }), status: "upcoming", logs: [] },
+      ],
+      logs: [],
+      picks: [],
+      projection: null,
+      nowMinutes: 10 * 60,
+      goalCalories: 2300,
+      budgetSkipped: ["w2"],
+    });
+    const empties = rows.filter((r) => r.kind === "empty-slot");
+    expect(empties.map((r) => (r as { reason: string }).reason))
+      .toEqual(["no-candidates", "budget-spent"]);
   });
 
   it("an open window with no candidates renders as an empty slot", () => {

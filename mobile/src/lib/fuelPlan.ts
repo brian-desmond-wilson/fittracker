@@ -364,15 +364,27 @@ function rescueRank(c: FuelCandidate): number {
  * Meals over the prep budget are excluded outright for live windows only —
  * tonight's dinner can afford prep that "eat now" cannot.
  */
+/** What the walk produced, and which windows it deliberately left alone. */
+export interface WindowPicks {
+  picks: FuelPick[];
+  /**
+   * Windows left empty because the day's calories were already planned, not
+   * because the library had nothing to offer. The rail says which, since
+   * "nothing fits this slot" would be a lie about a full library.
+   */
+  budgetSkipped: string[];
+}
+
 export function pickForWindows(opts: {
   states: WindowState[];
   targets: WindowTarget[];
   candidates: FuelCandidate[];
   maxPrepMinutes: number;
-}): FuelPick[] {
+}): WindowPicks {
   const targetById = new Map(opts.targets.map((t) => [t.windowId, t]));
   const used = new Set<string>();
   const picks: FuelPick[] = [];
+  const budgetSkipped: string[] = [];
 
   const open = opts.states
     .filter((s) => s.status === "live" || s.status === "upcoming")
@@ -423,7 +435,7 @@ export function pickForWindows(opts: {
       score: best.score,
     });
   }
-  return picks;
+  return { picks, budgetSkipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +458,60 @@ export interface AiAssignment {
  * Portions and rescue/portion reasons are ALWAYS recomputed by rules; the
  * model contributes the assignment and one sentence, nothing numeric.
  */
+/**
+ * Spend the day's calories in window order and drop what will not fit.
+ *
+ * This runs AFTER the AI merge, deliberately, and it is the only place the
+ * budget is enforced. Enforcing it inside `pickForWindows` was not enough:
+ * the AI tier's assignments are merged over the rules tier afterwards and
+ * happily re-filled the windows the rules had left alone — the strip said
+ * 2,120 while the rail below it still planned 3,355.
+ *
+ * The problem it solves: window TARGETS divide the remaining budget by weight,
+ * but nothing subtracted a pick once made, so seven windows each targeting a
+ * seventh of the day were each handed a whole meal. Portions never scale down
+ * (nobody eats four fifths of a prepared meal), so nothing downstream could
+ * claw it back.
+ *
+ * Fills the earlier windows and leaves the later ones spare, rather than
+ * scattering gaps: eating happens in time order. No slack — a rule that
+ * sometimes tips over is one nobody can predict, and the landing row already
+ * says when the day comes up short. Protein is deliberately not a second
+ * constraint: calories run out first, and two stopping rules would make it
+ * unpredictable which one ended the day.
+ */
+export function trimToBudget(opts: {
+  picks: FuelPick[];
+  states: WindowState[];
+  /** `null` (no calorie goal) plans everything, as before. */
+  remainingCalories: number | null;
+}): WindowPicks {
+  if (opts.remainingCalories === null) return { picks: opts.picks, budgetSkipped: [] };
+
+  const order = new Map(
+    [...opts.states]
+      .sort((a, b) => a.window.startMinutes - b.window.startMinutes)
+      .map((s, i) => [s.window.id, i]),
+  );
+  const inTimeOrder = [...opts.picks].sort(
+    (a, b) => (order.get(a.windowId) ?? 0) - (order.get(b.windowId) ?? 0),
+  );
+
+  let remaining = opts.remainingCalories;
+  const kept: FuelPick[] = [];
+  const budgetSkipped: string[] = [];
+  for (const pick of inTimeOrder) {
+    const cost = Math.round(pick.calories * pick.portion);
+    if (cost > remaining) {
+      budgetSkipped.push(pick.windowId);
+      continue;
+    }
+    remaining -= cost;
+    kept.push(pick);
+  }
+  return { picks: kept, budgetSkipped };
+}
+
 export function mergeAiPicks(opts: {
   states: WindowState[];
   targets: WindowTarget[];
@@ -631,7 +697,15 @@ export type FuelRailRow =
       closingSoon: boolean;
       sortMinutes: number;
     }
-  | { kind: "empty-slot"; window: FuelWindow; sortMinutes: number }
+  | {
+      kind: "empty-slot";
+      window: FuelWindow;
+      /** Why nothing is suggested: the library had nothing left to offer,
+       *  or the day's calories are already planned. The two want different
+       *  words — blaming the library for a full one would be a lie. */
+      reason: "no-candidates" | "budget-spent";
+      sortMinutes: number;
+    }
   | { kind: "landing"; projection: FuelProjection; sortMinutes: number };
 
 /**
@@ -647,6 +721,8 @@ export function buildFuelRail(opts: {
   projection: FuelProjection | null;
   nowMinutes: number | null;
   goalCalories: number | null;
+  /** Window ids the picker left alone because the budget was spent. */
+  budgetSkipped?: string[];
 }): FuelRailRow[] {
   const windowById = new Map(opts.states.map((s) => [s.window.id, s.window]));
   const rows: FuelRailRow[] = [];
@@ -707,7 +783,12 @@ export function buildFuelRail(opts: {
         sortMinutes: at,
       });
     } else {
-      rows.push({ kind: "empty-slot", window: s.window, sortMinutes: at });
+      rows.push({
+        kind: "empty-slot",
+        window: s.window,
+        reason: opts.budgetSkipped?.includes(s.window.id) ? "budget-spent" : "no-candidates",
+        sortMinutes: at,
+      });
     }
   }
 

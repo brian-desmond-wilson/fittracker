@@ -21,6 +21,7 @@ import {
   fuelVerdict,
   mergeAiPicks,
   pickForWindows,
+  trimToBudget,
   planProjection,
   timeToMinutes,
   windowsFromLegacyTimes,
@@ -438,7 +439,17 @@ export function useFuelPlan(
       };
     });
 
-    const rulesPicks = pickForWindows({ states, targets, candidates, maxPrepMinutes });
+    // The day's unplanned calories drive how many windows get filled: the walk
+    // spends from this and stops rather than handing every window a meal the
+    // budget cannot carry.
+    const remainingCalories =
+      goals.calories === null ? null : Math.max(0, goals.calories - dayTotals.calories);
+    const { picks: rulesPicks } = pickForWindows({
+      states,
+      targets,
+      candidates,
+      maxPrepMinutes,
+    });
 
     // The identity of this plan-state: same open windows, same targets, same
     // candidate set → same AI question, so a cached answer still applies.
@@ -452,7 +463,7 @@ export function useFuelPlan(
     // Merge the AI tier over rules when its answer matches this exact
     // plan-state; otherwise rules stand (and the effect below re-asks).
     const aiFresh = aiResult !== null && aiResult.signature === aiSignature;
-    const picks = aiFresh
+    const plannedPicks = aiFresh
       ? mergeAiPicks({
           states,
           targets,
@@ -462,6 +473,15 @@ export function useFuelPlan(
           maxPrepMinutes,
         })
       : rulesPicks;
+
+    // The budget is spent AFTER the merge, so both tiers answer to it. The AI
+    // is asked about every open window and may say what it likes; what the day
+    // can actually carry is decided here, once.
+    const { picks, budgetSkipped } = trimToBudget({
+      picks: plannedPicks,
+      states,
+      remainingCalories,
+    });
 
     const aiRequest =
       targets.length > 0 && candidates.length > 0
@@ -540,6 +560,7 @@ export function useFuelPlan(
         projection,
         nowMinutes,
         goalCalories: goals.calories,
+        budgetSkipped,
       }),
       windows,
       picks,
