@@ -26,7 +26,7 @@ import { ChevronLeft, Sparkles, MoreVertical, Dumbbell, Weight, Circle } from 'l
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
-import { computeMovementTier } from '@/src/lib/supabase/crossfit';
+import { computeMovementTier, fetchHierarchy } from '@/src/lib/supabase/crossfit';
 
 export interface TrainingItemDetailScreenProps {
   /** How this tab names the thing, lower case: "exercise" or "movement". */
@@ -132,32 +132,30 @@ export function TrainingItemDetailScreen({
     if (!item || !item.parent_exercise_id) return;
 
     try {
-      // Traverse up the chain to find all ancestors (from immediate parent to root)
+      // One read of the hierarchy, then walk it in memory. This used to cost
+      // a select AND a tier RPC per ancestor — six round trips to draw a
+      // three-deep tree.
+      const { rows, tiers } = await fetchHierarchy();
+      const byId = new Map(rows.map((r) => [r.id, r]));
+
+      // Up the chain from the immediate parent to the root.
       const ancestors: Array<{ id: string; name: string; is_core: boolean; tier: number }> = [];
       let currentParentId: string | null = item.parent_exercise_id;
+      const walked = new Set<string>();
 
-      while (currentParentId) {
-        const { data: parentData, error: parentError } = (await supabase
-          .from('exercises')
-          .select('id, name, is_core, parent_exercise_id')
-          .eq('id', currentParentId)
-          .single()) as { data: { id: string; name: string; is_core: boolean; parent_exercise_id: string | null } | null; error: unknown };
-
-        if (parentError) throw parentError;
-        if (!parentData) break;
-
-        // Compute tier for this ancestor
-        const ancestorTier = await computeMovementTier(parentData.id);
+      while (currentParentId && !walked.has(currentParentId)) {
+        walked.add(currentParentId);
+        const parent = byId.get(currentParentId);
+        if (!parent) break;
 
         ancestors.unshift({
-          id: parentData.id,
-          name: parentData.name,
-          is_core: parentData.is_core,
-          tier: ancestorTier,
+          id: parent.id,
+          name: parent.name,
+          is_core: parent.is_core,
+          tier: tiers.get(parent.id) ?? 0,
         });
 
-        // Move up the chain
-        currentParentId = parentData.is_core ? null : parentData.parent_exercise_id;
+        currentParentId = parent.is_core ? null : parent.parent_exercise_id;
       }
 
       // Fetch sibling items (same parent, same tier level)

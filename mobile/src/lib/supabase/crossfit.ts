@@ -903,6 +903,36 @@ export async function createVariationOption(
  * Compute the tier/depth of a movement in the hierarchy
  * Returns 0 for core movements, 1-4 for variation tiers
  */
+/** The whole hierarchy in one read: enough to walk any chain locally. */
+export interface HierarchyRow extends TierRow {
+  name: string;
+  is_core: boolean;
+}
+
+/**
+ * Every movement's place in the hierarchy, in one query.
+ *
+ * The detail page used to climb a chain a row at a time — one select and one
+ * tier RPC per ancestor, so a three-deep variation cost six round trips
+ * before it could draw its little tree. The table is small; read it once and
+ * walk it in memory.
+ */
+export async function fetchHierarchy(): Promise<{
+  rows: HierarchyRow[];
+  tiers: Map<string, number>;
+}> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id, name, is_core, parent_exercise_id');
+
+  if (error) {
+    console.error('Error fetching movement hierarchy:', error);
+    return { rows: [], tiers: new Map() };
+  }
+  const rows = (data ?? []) as HierarchyRow[];
+  return { rows, tiers: computeTiers(rows) };
+}
+
 /**
  * Tier for every movement in one query.
  *
