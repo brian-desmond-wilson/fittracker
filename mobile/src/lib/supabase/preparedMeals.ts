@@ -7,7 +7,8 @@
 // half-built meal that looks fine in the grid and breaks when logged. The
 // function does the whole box or none of it.
 import { supabase } from "../supabase";
-import type { DeliveryPayloadMeal } from "../preparedMealDelivery";
+import { mealsInDishes, pendingDishes } from "../preparedMealDelivery";
+import type { DeliveryPayloadMeal, PendingDish } from "../preparedMealDelivery";
 
 export interface DeliveryInput {
   vendorId: string;
@@ -63,7 +64,8 @@ export async function materializeDueDeliveries(): Promise<number> {
   return Number(data) || 0;
 }
 
-/** A delivery that has not arrived yet, for the line that says so. */
+/** A delivery that has not arrived yet, for the line that says so and the card
+ *  that lists what is in it. */
 export interface PendingDelivery {
   id: string;
   vendorId: string;
@@ -74,7 +76,20 @@ export interface PendingDelivery {
   /** MEALS, not dishes: two of one dish is two meals, which is what the
    *  person unpacking the box counts. */
   mealCount: number;
+  /** What is in the box, in the order it was saved. The Deliveries card sorts
+   *  these into menu order itself; the inventory line ignores them. Names and
+   *  quantities only — the macros stay in the payload until something edits
+   *  it, because nothing on a card prints them. */
+  dishes: PendingDish[];
 }
+
+// The embedded vendor row comes back as an object or an array depending on how
+// PostgREST reads the relationship; neither shape is worth trusting blind.
+const embeddedVendorName = (embedded: unknown): string | null => {
+  const row = Array.isArray(embedded) ? embedded[0] : embedded;
+  const name = (row as { name?: unknown } | null)?.name;
+  return typeof name === "string" ? name : null;
+};
 
 export async function fetchPendingDeliveries(): Promise<PendingDelivery[]> {
   const { data, error } = await supabase
@@ -82,19 +97,77 @@ export async function fetchPendingDeliveries(): Promise<PendingDelivery[]> {
     .select("id, vendor_id, arrives_at, use_by, meals, nutrition_vendors(name)")
     .order("arrives_at");
   if (error) throw error;
-  return ((data ?? []) as any[]).map((r) => ({
+  return ((data ?? []) as any[]).map((r) => {
+    const dishes = pendingDishes(r.meals);
+    return {
+      id: r.id as string,
+      vendorId: r.vendor_id as string,
+      vendorName: embeddedVendorName(r.nutrition_vendors),
+      arrivesAt: r.arrives_at as string,
+      useBy: r.use_by as string,
+      mealCount: mealsInDishes(dishes),
+      dishes,
+    };
+  });
+}
+
+/** One waiting box with its payload intact — everything the entry form needs
+ *  to reopen it, macros included. Fetched on its own rather than carried on
+ *  every `PendingDelivery`, because only the edit screen ever wants it. */
+export interface PendingDeliveryDraft {
+  id: string;
+  vendorId: string;
+  arrivesAt: string;
+  useBy: string;
+  meals: DeliveryPayloadMeal[];
+}
+
+/** Null when there is no such row — which most often means it arrived while
+ *  the list was on screen and has already been written into inventory. */
+export async function fetchPendingDelivery(id: string): Promise<PendingDeliveryDraft | null> {
+  const { data, error } = await supabase
+    .from("pending_prepared_meal_deliveries")
+    .select("id, vendor_id, arrives_at, use_by, meals")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const r = data as any;
+  return {
     id: r.id as string,
     vendorId: r.vendor_id as string,
-    // The embedded row comes back as an object or an array depending on how
-    // PostgREST reads the relationship; neither shape is worth trusting blind.
-    vendorName:
-      (Array.isArray(r.nutrition_vendors) ? r.nutrition_vendors[0]?.name : r.nutrition_vendors?.name) ?? null,
     arrivesAt: r.arrives_at as string,
     useBy: r.use_by as string,
-    mealCount: (Array.isArray(r.meals) ? r.meals : [])
-      .filter((m: { name?: string }) => (m?.name ?? "").trim() !== "")
-      .reduce((sum: number, m: { quantity?: number }) => sum + Math.max(1, Number(m?.quantity) || 1), 0),
-  }));
+    meals: (Array.isArray(r.meals) ? r.meals : []) as DeliveryPayloadMeal[],
+  };
+}
+
+/**
+ * Change a box that has not landed. One `UPDATE` on the row, covered by the
+ * table's owner policy — no RPC, because unlike saving a delivery there is
+ * nothing here to make atomic: the payload is still one column and no
+ * inventory has been written from it.
+ *
+ * Moving `arrives_at` into the past is allowed and needs no special handling.
+ * The row simply becomes due, and the next inventory read materialises it —
+ * the same clock every other delivery runs on.
+ *
+ * False when the row is gone: it arrived mid-edit and is inventory now, so the
+ * edit has nothing to apply and must not be reported as saved.
+ */
+export async function updatePendingDelivery(input: DeliveryInput & { id: string }): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("pending_prepared_meal_deliveries")
+    .update({
+      vendor_id: input.vendorId,
+      arrives_at: input.arrivesAt,
+      use_by: input.useBy,
+      meals: input.meals,
+    })
+    .eq("id", input.id)
+    .select("id");
+  if (error) throw error;
+  return (data ?? []).length > 0;
 }
 
 /** Call off a box that has not landed. Nothing was written, so nothing needs

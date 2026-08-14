@@ -127,3 +127,32 @@ export const formatArrival = (
   const label = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   return `${label} at ${time}`;
 };
+
+/**
+ * The same arrival, as a caption: "Sun 7:00 PM", "Today 7:00 PM".
+ *
+ * `formatArrival` writes a sentence, which is right in a line of prose and
+ * wrong under a tile title, where "Sun, Aug 16 at 7:00 PM" wraps to two lines.
+ * This drops the "at" and the comma, and the month with them — for the next few
+ * days a weekday names the day unambiguously.
+ *
+ * It only stays unambiguous for a week. Beyond six days out "Sat" reads as this
+ * Saturday to everyone, so the month comes back rather than the caption lying.
+ */
+export const formatArrivalShort = (
+  value: Date | string,
+  now: Date = new Date(),
+): string => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const day = getLocalDateString(date);
+  if (day === getLocalDateString(now)) return `Today ${time}`;
+  if (day === getLocalDateString(addDays(now, 1))) return `Tomorrow ${time}`;
+  const withinTheWeek = day <= getLocalDateString(addDays(now, 6));
+  const label = date.toLocaleDateString("en-US", {
+    weekday: "short",
+    ...(withinTheWeek ? {} : { month: "short", day: "numeric" }),
+  });
+  return `${label} ${time}`;
+};

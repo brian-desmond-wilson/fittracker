@@ -2,6 +2,7 @@ import {
   addDays,
   formatDayLabel,
   formatArrival,
+  formatArrivalShort,
   formatRelativeDay,
   getLocalDateString,
   parseLocalDate,
@@ -180,5 +181,35 @@ describe("formatArrival", () => {
     // produced "sun, aug 16 at 7:00 pm".
     expect(formatArrival(new Date(2026, 7, 16, 19, 0), ARRIVAL_NOW, { midSentence: true }))
       .toBe("Sun, Aug 16 at 7:00 PM");
+  });
+});
+
+describe("formatArrivalShort — the arrival, as a tile caption", () => {
+  // Same anchor the formatArrival suite above uses: Fri 14 Aug 2026, 2:00 PM.
+  const NOW = new Date(2026, 7, 14, 14, 0);
+
+  it("gives a weekday and a time, and no comma or month", () => {
+    // The hub tile has a caption's width, not a sentence's: "Sun, Aug 16 at
+    // 7:00 PM" wraps, and the month is redundant a few days out.
+    expect(formatArrivalShort(new Date(2026, 7, 16, 19, 0), NOW)).toBe("Sun 7:00 PM");
+  });
+
+  it("prefers today and tomorrow to their weekday names", () => {
+    expect(formatArrivalShort(new Date(2026, 7, 14, 19, 0), NOW)).toBe("Today 7:00 PM");
+    expect(formatArrivalShort(new Date(2026, 7, 15, 9, 0), NOW)).toBe("Tomorrow 9:00 AM");
+  });
+
+  it("adds the month once the weekday alone would be ambiguous", () => {
+    // Eight days out, "Sat" is this Saturday to every reader, and it is not.
+    expect(formatArrivalShort(new Date(2026, 7, 22, 10, 0), NOW)).toBe("Sat, Aug 22 10:00 AM");
+  });
+
+  it("takes an ISO string as readily as a Date", () => {
+    const iso = new Date(2026, 7, 16, 19, 0).toISOString();
+    expect(formatArrivalShort(iso, NOW)).toBe("Sun 7:00 PM");
+  });
+
+  it("says nothing rather than NaN for an unparseable value", () => {
+    expect(formatArrivalShort("not a date", NOW)).toBe("—");
   });
 });

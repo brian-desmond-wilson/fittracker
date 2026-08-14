@@ -3,12 +3,16 @@ import {
   addRecent,
   deliverySummary,
   dishSlug,
+  draftsFromPayload,
   draftFromRecent,
   emptyDraft,
+  mealsInDishes,
   namedDrafts,
   orderVendorsByUse,
+  pendingDishes,
   recentCounts,
   removeRecent,
+  sortDishesForMenu,
   toDeliveryPayload,
   validateDelivery,
   DELIVERY_SLOTS,
@@ -310,5 +314,173 @@ describe("deliverySummary", () => {
   });
   it("is empty-safe", () => {
     expect(deliverySummary([])).toBe("0 meals");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A box that has not arrived, read back
+// ---------------------------------------------------------------------------
+
+describe("pendingDishes — the stored payload, as a list to show", () => {
+  it("reads a dish off each element", () => {
+    expect(pendingDishes([{ name: "Tahini-Java Smoothie", slot: "breakfast", quantity: 1 }]))
+      .toEqual([{ name: "Tahini-Java Smoothie", slot: "breakfast", quantity: 1 }]);
+  });
+
+  it("keeps the order the box was saved in — sorting is a display decision", () => {
+    const dishes = pendingDishes([
+      { name: "Waldorf Salad", slot: "lunch", quantity: 2 },
+      { name: "Muesli", slot: "breakfast", quantity: 2 },
+    ]);
+    expect(dishes.map((d) => d.name)).toEqual(["Waldorf Salad", "Muesli"]);
+  });
+
+  it("drops the blank row the form always carries at the bottom", () => {
+    expect(pendingDishes([
+      { name: "Muesli", slot: "breakfast", quantity: 2 },
+      { name: "   ", slot: "lunch", quantity: 1 },
+    ])).toHaveLength(1);
+  });
+
+  it("trims the name, because the row was typed", () => {
+    expect(pendingDishes([{ name: "  Muesli  ", slot: "lunch", quantity: 1 }])[0].name)
+      .toBe("Muesli");
+  });
+
+  it("counts a missing or unusable quantity as one, exactly as the writer does", () => {
+    // Matches `greatest(1, coalesce((m->>'quantity')::integer, 1))` in
+    // 20260814180000 — a box must not say "7 meals" while it waits and "6"
+    // once it lands.
+    expect(pendingDishes([{ name: "A", slot: "lunch" }])[0].quantity).toBe(1);
+    expect(pendingDishes([{ name: "B", slot: "lunch", quantity: 0 }])[0].quantity).toBe(1);
+    expect(pendingDishes([{ name: "C", slot: "lunch", quantity: "3" }])[0].quantity).toBe(3);
+    expect(pendingDishes([{ name: "D", slot: "lunch", quantity: "nonsense" }])[0].quantity).toBe(1);
+  });
+
+  it("files an unknown or missing slot under lunch, the app's own default", () => {
+    expect(pendingDishes([{ name: "A", slot: "brunch", quantity: 1 }])[0].slot).toBe("lunch");
+    expect(pendingDishes([{ name: "B", quantity: 1 }])[0].slot).toBe("lunch");
+  });
+
+  it("survives anything the column could hold", () => {
+    // `meals` is jsonb with no shape constraint, and this renders a card.
+    expect(pendingDishes(null)).toEqual([]);
+    expect(pendingDishes(undefined)).toEqual([]);
+    expect(pendingDishes("not an array")).toEqual([]);
+    expect(pendingDishes([null, 7, "x"])).toEqual([]);
+  });
+});
+
+describe("mealsInDishes", () => {
+  it("counts meals, not dishes — two of one dish is two meals", () => {
+    expect(mealsInDishes([
+      { name: "Muesli", slot: "breakfast", quantity: 2 },
+      { name: "Smoothie", slot: "breakfast", quantity: 1 },
+      { name: "Waldorf Salad", slot: "lunch", quantity: 2 },
+      { name: "Pesto Pasta", slot: "dinner", quantity: 2 },
+    ])).toBe(7);
+  });
+
+  it("is empty-safe", () => {
+    expect(mealsInDishes([])).toBe(0);
+  });
+});
+
+describe("sortDishesForMenu — the box reads as a menu, not an index", () => {
+  const named = (name: string, slot: PreparedMealDraft["slot"]) => ({ name, slot, quantity: 1 });
+
+  it("runs through the day: breakfast, lunch, dinner, snack, dessert", () => {
+    const sorted = sortDishesForMenu([
+      named("Brownie", "dessert"),
+      named("Pesto Pasta", "dinner"),
+      named("Trail Mix", "snack"),
+      named("Muesli", "breakfast"),
+      named("Waldorf Salad", "lunch"),
+    ]);
+    expect(sorted.map((d) => d.slot)).toEqual(["breakfast", "lunch", "dinner", "snack", "dessert"]);
+  });
+
+  it("leaves dishes sharing a slot in the order the box listed them", () => {
+    // Not alphabetical: the owner typed them off the packing slip in an order,
+    // and re-sorting within a slot loses information for no gain.
+    const sorted = sortDishesForMenu([
+      named("Tahini-Java Smoothie", "breakfast"),
+      named("Waldorf Salad", "lunch"),
+      named("Cocoa Crumble Muesli", "breakfast"),
+    ]);
+    expect(sorted.map((d) => d.name))
+      .toEqual(["Tahini-Java Smoothie", "Cocoa Crumble Muesli", "Waldorf Salad"]);
+  });
+
+  it("does not disturb its argument", () => {
+    const input = [named("Brownie", "dessert"), named("Muesli", "breakfast")];
+    sortDishesForMenu(input);
+    expect(input.map((d) => d.name)).toEqual(["Brownie", "Muesli"]);
+  });
+
+  it("is empty-safe", () => {
+    expect(sortDishesForMenu([])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A box that has not arrived, opened for editing
+// ---------------------------------------------------------------------------
+
+describe("draftsFromPayload — the saved box, back in the form that wrote it", () => {
+  const saved = {
+    name: "Ruby Rice Bowl",
+    slot: "dinner" as const,
+    quantity: 2,
+    calories: 650,
+    protein: 21,
+    fiber: 13,
+    saturated_fat: 4.5,
+    sodium: 620,
+  };
+
+  it("maps every field, including the three the database spells differently", () => {
+    // The payload keys are the DATABASE's (`saturated_fat`, `sodium`,
+    // `fiber`); the draft's are the form's. Getting this pair backwards is
+    // silent — the row just opens with empty macro fields.
+    const [d] = draftsFromPayload([saved]);
+    expect(d.name).toBe("Ruby Rice Bowl");
+    expect(d.slot).toBe("dinner");
+    expect(d.quantity).toBe("2");
+    expect(d.calories).toBe("650");
+    expect(d.protein).toBe("21");
+    expect(d.fiber).toBe("13");
+    expect(d.saturatedFat).toBe("4.5");
+    expect(d.sodium).toBe("620");
+  });
+
+  it("leaves a macro nobody typed blank, not zero", () => {
+    const [d] = draftsFromPayload([{ ...saved, fiber: null, sodium: null }]);
+    expect(d.fiber).toBe("");
+    expect(d.sodium).toBe("");
+  });
+
+  it("gives every row its own key, so the list can be edited", () => {
+    const drafts = draftsFromPayload([saved, { ...saved, name: "Pesto Pasta" }]);
+    expect(drafts[0].key).not.toBe(drafts[1].key);
+  });
+
+  it("never hands back an empty list — a form with no row has nothing to type into", () => {
+    expect(draftsFromPayload([])).toHaveLength(1);
+    expect(draftsFromPayload([])[0].name).toBe("");
+  });
+
+  it("round-trips through toDeliveryPayload unchanged", () => {
+    // The whole point: what an edit saves must be what it opened, minus the
+    // edits. A drift here rewrites macros nobody touched.
+    expect(toDeliveryPayload(draftsFromPayload([saved]))).toEqual([saved]);
+  });
+
+  it("survives a payload row missing everything but a name", () => {
+    const [d] = draftsFromPayload([{ name: "Mystery Bowl" } as never]);
+    expect(d.name).toBe("Mystery Bowl");
+    expect(d.slot).toBe("lunch");
+    expect(d.quantity).toBe("1");
+    expect(d.calories).toBe("");
   });
 });

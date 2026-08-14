@@ -150,6 +150,112 @@ export function toDeliveryPayload(
 }
 
 // ---------------------------------------------------------------------------
+// A box that has not arrived yet
+// ---------------------------------------------------------------------------
+//
+// Between saving a delivery and its arrival, the whole box lives as one jsonb
+// column. These read that column back — for the card that lists what is coming,
+// and for the form that reopens it.
+//
+// `meals` is jsonb with no shape constraint, so everything here treats its
+// contents as untrusted: the column holds whatever some earlier version of the
+// app wrote, and the result renders a screen.
+
+/** One dish inside a box on the way. The three things the card prints. */
+export interface PendingDish {
+  name: string;
+  slot: MealType;
+  quantity: number;
+}
+
+const SLOT_SET = new Set<string>(DELIVERY_SLOTS);
+
+/** A stored quantity, read the way the writer reads it. Must match
+ *  `greatest(1, coalesce((m->>'quantity')::integer, 1))` in 20260814180000, or
+ *  a box says "7 meals" while it waits and "6" once it lands. */
+const storedQuantity = (raw: unknown): number => {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+};
+
+/**
+ * The dishes in a stored payload, in the order the box was saved in.
+ *
+ * Blank rows are dropped for the same reason `namedDrafts` drops them: the
+ * form always carries one empty row at the bottom, and it gets written.
+ */
+export function pendingDishes(raw: unknown): PendingDish[] {
+  if (!Array.isArray(raw)) return [];
+  const dishes: PendingDish[] = [];
+  for (const entry of raw) {
+    if (entry == null || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    if (name === "") continue;
+    const slot = typeof row.slot === "string" && SLOT_SET.has(row.slot)
+      ? (row.slot as MealType)
+      : "lunch";
+    dishes.push({ name, slot, quantity: storedQuantity(row.quantity) });
+  }
+  return dishes;
+}
+
+/** MEALS, not dishes: two of one dish is two meals, which is what the person
+ *  unpacking the box counts. */
+export function mealsInDishes(dishes: readonly PendingDish[]): number {
+  return dishes.reduce((sum, d) => sum + d.quantity, 0);
+}
+
+/**
+ * Through the day — breakfast, lunch, dinner, snack, dessert — rather than by
+ * name, so a box reads as a menu for the week, which is how its owner thinks
+ * about it.
+ *
+ * Stable within a slot: the dishes were typed off a packing slip in an order,
+ * and re-sorting inside a slot discards that for nothing. `DELIVERY_SLOTS` is
+ * already in day order, so it is the ranking rather than a second copy of it.
+ */
+export function sortDishesForMenu<T extends { slot: MealType }>(dishes: readonly T[]): T[] {
+  return dishes
+    .map((dish, index) => ({ dish, index }))
+    .sort((a, b) => {
+      const rank = DELIVERY_SLOTS.indexOf(a.dish.slot) - DELIVERY_SLOTS.indexOf(b.dish.slot);
+      return rank !== 0 ? rank : a.index - b.index;
+    })
+    .map((entry) => entry.dish);
+}
+
+/**
+ * A saved payload, back in the form that wrote it.
+ *
+ * The inverse of `toDeliveryPayload`, and the pair has to stay exact: what an
+ * edit saves is what it opened, minus the edits, so any drift here silently
+ * rewrites macros nobody touched. Note the three keys that change spelling —
+ * `saturated_fat`/`sodium`/`fiber` are the DATABASE's names, and getting the
+ * mapping backwards fails quietly, as a row that opens with empty fields.
+ */
+export function draftsFromPayload(
+  meals: readonly DeliveryPayloadMeal[],
+): PreparedMealDraft[] {
+  const num = (n: number | null | undefined) => (n == null ? "" : String(n));
+  const drafts = meals
+    .filter((m) => (m?.name ?? "").trim() !== "")
+    .map((m) => ({
+      ...emptyDraft(m.slot && SLOT_SET.has(m.slot) ? m.slot : "lunch"),
+      name: m.name.trim(),
+      quantity: String(storedQuantity(m.quantity)),
+      calories: num(m.calories),
+      protein: num(m.protein),
+      fiber: num(m.fiber),
+      saturatedFat: num(m.saturated_fat),
+      sodium: num(m.sodium),
+    }));
+  // Never an empty list, for the reason the screen's own remove button holds
+  // the same invariant: a form with no row has nothing to type into.
+  return drafts.length > 0 ? drafts : [emptyDraft()];
+}
+
+// ---------------------------------------------------------------------------
 // What the last delivery knew
 // ---------------------------------------------------------------------------
 //
