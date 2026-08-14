@@ -16,6 +16,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
 import { BodyMeasurement } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { addDays, formatDayLabel, getLocalDateString } from "@/src/lib/dates";
 
 interface MeasurementsScreenProps {
   onClose: () => void;
@@ -56,7 +57,7 @@ export function MeasurementsScreen({ onClose }: MeasurementsScreenProps) {
       // Fetch measurements from last 90 days
       const ninetyDaysAgo = new Date();
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const startDate = ninetyDaysAgo.toISOString().split("T")[0];
+      const startDate = getLocalDateString(ninetyDaysAgo);
 
       const { data, error } = await supabase
         .from("body_measurements")
@@ -106,7 +107,9 @@ export function MeasurementsScreen({ onClose }: MeasurementsScreenProps) {
 
       const measurementData = {
         user_id: user.id,
-        date: selectedDate.toISOString().split("T")[0],
+        // The local day, not the UTC one: an evening entry was filed under
+        // tomorrow, because `toISOString()` has already rolled over.
+        date: getLocalDateString(selectedDate),
         biceps_inches: biceps ? parseFloat(biceps) : null,
         chest_inches: chest ? parseFloat(chest) : null,
         waist_inches: waist ? parseFloat(waist) : null,
@@ -152,23 +155,20 @@ export function MeasurementsScreen({ onClose }: MeasurementsScreenProps) {
     ]);
   };
 
+/**
+ * A stored day, as "Today", "Yesterday", or its date.
+ *
+ * Everything here goes through the local-date helpers. It used to compare
+ * against `toISOString().split("T")[0]`, which is the UTC day: after 5pm
+ * Pacific that is tomorrow, so today's entry stopped saying "Today" every
+ * evening. And the fallback parsed the bare date with `new Date`, rendering
+ * it a day early.
+ */
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
     const dateOnly = dateStr.split("T")[0];
-    const todayOnly = today.toISOString().split("T")[0];
-    const yesterdayOnly = yesterday.toISOString().split("T")[0];
-
-    if (dateOnly === todayOnly) {
-      return "Today";
-    } else if (dateOnly === yesterdayOnly) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    }
+    if (dateOnly === getLocalDateString()) return "Today";
+    if (dateOnly === getLocalDateString(addDays(new Date(), -1))) return "Yesterday";
+    return formatDayLabel(dateOnly);
   };
 
   const getLatestMeasurement = () => {

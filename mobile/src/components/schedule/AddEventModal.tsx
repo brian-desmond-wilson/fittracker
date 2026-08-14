@@ -585,7 +585,7 @@ export function AddEventModal({
                       if (date) {
                         setFormData((prev) => ({
                           ...prev,
-                          date: date.toISOString().split("T")[0],
+                          date: getLocalDateString(date),
                         }));
                       }
                     }}

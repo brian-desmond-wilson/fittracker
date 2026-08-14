@@ -62,9 +62,11 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
    * Formula: startDate + ((weekNumber - 1) * 7) + (dayNumber - 1) days
    */
   const getScheduledDate = (start: string, weekNumber: number, dayNumber: number): string => {
-    const date = new Date(start);
-    date.setDate(date.getDate() + (weekNumber - 1) * 7 + (dayNumber - 1));
-    return date.toISOString().split("T")[0];
+    // Parsed locally as well as emitted locally. The two have to agree: a UTC
+    // parse with a local format lands a day early, and a UTC parse with a UTC
+    // format only round-trips by accident.
+    const date = addDays(parseLocalDate(start), (weekNumber - 1) * 7 + (dayNumber - 1));
+    return getLocalDateString(date);
   };
 
   const handleStartProgram = async () => {

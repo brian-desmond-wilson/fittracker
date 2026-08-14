@@ -19,7 +19,7 @@ import { Image } from "expo-image";
 import { colors } from "@/src/lib/colors";
 import { ProgressPhoto, ViewType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
-import { formatDayLabel } from "@/src/lib/dates";
+import { formatDayLabel, getLocalDateString } from "@/src/lib/dates";
 
 interface ProgressPhotosScreenProps {
   onClose: () => void;
@@ -58,7 +58,7 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
       // Fetch photos from last 180 days (6 months)
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setDate(sixMonthsAgo.getDate() - 180);
-      const startDate = sixMonthsAgo.toISOString().split("T")[0];
+      const startDate = getLocalDateString(sixMonthsAgo);
 
       const { data, error } = await supabase
         .from("progress_photos")
@@ -273,7 +273,8 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
       const { error } = await supabase.from("progress_photos").insert([
         {
           user_id: user.id,
-          date: selectedDate.toISOString().split("T")[0],
+          // Local, not UTC: an evening photo was filed under tomorrow.
+          date: getLocalDateString(selectedDate),
           photo_url: photoUrl,
           view_type: viewType,
           notes: notes.trim() || null,

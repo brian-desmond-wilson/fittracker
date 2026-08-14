@@ -29,6 +29,12 @@ import { colors } from "@/src/lib/colors";
 import { WeightLog, TimeOfDay } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { formatInstantTime } from "@/src/lib/timeFormat";
+import {
+  addDays,
+  formatDayLabel,
+  getLocalDateString,
+  parseLocalDate,
+} from "@/src/lib/dates";
 
 interface WeightScreenProps {
   onClose: () => void;
@@ -58,7 +64,11 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
-  const today = new Date().toISOString().split("T")[0];
+  // The LOCAL day. This is the date a new weigh-in is stored under, and
+  // `toISOString()` gives the UTC day — so an evening weigh-in in Pacific was
+  // filed under tomorrow. The display used the same UTC day, so the two
+  // cancelled out on screen while the stored date was wrong.
+  const today = getLocalDateString();
 
   useEffect(() => {
     fetchWeightLogs();
@@ -78,9 +88,7 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
       }
 
       // Fetch logs from last 90 days
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      const startDate = ninetyDaysAgo.toISOString().split("T")[0];
+      const startDate = getLocalDateString(addDays(new Date(), -90));
 
       const { data, error } = await supabase
         .from("weight_logs")
@@ -127,13 +135,13 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
     const weeks: WeeklyStats[] = [];
 
     for (let i = 0; i < 4; i++) {
-      const weekEnd = new Date(now);
-      weekEnd.setDate(weekEnd.getDate() - i * 7);
-      const weekStart = new Date(weekEnd);
-      weekStart.setDate(weekStart.getDate() - 6);
+      const weekEnd = addDays(now, -i * 7);
+      const weekStart = addDays(weekEnd, -6);
 
-      const weekStartStr = weekStart.toISOString().split("T")[0];
-      const weekEndStr = weekEnd.toISOString().split("T")[0];
+      // Local days: these are compared against `log.date`, which is a local
+      // calendar date, so a UTC boundary put logs in the wrong week.
+      const weekStartStr = getLocalDateString(weekStart);
+      const weekEndStr = getLocalDateString(weekEnd);
 
       const weekLogs = data.filter(
         (log) => log.date >= weekStartStr && log.date <= weekEndStr
@@ -295,7 +303,7 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
     const byDate: Record<string, number[]> = {};
 
     logs.forEach((log) => {
-      if (new Date(log.date) >= thirtyDaysAgo) {
+      if (parseLocalDate(log.date) >= thirtyDaysAgo) {
         if (!byDate[log.date]) byDate[log.date] = [];
         byDate[log.date].push(parseFloat(log.weight_lbs.toString()));
       }
@@ -318,7 +326,8 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
 
     return {
       labels: dataPoints.map((d) => {
-        const date = new Date(d.date);
+        // Parsed locally, or every label on the chart reads a day early.
+        const date = parseLocalDate(d.date);
         return `${date.getMonth() + 1}/${date.getDate()}`;
       }),
       datasets: [
@@ -332,19 +341,20 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
 
   const chartData = getChartData();
 
+/**
+ * A stored day, as "Today", "Yesterday", or its date.
+ *
+ * Everything here goes through the local-date helpers. It used to compare
+ * against `toISOString().split("T")[0]`, which is the UTC day: after 5pm
+ * Pacific that is tomorrow, so today's entry stopped saying "Today" every
+ * evening. And the fallback parsed the bare date with `new Date`, rendering
+ * it a day early.
+ */
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (dateStr === today.toISOString().split("T")[0]) {
-      return "Today";
-    } else if (dateStr === yesterday.toISOString().split("T")[0]) {
-      return "Yesterday";
-    } else {
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    }
+    const today = getLocalDateString();
+    if (dateStr === today) return "Today";
+    if (dateStr === getLocalDateString(addDays(new Date(), -1))) return "Yesterday";
+    return formatDayLabel(dateStr);
   };
 
   const formatTimeOfDay = (timeOfDay: string | null) => {
@@ -353,8 +363,8 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
   };
 
   const formatWeekRange = (start: string, end: string) => {
-    const s = new Date(start);
-    const e = new Date(end);
+    const s = parseLocalDate(start);
+    const e = parseLocalDate(end);
     return `${s.getMonth() + 1}/${s.getDate()} - ${e.getMonth() + 1}/${e.getDate()}`;
   };
 
