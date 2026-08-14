@@ -5,7 +5,7 @@ import {
 } from "../loopStatus";
 import type { ItemStockState } from "../stockState";
 import type { EatNextStockInfo } from "../eatNext";
-import { MAX_DISPLAY_DAYS } from "../consumptionRate";
+import { MAX_DISPLAY_DAYS, MIN_SPAN_DAYS, MIN_UNITS } from "../consumptionRate";
 import { FORECAST_LEAD_DAYS } from "../shoppingDemand";
 
 const state = (over: Partial<ItemStockState> = {}): ItemStockState => ({
@@ -420,6 +420,17 @@ describe("station 5: forecast", () => {
     expect(s.attention).toBe(false);
     inp.rates = new Map();
     expect(computeLoopStatus(inp).stations[4].headline).toBe("no items tracked yet");
+  });
+  // A station with nothing to say still has to say what it is waiting for —
+  // otherwise the row opens an empty sheet and reads as broken.
+  it("an empty forecast explains what would make it forecast", () => {
+    const inp = baseInputs();
+    inp.rates = new Map();
+    const detail = computeLoopStatus(inp).stations[4].detail;
+    expect(detail.lines).toEqual([]);
+    expect(detail.footnote).toContain("used often enough");
+    expect(detail.footnote).toContain(String(MIN_UNITS));
+    expect(detail.footnote).toContain(String(MIN_SPAN_DAYS));
   });
   it("skips ids missing from inventory; caps '~Nd' display at MAX_DISPLAY_DAYS", () => {
     const inp = baseInputs();

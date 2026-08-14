@@ -10,7 +10,7 @@ import type { EatNextResult, EatNextStockInfo } from "./eatNext";
 import { eatNextExpiringLine, eatNextStockBadge } from "./eatNext";
 import type { MealPaceState } from "./mealPace";
 import type { ConsumptionEstimate } from "./consumptionRate";
-import { MAX_DISPLAY_DAYS } from "./consumptionRate";
+import { MAX_DISPLAY_DAYS, MIN_SPAN_DAYS, MIN_UNITS } from "./consumptionRate";
 import { FORECAST_LEAD_DAYS } from "./shoppingDemand";
 
 export type StationKey = "inventory" | "library" | "eatNext" | "pace" | "forecast" | "shopping";
@@ -349,6 +349,12 @@ function forecastStation(inp: LoopStatusInputs): StationStatus {
   // only the row cap, items dropped by the MAX_DISPLAY_DAYS filter would vanish
   // unaccounted — the same noun describing two different sets, one tap apart.
   const hiddenTracked = tracked.length - lines.length;
+  // An empty forecast used to be a dead end: a row saying "no items tracked
+  // yet" that opened an empty sheet. The station is waiting on something
+  // specific and knowable, so it says what.
+  const emptyNote =
+    `Nothing has been used often enough yet — an item needs ${MIN_UNITS} uses ` +
+    `spread over at least ${MIN_SPAN_DAYS} days before its rate means anything.`;
   return {
     key: "forecast",
     title: "Forecast",
@@ -356,7 +362,13 @@ function forecastStation(inp: LoopStatusInputs): StationStatus {
     badge: urgent.length > 0 ? { label: `${urgent.length} urgent`, tone: "shopping" } : null,
     attention: urgent.length > 0,
     connector: "gaps and forecasts become a list",
-    detail: { lines, chips: [], footnote: hiddenTracked > 0 ? `+${hiddenTracked} more tracked` : null },
+    detail: {
+      lines,
+      chips: [],
+      footnote: tracked.length === 0 ? emptyNote
+        : hiddenTracked > 0 ? `+${hiddenTracked} more tracked`
+        : null,
+    },
     destination: "/(tabs)/track/shopping",
     destinationLabel: "Open Shopping",
   };
