@@ -1,16 +1,23 @@
 import React from "react";
 import { Alert } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { AddDeliveryScreen } from "@/src/components/track/AddDeliveryScreen";
 import { formatArrival } from "@/src/lib/dates";
 
 export default function AddDeliveryPage() {
   const router = useRouter();
+  // Which door this was opened through. Two lead here now — the inventory add
+  // sheet and the Deliveries page — and each expects to be behind the form when
+  // it closes.
+  const { from } = useLocalSearchParams<{ from?: string }>();
 
-  // Always land on the inventory list rather than router.back(): the same
-  // reason the add route does it — back walks linear history, which is wrong
-  // when this screen was entered from somewhere outside this stack.
-  const leave = () => router.replace("/(tabs)/track/food-inventory");
+  // Always land on a list rather than router.back(): the same reason the add
+  // route does it — back walks linear history, which is wrong when this screen
+  // was entered from somewhere outside this stack.
+  const leave = () =>
+    router.replace(
+      from === "deliveries" ? "/(tabs)/track/deliveries" : "/(tabs)/track/food-inventory",
+    );
 
   return (
     <AddDeliveryScreen

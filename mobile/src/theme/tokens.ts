@@ -37,6 +37,13 @@ export const colors = {
     water: "#3B82F6",
     inventory: "#8B5CF6",
     shopping: "#14B8A6",
+    // A delivery is the leg between the two stations either side of it — you
+    // have bought it (shopping) and you do not have it yet (inventory) — so its
+    // identity is the midpoint of that teal and that purple. Its own key rather
+    // than borrowing either one: a box on the way is neither a list nor stock,
+    // and the whole reason the pending table exists is that the app must not
+    // say otherwise.
+    deliveries: "#6366F1",
     brand: "#22C55E",
     // Track hub's non-nutrition tiles (Task 7). Identity only, same as above:
     // each is the tile's own pre-existing base hex, now named by domain so the
