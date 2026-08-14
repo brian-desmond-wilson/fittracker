@@ -1,5 +1,5 @@
 import { MealType } from "@/src/types/track";
-import { getLocalDateString } from "@/src/lib/dates";
+import { addDays, getLocalDateString } from "@/src/lib/dates";
 
 // Meal type metadata (order matters for the type selector and section ordering).
 export const MEAL_TYPES: { value: MealType; label: string; color: string }[] = [
@@ -42,12 +42,12 @@ export const formatLoggedTime = (timestamp: string): string => {
 };
 
 // Header label for the date navigator ("Today" / "Yesterday" / "Mon, Jul 5, 2026").
-export const formatViewingDate = (viewingDate: Date): string => {
+export const formatViewingDate = (viewingDate: Date, now: Date = new Date()): string => {
+  // One sample of the clock, not two: separate `new Date()` calls either side
+  // of local midnight can call the same day neither today nor yesterday.
   const viewingDateStr = getLocalDateString(viewingDate);
-  const todayStr = getLocalDateString(new Date());
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = getLocalDateString(yesterday);
+  const todayStr = getLocalDateString(now);
+  const yesterdayStr = getLocalDateString(addDays(now, -1));
 
   if (viewingDateStr === todayStr) return "Today";
   if (viewingDateStr === yesterdayStr) return "Yesterday";
@@ -60,12 +60,10 @@ export const formatViewingDate = (viewingDate: Date): string => {
 };
 
 // Nutrition-card label for the viewing date ("Today's Nutrition", etc.).
-export const getNutritionLabel = (viewingDate: Date): string => {
+export const getNutritionLabel = (viewingDate: Date, now: Date = new Date()): string => {
   const viewingDateStr = getLocalDateString(viewingDate);
-  const todayStr = getLocalDateString(new Date());
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = getLocalDateString(yesterday);
+  const todayStr = getLocalDateString(now);
+  const yesterdayStr = getLocalDateString(addDays(now, -1));
 
   if (viewingDateStr === todayStr) return "Today's Nutrition";
   if (viewingDateStr === yesterdayStr) return "Yesterday's Nutrition";
