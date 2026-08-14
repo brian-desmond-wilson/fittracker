@@ -20,6 +20,11 @@ export interface FoodInventoryItem {
   /** Grams per serving. Feeds the Nutrition Facts panel — daily totals still
    *  come from `saved_foods` via meal logs, so this is a display figure. */
   fiber_g: number | null;
+  /** Grams per serving, the sub-nutrient of `fats`. Display figure, as fiber. */
+  saturated_fat_g: number | null;
+  /** MILLIGRAMS per serving — the one nutrition field here that is not grams,
+   *  because that is how a panel prints sodium. Display figure, as fiber. */
+  sodium_mg: number | null;
   serving_size: string | null;
   expiration_date: string | null; // YYYY-MM-DD
   location: FoodLocation | null;
@@ -121,6 +126,7 @@ export interface MealLog {
   carbs: number | null; // grams
   fats: number | null; // grams
   sugars: number | null; // grams
+  saturated_fat_g: number | null; // grams
   sodium_mg: number | null; // milligrams
   fiber_g: number | null; // grams
   uses_inventory: boolean;
@@ -143,6 +149,7 @@ export interface SavedFood {
   carbs: number | null;
   fats: number | null;
   sugars: number | null;
+  saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
   serving_size: string | null;

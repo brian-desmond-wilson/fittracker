@@ -200,6 +200,7 @@ export interface MealTotals {
   carbs: number;
   fats: number;
   sugars: number;
+  saturated_fat_g: number;
   sodium_mg: number;
   fiber_g: number;
 }
