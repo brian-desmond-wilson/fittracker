@@ -1165,8 +1165,15 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
               // field it names four subsets, none of which is what you are
               // looking at. What replaces it has to say so out loud, or pills
               // that silently stopped biting would read as a bug.
+              // The count leads, because it is the answer; the scope follows,
+              // because it is what makes the answer trustworthy — "1 match"
+              // means something quite different if you suspect a filter is
+              // still holding things back.
               <Text style={styles.scopeNote} accessibilityLiveRegion="polite">
-                Searching all {items.length} items
+                <Text style={styles.scopeCount}>
+                  {visibleItems.length} {visibleItems.length === 1 ? "match" : "matches"}
+                </Text>
+                {` in all ${items.length} items`}
               </Text>
             ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentStrip}>
@@ -1668,6 +1675,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.screenGutter,
     paddingVertical: spacing.sm,
   },
+  scopeCount: { color: colors.text },
   segmentTools: {
     flexDirection: "row",
     alignItems: "center",
