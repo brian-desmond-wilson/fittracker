@@ -20,6 +20,7 @@ import { colors } from "@/src/lib/colors";
 import { ProgressPhoto, ViewType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import { formatDayLabel, getLocalDateString } from "@/src/lib/dates";
+import { requestCameraAndLibrary } from "@/src/lib/mediaPermissions";
 
 interface ProgressPhotosScreenProps {
   onClose: () => void;
@@ -98,22 +99,9 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
     }
   };
 
-  const requestPermissions = async () => {
-    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-    const mediaLibraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!cameraPermission.granted || !mediaLibraryPermission.granted) {
-      Alert.alert(
-        "Permissions Required",
-        "Camera and photo library access are required to upload photos."
-      );
-      return false;
-    }
-    return true;
-  };
 
   const pickPhoto = async () => {
-    const hasPermission = await requestPermissions();
+    const hasPermission = await requestCameraAndLibrary("photos");
     if (!hasPermission) return;
 
     if (Platform.OS === "ios") {

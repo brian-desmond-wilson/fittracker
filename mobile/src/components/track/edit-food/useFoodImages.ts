@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Platform, Alert, ActionSheetIOS } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { FoodInventoryItem } from "@/src/types/track";
+import { requestCameraAndLibrary } from "@/src/lib/mediaPermissions";
 
 export type FoodImageType = "primary" | "front" | "back" | "side";
 
@@ -22,22 +23,9 @@ export function useFoodImages(item: FoodImageSeed) {
   const [imageBack, setImageBack] = useState<string | null>(item.image_back_url);
   const [imageSide, setImageSide] = useState<string | null>(item.image_side_url);
 
-  const requestPermissions = async () => {
-    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-    const mediaLibraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!cameraPermission.granted || !mediaLibraryPermission.granted) {
-      Alert.alert(
-        "Permissions Required",
-        "Camera and photo library access are required to upload images."
-      );
-      return false;
-    }
-    return true;
-  };
 
   const pickImage = async (imageType: FoodImageType) => {
-    const hasPermission = await requestPermissions();
+    const hasPermission = await requestCameraAndLibrary("images");
     if (!hasPermission) return;
 
     const setImageFunction = {

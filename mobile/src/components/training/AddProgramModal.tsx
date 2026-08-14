@@ -21,6 +21,7 @@ import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
 import { createProgramTemplate, uploadProgramCoverImage } from '@/src/lib/supabase/training';
 import type { CreateProgramTemplateInput, DifficultyLevel, PrimaryGoal } from '@/src/types/training';
+import { requestCameraAndLibrary } from "@/src/lib/mediaPermissions";
 
 const DIFFICULTY_LEVELS: DifficultyLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
 const PRIMARY_GOALS: PrimaryGoal[] = ['Strength', 'Hypertrophy', 'Power', 'Endurance', 'Hybrid'];
@@ -126,22 +127,9 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
     }
   };
 
-  const requestPermissions = async () => {
-    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-    const mediaLibraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!cameraPermission.granted || !mediaLibraryPermission.granted) {
-      Alert.alert(
-        'Permissions Required',
-        'Camera and photo library access are required to upload images.'
-      );
-      return false;
-    }
-    return true;
-  };
 
   const pickImage = async () => {
-    const hasPermission = await requestPermissions();
+    const hasPermission = await requestCameraAndLibrary("images");
     if (!hasPermission) return;
 
     if (Platform.OS === 'ios') {
