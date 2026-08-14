@@ -549,9 +549,13 @@ export function getScaledMovements(wod: WODWithDetails | null, selectedScaling: 
 
     switch (selectedScaling) {
       case "Rx":
-        // Reps: custom or rep scheme
+        // Reps: custom or rep scheme. The dash check matches L2 and L1 — a
+        // value like "21-15-9" is a scheme, not a count, and "21-15-9 reps"
+        // is not a thing anyone says. Rx was the one level missing it, so the
+        // same movement read differently depending on which tab you were on.
         if (movement.rx_reps) {
-          repsDisplay = `${movement.rx_reps} reps`;
+          const repsValue = String(movement.rx_reps);
+          repsDisplay = repsValue.includes('-') ? repsValue : `${movement.rx_reps} reps`;
         } else if (repScheme) {
           repsDisplay = repScheme;
         }
