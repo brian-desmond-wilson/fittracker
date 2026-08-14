@@ -34,9 +34,11 @@ import {
   Search,
   ScanBarcode,
   X,
+  Check,
 } from "lucide-react-native";
 import { colors, icons, spacing } from "@/src/theme/tokens";
-import { Button, Card, EmptyState, IconButton } from "@/src/components/ui";
+import { Button, Card, EmptyState, IconButton, UndoToast } from "@/src/components/ui";
+import type { UndoToastContent } from "@/src/components/ui";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
@@ -243,6 +245,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   const [logSheetQuery, setLogSheetQuery] = useState("");
   const [loggingFoodId, setLoggingFoodId] = useState<string | null>(null);
   const [loggingMealId, setLoggingMealId] = useState<string | null>(null);
+  // Logging is what you came here to do, so the acknowledgement must not ask to
+  // be dismissed. Same bar the inventory screen raises: it states the log,
+  // carries the way back, and leaves on its own.
+  const [toast, setToast] = useState<UndoToastContent | null>(null);
+  // Deferred until the toast has gone rather than raised beside it — an alert
+  // over the bar would bury the Undo the bar exists to offer. Cleared on Undo,
+  // because undoing means you did not eat it.
+  const afterToastRef = useRef<(() => void) | null>(null);
   // The bottom chip row's Search chip focuses this instead of duplicating a
   // second search field.
   const searchInputRef = useRef<TextInput>(null);
@@ -1386,42 +1396,41 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             ratingConfirmedAt: c.rating_confirmed_at ?? null,
           })),
       );
-      // Fired from the confirmation's OK, never alongside it: two alerts
-      // raised in the same tick stack, and the second covers the first. Not
-      // fired after Undo either — undoing means you did not eat it, so there
-      // is nothing to have an opinion about.
-      const askTaste = () => {
-        if (!ask) return;
-        Alert.alert(
-          `How was ${ask.name}?`,
-          "Your answer replaces the rating the app guessed, which is 30% of every meal's score.",
-          [
-            { text: "Loved it", onPress: () => void rateConcept(ask.id, "love") },
-            { text: "Fine", onPress: () => void rateConcept(ask.id, "like") },
-            { text: "Not again", style: "destructive", onPress: () => void rateConcept(ask.id, "dislike") },
-            { text: "Skip", style: "cancel" },
-          ],
-        );
-      };
-      Alert.alert("Logged", `${meal.name} → ${defaultMealTypeFor(meal)}`, [
-        {
-          text: "Undo",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              try {
-                await undoMealLog(meal.id, result.loggedAt, result.consumedIds);
-                await fetchMealsForDate(viewingDate, true);
-                eatNext.refetch();
-              } catch (e) {
-                console.error("undo quick log:", e);
-                Alert.alert("Couldn't undo", "The meal is still logged.");
-              }
-            })();
-          },
+      // Held for the toast's exit rather than raised now: an alert on top of
+      // the bar would bury the Undo. Not asked after Undo either — undoing
+      // means you did not eat it, so there is nothing to have an opinion about.
+      afterToastRef.current = ask
+        ? () => {
+            Alert.alert(
+              `How was ${ask.name}?`,
+              "Your answer replaces the rating the app guessed, which is 30% of every meal's score.",
+              [
+                { text: "Loved it", onPress: () => void rateConcept(ask.id, "love") },
+                { text: "Fine", onPress: () => void rateConcept(ask.id, "like") },
+                { text: "Not again", style: "destructive", onPress: () => void rateConcept(ask.id, "dislike") },
+                { text: "Skip", style: "cancel" },
+              ],
+            );
+          }
+        : null;
+      setToast({
+        title: "Logged",
+        detail: `${meal.name} → ${defaultMealTypeFor(meal)}`,
+        undo: () => {
+          afterToastRef.current = null;
+          setToast(null);
+          void (async () => {
+            try {
+              await undoMealLog(meal.id, result.loggedAt, result.consumedIds);
+              await fetchMealsForDate(viewingDate, true);
+              eatNext.refetch();
+            } catch (e) {
+              console.error("undo quick log:", e);
+              Alert.alert("Couldn't undo", "The meal is still logged.");
+            }
+          })();
         },
-        { text: "OK", style: "default", onPress: askTaste },
-      ]);
+      });
     } catch (e) {
       // `MealLoggedButDecrementFailed` carries its own explanatory message and
       // means the log DID commit — never presented as a failure to log.
@@ -1527,21 +1536,19 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         inventory: library.inventory,
       });
       closeLogSheet();
-      Alert.alert("Logged", `${meal.name} → ${addForm.mealType}`, [
-        {
-          text: "Undo",
-          style: "destructive",
-          onPress: () => {
-            void undoMealLog(meal.id, result.loggedAt, result.consumedIds)
-              .then(() => fetchMealsForDate(viewingDate, true))
-              .catch((e) => {
-                console.error("undo quick meal log:", e);
-                Alert.alert("Couldn't undo that", "The meal is still on today.");
-              });
-          },
+      setToast({
+        title: "Logged",
+        detail: `${meal.name} → ${addForm.mealType}`,
+        undo: () => {
+          setToast(null);
+          void undoMealLog(meal.id, result.loggedAt, result.consumedIds)
+            .then(() => fetchMealsForDate(viewingDate, true))
+            .catch((e) => {
+              console.error("undo quick meal log:", e);
+              Alert.alert("Couldn't undo that", "The meal is still on today.");
+            });
         },
-        { text: "OK", style: "default" },
-      ]);
+      });
       setMealsCache((prev) => {
         const next = new Map(prev);
         next.delete(viewingDateStr);
@@ -2146,6 +2153,17 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             )}
           </Animated.ScrollView>
       </View>
+
+      <UndoToast
+        toast={toast}
+        onDismissed={() => {
+          setToast(null);
+          const after = afterToastRef.current;
+          afterToastRef.current = null;
+          after?.();
+        }}
+        icon={Check}
+      />
 
       {/* Condensed bar. A sibling of the container, not a child, so top:0 is
           the true top of the screen and it can own the safe-area inset itself.
