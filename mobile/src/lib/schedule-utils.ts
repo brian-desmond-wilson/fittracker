@@ -28,6 +28,21 @@ export function calculateEventPosition(event: ScheduleEvent): {
   return { top, height: Math.max(height, MIN_DISPLAY_HEIGHT) };
 }
 
+/**
+ * Lay overlapping events out side by side.
+ *
+ * The old pass assigned columns once per event and let later passes overwrite
+ * earlier ones: with A 9–11, B 10–12, C 11:30–12:30, the A/B pass put B in
+ * column 1, then the B/C pass moved B back to column 0 — on top of A, which
+ * it overlaps. Two events drawn in the same column is the one thing this
+ * function exists to prevent.
+ *
+ * The standard calendar layout instead: group events into clusters of
+ * transitively overlapping ones, and inside a cluster give each event the
+ * first column free at its start time. Every event in a cluster then shares
+ * one `totalColumns`, so the columns line up down the whole group rather than
+ * changing width partway.
+ */
 export function detectOverlappingEvents(
   events: ScheduleEvent[]
 ): EventPosition[] {
@@ -38,33 +53,38 @@ export function detectOverlappingEvents(
     totalColumns: 1,
   }));
 
-  // Sort by start time
-  positions.sort((a, b) => a.top - b.top);
+  // By start, then longest first so the event that spans the cluster takes the
+  // leftmost column and the short ones stack to its right.
+  positions.sort((a, b) => a.top - b.top || b.height - a.height);
 
-  // Detect overlaps and assign columns
-  for (let i = 0; i < positions.length; i++) {
-    const current = positions[i];
-    const overlapping: EventPosition[] = [current];
+  let cluster: EventPosition[] = [];
+  let clusterEnd = -Infinity;
+  /** Where each column is free from, for the cluster being built. */
+  let columnEnds: number[] = [];
 
-    // Find all overlapping events
-    for (let j = i + 1; j < positions.length; j++) {
-      const next = positions[j];
-      // Check if next event starts before current event ends
-      if (next.top < current.top + current.height) {
-        overlapping.push(next);
-      } else {
-        break;
-      }
+  const closeCluster = () => {
+    for (const pos of cluster) pos.totalColumns = columnEnds.length;
+    cluster = [];
+    columnEnds = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const pos of positions) {
+    // A gap with nothing running through it ends the group: what follows can
+    // start again from the left edge.
+    if (pos.top >= clusterEnd) closeCluster();
+
+    let column = columnEnds.findIndex((freeFrom) => freeFrom <= pos.top);
+    if (column === -1) {
+      column = columnEnds.length;
+      columnEnds.push(0);
     }
-
-    // Assign columns to overlapping events
-    if (overlapping.length > 1) {
-      overlapping.forEach((pos, index) => {
-        pos.column = index;
-        pos.totalColumns = overlapping.length;
-      });
-    }
+    columnEnds[column] = pos.top + pos.height;
+    pos.column = column;
+    cluster.push(pos);
+    clusterEnd = Math.max(clusterEnd, pos.top + pos.height);
   }
+  closeCluster();
 
   return positions;
 }
