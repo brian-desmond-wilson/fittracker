@@ -22,10 +22,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { ChevronRight, ScanBarcode, Search, Star } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Button } from "@/src/components/ui";
+import { Button, WhenSheet } from "@/src/components/ui";
 import type { MealType, SavedFood } from "@/src/types/track";
 import type { MealWithItems } from "@/src/types/meal-library";
 import { mergeLogResults } from "@/src/lib/logResults";
@@ -335,44 +334,15 @@ export function LogMealSheet({
           </TouchableOpacity>
         </View>
 
-        {contextOpen && (
-          <View style={styles.ctxPanel}>
-            <View style={styles.segTrack}>
-              {MEAL_TYPES.map((t) => {
-                const active = mealType === t.value;
-                return (
-                  <TouchableOpacity
-                    key={t.value}
-                    onPress={() => onMealTypeChange(t.value)}
-                    style={[styles.segment, active && styles.segmentActive]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={t.label}
-                  >
-                    <Text
-                      style={[styles.segmentText, active && styles.segmentTextActive]}
-                      numberOfLines={1}
-                    >
-                      {t.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <DateTimePicker
-              value={loggedAt}
-              mode="time"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={(_e, picked) => {
-                if (!picked) return;
-                const next = new Date(loggedAt);
-                next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
-                onLoggedAtChange(next);
-              }}
-              textColor={colors.text}
-            />
-          </View>
-        )}
+        <WhenSheet
+          visible={contextOpen}
+          loggedAt={loggedAt}
+          onLoggedAtChange={onLoggedAtChange}
+          mealType={mealType}
+          onMealTypeChange={onMealTypeChange}
+          dayLabel={dayLabel}
+          onClose={() => setContextOpen(false)}
+        />
 
         <ScrollView
           style={styles.body}

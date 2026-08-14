@@ -9,4 +9,5 @@ export { Screen } from "./Screen";
 export { SectionHeader } from "./SectionHeader";
 export { EmptyState, LoadingState } from "./EmptyState";
 export { UndoToast } from "./UndoToast";
+export { WhenSheet } from "./WhenSheet";
 export type { UndoToastContent } from "./UndoToast";

@@ -13,11 +13,10 @@
 // logged two ways was recording two different kinds of truth, one of which
 // silently claimed you ate at the moment you tapped.
 import React, { useState } from "react";
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Button } from "@/src/components/ui";
+import { Button, WhenSheet } from "@/src/components/ui";
 import { MEAL_TYPE_LABELS } from "@/src/types/meal-library";
 import type { MealType } from "@/src/types/track";
 
@@ -139,22 +138,15 @@ export function MealLogCard({
         <Text style={s.timeValue}>{clockLabel(loggedAt)}</Text>
       </TouchableOpacity>
 
-      {pickingTime && (
-        <DateTimePicker
-          value={loggedAt}
-          mode="time"
-          display={Platform.OS === "ios" ? "spinner" : "default"}
-          onChange={(_e, picked) => {
-            if (Platform.OS !== "ios") setPickingTime(false);
-            if (!picked) return;
-            // Only the clock moves — the DAY is the stepper's business, and a
-            // picker that carried its own date would fight it.
-            const next = new Date(loggedAt);
-            next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
-            onLoggedAt(next);
-          }}
-        />
-      )}
+      {/* Up from the bottom, never unfolded into the card: an inline spinner
+          pushes the log button off the screen you are reading. */}
+      <WhenSheet
+        visible={pickingTime}
+        loggedAt={loggedAt}
+        onLoggedAtChange={onLoggedAt}
+        dayLabel={dayLabel(daysAgo)}
+        onClose={() => setPickingTime(false)}
+      />
 
       <ScrollView
         horizontal
