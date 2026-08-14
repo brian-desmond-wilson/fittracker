@@ -519,10 +519,22 @@ export function mergeAiPicks(opts: {
 // ---------------------------------------------------------------------------
 // Projection + verdict
 
+/**
+ * How the projected day misses, when it misses.
+ *
+ * "Short" was the only word the landing row had, so a plan that overshot
+ * calories by half still read "short of goal". Calories are named first
+ * because they are the number beside the verdict; a protein floor missed on
+ * an otherwise fine day gets its own answer rather than being folded in.
+ */
+export type ProjectionMiss = "over_calories" | "under_calories" | "under_protein";
+
 export interface FuelProjection {
   calories: number;
   protein: number;
   onGoal: boolean;
+  /** `null` exactly when `onGoal` is true. */
+  miss: ProjectionMiss | null;
 }
 
 /** Calories may land a little over without failing the day; protein is a
@@ -549,7 +561,12 @@ export function planProjection(opts: {
     (calories >= opts.goalCalories * (1 - PROJECTION_CAL_UNDER_TOL) &&
       calories <= opts.goalCalories * (1 + PROJECTION_CAL_OVER_TOL));
   const proOk = opts.goalProtein == null || protein >= opts.goalProtein - PROJECTION_PROTEIN_TOL_G;
-  return { calories, protein, onGoal: calOk && proOk };
+  const miss: ProjectionMiss | null =
+    calOk && proOk ? null
+    : !calOk && opts.goalCalories != null && calories > opts.goalCalories ? "over_calories"
+    : !calOk ? "under_calories"
+    : "under_protein";
+  return { calories, protein, onGoal: calOk && proOk, miss };
 }
 
 export type FuelVerdictTone = "before_window" | "behind" | "on_pace" | "ahead" | "goal_hit" | "closed";

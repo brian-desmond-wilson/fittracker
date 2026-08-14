@@ -9,7 +9,13 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Check, Trash2 } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, Card, IconButton } from "@/src/components/ui";
-import type { AttributedLog, FuelPick, FuelRailRow, FuelWindow } from "@/src/lib/fuelPlan";
+import type {
+  AttributedLog,
+  FuelPick,
+  FuelProjection,
+  FuelRailRow,
+  FuelWindow,
+} from "@/src/lib/fuelPlan";
 
 interface FuelRailProps {
   rows: FuelRailRow[];
@@ -208,6 +214,14 @@ function SuggestionRow({
   );
 }
 
+/** The trailing phrase on the landing row, one per way the day can land. */
+const LANDING_NOTE: Record<NonNullable<FuelProjection["miss"]> | "on_goal", string> = {
+  on_goal: " — on goal ✓",
+  over_calories: " — over goal",
+  under_calories: " — short of goal",
+  under_protein: " — short on protein",
+};
+
 export function FuelRail({
   rows,
   loggingMealId,
@@ -326,7 +340,7 @@ export function FuelRail({
                 <View style={[s.landing, p.onGoal ? s.landingOk : s.landingShort]}>
                   <Text style={[s.landingText, { color: p.onGoal ? colors.success : colors.warning }]}>
                     Day lands: {p.calories.toLocaleString()} cal · {Math.round(p.protein)}g P
-                    {p.onGoal ? " — on goal ✓" : " — short of goal"}
+                    {LANDING_NOTE[p.miss ?? "on_goal"]}
                   </Text>
                 </View>
               </View>

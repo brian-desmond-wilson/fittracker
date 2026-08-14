@@ -477,6 +477,54 @@ describe("planProjection", () => {
       goalProtein: 160,
     });
     expect(p.onGoal).toBe(false);
+    expect(p.miss).toBe("under_protein");
+  });
+  // The landing row used to call every miss "short of goal", including a plan
+  // that overshot calories by half.
+  it("names an overshoot as over, not short", () => {
+    const p = planProjection({
+      consumedCalories: 0,
+      consumedProtein: 0,
+      picks: [
+        { windowId: "w", mealId: "m", name: "x", calories: 3355, protein: 165, portion: 1, prepMinutes: 0, faceUrl: null, reasons: [], assemblable: true, score: 80 },
+      ],
+      goalCalories: 2300,
+      goalProtein: 160,
+    });
+    expect(p.onGoal).toBe(false);
+    expect(p.miss).toBe("over_calories");
+  });
+  it("names a genuine calorie shortfall as short", () => {
+    const p = planProjection({
+      consumedCalories: 0,
+      consumedProtein: 200,
+      picks: [],
+      goalCalories: 2300,
+      goalProtein: 160,
+    });
+    expect(p.miss).toBe("under_calories");
+  });
+  it("has no miss to report when the day lands on goal", () => {
+    const p = planProjection({
+      consumedCalories: 2300,
+      consumedProtein: 160,
+      picks: [],
+      goalCalories: 2300,
+      goalProtein: 160,
+    });
+    expect(p.onGoal).toBe(true);
+    expect(p.miss).toBeNull();
+  });
+  it("cannot miss a goal that was never set", () => {
+    const p = planProjection({
+      consumedCalories: 9000,
+      consumedProtein: 0,
+      picks: [],
+      goalCalories: null,
+      goalProtein: null,
+    });
+    expect(p.onGoal).toBe(true);
+    expect(p.miss).toBeNull();
   });
 });
 
