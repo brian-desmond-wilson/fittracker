@@ -1769,7 +1769,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             color={colors.accents.meals}
             strokeWidth={icons.strokeWidth}
           />
-          <Text style={styles.pageTitle}>Fuel</Text>
+          <Text style={styles.pageTitle}>Fuel Schedule</Text>
           <TouchableOpacity
             onPress={handleExportCsv}
             disabled={exporting}
@@ -2146,7 +2146,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           >
             <ChevronLeft size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
           </TouchableOpacity>
-          <Text style={styles.slimBarTitle} numberOfLines={1}>Fuel</Text>
+          <Text style={styles.slimBarTitle} numberOfLines={1}>Fuel Schedule</Text>
           <TouchableOpacity
             onPress={handleExportCsv}
             disabled={exporting}
