@@ -7,6 +7,8 @@ export type { BadgeTone } from "./Badge";
 export { Card } from "./Card";
 export { Screen } from "./Screen";
 export { SectionHeader } from "./SectionHeader";
+export { TabBand } from "./TabBand";
+export type { TabBandItem } from "./TabBand";
 export { EmptyState, LoadingState } from "./EmptyState";
 export { UndoToast } from "./UndoToast";
 export { WhenSheet } from "./WhenSheet";
