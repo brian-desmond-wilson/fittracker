@@ -177,9 +177,13 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
         return (
           <Card variant="row" style={styles.row}>
             <View style={styles.rowMain}>
-              <Text style={styles.rowName} numberOfLines={1}>
-                {s.name} <Text style={styles.rowQty}>×{s.quantity}</Text>
-              </Text>
+              {/* The quantity sits outside the truncating name, or a long
+                  product eats the one number you are shopping by: "Breakfast
+                  Sandwich Spiral Butter Croi…" dropped its ×1 entirely. */}
+              <View style={styles.rowNameLine}>
+                <Text style={styles.rowName} numberOfLines={1}>{s.name}</Text>
+                <Text style={styles.rowQty}>×{s.quantity}</Text>
+              </View>
               <Text style={styles.rowReason} numberOfLines={2}>{s.reasons.join(" · ")}</Text>
             </View>
             <IconButton
@@ -211,9 +215,17 @@ export function ShoppingListScreen({ onClose }: ShoppingListScreenProps) {
               )}
             </TouchableOpacity>
             <View style={styles.rowMain}>
-              <Text style={[styles.rowName, purchased && styles.rowNamePurchased]} numberOfLines={1}>
-                {item.name} <Text style={styles.rowQty}>×{item.quantity} {item.unit}</Text>
-              </Text>
+              <View style={styles.rowNameLine}>
+                <Text
+                  style={[styles.rowName, purchased && styles.rowNamePurchased]}
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+                <Text style={[styles.rowQty, purchased && styles.rowNamePurchased]}>
+                  ×{item.quantity} {item.unit}
+                </Text>
+              </View>
               {item.notes ? <Text style={styles.rowReason} numberOfLines={1}>{item.notes}</Text> : null}
             </View>
             {!purchased && (
@@ -393,7 +405,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   rowMain: { flex: 1 },
-  rowName: { ...typography.rowTitle, color: colors.text },
+  // `flexShrink` on the name only: the quantity keeps its width and the name
+  // gives way, which is the right way round for a shopping list.
+  rowNameLine: { flexDirection: "row", alignItems: "baseline", gap: spacing.xs },
+  rowName: { ...typography.rowTitle, color: colors.text, flexShrink: 1 },
   rowNamePurchased: { color: colors.textFaint, textDecorationLine: "line-through" },
   rowQty: { ...typography.caption, fontWeight: "400" },
   rowReason: { ...typography.caption, marginTop: spacing.xs },
