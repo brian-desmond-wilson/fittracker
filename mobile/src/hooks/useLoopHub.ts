@@ -23,7 +23,11 @@ import { sumNutrition } from "@/src/lib/mealMacros";
 import { computeBrianScore } from "@/src/lib/mealScore";
 import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { buildStockByMealId, type EatNextResult } from "@/src/lib/eatNext";
-import { computeLoopStatus, type LoopStatus } from "@/src/lib/loopStatus";
+import {
+  computeLoopStatus,
+  type LoopFuelPick,
+  type LoopStatus,
+} from "@/src/lib/loopStatus";
 import { getLocalDateString } from "@/src/lib/dates";
 
 interface PaceProfileRow {
@@ -133,7 +137,13 @@ export interface UseLoopHubValue {
   computedAt: Date | null;
 }
 
-export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
+export function useLoopHub(
+  eatNext: EatNextResult | null,
+  /** The plan's next suggestion, from `useNextFuelPick` in the screen.
+   *  Passed in rather than fetched here for the same reason `eatNext` is:
+   *  the screen runs the hooks, this one never duplicates their assembly. */
+  fuelPick: LoopFuelPick | null,
+): UseLoopHubValue {
   const [status, setStatus] = useState<LoopStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -147,6 +157,11 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
   // Seeded from the first render's value; kept in sync by the effect below
   // rather than by a write in the render body (see there).
   const eatNextRef = useRef(eatNext);
+  // Same ref treatment, for the same reason: `load` is a stable callback, so
+  // reading the parameter directly would freeze it at its first value — null,
+  // since the plan resolves after the first render. That is exactly the bug
+  // this fixed: the station kept answering from the recommender forever.
+  const fuelPickRef = useRef(fuelPick);
 
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
@@ -202,6 +217,7 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
         totals: { calories: totals.calories, protein: totals.protein },
         goals: { calories: p.target_calories, protein: p.target_protein_g },
         rates: shopping.ratesById,
+        fuelPick: fuelPickRef.current,
         suggestions: shopping.suggestions,
         listRows: shopping.listRows,
         vendors: shopping.vendors,
@@ -230,6 +246,7 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
   // then sees the new value in the same commit. Reversing the two would make
   // `load()` compute against the PREVIOUS eatNext result.
   useEffect(() => { eatNextRef.current = eatNext; });
+  useEffect(() => { fuelPickRef.current = fuelPick; });
 
   // Recompute when the eatNext result lands/changes (cheap: refetches too, by
   // design — the eatNext result usually changes because data changed).
@@ -247,7 +264,7 @@ export function useLoopHub(eatNext: EatNextResult | null): UseLoopHubValue {
     // `eslint.config.js` registers a no-op stub so directives resolve — so
     // this is documentation until one is.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, eatNext]);
+  }, [load, eatNext, fuelPick]);
 
   return { status, loading, error, refetch: load, computedAt };
 }

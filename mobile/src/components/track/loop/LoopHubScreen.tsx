@@ -10,6 +10,7 @@ import { colors } from "@/src/theme/tokens";
 import { EmptyState, LoadingState, Screen } from "@/src/components/ui";
 import { useEatNext } from "@/src/hooks/useEatNext";
 import { useLoopHub } from "@/src/hooks/useLoopHub";
+import { useNextFuelPick } from "@/src/hooks/useNextFuelPick";
 import type { StationKey, StationStatus } from "@/src/lib/loopStatus";
 import { Connector } from "./Connector";
 import { StationRow } from "./StationRow";
@@ -18,7 +19,26 @@ import { StationDetailSheet } from "./StationDetailSheet";
 export function LoopHubScreen({ onBack }: { onBack: () => void }) {
   const router = useRouter();
   const eatNext = useEatNext();
-  const hub = useLoopHub(eatNext.result);
+  // The plan's answer for station 3, from the same hook the Home card uses —
+  // so the loop, Home and Fuel all name one meal. It falls back to `eatNext`
+  // whenever the plan has nothing to say.
+  const fuel = useNextFuelPick();
+  const hub = useLoopHub(
+    eatNext.result,
+    fuel.suggestion
+      ? {
+          name: fuel.suggestion.pick.name,
+          calories: fuel.suggestion.pick.calories,
+          protein: fuel.suggestion.pick.protein,
+          prepMinutes: fuel.suggestion.pick.prepMinutes,
+          score: fuel.suggestion.pick.score,
+          assemblable: fuel.suggestion.pick.assemblable,
+          reasons: fuel.suggestion.pick.reasons,
+          windowLabel: fuel.suggestion.window.label,
+          closingSoon: fuel.suggestion.closingSoon,
+        }
+      : null,
+  );
   // The open station is DERIVED from `hub.status`, not snapshotted into state.
   // Holding a `StationStatus` here would go stale in one reachable window: the
   // rows render as soon as the FIRST hub load lands, while `eatNext` is still
@@ -43,8 +63,9 @@ export function LoopHubScreen({ onBack }: { onBack: () => void }) {
   // would happen. The extra fetch is the price of a Retry that works.
   const refetchBoth = useCallback(() => {
     eatNext.refetch();
+    fuel.refetch();
     hub.refetch();
-  }, [eatNext.refetch, hub.refetch]);
+  }, [eatNext.refetch, fuel.refetch, hub.refetch]);
 
   // House focus-refresh pattern (EatNextHomeCard refinement): skip the
   // mount-time focus so the hooks' own mount effects aren't doubled.

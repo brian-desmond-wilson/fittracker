@@ -66,6 +66,14 @@ export interface LoopStatusInputs {
   meals: Array<{ id: string; name: string; raw: number; display: number }>;
   stockByMealId: Map<string, EatNextStockInfo>;
   eatNext: EatNextResult | null;
+  /**
+   * The Fuel plan's next suggestion. When present it WINS: Home was changed to
+   * prefer it when Fuel shipped, and this station was not, so the loop named a
+   * different meal than the two screens either side of it. `null` means the
+   * plan has nothing to say — not loaded, day closed, goals hit, empty library
+   * — and the recommender answers instead, exactly as the Home card falls back.
+   */
+  fuelPick: LoopFuelPick | null;
   paceCalories: MealPaceState;
   paceProtein: MealPaceState;
   totals: { calories: number; protein: number };
@@ -74,6 +82,26 @@ export interface LoopStatusInputs {
   suggestions: Array<{ name: string; priority: 1 | 2 | 3; reasons: string[] }>;
   listRows: Array<{ vendor_id: string | null; is_purchased: boolean }>;
   vendors: Array<{ id: string; name: string }>;
+}
+
+/**
+ * The plan's answer for the next window, when it has one.
+ *
+ * Declared structurally rather than imported from the hook, for the same
+ * layering reason `StationTone` is not `BadgeTone`. It mirrors what the Home
+ * card renders, which is the point: three surfaces, one answer.
+ */
+export interface LoopFuelPick {
+  name: string;
+  calories: number;
+  protein: number;
+  prepMinutes: number;
+  score: number;
+  assemblable: boolean;
+  reasons: string[];
+  /** The window it is suggested for — "Breakfast Window". */
+  windowLabel: string;
+  closingSoon: boolean;
 }
 
 export const DETAIL_MAX_ROWS = 5;
@@ -228,7 +256,48 @@ function libraryStation(inp: LoopStatusInputs, readyCount: number): StationStatu
   };
 }
 
+/**
+ * Station 3 from the plan's pick.
+ *
+ * Green only, deliberately, and for the reason the Home card records: a
+ * `FuelPick` carries the assemblable verdict but not the missing COUNT, so the
+ * amber "Missing 3" half of the recommender's badge cannot be said honestly
+ * from here. A pick the kitchen cannot make still raises the attention flag —
+ * this is a status board, and "the plan wants something you can't make" is
+ * exactly what it exists to surface.
+ */
+function planEatNextStation(pick: LoopFuelPick): StationStatus {
+  return {
+    key: "eatNext",
+    title: "Eat Next",
+    headline: `${pick.name} · ${Math.round(pick.calories)} cal · ${pick.prepMinutes} min`,
+    badge: pick.assemblable ? { label: "In stock", tone: "success" } : null,
+    attention: !pick.assemblable,
+    connector: "eating one takes it off the shelf",
+    detail: {
+      lines: [
+        {
+          label: "Window",
+          value: pick.closingSoon ? `${pick.windowLabel} — closes soon` : pick.windowLabel,
+        },
+        { label: "Calories", value: String(Math.round(pick.calories)) },
+        { label: "Protein", value: `${Math.round(pick.protein)}g` },
+        { label: "Prep · Score", value: `${pick.prepMinutes} min · ${Math.round(pick.score)}/100` },
+      ],
+      chips: [],
+      // The plan's own reasons, which already carry the expiry nudge the
+      // recommender rendered as its own line.
+      footnote: pick.reasons.length > 0 ? pick.reasons.join(" · ") : null,
+    },
+    destination: "/(tabs)/track/fuel",
+    destinationLabel: "Open Fuel",
+  };
+}
+
 function eatNextStation(inp: LoopStatusInputs): StationStatus {
+  // The plan first, the recommender as the fallback — the rule the Home card
+  // already follows.
+  if (inp.fuelPick) return planEatNextStation(inp.fuelPick);
   const r = inp.eatNext;
   const pick = r?.recommendations[0] ?? null;
   const runnerUp = r?.recommendations[1] ?? null;

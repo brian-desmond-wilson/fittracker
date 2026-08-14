@@ -5,6 +5,7 @@ import {
 } from "../loopStatus";
 import type { ItemStockState } from "../stockState";
 import type { EatNextStockInfo } from "../eatNext";
+import type { LoopFuelPick } from "../loopStatus";
 import { MAX_DISPLAY_DAYS, MIN_SPAN_DAYS, MIN_UNITS } from "../consumptionRate";
 import { FORECAST_LEAD_DAYS } from "../shoppingDemand";
 
@@ -33,6 +34,7 @@ const baseInputs = (): LoopStatusInputs => ({
     ["m1", stock({ assemblable: false, missingCount: 2 })],
     ["m2", stock()],
   ]),
+  fuelPick: null,
   eatNext: {
     context: "next_meal",
     message: null,
@@ -321,6 +323,70 @@ describe("station 3: eat next", () => {
     expect(computeLoopStatus(inp).stations[2].detail.lines).toContainEqual({
       label: "Expiring", value: "Uses Spinach — expires today",
     });
+  });
+});
+
+describe("station 3: Eat Next from the plan", () => {
+  const pick = (over: Partial<LoopFuelPick> = {}): LoopFuelPick => ({
+    name: "Almond Dream Smoothie",
+    calories: 400,
+    protein: 12,
+    prepMinutes: 0,
+    score: 88,
+    assemblable: true,
+    reasons: ["uses food expiring in 2d"],
+    windowLabel: "Breakfast Window",
+    closingSoon: false,
+    ...over,
+  });
+
+  // The whole point: Home and Fuel already agreed, and the loop did not.
+  it("the plan's pick wins over the recommender's", () => {
+    const inp = baseInputs();
+    inp.fuelPick = pick();
+    const s = computeLoopStatus(inp).stations[2];
+    expect(s.headline).toBe("Almond Dream Smoothie · 400 cal · 0 min");
+    expect(s.badge).toEqual({ label: "In stock", tone: "success" });
+    expect(s.attention).toBe(false);
+  });
+
+  it("falls back to the recommender when the plan has nothing to say", () => {
+    const inp = baseInputs();
+    inp.fuelPick = null;
+    expect(computeLoopStatus(inp).stations[2].headline).toBe("Korean Beef Bowl · 640 cal · 10 min");
+  });
+
+  it("names the window, and says when it is closing", () => {
+    const inp = baseInputs();
+    inp.fuelPick = pick({ closingSoon: true });
+    const d = computeLoopStatus(inp).stations[2].detail;
+    expect(d.lines[0]).toEqual({ label: "Window", value: "Breakfast Window — closes soon" });
+    expect(d.lines).toContainEqual({ label: "Prep · Score", value: "0 min · 88/100" });
+  });
+
+  it("carries the plan's own reasons as the footnote", () => {
+    const inp = baseInputs();
+    inp.fuelPick = pick({ reasons: ["in stock", "uses food expiring in 2d"] });
+    expect(computeLoopStatus(inp).stations[2].detail.footnote)
+      .toBe("in stock · uses food expiring in 2d");
+  });
+
+  // A FuelPick carries the verdict but not the missing COUNT, so the amber
+  // "Missing 3" the recommender can say cannot be said honestly from here —
+  // the same rule the Home card records. The attention flag still rises.
+  it("says nothing rather than guessing a count for a meal it cannot make", () => {
+    const inp = baseInputs();
+    inp.fuelPick = pick({ assemblable: false });
+    const s = computeLoopStatus(inp).stations[2];
+    expect(s.badge).toBeNull();
+    expect(s.detail.chips).toEqual([]);
+    expect(s.attention).toBe(true);
+  });
+
+  it("still points at Fuel", () => {
+    const inp = baseInputs();
+    inp.fuelPick = pick();
+    expect(computeLoopStatus(inp).stations[2].destination).toBe("/(tabs)/track/fuel");
   });
 });
 
