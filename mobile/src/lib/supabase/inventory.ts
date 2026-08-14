@@ -4,6 +4,7 @@
 // detail/edit routes). Every quantity the app displays comes from
 // projectItemStock over location rows — the one truth.
 import { supabase } from "../supabase";
+import { materializeDueDeliveries } from "./preparedMeals";
 import {
   projectItemStock,
   type ItemStockState,
@@ -35,6 +36,17 @@ export interface InventoryItemWithState extends FoodInventoryItem {
 export async function fetchInventoryWithState(
   todayLocalDate: string,
 ): Promise<InventoryItemWithState[]> {
+  // A delivery scheduled for a moment that has now passed becomes stock here,
+  // before the read that would otherwise miss it — this is the app's only
+  // clock, so every inventory read is also the tick that lets food arrive.
+  // Best-effort on purpose: a failure to materialise must not take the whole
+  // inventory down with it, and the next read tries again.
+  try {
+    await materializeDueDeliveries();
+  } catch (e) {
+    console.error("materialize due deliveries:", e);
+  }
+
   const [items, locations, categoryMaps, subcategoryMaps] = await Promise.all([
     // D1: deterministic order — the fetch previously returned rows in
     // whatever order the planner chose, so the grid (pre-sort) and every

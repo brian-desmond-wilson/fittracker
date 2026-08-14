@@ -38,6 +38,11 @@ import {
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
 import { addSuggestions, fetchConsumptionRates } from "@/src/lib/supabase/shopping";
+import {
+  cancelPendingDelivery,
+  fetchPendingDeliveries,
+  type PendingDelivery,
+} from "@/src/lib/supabase/preparedMeals";
 import { projectItemStock, lowThresholdFor } from "@/src/lib/stockState";
 import { isExpiringSoon, reviewExpiry } from "@/src/lib/expiryPolicy";
 import { formatQuantity } from "@/src/lib/units";
@@ -45,7 +50,7 @@ import { matchesInventoryQuery } from "@/src/lib/inventorySearch";
 import { mealsUsingConcepts } from "@/src/lib/useItUp";
 import { fetchMealLibrary } from "@/src/lib/supabase/mealLibrary";
 import { MAX_DISPLAY_DAYS, type ConsumptionEstimate } from "@/src/lib/consumptionRate";
-import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
+import { formatArrival, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { RestockModal } from "./RestockModal";
 import { ExpiryReviewModal } from "./ExpiryReviewModal";
 import { BulkCaptureModal } from "./BulkCaptureModal";
@@ -106,6 +111,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   // leaves this empty rather than blocking the inventory render (see
   // fetchInventory below).
   const [ratesById, setRatesById] = useState<Map<string, ConsumptionEstimate>>(new Map());
+
+  // Boxes that have not turned up yet. They are not stock and never appear in
+  // the grid — the whole point of scheduling one is that the app does not
+  // pretend you have the food — so they get a line of their own above it.
+  const [pending, setPending] = useState<PendingDelivery[]>([]);
 
   // `fetchInventory` is called from four places (mount, pull-to-refresh, the
   // delete-failure revert, the restock-failure revert) with no cancellation.
@@ -367,6 +377,44 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
     } catch (ratesError) {
       console.error("Error fetching consumption rates:", ratesError);
     }
+
+    // Decoration in the same sense the rates are: the grid is already on
+    // screen, and a failure here costs the "arriving" line, not the inventory.
+    try {
+      const rows = await fetchPendingDeliveries();
+      if (generation !== fetchGenerationRef.current) return; // stale
+      setPending(rows);
+    } catch (pendingError) {
+      console.error("Error fetching pending deliveries:", pendingError);
+    }
+  };
+
+  // Calling one off is not an undo — nothing was written to unwind — so it
+  // asks plainly and then the row simply stops waiting.
+  const cancelPending = (row: PendingDelivery) => {
+    Alert.alert(
+      "Cancel this delivery?",
+      `${row.mealCount} ${row.mealCount === 1 ? "meal" : "meals"}${row.vendorName ? ` from ${row.vendorName}` : ""} will not be added when ${formatArrival(row.arrivesAt, new Date(), { midSentence: true })} comes around. Nothing in your inventory changes.`,
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: "Cancel delivery",
+          style: "destructive",
+          onPress: async () => {
+            // Optimistic: the row is the only thing on screen that this
+            // touches, and a failure puts it straight back.
+            setPending((prev) => prev.filter((p) => p.id !== row.id));
+            try {
+              await cancelPendingDelivery(row.id);
+            } catch (e) {
+              console.error("cancel pending delivery:", e);
+              setPending((prev) => [...prev, row].sort((a, b) => a.arrivesAt.localeCompare(b.arrivesAt)));
+              Alert.alert("Couldn't cancel it", "The delivery is still scheduled. Try again.");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleRefresh = async () => {
@@ -1251,6 +1299,32 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             </View>
           </View>
 
+        {/* What is coming but not here. One line per box, above the grid it is
+            deliberately absent from: a scheduled delivery is food you do not
+            have yet, and the whole reason for scheduling it is that the app
+            should not say otherwise. Hidden entirely while searching, where
+            the answer is about what you own. */}
+        {!searching && pending.map((row) => (
+          <View key={row.id} style={styles.pendingRow}>
+            <Truck size={icons.sm} color={colors.accents.inventory} strokeWidth={icons.strokeWidth} />
+            <Text style={styles.pendingText} numberOfLines={1}>
+              <Text style={styles.pendingCount}>
+                {row.mealCount} {row.mealCount === 1 ? "meal" : "meals"}
+              </Text>
+              {row.vendorName ? ` from ${row.vendorName}` : ""}
+              {` arriving ${formatArrival(row.arrivesAt, new Date(), { midSentence: true })}`}
+            </Text>
+            <TouchableOpacity
+              onPress={() => cancelPending(row)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Cancel the delivery arriving ${formatArrival(row.arrivesAt)}`}
+            >
+              <X size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
+          </View>
+        ))}
+
         {/* Items Grid */}
         <View style={styles.gridWrap}>
         {Platform.OS === "ios" && (
@@ -1667,6 +1741,21 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     marginBottom: spacing.md,
   },
+  // Quiet: it is information, not a warning, and it sits directly above a grid
+  // of photographs that must stay the loudest thing on the screen.
+  pendingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginHorizontal: spacing.screenGutter,
+    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.control,
+    backgroundColor: tint(colors.accents.inventory),
+  },
+  pendingText: { ...typography.caption, color: colors.textMuted, flex: 1 },
+  pendingCount: { color: colors.text },
   segmentStrip: {
     flexDirection: "row",
     gap: spacing.sm,

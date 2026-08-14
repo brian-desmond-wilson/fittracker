@@ -1,6 +1,7 @@
 import {
   addDays,
   formatDayLabel,
+  formatArrival,
   formatRelativeDay,
   getLocalDateString,
   parseLocalDate,
@@ -131,5 +132,53 @@ describe("formatRelativeDay", () => {
     // instant instead of drifting across local midnight mid-render.
     expect(formatRelativeDay("2026-01-01", new Date(2026, 0, 1))).toBe("Today");
     expect(formatRelativeDay("2025-12-31", new Date(2026, 0, 1))).toBe("Yesterday");
+  });
+});
+
+// Fixed local instants, so nothing depends on when the suite runs.
+const ARRIVAL_NOW = new Date(2026, 7, 14, 13, 0); // Fri Aug 14 2026, 1:00 PM local
+
+describe("formatArrival", () => {
+  it("names today by name, with the time", () => {
+    expect(formatArrival(new Date(2026, 7, 14, 16, 30), ARRIVAL_NOW)).toBe("Today at 4:30 PM");
+  });
+
+  it("knows tomorrow — the commonest arrival there is", () => {
+    expect(formatArrival(new Date(2026, 7, 15, 9, 0), ARRIVAL_NOW)).toBe("Tomorrow at 9:00 AM");
+  });
+
+  it("gives a weekday and a date for anything further out", () => {
+    expect(formatArrival(new Date(2026, 7, 16, 9, 0), ARRIVAL_NOW)).toBe("Sun, Aug 16 at 9:00 AM");
+  });
+
+  it("does not call an arrival tomorrow just because it is later today", () => {
+    // 11:59 PM today is still today, however close to midnight it sits.
+    expect(formatArrival(new Date(2026, 7, 14, 23, 59), ARRIVAL_NOW)).toBe("Today at 11:59 PM");
+  });
+
+  it("labels a past instant the same way — it is a time, not a promise", () => {
+    expect(formatArrival(new Date(2026, 7, 13, 8, 0), ARRIVAL_NOW)).toBe("Thu, Aug 13 at 8:00 AM");
+  });
+
+  it("takes an ISO string as readily as a Date", () => {
+    const iso = new Date(2026, 7, 15, 9, 0).toISOString();
+    expect(formatArrival(iso, ARRIVAL_NOW)).toBe("Tomorrow at 9:00 AM");
+  });
+
+  it("says nothing rather than NaN for an unparseable value", () => {
+    expect(formatArrival("not a date", ARRIVAL_NOW)).toBe("—");
+  });
+
+  it("lowercases only today and tomorrow inside a sentence", () => {
+    const mid = { midSentence: true };
+    expect(formatArrival(new Date(2026, 7, 14, 16, 30), ARRIVAL_NOW, mid)).toBe("today at 4:30 PM");
+    expect(formatArrival(new Date(2026, 7, 15, 9, 0), ARRIVAL_NOW, mid)).toBe("tomorrow at 9:00 AM");
+  });
+
+  it("leaves a weekday and month capitalised wherever they sit", () => {
+    // The bug this closes: lowercasing the whole line to fix "Today" also
+    // produced "sun, aug 16 at 7:00 pm".
+    expect(formatArrival(new Date(2026, 7, 16, 19, 0), ARRIVAL_NOW, { midSentence: true }))
+      .toBe("Sun, Aug 16 at 7:00 PM");
   });
 });

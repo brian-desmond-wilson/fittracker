@@ -41,8 +41,10 @@ const dish = (over: Partial<RecentDish> = {}): RecentDish => ({
   ...over,
 });
 
-const ok = (drafts: PreparedMealDraft[]) =>
-  validateDelivery({ vendorId: "v1", useBy: "2026-08-17", drafts });
+const ok = (
+  drafts: PreparedMealDraft[],
+  over: { arrivesOn?: string | null } = {},
+) => validateDelivery({ vendorId: "v1", useBy: "2026-08-17", drafts, ...over });
 
 describe("emptyDraft", () => {
   it("starts at one of the thing, in the commonest slot", () => {
@@ -93,6 +95,20 @@ describe("validateDelivery", () => {
   it("accepts a decimal macro", () => {
     expect(ok([draft({ fiber: "13.5" })])).toBeNull();
   });
+  it("refuses a box that arrives after its own use-by date", () => {
+    expect(ok([draft()], { arrivesOn: "2026-08-18" })).toBe(
+      "This box arrives after its use-by date. Check both dates.",
+    );
+  });
+
+  it("accepts a box that arrives on its use-by date — tight, not wrong", () => {
+    expect(ok([draft()], { arrivesOn: "2026-08-17" })).toBeNull();
+  });
+
+  it("accepts a box with no arrival date at all", () => {
+    expect(ok([draft()], { arrivesOn: null })).toBeNull();
+  });
+
   it("catches the same dish listed twice, whatever the casing", () => {
     expect(ok([draft(), draft({ name: "ruby rice BOWL" })])).toMatch(/listed twice/i);
   });

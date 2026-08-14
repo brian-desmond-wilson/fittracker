@@ -85,10 +85,20 @@ const toNumber = (raw: string): number | null => {
 export function validateDelivery(opts: {
   vendorId: string | null;
   useBy: string | null;
+  /** Local YYYY-MM-DD of the arrival. Optional so callers that predate
+   *  scheduling still typecheck; absent skips the ordering check. */
+  arrivesOn?: string | null;
   drafts: readonly PreparedMealDraft[];
 }): string | null {
   if (!opts.vendorId) return "Pick who delivered this.";
   if (!opts.useBy) return "Set the use-by date printed on the box.";
+  // Food that expires before it turns up is a typo, always — most often a
+  // use-by left at today's default while the arrival was moved out a week.
+  // Same-day is fine: a box that arrives and must be eaten today is a real
+  // and unhappy thing, not a mistake.
+  if (opts.arrivesOn && opts.arrivesOn > opts.useBy) {
+    return "This box arrives after its use-by date. Check both dates.";
+  }
 
   const named = namedDrafts(opts.drafts);
   if (named.length === 0) return "Add at least one meal.";

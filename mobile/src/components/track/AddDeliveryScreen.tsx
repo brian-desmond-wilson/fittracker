@@ -18,14 +18,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
-import { Calendar, Camera, ChevronLeft, Plus } from "lucide-react-native";
+import { Calendar, Camera, ChevronLeft, Plus, Truck } from "lucide-react-native";
 import { Button, Card } from "@/src/components/ui";
 import { VendorTiles } from "@/src/components/track/edit/VendorTiles";
 import { DeliveryMealRow } from "@/src/components/track/delivery/DeliveryMealRow";
 import { RecentDishes } from "@/src/components/track/delivery/RecentDishes";
 import { supabase } from "@/src/lib/supabase";
-import { getLocalDateString, parseLocalDate } from "@/src/lib/dates";
-import { createPreparedMealDelivery } from "@/src/lib/supabase/preparedMeals";
+import { formatArrival, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
+import { savePreparedMealDelivery } from "@/src/lib/supabase/preparedMeals";
 import { fetchDeliveryHistory } from "@/src/lib/supabase/deliveryHistory";
 import {
   addLocalDays, addRecent, deliverySummary, emptyDraft, namedDrafts,
@@ -40,7 +40,10 @@ import type { MealType } from "@/src/types/track";
 interface AddDeliveryScreenProps {
   onClose: () => void;
   /** Called after a successful write, so the list behind can refresh. */
-  onSaved: (count: number) => void;
+  /** `status` is the database's verdict on whether the box landed or is
+   *  waiting — the client's clock does not get a vote — and `arrivesAt` is
+   *  what a waiting one is waiting for. */
+  onSaved: (count: number, status: "delivered" | "scheduled", arrivesAt: string) => void;
 }
 
 export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) {
@@ -55,6 +58,13 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
     addLocalDays(getLocalDateString(), TYPICAL_PREPARED_MEAL_DAYS),
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
+  // When the box turns up. Now by default, because most deliveries are logged
+  // as they are unpacked; moved forward, it holds the whole box until then.
+  const [arrivesAt, setArrivesAt] = useState<Date>(new Date());
+  const [showArrivalPicker, setShowArrivalPicker] = useState(false);
+  // Android has no combined picker, so it asks in two steps; this is which
+  // step is open, and it is null on iOS throughout.
+  const [androidArrivalStep, setAndroidArrivalStep] = useState<"date" | "time" | null>(null);
   const [drafts, setDrafts] = useState<PreparedMealDraft[]>([emptyDraft()]);
   const [saving, setSaving] = useState(false);
 
@@ -276,20 +286,32 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
     );
   };
 
+  // Recomputed on every render rather than watched with a timer: the only
+  // thing that acts on it is a Save the user is about to press, and a minute
+  // hand that flips this line while nobody is touching the screen would be
+  // motion for its own sake.
+  const arrivalIsFuture = arrivesAt.getTime() > Date.now();
+
   const handleSave = async () => {
-    const problem = validateDelivery({ vendorId, useBy, drafts });
+    const problem = validateDelivery({
+      vendorId,
+      useBy,
+      arrivesOn: getLocalDateString(arrivesAt),
+      drafts,
+    });
     if (problem) {
       Alert.alert("Not ready yet", problem);
       return;
     }
     setSaving(true);
     try {
-      const count = await createPreparedMealDelivery({
+      const result = await savePreparedMealDelivery({
         vendorId: vendorId as string,
         useBy,
+        arrivesAt: arrivesAt.toISOString(),
         meals: toDeliveryPayload(drafts),
       });
-      onSaved(count);
+      onSaved(result.count, result.status, arrivesAt.toISOString());
     } catch (e) {
       console.error("delivery save failed:", e);
       Alert.alert(
@@ -340,6 +362,28 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
                   No vendors set up yet. Add one under nutrition preferences first.
                 </Text>
               )}
+
+              <Text style={[styles.label, styles.labelSpaced]}>Arrives</Text>
+              <TouchableOpacity
+                style={styles.dateButton}
+                onPress={() => {
+                  if (Platform.OS === "android") setAndroidArrivalStep("date");
+                  else setShowArrivalPicker(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Choose when this delivery arrives"
+              >
+                <Truck size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+                <Text style={styles.dateText}>{formatArrival(arrivesAt)}</Text>
+              </TouchableOpacity>
+              {/* The consequence, not the mechanism. A future arrival changes
+                  what Save does, and that has to be said before it is pressed
+                  rather than discovered afterwards in an empty fridge. */}
+              <Text style={styles.help}>
+                {arrivalIsFuture
+                  ? "Nothing lands in your inventory until then — these meals appear the first time you open the app after it arrives."
+                  : "These meals go into your inventory as soon as you save."}
+              </Text>
 
               <Text style={[styles.label, styles.labelSpaced]}>Use by</Text>
               <TouchableOpacity
@@ -453,6 +497,75 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
               </View>
             </TouchableOpacity>
           </Modal>
+        )}
+
+        {/* iOS asks for both halves at once; Android has no such picker, so it
+            asks for the day and then the time, in that order. Either way the
+            answer is one instant. */}
+        {showArrivalPicker && Platform.OS === "ios" && (
+          <Modal transparent animationType="fade" onRequestClose={() => setShowArrivalPicker(false)}>
+            <TouchableOpacity
+              style={styles.pickerBackdrop}
+              activeOpacity={1}
+              onPress={() => setShowArrivalPicker(false)}
+            >
+              <View style={styles.pickerSheet}>
+                <View style={styles.pickerHead}>
+                  <Text style={styles.pickerTitle}>Arrives</Text>
+                  <TouchableOpacity onPress={() => setShowArrivalPicker(false)}>
+                    <Text style={styles.pickerDone}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={arrivesAt}
+                  mode="datetime"
+                  display="spinner"
+                  textColor={colors.text}
+                  onChange={(_e, picked) => {
+                    if (picked) setArrivesAt(picked);
+                  }}
+                />
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {androidArrivalStep === "date" && Platform.OS === "android" && (
+          <DateTimePicker
+            value={arrivesAt}
+            mode="date"
+            display="default"
+            onChange={(_e, picked) => {
+              // Cancelling the day cancels the whole question rather than
+              // dropping the user into a time picker for a day they declined
+              // to choose.
+              if (!picked) {
+                setAndroidArrivalStep(null);
+                return;
+              }
+              // The day from the picker, the time from what was already there:
+              // half an answer must not silently reset the other half.
+              const next = new Date(arrivesAt);
+              next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
+              setArrivesAt(next);
+              setAndroidArrivalStep("time");
+            }}
+          />
+        )}
+
+        {androidArrivalStep === "time" && Platform.OS === "android" && (
+          <DateTimePicker
+            value={arrivesAt}
+            mode="time"
+            display="default"
+            onChange={(_e, picked) => {
+              setAndroidArrivalStep(null);
+              if (!picked) return;
+              const next = new Date(arrivesAt);
+              next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+              setArrivesAt(next);
+            }}
+          />
         )}
 
         {showDatePicker && Platform.OS === "android" && (

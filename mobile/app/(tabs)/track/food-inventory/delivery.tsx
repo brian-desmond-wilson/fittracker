@@ -2,6 +2,7 @@ import React from "react";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { AddDeliveryScreen } from "@/src/components/track/AddDeliveryScreen";
+import { formatArrival } from "@/src/lib/dates";
 
 export default function AddDeliveryPage() {
   const router = useRouter();
@@ -14,13 +15,21 @@ export default function AddDeliveryPage() {
   return (
     <AddDeliveryScreen
       onClose={leave}
-      onSaved={(count) => {
+      onSaved={(count, status, arrivesAt) => {
         leave();
         // After the navigation, so the confirmation lands over the list the
         // new meals are now in rather than over the form that wrote them.
+        const meals = `${count} ${count === 1 ? "meal" : "meals"}`;
+        if (status === "scheduled") {
+          Alert.alert(
+            "Delivery scheduled",
+            `${meals} arriving ${formatArrival(arrivesAt, new Date(), { midSentence: true })}. They join your inventory then — nothing is in it yet.`,
+          );
+          return;
+        }
         Alert.alert(
           "Delivery saved",
-          `${count} ${count === 1 ? "meal is" : "meals are"} in your inventory and ready to log.`,
+          `${meals} ${count === 1 ? "is" : "are"} in your inventory and ready to log.`,
         );
       }}
     />

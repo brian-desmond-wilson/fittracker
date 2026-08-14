@@ -97,3 +97,33 @@ export const formatRelativeDay = (
   if (day === getLocalDateString(addDays(today, -1))) return "Yesterday";
   return formatDayLabel(day);
 };
+
+/**
+ * An instant as a person would say it: "Today at 4:30 PM", "Tomorrow at
+ * 9:00 AM", "Sat, Aug 16 at 9:00 AM".
+ *
+ * For arrivals — a delivery that has not happened yet — so it knows tomorrow,
+ * which `formatRelativeDay` (built for history) has no use for. Anchored on
+ * `now` so a screen labelling several can hand one instant to all of them and
+ * not have a list disagree with itself across local midnight.
+ */
+export const formatArrival = (
+  value: Date | string,
+  now: Date = new Date(),
+  opts: { midSentence?: boolean } = {},
+): string => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const day = getLocalDateString(date);
+  // `midSentence` lowercases "Today" and "Tomorrow" only — the words that are
+  // ordinary nouns inside a sentence. Weekdays, months and AM/PM are proper
+  // forms in any position, and lowercasing the whole string to fix the first
+  // word is what turned "Sun, Aug 16 at 7:00 PM" into "sun, aug 16 at 7:00 pm".
+  if (day === getLocalDateString(now)) return `${opts.midSentence ? "today" : "Today"} at ${time}`;
+  if (day === getLocalDateString(addDays(now, 1))) {
+    return `${opts.midSentence ? "tomorrow" : "Tomorrow"} at ${time}`;
+  }
+  const label = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  return `${label} at ${time}`;
+};
