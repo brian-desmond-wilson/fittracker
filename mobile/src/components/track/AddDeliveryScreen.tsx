@@ -25,11 +25,14 @@ import { DeliveryMealRow } from "@/src/components/track/delivery/DeliveryMealRow
 import { RecentDishes } from "@/src/components/track/delivery/RecentDishes";
 import { supabase } from "@/src/lib/supabase";
 import { formatArrival, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
-import { savePreparedMealDelivery } from "@/src/lib/supabase/preparedMeals";
+import {
+  savePreparedMealDelivery, updatePendingDelivery,
+  type PendingDeliveryDraft,
+} from "@/src/lib/supabase/preparedMeals";
 import { fetchDeliveryHistory } from "@/src/lib/supabase/deliveryHistory";
 import {
-  addLocalDays, addRecent, deliverySummary, emptyDraft, namedDrafts,
-  orderVendorsByUse, recentCounts, removeRecent, toDeliveryPayload,
+  addLocalDays, addRecent, deliverySummary, draftsFromPayload, emptyDraft,
+  namedDrafts, orderVendorsByUse, recentCounts, removeRecent, toDeliveryPayload,
   validateDelivery, TYPICAL_PREPARED_MEAL_DAYS,
   type PreparedMealDraft, type RecentDish, type VendorUse,
 } from "@/src/lib/preparedMealDelivery";
@@ -37,35 +40,61 @@ import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
 import type { MealType } from "@/src/types/track";
 
+/**
+ * What became of the box when Save was pressed.
+ *
+ * `delivered` and `scheduled` are the DATABASE's verdict on a new delivery —
+ * the client's clock does not get a vote, because a phone running a few minutes
+ * fast would otherwise schedule a box its owner is holding.
+ *
+ * `due` only happens on an edit. Changing a pending row is one `UPDATE`, not
+ * the scheduling RPC, so moving its arrival into the past does not write
+ * anything: the box simply becomes due, and the next inventory read is what
+ * turns it into food. Worth its own word, because it is the one outcome where
+ * a card vanishes from the Deliveries page without the user cancelling it.
+ */
+export type DeliverySaveStatus = "delivered" | "scheduled" | "due";
+
 interface AddDeliveryScreenProps {
   onClose: () => void;
-  /** Called after a successful write, so the list behind can refresh. */
-  /** `status` is the database's verdict on whether the box landed or is
-   *  waiting — the client's clock does not get a vote — and `arrivesAt` is
-   *  what a waiting one is waiting for. */
-  onSaved: (count: number, status: "delivered" | "scheduled", arrivesAt: string) => void;
+  /** Called after a successful write, so the list behind can refresh.
+   *  `arrivesAt` is what a waiting box is waiting for. */
+  onSaved: (count: number, status: DeliverySaveStatus, arrivesAt: string) => void;
+  /**
+   * A box already scheduled, reopened. Absent for a new delivery.
+   *
+   * The same form either way, deliberately: a delivery is a delivery, the
+   * validation that made it valid is the validation that keeps it valid, and a
+   * second screen for changing one would drift from the screen that writes one.
+   * All that changes is the wording and where Save sends the payload.
+   */
+  editing?: PendingDeliveryDraft;
 }
 
-export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) {
+export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScreenProps) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
   const [vendors, setVendors] = useState<NutritionVendor[]>([]);
   const [vendorUse, setVendorUse] = useState<VendorUse[]>([]);
   const [recents, setRecents] = useState<RecentDish[]>([]);
-  const [vendorId, setVendorId] = useState<string | null>(null);
+  const [vendorId, setVendorId] = useState<string | null>(editing?.vendorId ?? null);
   const [useBy, setUseBy] = useState<string>(
-    addLocalDays(getLocalDateString(), TYPICAL_PREPARED_MEAL_DAYS),
+    editing?.useBy ?? addLocalDays(getLocalDateString(), TYPICAL_PREPARED_MEAL_DAYS),
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
   // When the box turns up. Now by default, because most deliveries are logged
   // as they are unpacked; moved forward, it holds the whole box until then.
-  const [arrivesAt, setArrivesAt] = useState<Date>(new Date());
+  const [arrivesAt, setArrivesAt] = useState<Date>(
+    editing ? new Date(editing.arrivesAt) : new Date(),
+  );
   const [showArrivalPicker, setShowArrivalPicker] = useState(false);
   // Android has no combined picker, so it asks in two steps; this is which
   // step is open, and it is null on iOS throughout.
   const [androidArrivalStep, setAndroidArrivalStep] = useState<"date" | "time" | null>(null);
-  const [drafts, setDrafts] = useState<PreparedMealDraft[]>([emptyDraft()]);
+  const [drafts, setDrafts] = useState<PreparedMealDraft[]>(
+    editing ? draftsFromPayload(editing.meals) : [emptyDraft()],
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -92,8 +121,10 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
       const rows = (vendorResult.data ?? []) as NutritionVendor[];
       setVendors(rows);
       // One active vendor means there is nothing to choose. Preselecting it
-      // saves the only tap that screen would ever collect.
-      if (rows.length === 1) setVendorId(rows[0].id);
+      // saves the only tap that screen would ever collect. Never over a choice
+      // already made: a box being edited names its own vendor, which may not be
+      // the only active one.
+      if (rows.length === 1) setVendorId((prev) => prev ?? rows[0].id);
     })();
   }, []);
 
@@ -276,9 +307,14 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
       onClose();
       return;
     }
+    // An edit always has rows in it, so `filled` cannot say whether anything
+    // was actually changed. It asks anyway rather than pretending to know:
+    // leaving without saving is the same loss either way.
     Alert.alert(
-      "Discard this delivery?",
-      `${summary} typed in and not saved.`,
+      editing ? "Discard your changes?" : "Discard this delivery?",
+      editing
+        ? "The delivery stays as it was scheduled."
+        : `${summary} typed in and not saved.`,
       [
         { text: "Keep editing", style: "cancel" },
         { text: "Discard", style: "destructive", onPress: onClose },
@@ -304,19 +340,56 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
       return;
     }
     setSaving(true);
+    const meals = toDeliveryPayload(drafts);
+    const iso = arrivesAt.toISOString();
     try {
+      if (editing) {
+        // One UPDATE on the row that is already waiting. No RPC and no
+        // transaction to hold, because nothing has been written from this
+        // payload yet — it is still one column, and changing a column is not
+        // the eight-table write that scheduling one eventually becomes.
+        const applied = await updatePendingDelivery({
+          id: editing.id,
+          vendorId: vendorId as string,
+          useBy,
+          arrivesAt: iso,
+          meals,
+        });
+        if (!applied) {
+          // It arrived while it was open. Saying so is the whole point: the
+          // meals are in the fridge now, and the edit has nothing to apply.
+          Alert.alert(
+            "This delivery already arrived",
+            "It landed while you were editing, so its meals are in your inventory now. Your changes weren't saved — edit the items there instead.",
+            [{ text: "OK", onPress: onClose }],
+          );
+          return;
+        }
+        onSaved(
+          meals.reduce((sum, m) => sum + Math.max(1, m.quantity), 0),
+          // The client's clock decides here, and it is allowed to: unlike a new
+          // delivery, nothing is being written on the strength of this answer —
+          // it only picks which sentence the confirmation uses.
+          arrivesAt.getTime() > Date.now() ? "scheduled" : "due",
+          iso,
+        );
+        return;
+      }
+
       const result = await savePreparedMealDelivery({
         vendorId: vendorId as string,
         useBy,
-        arrivesAt: arrivesAt.toISOString(),
-        meals: toDeliveryPayload(drafts),
+        arrivesAt: iso,
+        meals,
       });
-      onSaved(result.count, result.status, arrivesAt.toISOString());
+      onSaved(result.count, result.status, iso);
     } catch (e) {
       console.error("delivery save failed:", e);
       Alert.alert(
-        "Couldn't save the delivery",
-        "Nothing was written — the whole box saves or none of it does. Try again.",
+        editing ? "Couldn't save your changes" : "Couldn't save the delivery",
+        editing
+          ? "The delivery is still scheduled as it was. Try again."
+          : "Nothing was written — the whole box saves or none of it does. Try again.",
       );
     } finally {
       setSaving(false);
@@ -332,7 +405,7 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
             <ChevronLeft size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Delivery</Text>
+          <Text style={styles.headerTitle}>{editing ? "Edit Delivery" : "New Delivery"}</Text>
           {/* Balances the back control so the title sits centred. */}
           <View style={styles.back} />
         </View>
@@ -379,10 +452,17 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
               {/* The consequence, not the mechanism. A future arrival changes
                   what Save does, and that has to be said before it is pressed
                   rather than discovered afterwards in an empty fridge. */}
+              {/* The consequence, not the mechanism — and it differs between
+                  the two forms. A new delivery with a past arrival is written
+                  on the spot by the scheduling function; an edit is one UPDATE
+                  on a row that is still waiting, so the same date only makes it
+                  due, and the food appears on the next inventory read. */}
               <Text style={styles.help}>
                 {arrivalIsFuture
                   ? "Nothing lands in your inventory until then — these meals appear the first time you open the app after it arrives."
-                  : "These meals go into your inventory as soon as you save."}
+                  : editing
+                    ? "That's in the past, which is allowed — the box becomes due, and these meals join your inventory the next time you open it."
+                    : "These meals go into your inventory as soon as you save."}
               </Text>
 
               <Text style={[styles.label, styles.labelSpaced]}>Use by</Text>
@@ -457,7 +537,7 @@ export function AddDeliveryScreen({ onClose, onSaved }: AddDeliveryScreenProps) 
           <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
             <Text style={styles.summary}>{summary}</Text>
             <Button
-              label={saving ? "Saving…" : "Save delivery"}
+              label={saving ? "Saving…" : editing ? "Save changes" : "Save delivery"}
               onPress={handleSave}
               disabled={saving || filled === 0}
               fluid

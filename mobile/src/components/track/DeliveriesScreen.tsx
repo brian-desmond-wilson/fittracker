@@ -7,10 +7,10 @@
 // change it.
 //
 // So this page is the pending table given a face. One card per box on the way,
-// its dishes ordered through the day like the menu it is, and the one verb a box
-// that has not arrived can take: call it off. Below that, the vendors that send
-// them — a slim footer, count and last date, because box-by-box history is a
-// question nobody has asked yet.
+// its dishes ordered through the day like the menu it is, with the two verbs a
+// box that has not arrived can take: change it, or call it off. Below that, the
+// vendors that send them — a slim footer, count and last date, because
+// box-by-box history is a question nobody has asked yet.
 //
 // It is deliberately NOT a second inventory. Nothing here is stock, nothing
 // here feeds the loop, and the only thing that turns one into the other is
@@ -24,7 +24,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { ChevronLeft, Plus, Truck } from "lucide-react-native";
+import { ChevronLeft, Pencil, Plus, Truck } from "lucide-react-native";
 import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { supabase } from "@/src/lib/supabase";
@@ -45,6 +45,8 @@ interface DeliveriesScreenProps {
   onClose: () => void;
   /** The New Delivery form — the same one the inventory add sheet opens. */
   onNewDelivery: () => void;
+  /** The same form again, reopened on a box that is already scheduled. */
+  onEditDelivery: (id: string) => void;
 }
 
 /** A vendor that has delivered at least once, with how much it is used. */
@@ -70,7 +72,9 @@ const USE_BY_LABEL = { weekday: "short", month: "short", day: "numeric" } as con
 /** "Aug 13" — a last-delivered date, where the weekday means nothing. */
 const LAST_DELIVERED_LABEL = { month: "short", day: "numeric" } as const;
 
-export function DeliveriesScreen({ onClose, onNewDelivery }: DeliveriesScreenProps) {
+export function DeliveriesScreen({
+  onClose, onNewDelivery, onEditDelivery,
+}: DeliveriesScreenProps) {
   const insets = useSafeAreaInsets();
 
   const [pending, setPending] = useState<PendingDelivery[]>([]);
@@ -229,9 +233,18 @@ export function DeliveriesScreen({ onClose, onNewDelivery }: DeliveriesScreenPro
         )}
 
         <View style={s.boxActions}>
+          <TouchableOpacity
+            style={s.editButton}
+            onPress={() => onEditDelivery(row.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit the delivery from ${vendorName}`}
+          >
+            <Pencil size={15} color={colors.text} strokeWidth={icons.strokeWidth} />
+            <Text style={s.editText}>Edit</Text>
+          </TouchableOpacity>
           {/* Text, not a bordered button: nothing was written, so calling a box
-              off unwinds nothing — it is a quiet act, and a framed red control
-              would make it look like the page's main verb. */}
+              off unwinds nothing — it is a quiet act, and framing it in red
+              beside Edit would read as the pair of them being equally likely. */}
           <TouchableOpacity
             onPress={() => cancel(row)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -402,9 +415,16 @@ const s = StyleSheet.create({
   dishSlot: { ...typography.caption, fontSize: 11, color: colors.textFaint },
 
   boxActions: {
-    flexDirection: "row", alignItems: "center", justifyContent: "flex-end",
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingTop: spacing.lg,
   },
+  editButton: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm - 1,
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
+    paddingVertical: spacing.sm + 1, paddingHorizontal: spacing.xxl - 2,
+  },
+  editText: { ...typography.buttonSm, color: colors.text },
   cancelText: { ...typography.buttonSm, color: colors.danger },
 
   // ── Nothing on the way, but there is history below ──────────────────────

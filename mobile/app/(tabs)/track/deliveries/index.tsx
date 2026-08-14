@@ -10,6 +10,7 @@ export default function DeliveriesRoute() {
       // back here rather than landing on the inventory grid.
       onNewDelivery={() =>
         router.push("/(tabs)/track/food-inventory/delivery?from=deliveries")}
+      onEditDelivery={(id) => router.push(`/(tabs)/track/deliveries/edit/${id}`)}
     />
   );
 }
