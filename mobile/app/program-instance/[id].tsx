@@ -23,6 +23,7 @@ import {
 import { colors } from "@/src/lib/colors";
 import { fetchProgramInstanceById } from "@/src/lib/supabase/training";
 import type { ProgramInstanceWithRelations, WorkoutInstance } from "@/src/types/training";
+import { formatDayLabel } from "@/src/lib/dates";
 
 export default function ProgramInstanceDetail() {
   const router = useRouter();
@@ -59,11 +60,6 @@ export default function ProgramInstanceDetail() {
     await loadInstance();
   }
 
-  const formatDate = (dateString: string | null | undefined) => {
-    if (!dateString) return "—";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  };
 
   const formatVolume = (pounds: number) => {
     if (pounds >= 1000000) {
@@ -281,13 +277,13 @@ export default function ProgramInstanceDetail() {
               <View style={styles.timelineRow}>
                 <Calendar size={18} color={colors.primary} />
                 <Text style={styles.timelineLabel}>Started</Text>
-                <Text style={styles.timelineValue}>{formatDate(instance.start_date)}</Text>
+                <Text style={styles.timelineValue}>{formatDayLabel(instance.start_date)}</Text>
               </View>
               <View style={styles.timelineRow}>
                 <Target size={18} color={colors.primary} />
                 <Text style={styles.timelineLabel}>Expected End</Text>
                 <Text style={styles.timelineValue}>
-                  {formatDate(instance.expected_end_date)}
+                  {formatDayLabel(instance.expected_end_date)}
                 </Text>
               </View>
               {instance.actual_end_date && (
@@ -295,7 +291,7 @@ export default function ProgramInstanceDetail() {
                   <CheckCircle2 size={18} color="#22C55E" />
                   <Text style={styles.timelineLabel}>Completed</Text>
                   <Text style={styles.timelineValue}>
-                    {formatDate(instance.actual_end_date)}
+                    {formatDayLabel(instance.actual_end_date)}
                   </Text>
                 </View>
               )}
@@ -354,7 +350,7 @@ export default function ProgramInstanceDetail() {
                       <View style={styles.workoutInfo}>
                         <Text style={styles.workoutName}>{workoutName}</Text>
                         <Text style={styles.workoutDate}>
-                          {formatDate(workout.completed_at || workout.scheduled_date)}
+                          {formatDayLabel(workout.completed_at || workout.scheduled_date)}
                         </Text>
                       </View>
                     </View>

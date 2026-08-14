@@ -47,3 +47,33 @@ export const addDays = (d: Date, days: number): Date => {
   result.setDate(result.getDate() + days);
   return result;
 };
+
+/** How the app writes a day: "Aug 14, 2026". */
+const DAY_LABEL: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+};
+
+/**
+ * A stored date, written the way a person reads it.
+ *
+ * Takes either shape and treats each correctly, because the app stores both
+ * and screens were mixing them up: a bare `YYYY-MM-DD` from a `DATE` column is
+ * a calendar day and must be parsed locally, while a full timestamp is an
+ * instant and `new Date` already resolves it right.
+ *
+ * The bug this closes: `new Date("2026-08-14")` is UTC midnight, which is the
+ * 13th everywhere west of Greenwich — so program start dates, progress-photo
+ * days and program history all rendered one day early.
+ */
+export const formatDayLabel = (
+  value: string | null | undefined,
+  options: Intl.DateTimeFormatOptions = DAY_LABEL,
+): string => {
+  if (!value) return "—";
+  const isBareDate = /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+  const date = isBareDate ? parseLocalDate(value.trim()) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", options);
+};

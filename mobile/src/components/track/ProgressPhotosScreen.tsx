@@ -19,6 +19,7 @@ import { Image } from "expo-image";
 import { colors } from "@/src/lib/colors";
 import { ProgressPhoto, ViewType } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { formatDayLabel } from "@/src/lib/dates";
 
 interface ProgressPhotosScreenProps {
   onClose: () => void;
@@ -316,10 +317,6 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
     ]);
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  };
 
   const getViewTypeLabel = (type: ViewType | null) => {
     if (!type) return "";
@@ -513,7 +510,7 @@ export function ProgressPhotosScreen({ onClose }: ProgressPhotosScreenProps) {
 
                 return (
                   <View key={date} style={styles.dayGroup}>
-                    <Text style={styles.dayDate}>{formatDate(date)}</Text>
+                    <Text style={styles.dayDate}>{formatDayLabel(date)}</Text>
                     <View style={styles.photoGrid}>
                       {dayPhotos.map((photo) => (
                         <View key={photo.id} style={styles.photoCard}>

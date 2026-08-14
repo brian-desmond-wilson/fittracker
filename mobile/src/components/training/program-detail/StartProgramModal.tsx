@@ -22,6 +22,12 @@ import {
   calculateTotalWorkouts,
 } from "@/src/lib/supabase/training";
 import type { CreateWorkoutInstanceInput } from "@/src/types/training";
+import {
+  addDays,
+  formatDayLabel,
+  getLocalDateString,
+  parseLocalDate,
+} from "@/src/lib/dates";
 
 interface StartProgramModalProps {
   visible: boolean;
@@ -37,25 +43,19 @@ interface StartProgramModalProps {
 export default function StartProgramModal({ visible, onClose, program }: StartProgramModalProps) {
   const router = useRouter();
   const [instanceName, setInstanceName] = useState("");
-  const [startDate, setStartDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split("T")[0];
-  });
+  // The LOCAL day, not the UTC one: `toISOString()` after 5pm Pacific returns
+  // tomorrow, so starting a program in the evening dated it a day ahead.
+  const [startDate, setStartDate] = useState(() => getLocalDateString());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const calculateEndDate = (start: string, weeks: number) => {
-    const startDate = new Date(start);
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + weeks * 7);
-    return endDate.toISOString().split("T")[0];
+    // Parsed and emitted locally at both ends, for the same reason.
+    const endDate = addDays(parseLocalDate(start), weeks * 7);
+    return getLocalDateString(endDate);
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-  };
 
   /**
    * Calculate the scheduled date for a workout based on start date, week, and day.
@@ -231,7 +231,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
               disabled={isLoading}
             >
               <Calendar size={18} color={colors.primary} />
-              <Text style={styles.dateInputText}>{formatDate(startDate)}</Text>
+              <Text style={styles.dateInputText}>{formatDayLabel(startDate, { month: "long", day: "numeric", year: "numeric" })}</Text>
             </TouchableOpacity>
           </View>
 
@@ -243,7 +243,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
                 <View style={styles.timelineDot} />
                 <View style={styles.timelineContent}>
                   <Text style={styles.timelineLabel}>Start Date</Text>
-                  <Text style={styles.timelineDate}>{formatDate(startDate)}</Text>
+                  <Text style={styles.timelineDate}>{formatDayLabel(startDate, { month: "long", day: "numeric", year: "numeric" })}</Text>
                 </View>
               </View>
               <View style={styles.timelineLine} />
@@ -251,7 +251,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
                 <View style={[styles.timelineDot, styles.timelineDotSecondary]} />
                 <View style={styles.timelineContent}>
                   <Text style={styles.timelineLabel}>Expected Completion</Text>
-                  <Text style={styles.timelineDate}>{formatDate(expectedEndDate)}</Text>
+                  <Text style={styles.timelineDate}>{formatDayLabel(expectedEndDate, { month: "long", day: "numeric", year: "numeric" })}</Text>
                   <Text style={styles.timelineNote}>
                     {program.durationWeeks} weeks from start
                   </Text>

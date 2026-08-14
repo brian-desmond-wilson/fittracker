@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import type { ProgramInstanceWithRelations } from "@/src/types/training";
+import { formatDayLabel } from "@/src/lib/dates";
 
 interface HistoryTabProps {
   programId: string;
@@ -67,10 +68,6 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -159,7 +156,7 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
               <View style={styles.dateRow}>
                 <Calendar size={14} color={colors.mutedForeground} />
                 <Text style={styles.dateText}>
-                  {formatDate(instance.startDate)} - {formatDate(instance.endDate)}
+                  {formatDayLabel(instance.startDate)} - {formatDayLabel(instance.endDate)}
                 </Text>
               </View>
 

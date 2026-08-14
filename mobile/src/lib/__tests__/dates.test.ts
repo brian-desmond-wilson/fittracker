@@ -1,4 +1,4 @@
-import { addDays, getLocalDateString, parseLocalDate } from "../dates";
+import { addDays, formatDayLabel, getLocalDateString, parseLocalDate } from "../dates";
 
 describe("getLocalDateString", () => {
   it("reads the local calendar date, not the UTC one", () => {
@@ -70,5 +70,29 @@ describe("addDays", () => {
     const original = new Date(2026, 7, 14);
     addDays(original, 5);
     expect(getLocalDateString(original)).toBe("2026-08-14");
+  });
+});
+
+describe("formatDayLabel", () => {
+  it("writes a bare date as the day it names", () => {
+    // The whole point: `new Date("2026-08-14")` is the 13th west of Greenwich.
+    expect(formatDayLabel("2026-08-14")).toBe("Aug 14, 2026");
+    expect(formatDayLabel("2026-01-01")).toBe("Jan 1, 2026");
+  });
+
+  it("writes a timestamp as its own local day", () => {
+    expect(formatDayLabel(new Date(2026, 7, 14, 22, 0).toISOString())).toBe("Aug 14, 2026");
+  });
+
+  it("takes a different format when asked", () => {
+    expect(formatDayLabel("2026-08-14", { month: "long", day: "numeric", year: "numeric" }))
+      .toBe("August 14, 2026");
+  });
+
+  it("has a dash for nothing, rather than 'Invalid Date'", () => {
+    expect(formatDayLabel(null)).toBe("—");
+    expect(formatDayLabel(undefined)).toBe("—");
+    expect(formatDayLabel("")).toBe("—");
+    expect(formatDayLabel("not a date")).toBe("—");
   });
 });
