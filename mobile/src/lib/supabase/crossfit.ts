@@ -994,16 +994,11 @@ export async function searchMovementsWithTier(query: string): Promise<ExerciseWi
 
     // One hierarchy query rather than one RPC per result.
     const tiers = await fetchTierMap();
-    const movementsWithTier: ExerciseWithTier[] = await Promise.all(
-      movements.map(async (movement) => {
-        const tier = tiers.get(movement.id) ?? 0;
-        return {
-          ...movement,
-          tier,
-          parent_movement: movement.parent || null,
-        };
-      })
-    );
+    const movementsWithTier: ExerciseWithTier[] = movements.map((movement) => ({
+      ...movement,
+      tier: tiers.get(movement.id) ?? 0,
+      parent_movement: movement.parent || null,
+    }));
 
     // Sort by tier (core first, then tier 1, tier 2, etc.)
     return movementsWithTier.sort((a, b) => a.tier - b.tier);
@@ -1576,24 +1571,22 @@ async function generateWODImage(
     const formats = await fetchWODFormats();
     const format = formats.find(f => f.id === wodInput.format_id);
 
-    // Fetch exercise names for the movements
-    const movementPromises = (wodInput.movements || []).map(async (movement) => {
-      const { data: exercise, error } = await supabase
-        .from('exercises')
-        .select('name')
-        .eq('id', movement.exercise_id)
-        .single();
+    // Names for the prompt, in one query rather than one per movement.
+    const movementIds = (wodInput.movements || []).map((m) => m.exercise_id);
+    const { data: named, error: namesError } = movementIds.length > 0
+      ? await supabase.from('exercises').select('id, name').in('id', movementIds)
+      : { data: [], error: null };
 
-      if (error) {
-        console.error(`Failed to fetch exercise name for ID ${movement.exercise_id}:`, error);
-      }
-
-      return {
-        name: exercise?.name || 'Movement',
-      };
-    });
-
-    const movements = await Promise.all(movementPromises);
+    if (namesError) {
+      console.error('Failed to fetch movement names:', namesError);
+    }
+    const nameById = new Map(
+      ((named ?? []) as Array<{ id: string; name: string }>).map((e) => [e.id, e.name]),
+    );
+    // Order follows the WOD's own movement order, and an id the query didn't
+    // return still takes a slot — the prompt reads better with a placeholder
+    // than with a movement silently missing.
+    const movements = movementIds.map((id) => ({ name: nameById.get(id) || 'Movement' }));
     console.log('Fetched movement names:', movements.map(m => m.name).join(', '));
 
     // Build prompt from WOD data
