@@ -19,6 +19,7 @@ import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button } from "@/src/components/ui";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
+import { uploadImage } from "@/src/lib/imageUpload";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
 import {
   replaceItemLocations,
@@ -549,71 +550,6 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
       Alert.alert("Error", "Failed to fetch product information. Please enter details manually.");
     } finally {
       setLoadingProductData(false);
-    }
-  };
-
-  const uploadImage = async (uri: string, imageName: string): Promise<string | null> => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return null;
-
-      // Create unique filename
-      const fileExt = uri.split(".").pop()?.split("?")[0] || "jpg";
-      const timestamp = Date.now();
-      const fileName = `${user.id}/${timestamp}_${imageName}.${fileExt}`;
-      const filePath = `food-images/${fileName}`;
-
-      console.log("Uploading image:", { filePath, uri });
-
-      // Use FormData to upload the file from React Native
-      const formData = new FormData();
-      formData.append("file", {
-        uri: uri,
-        type: "image/jpeg",
-        name: `${imageName}.jpg`,
-      } as any);
-
-      // Get Supabase storage upload URL and headers
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        console.error("No session available");
-        return null;
-      }
-
-      // Upload using fetch with FormData
-      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/food-inventory/${filePath}`;
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error("Upload failed:", uploadResponse.status, errorText);
-        return null;
-      }
-
-      console.log("Upload successful");
-
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("food-inventory").getPublicUrl(filePath);
-
-      return publicUrl;
-    } catch (error) {
-      console.error("Image upload failed:", error);
-      return null;
     }
   };
 

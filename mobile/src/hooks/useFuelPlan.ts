@@ -39,7 +39,7 @@ import {
 import { buildStockByMealId } from "@/src/lib/eatNext";
 import { rescuePlan } from "@/src/lib/rescuePlan";
 import { assessAssemblability } from "@/src/lib/stockState";
-import { mealFaceUrl } from "@/src/lib/mealFace";
+import { mealFaceUrlFor } from "@/src/lib/mealFace";
 import { shouldRetire } from "@/src/lib/mealRetirement";
 import { daysBetweenLocalDates } from "@/src/lib/stockState";
 import {
@@ -424,7 +424,8 @@ export function useFuelPlan(
         assemblable: stockByMealId.get(meal.id)?.assemblable ?? false,
         rescueCount: rescue?.rescues.length ?? 0,
         rescueSoonestDays: rescue?.soonestDaysLeft ?? null,
-        faceUrl: mealFaceUrl(
+        faceUrl: mealFaceUrlFor(
+          meal.image_primary_url,
           meal.items.map((it) => ({
             displayOrder: it.display_order,
             imageUrl: it.savedFood.image_primary_url,

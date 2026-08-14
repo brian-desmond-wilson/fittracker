@@ -10,10 +10,11 @@
 // is every write path that already worked — logging, editing, deleting, linking
 // an ingredient — now mounted by a route rather than raised as a sheet, so
 // Track › Meal Library › meal is a real stack and back means back.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Pencil } from "lucide-react-native";
+import { createSavedFood } from "@/src/services/savedFoodsService";
 import { supabase } from "@/src/lib/supabase";
 import type { MealCategory, MealWithItems } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
@@ -22,7 +23,7 @@ import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
 import { addSuggestions } from "@/src/lib/supabase/shopping";
 import { assessAssemblability, type MealAssemblability } from "@/src/lib/stockState";
 import { mealIngredients, mealNutrition } from "@/src/lib/mealLibraryView";
-import { mealFaceUrl } from "@/src/lib/mealFace";
+import { mealFaceUrlFor } from "@/src/lib/mealFace";
 import { getLocalDateString } from "@/src/lib/dates";
 import {
   createMeal, createUserLink, deleteMeal,
@@ -34,7 +35,8 @@ import {
 import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button, EmptyState, LoadingState } from "@/src/components/ui";
 import { MealDetail } from "./MealDetail";
-import { MealBuilder } from "./MealBuilder";
+import { MealBuilder, type MealBuilderHandle } from "./MealBuilder";
+import { BarcodeScannerModal } from "@/src/components/track/BarcodeScannerModal";
 import { ConceptPickerSheet } from "./ConceptPickerSheet";
 import { lib } from "./styles";
 
@@ -95,6 +97,48 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
       onClose();
     }
   }, [data, view, onClose]);
+
+  const builderRef = useRef<MealBuilderHandle>(null);
+
+  // The scanner is a modal this page owns, but the builder is what wants the
+  // answer — so it hands back a promise that settles when the camera closes,
+  // and the builder can `await` a barcode without knowing any of that.
+  const [scanning, setScanning] = useState(false);
+  const scanResolver = useRef<((barcode: string | null) => void) | null>(null);
+  const requestScan = useCallback(() => {
+    setScanning(true);
+    return new Promise<string | null>((resolve) => { scanResolver.current = resolve; });
+  }, []);
+  const settleScan = useCallback((barcode: string | null) => {
+    setScanning(false);
+    scanResolver.current?.(barcode);
+    scanResolver.current = null;
+  }, []);
+
+  const handleCreateFood = useCallback(
+    async (food: { name: string; calories: number | null; protein: number | null; barcode: string | null }) => {
+      try {
+        return await createSavedFood({
+          name: food.name,
+          brand: null,
+          barcode: food.barcode,
+          calories: food.calories,
+          protein: food.protein,
+          carbs: null,
+          fats: null,
+          sugars: null,
+          sodium_mg: null,
+          fiber_g: null,
+          is_favorite: false,
+        } as Parameters<typeof createSavedFood>[0]);
+      } catch (e) {
+        console.error("create food from builder:", e);
+        Alert.alert("Couldn't create that", e instanceof Error ? e.message : "Unknown error");
+        return null;
+      }
+    },
+    [],
+  );
 
   const run = useCallback(
     async (title: string, fn: () => Promise<void>): Promise<boolean> => {
@@ -452,7 +496,7 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
           nutritionByInventoryId: data.nutritionByInventoryId,
         })}
         ingredients={mealIngredients({
-          meal: detailMeal,
+          items: detailMeal.items,
           inventory: data.inventory,
           conceptIdsBySavedFoodId: data.conceptIdsBySavedFoodId,
         })}
@@ -460,7 +504,7 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
         assemblability={assemblabilityById.get(detailMeal.id)}
         timesLogged={data.timesLoggedByMealId.get(detailMeal.id) ?? 0}
         lastLoggedDate={data.lastLoggedByMealId.get(detailMeal.id) ?? null}
-        faceUrl={mealFaceUrl(detailMeal.items.map((it) => ({
+        faceUrl={mealFaceUrlFor(detailMeal.image_primary_url, detailMeal.items.map((it) => ({
           displayOrder: it.display_order,
           imageUrl: it.savedFood.image_primary_url,
           calories: (it.savedFood.calories ?? 0) * it.servings,
@@ -482,6 +526,7 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
   } else if (view.mode === "builder") {
     body = (
       <MealBuilder
+        ref={builderRef}
         initial={builderMeal}
         savedFoods={savedFoods}
         conceptsById={data.conceptsById}
@@ -490,6 +535,8 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
         saving={busy}
         onSave={handleSave}
         onQuickLink={handleQuickLink}
+        onCreateFood={handleCreateFood}
+        onScan={requestScan}
       />
     );
   } else {
@@ -499,16 +546,36 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
   }
 
   const headerTitle =
-    view.mode === "builder" ? (builderMeal ? "Edit Meal" : "New Meal")
+    view.mode === "builder" ? (builderMeal ? "Edit meal" : "New meal")
     : detailMeal?.name ?? "Meal";
 
   // Editing backs out to the meal it edits; everything else backs out to the
   // library — the same "one screen back" the chevron promises on any pushed
   // page, now that there is only one library to go back to.
   const editing = view.mode === "builder" && view.mealId !== null;
-  const back = () => {
+  const leave = useCallback(() => {
     if (editing) setView({ mode: "detail", mealId: view.mealId as string });
     else onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, view, onClose]);
+
+  // A form that throws work away on a back tap is the one place in this app
+  // where leaving is destructive. Three answers, because "save and leave" is
+  // usually what was meant.
+  const back = () => {
+    if (view.mode !== "builder" || !builderRef.current?.isDirty()) {
+      leave();
+      return;
+    }
+    Alert.alert(
+      "Leave without saving?",
+      "Nothing is written until you save.",
+      [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: leave },
+        { text: "Save and leave", onPress: () => builderRef.current?.save() },
+      ],
+    );
   };
 
   return (
@@ -540,10 +607,29 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
               onPress={() => setView({ mode: "builder", mealId: detailMeal.id })}
             />
           ) : (
-            <Text style={lib.headerTitle} numberOfLines={1}>{headerTitle}</Text>
+            <>
+              <Text style={lib.headerTitle} numberOfLines={1}>{headerTitle}</Text>
+              {/* Save sits where the meal page keeps Edit. The form is long
+                  enough that its own commit used to be off-screen from
+                  everything that changes it. */}
+              <TouchableOpacity
+                onPress={() => builderRef.current?.save()}
+                disabled={busy}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Save this meal"
+              >
+                <Text style={[s.save, busy && s.saveBusy]}>Save</Text>
+              </TouchableOpacity>
+            </>
           )}
         </View>
         {body}
+        <BarcodeScannerModal
+          visible={scanning}
+          onClose={() => settleScan(null)}
+          onBarcodeScanned={(barcode) => settleScan(barcode)}
+        />
         <ConceptPickerSheet
           visible={linkTarget !== null}
           subject={linkTarget?.name ?? ""}
@@ -560,4 +646,6 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
 const s = StyleSheet.create({
   backButton: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   backText: { fontSize: 17, color: colors.text },
+  save: { fontSize: 15, fontWeight: "700", color: colors.brand },
+  saveBusy: { color: colors.textFaint },
 });

@@ -1,4 +1,4 @@
-import { mealFaceUrl, type FaceCandidate } from "../mealFace";
+import { mealFaceUrl, mealFaceUrlFor, type FaceCandidate } from "../mealFace";
 
 const item = (over: Partial<FaceCandidate> = {}): FaceCandidate => ({
   displayOrder: 0,
@@ -46,5 +46,21 @@ describe("mealFaceUrl", () => {
 
   it("treats an empty-string url as no picture", () => {
     expect(mealFaceUrl([item({ imageUrl: "" })])).toBeNull();
+  });
+});
+
+describe("mealFaceUrlFor", () => {
+  it("the meal's own photograph wins over any ingredient's", () => {
+    expect(mealFaceUrlFor("bowl.jpg", [item({ imageUrl: "rice.jpg" })])).toBe("bowl.jpg");
+  });
+
+  it("falls back to the borrowed one, so no meal is ever faceless", () => {
+    expect(mealFaceUrlFor(null, [item({ imageUrl: "rice.jpg" })])).toBe("rice.jpg");
+    // Blank reads as absent, matching how a blank ingredient URL is read.
+    expect(mealFaceUrlFor("   ", [item({ imageUrl: "rice.jpg" })])).toBe("rice.jpg");
+  });
+
+  it("null when neither has one", () => {
+    expect(mealFaceUrlFor(null, [item()])).toBeNull();
   });
 });

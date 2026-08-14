@@ -111,7 +111,7 @@ describe("mealIngredients", () => {
   ];
 
   it("says in stock, and says so louder when the row is about to turn", () => {
-    const rows = mealIngredients({ meal: meal(), inventory: invRows, conceptIdsBySavedFoodId: conceptMap });
+    const rows = mealIngredients({ items: meal().items, inventory: invRows, conceptIdsBySavedFoodId: conceptMap });
     expect(rows.map((r) => r.state.kind)).toEqual(["in_stock", "expiring"]);
     expect(rows[1].state.daysLeft).toBe(2);
     expect(rows[1].state.inventoryId).toBe("inv-bread");
@@ -122,7 +122,7 @@ describe("mealIngredients", () => {
     // butter here has neither barcode nor link, so failing says something
     // about our records, not the kitchen.
     const rows = mealIngredients({
-      meal: meal(),
+      items: meal().items,
       inventory: [],
       conceptIdsBySavedFoodId: new Map([["sf-bread", ["c-bread"]]]),
     });
@@ -131,7 +131,7 @@ describe("mealIngredients", () => {
 
   it("an already-expired row is a throw-out, not a rescue", () => {
     const rows = mealIngredients({
-      meal: meal(),
+      items: meal().items,
       inventory: [invRows[0], { ...invRows[1], daysLeft: -2 }],
       conceptIdsBySavedFoodId: conceptMap,
     });
@@ -139,7 +139,7 @@ describe("mealIngredients", () => {
   });
 
   it("agrees with the meal-level verdict about what is missing", () => {
-    const rows = mealIngredients({ meal: meal(), inventory: [invRows[0]], conceptIdsBySavedFoodId: conceptMap });
+    const rows = mealIngredients({ items: meal().items, inventory: [invRows[0]], conceptIdsBySavedFoodId: conceptMap });
     const missing = rows.filter((r) => r.state.kind === "missing").map((r) => r.item.savedFood.name);
     expect(missing).toEqual(["Dave's Bread"]);
   });

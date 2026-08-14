@@ -225,11 +225,13 @@ export interface MealIngredient {
 export const INGREDIENT_EXPIRING_DAYS = 3;
 
 export function mealIngredients(opts: {
-  meal: MealWithItems;
+  /** The meal's items — not the meal, so the builder can ask the same question
+   *  of a list it is still assembling. */
+  items: readonly MealItemWithFood[];
   inventory: IngredientInventoryRow[];
   conceptIdsBySavedFoodId: Map<string, string[]>;
 }): MealIngredient[] {
-  const resolverItems = opts.meal.items.map((it) => ({
+  const resolverItems = opts.items.map((it) => ({
     savedFoodId: it.saved_food_id,
     barcode: it.savedFood.barcode,
     conceptIds: opts.conceptIdsBySavedFoodId.get(it.saved_food_id) ?? [],
@@ -237,7 +239,7 @@ export function mealIngredients(opts: {
   const matches = resolveInventoryMatches(resolverItems, opts.inventory);
   const byId = new Map(opts.inventory.map((r) => [r.id, r]));
 
-  return opts.meal.items.map((item, idx) => {
+  return opts.items.map((item, idx) => {
     const invId = matches.get(item.saved_food_id) ?? null;
     if (invId === null) {
       // Same test `assessAssemblability` uses: an ingredient with neither a

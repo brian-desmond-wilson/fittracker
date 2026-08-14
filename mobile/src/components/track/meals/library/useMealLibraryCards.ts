@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { computeBrianScore } from "@/src/lib/mealScore";
 import { brianScoreInputFor } from "@/src/lib/mealScoreInput";
-import { mealFaceUrl } from "@/src/lib/mealFace";
+import { mealFaceUrlFor } from "@/src/lib/mealFace";
 import { shouldRetire } from "@/src/lib/mealRetirement";
 import { assessAssemblability, daysBetweenLocalDates } from "@/src/lib/stockState";
 import { resolveInventoryMatches } from "@/src/lib/inventoryResolution";
@@ -112,7 +112,8 @@ export function useMealLibraryCards(): UseMealLibraryCards {
           brianScoreInputFor(meal, data.conceptIdsBySavedFoodId, data.conceptsById),
         ).score,
         prepMinutes: meal.prep_minutes,
-        faceUrl: mealFaceUrl(
+        faceUrl: mealFaceUrlFor(
+          meal.image_primary_url,
           meal.items.map((it) => ({
             displayOrder: it.display_order,
             imageUrl: it.savedFood.image_primary_url,

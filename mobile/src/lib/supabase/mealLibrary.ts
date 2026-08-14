@@ -436,6 +436,12 @@ export interface MealInput {
   default_meal_type: Meal["default_meal_type"];
   prep_minutes: number;
   taste_override: Meal["taste_override"];
+  /** Where the meal comes from, and what to call that place. The database
+   *  refuses a name on a `home` meal and demands one on the other two. */
+  source_kind: Meal["source_kind"];
+  source_name: string | null;
+  is_complete_portion: boolean;
+  image_primary_url: string | null;
   notes: string | null;
   items: MealItemInput[];
 }
@@ -595,24 +601,22 @@ export async function promoteAdHocMeal(
     if (error) throw error;
     savedFoodId = data.id as string;
   }
-  const mealId = await createMeal(userId, {
+  // Source travels with the input now that the edit page can set it, so it no
+  // longer needs stamping in a second write after the meal exists.
+  return createMeal(userId, {
     name: candidate.name.trim(),
     category: meta.category,
     role: null,
     default_meal_type: null,
     prep_minutes: 0,
     taste_override: null,
+    source_kind: meta.source_kind,
+    source_name: meta.source_name,
+    is_complete_portion: false,
+    image_primary_url: null,
     notes: null,
     items: [{ saved_food_id: savedFoodId, servings: 1, small_pieces_ok: false }],
   });
-  // Source is not on `MealInput` — it is a property of the meal the builder
-  // has never asked for — so it is stamped straight after.
-  const { error: srcError } = await supabase
-    .from("meals")
-    .update({ source_kind: meta.source_kind, source_name: meta.source_name })
-    .eq("id", mealId);
-  if (srcError) throw srcError;
-  return mealId;
 }
 
 /**

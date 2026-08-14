@@ -7,8 +7,8 @@ smoothie still opens the whole container), and an ingredient row calls out its
 expiry within 3 days — the shelves' rescue horizon — rather than the 7-day
 "expiring soon" one, which would flag half a fridge.
 **Mockups:** https://claude.ai/code/artifact/59aed8a8-476d-434c-912a-ebbac47b7150
-**Scope:** the meal page (`Track › Meal Library › meal`). The Edit page / builder is
-explicitly **out of scope** and follows in its own spec.
+**Scope:** the meal page (`Track › Meal Library › meal`), and — added after the
+meal page shipped — the Edit page behind it (§4).
 
 ---
 
@@ -67,7 +67,7 @@ release as the primary (see 2.2) and is not read anywhere else.
 | Library filter | Filtering by a category matches a meal holding it. |
 | Recommender window filter | A meal is eligible if **any** of its categories matches the window's. This is the point of the whole change. |
 | `CATEGORY_DEFAULT_MEAL_TYPE` | Derives a logging slot from a category. With several, use the primary. |
-| Builder | Writes several categories. **Deferred to the Edit spec**; until then it writes exactly one and the page's rail is the only way to add more. |
+| Builder | Writes several categories. Shipped a day later than the rest; in between, saving an edit refiled a two-shelf meal onto one (§4). |
 
 ### 2.2 Tab counts and the primary category
 
@@ -180,13 +180,38 @@ stays destructive-red and confirmed.
 
 ---
 
-## 4. Out of scope
+## 4. The Edit page
 
-- The Edit page / builder, including writing several categories from it.
+Approved from its own mockups (https://claude.ai/code/artifact/3d9deb05-567f-4a3e-85e9-c35ccef7435d)
+and built the same day.
+
+- **Categories as a set**, fixing a live data-loss path: the form wrote one
+  category, so saving any edit refiled a two-shelf meal onto one.
+- **A meal owns its photograph** (`meals.image_primary_url`), with the borrowed
+  ingredient picture as the fallback everywhere a face is chosen. Clearing it
+  falls back rather than blanking.
+- **Three properties get controls at last**: source kind, vendor name, and
+  complete-portion. They existed on every meal and survived an edit only
+  because the save passed them through.
+- **The ingredient list is the page** — a draggable list whose header and footer
+  are the rest of the form, because order decides the meal's face and a
+  ScrollView cannot hold a draggable list.
+- Rows carry what the meal page shows (thumbnail, calories, stock, days left),
+  remove by swipe rather than a bare ✕ twelve points from ＋, and an unlinked
+  ingredient states its consequence with the fix beside it.
+- **Search finishes the job**: scan a barcode, or create the food inline through
+  the existing food form — the old dead end cost you the whole edit.
+- Prep time becomes presets plus Other; role and taste say what they do; taste
+  reads as speech; notes get a field.
+- Save moves to the header, the live score follows you down the page with a
+  delta from where the meal started, and leaving dirty asks first.
+
+## 5. Out of scope
+
 - Cost scoring.
 - Any change to how the recommender ranks; only its eligibility filter changes.
 
-## 5. Risks
+## 6. Risks
 
 - **The category migration touches the recommender.** Its window filter is the
   most load-bearing read of `category` in the app. It needs its own tests before

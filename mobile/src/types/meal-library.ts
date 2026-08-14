@@ -150,6 +150,9 @@ export interface Meal {
   /** Venue or brand as you'd say it ("Thistle", "DoorDash · Chipotle").
    *  Null exactly when `source_kind` is `home` (DB check constraint). */
   source_name: string | null;
+  /** The meal's own photograph. Null falls back to an ingredient's — see
+   *  `mealFaceUrlFor`. */
+  image_primary_url: string | null;
   notes: string | null;
   /** Set by hand from the meal page. A meal is archived when this is set OR
    *  when the retirement rule says so; clearing it hands the meal back to the

@@ -40,3 +40,21 @@ export function mealFaceUrl(items: readonly FaceCandidate[]): string | null {
   )[0];
   return best.imageUrl;
 }
+
+/**
+ * A meal's face: its own photograph if it has one, else an ingredient's.
+ *
+ * The borrow is a good default and stays the fallback — every meal has a face
+ * without anyone photographing anything — but a bowl you assembled does not
+ * look like a jar of peanut butter, and now it doesn't have to.
+ *
+ * An empty string is treated as absent, matching `mealFaceUrl`'s own reading of
+ * a blank image URL.
+ */
+export function mealFaceUrlFor(
+  ownPhoto: string | null | undefined,
+  items: readonly FaceCandidate[],
+): string | null {
+  if (ownPhoto && ownPhoto.trim() !== "") return ownPhoto;
+  return mealFaceUrl(items);
+}

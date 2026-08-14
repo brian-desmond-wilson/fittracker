@@ -86,6 +86,7 @@ function scored(over: {
       is_favorite: false,
       source_kind: "home",
       source_name: null,
+      image_primary_url: null,
       notes: null,
       archived_at: null,
       created_at: "",

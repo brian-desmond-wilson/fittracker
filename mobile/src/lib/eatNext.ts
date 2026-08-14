@@ -11,7 +11,7 @@ import {
   assessAssemblability,
   type AssemblabilityInventoryRow,
 } from "./stockState";
-import { mealFaceUrl } from "./mealFace";
+import { mealFaceUrlFor } from "./mealFace";
 import type { MealCategory, MealTotals, MealWithItems, MealRole } from "@/src/types/meal-library";
 
 export const POST_WORKOUT_WINDOW_MIN = 180;
@@ -609,7 +609,8 @@ function rank(cands: Candidate[]): Candidate[] {
  *  mapping exactly — calories are per-item TOTALS (unit calories × servings),
  *  which is what `mealFaceUrl` ranks on. */
 function faceOf(meal: MealWithItems): string | null {
-  return mealFaceUrl(
+  return mealFaceUrlFor(
+    meal.image_primary_url,
     meal.items.map((it) => ({
       displayOrder: it.display_order,
       imageUrl: it.savedFood.image_primary_url,
