@@ -31,7 +31,7 @@ import { supabase } from "@/src/lib/supabase";
 import { formatInstantTime } from "@/src/lib/timeFormat";
 import {
   addDays,
-  formatDayLabel,
+  formatRelativeDay,
   getLocalDateString,
   parseLocalDate,
 } from "@/src/lib/dates";
@@ -350,12 +350,7 @@ export function WeightScreen({ onClose }: WeightScreenProps) {
  * evening. And the fallback parsed the bare date with `new Date`, rendering
  * it a day early.
  */
-  const formatDate = (dateStr: string) => {
-    const today = getLocalDateString();
-    if (dateStr === today) return "Today";
-    if (dateStr === getLocalDateString(addDays(new Date(), -1))) return "Yesterday";
-    return formatDayLabel(dateStr);
-  };
+  const formatDate = formatRelativeDay;
 
   const formatTimeOfDay = (timeOfDay: string | null) => {
     if (!timeOfDay) return "";

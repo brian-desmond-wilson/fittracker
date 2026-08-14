@@ -1,4 +1,10 @@
-import { addDays, formatDayLabel, getLocalDateString, parseLocalDate } from "../dates";
+import {
+  addDays,
+  formatDayLabel,
+  formatRelativeDay,
+  getLocalDateString,
+  parseLocalDate,
+} from "../dates";
 
 describe("getLocalDateString", () => {
   it("reads the local calendar date, not the UTC one", () => {
@@ -94,5 +100,30 @@ describe("formatDayLabel", () => {
     expect(formatDayLabel(undefined)).toBe("—");
     expect(formatDayLabel("")).toBe("—");
     expect(formatDayLabel("not a date")).toBe("—");
+  });
+});
+
+describe("formatRelativeDay", () => {
+  const today = new Date(2026, 7, 14, 9, 0);
+
+  it("names the two days worth naming", () => {
+    expect(formatRelativeDay("2026-08-14", today)).toBe("Today");
+    expect(formatRelativeDay("2026-08-13", today)).toBe("Yesterday");
+  });
+
+  it("dates anything else", () => {
+    expect(formatRelativeDay("2026-08-12", today)).toBe("Aug 12, 2026");
+    expect(formatRelativeDay("2026-08-15", today)).toBe("Aug 15, 2026");
+  });
+
+  it("takes the day off the front of a timestamp", () => {
+    expect(formatRelativeDay("2026-08-14T23:30:00Z", today)).toBe("Today");
+  });
+
+  it("anchors on the day it was given, not the real clock", () => {
+    // The point of the parameter: a list can label every row against one
+    // instant instead of drifting across local midnight mid-render.
+    expect(formatRelativeDay("2026-01-01", new Date(2026, 0, 1))).toBe("Today");
+    expect(formatRelativeDay("2025-12-31", new Date(2026, 0, 1))).toBe("Yesterday");
   });
 });

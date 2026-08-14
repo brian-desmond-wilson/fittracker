@@ -77,3 +77,23 @@ export const formatDayLabel = (
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleDateString("en-US", options);
 };
+
+/**
+ * A stored day as "Today", "Yesterday", or its date.
+ *
+ * Anchored on `today` so a caller can hand one instant to every row it is
+ * labelling; without that, a list rendering across local midnight could say
+ * "Today" on one row and "Yesterday" on the row beneath it for the same day.
+ *
+ * Accepts a timestamp too, taking the day off the front, because the history
+ * lists that use this store some rows each way.
+ */
+export const formatRelativeDay = (
+  value: string,
+  today: Date = new Date(),
+): string => {
+  const day = value.split("T")[0];
+  if (day === getLocalDateString(today)) return "Today";
+  if (day === getLocalDateString(addDays(today, -1))) return "Yesterday";
+  return formatDayLabel(day);
+};

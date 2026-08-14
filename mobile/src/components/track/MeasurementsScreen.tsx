@@ -16,7 +16,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors } from "@/src/lib/colors";
 import { BodyMeasurement } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
-import { addDays, formatDayLabel, getLocalDateString } from "@/src/lib/dates";
+import { formatRelativeDay, getLocalDateString } from "@/src/lib/dates";
 
 interface MeasurementsScreenProps {
   onClose: () => void;
@@ -164,12 +164,7 @@ export function MeasurementsScreen({ onClose }: MeasurementsScreenProps) {
  * evening. And the fallback parsed the bare date with `new Date`, rendering
  * it a day early.
  */
-  const formatDate = (dateStr: string) => {
-    const dateOnly = dateStr.split("T")[0];
-    if (dateOnly === getLocalDateString()) return "Today";
-    if (dateOnly === getLocalDateString(addDays(new Date(), -1))) return "Yesterday";
-    return formatDayLabel(dateOnly);
-  };
+  const formatDate = formatRelativeDay;
 
   const getLatestMeasurement = () => {
     return measurements.length > 0 ? measurements[0] : null;
