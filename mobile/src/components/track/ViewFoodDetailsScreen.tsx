@@ -723,11 +723,14 @@ export function ViewFoodDetailsScreen({ item, onClose, onRefresh, isPreview = fa
                   <Text style={styles.detailValue}>
                     {item.calories ? `${item.calories} kcal` : "—"}
                   </Text>
+                  {/* "12g P", the shorthand Fuel and the Meal Library use.
+                      It read "12P" here, one line above a total spelled
+                      "12g protein" — the same fact, two notations, adjacent. */}
                   <Text style={styles.locNote}>
                     {[
-                      item.protein ? `${item.protein}P` : null,
-                      item.carbs ? `${item.carbs}C` : null,
-                      item.fats ? `${item.fats}F` : null,
+                      item.protein ? `${item.protein}g P` : null,
+                      item.carbs ? `${item.carbs}g C` : null,
+                      item.fats ? `${item.fats}g F` : null,
                     ].filter(Boolean).join(" · ")}
                   </Text>
                 </View>
