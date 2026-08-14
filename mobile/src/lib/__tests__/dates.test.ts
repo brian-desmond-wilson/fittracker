@@ -95,6 +95,12 @@ describe("formatDayLabel", () => {
       .toBe("August 14, 2026");
   });
 
+  it("keeps the weekday when asked for one", () => {
+    // What the class screens want: "Friday, Aug 14".
+    expect(formatDayLabel("2026-08-14", { weekday: "long", month: "short", day: "numeric" }))
+      .toBe("Friday, Aug 14");
+  });
+
   it("has a dash for nothing, rather than 'Invalid Date'", () => {
     expect(formatDayLabel(null)).toBe("—");
     expect(formatDayLabel(undefined)).toBe("—");

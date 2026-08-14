@@ -23,6 +23,7 @@ import {
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { ClassWithDetails, ClassPart } from "@/src/types/crossfit";
+import { formatDayLabel } from "@/src/lib/dates";
 import {
   fetchClassById,
   updateClass,
@@ -164,14 +165,10 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
   };
 
   // Format date for display
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr + "T00:00:00");
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      month: "short",
-      day: "numeric",
-    });
-  };
+  // The shared helper reads a bare date as the local day, which is what the
+  // hand-appended "T00:00:00" was for.
+  const formatDate = (dateStr: string) =>
+    formatDayLabel(dateStr, { weekday: "long", month: "short", day: "numeric" });
 
   if (loading) {
     return (

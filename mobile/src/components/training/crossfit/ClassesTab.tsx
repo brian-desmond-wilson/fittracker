@@ -6,6 +6,7 @@ import { ClassWithDetails } from '@/src/types/crossfit';
 import { fetchClasses, searchClasses } from '@/src/lib/supabase/crossfit';
 import { ClassDetailScreen } from './ClassDetailScreen';
 import { supabase } from '@/src/lib/supabase';
+import { formatDayLabel } from "@/src/lib/dates";
 
 interface ClassesTabProps {
   searchQuery: string;
@@ -85,14 +86,10 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
     setRefreshing(false);
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  // The shared helper reads a bare date as the local day, which is what the
+  // hand-appended "T00:00:00" was for.
+  const formatDate = (dateStr: string) =>
+    formatDayLabel(dateStr, { weekday: "long", month: "short", day: "numeric" });
 
   const getWODPreview = (classData: ClassWithDetails) => {
     if (!classData.parts || classData.parts.length === 0) {
