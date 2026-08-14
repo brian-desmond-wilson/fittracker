@@ -496,6 +496,36 @@ describe("fuelVerdict", () => {
       fuelVerdict({ calorieStatus: "behind", proteinStatus: "behind", nowMinutes: 1400, windowEndMinutes: 1380 }).tone,
     ).toBe("closed");
   });
+  // Two in the morning, nothing eaten: there is nothing to be on pace with,
+  // and saying "On pace" in green is a reassurance the day hasn't earned.
+  it("before the first window opens, says so rather than 'on pace'", () => {
+    const v = fuelVerdict({
+      calorieStatus: "before_window",
+      proteinStatus: "before_window",
+      nowMinutes: 110,
+      windowEndMinutes: 1380,
+    });
+    expect(v.tone).toBe("before_window");
+    expect(v.label).toBe("Before window");
+  });
+  // One macro already moving means the day has started, whatever the clock
+  // says about the other — "behind" and "ahead" still outrank it.
+  it("a macro that is already behind outranks the window not being open", () => {
+    expect(
+      fuelVerdict({
+        calorieStatus: "before_window", proteinStatus: "behind",
+        nowMinutes: 110, windowEndMinutes: 1380,
+      }).tone,
+    ).toBe("behind");
+  });
+  it("the closed day still wins over an unopened window", () => {
+    expect(
+      fuelVerdict({
+        calorieStatus: "before_window", proteinStatus: "before_window",
+        nowMinutes: 1400, windowEndMinutes: 1380,
+      }).tone,
+    ).toBe("closed");
+  });
 });
 
 // -- rail -------------------------------------------------------------------

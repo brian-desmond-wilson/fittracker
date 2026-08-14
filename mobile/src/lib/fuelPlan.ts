@@ -552,7 +552,7 @@ export function planProjection(opts: {
   return { calories, protein, onGoal: calOk && proOk };
 }
 
-export type FuelVerdictTone = "behind" | "on_pace" | "ahead" | "goal_hit" | "closed";
+export type FuelVerdictTone = "before_window" | "behind" | "on_pace" | "ahead" | "goal_hit" | "closed";
 
 export interface FuelVerdict {
   tone: FuelVerdictTone;
@@ -568,6 +568,18 @@ export function fuelVerdict(opts: {
   windowEndMinutes: number;
 }): FuelVerdict {
   if (opts.nowMinutes > opts.windowEndMinutes) return { tone: "closed", label: "Day closed" };
+  // Before the first window opens there is nothing to be on pace WITH. The
+  // macro statuses say `before_window`, and reading them without this case
+  // let that fall through to the final `on_pace` — so at two in the morning,
+  // nothing eaten, the strip showed a green "On pace". The loop's own pace
+  // station says "Before window" at that hour; two screens, one day, one
+  // answer.
+  if (
+    opts.calorieStatus === "before_window" &&
+    opts.proteinStatus === "before_window"
+  ) {
+    return { tone: "before_window", label: "Before window" };
+  }
   if (opts.calorieStatus === "goal_hit" && opts.proteinStatus === "goal_hit") {
     return { tone: "goal_hit", label: "Goals hit" };
   }

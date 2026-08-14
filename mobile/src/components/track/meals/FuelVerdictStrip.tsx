@@ -36,6 +36,7 @@ interface FuelVerdictStripProps {
 }
 
 const TONE_FOR: Record<FuelVerdict["tone"], BadgeTone> = {
+  before_window: "neutral",
   behind: "warning",
   on_pace: "success",
   ahead: "neutral",
@@ -46,6 +47,7 @@ const TONE_FOR: Record<FuelVerdict["tone"], BadgeTone> = {
 /** Chip copy stays short — the chip carries the verdict word plus the
  *  replanned time, per the approved mock ("Behind · replanned 1:25"). */
 const CHIP_WORD: Record<FuelVerdict["tone"], string> = {
+  before_window: "Before window",
   behind: "Behind",
   on_pace: "On pace",
   ahead: "Ahead",
