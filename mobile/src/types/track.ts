@@ -256,6 +256,7 @@ export type TrackingCategory =
   | "meal-library"
   | "water"
   | "food-inventory"
+  | "deliveries"
   | "weight"
   | "measurements"
   | "photos"

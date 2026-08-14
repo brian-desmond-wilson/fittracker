@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   Utensils,
   BookOpen,
@@ -12,11 +12,14 @@ import {
   Camera,
   Dumbbell,
   ShoppingCart,
+  Truck,
   RefreshCw,
   ChevronRight,
 } from "lucide-react-native";
 import { TrackingCard } from "@/src/components/track/TrackingCard";
 import { Card } from "@/src/components/ui";
+import { fetchPendingDeliveries } from "@/src/lib/supabase/preparedMeals";
+import { formatArrivalShort } from "@/src/lib/dates";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { TrackingCategoryConfig, TrackingCategory } from "@/src/types/track";
 
@@ -24,11 +27,52 @@ export default function Track() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // The one live thing on this screen. A delivery is the only station whose
+  // state is a DATE — you cannot infer "a box comes Sunday" from anything on
+  // the hub, and by the time you have opened the page to check, the caption has
+  // already done its job. Every other tile's state is a count you can read on
+  // arrival, which is why none of them carries one.
+  //
+  // Strictly decoration: a failed fetch leaves the tile exactly as it was
+  // before captions existed, never an error where a subtitle goes.
+  const [nextDelivery, setNextDelivery] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const rows = await fetchPendingDeliveries();
+          if (cancelled) return;
+          // Future arrivals only. A box whose moment has passed is due, not
+          // coming — it becomes inventory on the next read of the inventory or
+          // the Deliveries page — and "Today 2:00 PM" on a tile at three
+          // o'clock reads as a promise the app has already broken. The hub
+          // deliberately does not materialise it itself: a tile caption is no
+          // reason for this screen to start writing.
+          const soonest = rows.find((r) => new Date(r.arrivesAt).getTime() > Date.now());
+          setNextDelivery(
+            soonest
+              ? `${soonest.mealCount} ${soonest.mealCount === 1 ? "meal" : "meals"} · ${formatArrivalShort(soonest.arrivesAt)}`
+              : null,
+          );
+        } catch (e) {
+          console.error("next delivery caption fetch failed:", e);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
   // Category configuration with prioritized ordering
   const trackingCategories: TrackingCategoryConfig[] = [
     // Nutrition & Food Section — ordered along the loop the section describes:
-    // what you have, what you can make of it, when you eat it, water, and what
-    // you still need to buy.
+    // what you have, what you can make of it, when you eat it, water, what is
+    // on its way, and what you still need to buy. Deliveries sits immediately
+    // before Shopping List because those two are the same half of the loop:
+    // food you do not have yet, one lot ordered and one lot not.
     {
       id: "food-inventory",
       title: "Food Inventory",
@@ -55,6 +99,13 @@ export default function Track() {
       title: "Water",
       icon: "Droplets",
       accent: "water",
+      section: "nutrition",
+    },
+    {
+      id: "deliveries",
+      title: "Deliveries",
+      icon: "Truck",
+      accent: "deliveries",
       section: "nutrition",
     },
     {
@@ -106,6 +157,7 @@ export default function Track() {
     Camera,
     Dumbbell,
     ShoppingCart,
+    Truck,
   };
 
   const handleCardPress = (categoryId: TrackingCategory) => {
@@ -136,6 +188,7 @@ export default function Track() {
             title={category.title}
             icon={iconMap[category.icon]}
             accent={category.accent}
+            caption={category.id === "deliveries" ? nextDelivery : null}
             onPress={() => handleCardPress(category.id)}
           />
         ))}
@@ -164,10 +217,14 @@ export default function Track() {
         {/* Nutrition & Food Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>NUTRITION & FOOD</Text>
-          {/* STATIC BY DESIGN (spec §7): no fetch, no badge, no live data. The
-              Track hub is fetch-free, and spec §2 lists "no live badge on the
-              Track-hub entry" as an explicit non-goal — the loop's state is the
-              hub screen's job. Deliberately NOT a `TrackingCategory` tile
+          {/* STATIC BY DESIGN (spec §7): no fetch, no badge, no live data.
+              Spec §2 lists "no live badge on the Track-hub entry" as an
+              explicit non-goal — the loop's state is the hub screen's job, and
+              this entry is only the door to it. That ruling is about THIS row
+              and still holds; the screen is no longer fetch-free (the
+              Deliveries tile carries a next-arrival caption), which is why it
+              is worth saying that a fetch existing nearby is not an argument
+              for adding one here. Deliberately NOT a `TrackingCategory` tile
               either: it is a full-width entry that pushes the route directly,
               so `trackingCategories`, `iconMap` and `handleCardPress` stay
               untouched. */}
