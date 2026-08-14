@@ -82,7 +82,17 @@ export default function EditFoodItemPage() {
     );
   }
 
-  return <EditFoodScreen item={item} onClose={goBack} onSave={handleSave} />;
+  return (
+    <EditFoodScreen
+      item={item}
+      onClose={goBack}
+      onSave={handleSave}
+      // `replace`, not a pop: popping would land on this item's detail page,
+      // which refetches on focus and would announce that the row it is about
+      // to show does not exist. The list is where a deleted item belongs.
+      onDeleted={() => router.replace("/(tabs)/track/food-inventory")}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

@@ -22,6 +22,7 @@ import * as ImagePicker from "expo-image-picker";
 import { uploadImage } from "@/src/lib/imageUpload";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
 import {
+  deleteInventoryItem,
   replaceItemLocations,
   restoreInventoryItem,
   type InventoryItemWithState,
@@ -103,9 +104,13 @@ interface EditFoodScreenProps {
   onClose: () => void;
   onSave: (newItemId?: string) => void;  // Changed to accept optional newItemId
   isNew?: boolean;  // NEW prop to indicate if this is a new item
+  /** Where to go when the item no longer exists — NOT `onClose`, which pops to
+   *  the detail page of the row that was just deleted. Absent means the screen
+   *  offers no delete, which is the add route's case. */
+  onDeleted?: () => void;
 }
 
-export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoodScreenProps) {
+export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted }: EditFoodScreenProps) {
   const insets = useSafeAreaInsets();
 
   // Categories & Subcategories Data
@@ -213,6 +218,7 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [loadingProductData, setLoadingProductData] = useState(false);
 
   // Accordion state
@@ -305,6 +311,38 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
     imageSide: imageSide ?? null,
   });
   const isDirty = pendingChanges > 0;
+
+  // Deleting is the one action here with no way back — the row's id is
+  // referenced by logs and links that a re-insert could not honestly re-adopt
+  // — so it asks first and says what it is about to destroy by name. It cannot
+  // pop to the detail page afterwards: that page would refetch a row that no
+  // longer exists and greet the user with "Item not found".
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete this product?",
+      `${item.name} and everything the app remembers about it — its stock, its tags and its shopping-list lines — will be removed. This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteInventoryItem(item.id);
+              handOffToast({ title: "Deleted", detail: `${item.name} is no longer in your inventory` });
+              onDeleted?.();
+            } catch (e) {
+              console.error("Error deleting item:", e);
+              Alert.alert("Couldn't delete it", "The item is still in your inventory. Try again.");
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // Photograph the panel instead of typing six numbers off it. The function
   // transcribes and returns; nothing is written until Save, and anything it
@@ -2122,6 +2160,26 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
               </View>
             )}
           </View>
+
+          {/* Deleting is for a row that should never have existed — a
+              mis-scan, a duplicate, something that is not a product. It is not
+              how you record eating the last of something, so it lives at the
+              very bottom rather than beside Save, and it is absent while
+              adding: there is nothing yet to delete. */}
+          {!isNew && (
+            <TouchableOpacity
+              style={styles.deleteRow}
+              onPress={handleDelete}
+              disabled={saving || deleting}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${item.name}`}
+            >
+              <Trash2 size={icons.sm} color={colors.danger} strokeWidth={icons.strokeWidth} />
+              <Text style={styles.deleteRowText}>
+                {deleting ? "Deleting…" : "Delete Product"}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <View style={{ height: 100 }} />
         </ScrollView>

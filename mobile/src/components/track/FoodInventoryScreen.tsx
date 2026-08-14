@@ -17,11 +17,11 @@ import {
   Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AlertTriangle, ArrowDownAZ, ArrowUpDown, CalendarClock, Camera, Check, ChevronLeft, Clock, Eye, Layers, Pencil, Plus, Minus, RefreshCw, Search, Package, ShoppingCart, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Tag } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Badge, Button, Card, EmptyState, IconButton, LoadingState, UndoToast } from "@/src/components/ui";
+import { Badge, Button, Card, EmptyState, IconButton, LoadingState, UndoToast, takeHandedOffToast } from "@/src/components/ui";
 import type { BadgeTone, UndoToastContent } from "@/src/components/ui";
 import {
   FoodCategory,
@@ -33,6 +33,7 @@ import {
   transferInventoryUnits,
   consumeOneUnit,
   restoreOneUnit,
+  deleteInventoryItem,
   discardItem,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
@@ -225,6 +226,16 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
   const showToast = (title: string, detail: string, undo?: () => void) => {
     setToast({ title, detail, undo });
   };
+
+  // A delete performed on the edit screen lands the user here, with its
+  // acknowledgement left behind for whoever arrives. Same bar, same rules —
+  // this one carries no Undo, because that deletion has none.
+  useFocusEffect(
+    useCallback(() => {
+      const handed = takeHandedOffToast();
+      if (handed) setToast({ title: handed.title, detail: handed.detail });
+    }, []),
+  );
 
   // Pull-to-refresh feedback. The gesture and the `refreshing` lifecycle still
   // come from RefreshControl, but on iOS its own spinner does not render in
@@ -441,24 +452,11 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
       // Optimistic update: remove item from local state immediately
       setItems(prevItems => prevItems.filter(item => item.id !== itemId));
 
-      // Delete associated shopping list items first
-      const { error: shoppingListError } = await supabase
-        .from("shopping_list")
-        .delete()
-        .eq("food_inventory_id", itemId);
-
-      if (shoppingListError) {
-        console.error("Error deleting shopping list items:", shoppingListError);
-        // Continue with deletion even if shopping list delete fails
-      }
-
-      // Delete the inventory item (CASCADE will handle locations)
-      const { error } = await supabase
-        .from("food_inventory")
-        .delete()
-        .eq("id", itemId);
-
-      if (error) {
+      // The same deletion the edit screen performs, from the one place that
+      // knows what a deleted item leaves behind.
+      try {
+        await deleteInventoryItem(itemId);
+      } catch (error) {
         // If deletion fails, revert by re-fetching
         await fetchInventory();
         throw error;

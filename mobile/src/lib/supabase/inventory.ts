@@ -221,6 +221,31 @@ export async function restoreInventoryItem(snapshot: InventoryItemWithState): Pr
 }
 
 /**
+ * Remove an item and everything that only existed because of it.
+ *
+ * The shopping-list rows go first and by hand: they carry a nullable FK, so
+ * the database would blank the reference and leave an orphan line reading
+ * "buy this" about a product that no longer exists. Locations, category and
+ * subcategory maps, and concept links all cascade.
+ *
+ * There is no undo behind this — the row's id is referenced by logs and links
+ * that a re-insert could not honestly re-adopt — so every caller confirms
+ * first.
+ */
+export async function deleteInventoryItem(itemId: string): Promise<void> {
+  const { error: shoppingError } = await supabase
+    .from("shopping_list")
+    .delete()
+    .eq("food_inventory_id", itemId);
+  // Non-fatal, as it has always been here: a stranded shopping line is worth
+  // less than the deletion the user asked for.
+  if (shoppingError) console.error("Error deleting shopping list items:", shoppingError);
+
+  const { error } = await supabase.from("food_inventory").delete().eq("id", itemId);
+  if (error) throw error;
+}
+
+/**
  * B1's one-tap verb: consume a single unit of one item, through the same
  * atomic RPC meal logging uses (ready-first location policy, legacy-cache
  * resync). Returns units actually consumed — 0 means "nothing was moved"

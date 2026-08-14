@@ -483,6 +483,27 @@ export const styles = StyleSheet.create({
     padding: spacing.xs,
     zIndex: 10,
   },
+  // The last thing on the page, below every section and well clear of Save:
+  // a destructive verb should take a deliberate scroll to reach, and should
+  // never sit in the footer where a mis-tap lands on the button you use every
+  // time.
+  deleteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: tint(colors.danger, 0.3),
+    backgroundColor: tint(colors.danger),
+  },
+  deleteRowText: {
+    ...typography.button,
+    color: colors.danger,
+  },
   footer: {
     flexDirection: "row",
     gap: spacing.md,
