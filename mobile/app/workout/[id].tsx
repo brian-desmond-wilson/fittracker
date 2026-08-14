@@ -250,10 +250,8 @@ export default function WorkoutSessionPage() {
   // derivable and never needs storing.
   const elapsedSeconds = () => (startedAt ? elapsedSecondsSince(startedAt.getTime()) : 0);
 
-  // The rest modal counts from the moment it opens. Nothing opens it today —
-  // there is no `setShowRestTimer(true)` anywhere in the app — but if it is
-  // wired up again it should start from zero rather than from whenever this
-  // screen mounted.
+  // The rest modal counts from the moment it opens — finishing a set — rather
+  // than from whenever this screen mounted.
   const [restStartedAt, setRestStartedAt] = useState<number>(() => Date.now());
   useEffect(() => {
     if (showRestTimer) setRestStartedAt(Date.now());
@@ -274,6 +272,9 @@ export default function WorkoutSessionPage() {
     }
     
     setActiveSetTimer(now);
+    // Starting the next set IS the end of resting — dismissing by hand as
+    // well would be a second tap for something already said.
+    setShowRestTimer(false);
   };
 
   const handleStopSetTimer = () => {
@@ -284,6 +285,9 @@ export default function WorkoutSessionPage() {
     const now = Date.now();
     setLastSetCompletedAt(now);
     setActiveSetTimer(null);
+    // Finishing a set is when rest starts, so that is when the timer appears.
+    // It had no opener at all before this — the modal was unreachable.
+    setShowRestTimer(true);
   };
 
   const loadWorkout = async () => {
