@@ -17,7 +17,7 @@ import React, {
   forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
 import {
-  Alert, Image, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
+  Alert, Image, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from "react-native-draggable-flatlist";
 import { Swipeable } from "react-native-gesture-handler";
@@ -33,9 +33,10 @@ import {
 } from "@/src/lib/mealBuilderInputs";
 import { suggestConcepts } from "@/src/lib/conceptMatch";
 import { mealIngredients, type IngredientInventoryRow, type MealIngredient } from "@/src/lib/mealLibraryView";
+import { mealFaceUrl } from "@/src/lib/mealFace";
 import { uploadImage } from "@/src/lib/imageUpload";
 import type { MealInput, MealItemInput } from "@/src/lib/supabase/mealLibrary";
-import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge } from "@/src/components/ui";
 import { CategoryRail } from "./CategoryRail";
 import { NewFoodSheet } from "./NewFoodSheet";
@@ -225,6 +226,19 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
     // The first item WITH a photograph is the meal's face — unless the meal has
     // one of its own, in which case order decides nothing about the picture.
     const faceItemId = items.find((it) => it.savedFood.image_primary_url)?.saved_food_id ?? null;
+
+    // What the meal looks like RIGHT NOW: its own photograph, or the one it is
+    // borrowing. An empty well beside "without one, the meal keeps borrowing
+    // the first ingredient's" showed nothing of the picture it was describing.
+    const borrowedFace = useMemo(
+      () => mealFaceUrl(items.map((it, idx) => ({
+        displayOrder: idx,
+        imageUrl: it.savedFood.image_primary_url,
+        calories: (it.savedFood.calories ?? 0) * it.servings,
+      }))),
+      [items],
+    );
+    const shownFace = photo ?? borrowedFace;
 
     const results = useMemo(() => {
       const q = search.trim().toLowerCase();
@@ -455,6 +469,10 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         return (
           <ScaleDecorator>
             <Swipeable
+              // The inset belongs to the swipe container, not the row: on the
+              // row it would leave the red action sitting in the page gutter
+              // outside the card it is deleting from.
+              containerStyle={s.swipeContainer}
               renderRightActions={() => (
                 <TouchableOpacity
                   style={s.swipeDelete}
@@ -597,13 +615,21 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
               accessibilityRole="button"
               accessibilityLabel="Change the meal photo"
             >
-              {photo ? (
-                <Image source={{ uri: photo }} style={s.faceImage} resizeMode="cover" />
+              {shownFace ? (
+                <Image
+                  source={{ uri: shownFace }}
+                  // Dimmed while it is only borrowed, so the well shows what the
+                  // meal looks like without claiming the picture is its own.
+                  style={[s.faceImage, photo === null && s.faceBorrowed]}
+                  resizeMode="cover"
+                />
               ) : (
                 <Camera size={icons.lg} color={colors.textFaint} strokeWidth={icons.strokeWidth} />
               )}
               <View style={s.faceTag}>
-                <Text style={s.faceTagText}>{uploading ? "…" : "Photo"}</Text>
+                <Text style={s.faceTagText}>
+                  {uploading ? "…" : photo ? "Photo" : shownFace ? "Borrowed" : "Photo"}
+                </Text>
               </View>
             </TouchableOpacity>
 
@@ -704,7 +730,10 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
           </View>
         </View>
 
-        <View style={s.listHead}>
+        {/* The lid of the ingredients card. Its rows are list items rather
+            than children, so the card is drawn in three parts — this, the
+            rows' own side borders, and the cap at the top of the footer. */}
+        <View style={s.cardTop}>
           <Text style={s.cardTitle}>INGREDIENTS · {items.length}</Text>
           <Text style={s.hint}>hold to reorder · swipe to remove</Text>
         </View>
@@ -713,6 +742,9 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
 
     const footer = (
       <View style={s.section}>
+        {/* The base of the ingredients card — see `cardTop`. */}
+        <View style={s.cardBottom} />
+
         <View style={s.card}>
           <TextInput
             style={s.input}
@@ -803,7 +835,12 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
             <Text style={s.sub}>
               Makes the meal eligible when the app is looking for that specific job.
             </Text>
-            <View style={s.chipWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.chipScroller}
+              contentContainerStyle={s.chipRow}
+            >
               {ROLES.map((r) => {
                 const on = role === r;
                 return (
@@ -818,7 +855,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
 
           <View style={s.field}>
@@ -826,7 +863,12 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
             <Text style={s.sub}>
               Overrides what the ingredients&apos; ratings would say about the whole meal.
             </Text>
-            <View style={s.chipWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.chipScroller}
+              contentContainerStyle={s.chipRow}
+            >
               {RATINGS.map((r) => {
                 const on = tasteOverride === r;
                 return (
@@ -841,7 +883,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
 
           <View style={s.field}>
@@ -907,6 +949,24 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   listContent: { paddingBottom: spacing.xl },
   section: { paddingHorizontal: spacing.screenGutter, gap: spacing.md, paddingTop: spacing.md },
+  // The ingredients card, drawn around list items: a lid, the rows' own side
+  // borders, and a base. `marginBottom: -spacing.md` cancels the section gap so
+  // the lid meets the first row.
+  cardTop: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
+    borderTopLeftRadius: radii.row, borderTopRightRadius: radii.row,
+    padding: spacing.md,
+    marginBottom: -spacing.md,
+  },
+  cardBottom: {
+    height: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderTopWidth: 0, borderColor: colors.border,
+    borderBottomLeftRadius: radii.row, borderBottomRightRadius: radii.row,
+    marginTop: -spacing.md,
+  },
 
   card: {
     backgroundColor: colors.surface,
@@ -918,7 +978,6 @@ const s = StyleSheet.create({
   },
   cardTitle: { ...typography.caption, color: colors.textMuted, fontWeight: "700" },
   hint: { ...typography.caption, color: colors.textFaint },
-  listHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 
   identity: { flexDirection: "row", gap: spacing.md, alignItems: "flex-start" },
   face: {
@@ -927,6 +986,7 @@ const s = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   faceImage: { width: "100%", height: "100%" },
+  faceBorrowed: { opacity: 0.55 },
   faceTag: {
     position: "absolute", left: 0, right: 0, bottom: 0,
     backgroundColor: tint(colors.bg, 0.72), paddingVertical: 2,
@@ -970,7 +1030,10 @@ const s = StyleSheet.create({
   switchBody: { flex: 1, gap: 2 },
   switchLabel: { ...typography.body, color: colors.text },
 
-  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  // Scrolls rather than wraps, so a card's height doesn't depend on how many
+  // options happen to fit the width — the same reason the category rail does.
+  chipScroller: { flexGrow: 0 },
+  chipRow: { flexDirection: "row", gap: spacing.sm, paddingRight: spacing.md },
   chip: {
     borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill,
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
@@ -979,14 +1042,15 @@ const s = StyleSheet.create({
   chipText: { ...typography.body, color: colors.textMuted },
   chipTextOn: { color: colors.brand, fontWeight: "600" },
 
-  // Rows sit outside the cards, full-bleed, so a swipe reads as the row moving
-  // rather than as something sliding about inside a box.
+  swipeContainer: { marginHorizontal: spacing.screenGutter },
   ingRow: {
     flexDirection: "row", alignItems: "center", gap: spacing.md,
-    paddingHorizontal: spacing.screenGutter, paddingVertical: spacing.sm,
-    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
   },
-  ingRowActive: { backgroundColor: colors.surface },
+  // Lifted while dragging, which is the one moment a row is outside the card.
+  ingRowActive: { backgroundColor: colors.surface2 },
   grip: { width: 14, flexDirection: "row", flexWrap: "wrap", gap: 3 },
   gripDot: { width: 3, height: 3, borderRadius: radii.pill, backgroundColor: colors.textFaint },
   thumb: {
@@ -1022,12 +1086,18 @@ const s = StyleSheet.create({
 
   subRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingLeft: 78, paddingRight: spacing.screenGutter, paddingBottom: spacing.sm,
+    marginHorizontal: spacing.screenGutter,
+    paddingLeft: 90, paddingRight: spacing.md, paddingBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
   },
   subRowText: { ...typography.caption, color: colors.textFaint },
   linkLine: {
-    paddingLeft: 78, paddingRight: spacing.screenGutter, paddingBottom: spacing.sm,
+    marginHorizontal: spacing.screenGutter,
+    paddingLeft: 90, paddingRight: spacing.md, paddingBottom: spacing.sm,
     gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
   },
   linkText: { ...typography.caption, color: colors.textMuted },
   linkBtn: {
@@ -1052,8 +1122,9 @@ const s = StyleSheet.create({
     bottom: spacing.md,
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
     backgroundColor: colors.surface2,
-    borderWidth: 1, borderColor: colors.border, borderRadius: radii.row,
+    borderWidth: 1, borderColor: tint(colors.brand, 0.4), borderRadius: radii.row,
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    ...elevation.overlay,
   },
   scoreNum: { ...typography.rowTitle, color: colors.text },
   delta: { ...typography.caption, fontWeight: "700" },

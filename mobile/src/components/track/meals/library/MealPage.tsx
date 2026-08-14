@@ -546,7 +546,7 @@ export function MealPage({ mealId, savedFoods, todayDate, onClose, onOpenProduct
   }
 
   const headerTitle =
-    view.mode === "builder" ? (builderMeal ? "Edit meal" : "New meal")
+    view.mode === "builder" ? (builderMeal ? "Edit Meal" : "New Meal")
     : detailMeal?.name ?? "Meal";
 
   // Editing backs out to the meal it edits; everything else backs out to the
