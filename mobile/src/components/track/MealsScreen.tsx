@@ -87,6 +87,7 @@ import { MealsDistributionBar } from "./MealsDistributionBar";
 import { MealsWeeklySummaryModal } from "./MealsWeeklySummaryModal";
 import {
   findInventoryMatchByBarcode,
+  findInventoryMatchForFood,
   consumeOneInventoryUnit,
   refundOneInventoryUnit,
   InventoryMatchSummary,
@@ -425,6 +426,11 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     }
   }, [activeTab, searchQuery]);
 
+  // Which food the preview is currently resolving stock for. The lookup is a
+  // round trip and the preview can be reopened on something else meanwhile; a
+  // late answer for the previous food would offer to decrement the wrong row.
+  const previewMatchFor = useRef<string | null>(null);
+
   const handleSearchResultPress = (food: SavedFood) => {
     setPreviewFood(food);
     setPreviewSource("saved");
@@ -432,6 +438,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setPreviewWasEdited(false);
     setShowFoodPreview(true);
     setSearchQuery("");
+    // Opened from search rather than from a scan, so nothing has resolved this
+    // food against the kitchen yet — and without it the preview's "use what's
+    // in stock" switch could log without taking anything.
+    setInventoryMatch(null);
+    previewMatchFor.current = food.id;
+    void findInventoryMatchForFood(food).then((match) => {
+      if (previewMatchFor.current === food.id) setInventoryMatch(match);
+    });
   };
 
   // Handle pull-to-refresh
@@ -1540,7 +1554,10 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         Alert.alert("Error", "You must be logged in to log meals");
         return;
       }
-      const match = food.barcode ? await findInventoryMatchByBarcode(food.barcode) : null;
+      // Barcode OR concept link, the same resolution meal logging uses. The
+      // barcode-only lookup this replaced meant a barcode-less dish that was
+      // sitting in the fridge could be eaten without the fridge noticing.
+      const match = await findInventoryMatchForFood(food);
       const willUseInventory = !!match && match.quantity > 0;
       const { data: inserted, error } = await supabase
         .from("meal_logs")

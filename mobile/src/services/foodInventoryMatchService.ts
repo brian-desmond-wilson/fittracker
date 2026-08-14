@@ -1,4 +1,7 @@
 import { supabase } from "@/src/lib/supabase";
+import { resolveInventoryMatches } from "@/src/lib/inventoryResolution";
+import { fetchMealLibrary } from "@/src/lib/supabase/mealLibrary";
+import type { SavedFood } from "@/src/types/track";
 
 export interface InventoryMatchSummary {
   id: string;
@@ -156,5 +159,52 @@ export async function refundOneInventoryUnit(
   } catch (error) {
     console.error("refundOneInventoryUnit error:", error);
     return false;
+  }
+}
+
+/**
+ * Which inventory row a saved food resolves to — by barcode OR by concept link.
+ *
+ * `findInventoryMatchByBarcode` above answers a narrower question, and quick
+ * logging used it: a food with no barcode matched nothing, so eating a
+ * barcode-less dish that WAS in the fridge left the stock untouched. Meal
+ * logging never had that hole, because it goes through `resolveInventoryMatches`
+ * — barcode first, then the concept graph, in-stock rows only. This is that
+ * same resolver, asked about one food, so the two paths can no longer disagree
+ * about whether something was taken from the kitchen.
+ *
+ * Reads the library payload, which is cached and is what the meal path reads
+ * too — a fresh round trip here would let the two answers drift apart.
+ */
+export async function findInventoryMatchForFood(
+  food: Pick<SavedFood, "id" | "barcode">,
+): Promise<InventoryMatchSummary | null> {
+  try {
+    const library = await fetchMealLibrary();
+    const matches = resolveInventoryMatches(
+      [{
+        savedFoodId: food.id,
+        barcode: food.barcode,
+        conceptIds: library.conceptIdsBySavedFoodId.get(food.id) ?? [],
+      }],
+      library.inventory,
+    );
+    const matchedId = matches.get(food.id);
+    if (!matchedId) return null;
+    const row = library.inventory.find((r) => r.id === matchedId);
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      brand: null,
+      barcode: row.barcode,
+      // The resolver only ever returns in-stock rows, so this is > 0 — but it
+      // is the projection, not an assumption, for the same reason as above.
+      quantity: row.totalQuantity,
+      unit: null,
+    };
+  } catch (error) {
+    console.error("findInventoryMatchForFood error:", error);
+    return null;
   }
 }
