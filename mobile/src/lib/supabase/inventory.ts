@@ -116,6 +116,111 @@ export async function replaceItemLocations(
 }
 
 /**
+ * Put an item back exactly as it was before an edit.
+ *
+ * The undo behind the "Saved" toast. It writes the same four things a save
+ * writes — the row's editable columns, its category and subcategory tags, and
+ * its location rows — from the snapshot the edit screen was opened with, so
+ * anything the save changed is changed back and nothing else is touched.
+ *
+ * Only what the form can edit: `quantity` stays out because the location rows
+ * own it (the RPC below resyncs the legacy cache), and the timestamps are the
+ * database's business. `user_id` is likewise absent — an UPDATE that cannot
+ * cross an owner boundary has no reason to restate the owner.
+ *
+ * The stock goes LAST for the same reason the save puts it there: every
+ * earlier failure then leaves the location rows untouched, and this one throws
+ * rather than reporting a half-restore as a success.
+ */
+export async function restoreInventoryItem(snapshot: InventoryItemWithState): Promise<void> {
+  const { error: updateError } = await supabase
+    .from("food_inventory")
+    .update({
+      name: snapshot.name,
+      brand: snapshot.brand,
+      flavor: snapshot.flavor,
+      barcode: snapshot.barcode,
+      storage_type: snapshot.storage_type,
+      unit: snapshot.unit,
+      location: snapshot.location,
+      requires_refrigeration: snapshot.requires_refrigeration,
+      restock_threshold: snapshot.restock_threshold,
+      fridge_restock_threshold: snapshot.fridge_restock_threshold,
+      total_restock_threshold: snapshot.total_restock_threshold,
+      calories: snapshot.calories,
+      protein: snapshot.protein,
+      carbs: snapshot.carbs,
+      fats: snapshot.fats,
+      sugars: snapshot.sugars,
+      fiber_g: snapshot.fiber_g,
+      saturated_fat_g: snapshot.saturated_fat_g,
+      sodium_mg: snapshot.sodium_mg,
+      is_scheduled_supply: snapshot.is_scheduled_supply,
+      serving_size: snapshot.serving_size,
+      expiration_date: snapshot.expiration_date,
+      notes: snapshot.notes,
+      preferred_vendor_id: snapshot.preferred_vendor_id,
+      image_primary_url: snapshot.image_primary_url,
+      image_front_url: snapshot.image_front_url,
+      image_back_url: snapshot.image_back_url,
+      image_side_url: snapshot.image_side_url,
+    })
+    .eq("id", snapshot.id);
+  if (updateError) throw updateError;
+
+  // Delete-then-insert, the shape the save uses: the maps carry no other
+  // columns worth preserving, so the previous set IS the whole truth.
+  const { error: catDeleteError } = await supabase
+    .from("food_inventory_category_map")
+    .delete()
+    .eq("food_inventory_id", snapshot.id);
+  if (catDeleteError) throw catDeleteError;
+
+  const { error: subDeleteError } = await supabase
+    .from("food_inventory_subcategory_map")
+    .delete()
+    .eq("food_inventory_id", snapshot.id);
+  if (subDeleteError) throw subDeleteError;
+
+  if (snapshot.categories.length > 0) {
+    const { error } = await supabase.from("food_inventory_category_map").insert(
+      snapshot.categories.map((c) => ({
+        food_inventory_id: snapshot.id,
+        category_id: c.id,
+        user_id: snapshot.user_id,
+      })),
+    );
+    if (error) throw error;
+  }
+
+  if (snapshot.subcategories.length > 0) {
+    const { error } = await supabase.from("food_inventory_subcategory_map").insert(
+      snapshot.subcategories.map((s) => ({
+        food_inventory_id: snapshot.id,
+        subcategory_id: s.id,
+        user_id: snapshot.user_id,
+      })),
+    );
+    if (error) throw error;
+  }
+
+  // The RPC refuses an empty array, and an item with no location rows is not a
+  // state a save can leave behind — but a snapshot with none is still worth
+  // stepping around rather than turning into an error the user cannot act on.
+  if (snapshot.locations.length > 0) {
+    await replaceItemLocations(
+      snapshot.id,
+      snapshot.locations.map((l) => ({
+        location: l.location,
+        quantity: l.quantity,
+        is_ready_to_consume: l.is_ready_to_consume,
+        notes: l.notes,
+      })),
+    );
+  }
+}
+
+/**
  * B1's one-tap verb: consume a single unit of one item, through the same
  * atomic RPC meal logging uses (ready-first location policy, legacy-cache
  * resync). Returns units actually consumed — 0 means "nothing was moved"

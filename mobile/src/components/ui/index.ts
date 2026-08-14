@@ -13,3 +13,5 @@ export { EmptyState, LoadingState } from "./EmptyState";
 export { UndoToast } from "./UndoToast";
 export { WhenSheet } from "./WhenSheet";
 export type { UndoToastContent } from "./UndoToast";
+export { handOffToast, takeHandedOffToast } from "./pendingToast";
+export type { PendingToast } from "./pendingToast";

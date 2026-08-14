@@ -16,13 +16,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Camera, Barcode, Trash2, Plus, ChevronDown, Circle, CheckCircle } from "lucide-react-native";
 import { colors, icons, spacing } from "@/src/theme/tokens";
-import { Button } from "@/src/components/ui";
+import { Button, handOffToast } from "@/src/components/ui";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { uploadImage } from "@/src/lib/imageUpload";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
 import {
   replaceItemLocations,
+  restoreInventoryItem,
   type InventoryItemWithState,
 } from "@/src/lib/supabase/inventory";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
@@ -1040,7 +1041,11 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
             if (error) console.error("inventory-intelligence (on add):", error);
           });
 
-        Alert.alert("Success", "Item added successfully");
+        // No Undo on this one: the way back from an item that did not exist
+        // a second ago is Delete, a different verb with its own confirmation,
+        // and offering it here would put a destructive action behind a bar
+        // that disappears on its own.
+        handOffToast({ title: "Added", detail: `${name.trim()} is in your inventory` });
         onSave(foodItemId);
         onClose();
       } else {
@@ -1151,7 +1156,15 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false }: EditFoo
           return;
         }
 
-        Alert.alert("Success", "Item updated successfully");
+        // The acknowledgement is left for the screen this one pops back to:
+        // rendered here it would unmount before it finished fading in. The
+        // undo writes `item` back — the snapshot this screen was opened with,
+        // which is by definition everything the save just changed away from.
+        handOffToast({
+          title: "Saved",
+          detail: `${name.trim()} updated`,
+          undo: () => restoreInventoryItem(item),
+        });
         onSave();
       }
     } catch (error: any) {

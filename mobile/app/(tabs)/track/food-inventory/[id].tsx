@@ -2,10 +2,15 @@ import React, { useState, useCallback, useRef } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View, Text, TouchableOpacity, StatusBar, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft } from "lucide-react-native";
+import { Check, ChevronLeft } from "lucide-react-native";
 import { ViewFoodDetailsScreen } from "@/src/components/track/ViewFoodDetailsScreen";
 import { colors, icons, spacing } from "@/src/theme/tokens";
-import { LoadingState } from "@/src/components/ui";
+import {
+  LoadingState,
+  UndoToast,
+  takeHandedOffToast,
+  type UndoToastContent,
+} from "@/src/components/ui";
 import {
   fetchInventoryWithState,
   type InventoryItemWithState,
@@ -18,6 +23,7 @@ export default function FoodItemDetailsPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [item, setItem] = useState<InventoryItemWithState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<UndoToastContent | null>(null);
 
   // `replace` animates as a PUSH — the new screen sweeps in from the right —
   // so using it for Back made going back look like going forward. Pop when
@@ -32,6 +38,29 @@ export default function FoodItemDetailsPage() {
   useFocusEffect(
     useCallback(() => {
       fetchItemDetails();
+      // A save on the edit screen pops back to here and leaves its
+      // acknowledgement behind; this is where it gets shown. Undo writes the
+      // pre-edit values back and then refetches, so the page underneath the
+      // bar agrees with what the bar just did.
+      const handed = takeHandedOffToast();
+      if (!handed) return;
+      setToast({
+        ...handed,
+        undo: handed.undo
+          ? () => {
+              setToast(null);
+              void (async () => {
+                try {
+                  await handed.undo!();
+                  await fetchItemDetails();
+                } catch (e) {
+                  console.error("undo edit failed:", e);
+                  Alert.alert("Couldn't undo", "Your changes are still saved. Try editing the item again.");
+                }
+              })();
+            }
+          : undefined,
+      });
     }, [id]),
   );
 
@@ -88,11 +117,21 @@ export default function FoodItemDetailsPage() {
   }
 
   return (
-    <ViewFoodDetailsScreen
-      item={item}
-      onClose={goBack}
-      onRefresh={fetchItemDetails}
-    />
+    <>
+      <ViewFoodDetailsScreen
+        item={item}
+        onClose={goBack}
+        onRefresh={fetchItemDetails}
+      />
+      {/* Four seconds, like the meal library's: this bar names an item and
+          offers a way back, which is more to weigh than a count going down. */}
+      <UndoToast
+        toast={toast}
+        onDismissed={() => setToast(null)}
+        icon={Check}
+        durationMs={4000}
+      />
+    </>
   );
 }
 
