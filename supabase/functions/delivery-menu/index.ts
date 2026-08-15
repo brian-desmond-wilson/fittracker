@@ -29,18 +29,24 @@ const SHARED_RULES = `Return ONLY what is legibly printed. Rules:
 - "slot" is one of breakfast, lunch, dinner, snack, dessert — taken from how
   the menu labels the dish. If the menu does not say, use null; do not guess
   from the food.
-- calories, protein, fiber and saturated_fat are per meal in grams (calories
-  in kcal), as printed. "sodium" is MILLIGRAMS per meal — the milligram
-  figure, never the % Daily Value beside it. saturated_fat means the
-  "Saturated Fat" row alone, not it plus trans fat. Any figure that is not
-  shown is null. Never derive one from another or from the food type.
+- calories, protein, carbs, fats, fiber, sugars and saturated_fat are per meal
+  in grams (calories in kcal), as printed. "sodium" is MILLIGRAMS per meal —
+  the milligram figure, never the % Daily Value beside it. "carbs" means Total
+  Carbohydrate and "fats" means Total Fat, each the total row rather than any
+  line indented beneath it; saturated_fat means the "Saturated Fat" row alone,
+  not it plus trans fat. Any figure that is not shown is null. Never derive one
+  from another or from the food type.
+- "serving_size" is what the figures are per, as printed — "1 bowl", "1 meal",
+  "8 oz". Null if the label does not say.
 - "quantity" is how many of that dish the box contains, if the menu says so;
   otherwise null.
 
 Respond as JSON:
 {"meals": [{"name": string, "slot": string|null, "quantity": number|null,
- "calories": number|null, "protein": number|null, "fiber": number|null,
- "saturated_fat": number|null, "sodium": number|null}],
+ "calories": number|null, "protein": number|null, "carbs": number|null,
+ "fats": number|null, "fiber": number|null, "sugars": number|null,
+ "saturated_fat": number|null, "sodium": number|null,
+ "serving_size": string|null}],
  "note": string|null}
 
 "note" is one short human sentence only when something is worth flagging —
@@ -132,8 +138,14 @@ serve(async (req) => {
         calories: num(m.calories),
         protein: num(m.protein),
         fiber: num(m.fiber),
+        carbs: num(m.carbs),
+        fats: num(m.fats),
+        sugars: num(m.sugars),
         saturatedFat: num(m.saturated_fat),
         sodium: num(m.sodium),
+        servingSize: typeof m.serving_size === 'string' && m.serving_size.trim() !== ''
+          ? m.serving_size.trim()
+          : null,
       }))
       .filter((m: { name: string }) => m.name.length > 0)
       // One lid fills one row. Capping here rather than trusting the prompt
