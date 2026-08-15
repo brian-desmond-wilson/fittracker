@@ -10,7 +10,7 @@
 // meal rows off the screen and the six most recent are the ones a repeat order
 // is made of.
 import React, { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Minus, Plus } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import type { RecentDish } from "@/src/lib/preparedMealDelivery";
@@ -53,6 +53,12 @@ export function RecentDishes({ dishes, counts, onAdd, onRemove }: RecentDishesPr
 
         return (
           <View key={dish.slug} style={[styles.row, count > 0 && styles.rowActive]}>
+            {/* The photo from the dish's last delivery — recognition is the
+                whole reason this list exists, and a picture recognises faster
+                than a name. Text-only when history has none. */}
+            {dish.imageUrl != null && (
+              <Image source={{ uri: dish.imageUrl }} style={styles.photo} resizeMode="cover" />
+            )}
             <View style={styles.text}>
               <Text style={styles.name} numberOfLines={2}>{dish.name}</Text>
               <Text style={styles.detail}>{detail}</Text>
@@ -119,6 +125,10 @@ const styles = StyleSheet.create({
   // Enough to find the ones you have already added at a glance, without the
   // row becoming a second kind of thing.
   rowActive: { borderColor: colors.brand },
+  photo: {
+    width: 32, height: 32, borderRadius: radii.control,
+    backgroundColor: colors.surface,
+  },
   text: { flex: 1, gap: 2 },
   name: { ...typography.body, color: colors.text },
   detail: { ...typography.caption, color: colors.textFaint },

@@ -21,7 +21,8 @@ import * as ImagePicker from "expo-image-picker";
 import { Calendar, Camera, ChevronLeft, Plus, Truck } from "lucide-react-native";
 import { Button, Card } from "@/src/components/ui";
 import { VendorTiles } from "@/src/components/track/edit/VendorTiles";
-import { DeliveryMealRow } from "@/src/components/track/delivery/DeliveryMealRow";
+import { MealEditorSheet, IDLE_SEARCH, type DishSearchState } from "@/src/components/track/delivery/MealEditorSheet";
+import { MealRowCompact } from "@/src/components/track/delivery/MealRowCompact";
 import { RecentDishes } from "@/src/components/track/delivery/RecentDishes";
 import { supabase } from "@/src/lib/supabase";
 import { formatArrival, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
@@ -30,10 +31,12 @@ import {
   type PendingDeliveryDraft,
 } from "@/src/lib/supabase/preparedMeals";
 import { fetchDeliveryHistory } from "@/src/lib/supabase/deliveryHistory";
+import { searchDishImages } from "@/src/lib/supabase/dishImageSearch";
 import {
-  addLocalDays, addRecent, deliverySummary, draftsFromPayload, emptyDraft,
-  namedDrafts, orderVendorsByUse, recentCounts, removeRecent, toDeliveryPayload,
-  validateDelivery, TYPICAL_PREPARED_MEAL_DAYS,
+  addLocalDays, addRecent, deliverySummary, dishesNeedingImages,
+  draftsFromPayload, emptyDraft, namedDrafts, orderVendorsByUse, recentCounts,
+  removeRecent, toDeliveryPayload, validateDelivery, withDraftPhotos,
+  TYPICAL_PREPARED_MEAL_DAYS,
   type PreparedMealDraft, type RecentDish, type VendorUse,
 } from "@/src/lib/preparedMealDelivery";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
@@ -96,6 +99,13 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
     editing ? draftsFromPayload(editing.meals) : [emptyDraft()],
   );
   const [saving, setSaving] = useState(false);
+  // Which meal's editor sheet is open. A key, not an index: rows can be
+  // removed from under a stale index, but a key just stops matching.
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  // Web image candidates per row key. Kept here rather than in the sheet so
+  // the auto-search after a menu scan has somewhere to land before any sheet
+  // has been opened, and so closing a sheet does not throw results away.
+  const [searches, setSearches] = useState<Record<string, DishSearchState>>({});
 
   useEffect(() => {
     (async () => {
@@ -145,6 +155,35 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
   // them honest when a row's Qty is edited by hand.
   const counts = useMemo(() => recentCounts(drafts), [drafts]);
 
+  const vendorName = useMemo(
+    () => vendors.find((v) => v.id === vendorId)?.name ?? null,
+    [vendors, vendorId],
+  );
+
+  /** Ask the web for pictures of one row's dish. Fire-and-forget: results land
+   *  in `searches` whenever they land, and the sheet renders whatever is there.
+   *  `force` re-runs a search whose results are already in (the Search button);
+   *  without it a run that is loading or done is left alone, so the post-scan
+   *  sweep cannot stampede a row the user is already looking at. */
+  const runSearch = useCallback(
+    (key: string, name: string, force = false) => {
+      setSearches((prev) => {
+        const current = prev[key] ?? IDLE_SEARCH;
+        if (!force && current.status !== "idle") return prev;
+        // The fetch is kicked off inside the updater on purpose: the updater
+        // is where "should this run?" is decided race-free.
+        searchDishImages(name, vendorName).then(({ candidates, configured }) => {
+          setSearches((later) => ({
+            ...later,
+            [key]: { status: "done", candidates, configured },
+          }));
+        });
+        return { ...prev, [key]: { status: "loading", candidates: [], configured: true } };
+      });
+    },
+    [vendorName],
+  );
+
   const filled = namedDrafts(drafts).length;
   const summary = useMemo(() => deliverySummary(drafts), [drafts]);
 
@@ -157,9 +196,11 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
     // arrive in runs — three breakfasts, then the lunches — so the commonest
     // next answer is the last answer.
     const last = drafts[drafts.length - 1];
-    setDrafts((prev) => [...prev, emptyDraft(last?.slot ?? "lunch")]);
-    // Let the row mount before scrolling to it.
-    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    const fresh = emptyDraft(last?.slot ?? "lunch");
+    setDrafts((prev) => [...prev, fresh]);
+    // Straight into the editor: a compact row has no inline name field, so an
+    // added meal with no open sheet would be a dead end.
+    setEditingKey(fresh.key);
   };
 
   const removeRow = (key: string) => {
@@ -169,6 +210,7 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
       // into, and "add a meal" is the whole purpose of the screen.
       return next.length > 0 ? next : [emptyDraft()];
     });
+    setEditingKey((open) => (open === key ? null : open));
   };
 
   // A stepper is a fast way to make an ordinary row. What it produces is
@@ -240,6 +282,9 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
         ...(meal.saturatedFat != null ? { saturatedFat: String(meal.saturatedFat) } : {}),
         ...(meal.sodium != null ? { sodium: String(Math.round(meal.sodium)) } : {}),
       });
+      // A scan is the capture flow, so the picture hunt starts by itself —
+      // typing a name never searches, but reading a label just did the typing.
+      runSearch(key, meal.name, true);
       if (data?.note) Alert.alert("Read the label", data.note);
     } catch (e) {
       console.error("delivery label scan failed:", e);
@@ -270,7 +315,7 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
       // duplicate meals. Anything typed already is lost, so it asks first if
       // there is anything to lose.
       const apply = () => {
-        setDrafts(read.map((m) => ({
+        const fresh = read.map((m) => ({
           ...emptyDraft(m.slot ?? "lunch"),
           name: m.name,
           quantity: m.quantity != null ? String(Math.max(1, Math.round(m.quantity))) : "1",
@@ -279,7 +324,15 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
           fiber: m.fiber != null ? String(m.fiber) : "",
           saturatedFat: m.saturatedFat != null ? String(m.saturatedFat) : "",
           sodium: m.sodium != null ? String(Math.round(m.sodium)) : "",
-        })));
+        }));
+        // Repeat dishes take their picture from history for free; only the
+        // genuinely new ones go to the web, and those searches run now, in the
+        // background, so candidates are already waiting when a row is opened.
+        const withPhotos = vendorId ? withDraftPhotos(fresh, vendorId, recents) : fresh;
+        setDrafts(withPhotos);
+        for (const dish of dishesNeedingImages(withPhotos)) {
+          runSearch(dish.key, dish.name);
+        }
         if (data?.note) Alert.alert("Read the menu", data.note);
       };
       if (filled > 0) {
@@ -436,22 +489,37 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
                 </Text>
               )}
 
-              <Text style={[styles.label, styles.labelSpaced]}>Arrives</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => {
-                  if (Platform.OS === "android") setAndroidArrivalStep("date");
-                  else setShowArrivalPicker(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Choose when this delivery arrives"
-              >
-                <Truck size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-                <Text style={styles.dateText}>{formatArrival(arrivesAt)}</Text>
-              </TouchableOpacity>
-              {/* The consequence, not the mechanism. A future arrival changes
-                  what Save does, and that has to be said before it is pressed
-                  rather than discovered afterwards in an empty fridge. */}
+              {/* One line for both dates: they are one decision about time,
+                  and stacked full-width they pushed the meals below the fold. */}
+              <View style={styles.dateRow}>
+                <View style={styles.dateHalf}>
+                  <Text style={[styles.label, styles.labelSpaced]}>Arrives</Text>
+                  <TouchableOpacity
+                    style={styles.dateButton}
+                    onPress={() => {
+                      if (Platform.OS === "android") setAndroidArrivalStep("date");
+                      else setShowArrivalPicker(true);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose when this delivery arrives"
+                  >
+                    <Truck size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+                    <Text style={styles.dateText} numberOfLines={1}>{formatArrival(arrivesAt)}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.dateHalf}>
+                  <Text style={[styles.label, styles.labelSpaced]}>Use by</Text>
+                  <TouchableOpacity
+                    style={styles.dateButton}
+                    onPress={() => setShowDatePicker(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose the use-by date"
+                  >
+                    <Calendar size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+                    <Text style={styles.dateText} numberOfLines={1}>{useBy}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
               {/* The consequence, not the mechanism — and it differs between
                   the two forms. A new delivery with a past arrival is written
                   on the spot by the scheduling function; an edit is one UPDATE
@@ -463,21 +531,6 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
                   : editing
                     ? "That's in the past, which is allowed — the box becomes due, and these meals join your inventory the next time you open it."
                     : "These meals go into your inventory as soon as you save."}
-              </Text>
-
-              <Text style={[styles.label, styles.labelSpaced]}>Use by</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => setShowDatePicker(true)}
-                accessibilityRole="button"
-                accessibilityLabel="Choose the use-by date"
-              >
-                <Calendar size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-                <Text style={styles.dateText}>{useBy}</Text>
-              </TouchableOpacity>
-              <Text style={styles.help}>
-                Prepared food keeps about {TYPICAL_PREPARED_MEAL_DAYS} days. The date on the
-                box wins — every meal in this delivery gets it.
               </Text>
             </Card>
 
@@ -515,17 +568,16 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
               </Text>
             </TouchableOpacity>
 
-            {/* One card per meal. Name, slot, the three numbers on the lid,
-                and a camera that fills just that card. */}
+            {/* One line per meal; the editor sheet holds the rest. Eight
+                meals fit on a screen this way, which is what reviewing a
+                box actually needs. */}
+            <Text style={styles.mealsLabel}>Meals in this box</Text>
             {drafts.map((d, index) => (
-              <DeliveryMealRow
+              <MealRowCompact
                 key={d.key}
                 draft={d}
                 index={index + 1}
-                onPatch={(changes) => patch(d.key, changes)}
-                onRemove={() => removeRow(d.key)}
-                onScan={() => scanRow(d.key)}
-                scanning={scanningKey === d.key}
+                onOpen={() => setEditingKey(d.key)}
               />
             ))}
 
@@ -544,6 +596,26 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
             />
           </View>
         </KeyboardAvoidingView>
+
+        {(() => {
+          const openIndex = drafts.findIndex((d) => d.key === editingKey);
+          if (openIndex === -1) return null;
+          const open = drafts[openIndex];
+          return (
+            <MealEditorSheet
+              draft={open}
+              index={openIndex + 1}
+              vendorName={vendorName}
+              search={searches[open.key] ?? IDLE_SEARCH}
+              onPatch={(changes) => patch(open.key, changes)}
+              onRemove={() => removeRow(open.key)}
+              onClose={() => setEditingKey(null)}
+              onScanLabel={() => scanRow(open.key)}
+              scanningLabel={scanningKey === open.key}
+              onSearch={() => runSearch(open.key, open.name.trim(), true)}
+            />
+          );
+        })()}
 
         {saving && (
           <View style={styles.savingVeil}>
@@ -687,13 +759,16 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
   },
   scanMenuText: { ...typography.caption, color: colors.textMuted, flexShrink: 1 },
+  dateRow: { flexDirection: "row", gap: spacing.sm },
+  dateHalf: { flex: 1, gap: spacing.sm },
   dateButton: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
     backgroundColor: colors.surface2,
     borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
     paddingHorizontal: spacing.md, paddingVertical: spacing.md,
   },
-  dateText: { ...typography.body, color: colors.text },
+  dateText: { ...typography.body, color: colors.text, flexShrink: 1 },
+  mealsLabel: { ...typography.section, color: colors.textMuted, paddingLeft: 2 },
   footer: {
     paddingHorizontal: spacing.screenGutter, paddingTop: spacing.md, gap: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.border,
