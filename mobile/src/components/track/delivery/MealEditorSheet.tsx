@@ -387,20 +387,27 @@ export function MealEditorSheet({
                 </View>
               </View>
 
+              {/* The same panel Edit Product asks for, in its order. A
+                  delivered meal is a product like any other, and two forms
+                  capturing different halves of one nutrition label is how a
+                  650-calorie pasta ended up recorded as carb-free. */}
               <View style={styles.macroGrid}>
                 {([
-                  ["Cal", draft.calories, (t: string) => onPatch({ calories: sanitizeInteger(t) }), "number-pad"],
-                  ["Protein", draft.protein, (t: string) => onPatch({ protein: sanitizeDecimal(t) }), "decimal-pad"],
-                  ["Fiber", draft.fiber, (t: string) => onPatch({ fiber: sanitizeDecimal(t) }), "decimal-pad"],
-                  ["Sat fat", draft.saturatedFat, (t: string) => onPatch({ saturatedFat: sanitizeDecimal(t) }), "decimal-pad"],
-                  ["Na mg", draft.sodium, (t: string) => onPatch({ sodium: sanitizeInteger(t) }), "number-pad"],
-                  ["Qty", draft.quantity, (t: string) => onPatch({ quantity: sanitizeInteger(t) }), "number-pad"],
+                  ["Calories", draft.calories, (t: string) => onPatch({ calories: sanitizeInteger(t) }), "number-pad"],
+                  ["Protein (g)", draft.protein, (t: string) => onPatch({ protein: sanitizeDecimal(t) }), "decimal-pad"],
+                  ["Carbs (g)", draft.carbs, (t: string) => onPatch({ carbs: sanitizeDecimal(t) }), "decimal-pad"],
+                  ["Fats (g)", draft.fats, (t: string) => onPatch({ fats: sanitizeDecimal(t) }), "decimal-pad"],
+                  ["Saturated Fat (g)", draft.saturatedFat, (t: string) => onPatch({ saturatedFat: sanitizeDecimal(t) }), "decimal-pad"],
+                  ["Sugars (g)", draft.sugars, (t: string) => onPatch({ sugars: sanitizeDecimal(t) }), "decimal-pad"],
+                  ["Fiber (g)", draft.fiber, (t: string) => onPatch({ fiber: sanitizeDecimal(t) }), "decimal-pad"],
+                  ["Sodium (mg)", draft.sodium, (t: string) => onPatch({ sodium: sanitizeInteger(t) }), "number-pad"],
+                  ["Quantity", draft.quantity, (t: string) => onPatch({ quantity: sanitizeInteger(t) }), "number-pad"],
                 ] as const).map(([label, value, onChange, keyboard]) => (
                   <View key={label} style={styles.macroField}>
                     <Text style={styles.macroLabel}>{label}</Text>
                     <TextInput
                       style={styles.macroInput}
-                      placeholder={label === "Qty" ? "1" : "—"}
+                      placeholder={label === "Quantity" ? "1" : "—"}
                       placeholderTextColor={colors.textFaint}
                       value={value}
                       onChangeText={onChange}
@@ -409,6 +416,21 @@ export function MealEditorSheet({
                     />
                   </View>
                 ))}
+              </View>
+
+              {/* Full width and last, because it is words rather than a
+                  figure, and because "1 meal" is right often enough that it
+                  is the one field usually left alone. */}
+              <View style={styles.servingField}>
+                <Text style={styles.macroLabel}>Serving Size</Text>
+                <TextInput
+                  style={styles.servingInput}
+                  placeholder="1 meal"
+                  placeholderTextColor={colors.textFaint}
+                  value={draft.servingSize}
+                  onChangeText={(t) => onPatch({ servingSize: t })}
+                  accessibilityLabel={`Serving Size for meal ${index}`}
+                />
               </View>
           </ScrollView>
         </Animated.View>
@@ -504,6 +526,13 @@ const styles = StyleSheet.create({
   noteText: { ...typography.caption, color: colors.textFaint },
   macroGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   macroField: { flexBasis: "30%", flexGrow: 1, gap: spacing.xs },
+  servingField: { gap: spacing.xs },
+  servingInput: {
+    ...typography.body, color: colors.text,
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  },
   macroLabel: { ...typography.caption, color: colors.textFaint },
   macroInput: {
     ...typography.body, color: colors.text, textAlign: "center",

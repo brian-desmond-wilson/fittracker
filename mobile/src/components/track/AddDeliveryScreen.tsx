@@ -35,7 +35,7 @@ import { searchDishImages } from "@/src/lib/supabase/dishImageSearch";
 import {
   addLocalDays, addRecent, deliverySummary, dishesNeedingImages,
   draftsFromPayload, emptyDraft, namedDrafts, orderVendorsByUse, recentCounts,
-  removeRecent, toDeliveryPayload, validateDelivery, withDraftPhotos,
+  removeRecent, toDeliveryPayload, validateDelivery, withDraftFacts,
   TYPICAL_PREPARED_MEAL_DAYS,
   type PreparedMealDraft, type RecentDish, type VendorUse,
 } from "@/src/lib/preparedMealDelivery";
@@ -142,14 +142,14 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
     })();
   }, []);
 
-  // Any row without a picture takes the one this vendor's history has for that
-  // dish. Runs whenever the history or the vendor lands rather than only after
-  // a scan, because a box saved before deliveries carried pictures has none in
-  // its payload — and a dish added from a shelf where you can see the photo
-  // should not become a grey row.
+  // Any blank on a row — photo, macro, serving size — takes what this vendor's
+  // history holds for that dish. A repeat delivery is the same product, so the
+  // numbers are the numbers. Runs whenever the history or the vendor lands
+  // rather than only after a scan, which is what backfills a box saved before
+  // some of these fields existed.
   useEffect(() => {
     if (!vendorId || recents.length === 0) return;
-    setDrafts((prev) => withDraftPhotos(prev, vendorId, recents));
+    setDrafts((prev) => withDraftFacts(prev, vendorId, recents));
   }, [vendorId, recents]);
 
   // Most-delivered first, so the shop you actually use is the first tile
@@ -261,7 +261,9 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
   interface ReadMeal {
     name: string; slot: MealType | null; quantity: number | null;
     calories: number | null; protein: number | null; fiber: number | null;
+    carbs: number | null; fats: number | null; sugars: number | null;
     saturatedFat: number | null; sodium: number | null;
+    servingSize: string | null;
   }
 
   /** One lid, filling one row. No confirmation and no effect on any other
@@ -293,8 +295,12 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
         ...(meal.calories != null ? { calories: String(Math.round(meal.calories)) } : {}),
         ...(meal.protein != null ? { protein: String(meal.protein) } : {}),
         ...(meal.fiber != null ? { fiber: String(meal.fiber) } : {}),
+        ...(meal.carbs != null ? { carbs: String(meal.carbs) } : {}),
+        ...(meal.fats != null ? { fats: String(meal.fats) } : {}),
+        ...(meal.sugars != null ? { sugars: String(meal.sugars) } : {}),
         ...(meal.saturatedFat != null ? { saturatedFat: String(meal.saturatedFat) } : {}),
         ...(meal.sodium != null ? { sodium: String(Math.round(meal.sodium)) } : {}),
+        ...(meal.servingSize ? { servingSize: meal.servingSize } : {}),
       });
       // A scan is the capture flow, so the picture hunt starts by itself —
       // typing a name never searches, but reading a label just did the typing.
@@ -336,13 +342,18 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
           calories: m.calories != null ? String(Math.round(m.calories)) : "",
           protein: m.protein != null ? String(m.protein) : "",
           fiber: m.fiber != null ? String(m.fiber) : "",
+          carbs: m.carbs != null ? String(m.carbs) : "",
+          fats: m.fats != null ? String(m.fats) : "",
+          sugars: m.sugars != null ? String(m.sugars) : "",
           saturatedFat: m.saturatedFat != null ? String(m.saturatedFat) : "",
           sodium: m.sodium != null ? String(Math.round(m.sodium)) : "",
+          servingSize: m.servingSize ?? "",
         }));
-        // Repeat dishes take their picture from history for free; only the
-        // genuinely new ones go to the web, and those searches run now, in the
-        // background, so candidates are already waiting when a row is opened.
-        const withPhotos = vendorId ? withDraftPhotos(fresh, vendorId, recents) : fresh;
+        // Repeat dishes take their picture AND their panel from history for
+        // free; only the genuinely new ones go to the web, and those searches
+        // run now, in the background, so candidates are already waiting when a
+        // row is opened.
+        const withPhotos = vendorId ? withDraftFacts(fresh, vendorId, recents) : fresh;
         setDrafts(withPhotos);
         for (const dish of dishesNeedingImages(withPhotos)) {
           runSearch(dish.key, dish.name);
