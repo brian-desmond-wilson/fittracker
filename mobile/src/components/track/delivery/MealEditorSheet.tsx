@@ -6,13 +6,17 @@
 // and a photo picker per meal is exactly what made the inline cards too tall
 // to review a box on.
 //
-// The photo block has three sources and one rule. Camera photographs the food,
+// The photo block has four sources and one rule. Camera photographs the food,
 // Library picks a shot already taken, Search asks the web — scoped by vendor,
 // because "Thistle Tahini-Java Smoothie" finds a product where the bare dish
-// name finds recipes. Whatever the source, nothing attaches until a deliberate
-// tap, and what attaches is always a URL the app owns: camera and library
-// shots upload to the bucket, and a chosen search candidate is copied into it
-// server-side before its URL comes back.
+// name finds recipes — and Link takes an address pasted from wherever the
+// vendor already publishes the picture.
+//
+// Whatever the source, nothing attaches until a deliberate tap, and what
+// attaches is always a URL the app owns: camera and library shots upload to
+// the bucket, and a search candidate or a pasted address is fetched and copied
+// into it server-side before its URL comes back. Never a hot link — a picture
+// on somebody else's CDN is one redesign away from a grey box.
 //
 // The sheet edits the draft in place through onPatch — there is no local copy
 // and no Cancel, the same live-editing contract the inline card had.
@@ -26,7 +30,7 @@ import {
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, ImageIcon, ScanLine, Search, Trash2, X } from "lucide-react-native";
+import { Camera, ImageIcon, Link as LinkIcon, ScanLine, Search, Trash2, X } from "lucide-react-native";
 import { uploadImage } from "@/src/lib/imageUpload";
 import { pickDishImage, type DishImageCandidate } from "@/src/lib/supabase/dishImageSearch";
 import { DELIVERY_SLOTS, type PreparedMealDraft } from "@/src/lib/preparedMealDelivery";
@@ -84,6 +88,12 @@ export function MealEditorSheet({
   // Which busy spinner the photo well shows: an upload from camera/library,
   // or a candidate being copied into the bucket.
   const [attaching, setAttaching] = useState(false);
+  // The paste-an-address field, hidden until asked for.
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [link, setLink] = useState("");
+  // Only an http(s) address can be fetched. Checked here so the button is
+  // plainly dead rather than failing after a round trip.
+  const canUseLink = /^https?:\/\/\S+$/i.test(link.trim());
 
   // Swipe down to dismiss.
   //
@@ -178,6 +188,33 @@ export function MealEditorSheet({
       return;
     }
     onPatch({ imageUrl: url });
+  };
+
+  /**
+   * A pasted address, taken the same way a chosen search result is: fetched
+   * server-side and copied into our own bucket. Hot-linking somebody's CDN
+   * would leave the inventory pointing at a picture that can vanish, and the
+   * URL in hand is exactly the kind that does — a share link, an asset id.
+   */
+  const useLink = async () => {
+    const address = link.trim();
+    if (!canUseLink) return;
+    setAttaching(true);
+    const url = await pickDishImage(
+      { thumbUrl: address, imageUrl: address, sourcePage: null },
+      draft.name || "dish",
+    );
+    setAttaching(false);
+    if (!url) {
+      Alert.alert(
+        "Couldn't fetch that image",
+        "Check the address points straight at an image file, not the page around it.",
+      );
+      return;
+    }
+    onPatch({ imageUrl: url });
+    setLink("");
+    setLinkOpen(false);
   };
 
   const canSearch = draft.name.trim() !== "";
@@ -330,10 +367,15 @@ export function MealEditorSheet({
                       ["Camera", Camera, () => shoot("camera"), true],
                       ["Library", ImageIcon, () => shoot("library"), true],
                       ["Search", Search, onSearch, canSearch],
+                      ["Link", LinkIcon, () => setLinkOpen((v) => !v), true],
                     ] as const).map(([label, Icon, onPress, enabled]) => (
                       <TouchableOpacity
                         key={label}
-                        style={[styles.sourceBtn, !enabled && styles.sourceBtnDisabled]}
+                        style={[
+                          styles.sourceBtn,
+                          !enabled && styles.sourceBtnDisabled,
+                          label === "Link" && linkOpen && styles.sourceBtnOpen,
+                        ]}
                         onPress={onPress}
                         disabled={!enabled || attaching}
                         accessibilityRole="button"
@@ -344,6 +386,36 @@ export function MealEditorSheet({
                       </TouchableOpacity>
                     ))}
                   </View>
+
+                  {/* Appears on tap rather than sitting there always: pasting a
+                      URL is the rarest of the four ways in, and a text field is
+                      the loudest thing you can put in a row of buttons. */}
+                  {linkOpen && (
+                    <View style={styles.linkRow}>
+                      <TextInput
+                        style={styles.linkInput}
+                        placeholder="https://…"
+                        placeholderTextColor={colors.textFaint}
+                        value={link}
+                        onChangeText={setLink}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        returnKeyType="done"
+                        onSubmitEditing={useLink}
+                        accessibilityLabel={`Image address for meal ${index}`}
+                      />
+                      <TouchableOpacity
+                        style={[styles.linkGo, !canUseLink && styles.sourceBtnDisabled]}
+                        onPress={useLink}
+                        disabled={!canUseLink || attaching}
+                        accessibilityRole="button"
+                        accessibilityLabel="Use this image address"
+                      >
+                        <Text style={styles.linkGoText}>Use</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
                   {search.status === "loading" && (
                     <View style={styles.candidateNote}>
@@ -516,7 +588,23 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   sourceBtnDisabled: { opacity: 0.4 },
+  // The button stays lit while its field is showing, so it reads as a toggle
+  // rather than something that did nothing.
+  sourceBtnOpen: { borderColor: colors.brand },
   sourceText: { ...typography.caption, color: colors.textMuted },
+  linkRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  linkInput: {
+    ...typography.body, color: colors.text, flex: 1,
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  },
+  linkGo: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.brand, borderRadius: radii.control,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  },
+  linkGoText: { ...typography.buttonSm, color: colors.brand },
   candidateNote: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   candidateRow: { flexDirection: "row", gap: spacing.sm },
   candidate: {
