@@ -1299,12 +1299,18 @@ export function FoodInventoryScreen({ onClose }: FoodInventoryScreenProps) {
             </View>
           </View>
 
-        {/* What is coming but not here. One line per box, above the grid it is
-            deliberately absent from: a scheduled delivery is food you do not
-            have yet, and the whole reason for scheduling it is that the app
-            should not say otherwise. Hidden entirely while searching, where
-            the answer is about what you own. */}
-        {!searching && pending.map((row) => (
+        {/* What is coming but not here — the SOONEST box only, above the grid
+            it is deliberately absent from: a scheduled delivery is food you do
+            not have yet, and the whole reason for scheduling it is that the
+            app should not say otherwise. One line, not one per box: this
+            screen only needs to say "food is coming"; the full slate lives on
+            the Deliveries page the line opens, and two banners here cost grid
+            space to repeat what one tap already answers. `pending` arrives
+            sorted by arrival (both the fetch and cancel's revert keep it so),
+            so the first row IS the soonest — and when it is cancelled or
+            lands, the next box takes over the line. Hidden entirely while
+            searching, where the answer is about what you own. */}
+        {!searching && pending.slice(0, 1).map((row) => (
           <View key={row.id} style={styles.pendingRow}>
             <Truck size={icons.sm} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
             {/* The line says how much is coming; the page it opens says what,
