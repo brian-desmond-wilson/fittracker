@@ -283,6 +283,12 @@ describe("withDraftPhotos", () => {
     );
     expect(d.imageUrl).toBe("https://cdn.example/mine.jpg");
   });
+  it("hands back the very same list when it changes nothing", () => {
+    // The screen runs this on every history change; a fresh array each time
+    // would re-render the whole meal list for no reason.
+    const rows = [draft({ name: "Unknown Dish" })];
+    expect(withDraftPhotos(rows, "v1", history)).toBe(rows);
+  });
 });
 
 describe("dishesNeedingImages", () => {
@@ -335,6 +341,16 @@ describe("addRecent", () => {
   it("counts up from a row whose quantity was left half-typed", () => {
     const next = addRecent([draft({ name: "Almond Dream Smoothie", quantity: "" })], dish());
     expect(next[0].quantity).toBe("1");
+  });
+  it("gives a bare row the dish's photo while incrementing it", () => {
+    const withPhoto = dish({ imageUrl: "https://cdn.example/a.jpg" });
+    const next = addRecent([draft({ name: "Almond Dream Smoothie" })], withPhoto);
+    expect(next[0].imageUrl).toBe("https://cdn.example/a.jpg");
+  });
+  it("does not overwrite a photo the row already has", () => {
+    const withPhoto = dish({ imageUrl: "https://cdn.example/a.jpg" });
+    const rows = [draft({ name: "Almond Dream Smoothie", imageUrl: "https://cdn.example/mine.jpg" })];
+    expect(addRecent(rows, withPhoto)[0].imageUrl).toBe("https://cdn.example/mine.jpg");
   });
 });
 

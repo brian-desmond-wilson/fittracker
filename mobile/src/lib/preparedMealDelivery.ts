@@ -438,13 +438,18 @@ export function dishesNeedingImages(
 }
 
 /**
- * Drafts with history's photo filled in wherever a draft has none — what a
- * menu scan runs right after replacing the rows, so a repeat dish shows its
- * picture before any search is needed.
+ * Drafts with history's photo filled in wherever a draft has none.
+ *
+ * Run after a menu scan, and again whenever the history or the vendor lands —
+ * a box saved before deliveries carried pictures has none in its payload, and
+ * reopening it should show the food rather than a row of grey placeholders.
  *
  * Same one-vendor scoping as `withDishPhotos`, and for the same reason: two
  * subscriptions can both sell a "Chicken Salad", and a wrong photo is worse
  * than none because a photo is a claim about what is in the box.
+ *
+ * Returns the SAME array when it changes nothing, so a caller can run it on
+ * every history change without handing React a new list each time.
  */
 export function withDraftPhotos(
   drafts: readonly PreparedMealDraft[],
@@ -458,11 +463,16 @@ export function withDraftPhotos(
     if (slug === "" || photos.has(slug)) continue;
     photos.set(slug, seen.imageUrl);
   }
-  return drafts.map((d) =>
-    d.imageUrl == null
-      ? { ...d, imageUrl: photos.get(dishSlug(d.name)) ?? null }
-      : d,
-  );
+
+  let changed = false;
+  const next = drafts.map((d) => {
+    if (d.imageUrl != null) return d;
+    const found = photos.get(dishSlug(d.name));
+    if (!found) return d;
+    changed = true;
+    return { ...d, imageUrl: found };
+  });
+  return changed ? next : (drafts as PreparedMealDraft[]);
 }
 
 /**
@@ -499,7 +509,15 @@ export function addRecent(
   if (existing) {
     return drafts.map((d) =>
       d.key === existing.key
-        ? { ...d, quantity: String(Math.max(0, toNumber(d.quantity) ?? 0) + 1) }
+        ? {
+            ...d,
+            quantity: String(Math.max(0, toNumber(d.quantity) ?? 0) + 1),
+            // A row that arrived without a picture — typed by hand, or saved
+            // before deliveries carried one — takes the dish's. Adding from
+            // the shelf where the photo is visible and getting a blank row is
+            // the surprise this removes.
+            imageUrl: d.imageUrl ?? dish.imageUrl,
+          }
         : d,
     );
   }

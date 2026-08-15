@@ -142,6 +142,16 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
     })();
   }, []);
 
+  // Any row without a picture takes the one this vendor's history has for that
+  // dish. Runs whenever the history or the vendor lands rather than only after
+  // a scan, because a box saved before deliveries carried pictures has none in
+  // its payload — and a dish added from a shelf where you can see the photo
+  // should not become a grey row.
+  useEffect(() => {
+    if (!vendorId || recents.length === 0) return;
+    setDrafts((prev) => withDraftPhotos(prev, vendorId, recents));
+  }, [vendorId, recents]);
+
   // Most-delivered first, so the shop you actually use is the first tile
   // rather than whichever one preferences happened to list first.
   const orderedVendors = useMemo(
