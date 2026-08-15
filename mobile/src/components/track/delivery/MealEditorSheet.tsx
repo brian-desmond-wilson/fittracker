@@ -16,6 +16,10 @@
 //
 // The sheet edits the draft in place through onPatch — there is no local copy
 // and no Cancel, the same live-editing contract the inline card had.
+//
+// The slot control is the Meal Builder's, deliberately: a delivered meal is
+// filed under the same five slots a built meal is, and two different-looking
+// controls for one decision is two things to learn.
 import React, { useState } from "react";
 import {
   ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform,
@@ -28,7 +32,7 @@ import { uploadImage } from "@/src/lib/imageUpload";
 import { pickDishImage, type DishImageCandidate } from "@/src/lib/supabase/dishImageSearch";
 import { DELIVERY_SLOTS, type PreparedMealDraft } from "@/src/lib/preparedMealDelivery";
 import { sanitizeDecimal, sanitizeInteger } from "@/src/lib/numericInput";
-import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import type { MealType } from "@/src/types/track";
 
 const SLOT_LABELS: Record<MealType, string> = {
@@ -194,12 +198,16 @@ export function MealEditorSheet({
               />
 
               <View style={styles.segTrack}>
-                {DELIVERY_SLOTS.map((slot) => {
+                {DELIVERY_SLOTS.map((slot, i) => {
                   const active = draft.slot === slot;
                   return (
                     <TouchableOpacity
                       key={slot}
-                      style={[styles.segItem, active && styles.segItemActive]}
+                      style={[
+                        styles.segItem,
+                        i > 0 && styles.segDivider,
+                        active && styles.segItemActive,
+                      ]}
                       onPress={() => onPatch({ slot })}
                       accessibilityRole="button"
                       accessibilityState={{ selected: active }}
@@ -346,22 +354,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: spacing.md,
     minHeight: 44,
   },
+  // The Meal Builder's control, borrowed whole: five divided cells in one
+  // row, the chosen one tinted rather than filled. A pill track needed 90pt a
+  // segment and wrapped to two rows on a phone; this fits five across because
+  // the cells share their borders and the label carries the state.
   segTrack: {
-    flexDirection: "row", flexWrap: "wrap", gap: spacing.xs,
-    backgroundColor: colors.surface2,
-    borderRadius: radii.pill,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.xs,
+    flexDirection: "row",
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.control,
+    overflow: "hidden",
   },
   segItem: {
-    flexGrow: 1, minWidth: 90,
-    alignItems: "center", justifyContent: "center",
-    paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
-    borderRadius: radii.pill,
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingVertical: spacing.sm, paddingHorizontal: 2,
   },
-  segItemActive: { backgroundColor: colors.brand },
+  segDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
+  segItemActive: { backgroundColor: tint(colors.brand) },
   segText: { ...typography.caption, color: colors.textMuted },
-  segTextActive: { color: colors.onBrand, fontWeight: "600" },
+  segTextActive: { color: colors.brand, fontWeight: "700" },
   blockLabel: { ...typography.section, color: colors.textMuted },
   photoBlock: { flexDirection: "row", gap: spacing.md },
   well: {
