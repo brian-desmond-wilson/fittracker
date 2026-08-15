@@ -18,7 +18,7 @@ import {
   toDeliveryPayload,
   validateDelivery,
   withDishPhotos,
-  withDraftPhotos,
+  withDraftFacts,
   DELIVERY_SLOTS,
   type PreparedMealDraft,
   type RecentDish,
@@ -30,8 +30,12 @@ const draft = (over: Partial<PreparedMealDraft> = {}): PreparedMealDraft => ({
   calories: "650",
   protein: "21",
   fiber: "13",
+  carbs: "65",
+  fats: "24",
+  sugars: "9",
   saturatedFat: "4.5",
   sodium: "620",
+  servingSize: "1 bowl",
   ...over,
 });
 
@@ -43,8 +47,12 @@ const dish = (over: Partial<RecentDish> = {}): RecentDish => ({
   calories: 420,
   protein: 18,
   fiber: 7,
+  carbs: 48,
+  fats: 12,
+  sugars: 20,
   saturatedFat: 2.5,
   sodium: 310,
+  servingSize: "1 cup",
   imageUrl: null,
   lastDeliveredOn: "2026-08-06",
   ...over,
@@ -131,7 +139,9 @@ describe("toDeliveryPayload", () => {
     expect(toDeliveryPayload([draft({ name: "  Ruby Rice Bowl " })])).toEqual([
       {
         name: "Ruby Rice Bowl", slot: "lunch", quantity: 1,
-        calories: 650, protein: 21, fiber: 13, saturated_fat: 4.5, sodium: 620,
+        calories: 650, protein: 21, fiber: 13,
+        carbs: 65, fats: 24, sugars: 9,
+        saturated_fat: 4.5, sodium: 620, serving_size: "1 bowl",
         image_url: null,
       },
     ]);
@@ -143,12 +153,32 @@ describe("toDeliveryPayload", () => {
     expect(meal.sodium).toBeNull();
   });
 
-  it("names the two newest fields the way the database keys them", () => {
+  it("names every field the way the database keys them", () => {
     // The payload goes straight into a plpgsql function that reads
-    // `v_meal->>'saturated_fat'` and `v_meal->>'sodium'` — a camelCase key
-    // here would be read as a null by a function that cannot complain.
+    // `v_meal->>'saturated_fat'` and friends — a camelCase key here would be
+    // read as a null by a function that cannot complain.
     const [meal] = toDeliveryPayload([draft()]);
-    expect(Object.keys(meal)).toEqual(expect.arrayContaining(["saturated_fat", "sodium"]));
+    expect(Object.keys(meal)).toEqual(expect.arrayContaining([
+      "carbs", "fats", "sugars", "saturated_fat", "sodium", "serving_size",
+    ]));
+  });
+
+  it("carries the whole panel, the same one Edit Product asks for", () => {
+    const [meal] = toDeliveryPayload([draft()]);
+    expect(meal).toMatchObject({ carbs: 65, fats: 24, sugars: 9, serving_size: "1 bowl" });
+  });
+
+  it("sends a blank serving size as null, so the writer's default stands", () => {
+    // An empty string would overwrite a serving the database already knows;
+    // null leaves it alone and falls back to "1 meal" on a new row.
+    const [meal] = toDeliveryPayload([draft({ servingSize: "   " })]);
+    expect(meal.serving_size).toBeNull();
+  });
+
+  it("rejects nonsense in any of the newer macro fields", () => {
+    expect(ok([draft({ carbs: "some" })])).toMatch(/Carbs.*Ruby Rice Bowl/);
+    expect(ok([draft({ fats: "lots" })])).toMatch(/Fats.*Ruby Rice Bowl/);
+    expect(ok([draft({ sugars: "sweet" })])).toMatch(/Sugars.*Ruby Rice Bowl/);
   });
   it("omits the blank row", () => {
     expect(toDeliveryPayload([draft(), emptyDraft()])).toHaveLength(1);
@@ -255,7 +285,7 @@ describe("draftFromRecent", () => {
   });
 });
 
-describe("withDraftPhotos", () => {
+describe("withDraftFacts", () => {
   const history = [
     dish({ imageUrl: "https://cdn.example/smoothie.jpg" }),
     dish({
@@ -265,29 +295,59 @@ describe("withDraftPhotos", () => {
   ];
 
   it("fills a draft's photo from the same vendor's history", () => {
-    const [d] = withDraftPhotos(
+    const [d] = withDraftFacts(
       [draft({ name: "Almond Dream Smoothie" })], "v1", history,
     );
     expect(d.imageUrl).toBe("https://cdn.example/smoothie.jpg");
   });
   it("never borrows across vendors — same name, different food", () => {
-    const [d] = withDraftPhotos(
+    const [d] = withDraftFacts(
       [draft({ name: "Almond Dream Smoothie" })], "v3", history,
     );
     expect(d.imageUrl).toBeNull();
   });
   it("leaves a photo the draft already has alone", () => {
-    const [d] = withDraftPhotos(
+    const [d] = withDraftFacts(
       [draft({ name: "Almond Dream Smoothie", imageUrl: "https://cdn.example/mine.jpg" })],
       "v1", history,
     );
     expect(d.imageUrl).toBe("https://cdn.example/mine.jpg");
   });
+  it("fills every blank macro from the same dish's last delivery", () => {
+    // A repeat delivery is the same product. The panel it had is the panel it
+    // has, and a box saved before a field existed must still end up with it.
+    const [d] = withDraftFacts(
+      [{ ...emptyDraft(), name: "Almond Dream Smoothie" }], "v1", history,
+    );
+    expect(d).toMatchObject({
+      calories: "420", protein: "18", carbs: "48", fats: "12",
+      fiber: "7", sugars: "20", saturatedFat: "2.5", sodium: "310",
+      servingSize: "1 cup",
+    });
+  });
+
+  it("never argues with a figure already typed", () => {
+    const [d] = withDraftFacts(
+      [{ ...emptyDraft(), name: "Almond Dream Smoothie", carbs: "51" }], "v1", history,
+    );
+    expect(d.carbs).toBe("51");
+    expect(d.protein).toBe("18");
+  });
+
+  it("leaves blanks blank when history never knew the figure either", () => {
+    const [d] = withDraftFacts(
+      [{ ...emptyDraft(), name: "Almond Dream Smoothie" }],
+      "v1",
+      [dish({ sugars: null })],
+    );
+    expect(d.sugars).toBe("");
+  });
+
   it("hands back the very same list when it changes nothing", () => {
     // The screen runs this on every history change; a fresh array each time
     // would re-render the whole meal list for no reason.
     const rows = [draft({ name: "Unknown Dish" })];
-    expect(withDraftPhotos(rows, "v1", history)).toBe(rows);
+    expect(withDraftFacts(rows, "v1", history)).toBe(rows);
   });
 });
 
@@ -531,8 +591,12 @@ describe("draftsFromPayload — the saved box, back in the form that wrote it", 
     calories: 650,
     protein: 21,
     fiber: 13,
+    carbs: 65,
+    fats: 24,
+    sugars: 9,
     saturated_fat: 4.5,
     sodium: 620,
+    serving_size: "1 bowl",
     image_url: "https://cdn.example/ruby.jpg",
   };
 

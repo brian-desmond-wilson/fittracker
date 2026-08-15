@@ -60,6 +60,10 @@ export async function fetchDeliveryHistory(): Promise<DeliveryHistory> {
       calories: num(row.calories),
       protein: num(row.protein),
       fiber: num(row.fiber_g),
+      carbs: num(row.carbs),
+      fats: num(row.fats),
+      sugars: num(row.sugars),
+      servingSize: (row.serving_size as string | null) ?? null,
       saturatedFat: num(row.saturated_fat_g),
       sodium: num(row.sodium_mg),
       // The photo from the inventory row this dish last became. Lets a box that

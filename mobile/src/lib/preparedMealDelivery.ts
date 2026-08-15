@@ -28,9 +28,15 @@ export interface PreparedMealDraft {
   protein: string;
   fiber: string;
   /** Grams, as printed on the lid. */
+  carbs: string;
+  fats: string;
+  sugars: string;
   saturatedFat: string;
   /** Milligrams — the one figure on a delivery row that is not grams. */
   sodium: string;
+  /** What the numbers are per. Blank means "1 meal", which is what a
+   *  delivered lid means when it prints nothing. */
+  servingSize: string;
   /** The dish's picture, already at a URL the app owns — history, an upload,
    *  or a picked search result. Not a text input: this one is null or done. */
   imageUrl: string | null;
@@ -43,8 +49,12 @@ export interface DeliveryPayloadMeal {
   calories: number | null;
   protein: number | null;
   fiber: number | null;
+  carbs: number | null;
+  fats: number | null;
+  sugars: number | null;
   saturated_fat: number | null;
   sodium: number | null;
+  serving_size: string | null;
   /** `v_meal->>'image_url'` in the writer — lands on the inventory row and
    *  the saved food as their primary picture. */
   image_url: string | null;
@@ -64,8 +74,12 @@ export function emptyDraft(slot: MealType = "lunch"): PreparedMealDraft {
     calories: "",
     protein: "",
     fiber: "",
+    carbs: "",
+    fats: "",
+    sugars: "",
     saturatedFat: "",
     sodium: "",
+    servingSize: "",
     imageUrl: null,
   };
 }
@@ -116,7 +130,8 @@ export function validateDelivery(opts: {
       return `“${d.name.trim()}” needs a whole quantity of 1 or more.`;
     }
     for (const [label, raw] of [
-      ["Calories", d.calories], ["Protein", d.protein], ["Fiber", d.fiber],
+      ["Calories", d.calories], ["Protein", d.protein], ["Carbs", d.carbs],
+      ["Fats", d.fats], ["Fiber", d.fiber], ["Sugars", d.sugars],
       ["Saturated fat", d.saturatedFat], ["Sodium", d.sodium],
     ] as const) {
       if (raw.trim() !== "" && toNumber(raw) === null) {
@@ -151,8 +166,14 @@ export function toDeliveryPayload(
     calories: toNumber(d.calories),
     protein: toNumber(d.protein),
     fiber: toNumber(d.fiber),
+    carbs: toNumber(d.carbs),
+    fats: toNumber(d.fats),
+    sugars: toNumber(d.sugars),
     saturated_fat: toNumber(d.saturatedFat),
     sodium: toNumber(d.sodium),
+    // Blank means "the vendor did not say", which the writer reads as one
+    // meal — not as an empty string that would erase a serving already known.
+    serving_size: d.servingSize.trim() === "" ? null : d.servingSize.trim(),
     image_url: d.imageUrl,
   }));
 }
@@ -292,8 +313,12 @@ export function draftsFromPayload(
       calories: num(m.calories),
       protein: num(m.protein),
       fiber: num(m.fiber),
+      carbs: num(m.carbs),
+      fats: num(m.fats),
+      sugars: num(m.sugars),
       saturatedFat: num(m.saturated_fat),
       sodium: num(m.sodium),
+      servingSize: typeof m.serving_size === "string" ? m.serving_size : "",
       imageUrl: typeof m.image_url === "string" && m.image_url !== "" ? m.image_url : null,
     }));
   // Never an empty list, for the reason the screen's own remove button holds
@@ -335,8 +360,12 @@ export interface RecentDish {
   calories: number | null;
   protein: number | null;
   fiber: number | null;
+  carbs: number | null;
+  fats: number | null;
+  sugars: number | null;
   saturatedFat: number | null;
   sodium: number | null;
+  servingSize: string | null;
   /** The photo carried by the inventory row this dish last became. Null is the
    *  ordinary case for a dish nobody has photographed. */
   imageUrl: string | null;
@@ -416,8 +445,12 @@ export function draftFromRecent(dish: RecentDish): PreparedMealDraft {
     calories: num(dish.calories),
     protein: num(dish.protein),
     fiber: num(dish.fiber),
+    carbs: num(dish.carbs),
+    fats: num(dish.fats),
+    sugars: num(dish.sugars),
     saturatedFat: num(dish.saturatedFat),
     sodium: num(dish.sodium),
+    servingSize: dish.servingSize ?? "",
     // The photo from the last time this dish was delivered. Free recognition:
     // a repeat order never needs the search.
     imageUrl: dish.imageUrl,
@@ -438,39 +471,75 @@ export function dishesNeedingImages(
 }
 
 /**
- * Drafts with history's photo filled in wherever a draft has none.
+ * Drafts with anything they are missing filled in from this vendor's history.
  *
- * Run after a menu scan, and again whenever the history or the vendor lands —
- * a box saved before deliveries carried pictures has none in its payload, and
- * reopening it should show the food rather than a row of grey placeholders.
+ * A repeat dish is the SAME product, not a new one: a second box of Waldorf
+ * salad has the carbohydrate it had last time. So every blank on the row —
+ * photo, each macro, the serving size — takes the value the dish carried when
+ * it was last delivered.
+ *
+ * Only blanks. A figure already typed is the one in front of the person
+ * typing it, and a vendor that reformulates prints the new number on the new
+ * lid; history must never argue with either.
+ *
+ * Run after a menu scan, and again whenever the history or the vendor lands,
+ * which is what backfills a box saved before some of these fields existed.
  *
  * Same one-vendor scoping as `withDishPhotos`, and for the same reason: two
- * subscriptions can both sell a "Chicken Salad", and a wrong photo is worse
- * than none because a photo is a claim about what is in the box.
+ * subscriptions can both sell a "Chicken Salad", and borrowing across them
+ * would put one dish's numbers on another's name.
  *
  * Returns the SAME array when it changes nothing, so a caller can run it on
  * every history change without handing React a new list each time.
  */
-export function withDraftPhotos(
+export function withDraftFacts(
   drafts: readonly PreparedMealDraft[],
   vendorId: string,
   history: readonly RecentDish[],
 ): PreparedMealDraft[] {
-  const photos = new Map<string, string>();
+  const known = new Map<string, RecentDish>();
   for (const seen of history) {
-    if (seen.vendorId !== vendorId || !seen.imageUrl) continue;
+    if (seen.vendorId !== vendorId) continue;
     const slug = seen.slug || dishSlug(seen.name);
-    if (slug === "" || photos.has(slug)) continue;
-    photos.set(slug, seen.imageUrl);
+    // First wins: the history arrives newest-first, and the newest sighting of
+    // a dish is the one whose numbers are current.
+    if (slug === "" || known.has(slug)) continue;
+    known.set(slug, seen);
   }
+
+  const num = (n: number | null) => (n == null ? "" : String(n));
 
   let changed = false;
   const next = drafts.map((d) => {
-    if (d.imageUrl != null) return d;
-    const found = photos.get(dishSlug(d.name));
-    if (!found) return d;
+    const seen = known.get(dishSlug(d.name));
+    if (!seen) return d;
+
+    const filled: PreparedMealDraft = { ...d };
+    let touched = false;
+    const fill = (key: keyof PreparedMealDraft, value: string) => {
+      if (value === "" || filled[key] !== "") return;
+      (filled[key] as string) = value;
+      touched = true;
+    };
+
+    fill("calories", num(seen.calories));
+    fill("protein", num(seen.protein));
+    fill("carbs", num(seen.carbs));
+    fill("fats", num(seen.fats));
+    fill("fiber", num(seen.fiber));
+    fill("sugars", num(seen.sugars));
+    fill("saturatedFat", num(seen.saturatedFat));
+    fill("sodium", num(seen.sodium));
+    fill("servingSize", seen.servingSize ?? "");
+
+    if (d.imageUrl == null && seen.imageUrl) {
+      filled.imageUrl = seen.imageUrl;
+      touched = true;
+    }
+
+    if (!touched) return d;
     changed = true;
-    return { ...d, imageUrl: found };
+    return filled;
   });
   return changed ? next : (drafts as PreparedMealDraft[]);
 }
