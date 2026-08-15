@@ -13,9 +13,11 @@ import {
   recentCounts,
   removeRecent,
   sortDishesForMenu,
+  dishesNeedingImages,
   toDeliveryPayload,
   validateDelivery,
   withDishPhotos,
+  withDraftPhotos,
   DELIVERY_SLOTS,
   type PreparedMealDraft,
   type RecentDish,
@@ -129,6 +131,7 @@ describe("toDeliveryPayload", () => {
       {
         name: "Ruby Rice Bowl", slot: "lunch", quantity: 1,
         calories: 650, protein: 21, fiber: 13, saturated_fat: 4.5, sodium: 620,
+        image_url: null,
       },
     ]);
   });
@@ -215,6 +218,52 @@ describe("draftFromRecent", () => {
   });
   it("leaves a macro blank where the history never knew it", () => {
     expect(draftFromRecent(dish({ fiber: null })).fiber).toBe("");
+  });
+  it("carries the photo from the last delivery", () => {
+    expect(draftFromRecent(dish({ imageUrl: "https://cdn.example/a.jpg" })).imageUrl)
+      .toBe("https://cdn.example/a.jpg");
+    expect(draftFromRecent(dish()).imageUrl).toBeNull();
+  });
+});
+
+describe("withDraftPhotos", () => {
+  const history = [
+    dish({ imageUrl: "https://cdn.example/smoothie.jpg" }),
+    dish({
+      vendorId: "v2", slug: "almond-dream-smoothie",
+      imageUrl: "https://cdn.example/impostor.jpg",
+    }),
+  ];
+
+  it("fills a draft's photo from the same vendor's history", () => {
+    const [d] = withDraftPhotos(
+      [draft({ name: "Almond Dream Smoothie" })], "v1", history,
+    );
+    expect(d.imageUrl).toBe("https://cdn.example/smoothie.jpg");
+  });
+  it("never borrows across vendors — same name, different food", () => {
+    const [d] = withDraftPhotos(
+      [draft({ name: "Almond Dream Smoothie" })], "v3", history,
+    );
+    expect(d.imageUrl).toBeNull();
+  });
+  it("leaves a photo the draft already has alone", () => {
+    const [d] = withDraftPhotos(
+      [draft({ name: "Almond Dream Smoothie", imageUrl: "https://cdn.example/mine.jpg" })],
+      "v1", history,
+    );
+    expect(d.imageUrl).toBe("https://cdn.example/mine.jpg");
+  });
+});
+
+describe("dishesNeedingImages", () => {
+  it("lists named rows without a picture, and only those", () => {
+    const rows = [
+      draft({ name: "Pictured", imageUrl: "https://cdn.example/p.jpg" }),
+      draft({ name: "Bare" }),
+      emptyDraft(),
+    ];
+    expect(dishesNeedingImages(rows)).toEqual([{ key: rows[1].key, name: "Bare" }]);
   });
 });
 
@@ -439,6 +488,7 @@ describe("draftsFromPayload — the saved box, back in the form that wrote it", 
     fiber: 13,
     saturated_fat: 4.5,
     sodium: 620,
+    image_url: "https://cdn.example/ruby.jpg",
   };
 
   it("maps every field, including the three the database spells differently", () => {

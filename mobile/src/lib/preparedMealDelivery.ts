@@ -31,6 +31,9 @@ export interface PreparedMealDraft {
   saturatedFat: string;
   /** Milligrams — the one figure on a delivery row that is not grams. */
   sodium: string;
+  /** The dish's picture, already at a URL the app owns — history, an upload,
+   *  or a picked search result. Not a text input: this one is null or done. */
+  imageUrl: string | null;
 }
 
 export interface DeliveryPayloadMeal {
@@ -42,6 +45,9 @@ export interface DeliveryPayloadMeal {
   fiber: number | null;
   saturated_fat: number | null;
   sodium: number | null;
+  /** `v_meal->>'image_url'` in the writer — lands on the inventory row and
+   *  the saved food as their primary picture. */
+  image_url: string | null;
 }
 
 let draftSeq = 0;
@@ -60,6 +66,7 @@ export function emptyDraft(slot: MealType = "lunch"): PreparedMealDraft {
     fiber: "",
     saturatedFat: "",
     sodium: "",
+    imageUrl: null,
   };
 }
 
@@ -146,6 +153,7 @@ export function toDeliveryPayload(
     fiber: toNumber(d.fiber),
     saturated_fat: toNumber(d.saturatedFat),
     sodium: toNumber(d.sodium),
+    image_url: d.imageUrl,
   }));
 }
 
@@ -286,6 +294,7 @@ export function draftsFromPayload(
       fiber: num(m.fiber),
       saturatedFat: num(m.saturated_fat),
       sodium: num(m.sodium),
+      imageUrl: typeof m.image_url === "string" && m.image_url !== "" ? m.image_url : null,
     }));
   // Never an empty list, for the reason the screen's own remove button holds
   // the same invariant: a form with no row has nothing to type into.
@@ -383,7 +392,51 @@ export function draftFromRecent(dish: RecentDish): PreparedMealDraft {
     fiber: num(dish.fiber),
     saturatedFat: num(dish.saturatedFat),
     sodium: num(dish.sodium),
+    // The photo from the last time this dish was delivered. Free recognition:
+    // a repeat order never needs the search.
+    imageUrl: dish.imageUrl,
   };
+}
+
+/**
+ * The dishes a fresh menu scan should search the web for: named, but with no
+ * picture from history. Keyed back by draft key so the screen can file each
+ * result set against the row it belongs to.
+ */
+export function dishesNeedingImages(
+  drafts: readonly PreparedMealDraft[],
+): Array<{ key: string; name: string }> {
+  return namedDrafts(drafts)
+    .filter((d) => d.imageUrl == null)
+    .map((d) => ({ key: d.key, name: d.name.trim() }));
+}
+
+/**
+ * Drafts with history's photo filled in wherever a draft has none — what a
+ * menu scan runs right after replacing the rows, so a repeat dish shows its
+ * picture before any search is needed.
+ *
+ * Same one-vendor scoping as `withDishPhotos`, and for the same reason: two
+ * subscriptions can both sell a "Chicken Salad", and a wrong photo is worse
+ * than none because a photo is a claim about what is in the box.
+ */
+export function withDraftPhotos(
+  drafts: readonly PreparedMealDraft[],
+  vendorId: string,
+  history: readonly RecentDish[],
+): PreparedMealDraft[] {
+  const photos = new Map<string, string>();
+  for (const seen of history) {
+    if (seen.vendorId !== vendorId || !seen.imageUrl) continue;
+    const slug = seen.slug || dishSlug(seen.name);
+    if (slug === "" || photos.has(slug)) continue;
+    photos.set(slug, seen.imageUrl);
+  }
+  return drafts.map((d) =>
+    d.imageUrl == null
+      ? { ...d, imageUrl: photos.get(dishSlug(d.name)) ?? null }
+      : d,
+  );
 }
 
 /**
