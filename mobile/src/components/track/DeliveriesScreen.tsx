@@ -19,7 +19,7 @@
 // read is also the tick that lets food arrive.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, RefreshControl, ScrollView, StatusBar, StyleSheet, Text,
+  Alert, Animated, RefreshControl, StatusBar, StyleSheet, Text,
   TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -65,6 +65,11 @@ const SLOT_LABELS: Record<MealType, string> = {
   snack: "Snack",
   dessert: "Dessert",
 };
+
+/** Height of the condensed bar that stands in for the header once you scroll.
+ *  The same 48 the other three Nutrition pages use, so the four collapse to the
+ *  same line. */
+const SLIM_BAR_HEIGHT = 48;
 
 /** "Thu, Aug 20" — a use-by is days away, so the weekday earns its place and
  *  the year does not. */
@@ -161,6 +166,48 @@ export function DeliveriesScreen({
     setRefreshing(true);
     load();
   };
+
+  // ── Collapsing header, the mechanism the other three Nutrition pages share ─
+  //
+  // Transform only, never height: `useNativeDriver` cannot animate height, and
+  // a JS-driven height is where scroll jank comes from. The header band and the
+  // scroll view translate by the same amount, and the scroll view is extended
+  // past the bottom edge by that distance, so the cards gain the space rather
+  // than dragging a gap up behind them.
+  //
+  // What is left behind is the condensed bar: Back and the + button have to
+  // survive the collapse, because a page you have scrolled is a page you may
+  // want to leave or add to without scrolling back first.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [collapsibleHeight, setCollapsibleHeight] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
+  const collapseDistance = Math.max(0, collapsibleHeight - SLIM_BAR_HEIGHT);
+  const headerTranslate = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [0, collapseDistance],
+        outputRange: [0, -collapseDistance],
+        extrapolate: "clamp",
+      })
+    : 0;
+  // Fades in over the back half of the travel, so the bar arrives just as the
+  // rows it replaces finish disappearing behind it.
+  const slimBarOpacity = collapseDistance > 0
+    ? scrollY.interpolate({
+        inputRange: [collapseDistance / 2, collapseDistance],
+        outputRange: [0, 1],
+        extrapolate: "clamp",
+      })
+    : 0;
+  // The bar must not swallow taps while it is invisible. One boolean flipped at
+  // the threshold — not a per-frame state update.
+  useEffect(() => {
+    if (collapseDistance <= 0) return;
+    const id = scrollY.addListener(({ value }) => {
+      const next = value >= collapseDistance - 1;
+      setCollapsed((prev) => (prev === next ? prev : next));
+    });
+    return () => scrollY.removeListener(id);
+  }, [collapseDistance, scrollY]);
 
   // Calling one off is not an undo — nothing was written to unwind — so it asks
   // plainly and then the box simply stops waiting. Same words as the inventory
@@ -267,27 +314,33 @@ export function DeliveriesScreen({
       <StatusBar barStyle="light-content" />
       <View style={[s.container, { paddingTop: insets.top }]}>
         {/* Two rows, like every other Nutrition page: chrome above a rule, then
-            the page's own glyph and name below it. The others carry a search
-            field in the chrome row; this one does not, because a page holding
-            one box and two vendors has nothing to search — the same reason its
-            vendor rows carry no chevron. */}
-        <View style={s.header}>
-          <TouchableOpacity
-            onPress={onClose}
-            style={s.back}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
-          </TouchableOpacity>
-          <View style={s.headerSpacer} />
-          <IconButton icon={Plus} onPress={onNewDelivery} accessibilityLabel="Log a delivery" />
-        </View>
+            the page's own glyph and name below it. Both stand down together as
+            you scroll, which is what `onLayout` is measuring. The others carry
+            a search field in the chrome row; this one does not, because a page
+            holding one box and two vendors has nothing to search — the same
+            reason its vendor rows carry no chevron. */}
+        <Animated.View
+          onLayout={(e) => setCollapsibleHeight(e.nativeEvent.layout.height)}
+          style={{ transform: [{ translateY: headerTranslate }] }}
+        >
+          <View style={s.header}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={s.back}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
+              <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
+            </TouchableOpacity>
+            <View style={s.headerSpacer} />
+            <IconButton icon={Plus} onPress={onNewDelivery} accessibilityLabel="Log a delivery" />
+          </View>
 
-        <View style={s.titleRow}>
-          <Truck size={icons.xl} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
-          <Text style={s.pageTitle}>Deliveries</Text>
-        </View>
+          <View style={s.titleRow}>
+            <Truck size={icons.xl} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
+            <Text style={s.pageTitle}>Deliveries</Text>
+          </View>
+        </Animated.View>
 
         {loading ? (
           <LoadingState label="Loading deliveries..." />
@@ -301,8 +354,21 @@ export function DeliveriesScreen({
         ) : (
           <>
             <RefreshIndicator visible={refreshing} />
-            <ScrollView
-              style={s.scroll}
+            <Animated.ScrollView
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                { useNativeDriver: true },
+              )}
+              scrollEventThrottle={16}
+              // Rides up with the header, and is extended below the screen edge
+              // by exactly the collapse distance so the cards gain that space.
+              style={[
+                s.scroll,
+                { marginBottom: -collapseDistance, transform: [{ translateY: headerTranslate }] },
+              ]}
+              // No collapse distance in here: the negative margin above already
+              // grew the frame by exactly that much, and paying for it twice
+              // would leave dead space to scroll past at the bottom.
               contentContainerStyle={[
                 s.scrollContent,
                 { paddingBottom: insets.bottom + spacing.xxl },
@@ -361,10 +427,39 @@ export function DeliveriesScreen({
                   </Text>
                 </>
               )}
-            </ScrollView>
+            </Animated.ScrollView>
           </>
         )}
       </View>
+
+      {/* Condensed bar — a sibling of the container, so `top: 0` is the true
+          top of the screen rather than the top of the padded content. Carries
+          the two controls the collapse takes away, and nothing else: there is
+          no search to condense and no filters to keep reachable. */}
+      <Animated.View
+        style={[s.slimBar, { paddingTop: insets.top, opacity: slimBarOpacity }]}
+        pointerEvents={collapsed ? "auto" : "none"}
+      >
+        <View style={s.slimBarRow}>
+          <TouchableOpacity
+            onPress={onClose}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <ChevronLeft size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+          <Text style={s.slimBarTitle} numberOfLines={1}>Deliveries</Text>
+          <TouchableOpacity
+            onPress={onNewDelivery}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Log a delivery"
+          >
+            <Plus size={icons.md} color={colors.brand} strokeWidth={icons.strokeWidth} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </>
   );
 }
@@ -391,6 +486,18 @@ const s = StyleSheet.create({
     paddingTop: spacing.xxl, paddingBottom: spacing.lg,
   },
   pageTitle: { ...typography.titleRoot, color: colors.text },
+
+  slimBar: {
+    position: "absolute", top: 0, left: 0, right: 0,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  slimBarRow: {
+    height: SLIM_BAR_HEIGHT,
+    flexDirection: "row", alignItems: "center", gap: spacing.lg,
+    paddingHorizontal: spacing.screenGutter,
+  },
+  slimBarTitle: { ...typography.titleBar, color: colors.text, flex: 1 },
 
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: spacing.screenGutter },
