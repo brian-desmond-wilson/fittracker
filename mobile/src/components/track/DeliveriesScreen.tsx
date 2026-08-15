@@ -37,7 +37,7 @@ import {
   orderVendorsByUse, sortDishesForMenu, type VendorUse,
 } from "@/src/lib/preparedMealDelivery";
 import { formatArrival, formatDayLabel } from "@/src/lib/dates";
-import { monogram } from "@/src/lib/vendorMonogram";
+import { VendorMark } from "@/src/components/track/delivery/VendorMark";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import type { MealType } from "@/src/types/track";
 
@@ -53,6 +53,7 @@ interface DeliveriesScreenProps {
 interface VendorRow {
   id: string;
   name: string;
+  logoUrl: string | null;
   use: VendorUse;
 }
 
@@ -112,7 +113,7 @@ export function DeliveriesScreen({
         // Every vendor, not just the active ones: a vendor you have stopped
         // using still delivered the six boxes it is credited with, and dropping
         // it would make the section disagree with its own history.
-        supabase.from("nutrition_vendors").select("id, name").order("display_order"),
+        supabase.from("nutrition_vendors").select("id, name, logo_url").order("display_order"),
       ]);
       if (generation !== generationRef.current) return;
 
@@ -122,14 +123,20 @@ export function DeliveriesScreen({
         console.error("deliveries vendor fetch failed:", vendorResult.error);
         setVendors([]);
       } else {
+        type VendorRecord = { id: string; name: string; logo_url: string | null };
         const named = new Map(
-          ((vendorResult.data ?? []) as { id: string; name: string }[]).map((v) => [v.id, v]),
+          ((vendorResult.data ?? []) as VendorRecord[]).map((v) => [v.id, v]),
         );
         // Only vendors that have actually delivered — that is what the section
         // says about itself in its own footnote.
         const delivered = history.vendorUse
           .filter((u) => named.has(u.vendorId))
-          .map((u) => ({ id: u.vendorId, name: named.get(u.vendorId)!.name, use: u }));
+          .map((u) => ({
+            id: u.vendorId,
+            name: named.get(u.vendorId)!.name,
+            logoUrl: named.get(u.vendorId)!.logo_url ?? null,
+            use: u,
+          }));
         setVendors(orderVendorsByUse(delivered, history.vendorUse));
       }
     } catch (e) {
@@ -249,9 +256,7 @@ export function DeliveriesScreen({
     return (
       <Card key={row.id} variant="panel" style={s.box}>
         <View style={s.boxHead}>
-          <View style={s.disc}>
-            <Text style={s.discText}>{monogram(vendorName)}</Text>
-          </View>
+          <VendorMark name={vendorName} logoUrl={row.vendorLogoUrl} />
           <Text style={s.vendorName} numberOfLines={1}>{vendorName}</Text>
           <Badge tone="deliveries" label="Scheduled" />
         </View>
@@ -405,9 +410,7 @@ export function DeliveriesScreen({
                   <Text style={[s.section, s.sectionSpaced]}>VENDORS</Text>
                   {vendors.map((v) => (
                     <Card key={v.id} variant="row" style={s.vendorRow}>
-                      <View style={s.disc}>
-                        <Text style={s.discText}>{monogram(v.name)}</Text>
-                      </View>
+                      <VendorMark name={v.name} logoUrl={v.logoUrl} />
                       <View style={s.vendorText}>
                         <Text style={s.vendorRowName} numberOfLines={1}>{v.name}</Text>
                         <Text style={s.vendorRowUse}>
@@ -464,8 +467,6 @@ export function DeliveriesScreen({
   );
 }
 
-const DISC = 34;
-
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   // Byte-for-byte the header the inventory, library and fuel pages use, so the
@@ -507,15 +508,6 @@ const s = StyleSheet.create({
   // ── A box on the way ────────────────────────────────────────────────────
   box: { marginBottom: spacing.xl },
   boxHead: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  // The vendor picker's mark, same treatment: a white disc because logos are
-  // drawn for light grounds, and the monogram is what a vendor without one
-  // gets there too.
-  disc: {
-    width: DISC, height: DISC, borderRadius: radii.pill,
-    alignItems: "center", justifyContent: "center",
-    backgroundColor: colors.imageWell,
-  },
-  discText: { ...typography.rowTitle, fontSize: 14, color: colors.textFaint },
   vendorName: { ...typography.rowTitle, color: colors.text, flex: 1 },
 
   arrival: {

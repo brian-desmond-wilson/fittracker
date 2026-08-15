@@ -70,6 +70,9 @@ export interface PendingDelivery {
   id: string;
   vendorId: string;
   vendorName: string | null;
+  /** The vendor's brand mark. Null falls back to a monogram, and so does a URL
+   *  that fails to load — see `VendorMark`. */
+  vendorLogoUrl: string | null;
   /** ISO instant. */
   arrivesAt: string;
   useBy: string;
@@ -84,17 +87,18 @@ export interface PendingDelivery {
 }
 
 // The embedded vendor row comes back as an object or an array depending on how
-// PostgREST reads the relationship; neither shape is worth trusting blind.
-const embeddedVendorName = (embedded: unknown): string | null => {
+// PostgREST reads the relationship; neither shape is worth trusting blind, and
+// nor is the type of anything inside it.
+const embeddedText = (embedded: unknown, field: string): string | null => {
   const row = Array.isArray(embedded) ? embedded[0] : embedded;
-  const name = (row as { name?: unknown } | null)?.name;
-  return typeof name === "string" ? name : null;
+  const value = (row as Record<string, unknown> | null)?.[field];
+  return typeof value === "string" ? value : null;
 };
 
 export async function fetchPendingDeliveries(): Promise<PendingDelivery[]> {
   const { data, error } = await supabase
     .from("pending_prepared_meal_deliveries")
-    .select("id, vendor_id, arrives_at, use_by, meals, nutrition_vendors(name)")
+    .select("id, vendor_id, arrives_at, use_by, meals, nutrition_vendors(name, logo_url)")
     .order("arrives_at");
   if (error) throw error;
   return ((data ?? []) as any[]).map((r) => {
@@ -102,7 +106,8 @@ export async function fetchPendingDeliveries(): Promise<PendingDelivery[]> {
     return {
       id: r.id as string,
       vendorId: r.vendor_id as string,
-      vendorName: embeddedVendorName(r.nutrition_vendors),
+      vendorName: embeddedText(r.nutrition_vendors, "name"),
+      vendorLogoUrl: embeddedText(r.nutrition_vendors, "logo_url"),
       arrivesAt: r.arrives_at as string,
       useBy: r.use_by as string,
       mealCount: mealsInDishes(dishes),
