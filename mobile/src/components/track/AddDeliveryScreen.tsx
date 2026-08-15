@@ -25,7 +25,7 @@ import { MealEditorSheet, IDLE_SEARCH, type DishSearchState } from "@/src/compon
 import { MealRowCompact } from "@/src/components/track/delivery/MealRowCompact";
 import { RecentDishes } from "@/src/components/track/delivery/RecentDishes";
 import { supabase } from "@/src/lib/supabase";
-import { formatArrival, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
+import { formatArrival, formatDayLabel, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import {
   savePreparedMealDelivery, updatePendingDelivery,
   type PendingDeliveryDraft,
@@ -57,6 +57,10 @@ import type { MealType } from "@/src/types/track";
  * a card vanishes from the Deliveries page without the user cancelling it.
  */
 export type DeliverySaveStatus = "delivered" | "scheduled" | "due";
+
+/** Matches the Deliveries card's use-by line, so the date a box is saved with
+ *  reads the same as the date it is listed with. */
+const USE_BY_LABEL = { weekday: "short", month: "short", day: "numeric" } as const;
 
 interface AddDeliveryScreenProps {
   onClose: () => void;
@@ -516,7 +520,13 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
                     accessibilityLabel="Choose the use-by date"
                   >
                     <Calendar size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-                    <Text style={styles.dateText} numberOfLines={1}>{useBy}</Text>
+                    {/* The same words the Deliveries card uses for this date.
+                        A stored `YYYY-MM-DD` is for the database to read; the
+                        day of the week is what tells you whether the box will
+                        still be good by then. */}
+                    <Text style={styles.dateText} numberOfLines={1}>
+                      {formatDayLabel(useBy, USE_BY_LABEL)}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
