@@ -37,7 +37,7 @@ import {
   orderVendorsByUse, sortDishesForMenu, type VendorUse,
 } from "@/src/lib/preparedMealDelivery";
 import { formatArrival, formatDayLabel } from "@/src/lib/dates";
-import { VendorMark } from "@/src/components/track/delivery/VendorMark";
+import { VendorMark } from "@/src/components/track/VendorMark";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import type { MealType } from "@/src/types/track";
 

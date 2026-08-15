@@ -7,12 +7,12 @@
 //
 // Horizontal scroll rather than wrap, so adding a sixth vendor lengthens the
 // row instead of reflowing the form.
-import React, { useState } from "react";
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import React from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ban } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import type { NutritionVendor } from "@/src/types/nutrition-preferences";
-import { monogram } from "@/src/lib/vendorMonogram";
+import { VendorMark } from "@/src/components/track/VendorMark";
 
 interface VendorTilesProps {
   vendors: NutritionVendor[];
@@ -35,11 +35,6 @@ function VendorTile({
   logoUrl?: string | null;
   inactive?: boolean;
 }) {
-  // A logo that 404s or times out must not leave a blank disc — fall back to
-  // the monogram, which is what a vendor with no logo gets anyway.
-  const [failed, setFailed] = useState(false);
-  const showLogo = !!logoUrl && !failed;
-
   return (
     <TouchableOpacity
       style={styles.tile}
@@ -48,18 +43,17 @@ function VendorTile({
       accessibilityState={{ selected }}
       accessibilityLabel={inactive ? `${label} (inactive)` : label}
     >
-      <View style={[styles.disc, selected && styles.discSelected]}>
-        {showLogo ? (
-          <Image
-            source={{ uri: logoUrl as string }}
-            style={styles.logo}
-            resizeMode="contain"
-            onError={() => setFailed(true)}
-          />
-        ) : (
-          <Text style={styles.monogram}>{monogram(label)}</Text>
-        )}
-      </View>
+      {/* The disc, its logo and the monogram it falls back to all live in
+          `VendorMark` — the same mark the Deliveries page draws, so a vendor
+          picked here looks like the box it later sends. This tile owns only
+          what is picker-specific: the ring and the label beneath. */}
+      <VendorMark
+        name={label}
+        logoUrl={logoUrl}
+        size={TILE}
+        ring={selected ? colors.brand : "transparent"}
+        monogramSize={typography.rowTitle.fontSize}
+      />
       <Text
         style={[styles.label, selected && styles.labelSelected]}
         numberOfLines={2}
@@ -93,7 +87,10 @@ export function VendorTiles({
           accessibilityState={{ selected: selectedId === null }}
           accessibilityLabel="No preferred vendor"
         >
-          <View style={[styles.disc, styles.discNone, selectedId === null && styles.discSelected]}>
+          {/* Not a `VendorMark`: there is no vendor here, and no logo or letter
+              to fall back to. A neutral disc, so it never competes with a real
+              mark — hence its own geometry rather than the shared one. */}
+          <View style={[styles.noneDisc, selectedId === null && styles.noneDiscSelected]}>
             <Ban size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
           </View>
           <Text
@@ -122,18 +119,14 @@ export function VendorTiles({
 const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: spacing.lg, paddingVertical: spacing.sm, paddingRight: spacing.lg },
   tile: { width: 76, alignItems: "center", gap: spacing.sm },
-  disc: {
+  noneDisc: {
     width: TILE, height: TILE, borderRadius: radii.pill,
     alignItems: "center", justifyContent: "center",
-    backgroundColor: colors.imageWell,  // logos are drawn for light grounds
+    backgroundColor: colors.surface2,
+    // Transparent rather than absent, so selecting it does not resize the disc.
     borderWidth: 2, borderColor: "transparent",
-    overflow: "hidden",
   },
-  discNone: { backgroundColor: colors.surface2 },
-  // The ring, not a fill: a filled disc would hide the logo that identifies it.
-  discSelected: { borderColor: colors.brand },
-  logo: { width: TILE - spacing.lg, height: TILE - spacing.lg },
-  monogram: { ...typography.rowTitle, color: colors.textFaint },
+  noneDiscSelected: { borderColor: colors.brand },
   label: { ...typography.caption, color: colors.textMuted, textAlign: "center" },
   labelSelected: { color: colors.brand, fontWeight: "600" },
 });
