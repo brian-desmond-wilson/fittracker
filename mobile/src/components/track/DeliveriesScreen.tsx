@@ -266,6 +266,11 @@ export function DeliveriesScreen({
     <>
       <StatusBar barStyle="light-content" />
       <View style={[s.container, { paddingTop: insets.top }]}>
+        {/* Two rows, like every other Nutrition page: chrome above a rule, then
+            the page's own glyph and name below it. The others carry a search
+            field in the chrome row; this one does not, because a page holding
+            one box and two vendors has nothing to search — the same reason its
+            vendor rows carry no chevron. */}
         <View style={s.header}>
           <TouchableOpacity
             onPress={onClose}
@@ -275,10 +280,13 @@ export function DeliveriesScreen({
           >
             <ChevronLeft size={icons.lg} color={colors.text} strokeWidth={icons.strokeWidth} />
           </TouchableOpacity>
-          <Truck size={icons.lg} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
-          <Text style={s.title}>Deliveries</Text>
           <View style={s.headerSpacer} />
           <IconButton icon={Plus} onPress={onNewDelivery} accessibilityLabel="Log a delivery" />
+        </View>
+
+        <View style={s.titleRow}>
+          <Truck size={icons.xl} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
+          <Text style={s.pageTitle}>Deliveries</Text>
         </View>
 
         {loading ? (
@@ -365,16 +373,27 @@ const DISC = 34;
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  // Byte-for-byte the header the inventory, library and fuel pages use, so the
+  // four read as one set: same gutter, same 12pt band, same rule beneath.
   header: {
-    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
     paddingHorizontal: spacing.screenGutter, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  back: { paddingRight: spacing.xs },
-  title: { ...typography.titleRoot, fontSize: 24, color: colors.text },
+  back: { padding: spacing.xs },
   headerSpacer: { flex: 1 },
+  // Likewise the title band. `icons.xl` glyph and `titleRoot` are what the
+  // library and fuel pages set; the inventory page's 26pt glyph is the odd one
+  // out, not the rule.
+  titleRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.xxl, paddingBottom: spacing.lg,
+  },
+  pageTitle: { ...typography.titleRoot, color: colors.text },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.screenGutter, paddingTop: spacing.sm },
+  scrollContent: { paddingHorizontal: spacing.screenGutter },
   section: { ...typography.section, marginBottom: spacing.md },
   sectionSpaced: { marginTop: spacing.lg },
 
