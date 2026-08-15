@@ -379,6 +379,32 @@ export function orderVendorsByUse<T extends { id: string }>(
     .map((entry) => entry.v);
 }
 
+/**
+ * The dishes matching what has been typed, in the order they came in.
+ *
+ * Every word of the query must appear somewhere in the name, in any order, so
+ * "chicken salad" finds "Sweet Sorghum Salad with Pulled Chicken" — which a
+ * plain substring test would miss, and which is exactly how somebody half
+ * remembers a dish they ate a fortnight ago.
+ *
+ * Folded through `dishSlug` on both sides, so punctuation and case cannot make
+ * a dish unfindable: typing "pbj" finds "PB & J Bowl".
+ */
+export function filterRecentDishes(
+  dishes: readonly RecentDish[],
+  query: string,
+): RecentDish[] {
+  const words = dishSlug(query).split("-").filter((w) => w !== "");
+  if (words.length === 0) return [...dishes];
+  return dishes.filter((dish) => {
+    const name = dishSlug(dish.name);
+    // Also matched against the name with its separators removed, so a word
+    // typed without them still lands: "pbj" against "PB & J Bowl".
+    const runTogether = name.replace(/-/g, "");
+    return words.every((word) => name.includes(word) || runTogether.includes(word));
+  });
+}
+
 /** A row prefilled from a dish that has come before. Blank where the history
  *  is blank — a macro nobody ever typed is not zero. */
 export function draftFromRecent(dish: RecentDish): PreparedMealDraft {

@@ -552,6 +552,7 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
                 <RecentDishes
                   dishes={vendorRecents}
                   counts={counts}
+                  vendorName={vendorName}
                   onAdd={addDish}
                   onRemove={removeDish}
                 />

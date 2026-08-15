@@ -14,6 +14,7 @@ import {
   removeRecent,
   sortDishesForMenu,
   dishesNeedingImages,
+  filterRecentDishes,
   toDeliveryPayload,
   validateDelivery,
   withDishPhotos,
@@ -202,6 +203,34 @@ describe("orderVendorsByUse", () => {
   });
   it("changes nothing when there is no history at all", () => {
     expect(orderVendorsByUse(vendors, []).map((v) => v.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("filterRecentDishes", () => {
+  const menu = [
+    dish({ slug: "almond-dream-smoothie", name: "Almond Dream Smoothie" }),
+    dish({ slug: "sweet-sorghum-salad", name: "Sweet Sorghum Salad with Pulled Chicken" }),
+    dish({ slug: "pb-j-bowl", name: "PB & J Bowl" }),
+  ];
+  const names = (q: string) => filterRecentDishes(menu, q).map((d) => d.name);
+
+  it("returns everything when nothing has been typed", () => {
+    expect(filterRecentDishes(menu, "   ")).toHaveLength(3);
+  });
+  it("matches part of a name", () => {
+    expect(names("smoo")).toEqual(["Almond Dream Smoothie"]);
+  });
+  it("ignores case", () => {
+    expect(names("ALMOND")).toEqual(["Almond Dream Smoothie"]);
+  });
+  it("matches words in any order, which is how a dish is half remembered", () => {
+    expect(names("chicken salad")).toEqual(["Sweet Sorghum Salad with Pulled Chicken"]);
+  });
+  it("sees through punctuation in the name", () => {
+    expect(names("pbj")).toEqual(["PB & J Bowl"]);
+  });
+  it("requires every word, not just one", () => {
+    expect(names("smoothie chicken")).toEqual([]);
   });
 });
 
