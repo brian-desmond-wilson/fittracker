@@ -206,6 +206,43 @@ export function mealsInDishes(dishes: readonly PendingDish[]): number {
   return dishes.reduce((sum, d) => sum + d.quantity, 0);
 }
 
+/** A dish with whatever picture the app can find of it. */
+export interface PendingDishWithPhoto extends PendingDish {
+  imageUrl: string | null;
+}
+
+/**
+ * Give each dish in a waiting box the photo from the last time that dish was
+ * delivered.
+ *
+ * A pending delivery is a payload, not stock: it carries names and numbers and
+ * has never had a picture. But a subscription rotates a fixed menu, so most of
+ * what is coming has been here before and left an inventory row behind with a
+ * photo on it — the delivery history view surfaces the newest one per dish.
+ * Nothing is copied or written; the card simply borrows the URL.
+ *
+ * Matched on the same name fold the database uses, and scoped to ONE VENDOR.
+ * Two subscriptions both send a "Chicken Salad" and they are not the same food:
+ * a wrong photo is worse than no photo, because a photo is a claim about what
+ * is in the box.
+ */
+export function withDishPhotos(
+  dishes: readonly PendingDish[],
+  vendorId: string,
+  history: readonly RecentDish[],
+): PendingDishWithPhoto[] {
+  const photos = new Map<string, string>();
+  for (const seen of history) {
+    if (seen.vendorId !== vendorId || !seen.imageUrl) continue;
+    // The view's own slug when it has one, the client's fold when it does not —
+    // the same precedence `addRecent` uses.
+    const slug = seen.slug || dishSlug(seen.name);
+    if (slug === "" || photos.has(slug)) continue;
+    photos.set(slug, seen.imageUrl);
+  }
+  return dishes.map((d) => ({ ...d, imageUrl: photos.get(dishSlug(d.name)) ?? null }));
+}
+
 /**
  * Through the day — breakfast, lunch, dinner, snack, dessert — rather than by
  * name, so a box reads as a menu for the week, which is how its owner thinks
@@ -291,6 +328,9 @@ export interface RecentDish {
   fiber: number | null;
   saturatedFat: number | null;
   sodium: number | null;
+  /** The photo carried by the inventory row this dish last became. Null is the
+   *  ordinary case for a dish nobody has photographed. */
+  imageUrl: string | null;
   /** Local YYYY-MM-DD of the last delivery that contained it. */
   lastDeliveredOn: string;
 }

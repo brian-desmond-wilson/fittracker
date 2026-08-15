@@ -62,6 +62,9 @@ export async function fetchDeliveryHistory(): Promise<DeliveryHistory> {
       fiber: num(row.fiber_g),
       saturatedFat: num(row.saturated_fat_g),
       sodium: num(row.sodium_mg),
+      // The photo from the inventory row this dish last became. Lets a box that
+      // has not arrived show what is in it; nothing else reads it yet.
+      imageUrl: (row.image_primary_url as string | null) ?? null,
       lastDeliveredOn: (row.last_delivered_on as string | null) ?? "",
     });
 

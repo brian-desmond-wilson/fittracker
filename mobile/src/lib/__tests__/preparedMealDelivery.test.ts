@@ -15,6 +15,7 @@ import {
   sortDishesForMenu,
   toDeliveryPayload,
   validateDelivery,
+  withDishPhotos,
   DELIVERY_SLOTS,
   type PreparedMealDraft,
   type RecentDish,
@@ -41,6 +42,7 @@ const dish = (over: Partial<RecentDish> = {}): RecentDish => ({
   fiber: 7,
   saturatedFat: 2.5,
   sodium: 310,
+  imageUrl: null,
   lastDeliveredOn: "2026-08-06",
   ...over,
 });
@@ -482,5 +484,77 @@ describe("draftsFromPayload — the saved box, back in the form that wrote it", 
     expect(d.slot).toBe("lunch");
     expect(d.quantity).toBe("1");
     expect(d.calories).toBe("");
+  });
+});
+
+describe("withDishPhotos — a box on the way borrows last delivery's photos", () => {
+  const seen = (over: Partial<RecentDish> = {}): RecentDish => ({
+    ...dish(),
+    vendorId: "thistle",
+    slug: "cocoa-berry-crumble-muesli",
+    name: "Cocoa & Berry Crumble Muesli",
+    imageUrl: "https://img/muesli.jpg",
+    ...over,
+  });
+  const coming = (name: string) => ({ name, slot: "breakfast" as const, quantity: 1 });
+
+  it("finds the photo through the name fold, not the spelling", () => {
+    // The pending payload holds a typed name; the history holds the database's
+    // slug of one. "&" and the capitals are exactly what the fold is for.
+    const [d] = withDishPhotos([coming("Cocoa & Berry Crumble Muesli")], "thistle", [seen()]);
+    expect(d.imageUrl).toBe("https://img/muesli.jpg");
+  });
+
+  it("matches a re-typed name that folds the same way", () => {
+    const [d] = withDishPhotos([coming("cocoa  &  berry crumble MUESLI")], "thistle", [seen()]);
+    expect(d.imageUrl).toBe("https://img/muesli.jpg");
+  });
+
+  it("will not borrow another vendor's photo of the same dish name", () => {
+    // Two subscriptions both send a "Chicken Salad" and they are not the same
+    // food. A wrong photo is worse than none: it is a claim about the box.
+    const [d] = withDishPhotos(
+      [coming("Chicken Salad")],
+      "thistle",
+      [seen({ vendorId: "sakara", slug: "chicken-salad", name: "Chicken Salad" })],
+    );
+    expect(d.imageUrl).toBeNull();
+  });
+
+  it("gives null for a dish this vendor has never sent before", () => {
+    const [d] = withDishPhotos([coming("Brand New Bowl")], "thistle", [seen()]);
+    expect(d.imageUrl).toBeNull();
+  });
+
+  it("gives null when the remembered dish had no photo", () => {
+    const [d] = withDishPhotos(
+      [coming("Cocoa & Berry Crumble Muesli")],
+      "thistle",
+      [seen({ imageUrl: null })],
+    );
+    expect(d.imageUrl).toBeNull();
+  });
+
+  it("falls back to folding the name when the view handed back no slug", () => {
+    const [d] = withDishPhotos(
+      [coming("Cocoa & Berry Crumble Muesli")],
+      "thistle",
+      [seen({ slug: "" })],
+    );
+    expect(d.imageUrl).toBe("https://img/muesli.jpg");
+  });
+
+  it("keeps the dish itself untouched, and its order", () => {
+    const dishes = [coming("Tahini-Java Smoothie"), coming("Cocoa & Berry Crumble Muesli")];
+    const out = withDishPhotos(dishes, "thistle", [seen()]);
+    expect(out.map((d) => d.name)).toEqual([
+      "Tahini-Java Smoothie", "Cocoa & Berry Crumble Muesli",
+    ]);
+    expect(out[0]).toMatchObject({ name: "Tahini-Java Smoothie", slot: "breakfast", quantity: 1 });
+  });
+
+  it("is empty-safe on both sides", () => {
+    expect(withDishPhotos([], "thistle", [seen()])).toEqual([]);
+    expect(withDishPhotos([coming("Anything")], "thistle", [])[0].imageUrl).toBeNull();
   });
 });

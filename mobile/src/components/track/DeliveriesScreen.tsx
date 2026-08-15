@@ -19,7 +19,7 @@
 // read is also the tick that lets food arrive.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, Animated, RefreshControl, StatusBar, StyleSheet, Text,
+  Alert, Animated, Image, RefreshControl, StatusBar, StyleSheet, Text,
   TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,10 +34,12 @@ import {
 } from "@/src/lib/supabase/preparedMeals";
 import { fetchDeliveryHistory } from "@/src/lib/supabase/deliveryHistory";
 import {
-  orderVendorsByUse, sortDishesForMenu, type VendorUse,
+  orderVendorsByUse, sortDishesForMenu, withDishPhotos,
+  type RecentDish, type VendorUse,
 } from "@/src/lib/preparedMealDelivery";
 import { formatArrival, formatDayLabel } from "@/src/lib/dates";
 import { VendorMark } from "@/src/components/track/VendorMark";
+import { monogram } from "@/src/lib/vendorMonogram";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 import type { MealType } from "@/src/types/track";
 
@@ -85,6 +87,11 @@ export function DeliveriesScreen({
 
   const [pending, setPending] = useState<PendingDelivery[]>([]);
   const [vendors, setVendors] = useState<VendorRow[]>([]);
+  // Every dish this account has ever been sent. Read for its photos only: a
+  // box that has not arrived has never had a picture of its own, but a
+  // subscription rotates its menu, so most of what is coming has been here
+  // before and left an inventory row with a photo behind it.
+  const [seenDishes, setSeenDishes] = useState<RecentDish[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -118,6 +125,7 @@ export function DeliveriesScreen({
       if (generation !== generationRef.current) return;
 
       setPending(rows);
+      setSeenDishes(history.dishes);
 
       if (vendorResult.error) {
         console.error("deliveries vendor fetch failed:", vendorResult.error);
@@ -251,7 +259,7 @@ export function DeliveriesScreen({
   const now = useMemo(() => new Date(), [pending]);
 
   const renderBox = (row: PendingDelivery) => {
-    const dishes = sortDishesForMenu(row.dishes);
+    const dishes = sortDishesForMenu(withDishPhotos(row.dishes, row.vendorId, seenDishes));
     const vendorName = row.vendorName ?? "Unknown vendor";
     return (
       <Card key={row.id} variant="panel" style={s.box}>
@@ -277,6 +285,21 @@ export function DeliveriesScreen({
             {dishes.map((dish, index) => (
               <View key={`${dish.name}-${index}`} style={s.dish}>
                 <Text style={s.qty}>×{dish.quantity}</Text>
+                {/* Borrowed from the last box that carried this dish. The
+                    monogram behind it is the ordinary case, not an error: a
+                    dish nobody has photographed has no picture to show. */}
+                <View style={s.thumb}>
+                  {dish.imageUrl ? (
+                    <Image
+                      source={{ uri: dish.imageUrl }}
+                      style={s.thumbImage}
+                      resizeMode="cover"
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : (
+                    <Text style={s.thumbText}>{monogram(dish.name)}</Text>
+                  )}
+                </View>
                 <Text style={s.dishName}>{dish.name}</Text>
                 <Text style={s.dishSlot}>{SLOT_LABELS[dish.slot]}</Text>
               </View>
@@ -519,7 +542,9 @@ const s = StyleSheet.create({
 
   dishes: { borderTopWidth: 1, borderTopColor: colors.border },
   dish: {
-    flexDirection: "row", alignItems: "baseline", gap: spacing.md,
+    // Centred, not baseline-aligned: a thumbnail has no baseline to sit on, and
+    // a two-line dish name would hang it off the first line.
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
     paddingVertical: spacing.sm + 2,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
@@ -529,6 +554,14 @@ const s = StyleSheet.create({
     // Tabular figures so the names start on one line whatever the counts are.
     fontVariant: ["tabular-nums"],
   },
+  // The app's food thumbnail, same 40pt rounded well the meal pages use.
+  thumb: {
+    width: 40, height: 40, borderRadius: radii.control,
+    backgroundColor: colors.imageWell,
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  thumbImage: { width: "100%", height: "100%" },
+  thumbText: { ...typography.caption, fontWeight: "700", color: colors.textFaint },
   dishName: { ...typography.body, color: colors.text, flex: 1 },
   dishSlot: { ...typography.caption, fontSize: 11, color: colors.textFaint },
 
