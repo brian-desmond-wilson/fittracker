@@ -480,7 +480,9 @@ describe("deliverySummary", () => {
 describe("pendingDishes — the stored payload, as a list to show", () => {
   it("reads a dish off each element", () => {
     expect(pendingDishes([{ name: "Tahini-Java Smoothie", slot: "breakfast", quantity: 1 }]))
-      .toEqual([{ name: "Tahini-Java Smoothie", slot: "breakfast", quantity: 1 }]);
+      .toEqual([
+        { name: "Tahini-Java Smoothie", slot: "breakfast", quantity: 1, imageUrl: null },
+      ]);
   });
 
   it("keeps the order the box was saved in — sorting is a display decision", () => {
@@ -527,13 +529,26 @@ describe("pendingDishes — the stored payload, as a list to show", () => {
   });
 });
 
+describe("pendingDishes — the picture the box was saved with", () => {
+  it("reads the dish's own photo out of the payload", () => {
+    const [d] = pendingDishes([
+      { name: "Muesli", slot: "breakfast", quantity: 1, image_url: "https://img/m.jpg" },
+    ]);
+    expect(d.imageUrl).toBe("https://img/m.jpg");
+  });
+  it("treats a blank or missing address as no photo", () => {
+    expect(pendingDishes([{ name: "Muesli", image_url: "" }])[0].imageUrl).toBeNull();
+    expect(pendingDishes([{ name: "Muesli", image_url: 7 }])[0].imageUrl).toBeNull();
+  });
+});
+
 describe("mealsInDishes", () => {
   it("counts meals, not dishes — two of one dish is two meals", () => {
     expect(mealsInDishes([
-      { name: "Muesli", slot: "breakfast", quantity: 2 },
-      { name: "Smoothie", slot: "breakfast", quantity: 1 },
-      { name: "Waldorf Salad", slot: "lunch", quantity: 2 },
-      { name: "Pesto Pasta", slot: "dinner", quantity: 2 },
+      { name: "Muesli", slot: "breakfast", quantity: 2, imageUrl: null },
+      { name: "Smoothie", slot: "breakfast", quantity: 1, imageUrl: null },
+      { name: "Waldorf Salad", slot: "lunch", quantity: 2, imageUrl: null },
+      { name: "Pesto Pasta", slot: "dinner", quantity: 2, imageUrl: null },
     ])).toBe(7);
   });
 
@@ -655,7 +670,8 @@ describe("withDishPhotos — a box on the way borrows last delivery's photos", (
     imageUrl: "https://img/muesli.jpg",
     ...over,
   });
-  const coming = (name: string) => ({ name, slot: "breakfast" as const, quantity: 1 });
+  const coming = (name: string, imageUrl: string | null = null) =>
+    ({ name, slot: "breakfast" as const, quantity: 1, imageUrl });
 
   it("finds the photo through the name fold, not the spelling", () => {
     // The pending payload holds a typed name; the history holds the database's
@@ -678,6 +694,24 @@ describe("withDishPhotos — a box on the way borrows last delivery's photos", (
       [seen({ vendorId: "sakara", slug: "chicken-salad", name: "Chicken Salad" })],
     );
     expect(d.imageUrl).toBeNull();
+  });
+
+  it("keeps the box's own photo rather than borrowing over it", () => {
+    // A picture attached while entering the delivery is a statement about THAT
+    // box, made after whatever history holds.
+    const [d] = withDishPhotos(
+      [coming("Cocoa & Berry Crumble Muesli", "https://img/this-box.jpg")],
+      "thistle",
+      [seen()],
+    );
+    expect(d.imageUrl).toBe("https://img/this-box.jpg");
+  });
+
+  it("shows a dish its own photo even when history has never seen it", () => {
+    const [d] = withDishPhotos(
+      [coming("Brand New Bowl", "https://img/new.jpg")], "thistle", [seen()],
+    );
+    expect(d.imageUrl).toBe("https://img/new.jpg");
   });
 
   it("gives null for a dish this vendor has never sent before", () => {

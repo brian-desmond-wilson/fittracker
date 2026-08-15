@@ -190,11 +190,15 @@ export function toDeliveryPayload(
 // contents as untrusted: the column holds whatever some earlier version of the
 // app wrote, and the result renders a screen.
 
-/** One dish inside a box on the way. The three things the card prints. */
+/** One dish inside a box on the way — what the card prints, including the
+ *  picture the box was saved with. */
 export interface PendingDish {
   name: string;
   slot: MealType;
   quantity: number;
+  /** The photo chosen for this dish while entering the delivery. Null for a
+   *  box saved before a picture was attached to it. */
+  imageUrl: string | null;
 }
 
 const SLOT_SET = new Set<string>(DELIVERY_SLOTS);
@@ -224,7 +228,14 @@ export function pendingDishes(raw: unknown): PendingDish[] {
     const slot = typeof row.slot === "string" && SLOT_SET.has(row.slot)
       ? (row.slot as MealType)
       : "lunch";
-    dishes.push({ name, slot, quantity: storedQuantity(row.quantity) });
+    dishes.push({
+      name,
+      slot,
+      quantity: storedQuantity(row.quantity),
+      imageUrl: typeof row.image_url === "string" && row.image_url !== ""
+        ? row.image_url
+        : null,
+    });
   }
   return dishes;
 }
@@ -241,14 +252,15 @@ export interface PendingDishWithPhoto extends PendingDish {
 }
 
 /**
- * Give each dish in a waiting box the photo from the last time that dish was
- * delivered.
+ * Give each dish in a waiting box a picture: its own if the delivery was saved
+ * with one, otherwise the photo from the last time that dish was delivered.
  *
- * A pending delivery is a payload, not stock: it carries names and numbers and
- * has never had a picture. But a subscription rotates a fixed menu, so most of
- * what is coming has been here before and left an inventory row behind with a
- * photo on it — the delivery history view surfaces the newest one per dish.
- * Nothing is copied or written; the card simply borrows the URL.
+ * Its own comes first, and that ordering is the whole point — a picture
+ * attached while entering the box is a statement about THAT box, made after
+ * whatever history holds, so history must not paint over it. The borrow is for
+ * the rest: a subscription rotates a fixed menu, so most of what is coming has
+ * been here before and left an inventory row behind with a photo on it.
+ * Nothing is copied or written; the card simply reads or borrows a URL.
  *
  * Matched on the same name fold the database uses, and scoped to ONE VENDOR.
  * Two subscriptions both send a "Chicken Salad" and they are not the same food:
@@ -269,7 +281,10 @@ export function withDishPhotos(
     if (slug === "" || photos.has(slug)) continue;
     photos.set(slug, seen.imageUrl);
   }
-  return dishes.map((d) => ({ ...d, imageUrl: photos.get(dishSlug(d.name)) ?? null }));
+  return dishes.map((d) => ({
+    ...d,
+    imageUrl: d.imageUrl ?? photos.get(dishSlug(d.name)) ?? null,
+  }));
 }
 
 /**
