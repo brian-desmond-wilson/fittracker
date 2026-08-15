@@ -20,12 +20,11 @@
 // The slot control is the Meal Builder's, deliberately: a delivered meal is
 // filed under the same five slots a built meal is, and two different-looking
 // controls for one decision is two things to learn.
-import React, { useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, Alert, Animated, Image, PanResponder,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, ImageIcon, ScanLine, Search, Trash2, X } from "lucide-react-native";
 import { uploadImage } from "@/src/lib/imageUpload";
@@ -54,6 +53,12 @@ export interface DishSearchState {
 
 export const IDLE_SEARCH: DishSearchState = { status: "idle", candidates: [], configured: true };
 
+// The same thresholds the meal log sheet dismisses on, so a throw-away flick
+// feels identical wherever a sheet appears.
+const DISMISS_DISTANCE = 110;
+const DISMISS_VELOCITY = 0.7;
+const EXIT_TRAVEL = 900;
+
 interface MealEditorSheetProps {
   /** Null closes the sheet. */
   draft: PreparedMealDraft | null;
@@ -76,10 +81,52 @@ export function MealEditorSheet({
   draft, index, vendorName, search,
   onPatch, onRemove, onClose, onScanLabel, scanningLabel, onSearch,
 }: MealEditorSheetProps) {
-  const insets = useSafeAreaInsets();
   // Which busy spinner the photo well shows: an upload from camera/library,
   // or a candidate being copied into the bucket.
   const [attaching, setAttaching] = useState(false);
+
+  // Swipe down to dismiss.
+  //
+  // The handlers sit on the sheet's HEAD — grab handle and title row — and
+  // never on the scroller below. A responder spanning both would have to guess
+  // on every touch whether a downward drag means "close this" or "scroll the
+  // macros up", and it would guess wrong at the top of the list where the two
+  // gestures are identical.
+  const dragY = useRef(new Animated.Value(0)).current;
+  // The responder is built once, so it must not close over a stale `onClose`.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const pan = useRef(
+    PanResponder.create({
+      // Only a deliberate downward drag, so a tap on the head still taps.
+      onMoveShouldSetPanResponder: (_e, g) => g.dy > 6 && g.dy > Math.abs(g.dx),
+      // Downward only: dragging up would lift the sheet off its own bottom
+      // edge and show the page behind it.
+      onPanResponderMove: (_e, g) => dragY.setValue(Math.max(0, g.dy)),
+      onPanResponderRelease: (_e, g) => {
+        if (g.dy > DISMISS_DISTANCE || g.vy > DISMISS_VELOCITY) {
+          Animated.timing(dragY, {
+            toValue: EXIT_TRAVEL,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => onCloseRef.current());
+          return;
+        }
+        Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(dragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      },
+    }),
+  ).current;
+
+  // A sheet thrown away is left parked off-screen; opening the next meal must
+  // start from rest. `useLayoutEffect` so the reset lands before the first
+  // paint rather than one frame into it.
+  const openKey = draft?.key ?? null;
+  useLayoutEffect(() => {
+    if (openKey) dragY.setValue(0);
+  }, [openKey, dragY]);
 
   if (!draft) return null;
 
@@ -135,15 +182,59 @@ export function MealEditorSheet({
 
   const canSearch = draft.name.trim() !== "";
 
+  // No Modal. A modal hosts its content in a separate native window, and the
+  // drag responder never gets the gesture in there — the sheet could be closed
+  // but not thrown. The meal log sheet renders inline over its page, so this
+  // does too, and the gesture behaves identically because it is the same
+  // mechanism. The cost is the tab bar showing beneath, exactly as it does on
+  // that sheet.
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        {/* The visible list behind is the same list being edited; tapping out
-            is closing, not cancelling. */}
-        <TouchableOpacity style={styles.backdropTouch} activeOpacity={1} onPress={onClose} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.lg }]}>
-            <View style={styles.grab} />
+    <>
+      <View style={styles.root} pointerEvents="box-none">
+        {/* The scrim thins as the sheet is dragged away, so the drag reads as
+            one movement rather than a card sliding under a fixed pane. */}
+        <Animated.View
+          style={[
+            styles.scrim,
+            {
+              opacity: dragY.interpolate({
+                inputRange: [0, DISMISS_DISTANCE * 2],
+                outputRange: [1, 0.15],
+                extrapolate: "clamp",
+              }),
+            },
+          ]}
+        >
+          {/* The visible list behind is the same list being edited; tapping
+              out is closing, not cancelling. */}
+          <TouchableOpacity
+            style={styles.scrimFill}
+            activeOpacity={1}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close this meal"
+          />
+        </Animated.View>
+        {/* Pinned to the bottom of the window by position, not by a flex
+            parent. A sheet laid out by a flex column would not follow the
+            finger: the transform fights the layout instead of moving the card,
+            which is the difference between this and the meal log sheet. */}
+        <Animated.View
+          style={[
+            styles.sheet,
+            // The tab bar sits below this sheet and already clears the home
+            // indicator, so the padding is the reference sheet's, unadjusted.
+            { paddingBottom: spacing.xxl },
+            { transform: [{ translateY: dragY }] },
+          ]}
+        >
+            <View {...pan.panHandlers} style={styles.dragArea}>
+              <View
+                style={styles.grab}
+                accessible
+                accessibilityRole="adjustable"
+                accessibilityLabel="Drag down to close"
+              />
 
             <View style={styles.head}>
               <Text style={styles.headTitle}>Meal {index}</Text>
@@ -180,6 +271,7 @@ export function MealEditorSheet({
                 >
                   <X size={icons.md} color={colors.text} strokeWidth={icons.strokeWidth} />
                 </TouchableOpacity>
+              </View>
               </View>
             </View>
 
@@ -318,26 +410,38 @@ export function MealEditorSheet({
                   </View>
                 ))}
               </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+          </ScrollView>
+        </Animated.View>
       </View>
-    </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: colors.scrim },
-  backdropTouch: { flex: 1 },
+  // Over the page it belongs to, not over the window.
+  root: { ...StyleSheet.absoluteFillObject },
+  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.scrim },
+  scrimFill: { flex: 1 },
+  // Against the bottom of the WINDOW — the modal covers the tab bar, so the
+  // sheet reaches past where the tab bar sits rather than stopping at the edge
+  // of the page that opened it.
   sheet: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
     backgroundColor: colors.surface,
+    borderTopWidth: 1, borderTopColor: colors.border,
     borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
     paddingHorizontal: spacing.lg, paddingTop: spacing.sm,
     maxHeight: "88%",
   },
+  // The grip. A background of its own, so the responder has a real surface to
+  // claim rather than the gaps between a 4pt handle and a row of icons.
+  dragArea: { backgroundColor: colors.surface },
+  // Same handle the meal log sheet draws, down to the margins: it is the grip
+  // the gesture is learned on, and two sizes would read as two gestures.
   grab: {
-    width: 36, height: 4, borderRadius: 2, alignSelf: "center",
-    backgroundColor: colors.border, marginBottom: spacing.sm,
+    width: 38, height: 4, borderRadius: radii.pill, alignSelf: "center",
+    backgroundColor: colors.surface2,
+    marginTop: spacing.sm, marginBottom: spacing.md,
   },
   head: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
