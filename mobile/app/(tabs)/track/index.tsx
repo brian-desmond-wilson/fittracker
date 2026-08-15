@@ -68,11 +68,25 @@ export default function Track() {
 
   // Category configuration with prioritized ordering
   const trackingCategories: TrackingCategoryConfig[] = [
-    // Nutrition & Food Section — ordered along the loop the section describes:
-    // what you have, what you can make of it, when you eat it, water, what is
-    // on its way, and what you still need to buy. Deliveries sits immediately
-    // before Shopping List because those two are the same half of the loop:
-    // food you do not have yet, one lot ordered and one lot not.
+    // Nutrition & Food Section — ordered along the loop the section describes,
+    // starting at the supply end: what you still need to buy, what is on its
+    // way, what you have, what you can make of it, when you eat it, and water.
+    // Shopping List and Deliveries lead as the same half of the loop — food you
+    // do not have yet, one lot ordered and one lot not.
+    {
+      id: "shopping",
+      title: "Shopping List",
+      icon: "ShoppingCart",
+      accent: "shopping",
+      section: "nutrition",
+    },
+    {
+      id: "deliveries",
+      title: "Deliveries",
+      icon: "Truck",
+      accent: "deliveries",
+      section: "nutrition",
+    },
     {
       id: "food-inventory",
       title: "Food Inventory",
@@ -99,20 +113,6 @@ export default function Track() {
       title: "Water",
       icon: "Droplets",
       accent: "water",
-      section: "nutrition",
-    },
-    {
-      id: "deliveries",
-      title: "Deliveries",
-      icon: "Truck",
-      accent: "deliveries",
-      section: "nutrition",
-    },
-    {
-      id: "shopping",
-      title: "Shopping List",
-      icon: "ShoppingCart",
-      accent: "shopping",
       section: "nutrition",
     },
     // Body & Measurements Section
