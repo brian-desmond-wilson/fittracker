@@ -8,6 +8,7 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { resolvePost, extractPost, findExistingCapture } from "@/src/lib/supabase/capture";
 import { sanitizeExtraction } from "@/src/lib/captureReview";
+import { normalizeSourceUrl } from "@/src/lib/captureUrl";
 import { fetchAllExercises } from "@/src/lib/supabase/crossfit";
 import type { ExtractedPost, ResolvedPost } from "@/src/types/capture";
 
@@ -74,7 +75,12 @@ export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProp
         setCaption(captionText);
         return;
       }
-      const payload = { resolved: r, sourceUrl: url.trim(), post, rawExtraction: raw };
+      const payload = {
+        resolved: r,
+        sourceUrl: normalizeSourceUrl(url),
+        post,
+        rawExtraction: raw,
+      };
       reset();
       onExtracted(payload);
     } catch (e) {
@@ -90,12 +96,16 @@ export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProp
       setErrorText("Paste a full link, starting with https://");
       return;
     }
+    // Everything downstream — the duplicate check, the saved row, the tap-back
+    // link — uses the canonical form, so a re-share of the same post lands on
+    // the capture that already exists.
+    const canonical = normalizeSourceUrl(trimmed);
     setPhase("resolving");
     setErrorText(null);
 
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const existing = await findExistingCapture(user.id, trimmed);
+      const existing = await findExistingCapture(user.id, canonical);
       if (existing?.extraction_status === "reviewed") {
         setErrorText("Already captured — it's in your catalog.");
         setPhase("url");
@@ -103,7 +113,7 @@ export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProp
       }
     }
 
-    const r = await resolvePost(trimmed);
+    const r = await resolvePost(canonical);
     if (!r) {
       setErrorText("Couldn't reach that post. Check the link and try again.");
       setPhase("url");
