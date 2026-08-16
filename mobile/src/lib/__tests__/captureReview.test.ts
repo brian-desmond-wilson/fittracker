@@ -1,0 +1,140 @@
+import { sanitizeExtraction, mapCategory } from "../captureReview";
+
+const VALID = {
+  libraryIds: new Set(["ex-1", "ex-2"]),
+  muscles: new Set(["Chest", "Triceps", "Glutes"]),
+  equipment: new Set(["Barbell", "Kettlebell", "Bands"]),
+};
+
+const rawExercise = (overrides: Record<string, unknown> = {}) => ({
+  name: "Kettlebell RDL",
+  description: "Hinge with kettlebell",
+  category: "strength",
+  skill_level: "Intermediate",
+  primary_muscles: ["Glutes"],
+  secondary_muscles: ["Triceps"],
+  equipment: ["Kettlebell"],
+  library_match_id: null,
+  ...overrides,
+});
+
+describe("sanitizeExtraction", () => {
+  it("accepts a well-formed single exercise", () => {
+    const out = sanitizeExtraction(
+      { post_type: "single_exercise", exercises: [rawExercise()], workout: null },
+      VALID,
+    );
+    expect(out).not.toBeNull();
+    expect(out!.postType).toBe("single_exercise");
+    expect(out!.exercises).toHaveLength(1);
+    expect(out!.exercises[0].name).toBe("Kettlebell RDL");
+    expect(out!.exercises[0].primaryMuscles).toEqual(["Glutes"]);
+  });
+
+  it("drops a library match id that is not in the library index", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [rawExercise({ library_match_id: "ex-999" })],
+        workout: null,
+      },
+      VALID,
+    );
+    expect(out!.exercises[0].libraryMatchId).toBeNull();
+  });
+
+  it("keeps a library match id that is in the index", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [rawExercise({ library_match_id: "ex-2" })],
+        workout: null,
+      },
+      VALID,
+    );
+    expect(out!.exercises[0].libraryMatchId).toBe("ex-2");
+  });
+
+  it("drops unknown muscle and equipment names, keeps known ones", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [
+          rawExercise({
+            primary_muscles: ["Glutes", "Face"],
+            equipment: ["Kettlebell", "Anvil"],
+          }),
+        ],
+        workout: null,
+      },
+      VALID,
+    );
+    expect(out!.exercises[0].primaryMuscles).toEqual(["Glutes"]);
+    expect(out!.exercises[0].equipment).toEqual(["Kettlebell"]);
+  });
+
+  it("defaults an unrecognized category to strength and unknown level to Beginner", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [rawExercise({ category: "yoga-flow", skill_level: "elite" })],
+        workout: null,
+      },
+      VALID,
+    );
+    expect(out!.exercises[0].category).toBe("strength");
+    expect(out!.exercises[0].skillLevel).toBe("Beginner");
+  });
+
+  it("returns null when there are no usable exercises", () => {
+    expect(
+      sanitizeExtraction({ post_type: "single_exercise", exercises: [], workout: null }, VALID),
+    ).toBeNull();
+    expect(
+      sanitizeExtraction(
+        { post_type: "single_exercise", exercises: [rawExercise({ name: "  " })], workout: null },
+        VALID,
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps a full workout whose item indexes are valid, drops out-of-range items", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: [rawExercise(), rawExercise({ name: "Goblet Squat" })],
+        workout: {
+          name: "Leg Day",
+          items: [
+            { exercise_index: 0, sets: 3, reps: "8-12", rest_seconds: 90, notes: null },
+            { exercise_index: 5, sets: 3, reps: "10", rest_seconds: 60, notes: null },
+          ],
+        },
+      },
+      VALID,
+    );
+    expect(out!.postType).toBe("full_workout");
+    expect(out!.workout!.items).toHaveLength(1);
+    expect(out!.workout!.items[0].exerciseIndex).toBe(0);
+  });
+
+  it("demotes full_workout to single_exercise when the workout block is missing", () => {
+    const out = sanitizeExtraction(
+      { post_type: "full_workout", exercises: [rawExercise()], workout: null },
+      VALID,
+    );
+    expect(out!.postType).toBe("single_exercise");
+    expect(out!.workout).toBeNull();
+  });
+});
+
+describe("mapCategory", () => {
+  it("maps each capture category onto existing reference-table names", () => {
+    expect(mapCategory("strength")).toEqual({ goalType: "Strength", movementCategory: "Weightlifting" });
+    expect(mapCategory("conditioning")).toEqual({ goalType: "MetCon", movementCategory: "Monostructural" });
+    expect(mapCategory("mobility")).toEqual({ goalType: "Mobility", movementCategory: "Recovery" });
+    expect(mapCategory("stretching")).toEqual({ goalType: "Stretching", movementCategory: "Recovery" });
+    expect(mapCategory("warmup")).toEqual({ goalType: "Mobility", movementCategory: "Recovery" });
+    expect(mapCategory("skill")).toEqual({ goalType: "Skill", movementCategory: "Gymnastics" });
+  });
+});
