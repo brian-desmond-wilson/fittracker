@@ -1,0 +1,276 @@
+// Resolve a shared social post, then extract its exercises. Two actions:
+//
+//   resolve { url }  → { platform, posterHandle, captionText, thumbnailUrl,
+//                        needsCaption }
+//       TikTok: public oEmbed. Instagram: fetch the page and read OpenGraph
+//       tags (best effort — IG's oEmbed requires a Graph API token we don't
+//       have). Either way the thumbnail is downloaded HERE and rehosted to
+//       the capture-thumbs bucket: a platform CDN URL is exactly the kind
+//       that vanishes (same doctrine as dish-image-search).
+//       If nothing usable comes back, needsCaption:true — the sheet asks the
+//       user to paste the caption, and the capture still works.
+//
+//   extract { caption, handle, platform, library, muscles, equipment }
+//       → the model's structured read of the post. The model may only use
+//       muscle/equipment names and library ids given in the request; the
+//       client re-validates all of it again (captureReview.ts). SUGGEST ONLY:
+//       this function writes no rows, ever.
+//
+// Model: gpt-5.6-terra — judgement/vision tier, same split as the rest of the app.
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY');
+const MODEL = 'gpt-5.6-terra';
+const BUCKET = 'capture-thumbs';
+const UA = 'Mozilla/5.0 (compatible; FitTracker/1.0)';
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
+type Platform = 'instagram' | 'tiktok' | 'other';
+
+function detectPlatform(url: string): Platform {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    if (host.endsWith('instagram.com')) return 'instagram';
+    if (host.endsWith('tiktok.com')) return 'tiktok';
+    return 'other';
+  } catch {
+    return 'other';
+  }
+}
+
+/** Decode the handful of HTML entities OG tag content actually contains. */
+const decodeEntities = (s: string): string =>
+  s
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+function ogTag(html: string, property: string): string | null {
+  // content before property and property before content both occur in the wild.
+  const a = html.match(
+    new RegExp(`<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']*)["']`, 'i'),
+  );
+  const b = html.match(
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${property}["']`, 'i'),
+  );
+  const raw = a?.[1] ?? b?.[1] ?? null;
+  return raw ? decodeEntities(raw) : null;
+}
+
+/** Download an image and keep our own copy. Returns the copy's public URL,
+ *  or null — a missing thumbnail never fails a capture. */
+async function rehostThumb(imageUrl: string, userId: string): Promise<string | null> {
+  try {
+    const res = await fetch(imageUrl, { headers: { 'User-Agent': UA } });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+    if (!contentType.startsWith('image/')) return null;
+    const buffer = new Uint8Array(await res.arrayBuffer());
+    if (buffer.byteLength === 0 || buffer.byteLength > 8 * 1024 * 1024) return null;
+
+    const ext = contentType.includes('png') ? 'png'
+      : contentType.includes('webp') ? 'webp'
+      : 'jpg';
+    const filePath = `${userId}/${Date.now()}.${ext}`;
+    const service = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+    const { error } = await service.storage
+      .from(BUCKET)
+      .upload(filePath, buffer, { contentType, upsert: false });
+    if (error) return null;
+    return service.storage.from(BUCKET).getPublicUrl(filePath).data.publicUrl;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTikTok(url: string) {
+  const res = await fetch(
+    `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`,
+    { headers: { 'User-Agent': UA } },
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  const handle = typeof data.author_unique_id === 'string' && data.author_unique_id !== ''
+    ? `@${data.author_unique_id}`
+    : typeof data.author_name === 'string' && data.author_name !== ''
+      ? data.author_name
+      : null;
+  return {
+    posterHandle: handle,
+    captionText: typeof data.title === 'string' && data.title.trim() !== '' ? data.title : null,
+    thumbSource: typeof data.thumbnail_url === 'string' ? data.thumbnail_url : null,
+  };
+}
+
+async function resolveInstagram(url: string) {
+  const res = await fetch(url, { headers: { 'User-Agent': UA } });
+  if (!res.ok) return null;
+  const html = await res.text();
+  const description = ogTag(html, 'og:description');
+  const image = ogTag(html, 'og:image');
+  // og:description looks like: `123 likes, 4 comments - handle on August 1,
+  // 2026: "the caption"`. Both pieces are best-effort.
+  let handle: string | null = null;
+  let caption: string | null = null;
+  if (description) {
+    const m = description.match(/-\s*([A-Za-z0-9_.]+)\s+on\s+.*?:\s*"([\s\S]*)"?$/);
+    if (m) {
+      handle = `@${m[1]}`;
+      caption = m[2]?.trim() || null;
+    } else {
+      caption = description;
+    }
+  }
+  if (!caption && !image) return null;
+  return { posterHandle: handle, captionText: caption, thumbSource: image };
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) throw new Error('missing Authorization header');
+
+    // Establish WHO is calling before any storage write — the thumb path is
+    // scoped by the verified user id, never by anything the client claims.
+    const anon = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+    );
+    const { data: userData, error: userError } = await anon.auth.getUser(
+      authHeader.replace(/^Bearer\s+/i, ''),
+    );
+    if (userError || !userData?.user) throw new Error('not authenticated');
+    const userId = userData.user.id;
+
+    const body = await req.json();
+
+    if (body.action === 'resolve') {
+      const url = String(body.url ?? '').trim();
+      if (!/^https?:\/\//.test(url)) throw new Error('url must be an http(s) address');
+      const platform = detectPlatform(url);
+
+      const meta = platform === 'tiktok'
+        ? await resolveTikTok(url)
+        : platform === 'instagram'
+          ? await resolveInstagram(url)
+          : null;
+
+      if (!meta || (!meta.captionText && !meta.posterHandle)) {
+        return json({
+          platform, posterHandle: meta?.posterHandle ?? null, captionText: null,
+          thumbnailUrl: meta?.thumbSource ? await rehostThumb(meta.thumbSource, userId) : null,
+          needsCaption: true,
+        });
+      }
+
+      return json({
+        platform,
+        posterHandle: meta.posterHandle,
+        captionText: meta.captionText,
+        thumbnailUrl: meta.thumbSource ? await rehostThumb(meta.thumbSource, userId) : null,
+        needsCaption: meta.captionText === null,
+      });
+    }
+
+    if (body.action === 'extract') {
+      if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
+      const caption = String(body.caption ?? '').trim();
+      if (!caption) throw new Error('caption is required');
+      const handle = String(body.handle ?? '').trim() || 'unknown';
+      const platform = String(body.platform ?? 'other');
+      const library = (Array.isArray(body.library) ? body.library : []) as
+        { id: string; name: string }[];
+      const muscles = (Array.isArray(body.muscles) ? body.muscles : []) as string[];
+      const equipment = (Array.isArray(body.equipment) ? body.equipment : []) as string[];
+
+      const SYSTEM = `You index one social-media fitness post into a personal
+exercise catalog. Read the caption and report what exercise(s) the post shows.
+
+Rules:
+- Muscle names: use ONLY names from the provided muscle list.
+- Equipment: use ONLY names from the provided equipment list.
+- If an exercise is the same movement as a library entry, set
+  "library_match_id" to that entry's exact id; otherwise null. Same movement
+  means same exercise — a variation (deficit, paused, banded) is NOT a match.
+- "category": one of strength | conditioning | mobility | stretching | warmup | skill.
+- "skill_level": Beginner | Intermediate | Advanced — how hard the movement is
+  to perform correctly, not how hard the workout is.
+- "post_type": "full_workout" only when the caption lays out multiple
+  exercises with a prescription (sets/reps/rounds); then fill "workout" with
+  one item per exercise, "exercise_index" pointing into your exercises array.
+  Otherwise "single_exercise" and workout: null.
+- Names in Title Case, the way a coach would say them. No hashtags.
+
+Respond as JSON:
+{"post_type": "single_exercise" | "full_workout",
+ "exercises": [{"name": string, "description": string | null,
+   "category": string, "skill_level": string,
+   "primary_muscles": string[], "secondary_muscles": string[],
+   "equipment": string[], "library_match_id": string | null}],
+ "workout": {"name": string, "items": [{"exercise_index": number,
+   "sets": number | null, "reps": string | null,
+   "rest_seconds": number | null, "notes": string | null}]} | null}`;
+
+      const user = [
+        `Platform: ${platform}`,
+        `Poster: ${handle}`,
+        `Caption:\n${caption}`,
+        ``,
+        `Allowed muscles: ${muscles.join(', ')}`,
+        `Allowed equipment: ${equipment.join(', ')}`,
+        ``,
+        `Library index (id · name):`,
+        ...library.map((e) => `${e.id} · ${e.name}`),
+      ].join('\n');
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${OPENAI_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: SYSTEM },
+            { role: 'user', content: user },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text();
+        throw new Error(`openai ${res.status}: ${detail.slice(0, 300)}`);
+      }
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') throw new Error('empty model response');
+      // Parsed here only to fail fast on malformed JSON; the client
+      // re-validates every field and id against its own vocabulary.
+      return json({ extraction: JSON.parse(content) });
+    }
+
+    throw new Error(`unknown action: ${String(body.action)}`);
+  } catch (e) {
+    console.error('capture-post:', e);
+    return json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
+  }
+});
