@@ -46,17 +46,36 @@ export interface ExtractedExercise {
 export interface ExtractedWorkoutItem {
   /** Index into ExtractedPost.exercises. */
   exerciseIndex: number;
+  /** Per-exercise sets. NULL for circuits — the repetition lives in
+   *  CapturedWorkout.rounds. Never inferred from a round count. */
   sets: number | null;
+  /** Verbatim: "8", "8R/8L", "21-15-9", "AMRAP". */
   reps: string | null;
+  /** Verbatim: "24kg", "bodyweight", "2x24kg". */
+  weight: string | null;
+  /** Verbatim: "30s", "30-45s", "hold to failure". */
+  duration: string | null;
   restSeconds: number | null;
   notes: string | null;
+}
+
+/** The creator's programming for a whole post. */
+export interface ExtractedWorkout {
+  name: string;
+  /** How many times through the whole list, as stated: "3-4". Null when the
+   *  caption prescribes per-exercise sets instead of rounds. */
+  rounds: string | null;
+  /** The caption's prescription lines, verbatim — the lossless record behind
+   *  the parsed items, shown when structure and reality disagree. */
+  rawProtocol: string | null;
+  items: ExtractedWorkoutItem[];
 }
 
 /** capture-post { action: "extract" } result, after sanitizing. */
 export interface ExtractedPost {
   postType: "single_exercise" | "full_workout";
   exercises: ExtractedExercise[];
-  workout: { name: string; items: ExtractedWorkoutItem[] } | null;
+  workout: ExtractedWorkout | null;
 }
 
 /** A row in the Catalog tab: an exercise plus its capture provenance. */

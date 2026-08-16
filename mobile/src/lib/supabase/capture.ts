@@ -171,6 +171,8 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
           source_id: sourceId,
           user_id: input.userId,
           name: input.post.workout.name,
+          rounds: input.post.workout.rounds,
+          raw_protocol: input.post.workout.rawProtocol,
         })
         .select("id")
         .single();
@@ -182,6 +184,8 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
         exercise_order: i,
         target_sets: item.sets,
         target_reps: item.reps,
+        target_weight: item.weight,
+        target_duration: item.duration,
         rest_seconds: item.restSeconds,
         notes: item.notes,
       }));

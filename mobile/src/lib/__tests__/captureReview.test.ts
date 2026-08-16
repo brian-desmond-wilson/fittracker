@@ -118,6 +118,73 @@ describe("sanitizeExtraction", () => {
     expect(out!.workout!.items[0].exerciseIndex).toBe(0);
   });
 
+  it("keeps rounds and the verbatim protocol on a circuit", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: [rawExercise({ name: "Kettlebell Halo" })],
+        workout: {
+          name: "Kettlebell Chest & Triceps Series",
+          rounds: "3-4",
+          raw_protocol: "- 8x Halos\nREPEAT 3-4x rounds",
+          items: [{ exercise_index: 0, sets: null, reps: "8", rest_seconds: null, notes: null }],
+        },
+      },
+      VALID,
+    );
+    expect(out!.workout!.rounds).toBe("3-4");
+    expect(out!.workout!.rawProtocol).toBe("- 8x Halos\nREPEAT 3-4x rounds");
+    // The creator never prescribed per-exercise sets; we must not invent any.
+    expect(out!.workout!.items[0].sets).toBeNull();
+    expect(out!.workout!.items[0].reps).toBe("8");
+  });
+
+  it("keeps weight and duration verbatim", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: [rawExercise()],
+        workout: {
+          name: "Carry Day",
+          items: [
+            {
+              exercise_index: 0,
+              sets: 3,
+              reps: null,
+              weight: "2x24kg",
+              duration: "30-45s",
+              rest_seconds: 60,
+              notes: null,
+            },
+          ],
+        },
+      },
+      VALID,
+    );
+    expect(out!.workout!.items[0].weight).toBe("2x24kg");
+    expect(out!.workout!.items[0].duration).toBe("30-45s");
+  });
+
+  it("keeps a rounds value that states a quantity, drops prose", () => {
+    const rounds = (v: unknown) =>
+      sanitizeExtraction(
+        {
+          post_type: "full_workout",
+          exercises: [rawExercise()],
+          workout: { name: "W", rounds: v, items: [{ exercise_index: 0, reps: "8" }] },
+        },
+        VALID,
+      )!.workout!.rounds;
+
+    expect(rounds("3-4")).toBe("3-4");
+    expect(rounds("5")).toBe("5");
+    expect(rounds("AMRAP 20 min")).toBe("AMRAP 20 min");
+    // A round count is a quantity. Prose here would render as nonsense next to
+    // the movement count, so it is dropped rather than displayed.
+    expect(rounds("as many as you can stomach")).toBeNull();
+    expect(rounds("")).toBeNull();
+  });
+
   it("demotes full_workout to single_exercise when the workout block is missing", () => {
     const out = sanitizeExtraction(
       { post_type: "full_workout", exercises: [rawExercise()], workout: null },

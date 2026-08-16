@@ -3,12 +3,14 @@ import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator,
 } from "react-native";
-import { X, Link2, Link2Off } from "lucide-react-native";
+import { X, Link2, Link2Off, Pencil } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { saveCapture } from "@/src/lib/supabase/capture";
+import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
 import type {
-  CaptureCategory, CaptureSkillLevel, ExtractedPost, ResolvedPost,
+  CaptureCategory, CaptureSkillLevel, ExtractedPost, ExtractedWorkoutItem,
+  ResolvedPost,
 } from "@/src/types/capture";
 
 const CATEGORIES: CaptureCategory[] = [
@@ -62,6 +64,27 @@ export function CaptureReviewSheet({
     });
   };
 
+  const patchWorkout = (patch: Partial<NonNullable<ExtractedPost["workout"]>>) => {
+    setPost((p) => (p?.workout ? { ...p, workout: { ...p.workout, ...patch } } : p));
+  };
+
+  const patchItem = (i: number, patch: Partial<ExtractedWorkoutItem>) => {
+    setPost((p) => {
+      if (!p?.workout) return p;
+      const items = [...p.workout.items];
+      items[i] = { ...items[i], ...patch };
+      return { ...p, workout: { ...p.workout, items } };
+    });
+  };
+
+  /** Empty input means "the creator didn't say", which is a real answer here —
+   *  it must round-trip to null rather than to 0 or "". */
+  const asText = (v: string): string | null => (v.trim() === "" ? null : v.trim());
+  const asCount = (v: string): number | null => {
+    const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
   const handleAccept = async () => {
     setSaving(true);
     setErrorText(null);
@@ -112,11 +135,19 @@ export function CaptureReviewSheet({
         <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 24 }}>
           {post.exercises.map((ex, i) => (
             <View key={i} style={styles.card}>
-              <TextInput
-                style={styles.nameInput}
-                value={ex.name}
-                onChangeText={(t) => patchExercise(i, { name: t })}
-              />
+              {/* The name reads as a heading, so without the pencil and the
+                  framed field nobody discovers it can be corrected. */}
+              <Text style={styles.fieldLabel}>Exercise name</Text>
+              <View style={styles.nameRow}>
+                <TextInput
+                  style={styles.nameInput}
+                  value={ex.name}
+                  onChangeText={(t) => patchExercise(i, { name: t })}
+                  placeholder="Name this exercise"
+                  placeholderTextColor={colors.mutedForeground}
+                />
+                <Pencil size={15} color={colors.mutedForeground} />
+              </View>
 
               {ex.libraryMatchId ? (
                 <TouchableOpacity
@@ -215,14 +246,72 @@ export function CaptureReviewSheet({
 
           {post.workout && (
             <View style={styles.card}>
-              <Text style={styles.workoutTitle}>Saved as workout: {post.workout.name}</Text>
+              <Text style={styles.fieldLabel}>Workout name</Text>
+              <View style={styles.nameRow}>
+                <TextInput
+                  style={styles.nameInput}
+                  value={post.workout.name}
+                  onChangeText={(t) => patchWorkout({ name: t })}
+                />
+                <Pencil size={15} color={colors.mutedForeground} />
+              </View>
+
+              <Text style={styles.headline}>
+                {formatWorkoutHeadline(post.workout.items.length, post.workout.rounds)}
+              </Text>
+
+              <Text style={styles.fieldLabel}>
+                Rounds through the whole list (blank if each exercise has its own sets)
+              </Text>
+              <TextInput
+                style={styles.roundsInput}
+                value={post.workout.rounds ?? ""}
+                onChangeText={(t) => patchWorkout({ rounds: asText(t) })}
+                placeholder="e.g. 3-4"
+                placeholderTextColor={colors.mutedForeground}
+              />
+
               {post.workout.items.map((item, i) => (
-                <Text key={i} style={styles.workoutItem}>
-                  {post.exercises[item.exerciseIndex]?.name}
-                  {item.sets ? ` — ${item.sets}×${item.reps ?? "?"}` : ""}
-                  {item.restSeconds ? `, rest ${item.restSeconds}s` : ""}
-                </Text>
+                <View key={i} style={styles.itemBlock}>
+                  <Text style={styles.itemName}>
+                    {post.exercises[item.exerciseIndex]?.name}
+                  </Text>
+                  <View style={styles.itemGrid}>
+                    {([
+                      ["Sets", item.sets === null ? "" : String(item.sets),
+                        (t: string) => patchItem(i, { sets: asCount(t) }), "—"],
+                      ["Reps", item.reps ?? "",
+                        (t: string) => patchItem(i, { reps: asText(t) }), "8R/8L"],
+                      ["Weight", item.weight ?? "",
+                        (t: string) => patchItem(i, { weight: asText(t) }), "24kg"],
+                      ["Duration", item.duration ?? "",
+                        (t: string) => patchItem(i, { duration: asText(t) }), "30s"],
+                      ["Rest (s)", item.restSeconds === null ? "" : String(item.restSeconds),
+                        (t: string) => patchItem(i, { restSeconds: asCount(t) }), "60"],
+                    ] as [string, string, (t: string) => void, string][]).map(
+                      ([label, value, onChange, hint]) => (
+                        <View key={label} style={styles.field}>
+                          <Text style={styles.microLabel}>{label}</Text>
+                          <TextInput
+                            style={styles.microInput}
+                            value={value}
+                            onChangeText={onChange}
+                            placeholder={hint}
+                            placeholderTextColor={colors.mutedForeground}
+                          />
+                        </View>
+                      ),
+                    )}
+                  </View>
+                </View>
               ))}
+
+              {post.workout.rawProtocol && (
+                <>
+                  <Text style={styles.fieldLabel}>As the creator wrote it</Text>
+                  <Text style={styles.protocol}>{post.workout.rawProtocol}</Text>
+                </>
+              )}
             </View>
           )}
         </ScrollView>
@@ -261,10 +350,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.muted, borderRadius: 12, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: colors.border,
   },
+  nameRow: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10,
+    backgroundColor: colors.input, borderRadius: 8, borderWidth: 1,
+    borderColor: colors.border, paddingHorizontal: 10,
+  },
   nameInput: {
-    fontSize: 17, fontWeight: "600", color: colors.foreground,
-    borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 6,
-    marginBottom: 10,
+    flex: 1, fontSize: 17, fontWeight: "600", color: colors.foreground,
+    paddingVertical: 9,
+  },
+  headline: { fontSize: 13, color: colors.primary, marginBottom: 4 },
+  roundsInput: {
+    backgroundColor: colors.input, borderRadius: 8, borderWidth: 1,
+    borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 8,
+    fontSize: 15, color: colors.foreground, marginBottom: 4,
+  },
+  itemBlock: {
+    marginTop: 14, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  itemName: { fontSize: 15, fontWeight: "600", color: colors.foreground, marginBottom: 8 },
+  itemGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  field: { width: 88 },
+  microLabel: { fontSize: 11, color: colors.mutedForeground, marginBottom: 4 },
+  microInput: {
+    backgroundColor: colors.input, borderRadius: 6, borderWidth: 1,
+    borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 7,
+    fontSize: 14, color: colors.foreground,
+  },
+  protocol: {
+    fontSize: 13, color: colors.mutedForeground, lineHeight: 19,
+    backgroundColor: colors.input, borderRadius: 8, padding: 10,
   },
   matchChip: {
     flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10,
@@ -281,8 +397,6 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 12, color: colors.mutedForeground },
   pillTextActive: { fontSize: 12, color: "#FFFFFF", fontWeight: "600" },
-  workoutTitle: { fontSize: 15, fontWeight: "600", color: colors.foreground, marginBottom: 8 },
-  workoutItem: { fontSize: 13, color: colors.mutedForeground, marginBottom: 4 },
   error: { color: "#F87171", fontSize: 14, marginBottom: 8 },
   button: {
     backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 14,

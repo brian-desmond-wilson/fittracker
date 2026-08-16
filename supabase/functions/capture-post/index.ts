@@ -219,14 +219,34 @@ Rules:
   Otherwise "single_exercise" and workout: null.
 - Names in Title Case, the way a coach would say them. No hashtags.
 
+RECORD THE PRESCRIPTION EXACTLY AS WRITTEN. You are transcribing, not
+programming. In particular:
+- "rounds" belongs to the WORKOUT: use it when the caption says to repeat the
+  whole list ("REPEAT 3-4x rounds" -> rounds: "3-4"). Copy the range as
+  written; never collapse "3-4" to a single number.
+- "sets" belongs to an EXERCISE, and ONLY when the caption gives that exercise
+  its own set count ("4x8 press"). If the repetition comes from rounds, sets
+  MUST be null. Never convert rounds into sets — "8x Halos, repeat 3-4 rounds"
+  is reps "8" with sets null and rounds "3-4". It is NOT 3 sets of 8.
+- "reps" is a verbatim string: "8", "8R/8L", "21-15-9", "AMRAP". Do not
+  normalise or average it.
+- "weight" and "duration" are verbatim too: "24kg", "bodyweight", "2x24kg",
+  "30-45s", "hold to failure". Null when unstated.
+- Never fill a field the caption does not state. Null is the correct answer.
+- "raw_protocol": copy the caption's prescription lines verbatim, newline
+  separated, exactly as the creator wrote them.
+
 Respond as JSON:
 {"post_type": "single_exercise" | "full_workout",
  "exercises": [{"name": string, "description": string | null,
    "category": string, "skill_level": string,
    "primary_muscles": string[], "secondary_muscles": string[],
    "equipment": string[], "library_match_id": string | null}],
- "workout": {"name": string, "items": [{"exercise_index": number,
+ "workout": {"name": string, "rounds": string | null,
+   "raw_protocol": string | null,
+   "items": [{"exercise_index": number,
    "sets": number | null, "reps": string | null,
+   "weight": string | null, "duration": string | null,
    "rest_seconds": number | null, "notes": string | null}]} | null}`;
 
       const user = [

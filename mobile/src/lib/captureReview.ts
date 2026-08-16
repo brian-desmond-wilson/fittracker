@@ -31,6 +31,15 @@ const str = (v: unknown): string | null =>
 const names = (v: unknown, valid: Set<string>): string[] =>
   Array.isArray(v) ? v.filter((n): n is string => typeof n === "string" && valid.has(n)) : [];
 
+/** A round count is a quantity ("3", "3-4", "AMRAP 20 min"), and it renders
+ *  next to a movement count. Prose there would read as nonsense, so anything
+ *  without a digit — or long enough to be a sentence — is dropped. */
+const rounds = (v: unknown): string | null => {
+  const s = str(v);
+  if (!s || s.length > 24 || !/\d/.test(s)) return null;
+  return s;
+};
+
 function sanitizeExercise(raw: unknown, vocab: ValidVocabulary): ExtractedExercise | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
@@ -80,15 +89,24 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
         if (idx < 0 || idx >= exercises.length) return null;
         return {
           exerciseIndex: idx,
+          // Left NULL for circuits. A round count is NOT a set count, and
+          // turning one into the other rewrites the creator's workout.
           sets: typeof i.sets === "number" ? i.sets : null,
           reps: str(i.reps),
+          weight: str(i.weight),
+          duration: str(i.duration),
           restSeconds: typeof i.rest_seconds === "number" ? i.rest_seconds : null,
           notes: str(i.notes),
         };
       })
       .filter((i): i is ExtractedWorkoutItem => i !== null);
     if (items.length > 0) {
-      workout = { name: str(w.name) ?? "Captured workout", items };
+      workout = {
+        name: str(w.name) ?? "Captured workout",
+        rounds: rounds(w.rounds),
+        rawProtocol: str(w.raw_protocol),
+        items,
+      };
     }
   }
 
