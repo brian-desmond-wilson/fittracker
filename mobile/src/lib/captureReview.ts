@@ -9,6 +9,7 @@ import type {
   ExtractedPost,
   ExtractedWorkoutItem,
 } from "../types/capture";
+import type { GoalTypeName, MovementCategoryName } from "../types/crossfit";
 
 const CATEGORIES: CaptureCategory[] = [
   "strength", "conditioning", "mobility", "stretching", "warmup", "skill",
@@ -102,8 +103,8 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
  *  goal_types: MetCon, Strength, Skill, Mobility, Stretching, Recovery, Cool-Down.
  *  movement_categories: Weightlifting, Gymnastics, Monostructural, Recovery. */
 export function mapCategory(category: CaptureCategory): {
-  goalType: string;
-  movementCategory: string;
+  goalType: GoalTypeName;
+  movementCategory: MovementCategoryName;
 } {
   switch (category) {
     case "strength":     return { goalType: "Strength",   movementCategory: "Weightlifting" };
