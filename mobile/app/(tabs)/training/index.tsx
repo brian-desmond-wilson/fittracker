@@ -16,6 +16,7 @@ import DailyWorkoutsTab from "@/src/components/training/daily/WorkoutsTab";
 import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
 import { fetchAllExercises, fetchMovements, fetchWODs, fetchClasses } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
+import { fetchCapturedWorkouts, fetchCatalog } from "@/src/lib/supabase/capture";
 
 type WorkoutMode = "crossfit" | "strength" | "daily";
 type CrossFitTab = "classes" | "wods" | "movements";
@@ -84,6 +85,22 @@ export default function Training() {
       // Workouts is a placeholder, always 0
       setWorkoutsCount(0);
     }
+  }, [workoutMode]);
+
+  // Without this the count chips read 0 until you visit each tab, which looks
+  // like "you have none" rather than "not loaded yet". Same approach as the
+  // two modes above.
+  useEffect(() => {
+    if (workoutMode !== "daily") return;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      fetchCapturedWorkouts(user.id)
+        .then((w) => setCapturedWorkoutsCount(w.length))
+        .catch(console.error);
+      fetchCatalog(user.id)
+        .then((c) => setCatalogCount(c.length))
+        .catch(console.error);
+    }).catch(console.error);
   }, [workoutMode]);
 
   const crossfitTabs: { key: CrossFitTab; label: string }[] = [
