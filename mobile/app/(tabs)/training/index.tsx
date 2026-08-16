@@ -11,7 +11,8 @@ import WODsTab from "@/src/components/training/crossfit/WODsTab";
 import MovementsTab from "@/src/components/training/crossfit/MovementsTab";
 import CatalogTab from "@/src/components/training/daily/CatalogTab";
 import TodayTab from "@/src/components/training/daily/TodayTab";
-import GymsTab from "@/src/components/training/daily/GymsTab";
+// Aliased: Strength mode has its own WorkoutsTab, and both are on this screen.
+import DailyWorkoutsTab from "@/src/components/training/daily/WorkoutsTab";
 import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
 import { fetchAllExercises, fetchMovements, fetchWODs, fetchClasses } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
@@ -19,14 +20,18 @@ import { supabase } from "@/src/lib/supabase";
 type WorkoutMode = "crossfit" | "strength" | "daily";
 type CrossFitTab = "classes" | "wods" | "movements";
 type StrengthTab = "programs" | "workouts" | "exercises";
-type DailyTab = "today" | "catalog" | "gyms";
+// Gym profiles are configuration, not a daily surface — they belong with the
+// check-in (which gym today) and in Profile (what that gym has), not in a
+// permanent tab slot here.
+type DailyTab = "today" | "workouts" | "exercises";
 
 export default function Training() {
   const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("crossfit");
   const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
-  const [dailyTab, setDailyTab] = useState<DailyTab>("catalog");
+  const [dailyTab, setDailyTab] = useState<DailyTab>("exercises");
   const [catalogCount, setCatalogCount] = useState(0);
+  const [capturedWorkoutsCount, setCapturedWorkoutsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Track counts for each CrossFit tab
@@ -95,8 +100,8 @@ export default function Training() {
 
   const dailyTabs: { key: DailyTab; label: string }[] = [
     { key: "today", label: "Today" },
-    { key: "catalog", label: "Catalog" },
-    { key: "gyms", label: "Gyms" },
+    { key: "workouts", label: "Workouts" },
+    { key: "exercises", label: "Exercises" },
   ];
 
   const handleCrossFitPress = () => {
@@ -138,10 +143,15 @@ export default function Training() {
       switch (dailyTab) {
         case "today":
           return <TodayTab />;
-        case "catalog":
+        case "workouts":
+          return (
+            <DailyWorkoutsTab
+              searchQuery={searchQuery}
+              onCountUpdate={setCapturedWorkoutsCount}
+            />
+          );
+        case "exercises":
           return <CatalogTab searchQuery={searchQuery} onCountUpdate={setCatalogCount} />;
-        case "gyms":
-          return <GymsTab />;
         default:
           return null;
       }
@@ -172,7 +182,14 @@ export default function Training() {
           return "Search...";
       }
     } else {
-      return dailyTab === "catalog" ? "Search catalog..." : "Search...";
+      switch (dailyTab) {
+        case "workouts":
+          return "Search captured workouts...";
+        case "exercises":
+          return "Search captured exercises...";
+        default:
+          return "Search...";
+      }
     }
   };
 
@@ -262,7 +279,11 @@ export default function Training() {
           })
         ) : (
           dailyTabs.map((tab) => {
-            const count = tab.key === "catalog" ? catalogCount : 0;
+            // Today has nothing to count until the recommender lands.
+            const count =
+              tab.key === "workouts" ? capturedWorkoutsCount
+              : tab.key === "exercises" ? catalogCount
+              : null;
             return (
               <TouchableOpacity
                 key={tab.key}
@@ -273,7 +294,7 @@ export default function Training() {
                   <Text style={[styles.tabText, dailyTab === tab.key && styles.tabTextActive]}>
                     {tab.label}
                   </Text>
-                  {tab.key === "catalog" && (
+                  {count !== null && (
                     <View style={[styles.countChip, dailyTab === tab.key && styles.countChipActive]}>
                       <Text style={[styles.countText, dailyTab === tab.key && styles.countTextActive]}>
                         {count}

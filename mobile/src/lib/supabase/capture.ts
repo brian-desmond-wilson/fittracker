@@ -7,6 +7,7 @@ import { supabase } from "../supabase";
 import { createExercise, fetchGoalTypes, fetchMovementCategories } from "./crossfit";
 import { mapCategory } from "../captureReview";
 import type {
+  CapturedWorkoutEntry,
   CatalogEntry,
   ExtractedPost,
   ResolvedPost,
@@ -207,6 +208,67 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
     console.error("saveCapture failed:", e);
     return null;
   }
+}
+
+/** Captured workouts with their movements and provenance, newest first.
+ *  Without this read the workouts are write-only: the rows exist and nothing
+ *  in the app can show them. */
+export async function fetchCapturedWorkouts(
+  userId: string,
+): Promise<CapturedWorkoutEntry[]> {
+  const { data, error } = await supabase
+    .from("captured_workouts")
+    .select(`
+      id, name, rounds, raw_protocol, created_at,
+      source:captured_sources!inner(
+        id, platform, source_url, poster_handle, thumbnail_url, extraction_status
+      ),
+      items:captured_workout_exercises(
+        exercise_order, target_sets, target_reps, target_weight,
+        target_duration, rest_seconds, notes,
+        exercise:exercises(id, name)
+      )
+    `)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("fetchCapturedWorkouts failed:", error);
+    return [];
+  }
+
+  return (data ?? [])
+    // A save that never finished leaves a pending source; don't show its
+    // half-built workout.
+    .filter((row: any) => row.source?.extraction_status === "reviewed")
+    .map((row: any) => ({
+      workoutId: row.id,
+      name: row.name,
+      rounds: row.rounds ?? null,
+      rawProtocol: row.raw_protocol ?? null,
+      capturedAt: row.created_at,
+      source: row.source
+        ? {
+            sourceId: row.source.id,
+            platform: row.source.platform,
+            sourceUrl: row.source.source_url,
+            posterHandle: row.source.poster_handle,
+            thumbnailUrl: row.source.thumbnail_url,
+          }
+        : null,
+      items: (row.items ?? [])
+        .slice()
+        .sort((a: any, b: any) => a.exercise_order - b.exercise_order)
+        .map((it: any) => ({
+          exerciseId: it.exercise?.id ?? "",
+          name: it.exercise?.name ?? "Unknown movement",
+          sets: it.target_sets ?? null,
+          reps: it.target_reps ?? null,
+          weight: it.target_weight ?? null,
+          duration: it.target_duration ?? null,
+          restSeconds: it.rest_seconds ?? null,
+          notes: it.notes ?? null,
+        })),
+    }));
 }
 
 /** Every captured exercise with taxonomy + provenance, newest capture first. */

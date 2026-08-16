@@ -98,6 +98,36 @@ export interface CatalogEntry {
   }[];
 }
 
+/** One movement inside a captured workout, as the creator prescribed it. */
+export interface CapturedWorkoutItemEntry {
+  exerciseId: string;
+  name: string;
+  sets: number | null;
+  reps: string | null;
+  weight: string | null;
+  duration: string | null;
+  restSeconds: number | null;
+  notes: string | null;
+}
+
+/** A captured workout, ready to show. Phase 1 reads these; Phase 2 serves
+ *  them whole. */
+export interface CapturedWorkoutEntry {
+  workoutId: string;
+  name: string;
+  rounds: string | null;
+  rawProtocol: string | null;
+  capturedAt: string;
+  source: {
+    sourceId: string;
+    platform: CapturePlatform;
+    sourceUrl: string;
+    posterHandle: string | null;
+    thumbnailUrl: string | null;
+  } | null;
+  items: CapturedWorkoutItemEntry[];
+}
+
 export interface CatalogFilters {
   muscle: string | null;
   equipment: string | null;

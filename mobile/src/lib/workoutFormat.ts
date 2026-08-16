@@ -7,9 +7,17 @@
 // sets, no "×". Rounds belong to the workout, not to each exercise.
 import type { ExtractedWorkoutItem } from "../types/capture";
 
+/** Only the prescription fields — so this works on an extraction being
+ *  reviewed and on a workout already saved, without either knowing about the
+ *  other. */
+export type Prescription = Pick<
+  ExtractedWorkoutItem,
+  "sets" | "reps" | "weight" | "duration" | "restSeconds"
+>;
+
 /** One exercise's prescription. Empty string when nothing was prescribed —
  *  the caller shows the exercise name alone rather than an invented number. */
-export function formatWorkoutItem(item: ExtractedWorkoutItem): string {
+export function formatWorkoutItem(item: Prescription): string {
   // Reps carry their own scheme ("8R/8L", "21-15-9"); only bare numbers get
   // the word "reps" appended.
   const effort = item.reps

@@ -217,10 +217,23 @@ completion — recommended-vs-performed feeds future rotation and ramp logic.
   dumbbell (Strength) mode icons. Tabs:
   - **Today** — check-in sheet if none today, then the composed session with
     per-exercise source links (tap → original post).
-  - **Catalog** — the captured collection with real filters: muscle region,
-    equipment, category, poster handle, skill level — driven by the existing
-    taxonomy junctions (finally replacing name-substring filtering).
-  - **Gyms** — gym list, one active, preset + checklist editor.
+  - **Workouts** — sessions servable whole: captured creator workouts in
+    Phase 1, joined by the recommender's own compositions in Phase 2,
+    distinguished by source. Each shows its movements, the rounds as
+    prescribed, the creator's verbatim protocol, and a link back to the post.
+  - **Exercises** — the captured movement collection with real filters: muscle
+    region, equipment, category, poster handle, skill level — driven by the
+    existing taxonomy junctions (finally replacing name-substring filtering).
+
+  **Revised 2026-08-16 (was Today / Catalog / Gyms).** Two problems with the
+  original: captured workouts had no read surface anywhere in the app, so the
+  rows were write-only; and Gyms held a permanent tab slot for what is
+  configuration rather than a daily surface. Splitting Catalog into Workouts
+  and Exercises fixes the first. Gyms moves — see below.
+- **Gym profiles** are not a Daily tab. Choosing today's gym belongs in the
+  daily check-in (it is one more thing you answer about today, alongside
+  soreness and time). Editing a gym's equipment checklist is rare setup and
+  belongs in Profile with the other configuration screens. Both are Phase 2.
 - **Capture button** in the Daily header.
 - All pickers/check-ins/review cards are **bottom sheets** (standing rule: no
   inline pickers).
@@ -232,9 +245,10 @@ completion — recommended-vs-performed feeds future rotation and ramp logic.
 ## 7. Phasing
 
 - **Phase 1 — ship this week:** migrations (§3), `capture-post` edge function,
-  paste-a-link sheet, review card, Catalog tab with filters. Value: start
-  collecting immediately.
-- **Phase 2 — mid-trip:** Gyms tab, check-in sheet, rules-tier modules,
+  paste-a-link sheet, review card, Exercises tab with filters, Workouts tab
+  showing captured workouts. Value: start collecting immediately.
+- **Phase 2 — mid-trip:** gym profiles (check-in picker + Profile editor),
+  check-in sheet, rules-tier modules,
   `compose-session` edge function, Today tab, Home card, logging integration.
   Value: the daily loop goes live.
 - **Phase 3 — after:** progression promotion UX, BFR finisher programming,
