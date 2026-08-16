@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Dumbbell, Search, X } from "lucide-react-native";
+import { Dumbbell, Flame, Search, X } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
@@ -9,18 +9,24 @@ import ExercisesTab from "@/src/components/training/ExercisesTab";
 import ClassesTab from "@/src/components/training/crossfit/ClassesTab";
 import WODsTab from "@/src/components/training/crossfit/WODsTab";
 import MovementsTab from "@/src/components/training/crossfit/MovementsTab";
+import CatalogTab from "@/src/components/training/daily/CatalogTab";
+import TodayTab from "@/src/components/training/daily/TodayTab";
+import GymsTab from "@/src/components/training/daily/GymsTab";
 import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
 import { fetchAllExercises, fetchMovements, fetchWODs, fetchClasses } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
 
-type WorkoutMode = "crossfit" | "strength";
+type WorkoutMode = "crossfit" | "strength" | "daily";
 type CrossFitTab = "classes" | "wods" | "movements";
 type StrengthTab = "programs" | "workouts" | "exercises";
+type DailyTab = "today" | "catalog" | "gyms";
 
 export default function Training() {
   const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("crossfit");
   const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
+  const [dailyTab, setDailyTab] = useState<DailyTab>("catalog");
+  const [catalogCount, setCatalogCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Track counts for each CrossFit tab
@@ -87,12 +93,22 @@ export default function Training() {
     { key: "exercises", label: "Exercises" },
   ];
 
+  const dailyTabs: { key: DailyTab; label: string }[] = [
+    { key: "today", label: "Today" },
+    { key: "catalog", label: "Catalog" },
+    { key: "gyms", label: "Gyms" },
+  ];
+
   const handleCrossFitPress = () => {
     setWorkoutMode("crossfit");
   };
 
   const handleStrengthPress = () => {
     setWorkoutMode("strength");
+  };
+
+  const handleDailyPress = () => {
+    setWorkoutMode("daily");
   };
 
   const renderTabContent = () => {
@@ -107,7 +123,7 @@ export default function Training() {
         default:
           return null;
       }
-    } else {
+    } else if (workoutMode === "strength") {
       switch (strengthTab) {
         case "programs":
           return <ProgramsTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setProgramsCount} />;
@@ -115,6 +131,17 @@ export default function Training() {
           return <WorkoutsTab onCountUpdate={setWorkoutsCount} />;
         case "exercises":
           return <ExercisesTab searchQuery={searchQuery} onSearchChange={setSearchQuery} onCountUpdate={setExercisesCount} />;
+        default:
+          return null;
+      }
+    } else {
+      switch (dailyTab) {
+        case "today":
+          return <TodayTab />;
+        case "catalog":
+          return <CatalogTab searchQuery={searchQuery} onCountUpdate={setCatalogCount} />;
+        case "gyms":
+          return <GymsTab />;
         default:
           return null;
       }
@@ -133,7 +160,7 @@ export default function Training() {
         default:
           return "Search...";
       }
-    } else {
+    } else if (workoutMode === "strength") {
       switch (strengthTab) {
         case "programs":
           return "Search programs...";
@@ -144,6 +171,8 @@ export default function Training() {
         default:
           return "Search...";
       }
+    } else {
+      return dailyTab === "catalog" ? "Search catalog..." : "Search...";
     }
   };
 
@@ -177,6 +206,9 @@ export default function Training() {
           <TouchableOpacity onPress={handleStrengthPress} activeOpacity={0.7} style={styles.iconButton}>
             <Dumbbell size={24} color={colors.primary} strokeWidth={2} />
           </TouchableOpacity>
+          <TouchableOpacity onPress={handleDailyPress} activeOpacity={0.7} style={styles.iconButton}>
+            <Flame size={24} color={colors.primary} strokeWidth={2} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -205,7 +237,7 @@ export default function Training() {
               </TouchableOpacity>
             );
           })
-        ) : (
+        ) : workoutMode === "strength" ? (
           strengthTabs.map((tab) => {
             const count = tab.key === "programs" ? programsCount : tab.key === "workouts" ? workoutsCount : exercisesCount;
             return (
@@ -225,6 +257,31 @@ export default function Training() {
                   </View>
                 </View>
                 {strengthTab === tab.key && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            );
+          })
+        ) : (
+          dailyTabs.map((tab) => {
+            const count = tab.key === "catalog" ? catalogCount : 0;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tab, dailyTab === tab.key && styles.tabActive]}
+                onPress={() => setDailyTab(tab.key)}
+              >
+                <View style={styles.tabContent}>
+                  <Text style={[styles.tabText, dailyTab === tab.key && styles.tabTextActive]}>
+                    {tab.label}
+                  </Text>
+                  {tab.key === "catalog" && (
+                    <View style={[styles.countChip, dailyTab === tab.key && styles.countChipActive]}>
+                      <Text style={[styles.countText, dailyTab === tab.key && styles.countTextActive]}>
+                        {count}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {dailyTab === tab.key && <View style={styles.tabIndicator} />}
               </TouchableOpacity>
             );
           })
