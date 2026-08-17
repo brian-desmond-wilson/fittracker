@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { getLocalDateString } from '../dates';
 import type {
   ProgramTemplate,
   ProgramTemplateWithRelations,
@@ -474,6 +475,119 @@ export async function updateProgramInstance(
 
   if (error) {
     console.error('Error updating program instance:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * How a program run stops being the one that schedules your days.
+ *
+ * `abandoned` and `completed` are both endings — the difference is only what
+ * the history says happened, and the caller decides that, never this function.
+ * A run you stopped keeping up with is `abandoned`: recording it as
+ * `completed` would put a finish line in your history you never crossed.
+ */
+export type ProgramEndOutcome = 'abandoned' | 'completed';
+
+/**
+ * End a program run.
+ *
+ * `status` is what every scheduling read keys on — `fetchTodaysWorkout` looks
+ * for the one instance with `status = 'active'` — so this single write is what
+ * stops the daily recommendation. The scheduled `workout_instances` rows are
+ * deliberately left alone: they are the plan this run HAD, they no longer
+ * reach any surface once the run is not active, and deleting them would take
+ * the completed ones (your history) with them.
+ *
+ * `actual_end_date` is stamped from the LOCAL calendar, not
+ * `toISOString().split('T')[0]` — an evening in a negative-offset timezone
+ * converts to tomorrow in UTC, which is how a run gets an end date it never
+ * saw. Same rule the expiration-date picker records.
+ */
+export async function endProgramInstance(
+  instanceId: string,
+  outcome: ProgramEndOutcome,
+): Promise<ProgramInstance> {
+  return updateProgramInstance(instanceId, {
+    status: outcome,
+    actual_end_date: getLocalDateString(),
+  });
+}
+
+/**
+ * Pause a run, or put a paused one back to work.
+ *
+ * Pausing reads as the same silence as ending — no workout is recommended,
+ * because only an `active` run schedules anything — but it keeps
+ * `actual_end_date` null, so the run has no ending recorded and resuming
+ * leaves no trace of the gap. That is the whole distinction: a pause is a
+ * break you mean to come back from.
+ */
+export async function setProgramInstancePaused(
+  instanceId: string,
+  paused: boolean,
+): Promise<ProgramInstance> {
+  return updateProgramInstance(instanceId, { status: paused ? 'paused' : 'active' });
+}
+
+/**
+ * The user's one scheduling run, if they have one — the same "active"
+ * question `fetchTodaysWorkout` asks, so a surface offering to END a run and
+ * the card showing that run's workout can never disagree about which run it
+ * is. `paused` deliberately does NOT count: a paused run schedules nothing.
+ */
+export async function fetchActiveProgramInstance(
+  userId: string,
+): Promise<ProgramInstance | null> {
+  const { data, error } = await supabase
+    .from('program_instances')
+    .select('*')
+    .eq('user_id', userId)
+    // Both predicates, and in this order, because `fetchTodaysWorkout` asks
+    // exactly this pair — a run is the scheduler's run only if it is active
+    // AND unended. Matching one but not the other is how a surface starts
+    // disagreeing with the card on Home about whether a program is running.
+    .is('actual_end_date', null)
+    .eq('status', 'active')
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching active program instance:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * This user's unfinished run of ONE program — active or paused.
+ *
+ * Wider than `fetchActiveProgramInstance` on purpose: a paused run schedules
+ * nothing, but it is still yours and still the thing you would resume or end,
+ * so a program's own page must offer it rather than inviting you to start a
+ * second run alongside it.
+ */
+export async function fetchCurrentRunForProgram(
+  userId: string,
+  programId: string,
+): Promise<ProgramInstance | null> {
+  const { data, error } = await supabase
+    .from('program_instances')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('program_id', programId)
+    .is('actual_end_date', null)
+    .in('status', ['active', 'paused'])
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching current run for program:', error);
     throw error;
   }
 

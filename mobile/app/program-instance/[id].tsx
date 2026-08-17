@@ -8,6 +8,7 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,9 +20,16 @@ import {
   Activity,
   Target,
   AlertCircle,
+  PauseCircle,
+  PlayCircle,
+  XCircle,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { fetchProgramInstanceById } from "@/src/lib/supabase/training";
+import {
+  endProgramInstance,
+  fetchProgramInstanceById,
+  setProgramInstancePaused,
+} from "@/src/lib/supabase/training";
 import type { ProgramInstanceWithRelations, WorkoutInstance } from "@/src/types/training";
 import { formatDayLabel } from "@/src/lib/dates";
 
@@ -35,6 +43,7 @@ export default function ProgramInstanceDetail() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   useEffect(() => {
     loadInstance();
@@ -58,6 +67,48 @@ export default function ProgramInstanceDetail() {
   async function handleRefresh() {
     setRefreshing(true);
     await loadInstance();
+  }
+
+  // Ending is the write that stops the daily recommendation — only an ACTIVE
+  // run schedules anything — so the confirmation says that in the words the
+  // owner would use, rather than asking them to trust the word "abandoned".
+  // Recorded as abandoned, not completed: a run you stopped keeping up with
+  // never crossed a finish line, and the history should not claim it did.
+  function confirmEnd() {
+    if (!instance) return;
+    Alert.alert(
+      "End program?",
+      `"${instance.instance_name}" will stop scheduling daily workouts. Everything you already logged stays in your history, and you can start a new program whenever you like.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "End program",
+          style: "destructive",
+          onPress: () => applyStatusChange(() => endProgramInstance(instance.id, "abandoned")),
+        },
+      ],
+    );
+  }
+
+  // Pause is the reversible half of the same silence: no workout is
+  // recommended, but nothing is written into the run's history, so resuming
+  // leaves no trace of the gap. No confirmation — it undoes itself.
+  function togglePaused(paused: boolean) {
+    if (!instance) return;
+    applyStatusChange(() => setProgramInstancePaused(instance.id, paused));
+  }
+
+  async function applyStatusChange(write: () => Promise<unknown>) {
+    setUpdatingStatus(true);
+    try {
+      await write();
+      await loadInstance();
+    } catch (err) {
+      console.error("Error updating program status:", err);
+      Alert.alert("Couldn't update program", "Please try again.");
+    } finally {
+      setUpdatingStatus(false);
+    }
   }
 
 
@@ -365,6 +416,56 @@ export default function ProgramInstanceDetail() {
             )}
           </View>
 
+          {/* Program controls. Only a run that is still going has anything to
+              stop — an ended run shows its outcome in the status badge above
+              and offers nothing, because restarting is starting a NEW run
+              (with its own dates and history), not reviving this one. */}
+          {(instance.status === "active" || instance.status === "paused") && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Program</Text>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={() => togglePaused(instance.status === "active")}
+                disabled={updatingStatus}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+              >
+                {instance.status === "active" ? (
+                  <PauseCircle size={18} color={colors.primary} />
+                ) : (
+                  <PlayCircle size={18} color={colors.primary} />
+                )}
+                <Text style={styles.secondaryActionText}>
+                  {instance.status === "active" ? "Pause program" : "Resume program"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.actionNote}>
+                {instance.status === "active"
+                  ? "Stops daily workouts without ending the program. Pick it back up any time."
+                  : "Paused — no workouts are being scheduled."}
+              </Text>
+
+              <TouchableOpacity
+                style={styles.destructiveAction}
+                onPress={confirmEnd}
+                disabled={updatingStatus}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+              >
+                <XCircle size={18} color={colors.destructive} />
+                <Text style={styles.destructiveActionText}>End program</Text>
+              </TouchableOpacity>
+              <Text style={styles.actionNote}>
+                Ends it for good and stops scheduling. Your logged workouts stay in
+                your history.
+              </Text>
+
+              {updatingStatus && (
+                <ActivityIndicator color={colors.primary} style={styles.actionSpinner} />
+              )}
+            </View>
+          )}
+
           <View style={{ height: 40 }} />
         </ScrollView>
       </View>
@@ -563,6 +664,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  // Both actions are full-width rows rather than buttons in a row: ending is
+  // not a peer of pausing, and sitting them side by side would invite the
+  // destructive one to be tapped by muscle memory.
+  secondaryAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: colors.secondary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  secondaryActionText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  destructiveAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "transparent",
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: colors.destructive,
+  },
+  destructiveActionText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.destructive,
+  },
+  actionNote: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  actionSpinner: {
+    marginTop: 16,
   },
   emptyText: {
     fontSize: 15,

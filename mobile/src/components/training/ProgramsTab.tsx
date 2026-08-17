@@ -16,7 +16,12 @@ import { TrendingUp, BarChart3, Clock, User, Plus } from "lucide-react-native";
 import { AddProgramModal } from "./AddProgramModal";
 import { colors } from "@/src/lib/colors";
 import { useRouter } from "expo-router";
-import { fetchPublishedPrograms, fetchUserProgramInstances, deleteProgramTemplate } from "@/src/lib/supabase/training";
+import {
+  fetchPublishedPrograms,
+  fetchUserProgramInstances,
+  deleteProgramTemplate,
+  endProgramInstance,
+} from "@/src/lib/supabase/training";
 import { supabase } from "@/src/lib/supabase";
 import type { ProgramTemplateWithRelations, ProgramInstanceWithRelations } from "@/src/types/training";
 
@@ -32,6 +37,11 @@ interface ProgramDisplayData {
   difficultyLevel: string;
   coverImageUrl: string | null;
   isActive: boolean;
+  /** The RUN behind the ACTIVE badge — null for a template you are not
+   *  currently running. Carried so the long-press menu can end that run
+   *  without a second lookup, and so "active" means the same thing here as
+   *  it does to the scheduler. */
+  activeInstanceId: string | null;
 }
 
 interface ProgramCardProps {
@@ -154,12 +164,18 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
         userProgramInstances = await fetchUserProgramInstances(user.id);
       }
 
-      // Create a Set of program IDs that the user has active instances for
-      const activeProgramIds = new Set(
-        userProgramInstances
-          .filter(instance => instance.status === 'active')
-          .map(instance => instance.program_id)
-      );
+      // Program id -> the active RUN of it. A map rather than a Set of ids
+      // now: the long-press menu ends a run, and a run is what it needs.
+      // Most recent start wins if history ever leaves two active.
+      const activeInstanceByProgramId = new Map<string, string>();
+      userProgramInstances
+        .filter(instance => instance.status === 'active')
+        .sort((a, b) => b.start_date.localeCompare(a.start_date))
+        .forEach(instance => {
+          if (!activeInstanceByProgramId.has(instance.program_id)) {
+            activeInstanceByProgramId.set(instance.program_id, instance.id);
+          }
+        });
 
       // Map Supabase data to display format
       const mappedPrograms: ProgramDisplayData[] = publishedPrograms.map(program => ({
@@ -173,7 +189,8 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
         primaryGoal: program.primary_goal,
         difficultyLevel: program.difficulty_level,
         coverImageUrl: program.cover_image_url,
-        isActive: activeProgramIds.has(program.id),
+        isActive: activeInstanceByProgramId.has(program.id),
+        activeInstanceId: activeInstanceByProgramId.get(program.id) ?? null,
       }));
 
       setPrograms(mappedPrograms);
@@ -197,7 +214,16 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
   const myPrograms = filteredPrograms.filter((p) => p.isActive);
   const discoverPrograms = filteredPrograms.filter((p) => !p.isActive);
 
+  // Ending a RUN and deleting a TEMPLATE are different acts on different
+  // things — one stops your schedule, the other destroys a program everyone
+  // could start — so they are never offered in the same breath: an active
+  // card offers to end, any other card you own offers to delete.
   const handleLongPress = (program: ProgramDisplayData) => {
+    if (program.isActive && program.activeInstanceId) {
+      confirmEndRun(program);
+      return;
+    }
+
     // Only show delete option if user is the creator
     if (!currentUserId || program.creatorId !== currentUserId) {
       return;
@@ -217,6 +243,33 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
               loadPrograms(true);
             } else {
               Alert.alert('Error', 'Failed to delete program');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Same wording and the same outcome as the program run screen's own
+  // control — this is a shortcut to that decision, not a second version of it.
+  const confirmEndRun = (program: ProgramDisplayData) => {
+    const instanceId = program.activeInstanceId;
+    if (!instanceId) return;
+    Alert.alert(
+      'End program?',
+      `"${program.title}" will stop scheduling daily workouts. Everything you already logged stays in your history, and you can start a new program whenever you like.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End program',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await endProgramInstance(instanceId, 'abandoned');
+              loadPrograms(true);
+            } catch (err) {
+              console.error('Error ending program:', err);
+              Alert.alert('Error', "Couldn't end the program. Please try again.");
             }
           },
         },

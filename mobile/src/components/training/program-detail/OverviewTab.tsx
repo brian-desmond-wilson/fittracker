@@ -1,8 +1,11 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { ChevronDown, ChevronUp, ChevronRight } from "lucide-react-native";
+import { useFocusEffect, useRouter } from "expo-router";
 import { colors } from "@/src/lib/colors";
-import type { ProgramTemplateWithRelations } from "@/src/types/training";
+import { supabase } from "@/src/lib/supabase";
+import { fetchCurrentRunForProgram } from "@/src/lib/supabase/training";
+import type { ProgramInstance, ProgramTemplateWithRelations } from "@/src/types/training";
 import StartProgramModal from "./StartProgramModal";
 
 interface OverviewTabProps {
@@ -10,8 +13,41 @@ interface OverviewTabProps {
 }
 
 export default function OverviewTab({ program }: OverviewTabProps) {
+  const router = useRouter();
   const [expandedCycle, setExpandedCycle] = useState<string | null>(null);
   const [showStartModal, setShowStartModal] = useState(false);
+  // The run you already have of this program, if any. `undefined` = not
+  // looked up yet, which is why the button below renders nothing until this
+  // resolves: offering "Start Program" for a beat and then swapping it for
+  // "Open your program" is how you end up with two runs of the same thing.
+  const [run, setRun] = useState<ProgramInstance | null | undefined>(undefined);
+
+  // On focus, not just on mount: ending or pausing the run happens on the
+  // screen this links to, so coming back must not still say "Active".
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) {
+            if (!cancelled) setRun(null);
+            return;
+          }
+          const current = await fetchCurrentRunForProgram(user.id, program.id);
+          if (!cancelled) setRun(current);
+        } catch (err) {
+          console.error("OverviewTab: current run lookup failed", err);
+          // Fall back to the start path — a failed lookup must not leave the
+          // page with no action at all.
+          if (!cancelled) setRun(null);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [program.id]),
+  );
 
   const toggleCycle = (cycleId: string) => {
     setExpandedCycle(expandedCycle === cycleId ? null : cycleId);
@@ -101,15 +137,40 @@ export default function OverviewTab({ program }: OverviewTabProps) {
         </View>
       )}
 
-      {/* Start Program Button */}
+      {/* Start, or — when you are already running this — the way into that
+          run, where pausing and ending live. One button, because "start" and
+          "the one you are already doing" are the same question answered
+          differently, and offering both invites a second parallel run. */}
       <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={styles.startButton}
-          activeOpacity={0.8}
-          onPress={() => setShowStartModal(true)}
-        >
-          <Text style={styles.startButtonText}>Start Program</Text>
-        </TouchableOpacity>
+        {run ? (
+          <TouchableOpacity
+            style={styles.runCard}
+            activeOpacity={0.7}
+            onPress={() => router.push(`/program-instance/${run.id}`)}
+            accessibilityRole="button"
+          >
+            <View style={styles.runCardText}>
+              <Text style={styles.runCardTitle}>
+                {run.status === "paused" ? "Paused" : "You're running this"}
+              </Text>
+              <Text style={styles.runCardSubtitle} numberOfLines={1}>
+                {run.instance_name} · {run.workouts_completed}/{run.total_workouts} workouts
+              </Text>
+              <Text style={styles.runCardHint}>
+                Open to pause or end the program
+              </Text>
+            </View>
+            <ChevronRight size={20} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        ) : run === null ? (
+          <TouchableOpacity
+            style={styles.startButton}
+            activeOpacity={0.8}
+            onPress={() => setShowStartModal(true)}
+          >
+            <Text style={styles.startButtonText}>Start Program</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <View style={{ height: 40 }} />
@@ -243,5 +304,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: colors.primaryForeground,
+  },
+  // A row, not a filled button: this is where you already are, not the
+  // page's call to action, and painting it brand-green would read as
+  // "start again".
+  runCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.secondary,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  runCardText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  runCardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.foreground,
+  },
+  runCardSubtitle: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  runCardHint: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginTop: 6,
   },
 });
