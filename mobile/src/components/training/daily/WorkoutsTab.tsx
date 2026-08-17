@@ -3,14 +3,14 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator,
   RefreshControl, Image,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import { ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { filterWorkouts } from "@/src/lib/workoutFilter";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
-import { WorkoutDetailSheet } from "./WorkoutDetailSheet";
+import { CaptureFab } from "./CaptureFab";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface WorkoutsTabProps {
@@ -22,7 +22,6 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [open, setOpen] = useState<CapturedWorkoutEntry | null>(null);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -50,16 +49,15 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
     [workouts, searchQuery],
   );
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
+  // The loading spinner sits inside the container, not in place of it, so the
+  // capture button never blinks out from under your thumb.
   return (
     <View style={styles.container}>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
       <FlatList
         data={filtered}
         keyExtractor={(w) => w.workoutId}
@@ -71,7 +69,9 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
-            onPress={() => setOpen(item)}
+            onPress={() =>
+              router.push(`/(tabs)/training/captured-workout/${item.workoutId}`)
+            }
             activeOpacity={0.7}
           >
             {item.source?.thumbnailUrl && (
@@ -102,8 +102,9 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
           </View>
         }
       />
+      )}
 
-      <WorkoutDetailSheet workout={open} onClose={() => setOpen(null)} />
+      <CaptureFab onSaved={load} />
     </View>
   );
 }

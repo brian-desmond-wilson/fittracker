@@ -13,6 +13,7 @@ export default function TrainingLayout() {
       <Stack.Screen name="movement/[id]" />
       <Stack.Screen name="exercise/[id]" />
       <Stack.Screen name="workout/[id]" />
+      <Stack.Screen name="captured-workout/[id]" />
     </Stack>
   );
 }
