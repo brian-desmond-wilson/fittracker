@@ -1,6 +1,7 @@
 import {
   elapsedSecondsSince,
   formatClockTime,
+  formatMinutesLabel,
   formatDuration,
   formatInstantTime,
 } from "../timeFormat";
@@ -92,5 +93,30 @@ describe("elapsedSecondsSince", () => {
   it("clamps a start in the future to zero", () => {
     // A device clock adjustment can put "now" behind a stored timestamp.
     expect(elapsedSecondsSince(Date.now() + 5000)).toBe(0);
+  });
+});
+
+describe("formatMinutesLabel", () => {
+  it("renders whole hours without a minutes tail", () => {
+    expect(formatMinutesLabel(60)).toBe("1h");
+    expect(formatMinutesLabel(120)).toBe("2h");
+  });
+
+  it("splits an hour-and-a-bit into whole hours plus the remainder", () => {
+    // The bug this replaces printed 90 as "1.5h 30m" — the hour part was a
+    // raw division, so the half-hour was counted twice.
+    expect(formatMinutesLabel(90)).toBe("1h 30m");
+    expect(formatMinutesLabel(75)).toBe("1h 15m");
+    expect(formatMinutesLabel(135)).toBe("2h 15m");
+  });
+
+  it("renders under an hour as plain minutes", () => {
+    expect(formatMinutesLabel(45)).toBe("45m");
+    expect(formatMinutesLabel(5)).toBe("5m");
+  });
+
+  it("clamps nonsense to zero minutes rather than printing NaN", () => {
+    expect(formatMinutesLabel(0)).toBe("0m");
+    expect(formatMinutesLabel(-30)).toBe("0m");
   });
 });

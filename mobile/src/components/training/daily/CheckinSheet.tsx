@@ -8,6 +8,7 @@ import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/components/workout-session/helpers";
 import { saveCheckin } from "@/src/lib/supabase/daily";
 import { fetchMuscleRegions } from "@/src/lib/supabase/crossfit";
+import { formatMinutesLabel } from "@/src/lib/timeFormat";
 import type { DailyCheckin } from "@/src/types/daily";
 
 const MINUTES_OPTIONS = [45, 60, 90, 120];
@@ -106,7 +107,7 @@ export function CheckinSheet({ visible, existing, onClose, onSaved }: CheckinShe
                 style={[styles.pill, minutes === m && styles.pillActive]}
                 onPress={() => setMinutes(m)}>
                 <Text style={[styles.pillText, minutes === m && styles.pillTextActive]}>
-                  {m >= 60 ? `${m / 60}h${m % 60 ? ` ${m % 60}m` : ""}` : `${m}m`}
+                  {formatMinutesLabel(m)}
                 </Text>
               </TouchableOpacity>
             ))}

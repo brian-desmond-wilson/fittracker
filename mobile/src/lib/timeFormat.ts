@@ -62,6 +62,21 @@ export function formatDuration(totalSeconds: number): string {
 }
 
 /**
+ * A budget of minutes as a person says it: "45m", "1h", "1h 30m".
+ *
+ * The hour part must be a FLOOR, not a division — writing `m / 60` renders 90
+ * as "1.5h 30m", counting the half hour once in the hours and again in the
+ * remainder.
+ */
+export function formatMinutesLabel(minutes: number): string {
+  const safe = Math.max(0, Math.floor(minutes));
+  const h = Math.floor(safe / 60);
+  const m = safe % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/**
  * Whole seconds elapsed since a `Date.now()`-style timestamp, never negative.
  *
  * A start in the future clamps to zero rather than counting backwards — a
