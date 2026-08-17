@@ -105,29 +105,84 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
     if (muscleError) throw muscleError;
     const muscleIdByName = new Map((muscleRows ?? []).map((m) => [m.name, m.id]));
 
-    // 1. The source row, pending until everything under it lands.
-    const { data: source, error: sourceError } = await supabase
-      .from("captured_sources")
-      .insert({
-        user_id: input.userId,
-        platform: input.platform,
-        source_url: input.sourceUrl,
-        poster_handle: input.posterHandle,
-        caption_text: input.captionText,
-        thumbnail_url: input.thumbnailUrl,
-        raw_extraction: input.rawExtraction ?? null,
-        extraction_status: "pending",
-      })
-      .select("id")
-      .single();
-    if (sourceError) throw sourceError;
-    const sourceId = source.id as string;
+    // 1. Claim the source row. The URL is unique per user, and a failed
+    //    earlier save leaves a pending row behind — a plain insert would
+    //    collide with it on every retry, making the first flaky-network save
+    //    permanent. So: a reviewed row means this capture already succeeded;
+    //    a pending/failed row is reclaimed, its children cleared, and the
+    //    retry writes a clean set.
+    const existing = await findExistingCapture(input.userId, input.sourceUrl);
+    let sourceId: string;
+    if (existing) {
+      if (existing.extraction_status === "reviewed") return existing.id;
+
+      const { error: clearLinksError } = await supabase
+        .from("source_exercises")
+        .delete()
+        .eq("source_id", existing.id);
+      if (clearLinksError) throw clearLinksError;
+      // captured_workout_exercises cascades from captured_workouts.
+      const { error: clearWorkoutsError } = await supabase
+        .from("captured_workouts")
+        .delete()
+        .eq("source_id", existing.id);
+      if (clearWorkoutsError) throw clearWorkoutsError;
+
+      const { error: reclaimError } = await supabase
+        .from("captured_sources")
+        .update({
+          platform: input.platform,
+          poster_handle: input.posterHandle,
+          caption_text: input.captionText,
+          thumbnail_url: input.thumbnailUrl,
+          raw_extraction: input.rawExtraction ?? null,
+          extraction_status: "pending",
+        })
+        .eq("id", existing.id);
+      if (reclaimError) throw reclaimError;
+      sourceId = existing.id;
+    } else {
+      const { data: source, error: sourceError } = await supabase
+        .from("captured_sources")
+        .insert({
+          user_id: input.userId,
+          platform: input.platform,
+          source_url: input.sourceUrl,
+          poster_handle: input.posterHandle,
+          caption_text: input.captionText,
+          thumbnail_url: input.thumbnailUrl,
+          raw_extraction: input.rawExtraction ?? null,
+          extraction_status: "pending",
+        })
+        .select("id")
+        .single();
+      if (sourceError) throw sourceError;
+      sourceId = source.id as string;
+    }
 
     // 2. Each exercise: link the matched library entry, or create a new one
     //    through the SAME path the Add Exercise wizard uses.
     const exerciseIds: string[] = [];
     for (const ex of input.post.exercises) {
       let exerciseId = ex.libraryMatchId;
+      let reusedOwn = false;
+      if (!exerciseId) {
+        // A failed earlier attempt may already have created this exercise
+        // (exercises outlive their source's rollback-by-status). An exact
+        // name match owned by this user is that leftover — link it instead
+        // of minting a twin.
+        const { data: dupes, error: dupeError } = await supabase
+          .from("exercises")
+          .select("id")
+          .eq("name", ex.name)
+          .eq("created_by", input.userId)
+          .limit(1);
+        if (dupeError) throw dupeError;
+        if (dupes && dupes.length > 0) {
+          exerciseId = dupes[0].id as string;
+          reusedOwn = true;
+        }
+      }
       if (!exerciseId) {
         const { goalType, movementCategory } = mapCategory(ex.category);
         const movementCategoryId = mcIdByName.get(movementCategory);
@@ -159,7 +214,7 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
       const { error: linkError } = await supabase.from("source_exercises").insert({
         source_id: sourceId,
         exercise_id: exerciseId,
-        was_created: !ex.libraryMatchId,
+        was_created: !ex.libraryMatchId && !reusedOwn,
       });
       if (linkError) throw linkError;
     }
