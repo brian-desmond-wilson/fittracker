@@ -4,7 +4,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronDown, MapPin, Play, Sparkles } from "lucide-react-native";
+import { ChevronDown, ChevronRight, MapPin, Play, Sparkles } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { useDailySession } from "@/src/hooks/useDailySession";
 import { GymSheet } from "./GymSheet";
@@ -122,16 +122,28 @@ export default function TodayTab() {
                 <View key={section} style={styles.section}>
                   <Text style={styles.sectionTitle}>{SECTION_TITLES[section]}</Text>
                   {items.map((item) => (
-                    <View key={item.id} style={styles.itemCard}>
-                      <Text style={styles.itemName}>{item.name}</Text>
-                      <Text style={styles.itemMeta}>
-                        {[
-                          item.targetSets ? `${item.targetSets} × ${item.targetReps ?? "?"}` : item.targetReps,
-                          item.restSeconds ? `rest ${item.restSeconds}s` : null,
-                        ].filter(Boolean).join(" · ")}
-                      </Text>
-                      {item.reason && <Text style={styles.itemReason}>{item.reason}</Text>}
-                    </View>
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.itemCard}
+                      activeOpacity={0.7}
+                      onPress={() =>
+                        router.push(`/(tabs)/training/exercise/${item.exerciseId}` as never)
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item.name}. Open the exercise.`}
+                    >
+                      <View style={styles.itemBody}>
+                        <Text style={styles.itemName}>{item.name}</Text>
+                        <Text style={styles.itemMeta}>
+                          {[
+                            item.targetSets ? `${item.targetSets} × ${item.targetReps ?? "?"}` : item.targetReps,
+                            item.restSeconds ? `rest ${item.restSeconds}s` : null,
+                          ].filter(Boolean).join(" · ")}
+                        </Text>
+                        {item.reason && <Text style={styles.itemReason}>{item.reason}</Text>}
+                      </View>
+                      <ChevronRight size={18} color={colors.mutedForeground} />
+                    </TouchableOpacity>
                   ))}
                 </View>
               );
@@ -195,9 +207,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1, marginBottom: 8,
   },
   itemCard: {
+    flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
     borderRadius: 10, padding: 12, marginBottom: 8,
   },
+  itemBody: { flex: 1 },
   itemName: { fontSize: 15, fontWeight: "600", color: colors.foreground },
   itemMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
   itemReason: { fontSize: 12, color: colors.primary, marginTop: 6, fontStyle: "italic" },
