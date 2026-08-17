@@ -30,7 +30,7 @@ export default function Training() {
   const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("daily");
   const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
-  const [dailyTab, setDailyTab] = useState<DailyTab>("exercises");
+  const [dailyTab, setDailyTab] = useState<DailyTab>("today");
   const [catalogCount, setCatalogCount] = useState(0);
   const [capturedWorkoutsCount, setCapturedWorkoutsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
