@@ -34,6 +34,85 @@ const RAMP_CAPS: Record<number, Partial<Record<SessionSection, number>>> = {
   2: { main: 4, accessory: 2, bfr: 1 },
 };
 
+// What the leftover of a capped day may be spent on. The re-entry ceilings
+// hold down hard sets, not time in the building — so an hour the ramp refuses
+// to fill with loaded work goes to mobility at both ends and to longer rests
+// between the sets it does allow.
+/** Total slots a section will accept once leftover time is being spent. */
+const MOBILITY_CEILING: Partial<Record<SessionSection, number>> = {
+  warmup: 8,
+  cooldown: 4,
+};
+/** Rest can stretch this far, in seconds, and no further. */
+const REST_CEILING: Partial<Record<SessionSection, number>> = {
+  main: 210,
+  accessory: 150,
+  bfr: 75,
+};
+/** Under this, the shortfall is floor() rounding rather than a real gap. */
+const MIN_LEFTOVER_MINUTES = 5;
+
+const PER_SLOT = new Map(SHAPE.map((s) => [s.section, s.perSlot]));
+
+/**
+ * Spend the minutes a cap refused to use.
+ *
+ * Mobility first — half the leftover, warm-up before cooldown, each to its own
+ * ceiling. Whatever remains stretches the rests, longest-resting section
+ * first, because that is recovery rather than work. The person keeps the day
+ * they asked for without doing volume they aren't ready for.
+ *
+ * Slots are an offer, not a promise: if the warm-up pool holds four movements,
+ * asking for six still yields four. Composition takes what exists.
+ */
+function spendLeftover(plans: SectionPlan[], minutes: number): SectionPlan[] {
+  const spent = plans.reduce(
+    (sum, p) => sum + p.slots * (PER_SLOT.get(p.section) ?? 0), 0,
+  );
+  let leftover = minutes - spent;
+  if (leftover < MIN_LEFTOVER_MINUTES) return plans;
+
+  const out = plans.map((p) => ({ ...p }));
+  const find = (section: SessionSection) => out.find((p) => p.section === section);
+
+  // ---- Mobility: half the leftover, warm-up then cooldown ----
+  let mobility = Math.floor(leftover / 2);
+  for (const section of ["warmup", "cooldown"] as SessionSection[]) {
+    const plan = find(section);
+    const ceiling = MOBILITY_CEILING[section];
+    const perSlot = PER_SLOT.get(section);
+    // A section the day was too short to run stays off; leftover time is not
+    // a reason to reopen what the time gate closed.
+    if (!plan || plan.slots === 0 || ceiling === undefined || !perSlot) continue;
+    while (mobility >= perSlot && plan.slots < ceiling) {
+      plan.slots += 1;
+      mobility -= perSlot;
+      leftover -= perSlot;
+    }
+  }
+
+  // ---- Rests: the rest of it, longest-resting section first ----
+  const resting = out
+    .filter((p) => p.slots > 0 && p.restSeconds !== null && REST_CEILING[p.section])
+    .sort((a, b) => (b.restSeconds ?? 0) - (a.restSeconds ?? 0));
+  for (const plan of resting) {
+    if (leftover <= 0) break;
+    // One gap between each pair of sets — no rest after the final one.
+    const gaps = plan.slots * Math.max(0, plan.targetSets - 1);
+    if (gaps === 0) continue;
+    const ceiling = REST_CEILING[plan.section]!;
+    const room = ceiling - (plan.restSeconds ?? 0);
+    if (room <= 0) continue;
+    const wanted = Math.floor((leftover * 60) / gaps);
+    const added = Math.min(room, wanted);
+    if (added <= 0) continue;
+    plan.restSeconds = (plan.restSeconds ?? 0) + added;
+    leftover -= (added * gaps) / 60;
+  }
+
+  return out;
+}
+
 export function sessionBudget({ minutes, rampWeek, energy }: BudgetInput): SectionPlan[] {
   const caps = RAMP_CAPS[rampWeek] ?? {};
   // Short days starve the back of the list: below these thresholds a section
@@ -45,7 +124,7 @@ export function sessionBudget({ minutes, rampWeek, energy }: BudgetInput): Secti
   const liveFraction = SHAPE.filter((s) => !skip.has(s.section))
     .reduce((sum, s) => sum + s.fraction, 0);
 
-  return SHAPE.map((s) => {
+  const plans = SHAPE.map((s) => {
     if (skip.has(s.section)) {
       return { section: s.section, slots: 0, targetSets: s.sets, targetReps: s.reps, restSeconds: s.rest };
     }
@@ -59,4 +138,7 @@ export function sessionBudget({ minutes, rampWeek, energy }: BudgetInput): Secti
       : s.sets;
     return { section: s.section, slots, targetSets: sets, targetReps: s.reps, restSeconds: s.rest };
   });
+
+  // Whatever a cap — or plain rounding — left on the table.
+  return spendLeftover(plans, minutes);
 }

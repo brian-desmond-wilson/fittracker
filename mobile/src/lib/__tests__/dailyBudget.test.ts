@@ -48,3 +48,52 @@ describe("sessionBudget", () => {
     expect(tired.targetSets).toBeGreaterThanOrEqual(2);
   });
 });
+
+// The re-entry ceilings hold down hard sets, not time in the building. A long
+// day the caps refuse to fill goes to mobility and to longer rests instead of
+// simply going unused.
+describe("sessionBudget spends what a cap left over", () => {
+  const of = (p: ReturnType<typeof sessionBudget>, section: string) =>
+    p.find((s) => s.section === section)!;
+
+  it("buys mobility and rest, never more loaded work", () => {
+    const capped = plan(120, 1);
+    expect(of(capped, "main").slots).toBeLessThanOrEqual(3);
+    expect(of(capped, "accessory").slots).toBeLessThanOrEqual(1);
+    expect(of(capped, "bfr").slots).toBe(0);
+    // ...and the time goes somewhere.
+    expect(of(capped, "warmup").slots).toBeGreaterThan(4);
+    expect(of(capped, "cooldown").slots).toBeGreaterThan(2);
+    expect(of(capped, "main").restSeconds!).toBeGreaterThan(120);
+  });
+
+  it("gives a capped day more mobility than an uncapped one of the same length", () => {
+    expect(of(plan(120, 1), "warmup").slots)
+      .toBeGreaterThan(of(plan(120, 3), "warmup").slots);
+  });
+
+  it("respects the mobility ceilings", () => {
+    const p = plan(240, 1);
+    expect(of(p, "warmup").slots).toBeLessThanOrEqual(8);
+    expect(of(p, "cooldown").slots).toBeLessThanOrEqual(4);
+  });
+
+  it("respects the rest ceilings", () => {
+    const p = plan(240, 1);
+    expect(of(p, "main").restSeconds!).toBeLessThanOrEqual(210);
+    expect(of(p, "accessory").restSeconds!).toBeLessThanOrEqual(150);
+  });
+
+  it("leaves a section the clock closed closed", () => {
+    const short = plan(30, 1);
+    expect(of(short, "cooldown").slots).toBe(0);
+    expect(of(short, "accessory").slots).toBe(0);
+    expect(of(short, "bfr").slots).toBe(0);
+  });
+
+  it("never stretches rest where the section prescribes none", () => {
+    const p = plan(120, 1);
+    expect(of(p, "warmup").restSeconds).toBeNull();
+    expect(of(p, "cooldown").restSeconds).toBeNull();
+  });
+});

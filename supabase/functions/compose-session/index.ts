@@ -23,6 +23,11 @@ ordering, and pairing, the judgment a good coach applies.
 Rules:
 - Use ONLY exercise ids from the candidate list, by exact "id". Never invent.
 - Respect the slot budget per section. Fewer is fine; more is not.
+- The budget already spent the person's stated time for them, so a long
+  warm-up or cooldown next to little loaded work is deliberate: their re-entry
+  ramp caps hard sets, and the leftover time went to mobility and to longer
+  rests. Fill the warm-up and cooldown slots you are offered instead of
+  trimming them — the time is theirs, and the mobility is what it is for.
 - Higher-ranked candidates are preferred (the list is ordered), but you may
   reach past one when it makes the session cohere: complementary movement
   patterns, sensible push/pull pairing within the day, equipment flow so the
