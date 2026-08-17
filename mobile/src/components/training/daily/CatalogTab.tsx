@@ -4,15 +4,13 @@ import {
   ActivityIndicator, RefreshControl, Linking, Image,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { Plus, ExternalLink } from "lucide-react-native";
+import { ExternalLink } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCatalog } from "@/src/lib/supabase/capture";
-import { fetchAllExercises } from "@/src/lib/supabase/crossfit";
 import { filterCatalog, catalogHandles } from "@/src/lib/catalogFilter";
-import { CaptureSheet } from "./CaptureSheet";
-import { CaptureReviewSheet } from "./CaptureReviewSheet";
-import type { CatalogEntry, CatalogFilters, ExtractedPost, ResolvedPost } from "@/src/types/capture";
+import { CaptureFab } from "./CaptureFab";
+import type { CatalogEntry, CatalogFilters } from "@/src/types/capture";
 
 // One pill rail per filter axis. Muscles/equipment/categories are derived
 // from the loaded catalog so the rails only offer values that select something.
@@ -35,12 +33,6 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
   const [filters, setFilters] = useState<Omit<CatalogFilters, "search">>({
     muscle: null, equipment: null, category: null, handle: null,
   });
-  const [captureVisible, setCaptureVisible] = useState(false);
-  const [reviewPayload, setReviewPayload] = useState<{
-    resolved: ResolvedPost; sourceUrl: string; post: ExtractedPost; rawExtraction: unknown;
-  } | null>(null);
-  const [matchNames, setMatchNames] = useState<Map<string, string>>(new Map());
-
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -60,16 +52,6 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
     setRefreshing(true);
     await load();
     setRefreshing(false);
-  };
-
-  const handleExtracted = async (payload: {
-    resolved: ResolvedPost; sourceUrl: string; post: ExtractedPost; rawExtraction: unknown;
-  }) => {
-    // Names for the "matches X" chips in review.
-    const library = await fetchAllExercises();
-    setMatchNames(new Map(library.map((e) => [e.id, e.name])));
-    setCaptureVisible(false);
-    setReviewPayload(payload);
   };
 
   const axes = useMemo(() => axisValues(entries), [entries]);
@@ -163,22 +145,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
         />
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={() => setCaptureVisible(true)} activeOpacity={0.8}>
-        <Plus size={24} color="#FFFFFF" />
-      </TouchableOpacity>
-
-      <CaptureSheet
-        visible={captureVisible}
-        onClose={() => setCaptureVisible(false)}
-        onExtracted={handleExtracted}
-      />
-      <CaptureReviewSheet
-        visible={reviewPayload !== null}
-        payload={reviewPayload}
-        matchNames={matchNames}
-        onClose={() => setReviewPayload(null)}
-        onSaved={() => { setReviewPayload(null); load(); }}
-      />
+      <CaptureFab onSaved={load} />
     </View>
   );
 }
@@ -210,11 +177,4 @@ const styles = StyleSheet.create({
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
-  fab: {
-    position: "absolute", right: 20, bottom: 20, width: 56, height: 56,
-    borderRadius: 28, backgroundColor: colors.primary,
-    alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
-  },
 });

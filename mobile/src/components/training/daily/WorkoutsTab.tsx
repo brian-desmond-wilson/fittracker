@@ -10,6 +10,7 @@ import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { filterWorkouts } from "@/src/lib/workoutFilter";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
+import { CaptureFab } from "./CaptureFab";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface WorkoutsTabProps {
@@ -48,16 +49,15 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
     [workouts, searchQuery],
   );
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
+  // The loading spinner sits inside the container, not in place of it, so the
+  // capture button never blinks out from under your thumb.
   return (
     <View style={styles.container}>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
       <FlatList
         data={filtered}
         keyExtractor={(w) => w.workoutId}
@@ -102,6 +102,9 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
           </View>
         }
       />
+      )}
+
+      <CaptureFab onSaved={load} />
     </View>
   );
 }
