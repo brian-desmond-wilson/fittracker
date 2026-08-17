@@ -56,14 +56,22 @@ function sanitizeExercise(raw: unknown, vocab: ValidVocabulary): ExtractedExerci
     : "Beginner";
 
   const matchId = str(r.library_match_id);
+  // The model happily lists a muscle in both roles ("Shoulders" primary AND
+  // secondary). Downstream, the pair becomes two junction inserts for one
+  // (exercise, muscle) and the save dies on the unique index — so primary
+  // wins and both lists dedupe here, where it's testable.
+  const primaryMuscles = [...new Set(names(r.primary_muscles, vocab.muscles))];
+  const primarySet = new Set(primaryMuscles);
+  const secondaryMuscles = [...new Set(names(r.secondary_muscles, vocab.muscles))]
+    .filter((m) => !primarySet.has(m));
   return {
     name,
     description: str(r.description),
     category,
     skillLevel,
-    primaryMuscles: names(r.primary_muscles, vocab.muscles),
-    secondaryMuscles: names(r.secondary_muscles, vocab.muscles),
-    equipment: names(r.equipment, vocab.equipment),
+    primaryMuscles,
+    secondaryMuscles,
+    equipment: [...new Set(names(r.equipment, vocab.equipment))],
     libraryMatchId: matchId && vocab.libraryIds.has(matchId) ? matchId : null,
   };
 }
@@ -73,9 +81,20 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
 
-  const exercises = (Array.isArray(r.exercises) ? r.exercises : [])
-    .map((e) => sanitizeExercise(e, vocab))
-    .filter((e): e is ExtractedExercise => e !== null);
+  // Dropping an invalid exercise shifts every index after it, and the
+  // workout items below refer to the model's ORIGINAL indexes — so record
+  // old→new for survivors and translate items through it. Without this, a
+  // dropped exercise silently reattaches prescriptions to the wrong movement.
+  const rawExercises = Array.isArray(r.exercises) ? r.exercises : [];
+  const exercises: ExtractedExercise[] = [];
+  const indexMap = new Map<number, number>();
+  rawExercises.forEach((e, oldIdx) => {
+    const cleaned = sanitizeExercise(e, vocab);
+    if (cleaned) {
+      indexMap.set(oldIdx, exercises.length);
+      exercises.push(cleaned);
+    }
+  });
   if (exercises.length === 0) return null;
 
   let workout: ExtractedPost["workout"] = null;
@@ -85,8 +104,11 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
       .map((item): ExtractedWorkoutItem | null => {
         if (typeof item !== "object" || item === null) return null;
         const i = item as Record<string, unknown>;
-        const idx = typeof i.exercise_index === "number" ? i.exercise_index : -1;
-        if (idx < 0 || idx >= exercises.length) return null;
+        const rawIdx = typeof i.exercise_index === "number" ? i.exercise_index : -1;
+        // Translate the model's index into the survivors' numbering; an item
+        // whose exercise was dropped (or never existed) goes with it.
+        const idx = indexMap.get(rawIdx);
+        if (idx === undefined) return null;
         return {
           exerciseIndex: idx,
           // Left NULL for circuits. A round count is NOT a set count, and

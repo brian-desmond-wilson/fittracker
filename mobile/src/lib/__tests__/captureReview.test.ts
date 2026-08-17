@@ -98,6 +98,53 @@ describe("sanitizeExtraction", () => {
     ).toBeNull();
   });
 
+  it("a muscle listed as both primary and secondary stays primary only, and lists dedupe", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [
+          rawExercise({
+            primary_muscles: ["Glutes", "Glutes", "Chest"],
+            secondary_muscles: ["Glutes", "Triceps", "Triceps"],
+          }),
+        ],
+        workout: null,
+      },
+      VALID,
+    );
+    expect(out!.exercises[0].primaryMuscles).toEqual(["Glutes", "Chest"]);
+    expect(out!.exercises[0].secondaryMuscles).toEqual(["Triceps"]);
+  });
+
+  it("remaps workout item indexes when an invalid exercise is dropped", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: [
+          rawExercise({ name: "Goblet Squat" }),
+          rawExercise({ name: "   " }), // dropped by the sanitizer
+          rawExercise({ name: "Kettlebell Halo" }),
+        ],
+        workout: {
+          name: "Circuit",
+          items: [
+            { exercise_index: 0, sets: 3, reps: "10", rest_seconds: 60, notes: null },
+            { exercise_index: 1, sets: 3, reps: "12", rest_seconds: 60, notes: null },
+            { exercise_index: 2, sets: 3, reps: "8", rest_seconds: 90, notes: null },
+          ],
+        },
+      },
+      VALID,
+    );
+    // Two survivors; the dropped exercise's item goes with it, and the Halo's
+    // prescription must still point at the Halo — not at the dropped slot.
+    expect(out!.exercises.map((e) => e.name)).toEqual(["Goblet Squat", "Kettlebell Halo"]);
+    expect(out!.workout!.items).toHaveLength(2);
+    expect(out!.workout!.items[0].exerciseIndex).toBe(0);
+    expect(out!.workout!.items[1].exerciseIndex).toBe(1);
+    expect(out!.workout!.items[1].reps).toBe("8");
+  });
+
   it("keeps a full workout whose item indexes are valid, drops out-of-range items", () => {
     const out = sanitizeExtraction(
       {
