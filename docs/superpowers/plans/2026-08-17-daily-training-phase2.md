@@ -46,7 +46,7 @@ Reused, unmodified: `fetchCatalog`/`fetchCapturedWorkouts` (`capture.ts`), `fetc
 
 ### Task 0: Branch
 
-- [ ] **Step 0.1:**
+- [x] **Step 0.1:**
 
 ```bash
 cd /Users/brianwilson/code/fittracker
@@ -61,7 +61,7 @@ git checkout main && git pull && git checkout -b daily-training-phase2
 - Create: `supabase/migrations/20260817100000_daily_loop_schema.sql`
 - Create: `supabase/migrations/20260817100001_relax_instance_parentage.sql`
 
-- [ ] **Step 1.1: Write the daily-loop schema migration**
+- [x] **Step 1.1: Write the daily-loop schema migration**
 
 Create `supabase/migrations/20260817100000_daily_loop_schema.sql`:
 
@@ -209,7 +209,7 @@ CREATE POLICY "own skill state" ON public.exercise_skill_state FOR ALL TO authen
   USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 ```
 
-- [ ] **Step 1.2: Write the parentage-relaxation migration**
+- [x] **Step 1.2: Write the parentage-relaxation migration**
 
 Create `supabase/migrations/20260817100001_relax_instance_parentage.sql`:
 
@@ -234,7 +234,7 @@ COMMENT ON COLUMN public.workout_instances.program_instance_id IS
   'NULL for standalone daily sessions (see generated_sessions.workout_instance_id).';
 ```
 
-- [ ] **Step 1.3: Apply and verify**
+- [x] **Step 1.3: Apply and verify**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -250,7 +250,7 @@ npx supabase db dump --schema public 2>/dev/null | grep -A4 '"program_instance_i
 
 Expected: `program_instance_id "uuid"` with no `not null` on the `workout_instances` definition.
 
-- [ ] **Step 1.4: Commit**
+- [x] **Step 1.4: Commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker
@@ -265,7 +265,7 @@ git commit -m "feat(daily): phase 2 schema — gyms, check-ins, generated sessio
 **Files:**
 - Create: `mobile/src/types/daily.ts`
 
-- [ ] **Step 2.1: Write the types**
+- [x] **Step 2.1: Write the types**
 
 ```typescript
 // Types for Daily Training Phase 2 — the daily loop.
@@ -353,7 +353,7 @@ export interface StoredSession extends ComposedSession {
 }
 ```
 
-- [ ] **Step 2.2: Commit**
+- [x] **Step 2.2: Commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker
@@ -369,7 +369,7 @@ git commit -m "feat(daily): phase 2 domain types"
 - Create: `mobile/src/lib/dailySplit.ts`
 - Test: `mobile/src/lib/__tests__/dailySplit.test.ts`
 
-- [ ] **Step 3.1: Write the failing tests**
+- [x] **Step 3.1: Write the failing tests**
 
 ```typescript
 import { nextSplitDay, rampWeek } from "../dailySplit";
@@ -404,7 +404,7 @@ describe("rampWeek", () => {
 });
 ```
 
-- [ ] **Step 3.2: Run, verify failure**
+- [x] **Step 3.2: Run, verify failure**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -413,7 +413,7 @@ npx jest src/lib/__tests__/dailySplit.test.ts
 
 Expected: FAIL — cannot find module.
 
-- [ ] **Step 3.3: Implement**
+- [x] **Step 3.3: Implement**
 
 ```typescript
 // Split rotation and the re-entry ramp position. Pure; dates are YYYY-MM-DD
@@ -445,7 +445,7 @@ export function rampWeek(firstSessionDate: string | null, today: string): number
 }
 ```
 
-- [ ] **Step 3.4: Run, verify pass; commit**
+- [x] **Step 3.4: Run, verify pass; commit**
 
 ```bash
 npx jest src/lib/__tests__/dailySplit.test.ts
@@ -462,7 +462,7 @@ git commit -m "feat(daily): split rotation and ramp week"
 - Create: `mobile/src/lib/dailyCandidates.ts`
 - Test: `mobile/src/lib/__tests__/dailyCandidates.test.ts`
 
-- [ ] **Step 4.1: Write the failing tests**
+- [x] **Step 4.1: Write the failing tests**
 
 ```typescript
 import {
@@ -602,13 +602,13 @@ describe("resolveProgressions", () => {
 });
 ```
 
-- [ ] **Step 4.2: Run, verify failure**
+- [x] **Step 4.2: Run, verify failure**
 
 ```bash
 npx jest src/lib/__tests__/dailyCandidates.test.ts
 ```
 
-- [ ] **Step 4.3: Implement**
+- [x] **Step 4.3: Implement**
 
 ```typescript
 // The rules tier's candidate builder: which exercises are even in play today.
@@ -767,7 +767,7 @@ export function resolveProgressions(
 }
 ```
 
-- [ ] **Step 4.4: Run, verify pass; commit**
+- [x] **Step 4.4: Run, verify pass; commit**
 
 ```bash
 npx jest src/lib/__tests__/dailyCandidates.test.ts
@@ -784,7 +784,7 @@ git commit -m "feat(daily): candidate pools — equipment/split/soreness gates, 
 - Create: `mobile/src/lib/dailyBudget.ts`
 - Test: `mobile/src/lib/__tests__/dailyBudget.test.ts`
 
-- [ ] **Step 5.1: Write the failing tests**
+- [x] **Step 5.1: Write the failing tests**
 
 ```typescript
 import { sessionBudget } from "../dailyBudget";
@@ -839,13 +839,13 @@ describe("sessionBudget", () => {
 });
 ```
 
-- [ ] **Step 5.2: Run, verify failure**
+- [x] **Step 5.2: Run, verify failure**
 
 ```bash
 npx jest src/lib/__tests__/dailyBudget.test.ts
 ```
 
-- [ ] **Step 5.3: Implement**
+- [x] **Step 5.3: Implement**
 
 ```typescript
 // The session's time arithmetic. Deterministic: minutes in, per-section slot
@@ -912,7 +912,7 @@ export function sessionBudget({ minutes, rampWeek, energy }: BudgetInput): Secti
 }
 ```
 
-- [ ] **Step 5.4: Run, verify pass; commit**
+- [x] **Step 5.4: Run, verify pass; commit**
 
 ```bash
 npx jest src/lib/__tests__/dailyBudget.test.ts
@@ -929,7 +929,7 @@ git commit -m "feat(daily): session time budget with ramp caps and energy scalin
 - Create: `mobile/src/lib/dailyCompose.ts`
 - Test: `mobile/src/lib/__tests__/dailyCompose.test.ts`
 
-- [ ] **Step 6.1: Write the failing tests**
+- [x] **Step 6.1: Write the failing tests**
 
 ```typescript
 import { composeFallback, validateAiSession } from "../dailyCompose";
@@ -1032,13 +1032,13 @@ describe("validateAiSession", () => {
 });
 ```
 
-- [ ] **Step 6.2: Run, verify failure**
+- [x] **Step 6.2: Run, verify failure**
 
 ```bash
 npx jest src/lib/__tests__/dailyCompose.test.ts
 ```
 
-- [ ] **Step 6.3: Implement**
+- [x] **Step 6.3: Implement**
 
 ```typescript
 // Rules-only composition (the fallback that makes "you always get a workout"
@@ -1144,7 +1144,7 @@ export function validateAiSession(
 }
 ```
 
-- [ ] **Step 6.4: Run, verify pass; commit**
+- [x] **Step 6.4: Run, verify pass; commit**
 
 ```bash
 npx jest src/lib/__tests__/dailyCompose.test.ts
@@ -1160,7 +1160,7 @@ git commit -m "feat(daily): rules composition fallback and constrained AI-sessio
 **Files:**
 - Create: `mobile/src/lib/supabase/daily.ts`
 
-- [ ] **Step 7.1: Write the module**
+- [x] **Step 7.1: Write the module**
 
 ```typescript
 // Client half of the daily loop: gyms, check-ins, generated sessions, and the
@@ -1657,7 +1657,7 @@ export async function completeSession(
 }
 ```
 
-- [ ] **Step 7.2: Typecheck; commit**
+- [x] **Step 7.2: Typecheck; commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -1674,7 +1674,7 @@ git commit -m "feat(daily): client library — gyms, check-ins, candidate assemb
 **Files:**
 - Create: `supabase/functions/compose-session/index.ts`
 
-- [ ] **Step 8.1: Write the function**
+- [x] **Step 8.1: Write the function**
 
 ```typescript
 // The daily recommender's AI tier: ONE judgment call — compose today's
@@ -1796,7 +1796,7 @@ serve(async (req) => {
 });
 ```
 
-- [ ] **Step 8.2: Deploy; commit**
+- [x] **Step 8.2: Deploy; commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -1813,7 +1813,7 @@ git commit -m "feat(daily): compose-session edge function — one constrained ju
 **Files:**
 - Create: `mobile/src/hooks/useDailySession.ts`
 
-- [ ] **Step 9.1: Write the hook**
+- [x] **Step 9.1: Write the hook**
 
 ```typescript
 // Orchestrates the daily loop: rules tier → one AI ask → persisted session.
@@ -2044,7 +2044,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
 }
 ```
 
-- [ ] **Step 9.2: Typecheck; commit**
+- [x] **Step 9.2: Typecheck; commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -2064,7 +2064,7 @@ git commit -m "feat(daily): useDailySession — rules tier plus one signature-ca
 
 Both are `Modal` + `animationType="slide"` + `presentationStyle="pageSheet"` bottom sheets, colors from `@/src/lib/colors` (same keys the Phase-1 sheets use).
 
-- [ ] **Step 10.1: Write GymSheet**
+- [x] **Step 10.1: Write GymSheet**
 
 ```tsx
 import React, { useEffect, useState } from "react";
@@ -2304,7 +2304,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-- [ ] **Step 10.2: Write CheckinSheet**
+- [x] **Step 10.2: Write CheckinSheet**
 
 ```tsx
 import React, { useEffect, useState } from "react";
@@ -2457,7 +2457,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-- [ ] **Step 10.3: Typecheck; commit**
+- [x] **Step 10.3: Typecheck; commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -2475,7 +2475,7 @@ git commit -m "feat(daily): gym and check-in bottom sheets"
 - Rewrite: `mobile/src/components/training/daily/TodayTab.tsx` (replace the 21-line placeholder)
 - Modify: `mobile/app/(tabs)/training/index.tsx`
 
-- [ ] **Step 11.1: Rewrite TodayTab**
+- [x] **Step 11.1: Rewrite TodayTab**
 
 ```tsx
 import React, { useState } from "react";
@@ -2691,7 +2691,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-- [ ] **Step 11.2: Wire the search placeholder in the training screen**
+- [x] **Step 11.2: Wire the search placeholder in the training screen**
 
 In `mobile/app/(tabs)/training/index.tsx`, the daily branch of `getSearchPlaceholder()` currently has no `today` case (falls to `"Search..."`). That's acceptable — but make the Today tab default when a session exists is Phase-3 polish; the only Phase-2 change here is defaulting `dailyTab` to `"today"` once the loop is live:
 
@@ -2701,7 +2701,7 @@ const [dailyTab, setDailyTab] = useState<DailyTab>("today");
 
 (Currently `"exercises"` at line 33.)
 
-- [ ] **Step 11.3: Typecheck; commit**
+- [x] **Step 11.3: Typecheck; commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -2720,7 +2720,7 @@ git commit -m "feat(daily): Today tab — gym chip, check-in gate, composed sess
 
 The screen is template-driven: `[id]` is a `program_workouts.id`, targets come from `program_workout_exercises`, and every write threads program parentage. Daily mode reuses the whole screen by building the SAME `WorkoutTemplate` shape from `generated_session_items` and passing NULL parentage. Six surgical edits, all anchored to current code (line numbers from current main):
 
-- [ ] **Step 12.1: Params + mode flag (line 71)**
+- [x] **Step 12.1: Params + mode flag (line 71)**
 
 Replace:
 ```tsx
@@ -2734,7 +2734,7 @@ const { id, instanceId, programInstanceId, mode } = useLocalSearchParams<{ id: s
 const isDaily = mode === 'daily';
 ```
 
-- [ ] **Step 12.2: Template loading (inside `loadWorkout`, lines 298-333)**
+- [x] **Step 12.2: Template loading (inside `loadWorkout`, lines 298-333)**
 
 Wrap the existing `program_workouts` fetch in `if (!isDaily) { ... }` and add the daily branch. The daily branch builds pseudo-`ProgramWorkoutExercise` rows: `id` carries the session item id (never written to the DB in daily mode), `target_sets`/`target_reps_min` come from the item (reps parsed to its leading integer; `"8-12"` → 8):
 
@@ -2786,7 +2786,7 @@ if (isDaily) {
 
 Also in the daily branch: if `sessionRow.workout_instance_id` exists and no `instanceId` param was passed, treat it as the resume instance — set a local `const effectiveInstanceId = instanceId || sessionRow?.workout_instance_id || null;` and use `effectiveInstanceId` everywhere the rest of `loadWorkout` reads `instanceId` (lines 384, 546).
 
-- [ ] **Step 12.3: Instance creation (`createWorkoutInstance`, lines 948-968)**
+- [x] **Step 12.3: Instance creation (`createWorkoutInstance`, lines 948-968)**
 
 Replace the `programInstanceId` guard and insert:
 ```tsx
@@ -2819,7 +2819,7 @@ if (data) {
 }
 ```
 
-- [ ] **Step 12.4: Null parentage on exercise writes (two sites: lines 662 and 1079)**
+- [x] **Step 12.4: Null parentage on exercise writes (two sites: lines 662 and 1079)**
 
 In both `saveSetToDatabase` and `saveExerciseInstance`, the insert line
 ```tsx
@@ -2832,7 +2832,7 @@ becomes
 program_workout_exercise_id: isDaily ? null : state.exercise.id,
 ```
 
-- [ ] **Step 12.5: Completion backfill (`finishWorkout`, after the workout_instances update ~line 1232)**
+- [x] **Step 12.5: Completion backfill (`finishWorkout`, after the workout_instances update ~line 1232)**
 
 Import `completeSession` from `@/src/lib/supabase/daily` and add, inside the `if (workoutInstanceId)` block after the update succeeds:
 ```tsx
@@ -2844,7 +2844,7 @@ if (isDaily) {
 }
 ```
 
-- [ ] **Step 12.6: Typecheck, run the FULL suite, verify no program-mode regression**
+- [x] **Step 12.6: Typecheck, run the FULL suite, verify no program-mode regression**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -2854,7 +2854,7 @@ npm test
 
 Then on the simulator (or defer to Task 14): open a normal PROGRAM workout from Home and log one set — the program path must behave exactly as before (this file has no test coverage; manual verification is the regression gate).
 
-- [ ] **Step 12.7: Commit**
+- [x] **Step 12.7: Commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker
@@ -2870,7 +2870,7 @@ git commit -m "feat(daily): logging screen daily mode — session-built template
 - Create: `mobile/src/components/DailySessionHomeCard.tsx`
 - Modify: `mobile/app/(tabs)/home.tsx`
 
-- [ ] **Step 13.1: Write the card**
+- [x] **Step 13.1: Write the card**
 
 ```tsx
 import React, { useEffect, useState } from "react";
@@ -2944,7 +2944,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-- [ ] **Step 13.2: Insert into Home**
+- [x] **Step 13.2: Insert into Home**
 
 In `mobile/app/(tabs)/home.tsx`: add the import, then between the Eat Next block (line 150) and the "Today's Workout" section title (line 153) insert:
 
@@ -2955,7 +2955,7 @@ In `mobile/app/(tabs)/home.tsx`: add the import, then between the Eat Next block
 
 (The `key` remount on `refreshKey` matches how `TodaysWorkoutCard` refreshes.)
 
-- [ ] **Step 13.3: Typecheck; commit**
+- [x] **Step 13.3: Typecheck; commit**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -2976,7 +2976,7 @@ cd /Users/brianwilson/code/fittracker/mobile
 npx expo start --dev-client --port 8091
 ```
 
-- [ ] **Step 14.1: Full quality gate first**
+- [x] **Step 14.1: Full quality gate first**
 
 ```bash
 npm test && npx tsc --noEmit && npm run lint
@@ -2984,7 +2984,7 @@ npm test && npx tsc --noEmit && npm run lint
 
 Expected: all suites pass (including the four new daily ones), no new tsc errors, no new lint errors.
 
-- [ ] **Step 14.2: Walk the loop**
+- [x] **Step 14.2: Walk the loop**
 
 1. **Gyms:** Today tab → gym chip → add "Test Hotel Gym" (hotel preset), tweak a checkbox → save. Chip shows the gym. Toggle BFR on.
 2. **Check-in:** tap Check in → mark Chest sore (2 taps), energy 6, 90 minutes → Build my session. A session appears: split day named, sections grouped, reasons visible on AI picks, "AI composed" (or "Rules composed" if offline) badge.
@@ -2997,7 +2997,7 @@ Expected: all suites pass (including the four new daily ones), no new tsc errors
 9. **Offline fallback:** airplane mode → new day simulation is impractical; instead delete today's check-in via re-check-in with changed values while offline → expect the rules-composed session, "Rules composed" badge, no crash.
 10. **Home:** card shows the session state and routes to the Today tab.
 
-- [ ] **Step 14.3: Verify rows**
+- [x] **Step 14.3: Verify rows**
 
 ```bash
 cd /Users/brianwilson/code/fittracker/mobile
@@ -3006,7 +3006,7 @@ npx supabase db dump --data-only --schema public 2>/dev/null | grep -A3 "COPY pu
 
 Expected: today's row with status `completed`, `workout_instance_id` set; the linked `workout_instances` row has NULL program parentage.
 
-- [ ] **Step 14.4: Stop and report**
+- [x] **Step 14.4: Stop and report**
 
 Do NOT merge. Show the user: screenshots of Today (composed session with reasons), the gym sheet, the check-in sheet, the logging screen mid-session, Home card, plus test output and any deviations from this plan. The user decides the merge.
 
