@@ -4,7 +4,7 @@ describe("normalizeSourceUrl", () => {
   it("strips Instagram's per-share tracking parameter", () => {
     expect(
       normalizeSourceUrl("https://www.instagram.com/reel/DWrabBkjhfI/?igsh=NTc4MTIwNjQ2YQ=="),
-    ).toBe("https://instagram.com/reel/DWrabBkjhfI");
+    ).toBe("https://instagram.com/p/DWrabBkjhfI");
   });
 
   it("treats two shares of the same reel as the same capture", () => {
@@ -33,15 +33,42 @@ describe("normalizeSourceUrl", () => {
     ).toBe("https://tiktok.com/@c/video/1");
   });
 
-  it("keeps parameters that change which post is shown", () => {
-    expect(normalizeSourceUrl("https://instagram.com/p/ABC/?img_index=2&igsh=zz")).toBe(
-      "https://instagram.com/p/ABC?img_index=2",
+  it("preserves case in the path — post shortcodes are case-sensitive", () => {
+    expect(normalizeSourceUrl("https://INSTAGRAM.com/reel/DWrabBkjhfI/")).toBe(
+      "https://instagram.com/p/DWrabBkjhfI",
     );
   });
 
-  it("preserves case in the path — post shortcodes are case-sensitive", () => {
-    expect(normalizeSourceUrl("https://INSTAGRAM.com/reel/DWrabBkjhfI/")).toBe(
-      "https://instagram.com/reel/DWrabBkjhfI",
+  // The bug this pair exists for: one carousel post captured twice, once from
+  // each slide, arriving as two workouts under two AI-written names.
+  it("treats two slides of one carousel as the same post", () => {
+    const first = normalizeSourceUrl("https://instagram.com/p/C6JUm5JhrX2?img_index=1");
+    const second = normalizeSourceUrl("https://instagram.com/p/C6JUm5JhrX2?img_index=2");
+    expect(first).toBe(second);
+    expect(first).toBe("https://instagram.com/p/C6JUm5JhrX2");
+  });
+
+  it("treats the reel and post doors onto one Instagram post as the same", () => {
+    const shapes = [
+      "https://instagram.com/p/C6JUm5JhrX2",
+      "https://instagram.com/reel/C6JUm5JhrX2/",
+      "https://www.instagram.com/reels/C6JUm5JhrX2?igsh=z",
+      "https://instagram.com/tv/C6JUm5JhrX2",
+      "https://instagram.com/senada.greca/reel/C6JUm5JhrX2/",
+    ].map(normalizeSourceUrl);
+    expect(new Set(shapes).size).toBe(1);
+    expect(shapes[0]).toBe("https://instagram.com/p/C6JUm5JhrX2");
+  });
+
+  it("leaves an Instagram link that is not a post alone", () => {
+    expect(normalizeSourceUrl("https://instagram.com/senada.greca/")).toBe(
+      "https://instagram.com/senada.greca",
+    );
+  });
+
+  it("leaves other platforms' paths untouched", () => {
+    expect(normalizeSourceUrl("https://tiktok.com/@coach/video/7172939297124027694")).toBe(
+      "https://tiktok.com/@coach/video/7172939297124027694",
     );
   });
 

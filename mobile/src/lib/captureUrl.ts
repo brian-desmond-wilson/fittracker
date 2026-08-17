@@ -7,9 +7,14 @@
 // captured over and over. Normalizing here makes re-shares collapse onto one
 // capture. It matters more in Phase 3, where every share carries a fresh tag.
 //
-// What is NOT touched: the path. Post shortcodes are case-sensitive, and
-// parameters that select WHICH post is shown (a carousel's img_index) are
-// meaning, not tracking.
+// Identity is the POST, not the view of it. One Instagram post is served under
+// several path shapes (/p/, /reel/, /reels/, /tv/, and profile-scoped
+// /<user>/reel/), and a carousel adds img_index to say which slide you were
+// looking at when you hit Share. None of that changes the post or its caption,
+// and the caption is the only thing extraction reads — so sharing slide 2 of a
+// carousel you already captured from slide 1 used to arrive as a second
+// workout under a second AI-written name. Shortcode case is still preserved:
+// that genuinely does select the post.
 
 /** Per-share telemetry: identifies the sharer/session, never the post. */
 const TRACKING_PARAMS = new Set([
@@ -24,8 +29,30 @@ const TRACKING_PARAMS = new Set([
   "fbclid", "gclid", "mc_cid", "mc_eid", "si", "ref", "ref_src",
 ]);
 
+/**
+ * Which slide of a carousel was on screen when the link was shared. It is real
+ * information — just not information about WHICH post, which is all identity
+ * cares about. Dropping it costs only that a tap-back opens the carousel at
+ * its first slide instead of the shared one.
+ */
+const VIEW_PARAMS = new Set(["img_index", "img_index_do_not_use"]);
+
 const isTracking = (key: string): boolean =>
-  TRACKING_PARAMS.has(key) || key.startsWith("utm_");
+  TRACKING_PARAMS.has(key) || VIEW_PARAMS.has(key) || key.startsWith("utm_");
+
+/**
+ * Instagram's several doors onto one post. The shortcode is the identity, so
+ * every shape collapses to /p/<shortcode> — including the profile-scoped form
+ * a reel gets when shared from someone's grid.
+ */
+const IG_POST_PATH = /^(?:\/[^/]+)?\/(?:p|reel|reels|tv)\/([^/]+)/;
+
+/** Canonical path for a post on `host`, or null to keep the path as-is. */
+function canonicalPath(host: string, path: string): string | null {
+  if (host !== "instagram.com") return null;
+  const match = IG_POST_PATH.exec(path);
+  return match ? `/p/${match[1]}` : null;
+}
 
 /** Stable identity for a post link. Falls back to the trimmed input when the
  *  string isn't a URL at all — the caller's own validation reports that. */
@@ -47,7 +74,8 @@ export function normalizeSourceUrl(raw: string): string {
 
   // Trailing slashes are cosmetic on both platforms; dropping one more way for
   // the same post to look like two.
-  const path = url.pathname.replace(/\/+$/, "");
+  const trimmedPath = url.pathname.replace(/\/+$/, "");
+  const path = canonicalPath(host, trimmedPath) ?? trimmedPath;
   const query = kept.toString();
 
   return `${url.protocol}//${host}${path}${query ? `?${query}` : ""}`;
