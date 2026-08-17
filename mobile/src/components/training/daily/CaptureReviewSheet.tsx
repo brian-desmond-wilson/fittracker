@@ -145,11 +145,16 @@ export function CaptureReviewSheet({
                   onChangeText={(t) => patchExercise(i, { name: t })}
                   placeholder="Name this exercise"
                   placeholderTextColor={colors.mutedForeground}
+                  editable={!ex.libraryMatchId}
                 />
-                <Pencil size={15} color={colors.mutedForeground} />
+                {!ex.libraryMatchId && <Pencil size={15} color={colors.mutedForeground} />}
               </View>
 
               {ex.libraryMatchId ? (
+                // A matched exercise saves AS the library entry, untouched —
+                // so nothing about it is editable here. Showing live editors
+                // whose values get discarded is a lie; unlinking is the one
+                // action that makes edits real.
                 <TouchableOpacity
                   style={styles.matchChip}
                   onPress={() => patchExercise(i, { libraryMatchId: null })}
@@ -157,7 +162,7 @@ export function CaptureReviewSheet({
                 >
                   <Link2 size={14} color={colors.primary} />
                   <Text style={styles.matchText}>
-                    Matches “{matchNames.get(ex.libraryMatchId) ?? "library exercise"}” — tap to create new instead
+                    Saves as your existing “{matchNames.get(ex.libraryMatchId) ?? "library exercise"}” — tap to create a new entry you can edit
                   </Text>
                 </TouchableOpacity>
               ) : (
@@ -167,6 +172,7 @@ export function CaptureReviewSheet({
                 </View>
               )}
 
+              {!ex.libraryMatchId && (<>
               <Text style={styles.fieldLabel}>Category</Text>
               <View style={styles.pillRow}>
                 {CATEGORIES.map((c) => (
@@ -241,6 +247,7 @@ export function CaptureReviewSheet({
                   </View>
                 </>
               )}
+              </>)}
             </View>
           ))}
 
