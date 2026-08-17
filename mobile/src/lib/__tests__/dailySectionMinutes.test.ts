@@ -1,5 +1,6 @@
 import {
   estimateSectionMinutes,
+  planMinutes,
   setSeconds,
   totalSectionMinutes,
   validateSectionMinutes,
@@ -68,6 +69,28 @@ describe("estimateSectionMinutes", () => {
       item("cooldown", { targetSets: 1, targetReps: "1", restSeconds: null }),
     ]);
     expect(minutes.cooldown).toBe(1);
+  });
+});
+
+describe("planMinutes", () => {
+  const plan = {
+    section: "main" as const, slots: 3, targetSets: 3,
+    targetReps: "8-12", restSeconds: 120,
+  };
+
+  it("prices a whole section: every slot, its sets, its rests", () => {
+    // One slot: 3×48s work + 2×120s rest + 60s transition = 444s.
+    expect(planMinutes({ ...plan, slots: 1 })).toBeCloseTo(444 / 60, 5);
+    expect(planMinutes(plan)).toBeCloseTo((444 * 3) / 60, 5);
+  });
+
+  it("costs nothing for a section that isn't running", () => {
+    expect(planMinutes({ ...plan, slots: 0 })).toBe(0);
+  });
+
+  it("grows with longer rests, so buying rest costs time", () => {
+    expect(planMinutes({ ...plan, restSeconds: 240 }))
+      .toBeGreaterThan(planMinutes(plan));
   });
 });
 

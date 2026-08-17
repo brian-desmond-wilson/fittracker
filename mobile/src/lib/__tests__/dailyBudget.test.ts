@@ -1,4 +1,8 @@
 import { sessionBudget } from "../dailyBudget";
+import { planMinutes } from "../dailySectionMinutes";
+
+/** Matches dailyBudget's own "this is rounding, not a gap" threshold. */
+const MIN_LEFTOVER = 5;
 
 const plan = (minutes: number, rampWeek = 3, energy = 7) =>
   sessionBudget({ minutes, rampWeek, energy });
@@ -74,14 +78,36 @@ describe("sessionBudget spends what a cap left over", () => {
 
   it("respects the mobility ceilings", () => {
     const p = plan(240, 1);
-    expect(of(p, "warmup").slots).toBeLessThanOrEqual(8);
-    expect(of(p, "cooldown").slots).toBeLessThanOrEqual(4);
+    expect(of(p, "warmup").slots).toBeLessThanOrEqual(12);
+    expect(of(p, "cooldown").slots).toBeLessThanOrEqual(8);
   });
 
   it("respects the rest ceilings", () => {
     const p = plan(240, 1);
-    expect(of(p, "main").restSeconds!).toBeLessThanOrEqual(210);
-    expect(of(p, "accessory").restSeconds!).toBeLessThanOrEqual(150);
+    expect(of(p, "main").restSeconds!).toBeLessThanOrEqual(300);
+    expect(of(p, "accessory").restSeconds!).toBeLessThanOrEqual(210);
+  });
+
+  it("plans the time it was given, priced as the screen prices it", () => {
+    for (const [minutes, ramp] of [[120, 3], [90, 3], [60, 1], [45, 1], [30, 1]]) {
+      const total = plan(minutes, ramp).reduce((s, p) => s + planMinutes(p), 0);
+      expect(total).toBeLessThanOrEqual(minutes);
+      expect(total).toBeGreaterThan(minutes - MIN_LEFTOVER);
+    }
+  });
+
+  it("falls short only when every unloaded ceiling is already spent", () => {
+    // Re-entry week 1 allows three main lifts and one accessory. Two hours
+    // cannot be filled honestly on top of that, even with the warm-up,
+    // cooldown and rests all stretched to their limits — so it comes up short
+    // rather than inventing volume.
+    const p = plan(120, 1);
+    const total = p.reduce((s, x) => s + planMinutes(x), 0);
+    expect(total).toBeLessThan(120);
+    expect(total).toBeGreaterThan(80);
+    expect(of(p, "warmup").slots).toBe(12);
+    expect(of(p, "cooldown").slots).toBe(8);
+    expect(of(p, "main").restSeconds).toBe(300);
   });
 
   it("leaves a section the clock closed closed", () => {

@@ -2,6 +2,7 @@
 // counts and set/rep defaults out. The AI never gets to move these numbers —
 // rules keep the numbers (spec §2).
 import type { SectionPlan, SessionSection } from "../types/daily";
+import { planMinutes } from "./dailySectionMinutes";
 
 interface BudgetInput {
   minutes: number;
@@ -40,74 +41,78 @@ const RAMP_CAPS: Record<number, Partial<Record<SessionSection, number>>> = {
 // between the sets it does allow.
 /** Total slots a section will accept once leftover time is being spent. */
 const MOBILITY_CEILING: Partial<Record<SessionSection, number>> = {
-  warmup: 8,
-  cooldown: 4,
+  warmup: 12,
+  cooldown: 8,
 };
 /** Rest can stretch this far, in seconds, and no further. */
 const REST_CEILING: Partial<Record<SessionSection, number>> = {
-  main: 210,
-  accessory: 150,
-  bfr: 75,
+  main: 300,
+  accessory: 210,
+  bfr: 120,
 };
+/** How much rest one pass adds, so time spreads instead of pooling. */
+const REST_STEP_SECONDS = 15;
 /** Under this, the shortfall is floor() rounding rather than a real gap. */
 const MIN_LEFTOVER_MINUTES = 5;
-
-const PER_SLOT = new Map(SHAPE.map((s) => [s.section, s.perSlot]));
 
 /**
  * Spend the minutes a cap refused to use.
  *
- * Mobility first — half the leftover, warm-up before cooldown, each to its own
- * ceiling. Whatever remains stretches the rests, longest-resting section
- * first, because that is recovery rather than work. The person keeps the day
- * they asked for without doing volume they aren't ready for.
+ * One pass at a time, round-robin: a warm-up movement, a cooldown movement,
+ * then a step of extra rest on each resting section. Spreading it this way
+ * keeps a long day from pouring everything into the warm-up, and every buy is
+ * priced with `planMinutes` — the same arithmetic the screen shows — so the
+ * budget stops exactly when the day is full rather than when its own
+ * bookkeeping thinks so.
  *
  * Slots are an offer, not a promise: if the warm-up pool holds four movements,
- * asking for six still yields four. Composition takes what exists.
+ * asking for ten still yields four. Composition takes what exists, which is
+ * why a thin catalog can still come out short of the time asked for.
  */
 function spendLeftover(plans: SectionPlan[], minutes: number): SectionPlan[] {
-  const spent = plans.reduce(
-    (sum, p) => sum + p.slots * (PER_SLOT.get(p.section) ?? 0), 0,
-  );
-  let leftover = minutes - spent;
-  if (leftover < MIN_LEFTOVER_MINUTES) return plans;
-
   const out = plans.map((p) => ({ ...p }));
+  const committed = () => out.reduce((sum, p) => sum + planMinutes(p), 0);
+  if (minutes - committed() < MIN_LEFTOVER_MINUTES) return plans;
+
   const find = (section: SessionSection) => out.find((p) => p.section === section);
+  /** Take the change only if the day can still pay for it. */
+  const afford = (plan: SectionPlan, change: (p: SectionPlan) => void): boolean => {
+    const before = planMinutes(plan);
+    const undo = { slots: plan.slots, restSeconds: plan.restSeconds };
+    change(plan);
+    if (committed() <= minutes && planMinutes(plan) > before) return true;
+    plan.slots = undo.slots;
+    plan.restSeconds = undo.restSeconds;
+    return false;
+  };
 
-  // ---- Mobility: half the leftover, warm-up then cooldown ----
-  let mobility = Math.floor(leftover / 2);
-  for (const section of ["warmup", "cooldown"] as SessionSection[]) {
-    const plan = find(section);
-    const ceiling = MOBILITY_CEILING[section];
-    const perSlot = PER_SLOT.get(section);
-    // A section the day was too short to run stays off; leftover time is not
-    // a reason to reopen what the time gate closed.
-    if (!plan || plan.slots === 0 || ceiling === undefined || !perSlot) continue;
-    while (mobility >= perSlot && plan.slots < ceiling) {
-      plan.slots += 1;
-      mobility -= perSlot;
-      leftover -= perSlot;
+  let progressed = true;
+  while (progressed && minutes - committed() > 0) {
+    progressed = false;
+
+    // ---- One more movement at each end ----
+    for (const section of ["warmup", "cooldown"] as SessionSection[]) {
+      const plan = find(section);
+      const ceiling = MOBILITY_CEILING[section];
+      // A section the clock closed stays closed; leftover time is not a reason
+      // to reopen what the time gate shut.
+      if (!plan || plan.slots === 0 || ceiling === undefined) continue;
+      if (plan.slots >= ceiling) continue;
+      if (afford(plan, (p) => { p.slots += 1; })) progressed = true;
     }
-  }
 
-  // ---- Rests: the rest of it, longest-resting section first ----
-  const resting = out
-    .filter((p) => p.slots > 0 && p.restSeconds !== null && REST_CEILING[p.section])
-    .sort((a, b) => (b.restSeconds ?? 0) - (a.restSeconds ?? 0));
-  for (const plan of resting) {
-    if (leftover <= 0) break;
-    // One gap between each pair of sets — no rest after the final one.
-    const gaps = plan.slots * Math.max(0, plan.targetSets - 1);
-    if (gaps === 0) continue;
-    const ceiling = REST_CEILING[plan.section]!;
-    const room = ceiling - (plan.restSeconds ?? 0);
-    if (room <= 0) continue;
-    const wanted = Math.floor((leftover * 60) / gaps);
-    const added = Math.min(room, wanted);
-    if (added <= 0) continue;
-    plan.restSeconds = (plan.restSeconds ?? 0) + added;
-    leftover -= (added * gaps) / 60;
+    // ---- A longer breath between the sets the ramp does allow ----
+    for (const plan of out) {
+      const ceiling = REST_CEILING[plan.section];
+      if (plan.slots === 0 || plan.restSeconds === null || ceiling === undefined) continue;
+      if (plan.restSeconds >= ceiling) continue;
+      // One gap between each pair of sets — no rest after the final one.
+      if (plan.slots * Math.max(0, plan.targetSets - 1) === 0) continue;
+      const step = Math.min(REST_STEP_SECONDS, ceiling - plan.restSeconds);
+      if (afford(plan, (p) => { p.restSeconds = (p.restSeconds ?? 0) + step; })) {
+        progressed = true;
+      }
+    }
   }
 
   return out;

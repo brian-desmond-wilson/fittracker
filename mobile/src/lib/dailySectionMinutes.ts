@@ -7,7 +7,12 @@
 // three hours of work for a forty-minute day. So the arithmetic below is both
 // the fallback and the sanity check: an estimate is never missing, and a
 // number the model cannot justify never reaches the screen.
-import type { SectionMinutes, SessionItem, SessionSection } from "../types/daily";
+import type {
+  SectionMinutes,
+  SectionPlan,
+  SessionItem,
+  SessionSection,
+} from "../types/daily";
 
 /** A controlled rep, eccentric included. */
 const SECONDS_PER_REP = 4;
@@ -43,12 +48,32 @@ export function setSeconds(reps: string | null): number {
   return perSide ? seconds * 2 : seconds;
 }
 
-/** Seconds one item costs: its working sets, the rests between them, and the
- *  gap before whatever comes next. */
-function itemSeconds(item: SessionItem): number {
+/** What a prescription costs, whatever carries it — a stored item or a plan. */
+interface Prescription {
+  targetSets: number | null;
+  targetReps: string | null;
+  restSeconds: number | null;
+}
+
+/** Seconds one exercise costs: its working sets, the rests between them, and
+ *  the gap before whatever comes next. */
+function itemSeconds(item: Prescription): number {
   const sets = Math.max(1, item.targetSets ?? 1);
   const rest = Math.max(0, item.restSeconds ?? 0);
   return sets * setSeconds(item.targetReps) + (sets - 1) * rest + TRANSITION_SECONDS;
+}
+
+/**
+ * What one section of a budget will cost, in minutes, unrounded.
+ *
+ * The time budget spends against this rather than its own per-slot estimates,
+ * so the minutes it believes it has committed are the minutes the athlete
+ * reads off the screen. When the two disagree the budget stops buying early
+ * and the day comes out short of the time that was asked for.
+ */
+export function planMinutes(plan: SectionPlan): number {
+  if (plan.slots <= 0) return 0;
+  return (plan.slots * itemSeconds(plan)) / 60;
 }
 
 /**
