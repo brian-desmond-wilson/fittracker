@@ -9,6 +9,7 @@ import { createExercise, fetchGoalTypes, fetchMovementCategories } from "./cross
 import { mapCategory } from "../captureReview";
 import type {
   CapturedWorkoutEntry,
+  CaptureSource,
   CatalogEntry,
   ExtractedPost,
   ResolvedPost,
@@ -441,6 +442,46 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   return entries
     .filter((e) => e.sources.length > 0)
     .sort((a, b) => (a.sources[0].capturedAt < b.sources[0].capturedAt ? 1 : -1));
+}
+
+/**
+ * The posts one exercise was captured from, newest first — provenance for the
+ * detail page. Same two filters fetchCatalog applies: a shared library
+ * exercise may be linked by other people's captures, and a save that never
+ * finished leaves a pending source that was never really reviewed.
+ */
+export async function fetchExerciseSources(
+  exerciseId: string,
+  userId: string,
+): Promise<CaptureSource[]> {
+  const { data, error } = await supabase
+    .from("source_exercises")
+    .select(`
+      source:captured_sources!inner(
+        id, user_id, platform, source_url, poster_handle, thumbnail_url,
+        captured_at, extraction_status
+      )
+    `)
+    .eq("exercise_id", exerciseId);
+  if (error) {
+    console.error("fetchExerciseSources failed:", error);
+    return [];
+  }
+
+  return (data ?? [])
+    .map((row: any) => row.source)
+    .filter((s: any) => s && s.user_id === userId && s.extraction_status === "reviewed")
+    .map((s: any) => ({
+      sourceId: s.id,
+      platform: s.platform,
+      sourceUrl: s.source_url,
+      posterHandle: s.poster_handle,
+      thumbnailUrl: s.thumbnail_url,
+      capturedAt: s.captured_at,
+    }))
+    .sort((a: CaptureSource, b: CaptureSource) =>
+      a.capturedAt < b.capturedAt ? 1 : -1,
+    );
 }
 
 // ---------- Editing a captured workout ----------

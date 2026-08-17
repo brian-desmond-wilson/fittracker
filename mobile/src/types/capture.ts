@@ -83,6 +83,16 @@ export interface ExtractedPost {
 }
 
 /** A row in the Catalog tab: an exercise plus its capture provenance. */
+/** The post an exercise was captured from — its provenance. */
+export interface CaptureSource {
+  sourceId: string;
+  platform: CapturePlatform;
+  sourceUrl: string;
+  posterHandle: string | null;
+  thumbnailUrl: string | null;
+  capturedAt: string;
+}
+
 export interface CatalogEntry {
   exerciseId: string;
   name: string;
@@ -92,14 +102,7 @@ export interface CatalogEntry {
   muscles: { name: string; isPrimary: boolean }[];
   /** goal_types names from exercise_goal_types join. */
   goalTypes: string[];
-  sources: {
-    sourceId: string;
-    platform: CapturePlatform;
-    sourceUrl: string;
-    posterHandle: string | null;
-    thumbnailUrl: string | null;
-    capturedAt: string;
-  }[];
+  sources: CaptureSource[];
 }
 
 /** One movement inside a captured workout, as the creator prescribed it. */

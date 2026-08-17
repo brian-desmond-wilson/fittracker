@@ -22,11 +22,13 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ChevronLeft, Sparkles, MoreVertical, Dumbbell, Weight, Circle } from 'lucide-react-native';
+import { ChevronLeft, Sparkles, MoreVertical, Dumbbell, Weight, Circle, ExternalLink } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
+import type { CaptureSource } from '@/src/types/capture';
 import { supabase } from '@/src/lib/supabase';
 import { computeMovementTier, fetchHierarchy } from '@/src/lib/supabase/crossfit';
+import { fetchExerciseSources } from '@/src/lib/supabase/capture';
 
 export interface TrainingItemDetailScreenProps {
   /** How this tab names the thing, lower case: "exercise" or "movement". */
@@ -64,6 +66,7 @@ export function TrainingItemDetailScreen({
   const [generating, setGenerating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tier, setTier] = useState<number>(0);
+  const [sources, setSources] = useState<CaptureSource[]>([]);
   const [hierarchyData, setHierarchyData] = useState<{
     ancestors: Array<{ id: string; name: string; is_core: boolean; tier: number }>;
     siblings: ExerciseWithVariations[];
@@ -72,6 +75,7 @@ export function TrainingItemDetailScreen({
   useEffect(() => {
     loadItem();
     checkAdminStatus();
+    loadSources();
   }, [id]);
 
   useEffect(() => {
@@ -94,6 +98,25 @@ export function TrainingItemDetailScreen({
       setIsAdmin(profile?.is_admin || false);
     } catch (error) {
       console.error('Error checking admin status:', error);
+    }
+  };
+
+  /**
+   * Where a captured exercise came from. Most of the library was never
+   * captured from anything, so an empty list is the normal case and the
+   * section simply doesn't appear.
+   */
+  const loadSources = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !id) {
+        setSources([]);
+        return;
+      }
+      setSources(await fetchExerciseSources(id, user.id));
+    } catch (error) {
+      console.error('Error loading capture sources:', error);
+      setSources([]);
     }
   };
 
@@ -613,6 +636,37 @@ export function TrainingItemDetailScreen({
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Captured From — the post this came from, so provenance survives
+            after the catalog card stopped carrying the link. */}
+        {sources.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Captured From</Text>
+            {sources.map((source) => (
+              <TouchableOpacity
+                key={source.sourceId}
+                style={styles.captureSourceRow}
+                activeOpacity={0.7}
+                onPress={() => Linking.openURL(source.sourceUrl)}
+                accessibilityRole="link"
+                accessibilityLabel={
+                  `Open the ${source.platform} post` +
+                  (source.posterHandle ? ` by ${source.posterHandle}` : '') + '.'
+                }
+              >
+                <ExternalLink size={15} color={colors.primary} />
+                <Text style={styles.captureSourceHandle}>
+                  {source.posterHandle ?? capitalize(source.platform)}
+                </Text>
+                {source.posterHandle && (
+                  <Text style={styles.captureSourcePlatform}>
+                    on {capitalize(source.platform)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
       </View>
     </>
@@ -874,6 +928,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  captureSourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+  },
+  captureSourceHandle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  captureSourcePlatform: {
+    fontSize: 13,
+    color: colors.mutedForeground,
   },
   variationItem: {
     marginBottom: 16,
