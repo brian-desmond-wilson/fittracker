@@ -8,6 +8,8 @@ import { decodeCaption } from "../captionText";
 import { createExercise, fetchGoalTypes, fetchMovementCategories } from "./crossfit";
 import { mapCategory } from "../captureReview";
 import { collapseByPost } from "../captureUrl";
+import { catalogDeleteMode, describeUsage } from "../catalogDelete";
+import type { ProvenanceLink } from "../catalogDelete";
 import type {
   CapturedWorkoutEntry,
   CaptureSource,
@@ -559,6 +561,107 @@ export async function deleteCapturedWorkout(
   } catch (e) {
     console.error("deleteCapturedWorkout failed:", e);
     return false;
+  }
+}
+
+export type DeleteCatalogResult =
+  | { ok: true; removedExercise: boolean }
+  | { ok: false; reason: string };
+
+/** Rows counted, or null when the count could not be read. */
+async function countRows(
+  table: string,
+  column: string,
+  exerciseId: string,
+): Promise<number | null> {
+  const { count, error } = await supabase
+    .from(table)
+    .select(column, { count: "exact", head: true })
+    .eq("exercise_id", exerciseId);
+  if (error) {
+    console.error(`usage count failed for ${table}:`, error);
+    return null;
+  }
+  return count ?? 0;
+}
+
+/**
+ * Remove a captured exercise from the catalog.
+ *
+ * Two different acts wear one word here, and which one applies is already
+ * recorded: a capture either CREATED an exercise or merely pointed at a
+ * library entry that already existed. Only the first is this capture's to
+ * delete — the second just loses its link to the post, leaves the catalog, and
+ * stays in the library where it was before any of this.
+ *
+ * A created exercise still standing in a captured workout, a program, or a
+ * logged set is refused rather than deleted, because the row cascades: those
+ * lists would silently come back a movement shorter. Generated sessions are
+ * not counted — they are today's suggestion, rebuilt tomorrow from whatever
+ * the catalog holds, so they are a derived list rather than authored work.
+ */
+export async function deleteCatalogExercise(
+  exerciseId: string,
+  userId: string,
+): Promise<DeleteCatalogResult> {
+  try {
+    const { data: links, error: linkError } = await supabase
+      .from("source_exercises")
+      .select("source_id, was_created")
+      .eq("exercise_id", exerciseId);
+    if (linkError) throw linkError;
+    const sourceIds = [...new Set((links ?? []).map((l: any) => l.source_id as string))];
+
+    const { data: exercise, error: exerciseError } = await supabase
+      .from("exercises")
+      .select("created_by, is_official")
+      .eq("id", exerciseId)
+      .maybeSingle();
+    if (exerciseError) throw exerciseError;
+
+    const mode = catalogDeleteMode({
+      links: (links ?? []) as ProvenanceLink[],
+      createdBy: (exercise?.created_by as string | null) ?? null,
+      isOfficial: (exercise?.is_official as boolean | null) ?? null,
+      userId,
+    });
+    const deletable = mode === "delete";
+
+    if (deletable) {
+      const [workouts, programs, logged] = await Promise.all([
+        countRows("captured_workout_exercises", "exercise_id", exerciseId),
+        countRows("program_workout_exercises", "exercise_id", exerciseId),
+        countRows("exercise_instances", "exercise_id", exerciseId),
+      ]);
+      // A count that would not read is treated as "in use": refusing costs a
+      // card left on screen, deleting wrongly costs somebody's history.
+      if (workouts === null || programs === null || logged === null) {
+        return { ok: false, reason: "Couldn't check what still uses it. Try again." };
+      }
+      const used = describeUsage({
+        logged, capturedWorkouts: workouts, programWorkouts: programs,
+      });
+      if (used) return { ok: false, reason: used };
+
+      // The provenance links cascade with the row.
+      const { error: deleteError } = await supabase
+        .from("exercises")
+        .delete()
+        .eq("id", exerciseId);
+      if (deleteError) throw deleteError;
+    } else {
+      const { error: unlinkError } = await supabase
+        .from("source_exercises")
+        .delete()
+        .eq("exercise_id", exerciseId);
+      if (unlinkError) throw unlinkError;
+    }
+
+    for (const sourceId of sourceIds) await pruneOrphanSource(sourceId, userId);
+    return { ok: true, removedExercise: deletable };
+  } catch (e) {
+    console.error("deleteCatalogExercise failed:", e);
+    return { ok: false, reason: "Couldn't remove that one. Try again." };
   }
 }
 

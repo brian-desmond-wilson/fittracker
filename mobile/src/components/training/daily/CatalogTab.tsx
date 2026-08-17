@@ -1,15 +1,16 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Image,
+  ActivityIndicator, RefreshControl,
 } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, useRouter } from "expo-router";
-import { ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCatalog } from "@/src/lib/supabase/capture";
 import { filterCatalog, catalogHandles } from "@/src/lib/catalogFilter";
 import { CaptureFab } from "./CaptureFab";
+import { SwipeableCatalogCard } from "./SwipeableCatalogCard";
 import type { CatalogEntry, CatalogFilters } from "@/src/types/capture";
 
 // One pill rail per filter axis. Muscles/equipment/categories are derived
@@ -81,7 +82,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
     );
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <View style={styles.railBlock}>
         {rail("Muscle", "muscle", axes.muscles)}
         {rail("Equipment", "equipment", axes.equipment)}
@@ -103,40 +104,13 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
               tintColor={colors.primary} colors={[colors.primary]} />
           }
           renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.card}
-              activeOpacity={0.7}
+            <SwipeableCatalogCard
+              entry={item}
               onPress={() =>
                 router.push(`/(tabs)/training/exercise/${item.exerciseId}` as never)
               }
-              accessibilityRole="button"
-              accessibilityLabel={`${item.name}. Open the exercise.`}
-            >
-              {item.sources[0]?.thumbnailUrl && (
-                <Image source={{ uri: item.sources[0].thumbnailUrl }} style={styles.thumb} />
-              )}
-              <View style={styles.cardBody}>
-                <Text style={styles.cardName}>{item.name}</Text>
-                <Text style={styles.cardMeta}>
-                  {[
-                    item.skillLevel,
-                    item.muscles.filter((m) => m.isPrimary).map((m) => m.name).join(", ") || null,
-                    item.equipmentTypes.join(", ") || "no equipment",
-                  ].filter(Boolean).join(" · ")}
-                </Text>
-                {/* Credit where it's due, but not a second tap target: the
-                    whole card belongs to the exercise page now. */}
-                {item.sources[0] && (
-                  <Text style={styles.sourceText}>
-                    {item.sources[0].posterHandle ?? item.sources[0].platform}
-                  </Text>
-                )}
-              </View>
-
-              <View style={styles.chevron}>
-                <ChevronRight size={18} color={colors.mutedForeground} />
-              </View>
-            </TouchableOpacity>
+              onDeleted={load}
+            />
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -154,7 +128,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
       )}
 
       <CaptureFab onSaved={load} />
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -171,17 +145,9 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 13, color: colors.mutedForeground },
   pillTextActive: { color: "#FFFFFF", fontWeight: "600" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { padding: 16, gap: 12 },
-  card: {
-    flexDirection: "row", backgroundColor: colors.muted, borderRadius: 12,
-    borderWidth: 1, borderColor: colors.border, overflow: "hidden", marginBottom: 12,
-  },
-  thumb: { width: 72, height: 72 },
-  cardBody: { flex: 1, padding: 12 },
-  cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
-  cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
-  chevron: { alignSelf: "center", paddingRight: 12 },
-  sourceText: { fontSize: 13, color: colors.mutedForeground, marginTop: 6 },
+  // The card's own gap lives on its swipe container, so `gap` here would
+  // double it.
+  listContent: { padding: 16 },
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
