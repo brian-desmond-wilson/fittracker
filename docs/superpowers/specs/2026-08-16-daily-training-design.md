@@ -230,10 +230,18 @@ completion — recommended-vs-performed feeds future rotation and ramp logic.
   rows were write-only; and Gyms held a permanent tab slot for what is
   configuration rather than a daily surface. Splitting Catalog into Workouts
   and Exercises fixes the first. Gyms moves — see below.
-- **Gym profiles** are not a Daily tab. Choosing today's gym belongs in the
-  daily check-in (it is one more thing you answer about today, alongside
-  soreness and time). Editing a gym's equipment checklist is rare setup and
-  belongs in Profile with the other configuration screens. Both are Phase 2.
+- **Gym profiles** are not a Daily tab — gyms are context, not content
+  (**revised again 2026-08-16**: chip-plus-sheet, replacing the earlier
+  check-in-picker + Profile-editor split). The control lives where its effect
+  is visible:
+  - A **gym chip** on the Today tab — "at: Hotel Gym ▾" above the composed
+    session. Change the gym, watch the session recompose.
+  - The same selector appears **inside the daily check-in sheet**, since
+    that's the moment the answer matters.
+  - Tapping either opens one **gym bottom sheet**: switch the active gym, or
+    add/edit one (name, location, preset, equipment checklist). No separate
+    management screen in Phase 2; a Profile "My Gyms" entry point can be
+    added later if the list grows past a handful.
 - **Capture button** in the Daily header.
 - All pickers/check-ins/review cards are **bottom sheets** (standing rule: no
   inline pickers).
@@ -247,8 +255,8 @@ completion — recommended-vs-performed feeds future rotation and ramp logic.
 - **Phase 1 — ship this week:** migrations (§3), `capture-post` edge function,
   paste-a-link sheet, review card, Exercises tab with filters, Workouts tab
   showing captured workouts. Value: start collecting immediately.
-- **Phase 2 — mid-trip:** gym profiles (check-in picker + Profile editor),
-  check-in sheet, rules-tier modules,
+- **Phase 2 — mid-trip:** gym profiles (Today-tab chip + gym bottom sheet,
+  selector repeated in check-in), check-in sheet, rules-tier modules,
   `compose-session` edge function, Today tab, Home card, logging integration.
   Value: the daily loop goes live.
 - **Phase 3 — after:** progression promotion UX, BFR finisher programming,
