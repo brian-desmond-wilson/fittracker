@@ -265,6 +265,40 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
   }
 }
 
+/** Shared by the list and the single-workout screen so both read a row the
+ *  same way. */
+function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
+  return {
+    workoutId: row.id,
+    name: row.name,
+    rounds: row.rounds ?? null,
+    rawProtocol: row.raw_protocol ?? null,
+    capturedAt: row.created_at,
+    source: row.source
+      ? {
+          sourceId: row.source.id,
+          platform: row.source.platform,
+          sourceUrl: row.source.source_url,
+          posterHandle: row.source.poster_handle,
+          thumbnailUrl: row.source.thumbnail_url,
+        }
+      : null,
+    items: (row.items ?? [])
+      .slice()
+      .sort((a: any, b: any) => a.exercise_order - b.exercise_order)
+      .map((it: any) => ({
+        exerciseId: it.exercise?.id ?? "",
+        name: it.exercise?.name ?? "Unknown movement",
+        sets: it.target_sets ?? null,
+        reps: it.target_reps ?? null,
+        weight: it.target_weight ?? null,
+        duration: it.target_duration ?? null,
+        restSeconds: it.rest_seconds ?? null,
+        notes: it.notes ?? null,
+      })),
+  };
+}
+
 /** Captured workouts with their movements and provenance, newest first.
  *  Without this read the workouts are write-only: the rows exist and nothing
  *  in the app can show them. */
@@ -295,35 +329,34 @@ export async function fetchCapturedWorkouts(
     // A save that never finished leaves a pending source; don't show its
     // half-built workout.
     .filter((row: any) => row.source?.extraction_status === "reviewed")
-    .map((row: any) => ({
-      workoutId: row.id,
-      name: row.name,
-      rounds: row.rounds ?? null,
-      rawProtocol: row.raw_protocol ?? null,
-      capturedAt: row.created_at,
-      source: row.source
-        ? {
-            sourceId: row.source.id,
-            platform: row.source.platform,
-            sourceUrl: row.source.source_url,
-            posterHandle: row.source.poster_handle,
-            thumbnailUrl: row.source.thumbnail_url,
-          }
-        : null,
-      items: (row.items ?? [])
-        .slice()
-        .sort((a: any, b: any) => a.exercise_order - b.exercise_order)
-        .map((it: any) => ({
-          exerciseId: it.exercise?.id ?? "",
-          name: it.exercise?.name ?? "Unknown movement",
-          sets: it.target_sets ?? null,
-          reps: it.target_reps ?? null,
-          weight: it.target_weight ?? null,
-          duration: it.target_duration ?? null,
-          restSeconds: it.rest_seconds ?? null,
-          notes: it.notes ?? null,
-        })),
-    }));
+    .map(toCapturedWorkoutEntry);
+}
+
+/** One captured workout, for its own screen. A pushed screen gets an id, not
+ *  a prop, so it loads its own row rather than trusting what the list had. */
+export async function fetchCapturedWorkout(
+  workoutId: string,
+): Promise<CapturedWorkoutEntry | null> {
+  const { data, error } = await supabase
+    .from("captured_workouts")
+    .select(`
+      id, name, rounds, raw_protocol, created_at,
+      source:captured_sources!inner(
+        id, platform, source_url, poster_handle, thumbnail_url, extraction_status
+      ),
+      items:captured_workout_exercises(
+        exercise_order, target_sets, target_reps, target_weight,
+        target_duration, rest_seconds, notes,
+        exercise:exercises(id, name)
+      )
+    `)
+    .eq("id", workoutId)
+    .maybeSingle();
+  if (error) {
+    console.error("fetchCapturedWorkout failed:", error);
+    return null;
+  }
+  return data ? toCapturedWorkoutEntry(data) : null;
 }
 
 /** Every captured exercise with taxonomy + provenance, newest capture first. */
