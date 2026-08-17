@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 import { Dumbbell, Flame, Search, X } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { KettlebellIcon } from "@/src/components/ui/KettlebellIcon";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
 import ExercisesTab from "@/src/components/training/ExercisesTab";
@@ -25,6 +27,25 @@ type StrengthTab = "programs" | "workouts" | "exercises";
 // check-in (which gym today) and in Profile (what that gym has), not in a
 // permanent tab slot here.
 type DailyTab = "today" | "workouts" | "exercises";
+
+/** Props every header mode icon honours, whatever it is drawn from. */
+interface ModeIconProps {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+  fill?: string;
+}
+
+const MODES: {
+  key: WorkoutMode;
+  /** What a screen reader calls it; the icons say nothing on their own. */
+  label: string;
+  Icon: React.ComponentType<ModeIconProps>;
+}[] = [
+  { key: "daily", label: "Training", Icon: Flame },
+  { key: "crossfit", label: "HIIT", Icon: KettlebellIcon },
+  { key: "strength", label: "Weightlifting", Icon: Dumbbell },
+];
 
 export default function Training() {
   const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("daily");
@@ -121,16 +142,12 @@ export default function Training() {
     { key: "exercises", label: "Exercises" },
   ];
 
-  const handleCrossFitPress = () => {
-    setWorkoutMode("crossfit");
-  };
-
-  const handleStrengthPress = () => {
-    setWorkoutMode("strength");
-  };
-
-  const handleDailyPress = () => {
-    setWorkoutMode("daily");
+  // A tap on the mode you are already in changes nothing, so it stays silent:
+  // the tick should always mean something happened.
+  const selectMode = (mode: WorkoutMode) => {
+    if (mode === workoutMode) return;
+    Haptics.selectionAsync();
+    setWorkoutMode(mode);
   };
 
   const renderTabContent = () => {
@@ -229,21 +246,31 @@ export default function Training() {
             </TouchableOpacity>
           )}
         </View>
-        {/* Training (daily) · HIIT (CrossFit) · Weightlifting (strength) */}
+        {/* The mode you are in is filled and green; the two you aren't are
+            outlined and grey. Fill alone is too quiet a signal at this size,
+            so colour carries it too. */}
         <View style={styles.headerButtons}>
-          <TouchableOpacity onPress={handleDailyPress} activeOpacity={0.7} style={styles.iconButton}>
-            <Flame size={24} color={colors.primary} strokeWidth={2} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleCrossFitPress} activeOpacity={0.7} style={styles.iconButton}>
-            <Image
-              source={require('@/assets/kettlebell.png')}
-              style={styles.kettlebellIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleStrengthPress} activeOpacity={0.7} style={styles.iconButton}>
-            <Dumbbell size={24} color={colors.primary} strokeWidth={2} />
-          </TouchableOpacity>
+          {MODES.map(({ key, label, Icon }) => {
+            const active = workoutMode === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                onPress={() => selectMode(key)}
+                activeOpacity={0.7}
+                style={styles.iconButton}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={label}
+              >
+                <Icon
+                  size={24}
+                  strokeWidth={2}
+                  color={active ? colors.primary : colors.mutedForeground}
+                  fill={active ? colors.primary : "none"}
+                />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
@@ -375,11 +402,6 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: "center",
     justifyContent: "center",
-  },
-  kettlebellIcon: {
-    width: 24,
-    height: 24,
-    tintColor: colors.primary,
   },
   tabBar: {
     flexDirection: "row",
