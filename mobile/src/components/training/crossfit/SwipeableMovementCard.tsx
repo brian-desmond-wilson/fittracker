@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Trash2 } from 'lucide-react-native';
+import { ChevronRight, Trash2 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
@@ -179,6 +179,8 @@ function SwipeableMovementCardBase({
         style={styles.movementCard}
         activeOpacity={0.7}
         onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${movement.name}. Open the ${detailRoute}.`}
       >
         {/* Left: Icon or Thumbnail */}
         {movement.image_url ? (
@@ -245,6 +247,11 @@ function SwipeableMovementCardBase({
             {movement.movement_category?.name || movement.goal_type?.name || 'General'}
           </Text>
         </View>
+
+        {/* The card has always opened the detail page; the chevron says so. */}
+        <View style={styles.chevron}>
+          <ChevronRight size={18} color={colors.mutedForeground} />
+        </View>
       </TouchableOpacity>
     </Swipeable>
   );
@@ -293,6 +300,10 @@ const styles = StyleSheet.create({
   movementCategory: {
     fontSize: 14,
     color: colors.mutedForeground,
+  },
+  chevron: {
+    alignSelf: 'center',
+    paddingRight: 12,
   },
   badgeColumn: {
     flexDirection: 'column',
