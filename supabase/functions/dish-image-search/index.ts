@@ -45,6 +45,103 @@ interface Candidate {
   sourcePage: string | null;
 }
 
+/**
+ * Fetch the picture, with a second address to fall back on.
+ *
+ * Three things make a straight fetch of a search result unreliable, and all
+ * three are about who is asking rather than what is being asked for:
+ *
+ *   1. Plenty of publishers refuse anything that does not look like a browser
+ *      — a self-identifying bot UA gets a 403 from most CDN edge rules.
+ *   2. Some serve a picture only to requests that appear to come from their
+ *      own page, which is what the Referer is for.
+ *   3. Some answer 200 with a PAGE — an anti-hotlinking redirect to the
+ *      product listing, or a bot-check interstitial. This is the common one,
+ *      and it is why "did the fetch succeed" is the wrong question: the status
+ *      is fine and the bytes are HTML.
+ *
+ * So a response only counts if it IS an image, and anything else — refused,
+ * unreachable, or a page wearing a 200 — falls through to the thumbnail. That
+ * lives on the search engine's own CDN, which exists to be fetched.
+ *
+ * The body is read here rather than by the caller because the content type is
+ * not always honest either: a lazy server sends `application/octet-stream` for
+ * a real JPEG, so the first bytes get the final say.
+ */
+interface FetchedImage {
+  bytes: Uint8Array;
+  contentType: string;
+  from: 'source' | 'thumbnail';
+}
+
+/** JPEG, PNG, GIF, WebP and BMP by their first bytes. What a file says it is
+ *  matters less than what it starts with. */
+function sniffImageType(bytes: Uint8Array): string | null {
+  const b = bytes;
+  if (b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  ) return 'image/webp';
+  if (b[0] === 0x42 && b[1] === 0x4d) return 'image/bmp';
+  return null;
+}
+
+async function fetchOne(target: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+  const headers: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+  };
+  try {
+    headers.Referer = new URL(target).origin + '/';
+  } catch {
+    // An unparseable URL fails the fetch below on its own terms.
+  }
+
+  const res = await fetch(target, { headers, redirect: 'follow' });
+  if (!res.ok) throw new Error(`refused (${res.status})`);
+
+  const declared = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength === 0) throw new Error('empty response');
+  // 8 MB cap: a picked photo decorates a list row, and anything bigger is a
+  // wallpaper, not a product shot. Also bounds what a hostile URL can cost.
+  if (bytes.byteLength > 8 * 1024 * 1024) throw new Error('image too large');
+
+  const sniffed = sniffImageType(bytes);
+  if (sniffed) return { bytes, contentType: sniffed };
+  if (declared.startsWith('image/')) return { bytes, contentType: declared };
+  throw new Error(`returned ${declared || 'unknown content'}, not an image`);
+}
+
+async function fetchImage(imageUrl: string, fallbackUrl: string): Promise<FetchedImage> {
+  let firstProblem = 'unreachable';
+  try {
+    const got = await fetchOne(imageUrl);
+    return { ...got, from: 'source' };
+  } catch (e) {
+    firstProblem = e instanceof Error ? e.message : String(e);
+    console.error('source image fetch failed:', firstProblem);
+  }
+
+  if (fallbackUrl && /^https?:\/\//.test(fallbackUrl) && fallbackUrl !== imageUrl) {
+    try {
+      const got = await fetchOne(fallbackUrl);
+      return { ...got, from: 'thumbnail' };
+    } catch (e) {
+      const second = e instanceof Error ? e.message : String(e);
+      throw new Error(`the publisher ${firstProblem}, and the preview ${second}`);
+    }
+  }
+
+  throw new Error(`that address ${firstProblem}`);
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -110,6 +207,8 @@ serve(async (req) => {
     // ---- pick: download the chosen image and keep our own copy ----
 
     const imageUrl = String(body.imageUrl ?? '').trim();
+    // The thumbnail, when the caller has one. See `fetchImage` below.
+    const fallbackUrl = String(body.fallbackUrl ?? '').trim();
     const name = String(body.name ?? 'dish').trim() || 'dish';
     if (!/^https?:\/\//.test(imageUrl)) throw new Error('imageUrl must be an http(s) URL');
 
@@ -124,20 +223,9 @@ serve(async (req) => {
     if (userError || !userData?.user) throw new Error('not authenticated');
     const userId = userData.user.id;
 
-    const imgRes = await fetch(imageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FitTracker/1.0)' },
-    });
-    if (!imgRes.ok) throw new Error(`source image fetch failed: ${imgRes.status}`);
-
-    const contentType = imgRes.headers.get('content-type') ?? 'image/jpeg';
-    if (!contentType.startsWith('image/')) {
-      throw new Error('the chosen URL did not return an image');
-    }
-    const buffer = new Uint8Array(await imgRes.arrayBuffer());
-    // 8 MB cap: a picked photo decorates a list row, and anything bigger is a
-    // wallpaper, not a dish shot. Also bounds what a hostile URL can cost.
-    if (buffer.byteLength > 8 * 1024 * 1024) throw new Error('image too large');
-    if (buffer.byteLength === 0) throw new Error('image was empty');
+    // Validation, the size cap and the fallback all live in fetchImage: what
+    // comes back here is bytes that ARE an image.
+    const { bytes: buffer, contentType, from } = await fetchImage(imageUrl, fallbackUrl);
 
     const ext = contentType.includes('png') ? 'png'
       : contentType.includes('webp') ? 'webp'
@@ -155,7 +243,11 @@ serve(async (req) => {
     if (uploadError) throw new Error(`upload failed: ${uploadError.message}`);
 
     const { data: { publicUrl } } = service.storage.from(BUCKET).getPublicUrl(filePath);
-    return json({ imageUrl: publicUrl });
+    // `from` tells the caller whether it got the publisher's picture or the
+    // search engine's smaller copy of it — the difference is visible on a
+    // large tile, and a silent downgrade is the kind of thing that gets
+    // noticed months later and blamed on the camera.
+    return json({ imageUrl: publicUrl, from });
   } catch (e) {
     console.error('dish-image-search:', e);
     return json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);

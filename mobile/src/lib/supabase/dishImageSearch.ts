@@ -45,22 +45,60 @@ export async function searchDishImages(
 }
 
 /**
+ * What the server said when a pick failed.
+ *
+ * `functions.invoke` rejects with a FunctionsHttpError whose message is only
+ * "non-2xx status code" — the actual reason ("source image fetch failed: 403")
+ * is in the response body, which the error carries but does not read. Without
+ * this the app could only ever say "couldn't fetch that image", which names
+ * the symptom and hides every cause: a site refusing robots, an address that
+ * points at a page, an image too big.
+ */
+async function serverReason(e: unknown): Promise<string | null> {
+  const res = (e as { context?: Response })?.context;
+  if (!res || typeof res.json !== "function") return null;
+  try {
+    const body = await res.json();
+    return typeof body?.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface PickResult {
+  /** The URL of our own copy, or null when nothing was kept. */
+  url: string | null;
+  /** Why not, in the server's words, for the caller to show. */
+  reason?: string | null;
+}
+
+/**
  * Keep the chosen candidate: the function downloads it and stores a copy in
- * the app's own bucket. Returns the copy's URL, or null — null leaves the
- * dish exactly as it was, which is the correct cost of a failed decoration.
+ * the app's own bucket.
+ *
+ * The thumbnail rides along so the server has a second address to try. A
+ * search result's full-size link belongs to whoever published it, and plenty
+ * of them refuse a fetch that is not a browser on their own page; the
+ * thumbnail is Google's copy, and it always answers.
  */
 export async function pickDishImage(
   candidate: DishImageCandidate,
   dishName: string,
-): Promise<string | null> {
+): Promise<PickResult> {
   try {
     const { data, error } = await supabase.functions.invoke("dish-image-search", {
-      body: { action: "pick", imageUrl: candidate.imageUrl, name: dishName },
+      body: {
+        action: "pick",
+        imageUrl: candidate.imageUrl,
+        fallbackUrl: candidate.thumbUrl || null,
+        name: dishName,
+      },
     });
     if (error) throw error;
-    return typeof data?.imageUrl === "string" ? data.imageUrl : null;
+    return { url: typeof data?.imageUrl === "string" ? data.imageUrl : null };
   } catch (e) {
-    console.error("dish image pick failed:", e);
-    return null;
+    const reason = await serverReason(e);
+    console.error("dish image pick failed:", reason ?? e);
+    return { url: null, reason };
   }
 }

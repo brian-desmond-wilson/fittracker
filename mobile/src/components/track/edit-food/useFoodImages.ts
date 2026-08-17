@@ -1,8 +1,5 @@
 import { useState } from "react";
-import { Platform, Alert, ActionSheetIOS } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import { FoodInventoryItem } from "@/src/types/track";
-import { requestCameraAndLibrary } from "@/src/lib/mediaPermissions";
 
 export type FoodImageType = "primary" | "front" | "back" | "side";
 
@@ -15,93 +12,37 @@ type FoodImageSeed = Pick<
   "image_primary_url" | "image_front_url" | "image_back_url" | "image_side_url"
 >;
 
-// Owns the four food-image URIs and the camera/library picker flow. Values seed
-// from the item; the picker updates them (local file:// URIs until save uploads).
+/**
+ * Owns the four food-image URIs. Values seed from the item and hold whatever
+ * the picker last handed over: a local `file://` from the camera or the
+ * library, which Save uploads, or an `https://` the server already copied into
+ * our bucket, which Save passes through untouched.
+ *
+ * It used to own the picker too — an iOS action sheet offering a camera and a
+ * library and nothing else. That flow now lives in `PhotoSourceSheet`, which
+ * offers those two plus web search and a pasted address, and knows nothing
+ * about which of the four faces it is filling. `setFor` is the seam: the
+ * screen says which slot, the sheet says which picture.
+ */
 export function useFoodImages(item: FoodImageSeed) {
   const [imagePrimary, setImagePrimary] = useState<string | null>(item.image_primary_url);
   const [imageFront, setImageFront] = useState<string | null>(item.image_front_url);
   const [imageBack, setImageBack] = useState<string | null>(item.image_back_url);
   const [imageSide, setImageSide] = useState<string | null>(item.image_side_url);
 
-
-  const pickImage = async (imageType: FoodImageType) => {
-    const hasPermission = await requestCameraAndLibrary("images");
-    if (!hasPermission) return;
-
-    const setImageFunction = {
+  /** One writer keyed by slot, so callers stop re-deriving the same
+   *  four-branch ladder every time they need to set or clear a face. */
+  const setFor = (type: FoodImageType, uri: string | null) => {
+    ({
       primary: setImagePrimary,
       front: setImageFront,
       back: setImageBack,
       side: setImageSide,
-    }[imageType];
-
-    // Show action sheet on iOS, alert on Android
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Cancel", "Take Photo", "Choose from Library"],
-          cancelButtonIndex: 0,
-        },
-        async (buttonIndex) => {
-          if (buttonIndex === 1) {
-            const result = await ImagePicker.launchCameraAsync({
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.8,
-            });
-
-            if (!result.canceled && result.assets[0]) {
-              setImageFunction(result.assets[0].uri);
-            }
-          } else if (buttonIndex === 2) {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.8,
-            });
-
-            if (!result.canceled && result.assets[0]) {
-              setImageFunction(result.assets[0].uri);
-            }
-          }
-        }
-      );
-    } else {
-      Alert.alert("Select Image", "Choose an option", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Take Photo",
-          onPress: async () => {
-            const result = await ImagePicker.launchCameraAsync({
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.8,
-            });
-
-            if (!result.canceled && result.assets[0]) {
-              setImageFunction(result.assets[0].uri);
-            }
-          },
-        },
-        {
-          text: "Choose from Library",
-          onPress: async () => {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.8,
-            });
-
-            if (!result.canceled && result.assets[0]) {
-              setImageFunction(result.assets[0].uri);
-            }
-          },
-        },
-      ]);
-    }
+    })[type](uri);
   };
+
+  const imageFor = (type: FoodImageType): string | null =>
+    ({ primary: imagePrimary, front: imageFront, back: imageBack, side: imageSide })[type];
 
   return {
     imagePrimary,
@@ -112,6 +53,7 @@ export function useFoodImages(item: FoodImageSeed) {
     setImageFront,
     setImageBack,
     setImageSide,
-    pickImage,
+    setFor,
+    imageFor,
   };
 }

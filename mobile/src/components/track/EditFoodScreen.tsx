@@ -48,7 +48,8 @@ import {
 import { estimateShelfLifeDays } from "@/src/lib/expiryPolicy";
 import { sanitizeInteger, sanitizeDecimal } from "@/src/lib/numericInput";
 import { SectionKey, UNITS, LocationEntry } from "./edit-food/constants";
-import { useFoodImages } from "./edit-food/useFoodImages";
+import { useFoodImages, type FoodImageType } from "./edit-food/useFoodImages";
+import { PhotoSourceSheet } from "./photo/PhotoSourceSheet";
 
 /** `food_inventory_locations.quantity` is int4; anything above this overflows. */
 const INT4_MAX = 2_147_483_647;
@@ -98,6 +99,14 @@ function parseDecimalInput(raw: string): number | null {
   if (!Number.isFinite(value) || value < 0 || value > DECIMAL_10_2_MAX) return null;
   return value;
 }
+
+/** The label each face wears in the grid, and in the sheet that fills it. */
+const SLOT_LABELS: Record<FoodImageType, string> = {
+  primary: "Primary",
+  front: "Front",
+  back: "Back",
+  side: "Side",
+};
 
 interface EditFoodScreenProps {
   item: InventoryItemWithState;
@@ -210,8 +219,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted
     setImageFront,
     setImageBack,
     setImageSide,
-    pickImage,
+    setFor,
+    imageFor,
   } = useFoodImages(item);
+
+  // Which of the four faces the photo sheet is filling — null when it is shut.
+  // The slot lives here rather than in the sheet because the slot is this
+  // screen's idea: the sheet only knows how to get a picture.
+  const [photoSlot, setPhotoSlot] = useState<FoodImageType | null>(null);
 
   // UI State
   const [showUnitPicker, setShowUnitPicker] = useState(false);
@@ -1419,19 +1434,26 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted
 
             {expandedSection === "images" && (
               <View style={styles.sectionContent}>
-                <Text style={styles.sectionSubtitle}>Add photos to easily identify your products</Text>
+                {/* The four ways in are named here rather than left to be
+                    discovered behind a tap — Search in particular is the one
+                    nobody would guess a photo slot offers. */}
+                <Text style={styles.sectionSubtitle}>
+                  Tap a slot to add a photo — take one, pick one, search the web, or paste a link.
+                </Text>
 
                 <View style={styles.imageGrid}>
-                  {[
-                    { label: "Primary", image: imagePrimary, type: "primary" as const },
-                    { label: "Front", image: imageFront, type: "front" as const },
-                    { label: "Back", image: imageBack, type: "back" as const },
-                    { label: "Side", image: imageSide, type: "side" as const },
-                  ].map(({ label, image, type }) => (
+                  {([
+                    { image: imagePrimary, type: "primary" as const },
+                    { image: imageFront, type: "front" as const },
+                    { image: imageBack, type: "back" as const },
+                    { image: imageSide, type: "side" as const },
+                  ]).map(({ image, type }) => {
+                    const label = SLOT_LABELS[type];
+                    return (
                     <View key={label} style={styles.imageContainer}>
                       <TouchableOpacity
                         style={[styles.imagePlaceholder, image && styles.imageWithPhoto]}
-                        onPress={() => pickImage(type)}
+                        onPress={() => setPhotoSlot(type)}
                       >
                         {image ? (
                           <Image source={{ uri: image }} style={styles.productImage} />
@@ -1445,18 +1467,14 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted
                       {image && (
                         <TouchableOpacity
                           style={styles.removeImageButton}
-                          onPress={() => {
-                            if (type === "primary") setImagePrimary(null);
-                            else if (type === "front") setImageFront(null);
-                            else if (type === "back") setImageBack(null);
-                            else if (type === "side") setImageSide(null);
-                          }}
+                          onPress={() => setFor(type, null)}
                         >
                           <Trash2 size={icons.sm} color={colors.text} />
                         </TouchableOpacity>
                       )}
                     </View>
-                  ))}
+                    );
+                  })}
                 </View>
               </View>
             )}
@@ -2227,6 +2245,21 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted
             </View>
           </View>
         </Modal>
+
+        {/* All four sources on all four faces: the packet's back is as
+            findable on the web as its front, and deciding which slot deserves
+            which source is a judgment the person holding the packet makes
+            better than this screen can. */}
+        <PhotoSourceSheet
+          visible={photoSlot !== null}
+          title={photoSlot ? `${SLOT_LABELS[photoSlot]} photo` : ""}
+          subtitle={[brand.trim(), name.trim()].filter(Boolean).join(" · ") || null}
+          searchQuery={name.trim()}
+          searchScope={brand.trim() || null}
+          replacing={photoSlot ? imageFor(photoSlot) !== null : false}
+          onPicked={(uri) => { if (photoSlot) setFor(photoSlot, uri); }}
+          onClose={() => setPhotoSlot(null)}
+        />
 
         <CategoryPickerSheet
           visible={showCategoryPicker}
