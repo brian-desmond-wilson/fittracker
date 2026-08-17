@@ -1,16 +1,15 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Image,
+  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
 } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, router } from "expo-router";
-import { ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { filterWorkouts } from "@/src/lib/workoutFilter";
-import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
 import { CaptureFab } from "./CaptureFab";
+import { SwipeableWorkoutCard } from "./SwipeableWorkoutCard";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface WorkoutsTabProps {
@@ -52,7 +51,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
   // The loading spinner sits inside the container, not in place of it, so the
   // capture button never blinks out from under your thumb.
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -67,27 +66,13 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
             tintColor={colors.primary} colors={[colors.primary]} />
         }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.card}
+          <SwipeableWorkoutCard
+            workout={item}
             onPress={() =>
               router.push(`/(tabs)/training/captured-workout/${item.workoutId}`)
             }
-            activeOpacity={0.7}
-          >
-            {item.source?.thumbnailUrl && (
-              <Image source={{ uri: item.source.thumbnailUrl }} style={styles.thumb} />
-            )}
-            <View style={styles.cardBody}>
-              <Text style={styles.cardName}>{item.name}</Text>
-              <Text style={styles.cardMeta}>
-                {formatWorkoutHeadline(item.items.length, item.rounds)}
-              </Text>
-              {item.source?.posterHandle && (
-                <Text style={styles.handle}>{item.source.posterHandle}</Text>
-              )}
-            </View>
-            <ChevronRight size={18} color={colors.mutedForeground} />
-          </TouchableOpacity>
+            onDeleted={load}
+          />
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -105,7 +90,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
       )}
 
       <CaptureFab onSaved={load} />
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -116,17 +101,6 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   listContent: { padding: 16 },
-  card: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: colors.muted, borderRadius: 12,
-    borderWidth: 1, borderColor: colors.border,
-    overflow: "hidden", marginBottom: 12, paddingRight: 12,
-  },
-  thumb: { width: 72, height: 72 },
-  cardBody: { flex: 1, padding: 12 },
-  cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
-  cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
-  handle: { fontSize: 13, color: colors.primary, marginTop: 4 },
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },

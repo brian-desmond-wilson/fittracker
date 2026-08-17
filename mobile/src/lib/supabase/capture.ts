@@ -484,6 +484,81 @@ export async function fetchExerciseSources(
     );
 }
 
+/**
+ * Drop a capture's source once nothing it explains is left.
+ *
+ * The source row is what answers "already captured?", so a bare one left
+ * behind would make that post permanently uncapturable. It is also the only
+ * thread tying catalog exercises back to the post they came from, and the
+ * catalog is assembled through those threads — cutting them would take
+ * exercises off the Exercises tab while leaving them in the library, which
+ * looks exactly like data loss. So a source with anything still pointing at it
+ * stays, and only one that explains nothing goes.
+ */
+async function pruneOrphanSource(sourceId: string, userId: string): Promise<void> {
+  const workouts = await supabase
+    .from("captured_workouts")
+    .select("id", { count: "exact", head: true })
+    .eq("source_id", sourceId);
+  const exercises = await supabase
+    .from("source_exercises")
+    .select("source_id", { count: "exact", head: true })
+    .eq("source_id", sourceId);
+
+  // A count we failed to read is not a count of zero: leaving a source behind
+  // costs one re-capture, deleting a live one costs the catalog.
+  if (workouts.error || exercises.error) {
+    console.error("orphan source check failed:", workouts.error ?? exercises.error);
+    return;
+  }
+  if ((workouts.count ?? 1) > 0 || (exercises.count ?? 1) > 0) return;
+
+  const { error } = await supabase
+    .from("captured_sources")
+    .delete()
+    .eq("id", sourceId)
+    .eq("user_id", userId);
+  if (error) console.error("orphan source delete failed:", error);
+}
+
+/**
+ * Delete a captured workout the owner is done with.
+ *
+ * Its movement list — the reps and rounds the creator prescribed — goes with
+ * it. The exercises do not: those rows belong to the library whether this
+ * capture created them or merely pointed at entries that already existed, and
+ * nothing here touches them. A generated session that served this workout
+ * survives with its link cleared, which the schema handles.
+ */
+export async function deleteCapturedWorkout(
+  workoutId: string,
+  userId: string,
+): Promise<boolean> {
+  try {
+    const { data: workout, error: readError } = await supabase
+      .from("captured_workouts")
+      .select("source_id")
+      .eq("id", workoutId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!workout) return false;
+
+    const { error: deleteError } = await supabase
+      .from("captured_workouts")
+      .delete()
+      .eq("id", workoutId)
+      .eq("user_id", userId);
+    if (deleteError) throw deleteError;
+
+    await pruneOrphanSource(workout.source_id as string, userId);
+    return true;
+  } catch (e) {
+    console.error("deleteCapturedWorkout failed:", e);
+    return false;
+  }
+}
+
 // ---------- Editing a captured workout ----------
 //
 // A capture is a starting point, not a contract: the extraction guesses a
