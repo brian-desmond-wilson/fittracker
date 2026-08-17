@@ -456,7 +456,13 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
     }
     return data.id;
   } catch (e) {
-    console.error("saveGeneratedSession failed:", e);
+    // The bare object logs as "{"code":"PGRST…" and truncates in the on-device
+    // toast, which is exactly where you read it — so name the parts.
+    const err = e as { code?: string; message?: string; details?: string };
+    console.error(
+      "saveGeneratedSession failed:",
+      err?.code ?? "", err?.message ?? String(e), err?.details ?? "",
+    );
     return null;
   }
 }
