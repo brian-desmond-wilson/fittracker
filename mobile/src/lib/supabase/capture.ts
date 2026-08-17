@@ -7,6 +7,7 @@ import { supabase } from "../supabase";
 import { decodeCaption } from "../captionText";
 import { createExercise, fetchGoalTypes, fetchMovementCategories } from "./crossfit";
 import { mapCategory } from "../captureReview";
+import { collapseByPost } from "../captureUrl";
 import type {
   CapturedWorkoutEntry,
   CaptureSource,
@@ -468,20 +469,22 @@ export async function fetchExerciseSources(
     return [];
   }
 
-  return (data ?? [])
-    .map((row: any) => row.source)
-    .filter((s: any) => s && s.user_id === userId && s.extraction_status === "reviewed")
-    .map((s: any) => ({
-      sourceId: s.id,
-      platform: s.platform,
-      sourceUrl: s.source_url,
-      posterHandle: s.poster_handle,
-      thumbnailUrl: s.thumbnail_url,
-      capturedAt: s.captured_at,
-    }))
-    .sort((a: CaptureSource, b: CaptureSource) =>
-      a.capturedAt < b.capturedAt ? 1 : -1,
-    );
+  // collapseByPost both dedupes and orders: two source rows for one post — a
+  // capture made twice before the identity rule tightened — would otherwise
+  // list the same link against the same handle twice.
+  return collapseByPost(
+    (data ?? [])
+      .map((row: any) => row.source)
+      .filter((s: any) => s && s.user_id === userId && s.extraction_status === "reviewed")
+      .map((s: any): CaptureSource => ({
+        sourceId: s.id,
+        platform: s.platform,
+        sourceUrl: s.source_url,
+        posterHandle: s.poster_handle,
+        thumbnailUrl: s.thumbnail_url,
+        capturedAt: s.captured_at,
+      })),
+  );
 }
 
 /**

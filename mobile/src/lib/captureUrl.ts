@@ -80,3 +80,31 @@ export function normalizeSourceUrl(raw: string): string {
 
   return `${url.protocol}//${host}${path}${query ? `?${query}` : ""}`;
 }
+
+/**
+ * One entry per post, newest capture first.
+ *
+ * A post captured twice before the identity rule tightened leaves two source
+ * rows, and provenance built from them lists the same post twice — the same
+ * handle, the same link, side by side. Collapsing on canonical identity keeps
+ * the earliest capture of each post, since that is when it actually entered the
+ * library, and hands back the canonical link so the survivor points at the post
+ * rather than at whichever carousel slide happened to be shared.
+ *
+ * Structural on purpose: anything carrying a link and a capture time can use
+ * it, without this module learning the capture types.
+ */
+export function collapseByPost<T extends { sourceUrl: string; capturedAt: string }>(
+  sources: T[],
+): T[] {
+  const earliestByPost = new Map<string, T>();
+  for (const source of sources) {
+    const key = normalizeSourceUrl(source.sourceUrl);
+    const held = earliestByPost.get(key);
+    if (!held || source.capturedAt < held.capturedAt) {
+      earliestByPost.set(key, { ...source, sourceUrl: key });
+    }
+  }
+  return [...earliestByPost.values()]
+    .sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : -1));
+}

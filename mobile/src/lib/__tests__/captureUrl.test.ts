@@ -1,4 +1,4 @@
-import { normalizeSourceUrl } from "../captureUrl";
+import { collapseByPost, normalizeSourceUrl } from "../captureUrl";
 
 describe("normalizeSourceUrl", () => {
   it("strips Instagram's per-share tracking parameter", () => {
@@ -80,5 +80,50 @@ describe("normalizeSourceUrl", () => {
 
   it("returns the trimmed input when it is not a parseable url", () => {
     expect(normalizeSourceUrl("  not a url  ")).toBe("not a url");
+  });
+});
+
+describe("collapseByPost", () => {
+  const src = (sourceUrl: string, capturedAt: string, sourceId = sourceUrl) => ({
+    sourceId, sourceUrl, capturedAt,
+  });
+
+  it("keeps one entry per post, and the earliest capture of it", () => {
+    const collapsed = collapseByPost([
+      src("https://instagram.com/p/C6JUm5JhrX2?img_index=2", "2026-08-17T16:03:00Z", "later"),
+      src("https://instagram.com/p/C6JUm5JhrX2", "2026-08-17T07:32:00Z", "earlier"),
+    ]);
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0].sourceId).toBe("earlier");
+  });
+
+  it("hands back the canonical link, not the slide that was shared", () => {
+    const collapsed = collapseByPost([
+      src("https://www.instagram.com/reel/ABC/?igsh=zz&img_index=3", "2026-08-01T00:00:00Z"),
+    ]);
+    expect(collapsed[0].sourceUrl).toBe("https://instagram.com/p/ABC");
+  });
+
+  it("leaves genuinely different posts alone, newest first", () => {
+    const collapsed = collapseByPost([
+      src("https://instagram.com/p/AAA", "2026-08-01T00:00:00Z"),
+      src("https://instagram.com/p/BBB", "2026-08-09T00:00:00Z"),
+      src("https://tiktok.com/@c/video/1", "2026-08-05T00:00:00Z"),
+    ]);
+    expect(collapsed.map((s) => s.sourceUrl)).toEqual([
+      "https://instagram.com/p/BBB",
+      "https://tiktok.com/@c/video/1",
+      "https://instagram.com/p/AAA",
+    ]);
+  });
+
+  it("does not mutate what it was given", () => {
+    const original = src("https://instagram.com/reel/ABC/", "2026-08-01T00:00:00Z");
+    collapseByPost([original]);
+    expect(original.sourceUrl).toBe("https://instagram.com/reel/ABC/");
+  });
+
+  it("handles an empty list", () => {
+    expect(collapseByPost([])).toEqual([]);
   });
 });
