@@ -40,10 +40,17 @@ Rules:
 - "reason" is ONE short sentence to the athlete, plain and specific — "first
   time back on pressing, so it leads while you're fresh", not marketing.
 - Order items warmup → main → accessory → bfr → cooldown.
+- "sectionMinutes" is how long each section you filled will actually take, in
+  whole minutes: the working sets you prescribed, the rests between them, and
+  the walking-and-loading gap between one exercise and the next. Give an entry
+  for every section you put work in, and none for the sections you left empty.
+  The total must fit inside the minutes available.
 
 Respond as JSON:
 {"items": [{"exerciseId": string, "section": "warmup"|"main"|"accessory"|"bfr"|"cooldown",
   "sets": number, "reps": string, "restSeconds": number, "reason": string}],
+ "sectionMinutes": [{"section": "warmup"|"main"|"accessory"|"bfr"|"cooldown",
+  "minutes": number}],
  "servedWorkoutId": string | null}`;
 
 serve(async (req) => {

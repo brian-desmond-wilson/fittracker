@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   RefreshControl,
@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { ChevronDown, ChevronRight, MapPin, Play, Sparkles } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { useDailySession } from "@/src/hooks/useDailySession";
+import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySectionMinutes";
 import { GymSheet } from "./GymSheet";
 import { CheckinSheet } from "./CheckinSheet";
 import type { SessionSection } from "@/src/types/daily";
@@ -30,6 +31,17 @@ export default function TodayTab() {
   const [refreshing, setRefreshing] = useState(false);
 
   const bump = () => setRefreshKey((k) => k + 1);
+
+  // The estimate stored with the session, or one derived from the items on
+  // screen when there is none — a session composed before these existed, or a
+  // day the model's timings didn't survive validation.
+  const sectionMinutes = useMemo(() => {
+    if (!session) return {};
+    return Object.keys(session.sectionMinutes).length > 0
+      ? session.sectionMinutes
+      : estimateSectionMinutes(session.items);
+  }, [session]);
+  const plannedMinutes = totalSectionMinutes(sectionMinutes);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -113,6 +125,11 @@ export default function TodayTab() {
                   Energy {checkin.energy}/10 · {checkin.minutesAvailable} min · edit
                 </Text>
               </TouchableOpacity>
+              {plannedMinutes > 0 && (
+                <Text style={styles.plannedTotal}>
+                  ≈{plannedMinutes} min planned of {checkin.minutesAvailable}
+                </Text>
+              )}
             </View>
 
             {SECTION_ORDER.map((section) => {
@@ -120,7 +137,14 @@ export default function TodayTab() {
               if (items.length === 0) return null;
               return (
                 <View key={section} style={styles.section}>
-                  <Text style={styles.sectionTitle}>{SECTION_TITLES[section]}</Text>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{SECTION_TITLES[section]}</Text>
+                    {sectionMinutes[section] !== undefined && (
+                      <Text style={styles.sectionMinutes}>
+                        ~{sectionMinutes[section]} min
+                      </Text>
+                    )}
+                  </View>
                   {items.map((item) => (
                     <TouchableOpacity
                       key={item.id}
@@ -201,11 +225,17 @@ const styles = StyleSheet.create({
     paddingVertical: 2, overflow: "hidden",
   },
   editCheckin: { fontSize: 13, color: colors.primary, marginTop: 8 },
+  plannedTotal: { fontSize: 13, color: colors.mutedForeground, marginTop: 4 },
   section: { marginTop: 16 },
+  sectionHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginBottom: 8,
+  },
   sectionTitle: {
     fontSize: 12, color: colors.mutedForeground, textTransform: "uppercase",
-    letterSpacing: 1, marginBottom: 8,
+    letterSpacing: 1,
   },
+  sectionMinutes: { fontSize: 12, color: colors.mutedForeground, letterSpacing: 0.5 },
   itemCard: {
     flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,

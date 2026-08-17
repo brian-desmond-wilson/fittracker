@@ -2,7 +2,13 @@
 // true) and the validator that constrains the AI's answer to what it was
 // offered — the fuel-plan doctrine, enforced client-side.
 import type { CandidatePools } from "./dailyCandidates";
-import type { SectionPlan, SessionItem, SessionSection } from "../types/daily";
+import type {
+  SectionMinutes,
+  SectionPlan,
+  SessionItem,
+  SessionSection,
+} from "../types/daily";
+import { validateSectionMinutes } from "./dailySectionMinutes";
 
 const SECTIONS: SessionSection[] = ["warmup", "main", "accessory", "bfr", "cooldown"];
 
@@ -48,6 +54,8 @@ export function composeFallback(pools: CandidatePools, budget: SectionPlan[]): S
 export interface ValidatedAiSession {
   items: SessionItem[];
   servedCapturedWorkoutId: string | null;
+  /** Null when the model's timings didn't hold up, or weren't asked for. */
+  sectionMinutes: SectionMinutes | null;
 }
 
 const str = (v: unknown): string | null =>
@@ -58,6 +66,8 @@ export function validateAiSession(
   raw: unknown,
   allowedExerciseIds: Set<string>,
   allowedWorkoutIds: Set<string>,
+  /** Omitted means the caller doesn't want the model's timings. */
+  minutesAvailable?: number,
 ): ValidatedAiSession | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
@@ -65,7 +75,9 @@ export function validateAiSession(
   const servedId = str(r.servedWorkoutId);
   if (servedId) {
     if (!allowedWorkoutIds.has(servedId)) return null;
-    return { items: [], servedCapturedWorkoutId: servedId };
+    // A workout served whole keeps its creator's shape; we didn't compose its
+    // sections, so we don't time them.
+    return { items: [], servedCapturedWorkoutId: servedId, sectionMinutes: null };
   }
 
   const items: SessionItem[] = (Array.isArray(r.items) ? r.items : [])
@@ -97,5 +109,11 @@ export function validateAiSession(
     .map((i, idx) => ({ ...i, itemOrder: idx }));
 
   if (items.length === 0) return null;
-  return { items, servedCapturedWorkoutId: null };
+  return {
+    items,
+    servedCapturedWorkoutId: null,
+    sectionMinutes: minutesAvailable === undefined
+      ? null
+      : validateSectionMinutes(r.sectionMinutes, items, minutesAvailable),
+  };
 }

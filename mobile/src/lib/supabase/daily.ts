@@ -7,6 +7,7 @@ import type {
   ComposedSession,
   DailyCheckin,
   GymProfile,
+  SectionMinutes,
   SessionCandidate,
   SkillStateLevel,
   SplitDay,
@@ -351,7 +352,7 @@ export async function fetchTodaySession(
     .from("generated_sessions")
     .select(`
       id, session_date, split_day, ramp_week, source, served_captured_workout_id,
-      status, workout_instance_id, gym_profile_id,
+      status, workout_instance_id, gym_profile_id, section_minutes,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
         rest_seconds, reason, was_performed, exercise:exercises(name)
@@ -374,6 +375,9 @@ export async function fetchTodaySession(
     status: data.status,
     workoutInstanceId: data.workout_instance_id,
     gymProfileId: data.gym_profile_id,
+    // Rows written before the column existed, and workouts served whole, have
+    // no stored estimate; the tab derives one from the items instead.
+    sectionMinutes: (data.section_minutes ?? {}) as SectionMinutes,
     items: ((data as any).items ?? [])
       .sort((a: any, b: any) => a.item_order - b.item_order)
       .map((i: any) => ({
@@ -416,6 +420,9 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
       ramp_week: input.session.rampWeek,
       source: input.session.source,
       served_captured_workout_id: input.session.servedCapturedWorkoutId,
+      section_minutes: Object.keys(input.session.sectionMinutes).length > 0
+        ? input.session.sectionMinutes
+        : null,
       status: "suggested",
       inputs_snapshot: input.inputsSnapshot ?? null,
     };

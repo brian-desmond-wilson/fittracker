@@ -9,6 +9,7 @@ import { nextSplitDay, rampWeek } from "../lib/dailySplit";
 import { buildCandidatePools, resolveProgressions } from "../lib/dailyCandidates";
 import { sessionBudget } from "../lib/dailyBudget";
 import { composeFallback, validateAiSession } from "../lib/dailyCompose";
+import { estimateSectionMinutes } from "../lib/dailySectionMinutes";
 import {
   fetchBfrFlag,
   fetchCandidateData,
@@ -147,6 +148,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       let composed: ComposedSession = {
         splitDay, rampWeek: week, source: "rules_fallback",
         servedCapturedWorkoutId: null, items: fallbackItems,
+        sectionMinutes: estimateSectionMinutes(fallbackItems),
       };
 
       const aiBody = {
@@ -184,11 +186,17 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
             ask.finally(() => aiAskInFlight.delete(signature));
           }
           const raw = await ask;
-          const validated = validateAiSession(raw, offeredIds, offeredWorkoutIds);
+          const validated = validateAiSession(
+            raw, offeredIds, offeredWorkoutIds, todayCheckin.minutesAvailable,
+          );
           cached = validated
             ? { splitDay, rampWeek: week, source: "ai" as const,
                 servedCapturedWorkoutId: validated.servedCapturedWorkoutId,
-                items: validated.items }
+                items: validated.items,
+                // The model's own timings when they held up; our arithmetic
+                // when they didn't, so the sections are never left untimed.
+                sectionMinutes: validated.sectionMinutes
+                  ?? estimateSectionMinutes(validated.items) }
             : null;
           aiAnswerBySignature.set(signature, cached);
         }

@@ -95,4 +95,44 @@ describe("validateAiSession", () => {
     expect(validateAiSession(null, allowed, new Set())).toBeNull();
     expect(validateAiSession({ items: [], servedWorkoutId: null }, allowed, new Set())).toBeNull();
   });
+
+  const oneMain = {
+    items: [
+      { exerciseId: "m1", section: "main", sets: 3, reps: "8-12", restSeconds: 120, reason: "x" },
+    ],
+    servedWorkoutId: null,
+  };
+
+  it("keeps the model's section timings when they hold up", () => {
+    const out = validateAiSession(
+      { ...oneMain, sectionMinutes: [{ section: "main", minutes: 12 }] },
+      allowed, new Set(), 60,
+    );
+    expect(out!.sectionMinutes).toEqual({ main: 12 });
+  });
+
+  it("reports no timings when the model's numbers don't hold up", () => {
+    const out = validateAiSession(
+      { ...oneMain, sectionMinutes: [{ section: "main", minutes: 400 }] },
+      allowed, new Set(), 60,
+    );
+    expect(out!.items).toHaveLength(1);
+    expect(out!.sectionMinutes).toBeNull();
+  });
+
+  it("reports no timings when the caller didn't ask for them", () => {
+    const out = validateAiSession(
+      { ...oneMain, sectionMinutes: [{ section: "main", minutes: 12 }] },
+      allowed, new Set(),
+    );
+    expect(out!.sectionMinutes).toBeNull();
+  });
+
+  it("never times a workout served whole", () => {
+    const out = validateAiSession(
+      { items: [], servedWorkoutId: "cw-1", sectionMinutes: [{ section: "main", minutes: 30 }] },
+      allowed, new Set(["cw-1"]), 60,
+    );
+    expect(out!.sectionMinutes).toBeNull();
+  });
 });

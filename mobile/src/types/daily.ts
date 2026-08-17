@@ -71,12 +71,19 @@ export interface SessionItem {
   reason: string | null;
 }
 
+/**
+ * How long each section should take, in whole minutes. A section with no
+ * items has no entry — the tab shows an estimate only where there is work.
+ */
+export type SectionMinutes = Partial<Record<SessionSection, number>>;
+
 export interface ComposedSession {
   splitDay: SplitDay;
   rampWeek: number;
   source: "ai" | "rules_fallback";
   servedCapturedWorkoutId: string | null;
   items: SessionItem[];
+  sectionMinutes: SectionMinutes;
 }
 
 /** A stored generated_sessions row with items joined for display. */
