@@ -229,7 +229,11 @@ export default function Training() {
             </TouchableOpacity>
           )}
         </View>
+        {/* Training (daily) · HIIT (CrossFit) · Weightlifting (strength) */}
         <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={handleDailyPress} activeOpacity={0.7} style={styles.iconButton}>
+            <Flame size={24} color={colors.primary} strokeWidth={2} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleCrossFitPress} activeOpacity={0.7} style={styles.iconButton}>
             <Image
               source={require('@/assets/kettlebell.png')}
@@ -239,9 +243,6 @@ export default function Training() {
           </TouchableOpacity>
           <TouchableOpacity onPress={handleStrengthPress} activeOpacity={0.7} style={styles.iconButton}>
             <Dumbbell size={24} color={colors.primary} strokeWidth={2} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleDailyPress} activeOpacity={0.7} style={styles.iconButton}>
-            <Flame size={24} color={colors.primary} strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
