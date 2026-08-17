@@ -66,6 +66,11 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
     try {
+      // Every run re-enters the loading state, not just the first mount: a
+      // recompute (check-in saved, gym switched) takes as long as the AI ask,
+      // and without this the tab renders its "nothing yet" empty state for the
+      // whole wait before snapping to the finished session.
+      setLoading(true);
       setError(null);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("not signed in");
