@@ -3,8 +3,8 @@ import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Linking, Image,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
-import { ExternalLink } from "lucide-react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { ChevronRight, ExternalLink } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCatalog } from "@/src/lib/supabase/capture";
@@ -27,6 +27,7 @@ interface CatalogTabProps {
 }
 
 export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabProps) {
+  const router = useRouter();
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,7 +103,15 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
               tintColor={colors.primary} colors={[colors.primary]} />
           }
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.card}
+              activeOpacity={0.7}
+              onPress={() =>
+                router.push(`/(tabs)/training/exercise/${item.exerciseId}` as never)
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`${item.name}. Open the exercise.`}
+            >
               {item.sources[0]?.thumbnailUrl && (
                 <Image source={{ uri: item.sources[0].thumbnailUrl }} style={styles.thumb} />
               )}
@@ -128,7 +137,13 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
                   </TouchableOpacity>
                 )}
               </View>
-            </View>
+
+              {/* The card opens the exercise; the source link inside it still
+                  wins its own taps and goes out to the post. */}
+              <View style={styles.chevron}>
+                <ChevronRight size={18} color={colors.mutedForeground} />
+              </View>
+            </TouchableOpacity>
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -172,6 +187,7 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1, padding: 12 },
   cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
   cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
+  chevron: { alignSelf: "center", paddingRight: 12 },
   sourceRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
   sourceText: { fontSize: 13, color: colors.primary },
   empty: { padding: 40, alignItems: "center" },
