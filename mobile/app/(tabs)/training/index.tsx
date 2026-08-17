@@ -27,7 +27,7 @@ type StrengthTab = "programs" | "workouts" | "exercises";
 type DailyTab = "today" | "workouts" | "exercises";
 
 export default function Training() {
-  const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("crossfit");
+  const [workoutMode, setWorkoutMode] = useState<WorkoutMode>("daily");
   const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
   const [dailyTab, setDailyTab] = useState<DailyTab>("exercises");
