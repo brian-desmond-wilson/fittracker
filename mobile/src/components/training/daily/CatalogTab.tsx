@@ -1,10 +1,10 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Linking, Image,
+  ActivityIndicator, RefreshControl, Image,
 } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { ChevronRight, ExternalLink } from "lucide-react-native";
+import { ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCatalog } from "@/src/lib/supabase/capture";
@@ -124,22 +124,15 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
                     item.equipmentTypes.join(", ") || "no equipment",
                   ].filter(Boolean).join(" · ")}
                 </Text>
+                {/* Credit where it's due, but not a second tap target: the
+                    whole card belongs to the exercise page now. */}
                 {item.sources[0] && (
-                  <TouchableOpacity
-                    style={styles.sourceRow}
-                    onPress={() => Linking.openURL(item.sources[0].sourceUrl)}
-                    activeOpacity={0.7}
-                  >
-                    <ExternalLink size={13} color={colors.primary} />
-                    <Text style={styles.sourceText}>
-                      {item.sources[0].posterHandle ?? item.sources[0].platform}
-                    </Text>
-                  </TouchableOpacity>
+                  <Text style={styles.sourceText}>
+                    {item.sources[0].posterHandle ?? item.sources[0].platform}
+                  </Text>
                 )}
               </View>
 
-              {/* The card opens the exercise; the source link inside it still
-                  wins its own taps and goes out to the post. */}
               <View style={styles.chevron}>
                 <ChevronRight size={18} color={colors.mutedForeground} />
               </View>
@@ -188,8 +181,7 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
   cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
   chevron: { alignSelf: "center", paddingRight: 12 },
-  sourceRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
-  sourceText: { fontSize: 13, color: colors.primary },
+  sourceText: { fontSize: 13, color: colors.mutedForeground, marginTop: 6 },
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
