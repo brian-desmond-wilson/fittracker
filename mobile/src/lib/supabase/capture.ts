@@ -58,6 +58,30 @@ export async function extractPost(input: {
   }
 }
 
+/**
+ * A one-line description for a workout, written from the post's caption.
+ *
+ * Suggest only: it hands back text for a field the owner still has to accept
+ * and save. Captures made before the extraction learned to write a summary
+ * have no description at all, and this is how they get one.
+ */
+export async function summarizeCaption(
+  caption: string,
+  handle: string | null,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke("capture-post", {
+      body: { action: "summarize", caption, handle: handle ?? "" },
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return typeof data?.summary === "string" ? data.summary : null;
+  } catch (e) {
+    console.error("capture summarize failed:", e);
+    return null;
+  }
+}
+
 /** A capture of this URL already reviewed by this user, if any. */
 export async function findExistingCapture(
   userId: string,
@@ -230,6 +254,7 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
           name: input.post.workout.name,
           rounds: input.post.workout.rounds,
           raw_protocol: input.post.workout.rawProtocol,
+          description: input.post.workout.summary,
         })
         .select("id")
         .single();
@@ -274,6 +299,7 @@ function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
     name: row.name,
     rounds: row.rounds ?? null,
     rawProtocol: row.raw_protocol ?? null,
+    description: row.description ?? null,
     notes: row.notes ?? null,
     capturedAt: row.created_at,
     source: row.source
@@ -313,7 +339,7 @@ export async function fetchCapturedWorkouts(
   const { data, error } = await supabase
     .from("captured_workouts")
     .select(`
-      id, name, rounds, raw_protocol, notes, created_at,
+      id, name, rounds, raw_protocol, description, notes, created_at,
       source:captured_sources!inner(
         id, platform, source_url, poster_handle, thumbnail_url, caption_text,
         extraction_status
@@ -346,7 +372,7 @@ export async function fetchCapturedWorkout(
   const { data, error } = await supabase
     .from("captured_workouts")
     .select(`
-      id, name, rounds, raw_protocol, notes, created_at,
+      id, name, rounds, raw_protocol, description, notes, created_at,
       source:captured_sources!inner(
         id, platform, source_url, poster_handle, thumbnail_url, caption_text,
         extraction_status
@@ -427,6 +453,8 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
 export interface CapturedWorkoutEdits {
   name: string;
   rounds: string | null;
+  /** One sentence on what this workout is. */
+  description: string | null;
   /** The owner's own note. */
   notes: string | null;
 }
@@ -441,34 +469,12 @@ export async function updateCapturedWorkout(
     .update({
       name: edits.name,
       rounds: edits.rounds,
+      description: edits.description,
       notes: edits.notes,
     })
     .eq("id", workoutId);
   if (error) {
     console.error("updateCapturedWorkout failed:", error);
-    return false;
-  }
-  return true;
-}
-
-/**
- * Correct the caption held against a capture.
- *
- * Written back decoded, not re-encoded: once the owner has edited it, the row
- * is their text rather than a copy of the platform's HTML, and `decodeCaption`
- * leaves text with no entities in it untouched, so the read path stays correct
- * either way.
- */
-export async function updateCaptureCaption(
-  sourceId: string,
-  captionText: string | null,
-): Promise<boolean> {
-  const { error } = await supabase
-    .from("captured_sources")
-    .update({ caption_text: captionText })
-    .eq("id", sourceId);
-  if (error) {
-    console.error("updateCaptureCaption failed:", error);
     return false;
   }
   return true;

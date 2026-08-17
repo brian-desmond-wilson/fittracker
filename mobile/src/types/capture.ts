@@ -68,6 +68,10 @@ export interface ExtractedWorkout {
   /** The caption's prescription lines, verbatim — the lossless record behind
    *  the parsed items, shown when structure and reality disagree. */
   rawProtocol: string | null;
+  /** One sentence saying what the workout IS — equipment, focus, creator —
+   *  so a saved list reads as more than a column of names. Never a restatement
+   *  of the movements; those are the items. */
+  summary: string | null;
   items: ExtractedWorkoutItem[];
 }
 
@@ -117,6 +121,8 @@ export interface CapturedWorkoutEntry {
   name: string;
   rounds: string | null;
   rawProtocol: string | null;
+  /** One sentence on what this workout is. Written at capture, editable after. */
+  description: string | null;
   /** The owner's own note, not the creator's. Empty until they write one. */
   notes: string | null;
   capturedAt: string;

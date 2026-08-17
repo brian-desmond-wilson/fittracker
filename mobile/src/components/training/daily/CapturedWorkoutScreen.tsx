@@ -12,7 +12,7 @@ import { colors } from "@/src/lib/colors";
 import {
   fetchCapturedWorkout,
   replaceCapturedWorkoutItems,
-  updateCaptureCaption,
+  summarizeCaption,
   updateCapturedWorkout,
 } from "@/src/lib/supabase/capture";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
@@ -25,7 +25,7 @@ interface Draft {
   name: string;
   rounds: string;
   notes: string;
-  caption: string;
+  description: string;
   items: CapturedWorkoutItemEntry[];
 }
 
@@ -33,7 +33,7 @@ const draftFrom = (w: CapturedWorkoutEntry): Draft => ({
   name: w.name,
   rounds: w.rounds ?? "",
   notes: w.notes ?? "",
-  caption: w.source?.captionText ?? "",
+  description: w.description ?? "",
   items: w.items.map((i) => ({ ...i })),
 });
 
@@ -49,6 +49,7 @@ export function CapturedWorkoutScreen() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
 
   const editing = draft !== null;
 
@@ -126,6 +127,21 @@ export function CapturedWorkoutScreen() {
     );
   };
 
+  const suggestDescription = async () => {
+    if (!workout?.source?.captionText) return;
+    setSuggesting(true);
+    const summary = await summarizeCaption(
+      workout.source.captionText,
+      workout.source.posterHandle,
+    );
+    setSuggesting(false);
+    if (!summary) {
+      Alert.alert("Couldn't write one", "Try again, or write the description yourself.");
+      return;
+    }
+    patch({ description: summary });
+  };
+
   const save = async () => {
     if (!draft || !workout) return;
     if (draft.name.trim() === "") {
@@ -136,6 +152,7 @@ export function CapturedWorkoutScreen() {
     const wroteWorkout = await updateCapturedWorkout(workout.workoutId, {
       name: draft.name.trim(),
       rounds: blank(draft.rounds),
+      description: blank(draft.description),
       notes: blank(draft.notes),
     });
     const wroteItems = await replaceCapturedWorkoutItems(
@@ -150,12 +167,9 @@ export function CapturedWorkoutScreen() {
         notes: i.notes,
       })),
     );
-    const wroteCaption = workout.source
-      ? await updateCaptureCaption(workout.source.sourceId, blank(draft.caption))
-      : true;
     setSaving(false);
 
-    if (!wroteWorkout || !wroteItems || !wroteCaption) {
+    if (!wroteWorkout || !wroteItems) {
       // The draft is kept so nothing typed is lost to a failed write.
       Alert.alert("Couldn't save", "Your changes are still here. Try again.");
       return;
@@ -222,7 +236,7 @@ export function CapturedWorkoutScreen() {
 
   const shownItems = draft ? draft.items : workout.items;
   const shownRounds = draft ? blank(draft.rounds) : workout.rounds;
-  const shownCaption = draft ? draft.caption : workout.source?.captionText ?? "";
+  const shownDescription = draft ? draft.description : workout.description ?? "";
   const shownNotes = draft ? draft.notes : workout.notes ?? "";
 
   return (
@@ -250,22 +264,36 @@ export function CapturedWorkoutScreen() {
             <Image source={{ uri: workout.source.thumbnailUrl }} style={styles.hero} />
           )}
 
-          {/* What the creator wrote on the post, in their words. Sits under
-              the picture because that is the order the post itself had. */}
+          {/* What this workout IS, in a sentence — written at capture from
+              the post, not lifted out of it. The caption itself is one tap
+              away on the source link, and its prescription lines are already
+              below as the protocol; repeating either here would just be the
+              same words twice. */}
           {editing ? (
             <>
-              <Text style={styles.fieldLabel}>Description</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel}>Description</Text>
+                {!!workout.source?.captionText && (
+                  <TouchableOpacity onPress={suggestDescription} disabled={suggesting}>
+                    <Text style={[styles.suggest, suggesting && styles.headerActionMuted]}>
+                      {suggesting ? "Writing…" : "Suggest from the post"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <TextInput
                 style={[styles.input, styles.multiline]}
-                value={draft!.caption}
-                onChangeText={(caption) => patch({ caption })}
+                value={draft!.description}
+                onChangeText={(description) => patch({ description })}
                 multiline
-                placeholder="What the creator wrote"
+                placeholder="What this workout is, in a sentence"
                 placeholderTextColor={colors.mutedForeground}
               />
             </>
           ) : (
-            shownCaption !== "" && <Text style={styles.description}>{shownCaption}</Text>
+            shownDescription !== "" && (
+              <Text style={styles.description}>{shownDescription}</Text>
+            )
           )}
 
           {shownItems.map((item, i) => {
@@ -434,9 +462,9 @@ export function CapturedWorkoutScreen() {
             )
           )}
 
-          {/* The parsed protocol stays alongside the caption: the caption is
-              the post, this is what the extraction made of it, and seeing
-              both is how you tell a bad parse from a bad post. */}
+          {/* The creator's own prescription lines, verbatim. The description
+              above says what the workout is; this says what they wrote, and
+              seeing it is how you tell a bad parse from a bad post. */}
           {!editing && workout.rawProtocol && (
             <>
               <Text style={styles.sectionLabel}>As the creator wrote it</Text>
@@ -495,6 +523,10 @@ const styles = StyleSheet.create({
     fontSize: 12, color: colors.mutedForeground, marginTop: 16, marginBottom: 6,
     textTransform: "uppercase", letterSpacing: 1,
   },
+  labelRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+  },
+  suggest: { fontSize: 13, color: colors.primary, marginTop: 16, marginBottom: 6 },
   input: {
     backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12,
     paddingVertical: 10, fontSize: 15, color: colors.foreground,

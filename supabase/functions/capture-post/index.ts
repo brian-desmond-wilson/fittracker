@@ -194,6 +194,49 @@ serve(async (req) => {
       });
     }
 
+    // Just the one-line description, for a workout captured before the
+    // extraction learned to write one — or when the owner wants a different
+    // one. Suggest only: it returns text for a field the user still has to
+    // save, and writes nothing itself.
+    if (body.action === 'summarize') {
+      if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
+      const caption = String(body.caption ?? '').trim();
+      if (!caption) throw new Error('caption is required');
+      const handle = String(body.handle ?? '').trim();
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: `Write ONE sentence saying what this workout is, for
+someone scanning a list of saved workouts. Name the equipment, the part of the
+body or quality it trains, and the creator if the caption names them: "A
+kettlebell full body strength session from Dr. Colin."
+
+Do NOT restate the movements, the reps or the rounds — those are already on
+the page. No hashtags, no calls to action, no marketing, no quoting the
+caption back.
+
+Respond as JSON: {"summary": string}`,
+            },
+            { role: 'user', content: `Poster: ${handle}\nCaption:\n${caption}` },
+          ],
+        }),
+      });
+      if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') throw new Error('empty model response');
+      const parsed = JSON.parse(content);
+      const summary = typeof parsed?.summary === 'string' ? parsed.summary.trim() : '';
+      return json({ summary: summary === '' ? null : summary });
+    }
+
     if (body.action === 'extract') {
       if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
       const caption = String(body.caption ?? '').trim();
@@ -239,6 +282,12 @@ programming. In particular:
 - Never fill a field the caption does not state. Null is the correct answer.
 - "raw_protocol": copy the caption's prescription lines verbatim, newline
   separated, exactly as the creator wrote them.
+- "summary": ONE sentence saying what this workout is, for someone scanning a
+  list of saved workouts. Name the equipment, the part of the body or quality
+  it trains, and the creator if the caption names them: "A kettlebell full
+  body strength session from Dr. Colin." Do NOT restate the movements, the
+  reps or the rounds — those are already on the page. No hashtags, no calls to
+  action, no marketing ("crush your goals"), no quoting the caption back.
 
 Respond as JSON:
 {"post_type": "single_exercise" | "full_workout",
@@ -247,6 +296,7 @@ Respond as JSON:
    "primary_muscles": string[], "secondary_muscles": string[],
    "equipment": string[], "library_match_id": string | null}],
  "workout": {"name": string, "rounds": string | null,
+   "summary": string | null,
    "raw_protocol": string | null,
    "items": [{"exercise_index": number,
    "sets": number | null, "reps": string | null,

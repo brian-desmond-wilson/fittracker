@@ -127,6 +127,7 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
         name: str(w.name) ?? "Captured workout",
         rounds: rounds(w.rounds),
         rawProtocol: str(w.raw_protocol),
+        summary: str(w.summary),
         items,
       };
     }

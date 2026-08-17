@@ -186,6 +186,39 @@ describe("sanitizeExtraction", () => {
     expect(out!.workout!.items[0].reps).toBe("8");
   });
 
+  it("carries the one-line summary, and tolerates its absence", () => {
+    const withSummary = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: [rawExercise({ name: "Kettlebell Halo" })],
+        workout: {
+          name: "The Workout",
+          summary: "A kettlebell full body strength session from Dr. Colin.",
+          items: [{ exercise_index: 0, sets: null, reps: "8", rest_seconds: null, notes: null }],
+        },
+      },
+      VALID,
+    );
+    expect(withSummary!.workout!.summary).toBe(
+      "A kettlebell full body strength session from Dr. Colin.",
+    );
+
+    // Older captures predate the field, and a model can always omit it — the
+    // page just shows no description rather than the extraction failing.
+    const without = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: [rawExercise({ name: "Kettlebell Halo" })],
+        workout: {
+          name: "The Workout",
+          items: [{ exercise_index: 0, sets: null, reps: "8", rest_seconds: null, notes: null }],
+        },
+      },
+      VALID,
+    );
+    expect(without!.workout!.summary).toBeNull();
+  });
+
   it("keeps weight and duration verbatim", () => {
     const out = sanitizeExtraction(
       {

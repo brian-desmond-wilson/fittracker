@@ -6,6 +6,7 @@ const workout = (o: Partial<CapturedWorkoutEntry> = {}): CapturedWorkoutEntry =>
   name: "KB Chest & Triceps Series",
   rounds: "3-4",
   rawProtocol: null,
+  description: null,
   notes: null,
   capturedAt: "2026-08-16T00:00:00Z",
   source: {
