@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Zap, Trash2, History, Timer } from 'lucide-react-native';
+import { Zap, History, Timer } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
+import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
 import { WODWithDetails } from '@/src/types/crossfit';
 import { deleteWOD } from '@/src/lib/supabase/crossfit';
 import { supabase } from '@/src/lib/supabase';
@@ -118,30 +119,16 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
     }
   };
 
-  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => {
-    const translateX = progress.interpolate({
-      inputRange: [0, 1],
-      outputRange: [80, 0],
-    });
-
-    return (
-      <Animated.View style={[styles.deleteAction, { transform: [{ translateX }] }]}>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={handleDelete}
-          activeOpacity={0.7}
-        >
-          <Trash2 size={20} color="#FFFFFF" />
-          <Text style={styles.deleteText}>Delete</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
-
   return (
     <Swipeable
       ref={swipeableRef}
-      renderRightActions={renderRightActions}
+      renderRightActions={(progress) => (
+        <SwipeDeleteAction
+          progress={progress}
+          onPress={handleDelete}
+          accessibilityLabel={`Delete ${wod.name}`}
+        />
+      )}
       overshootRight={false}
       friction={2}
     >
@@ -280,25 +267,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.mutedForeground,
     lineHeight: 16,
-  },
-  deleteAction: {
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    width: 80,
-  },
-  deleteButton: {
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    height: '100%',
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-    gap: 4,
-  },
-  deleteText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

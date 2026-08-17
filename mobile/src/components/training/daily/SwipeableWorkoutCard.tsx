@@ -4,12 +4,11 @@
 // part. Deleting says out loud what it does and does not take, because the one
 // thing a person fears here is losing exercises they had before the capture.
 import React, { useRef } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { ChevronRight, Trash2 } from "lucide-react-native";
+import { ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { SwipeDeleteAction } from "@/src/components/ui/SwipeDeleteAction";
 import { supabase } from "@/src/lib/supabase";
 import { deleteCapturedWorkout } from "@/src/lib/supabase/capture";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
@@ -62,25 +61,17 @@ export function SwipeableWorkoutCard({
     );
   };
 
-  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => {
-    const translateX = progress.interpolate({
-      inputRange: [0, 1],
-      outputRange: [80, 0],
-    });
-    return (
-      <Animated.View style={[styles.deleteAction, { transform: [{ translateX }] }]}>
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete} activeOpacity={0.7}>
-          <Trash2 size={20} color="#FFFFFF" />
-          <Text style={styles.deleteText}>Delete</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
-
   return (
     <Swipeable
       ref={swipeableRef}
-      renderRightActions={renderRightActions}
+      renderRightActions={(progress) => (
+        <SwipeDeleteAction
+          progress={progress}
+          onPress={handleDelete}
+          radius={CARD_RADIUS}
+          accessibilityLabel={`Delete ${workout.name}`}
+        />
+      )}
       overshootRight={false}
       friction={2}
       containerStyle={styles.swipeContainer}
@@ -110,13 +101,16 @@ export function SwipeableWorkoutCard({
   );
 }
 
+/** Shared by the card and the delete panel — they have to agree. */
+const CARD_RADIUS = 12;
+
 const styles = StyleSheet.create({
   // The gap between cards lives out here: inside the Swipeable it would leave
   // a stripe of red showing under the next card.
   swipeContainer: { marginBottom: 12 },
   card: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: colors.muted, borderRadius: 12,
+    backgroundColor: colors.muted, borderRadius: CARD_RADIUS,
     borderWidth: 1, borderColor: colors.border,
     overflow: "hidden", paddingRight: 12,
   },
@@ -125,11 +119,4 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
   cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
   handle: { fontSize: 13, color: colors.primary, marginTop: 4 },
-  deleteAction: { justifyContent: "center", alignItems: "flex-end", width: 80 },
-  deleteButton: {
-    backgroundColor: "#EF4444", justifyContent: "center", alignItems: "center",
-    width: 80, height: "100%", gap: 4,
-    borderTopRightRadius: 12, borderBottomRightRadius: 12,
-  },
-  deleteText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
 });

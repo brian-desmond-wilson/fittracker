@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { ChevronRight, Trash2 } from 'lucide-react-native';
+import { ChevronRight } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
+import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
 
@@ -148,30 +149,16 @@ function SwipeableMovementCardBase({
     }
   };
 
-  const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => {
-    const translateX = progress.interpolate({
-      inputRange: [0, 1],
-      outputRange: [80, 0],
-    });
-
-    return (
-      <Animated.View style={[styles.deleteAction, { transform: [{ translateX }] }]}>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={handleDelete}
-          activeOpacity={0.7}
-        >
-          <Trash2 size={20} color="#FFFFFF" />
-          <Text style={styles.deleteText}>Delete</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
-
   return (
     <Swipeable
       ref={swipeableRef}
-      renderRightActions={renderRightActions}
+      renderRightActions={(progress) => (
+        <SwipeDeleteAction
+          progress={progress}
+          onPress={handleDelete}
+          accessibilityLabel={`Delete ${movement.name}`}
+        />
+      )}
       overshootRight={false}
       friction={2}
     >
@@ -372,26 +359,6 @@ const styles = StyleSheet.create({
   },
   skillSegmentFilledAdvanced: {
     backgroundColor: '#EF4444',
-  },
-  deleteAction: {
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    width: 80,
-  },
-  deleteButton: {
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    height: '100%',
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-    gap: 4,
-  },
-  deleteText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
   },
 });
 
