@@ -42,6 +42,7 @@ import {
 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
+import { acceptSession, completeSession } from '@/src/lib/supabase/daily';
 
 import {
   SCREEN_WIDTH,
@@ -68,7 +69,10 @@ import { TickingDuration } from '@/src/components/workout-session/TickingDuratio
 export default function WorkoutSessionPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id, instanceId, programInstanceId } = useLocalSearchParams<{ id: string; instanceId?: string; programInstanceId?: string }>();
+  const { id, instanceId, programInstanceId, mode } = useLocalSearchParams<{ id: string; instanceId?: string; programInstanceId?: string; mode?: string }>();
+  // Daily mode: `id` is a generated_sessions.id, parentage is NULL, and the
+  // template shape is built from generated_session_items instead of a program.
+  const isDaily = mode === 'daily';
   
   const [userId, setUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -296,41 +300,87 @@ export default function WorkoutSessionPage() {
       setError(null);
 
       // Fetch template with exercises
-      const { data: workoutData, error: workoutError } = await supabase
-        .from('program_workouts')
-        .select(`
-          id,
-          name,
-          day_number,
-          week_number,
-          program_workout_exercises (
-            id,
-            exercise_id,
-            exercise_order,
-            target_sets,
-            target_reps_min,
-            target_reps_max,
-            superset_group,
-            exercises (
-              id,
-              name,
-              image_url
+      let sortedExercises: any[];
+      let templateName = '';
+      let sessionRow: { id: string; workout_instance_id: string | null } | null = null;
+
+      if (isDaily) {
+        const { data: sessionData, error: sessionError } = await supabase
+          .from('generated_sessions')
+          .select(`
+            id, split_day, workout_instance_id,
+            items:generated_session_items(
+              id, exercise_id, item_order, section, target_sets, target_reps,
+              rest_seconds,
+              exercises ( id, name, image_url )
             )
-          )
-        `)
-        .eq('id', id)
-        .single();
+          `)
+          .eq('id', id)
+          .single();
+        if (sessionError) throw sessionError;
+        sessionRow = { id: sessionData.id, workout_instance_id: sessionData.workout_instance_id };
+        templateName = sessionData.split_day === 'push' ? 'Push Day'
+          : sessionData.split_day === 'pull' ? 'Pull Day' : 'Leg Day';
+        sortedExercises = [...(sessionData.items || [])]
+          .sort((a: any, b: any) => a.item_order - b.item_order)
+          .map((item: any) => ({
+            id: item.id, // session item id — NEVER written as program_workout_exercise_id
+            exercise_id: item.exercise_id,
+            exercise_order: item.item_order,
+            target_sets: item.target_sets ?? 3,
+            target_reps_min: parseInt(item.target_reps ?? '', 10) || 8,
+            target_reps_max: null,
+            superset_group: null,
+            exercises: item.exercises,
+          }));
+        setTemplate({
+          id: sessionData.id,
+          name: templateName,
+          day_number: 0,
+          week_number: 0,
+          program_workout_exercises: sortedExercises,
+        } as unknown as WorkoutTemplate);
+      } else {
+        const { data: workoutData, error: workoutError } = await supabase
+          .from('program_workouts')
+          .select(`
+            id,
+            name,
+            day_number,
+            week_number,
+            program_workout_exercises (
+              id,
+              exercise_id,
+              exercise_order,
+              target_sets,
+              target_reps_min,
+              target_reps_max,
+              superset_group,
+              exercises (
+                id,
+                name,
+                image_url
+              )
+            )
+          `)
+          .eq('id', id)
+          .single();
 
-      if (workoutError) throw workoutError;
+        if (workoutError) throw workoutError;
 
-      // Sort exercises by order
-      const sortedExercises = [...(workoutData.program_workout_exercises || [])]
-        .sort((a, b) => a.exercise_order - b.exercise_order);
+        // Sort exercises by order
+        sortedExercises = [...(workoutData.program_workout_exercises || [])]
+          .sort((a, b) => a.exercise_order - b.exercise_order);
 
-      setTemplate({
-        ...workoutData,
-        program_workout_exercises: sortedExercises,
-      } as unknown as WorkoutTemplate);
+        setTemplate({
+          ...workoutData,
+          program_workout_exercises: sortedExercises,
+        } as unknown as WorkoutTemplate);
+      }
+
+      // A daily session already linked to an instance resumes into it even when
+      // the caller passed no instanceId param.
+      const effectiveInstanceId = instanceId || sessionRow?.workout_instance_id || null;
 
       // Prefetch all exercise images for smooth transitions
       const imageUrls = sortedExercises
@@ -381,12 +431,12 @@ export default function WorkoutSessionPage() {
       let workoutStartedAt: Date | null = null;
       let savedDurationSeconds: number = 0;
 
-      if (instanceId) {
+      if (effectiveInstanceId) {
         // Fetch workout instance to get started_at and duration_seconds
         const { data: workoutInstance } = await supabase
           .from('workout_instances')
           .select('started_at, duration_seconds')
-          .eq('id', instanceId)
+          .eq('id', effectiveInstanceId)
           .single();
         
         if (workoutInstance?.started_at) {
@@ -401,7 +451,7 @@ export default function WorkoutSessionPage() {
         const { data: existingSession } = await supabase
           .from('workout_sessions')
           .select('id, duration_seconds')
-          .eq('workout_instance_id', instanceId)
+          .eq('workout_instance_id', effectiveInstanceId)
           .eq('session_date', today)
           .single();
         
@@ -435,7 +485,7 @@ export default function WorkoutSessionPage() {
               increase_weight_next
             )
           `)
-          .eq('workout_instance_id', instanceId)
+          .eq('workout_instance_id', effectiveInstanceId)
           .order('exercise_order');
 
         if (existingExercises) {
@@ -543,7 +593,7 @@ export default function WorkoutSessionPage() {
       setExerciseStates(states);
       
       // If resuming, find first incomplete exercise to start from
-      if (instanceId) {
+      if (effectiveInstanceId) {
         const firstIncompleteIdx = states.findIndex(s => !s.completed);
         if (firstIncompleteIdx > 0) {
           setCurrentExerciseIndex(firstIncompleteIdx);
@@ -659,7 +709,9 @@ export default function WorkoutSessionPage() {
               workout_instance_id: wiId,
               workout_session_id: sessionId,
               exercise_id: state.exercise.exercise_id,
-              program_workout_exercise_id: state.exercise.id,
+              // Daily: state.exercise.id is a generated_session_items id, not a
+              // program_workout_exercises id — parentage is NULL by design.
+              program_workout_exercise_id: isDaily ? null : state.exercise.id,
               exercise_order: exerciseIdx + 1,
               user_id: userId,
               status: 'in_progress',
@@ -945,7 +997,7 @@ export default function WorkoutSessionPage() {
       Alert.alert('Error', 'Workout template not loaded. Please go back and try again.');
       return null;
     }
-    if (!programInstanceId) {
+    if (!isDaily && !programInstanceId) {
       console.error('Cannot create workout instance: programInstanceId not available');
       Alert.alert('Error', 'Program instance not found. Please start from the home screen.');
       return null;
@@ -958,10 +1010,10 @@ export default function WorkoutSessionPage() {
         .from('workout_instances')
         .insert({
           user_id: userId,
-          program_instance_id: programInstanceId,
-          program_workout_id: template.id,
-          week_number: template.week_number,
-          day_number: template.day_number,
+          program_instance_id: isDaily ? null : programInstanceId,
+          program_workout_id: isDaily ? null : template.id,
+          week_number: template.week_number, // 0 for daily
+          day_number: template.day_number,   // 0 for daily
           status: 'in_progress',
           scheduled_date: getLocalDateString(),
           started_at: startedAt?.toISOString(),
@@ -978,9 +1030,10 @@ export default function WorkoutSessionPage() {
       if (data) {
         workoutInstanceIdRef.current = data.id;
         setWorkoutInstanceId(data.id);
+        if (isDaily) await acceptSession(String(id), data.id);
         return data.id;
       }
-      
+
       return null;
     } finally {
       creatingWorkoutInstance.current = false;
@@ -1076,7 +1129,9 @@ export default function WorkoutSessionPage() {
           workout_instance_id: wiId,
           workout_session_id: sessionId,
           exercise_id: state.exercise.exercise_id,
-          program_workout_exercise_id: state.exercise.id,
+          // Daily: state.exercise.id is a generated_session_items id, not a
+          // program_workout_exercises id — parentage is NULL by design.
+          program_workout_exercise_id: isDaily ? null : state.exercise.id,
           exercise_order: exerciseIdx + 1,
           user_id: userId,
           status: 'completed',
@@ -1230,6 +1285,13 @@ export default function WorkoutSessionPage() {
           })
           .eq('id', workoutInstanceId);
         if (error) throw error;
+
+        if (isDaily) {
+          const performedIds = exerciseStates
+            .filter((e) => e.sets.some((s) => s.completed))
+            .map((e) => e.exercise.exercise_id);
+          await completeSession(String(id), performedIds);
+        }
       }
 
       Alert.alert(
