@@ -181,10 +181,12 @@ export function MealEditorSheet({
 
   const chooseCandidate = async (candidate: DishImageCandidate) => {
     setAttaching(true);
-    const url = await pickDishImage(candidate, draft.name || "dish");
+    const { url, reason } = await pickDishImage(candidate, draft.name || "dish");
     setAttaching(false);
     if (!url) {
-      Alert.alert("Couldn't fetch that image", "Try another candidate, or the camera.");
+      // The server's own words when it has them — which result to try next
+      // depends on why this one failed.
+      Alert.alert("Couldn't use that picture", reason ?? "Try another candidate, or the camera.");
       return;
     }
     onPatch({ imageUrl: url });
@@ -200,15 +202,15 @@ export function MealEditorSheet({
     const address = link.trim();
     if (!canUseLink) return;
     setAttaching(true);
-    const url = await pickDishImage(
+    const { url, reason } = await pickDishImage(
       { thumbUrl: address, imageUrl: address, sourcePage: null },
       draft.name || "dish",
     );
     setAttaching(false);
     if (!url) {
       Alert.alert(
-        "Couldn't fetch that image",
-        "Check the address points straight at an image file, not the page around it.",
+        "Couldn't use that address",
+        reason ?? "Check the address points straight at an image file, not the page around it.",
       );
       return;
     }
@@ -276,22 +278,6 @@ export function MealEditorSheet({
             <View style={styles.head}>
               <Text style={styles.headTitle}>Meal {index}</Text>
               <View style={styles.headActions}>
-                {/* Reads the printed label into the fields. Not the photo
-                    camera: a picture of a lid full of small print is a
-                    terrible portrait of the food. */}
-                <TouchableOpacity
-                  onPress={onScanLabel}
-                  disabled={scanningLabel}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Photograph the label to fill these fields"
-                >
-                  <ScanLine
-                    size={icons.md}
-                    color={scanningLabel ? colors.brand : colors.textMuted}
-                    strokeWidth={icons.strokeWidth}
-                  />
-                </TouchableOpacity>
                 <TouchableOpacity
                   onPress={onRemove}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -317,6 +303,30 @@ export function MealEditorSheet({
               contentContainerStyle={styles.bodyContent}
               keyboardShouldPersistTaps="handled"
             >
+              {/* Above the fields it fills, spelled out. This was an unlabelled
+                  viewfinder between Delete and Close, where it read as chrome
+                  rather than an action — findable only by someone who already
+                  knew it was there. Not the photo block's camera: that
+                  photographs the food, this reads the small print. */}
+              <TouchableOpacity
+                style={styles.scanLabel}
+                onPress={onScanLabel}
+                disabled={scanningLabel}
+                accessibilityRole="button"
+                accessibilityLabel="Photograph the label to fill in this meal"
+              >
+                {scanningLabel ? (
+                  <ActivityIndicator size="small" color={colors.brand} />
+                ) : (
+                  <ScanLine size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+                )}
+                <Text style={styles.scanLabelText}>
+                  {scanningLabel
+                    ? "Reading the label…"
+                    : "Photograph the label and I'll fill this in"}
+                </Text>
+              </TouchableOpacity>
+
               <TextInput
                 style={styles.nameInput}
                 placeholder={scanningLabel ? "Reading the label…" : "Meal name"}
@@ -570,6 +580,13 @@ const styles = StyleSheet.create({
   segText: { ...typography.caption, color: colors.textMuted },
   segTextActive: { color: colors.brand, fontWeight: "700" },
   blockLabel: { ...typography.section, color: colors.textMuted },
+  scanLabel: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: tint(colors.brand),
+    borderWidth: 1, borderColor: colors.brand, borderRadius: radii.control,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+  },
+  scanLabelText: { ...typography.caption, color: colors.brand, fontWeight: "600", flexShrink: 1 },
   photoBlock: { flexDirection: "row", gap: spacing.md },
   well: {
     width: 96, height: 96, borderRadius: radii.row,

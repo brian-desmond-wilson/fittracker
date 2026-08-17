@@ -178,6 +178,19 @@ export function toDeliveryPayload(
   }));
 }
 
+/**
+ * The contents of a delivery as one comparable string.
+ *
+ * Built from the PAYLOAD rather than the rows, so the comparison sees what a
+ * save would write and nothing else: the blank row waiting at the bottom is
+ * dropped, "6." and "6" are the same number, and adding a row then deleting it
+ * again leaves no trace. That is the difference between "you changed this box"
+ * and "you touched the keyboard".
+ */
+export function draftsSignature(drafts: readonly PreparedMealDraft[]): string {
+  return JSON.stringify(toDeliveryPayload(drafts));
+}
+
 // ---------------------------------------------------------------------------
 // A box that has not arrived yet
 // ---------------------------------------------------------------------------

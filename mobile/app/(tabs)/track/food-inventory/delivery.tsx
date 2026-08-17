@@ -11,19 +11,26 @@ export default function AddDeliveryPage() {
   // it closes.
   const { from } = useLocalSearchParams<{ from?: string }>();
 
-  // Always land on a list rather than router.back(): the same reason the add
-  // route does it — back walks linear history, which is wrong when this screen
-  // was entered from somewhere outside this stack.
-  const leave = () =>
+  // After a SAVE, land on a list whatever the history says: the point of
+  // arriving there is to see the box you just wrote, and back walks linear
+  // history, which leads somewhere else when this screen was entered from
+  // outside the stack.
+  const landOnList = () =>
     router.replace(
       from === "deliveries" ? "/(tabs)/track/deliveries" : "/(tabs)/track/food-inventory",
     );
 
+  // Backing out is the other case, and it wants a pop. A replace pushes a new
+  // screen over this one, so leaving animated forwards — the page slid in from
+  // the right as though Back were taking you deeper. The list is still the
+  // fallback for a deep link with nothing behind it.
+  const abandon = () => (router.canGoBack() ? router.back() : landOnList());
+
   return (
     <AddDeliveryScreen
-      onClose={leave}
+      onClose={abandon}
       onSaved={(count, status, arrivesAt) => {
-        leave();
+        landOnList();
         // After the navigation, so the confirmation lands over the list the
         // new meals are now in rather than over the form that wrote them.
         const meals = `${count} ${count === 1 ? "meal" : "meals"}`;

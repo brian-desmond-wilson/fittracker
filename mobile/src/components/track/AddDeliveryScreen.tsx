@@ -34,7 +34,7 @@ import { fetchDeliveryHistory } from "@/src/lib/supabase/deliveryHistory";
 import { searchDishImages } from "@/src/lib/supabase/dishImageSearch";
 import {
   addLocalDays, addRecent, deliverySummary, dishesNeedingImages,
-  draftsFromPayload, emptyDraft, namedDrafts, orderVendorsByUse, recentCounts,
+  draftsFromPayload, draftsSignature, emptyDraft, namedDrafts, orderVendorsByUse, recentCounts,
   removeRecent, toDeliveryPayload, validateDelivery, withDraftFacts,
   TYPICAL_PREPARED_MEAL_DAYS,
   type PreparedMealDraft, type RecentDish, type VendorUse,
@@ -111,6 +111,36 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
   // has been opened, and so closing a sheet does not throw results away.
   const [searches, setSearches] = useState<Record<string, DishSearchState>>({});
 
+  /**
+   * The form as it opened, for deciding whether backing out loses anything.
+   *
+   * Held as parts rather than one string so the photo backfill below can
+   * refresh the meals half without swallowing a date the owner had already
+   * changed while the history was still loading.
+   */
+  const opened = useRef<{
+    vendorId: string | null; useBy: string; arrivesAt: string; meals: string;
+  } | null>(null);
+  if (opened.current === null) {
+    opened.current = {
+      vendorId,
+      useBy,
+      arrivesAt: arrivesAt.toISOString(),
+      meals: draftsSignature(drafts),
+    };
+  }
+
+  /** Whether anything a save would write differs from how the form opened. */
+  const changed = () => {
+    const was = opened.current!;
+    return (
+      vendorId !== was.vendorId
+      || useBy !== was.useBy
+      || arrivesAt.toISOString() !== was.arrivesAt
+      || draftsSignature(drafts) !== was.meals
+    );
+  };
+
   useEffect(() => {
     (async () => {
       // The history is an accelerator, not a precondition: it is fetched
@@ -147,9 +177,17 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
   // numbers are the numbers. Runs whenever the history or the vendor lands
   // rather than only after a scan, which is what backfills a box saved before
   // some of these fields existed.
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
   useEffect(() => {
     if (!vendorId || recents.length === 0) return;
-    setDrafts((prev) => withDraftFacts(prev, vendorId, recents));
+    const filledIn = withDraftFacts(draftsRef.current, vendorId, recents);
+    if (filledIn === draftsRef.current) return;
+    setDrafts(filledIn);
+    // The app filled these, not the owner. Moving the baseline with them is
+    // what stops "I opened it and pressed Back" from asking about changes
+    // nobody made.
+    if (opened.current) opened.current.meals = draftsSignature(filledIn);
   }, [vendorId, recents]);
 
   // Most-delivered first, so the shop you actually use is the first tile
@@ -381,13 +419,12 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
   };
 
   const handleClose = () => {
-    if (filled === 0) {
+    // Nothing to lose: either the form is untouched, or it is a new delivery
+    // with no meal in it yet.
+    if (!changed() || filled === 0) {
       onClose();
       return;
     }
-    // An edit always has rows in it, so `filled` cannot say whether anything
-    // was actually changed. It asks anyway rather than pretending to know:
-    // leaving without saving is the same loss either way.
     Alert.alert(
       editing ? "Discard your changes?" : "Discard this delivery?",
       editing

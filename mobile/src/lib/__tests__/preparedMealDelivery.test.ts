@@ -4,6 +4,7 @@ import {
   deliverySummary,
   dishSlug,
   draftsFromPayload,
+  draftsSignature,
   draftFromRecent,
   emptyDraft,
   mealsInDishes,
@@ -186,6 +187,31 @@ describe("toDeliveryPayload", () => {
   it("carries the slot through", () => {
     const [meal] = toDeliveryPayload([draft({ slot: "breakfast" })]);
     expect(meal.slot).toBe("breakfast");
+  });
+});
+
+describe("draftsSignature", () => {
+  it("is the same for a box nobody has touched", () => {
+    const rows = [draft()];
+    expect(draftsSignature(rows)).toBe(draftsSignature([...rows]));
+  });
+  it("ignores the blank row waiting at the bottom", () => {
+    expect(draftsSignature([draft()])).toBe(draftsSignature([draft(), emptyDraft()]));
+  });
+  it("does not care how a number was typed", () => {
+    expect(draftsSignature([draft({ fiber: "13" })]))
+      .toBe(draftsSignature([draft({ fiber: "13." })]));
+  });
+  it("changes when a macro changes", () => {
+    expect(draftsSignature([draft()])).not.toBe(draftsSignature([draft({ carbs: "70" })]));
+  });
+  it("changes when a photo is attached", () => {
+    expect(draftsSignature([draft()]))
+      .not.toBe(draftsSignature([draft({ imageUrl: "https://img/a.jpg" })]));
+  });
+  it("changes when a meal is added", () => {
+    expect(draftsSignature([draft()]))
+      .not.toBe(draftsSignature([draft(), draft({ name: "Pesto Pasta" })]));
   });
 });
 

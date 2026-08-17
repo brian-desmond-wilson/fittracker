@@ -24,7 +24,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { ChevronLeft, Pencil, Plus, Truck } from "lucide-react-native";
+import { ChevronDown, ChevronLeft, ChevronUp, Pencil, Plus, Truck } from "lucide-react-native";
 import { Badge, Card, EmptyState, IconButton, LoadingState } from "@/src/components/ui";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { supabase } from "@/src/lib/supabase";
@@ -92,6 +92,11 @@ export function DeliveriesScreen({
   // subscription rotates its menu, so most of what is coming has been here
   // before and left an inventory row with a photo behind it.
   const [seenDishes, setSeenDishes] = useState<RecentDish[]>([]);
+  // Which boxes are open. Every card starts shut: a household on two
+  // subscriptions can have four or five in flight, and five open menus is a
+  // page you scroll past rather than read. What is coming, from whom, and
+  // when stays on the face of the card; the dishes are the detail behind it.
+  const [openBoxes, setOpenBoxes] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -258,29 +263,55 @@ export function DeliveriesScreen({
   // itself about where "today" is.
   const now = useMemo(() => new Date(), [pending]);
 
+  const toggleBox = (id: string) => {
+    setOpenBoxes((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  };
+
   const renderBox = (row: PendingDelivery) => {
     const dishes = sortDishesForMenu(withDishPhotos(row.dishes, row.vendorId, seenDishes));
     const vendorName = row.vendorName ?? "Unknown vendor";
+    const open = openBoxes.has(row.id);
+    const Chevron = open ? ChevronUp : ChevronDown;
     return (
       <Card key={row.id} variant="panel" style={s.box}>
-        <View style={s.boxHead}>
-          <VendorMark name={vendorName} logoUrl={row.vendorLogoUrl} />
-          <Text style={s.vendorName} numberOfLines={1}>{vendorName}</Text>
-          <Badge tone="deliveries" label="Scheduled" />
-        </View>
+        {/* The whole face is the control, not just the chevron: everything
+            above the dishes is a summary of one thing, and a summary that
+            opens what it summarises wants a target you cannot miss. */}
+        <TouchableOpacity
+          onPress={() => toggleBox(row.id)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          accessibilityLabel={
+            `${vendorName}, ${row.mealCount} ${row.mealCount === 1 ? "meal" : "meals"}, ` +
+            `arriving ${formatArrival(row.arrivesAt, now)}. ` +
+            (open ? "Hide the meals." : "Show the meals.")
+          }
+        >
+          <View style={s.boxHead}>
+            <VendorMark name={vendorName} logoUrl={row.vendorLogoUrl} />
+            <Text style={s.vendorName} numberOfLines={1}>{vendorName}</Text>
+            <Badge tone="deliveries" label="Scheduled" />
+            <Chevron size={18} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+          </View>
 
-        <View style={s.arrival}>
-          <Truck size={17} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
-          <Text style={s.arrivalText}>Arrives {formatArrival(row.arrivesAt, now)}</Text>
-        </View>
-        <Text style={s.boxMeta}>
-          Use by {formatDayLabel(row.useBy, USE_BY_LABEL)} · {row.mealCount}{" "}
-          {row.mealCount === 1 ? "meal" : "meals"}
-        </Text>
+          <View style={s.arrival}>
+            <Truck size={17} color={colors.accents.deliveries} strokeWidth={icons.strokeWidth} />
+            <Text style={s.arrivalText}>Arrives {formatArrival(row.arrivesAt, now)}</Text>
+          </View>
+          <Text style={s.boxMeta}>
+            Use by {formatDayLabel(row.useBy, USE_BY_LABEL)} · {row.mealCount}{" "}
+            {row.mealCount === 1 ? "meal" : "meals"}
+          </Text>
+        </TouchableOpacity>
 
         {/* The box as a menu for the week. Quantity first, because "×2" is
             what distinguishes two nights of the same dinner from one. */}
-        {dishes.length > 0 && (
+        {open && dishes.length > 0 && (
           <View style={s.dishes}>
             {dishes.map((dish, index) => (
               <View key={`${dish.name}-${index}`} style={s.dish}>
@@ -307,6 +338,10 @@ export function DeliveriesScreen({
           </View>
         )}
 
+        {/* Inside the fold with the dishes: a shut card is a statement about
+            what is coming, and Cancel delivery is not something to put a
+            thumb's width from a row you are only scrolling past. */}
+        {open && (
         <View style={s.boxActions}>
           <TouchableOpacity
             style={s.editButton}
@@ -329,6 +364,7 @@ export function DeliveriesScreen({
             <Text style={s.cancelText}>Cancel delivery</Text>
           </TouchableOpacity>
         </View>
+        )}
       </Card>
     );
   };

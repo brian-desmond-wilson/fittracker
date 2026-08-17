@@ -18,7 +18,13 @@ export default function EditDeliveryPage() {
   // anything typed in the meantime.
   const [draft, setDraft] = useState<PendingDeliveryDraft | null>(null);
 
-  const leave = () => router.replace("/(tabs)/track/deliveries");
+  // Pop, don't replace. A replace pushes a new screen over this one, so
+  // leaving animated forwards — the page slid in from the right as though Back
+  // were taking you deeper. Popping plays the same movement in reverse, which
+  // is what a back control means. The replace stays as the fallback for a
+  // deep link, where there is no card behind to return to.
+  const leave = () =>
+    router.canGoBack() ? router.back() : router.replace("/(tabs)/track/deliveries");
 
   useEffect(() => {
     let cancelled = false;
