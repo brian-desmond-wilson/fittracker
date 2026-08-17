@@ -27,6 +27,11 @@ Rules:
   reach past one when it makes the session cohere: complementary movement
   patterns, sensible push/pull pairing within the day, equipment flow so the
   person isn't walking across the gym between every set.
+- "EQUIPMENT UNVERIFIED" means the catalog never recorded what that movement
+  needs, so nobody has checked it against today's gym. Prefer verified
+  candidates; reach for an unverified one only to fill a gap, and never when
+  its usual form clearly needs kit this gym lacks (no barbell lifts at a
+  bodyweight gym).
 - A "captured workout" (if any are offered) may be served WHOLE instead of a
   composed list, but only when it genuinely fits today's focus, equipment,
   and time — then return its id as servedWorkoutId and an empty items array.
@@ -68,6 +73,7 @@ serve(async (req) => {
         c.skillLevel ?? 'unrated',
         `muscles ${Array.isArray(c.muscles) ? c.muscles.join('/') : ''}`,
         c.lastPerformedDaysAgo == null ? 'never done' : `last done ${c.lastPerformedDaysAgo}d ago`,
+        c.equipmentUnknown ? 'EQUIPMENT UNVERIFIED' : null,
         c.regressedFrom ? `regression of ${c.regressedFrom}` : null,
       ].filter(Boolean).join(' · '))
       .join('\n');

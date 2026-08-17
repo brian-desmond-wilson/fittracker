@@ -44,6 +44,13 @@ export interface RankedCandidate extends SessionCandidate {
   soreDowngrade: boolean;
   /** Set when progression resolution swapped in an easier movement. */
   regressedFromId: string | null;
+  /**
+   * True when nothing in the catalog says what this movement needs, so the
+   * gym gate could not be applied to it. Most of the library is untagged, so
+   * these stay in play — but they rank below verified fits and are labelled
+   * as unverified for the model.
+   */
+  equipmentUnknown: boolean;
 }
 
 export interface SectionPlan {

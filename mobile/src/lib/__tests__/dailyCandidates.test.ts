@@ -47,12 +47,54 @@ describe("buildCandidatePools", () => {
     expect(pools.main).toHaveLength(0);
   });
 
-  it("treats empty equipment as bodyweight (always available)", () => {
+  it("keeps an untagged exercise but marks its equipment unverified", () => {
+    // 88 of 129 catalog rows carry no equipment at all, so dropping them
+    // would empty the pool. They stay in play — but the engine must not
+    // claim they fit the gym, because it does not know that.
     const pools = buildCandidatePools(
-      [cand({ equipmentTypes: [] })],
+      // "Push Press" names no tool — it could be a barbell or a dumbbell.
+      [cand({ name: "Push Press", equipmentTypes: [] })],
       { splitDay: "push", gymEquipment: new Set(["Floor"]), soreness: {} },
     );
     expect(pools.main).toHaveLength(1);
+    expect(pools.main[0].equipmentUnknown).toBe(true);
+  });
+
+  it("treats an explicitly bodyweight exercise as verified, not unknown", () => {
+    const pools = buildCandidatePools(
+      [cand({ equipmentTypes: ["Bodyweight"] })],
+      { splitDay: "push", gymEquipment: new Set(["Floor"]), soreness: {} },
+    );
+    expect(pools.main[0].equipmentUnknown).toBe(false);
+  });
+
+  it("infers the tool a name states, and gates on it", () => {
+    // "Barbell Curl" is untagged in the catalog, but the name says barbell.
+    const atHotel = buildCandidatePools(
+      [cand({ exerciseId: "bc", name: "Barbell Curl", equipmentTypes: [] })],
+      { splitDay: "push", gymEquipment: GYM, soreness: {} },
+    );
+    expect(atHotel.main).toHaveLength(0);
+
+    const withBarbell = buildCandidatePools(
+      [cand({ exerciseId: "bc", name: "Barbell Curl", equipmentTypes: [] })],
+      { splitDay: "push", gymEquipment: new Set([...GYM, "Barbell"]), soreness: {} },
+    );
+    expect(withBarbell.main).toHaveLength(1);
+    expect(withBarbell.main[0].equipmentUnknown).toBe(false);
+  });
+
+  it("ranks verified-fit candidates above unverified ones", () => {
+    const pools = buildCandidatePools(
+      [
+        cand({ exerciseId: "unknown", name: "Push Press", equipmentTypes: [], lastPerformedDaysAgo: null }),
+        cand({ exerciseId: "verified", name: "Floor Press", equipmentTypes: ["Dumbbell"], lastPerformedDaysAgo: 2 }),
+      ],
+      { splitDay: "push", gymEquipment: GYM, soreness: {} },
+    );
+    // Recency would have put the never-performed unknown first; a verified
+    // fit outranks it, because it is the one we know the gym can do.
+    expect(pools.main.map((c) => c.exerciseId)).toEqual(["verified", "unknown"]);
   });
 
   it("excludes primaries sore at 2+, downgrades at 1", () => {
@@ -104,7 +146,7 @@ describe("buildCandidatePools", () => {
 
 describe("resolveProgressions", () => {
   it("regresses an Advanced movement the user hasn't earned, when a link exists", () => {
-    const advanced = { ...cand({ exerciseId: "hsw", name: "Handstand Walk", skillLevel: "Advanced" as const }), section: "main" as const, soreDowngrade: false, regressedFromId: null };
+    const advanced = { ...cand({ exerciseId: "hsw", name: "Handstand Walk", skillLevel: "Advanced" as const }), section: "main" as const, soreDowngrade: false, regressedFromId: null, equipmentUnknown: false };
     const wallWalk = cand({ exerciseId: "ww", name: "Wall Walk", skillLevel: "Intermediate" });
     const out = resolveProgressions([advanced], {
       skillState: {},
@@ -116,7 +158,7 @@ describe("resolveProgressions", () => {
   });
 
   it("keeps an Advanced movement the user has earned", () => {
-    const advanced = { ...cand({ exerciseId: "hsw", skillLevel: "Advanced" as const }), section: "main" as const, soreDowngrade: false, regressedFromId: null };
+    const advanced = { ...cand({ exerciseId: "hsw", skillLevel: "Advanced" as const }), section: "main" as const, soreDowngrade: false, regressedFromId: null, equipmentUnknown: false };
     const out = resolveProgressions([advanced], {
       skillState: { hsw: "advanced" },
       regressions: new Map([["hsw", "ww"]]),
@@ -126,7 +168,7 @@ describe("resolveProgressions", () => {
   });
 
   it("keeps an Advanced movement with no regression link (nothing to swap to)", () => {
-    const advanced = { ...cand({ exerciseId: "hsw", skillLevel: "Advanced" as const }), section: "main" as const, soreDowngrade: false, regressedFromId: null };
+    const advanced = { ...cand({ exerciseId: "hsw", skillLevel: "Advanced" as const }), section: "main" as const, soreDowngrade: false, regressedFromId: null, equipmentUnknown: false };
     const out = resolveProgressions([advanced], {
       skillState: {}, regressions: new Map(), byExerciseId: new Map(),
     });

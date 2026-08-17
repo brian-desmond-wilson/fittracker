@@ -164,6 +164,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
           muscles: c.muscles.filter((m) => m.isPrimary).map((m) => m.name),
           lastPerformedDaysAgo: c.lastPerformedDaysAgo,
           regressedFrom: c.regressedFromId,
+          equipmentUnknown: c.equipmentUnknown,
         })),
         capturedWorkouts: capturedWorkouts.map((w) => ({
           id: w.workoutId,

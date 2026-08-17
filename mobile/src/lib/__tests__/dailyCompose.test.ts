@@ -5,7 +5,7 @@ import type { RankedCandidate, SectionPlan } from "../../types/daily";
 const rc = (id: string, section: RankedCandidate["section"]): RankedCandidate => ({
   exerciseId: id, name: id, skillLevel: "Beginner", goalTypes: [], muscles: [],
   equipmentTypes: [], isCapture: true, lastPerformedDaysAgo: null,
-  section, soreDowngrade: false, regressedFromId: null,
+  section, soreDowngrade: false, regressedFromId: null, equipmentUnknown: false,
 });
 
 const pools: CandidatePools = {

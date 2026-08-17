@@ -24,6 +24,55 @@ export function normalizeEquipmentName(raw: string): string {
   return raw;
 }
 
+// Most of the catalog (88 of 129 rows) carries no equipment at all, so the
+// gym gate has nothing to check those rows against. When the NAME states the
+// tool, that is evidence enough to gate on: "Barbell Curl" needs a barbell
+// whether or not anyone tagged the row.
+//
+// Every value here MUST be a real equipment.name. Inventing one ("Cable",
+// "Machine") would exclude the movement from every gym forever, since no
+// gym's checklist could ever contain it — cable and machine work therefore
+// stays unverified rather than being gated out.
+const NAME_IMPLIES_EQUIPMENT: Record<string, string> = {
+  "trap bar": "Trap Bar",
+  "medicine ball": "Med Ball",
+  "wall ball": "Med Ball",
+  "med ball": "Med Ball",
+  "stability ball": "Stability Ball",
+  "massage ball": "Massage Ball",
+  "foam roller": "Foam Roller",
+  "yoga block": "Yoga Block",
+  "assault bike": "Bike",
+  "ski erg": "Ski",
+  kettlebell: "Kettlebell",
+  dumbbell: "Dumbbell",
+  barbell: "Barbell",
+  sandbag: "Sandbag",
+  treadmill: "Treadmill",
+  rower: "Rower",
+  rings: "Rings",
+  rope: "Rope",
+  bench: "Bench",
+  plate: "Plate",
+  bands: "Bands",
+  band: "Bands",
+  box: "Box",
+};
+
+/** Equipment the exercise's own name states it needs. Empty when the name
+ *  names no tool — "Push Press" could be a barbell or a dumbbell, and
+ *  guessing either way would be worse than admitting we don't know. */
+export function equipmentFromName(name: string): string[] {
+  // Pad and strip punctuation so matches land on whole words: "Box Jump"
+  // hits `box`, "Boxer Shuffle" does not.
+  const haystack = ` ${name.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+  const found = new Set<string>();
+  for (const [phrase, equipment] of Object.entries(NAME_IMPLIES_EQUIPMENT)) {
+    if (haystack.includes(` ${phrase} `)) found.add(equipment);
+  }
+  return [...found];
+}
+
 // muscle_regions.name values, verbatim (post-reorg seed).
 const DAY_MUSCLES: Record<SplitDay, Set<string>> = {
   push: new Set(["Chest", "Shoulders", "Triceps"]),
@@ -57,10 +106,12 @@ export interface CandidatePools {
   cooldown: RankedCandidate[];
 }
 
-/** Rank: captures before stock; never-performed before stale before recent;
- *  sore-downgrades sink to the bottom of their pool. */
+/** Rank: sore-downgrades sink; a movement we KNOW the gym can do outranks one
+ *  we merely can't rule out; then captures before stock; then never-performed
+ *  before stale before recent. */
 function rank(a: RankedCandidate, b: RankedCandidate): number {
   if (a.soreDowngrade !== b.soreDowngrade) return a.soreDowngrade ? 1 : -1;
+  if (a.equipmentUnknown !== b.equipmentUnknown) return a.equipmentUnknown ? 1 : -1;
   if (a.isCapture !== b.isCapture) return a.isCapture ? -1 : 1;
   const aDays = a.lastPerformedDaysAgo ?? Number.POSITIVE_INFINITY;
   const bDays = b.lastPerformedDaysAgo ?? Number.POSITIVE_INFINITY;
@@ -75,10 +126,16 @@ export function buildCandidatePools(
   const pools: CandidatePools = { warmup: [], main: [], cooldown: [] };
 
   for (const c of candidates) {
-    // Equipment gate. Empty means bodyweight — always doable.
-    const needs = c.equipmentTypes.map(normalizeEquipmentName);
+    // Equipment gate. A tagged row is checked against the gym outright; an
+    // untagged one falls back to what its name states. If neither says
+    // anything, we genuinely don't know what it needs — it stays in play
+    // (dropping 2/3 of the catalog would leave no session at all) but is
+    // marked unverified so it ranks below movements the gym can definitely do.
+    const tagged = c.equipmentTypes.map(normalizeEquipmentName);
+    const needs = tagged.length > 0 ? tagged : equipmentFromName(c.name);
+    const equipmentUnknown = needs.length === 0;
     const equipmentOk =
-      needs.length === 0 ||
+      equipmentUnknown ||
       needs.every((n) => n === "Bodyweight" || ctx.gymEquipment.has(n));
     if (!equipmentOk) continue;
 
@@ -103,6 +160,7 @@ export function buildCandidatePools(
       section: pool as SessionSection,
       soreDowngrade,
       regressedFromId: null,
+      equipmentUnknown,
     });
   }
 
@@ -147,6 +205,10 @@ export function resolveProgressions(
       section: c.section,
       soreDowngrade: c.soreDowngrade,
       regressedFromId: c.exerciseId,
+      // Recomputed for the TARGET, not inherited — it is a different
+      // movement with its own equipment story.
+      equipmentUnknown:
+        target.equipmentTypes.length === 0 && equipmentFromName(target.name).length === 0,
       // The regression inherits the original's queue position by replacing
       // it in place; isCapture/lastPerformed come from the target itself.
     };
