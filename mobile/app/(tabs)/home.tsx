@@ -20,6 +20,7 @@ import { WaterIntakeHomeCard } from "@/src/components/WaterIntakeHomeCard";
 import { MealsHomeCard } from "@/src/components/MealsHomeCard";
 import { EatNextHomeCard } from "@/src/components/EatNextHomeCard";
 import { RampHomeBanner } from "@/src/components/RampHomeBanner";
+import { DailySessionHomeCard } from "@/src/components/DailySessionHomeCard";
 
 export default function Home() {
   const router = useRouter();
@@ -148,6 +149,10 @@ export default function Home() {
         {/* Eat Next Section */}
         <Text style={styles.sectionTitle}>Eat Next</Text>
         <EatNextHomeCard refreshKey={refreshKey} />
+
+        {/* Daily Training Section */}
+        <Text style={styles.sectionTitle}>Daily Training</Text>
+        <DailySessionHomeCard key={`daily-${refreshKey}`} />
 
         {/* Today's Workout Section */}
         <Text style={styles.sectionTitle}>Today's Workout</Text>
