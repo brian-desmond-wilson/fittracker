@@ -6,6 +6,7 @@ const workout = (o: Partial<CapturedWorkoutEntry> = {}): CapturedWorkoutEntry =>
   name: "KB Chest & Triceps Series",
   rounds: "3-4",
   rawProtocol: null,
+  notes: null,
   capturedAt: "2026-08-16T00:00:00Z",
   source: {
     sourceId: "s-1",
@@ -13,6 +14,7 @@ const workout = (o: Partial<CapturedWorkoutEntry> = {}): CapturedWorkoutEntry =>
     sourceUrl: "https://instagram.com/reel/abc",
     posterHandle: "@flolyfe",
     thumbnailUrl: null,
+    captionText: null,
   },
   items: [
     {

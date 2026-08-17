@@ -117,6 +117,8 @@ export interface CapturedWorkoutEntry {
   name: string;
   rounds: string | null;
   rawProtocol: string | null;
+  /** The owner's own note, not the creator's. Empty until they write one. */
+  notes: string | null;
   capturedAt: string;
   source: {
     sourceId: string;
@@ -124,6 +126,8 @@ export interface CapturedWorkoutEntry {
     sourceUrl: string;
     posterHandle: string | null;
     thumbnailUrl: string | null;
+    /** The post's caption, HTML-decoded — what the creator actually wrote. */
+    captionText: string | null;
   } | null;
   items: CapturedWorkoutItemEntry[];
 }

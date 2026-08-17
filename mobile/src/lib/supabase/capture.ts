@@ -4,6 +4,7 @@
 // and 'reviewed' is stamped last — so a failure partway leaves a retryable
 // pending source, never a half-visible catalog entry.
 import { supabase } from "../supabase";
+import { decodeCaption } from "../captionText";
 import { createExercise, fetchGoalTypes, fetchMovementCategories } from "./crossfit";
 import { mapCategory } from "../captureReview";
 import type {
@@ -273,6 +274,7 @@ function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
     name: row.name,
     rounds: row.rounds ?? null,
     rawProtocol: row.raw_protocol ?? null,
+    notes: row.notes ?? null,
     capturedAt: row.created_at,
     source: row.source
       ? {
@@ -281,6 +283,9 @@ function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
           sourceUrl: row.source.source_url,
           posterHandle: row.source.poster_handle,
           thumbnailUrl: row.source.thumbnail_url,
+          // Stored as the platform's HTML; decoded here so every reader gets
+          // the creator's actual characters rather than "&#x2705;".
+          captionText: decodeCaption(row.source.caption_text) || null,
         }
       : null,
     items: (row.items ?? [])
@@ -308,9 +313,10 @@ export async function fetchCapturedWorkouts(
   const { data, error } = await supabase
     .from("captured_workouts")
     .select(`
-      id, name, rounds, raw_protocol, created_at,
+      id, name, rounds, raw_protocol, notes, created_at,
       source:captured_sources!inner(
-        id, platform, source_url, poster_handle, thumbnail_url, extraction_status
+        id, platform, source_url, poster_handle, thumbnail_url, caption_text,
+        extraction_status
       ),
       items:captured_workout_exercises(
         exercise_order, target_sets, target_reps, target_weight,
@@ -340,9 +346,10 @@ export async function fetchCapturedWorkout(
   const { data, error } = await supabase
     .from("captured_workouts")
     .select(`
-      id, name, rounds, raw_protocol, created_at,
+      id, name, rounds, raw_protocol, notes, created_at,
       source:captured_sources!inner(
-        id, platform, source_url, poster_handle, thumbnail_url, extraction_status
+        id, platform, source_url, poster_handle, thumbnail_url, caption_text,
+        extraction_status
       ),
       items:captured_workout_exercises(
         exercise_order, target_sets, target_reps, target_weight,
@@ -408,4 +415,130 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   return entries
     .filter((e) => e.sources.length > 0)
     .sort((a, b) => (a.sources[0].capturedAt < b.sources[0].capturedAt ? 1 : -1));
+}
+
+// ---------- Editing a captured workout ----------
+//
+// A capture is a starting point, not a contract: the extraction guesses a
+// name, the caption arrives with the platform's markup, and the movement list
+// is whatever the model could read off a post. All of it is the owner's to
+// correct.
+
+export interface CapturedWorkoutEdits {
+  name: string;
+  rounds: string | null;
+  /** The owner's own note. */
+  notes: string | null;
+}
+
+/** Rename a captured workout, restate its rounds, or keep a note on it. */
+export async function updateCapturedWorkout(
+  workoutId: string,
+  edits: CapturedWorkoutEdits,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("captured_workouts")
+    .update({
+      name: edits.name,
+      rounds: edits.rounds,
+      notes: edits.notes,
+    })
+    .eq("id", workoutId);
+  if (error) {
+    console.error("updateCapturedWorkout failed:", error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Correct the caption held against a capture.
+ *
+ * Written back decoded, not re-encoded: once the owner has edited it, the row
+ * is their text rather than a copy of the platform's HTML, and `decodeCaption`
+ * leaves text with no entities in it untouched, so the read path stays correct
+ * either way.
+ */
+export async function updateCaptureCaption(
+  sourceId: string,
+  captionText: string | null,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("captured_sources")
+    .update({ caption_text: captionText })
+    .eq("id", sourceId);
+  if (error) {
+    console.error("updateCaptureCaption failed:", error);
+    return false;
+  }
+  return true;
+}
+
+export interface CapturedWorkoutItemInput {
+  exerciseId: string;
+  sets: number | null;
+  reps: string | null;
+  weight: string | null;
+  duration: string | null;
+  restSeconds: number | null;
+  notes: string | null;
+}
+
+/**
+ * Replace the movement list wholesale.
+ *
+ * Reordering, removing and adding all reduce to "here is the new list", and a
+ * captured workout is a handful of rows — diffing them would be more code and
+ * more ways to be wrong. `exercise_order` is assigned from array position, so
+ * the order on screen is the order in the table.
+ *
+ * Insert first, then delete the old rows by id. The two statements are not a
+ * transaction, so the order decides what a failure between them leaves
+ * behind: this way a dead insert leaves the workout exactly as it was, where
+ * deleting first would leave it empty. Nothing constrains (workout, order),
+ * so the brief overlap is harmless.
+ */
+export async function replaceCapturedWorkoutItems(
+  workoutId: string,
+  items: CapturedWorkoutItemInput[],
+): Promise<boolean> {
+  try {
+    const { data: existing, error: readError } = await supabase
+      .from("captured_workout_exercises")
+      .select("id")
+      .eq("captured_workout_id", workoutId);
+    if (readError) throw readError;
+
+    if (items.length > 0) {
+      const { error: insError } = await supabase
+        .from("captured_workout_exercises")
+        .insert(
+          items.map((item, index) => ({
+            captured_workout_id: workoutId,
+            exercise_id: item.exerciseId,
+            exercise_order: index,
+            target_sets: item.sets,
+            target_reps: item.reps,
+            target_weight: item.weight,
+            target_duration: item.duration,
+            rest_seconds: item.restSeconds,
+            notes: item.notes,
+          })),
+        );
+      if (insError) throw insError;
+    }
+
+    const oldIds = (existing ?? []).map((r: any) => r.id);
+    if (oldIds.length > 0) {
+      const { error: delError } = await supabase
+        .from("captured_workout_exercises")
+        .delete()
+        .in("id", oldIds);
+      if (delError) throw delError;
+    }
+    return true;
+  } catch (e) {
+    console.error("replaceCapturedWorkoutItems failed:", e);
+    return false;
+  }
 }
