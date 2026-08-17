@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { ChevronRight, Flame } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
@@ -15,7 +15,7 @@ export function DailySessionHomeCard() {
   const [session, setSession] = useState<StoredSession | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { setLoaded(true); return; }
       fetchTodaySession(user.id, getLocalDateString())
@@ -23,6 +23,14 @@ export function DailySessionHomeCard() {
         .finally(() => setLoaded(true));
     });
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // The session changes off-screen: starting it flips the row to `accepted`
+  // and finishing it to `completed`, both from the logging screen. Without
+  // re-reading on focus the card still says "ready" for a workout already
+  // done, until something else happens to refresh Home.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   if (!loaded) return null;
 
