@@ -41,8 +41,12 @@ type Platform = 'instagram' | 'tiktok' | 'other';
 function detectPlatform(url: string): Platform {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
-    if (host.endsWith('instagram.com')) return 'instagram';
-    if (host.endsWith('tiktok.com')) return 'tiktok';
+    // Exact domain or a true subdomain — a bare endsWith would also accept
+    // lookalikes ("notinstagram.com") and hand them a server-side fetch.
+    const isDomain = (h: string, domain: string) =>
+      h === domain || h.endsWith(`.${domain}`);
+    if (isDomain(host, 'instagram.com')) return 'instagram';
+    if (isDomain(host, 'tiktok.com')) return 'tiktok';
     return 'other';
   } catch {
     return 'other';
