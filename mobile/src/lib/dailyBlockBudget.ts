@@ -5,66 +5,42 @@
 import type { BlockEnvelope, BlockRole } from "../types/dailyBlocks";
 
 /**
- * Under this many total minutes, support blocks compress (spec §8).
- *
- * Known consequence, not a bug: the threshold is a step, so crossing it moves
- * main the wrong way. A 44-minute day gives main 29-35; a 45-minute day gives
- * it 15-30 — one more minute of budget lowers main's ceiling by five and
- * halves its floor, because support blocks stop compressing and may now ask
- * for 10 minutes each instead of 5. Smoothing that out means replacing the
- * spec's compression rule with a proportional one, which is a spec change.
+ * Under this many total minutes, support blocks compress (spec §8). A step,
+ * not a curve, so it moves main backwards at the boundary: 44 minutes gives
+ * main 29-35, 45 gives it 15-30. Smoothing it is a spec change.
  */
 const SHORT_DAY = 45;
-/** Conditioning only exists when the budget clears this (spec §4). */
+/** Conditioning exists only above this (spec §4), bought from main: 74
+ *  minutes gives main 44-59, 75 gives it 25-50. */
 const CONDITIONING_FLOOR = 75;
-/** A roundless workout may be capped down by at most this factor. */
+/** How far over its ceiling a roundless workout may be capped from. */
 const CAP_TOLERANCE = 1.25;
-/**
- * Extension only fires below this fraction of a block's floor. Adding a whole
- * round costs the athlete real work, so it has to buy a real gap rather than
- * a rounding error: 29 minutes in a 30-45 block is a slightly short block, and
- * the roundless path is allowed to leave it alone, so the rounds path must not
- * be the more aggressive of the two.
- */
+/** How far under its floor a workout may be and still be worth the block. */
+const FLOOR_TOLERANCE = 0.75;
+/** Extension fires only below this fraction of the floor: a whole round is
+ *  real work and has to buy a real gap, not a rounding error. */
 const EXTEND_BELOW = 0.8;
-/**
- * What a broken budget falls back to.
- *
- * A missing, non-finite or non-positive budget is not a request for a
- * zero-minute session, it is a bad input — and NaN is the dangerous one,
- * because NaN envelopes fail silently: every comparison in `fitToEnvelope` is
- * false against NaN, so every candidate passes through unfitted and unnoted,
- * and the day comes out unbounded with nothing flagging it. Twenty minutes is
- * the shortest day this arithmetic already produces a sane shape for, and
- * falling back to it keeps the promise that you always get a session
- * (spec §5). A small but genuine budget is left alone.
- */
+/** What a broken budget falls back to. NaN is the dangerous input: NaN
+ *  envelopes fail silently, since every comparison in `fitToEnvelope` is
+ *  false against NaN and every candidate passes through unfitted. */
 const FALLBACK_BUDGET = 20;
 
 /**
- * What each block of today's session may cost, in the order the blocks are
- * performed (RAMP: raise, activate, work, condition, cool).
+ * What each block may cost, in the order the blocks are performed (RAMP).
  *
  * These are independent ranges, NOT a partition of the day — every block
- * taking its max would overrun the budget, and on a very short day the floors
- * below overrun it outright. That is deliberate: the envelope says what a
- * block is allowed to be, and composition is what keeps the day's total
- * honest (spec §5 re-validates the sum to ±10%).
- *
- * Main is sized as the remainder rather than a fraction, because main is the
- * point of the day: everything else states its appetite first and main eats
- * what is left. Its floor of 10 and ceiling of 15 keep a nonsense-short
- * budget from asking for a main block of zero or negative minutes.
+ * taking its max would overrun the budget. The envelope says what a block is
+ * allowed to be; composition keeps the total honest (spec §5 re-validates to
+ * ±10%). Main is the remainder rather than a fraction, because main is the
+ * point of the day: everything else states its appetite, main eats the rest.
  */
 export function blockEnvelopes(minutes: number, recoveryDay: boolean): BlockEnvelope[] {
-  const budget = Number.isFinite(minutes) && minutes > 0 ? minutes : FALLBACK_BUDGET;
+  // Rounded as well as guarded, so every envelope below is whole minutes.
+  const budget = Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes) : FALLBACK_BUDGET;
 
   if (recoveryDay) {
-    // Mobility and cool-down only, deliberately (spec §6). Split roughly 60/40
-    // toward mobility — the stretching is the session, the cool-down closes it.
-    // The 10- and 5-minute floors mean a recovery day is never shorter than 15
-    // minutes even when the budget is, which is the right way round: a
-    // ten-minute recovery day is not worth presenting as a session.
+    // Mobility and cool-down only, deliberately (spec §6), split 60/40 toward
+    // the stretching. The floors hold a recovery day to 15 minutes minimum.
     const mobility = Math.max(10, Math.round(budget * 0.6));
     const cooldown = Math.max(5, Math.min(budget - mobility, Math.round(budget * 0.4)));
     return [
@@ -82,14 +58,12 @@ export function blockEnvelopes(minutes: number, recoveryDay: boolean): BlockEnve
   const warmup = support("warmup");
   const mobility = support("mobility");
   const cooldown = support("cooldown");
-  // Conditioning is the first thing a tight day gives up: below 75 minutes,
-  // buying it would come straight out of the main workout.
   const conditioning: BlockEnvelope | null = budget >= CONDITIONING_FLOOR
     ? { block: "conditioning", minMinutes: 10, maxMinutes: 20 }
     : null;
 
-  // What main has to share the day with. Main's floor assumes the others all
-  // run long, its ceiling assumes they all run short.
+  // Main's floor assumes everything else runs long, its ceiling that they run
+  // short. The 10 and 15 keep a tiny budget from asking for a negative main.
   const aroundMain = [warmup, mobility, cooldown, ...(conditioning ? [conditioning] : [])];
   const minTaken = aroundMain.reduce((s, e) => s + e.minMinutes, 0);
   const maxTaken = aroundMain.reduce((s, e) => s + e.maxMinutes, 0);
@@ -107,91 +81,89 @@ export interface FittedDuration {
   roundsNote: string | null;
 }
 
+/** A count followed by a time unit is a duration, not a round count. */
+const TIME_UNIT = /^\s*x?\s*(minutes|minute|mins|min|seconds|second|secs|sec|hours|hour|hrs|hr|m|s|h)\b/i;
+
 /**
- * Top of a rounds prescription: "4" → 4, "3-4" → 4, "5 rounds for time" → 5.
+ * Top of a rounds prescription: "3-4" → 4, "REPEAT 3-4x rounds" → 4.
  *
- * Only the LEADING number counts, because the column is the creator's own
- * words and holds more than counts: "AMRAP 20 min" is a documented value, and
- * reading the largest digit-run anywhere in the string would call that twenty
- * rounds and then confidently offer to trim fifteen of them. Anything not
- * opening with a count — and any single-round workout, which has no round to
- * give up — reads as roundless, so the caller falls back to capping.
+ * The column holds the creator's own words, so only the first count is read,
+ * after a word or two of preamble. Taking the largest digit-run anywhere reads
+ * "3 rounds of 12 reps" as twelve and "AMRAP 20 min" — a documented value — as
+ * twenty rounds to offer to trim fifteen of. Anything else, a single round
+ * included, reads as roundless and falls back to capping.
  */
 function topRounds(rounds: string | null): number | null {
   if (!rounds) return null;
-  const match = rounds.trim().match(/^(\d+)\s*(?:[-–—]\s*(\d+))?/);
+  const text = rounds.trim().replace(/^(?:[a-z]+\s+){1,2}/i, "");
+  const match = text.match(/^(\d+)\s*(?:[-–—]\s*(\d+))?/);
   if (!match) return null;
-  const top = match[2] === undefined ? Number(match[1]) : Math.max(Number(match[1]), Number(match[2]));
+  if (TIME_UNIT.test(text.slice(match[0].length))) return null;
+  const top = match[2] === undefined
+    ? Number(match[1])
+    : Math.max(Number(match[1]), Number(match[2]));
   return top >= 2 ? top : null;
 }
 
 /**
- * Fit a workout's estimated duration to a block's envelope, by whole rounds
- * when the creator wrote rounds. Null = cannot fit; the workout leaves the
- * shortlist. Never invents more than double the written rounds.
+ * Fit a CATALOG workout's estimated duration to a block's envelope, by whole
+ * rounds when the creator wrote rounds, never more than doubling them. Null =
+ * cannot fit, and the workout leaves the shortlist. Built-ins never come
+ * through here; the shortlist builder appends them and clamps them itself.
  *
  * Whole rounds are the only honest way to shorten someone else's workout —
- * "do 3 of 4" is a thing you can actually perform, where "do 46 minutes of a
- * 60-minute workout" is not. So a workout that states rounds is trimmed by
- * rounds or dropped; only a roundless one is capped, and only modestly.
- *
- * The ceiling is hard and the floor is soft. Running over the envelope pushes
- * the day past the minutes the athlete said they had; running under it just
- * means a short block, which is a disappointment rather than a failure.
+ * "do 3 of 4" is a thing you can perform, "do 46 minutes of a 60-minute
+ * workout" is not. Both ends are bounded, but the ceiling binds harder: over
+ * the envelope overruns the day, while under it is merely a short block until
+ * it is too short to be this block's main event.
  */
 export function fitToEnvelope(
   estMinutes: number | null,
   rounds: string | null,
   env: BlockEnvelope,
 ): FittedDuration | null {
-  // The estimate is AI-assigned at capture, so it can arrive missing or
-  // nonsensical. Nothing can be fitted to an unknown duration.
-  if (estMinutes === null || !Number.isFinite(estMinutes) || estMinutes <= 0) return null;
+  // AI-assigned at capture, so it can arrive missing or nonsensical. Minutes
+  // are displayed and summed, so they come back whole.
+  if (estMinutes === null || !Number.isFinite(estMinutes)) return null;
+  const est = Math.round(estMinutes);
+  if (est <= 0) return null;
 
-  if (estMinutes <= env.maxMinutes && estMinutes >= env.minMinutes) {
-    return { minutes: estMinutes, roundsNote: null };
+  if (est <= env.maxMinutes && est >= env.minMinutes) {
+    return { minutes: est, roundsNote: null };
   }
 
   const n = topRounds(rounds);
 
-  if (estMinutes > env.maxMinutes) {
+  if (est > env.maxMinutes) {
     if (n !== null) {
-      const k = Math.max(1, Math.floor((n * env.maxMinutes) / estMinutes));
+      const k = Math.max(1, Math.floor((n * env.maxMinutes) / est));
       if (k < n) {
-        const minutes = Math.round((estMinutes * k) / n);
-        if (minutes <= env.maxMinutes) {
-          return { minutes, roundsNote: `Do ${k} of ${n} rounds` };
-        }
+        const minutes = Math.round((est * k) / n);
+        if (minutes <= env.maxMinutes) return { minutes, roundsNote: `Do ${k} of ${n} rounds` };
       }
-      // Even one round busts the block. Nothing left to cut.
-      //
-      // Note that a workout with rounds never gets the roundless cap, so the
-      // doctrine sometimes costs minutes: 46 over 4 rounds in a 30-45 block
-      // drops to 35 ("do 3 of 4") where a cap would have shaved one minute.
-      // That is the price of only ever prescribing work someone can perform.
+      // Even one round busts the block. Rounds never get the roundless cap, so
+      // 46 over 4 rounds in a 30-45 block drops to 35 rather than shaving one.
       return null;
     }
-    // Roundless: a modest overage caps; past tolerance it doesn't fit.
-    if (estMinutes <= env.maxMinutes * CAP_TOLERANCE) {
+    if (est <= env.maxMinutes * CAP_TOLERANCE) {
       return { minutes: env.maxMinutes, roundsNote: `Cap at ${env.maxMinutes} min` };
     }
     return null;
   }
 
-  // Under the floor. With rounds we can extend (at most doubling), but only
-  // when the shortfall is worth a whole round; without rounds — or within
-  // reach of the floor — a short workout is simply a short block, allowed
-  // as-is. A trim can land here too and is likewise kept: 70 minutes over 2
-  // rounds in a 40-65 block becomes a 35-minute single round, under the floor
-  // but honest, because the floor is soft and the ceiling is not.
-  if (n !== null && estMinutes < env.minMinutes * EXTEND_BELOW) {
-    const k = Math.min(n * 2, Math.ceil((n * env.minMinutes) / estMinutes));
+  // Under the floor: extend by rounds when the shortfall is worth a round,
+  // keep a nearly-long-enough workout as the short block it is, reject one too
+  // short to carry the block. A trim landing here is kept — 70 over 2 rounds
+  // in a 40-65 block is an honest 35-minute single round.
+  if (n !== null && est < env.minMinutes * EXTEND_BELOW) {
+    const k = Math.min(n * 2, Math.ceil((n * env.minMinutes) / est));
     if (k > n) {
-      const minutes = Math.round((estMinutes * k) / n);
+      const minutes = Math.round((est * k) / n);
       if (minutes <= env.maxMinutes) {
         return { minutes, roundsNote: `Do ${k} rounds (written: ${n})` };
       }
     }
   }
-  return { minutes: estMinutes, roundsNote: null };
+  if (est < env.minMinutes * FLOOR_TOLERANCE) return null;
+  return { minutes: est, roundsNote: null };
 }
