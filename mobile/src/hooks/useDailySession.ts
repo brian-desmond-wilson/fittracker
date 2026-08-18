@@ -93,7 +93,10 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         return;
       }
       // Already accepted/completed → show it as stored, never recompose.
-      if (existing && existing.status !== "suggested") {
+      // A workout you picked yourself is never recomposed either, whatever its
+      // status: recomposing would quietly undo the choice the moment the tab
+      // reloaded or the check-in changed.
+      if (existing && (existing.status !== "suggested" || existing.source === "user_pick")) {
         setSession(existing);
         setLoading(false);
         return;

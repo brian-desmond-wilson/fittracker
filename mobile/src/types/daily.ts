@@ -78,9 +78,11 @@ export interface SessionItem {
 export type SectionMinutes = Partial<Record<SessionSection, number>>;
 
 export interface ComposedSession {
-  splitDay: SplitDay;
+  /** NULL for a workout served whole — an unstamped session does not advance
+   *  the rotation (spec 2026-08-17-start-catalog-workout §5). */
+  splitDay: SplitDay | null;
   rampWeek: number;
-  source: "ai" | "rules_fallback";
+  source: "ai" | "rules_fallback" | "user_pick";
   servedCapturedWorkoutId: string | null;
   items: SessionItem[];
   sectionMinutes: SectionMinutes;

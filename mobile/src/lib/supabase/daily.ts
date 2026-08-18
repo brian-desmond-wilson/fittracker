@@ -3,6 +3,9 @@
 // session writes here are the suggestion record itself and status
 // transitions the user's taps cause.
 import { supabase } from "../supabase";
+import { lastStampedSplitDay, rampWeek } from "../dailySplit";
+import { capturedWorkoutToSessionItems, pickDaySession } from "../dailyAdopt";
+import { fetchCapturedWorkout } from "./capture";
 import type {
   ComposedSession,
   DailyCheckin,
@@ -284,7 +287,7 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
         .order("display_order", { ascending: true }),
       supabase
         .from("generated_sessions")
-        .select("session_date, split_day, status")
+        .select("session_date, split_day, status, created_at")
         .eq("user_id", userId)
         .order("session_date", { ascending: true }),
     ]);
@@ -330,14 +333,22 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
   }
 
   const history = historyRes.data ?? [];
-  const lastCompleted = [...history].reverse().find((h: any) => h.status === "completed");
 
   return {
     candidates,
     byExerciseId: new Map(candidates.map((c) => [c.exerciseId, c])),
     skillState,
     regressions,
-    lastCompletedSplitDay: (lastCompleted?.split_day as SplitDay) ?? null,
+    // Reads past unstamped sessions (a catalog workout served whole) to the
+    // last day that actually moved the rotation.
+    lastCompletedSplitDay: lastStampedSplitDay(
+      history.map((h: any) => ({
+        sessionDate: h.session_date,
+        createdAt: h.created_at ?? "",
+        splitDay: h.split_day,
+        status: h.status,
+      })),
+    ),
     firstSessionDate: history[0]?.session_date ?? null,
   };
 }
@@ -348,23 +359,29 @@ export async function fetchTodaySession(
   userId: string,
   date: string,
 ): Promise<StoredSession | null> {
-  const { data, error } = await supabase
+  // A date can hold more than one session since catalog workouts became
+  // startable: the replaced suggestion stays as a skipped row beside the one
+  // you chose, and a second workout after a finished one is a second row.
+  const { data: rows, error } = await supabase
     .from("generated_sessions")
     .select(`
       id, session_date, split_day, ramp_week, source, served_captured_workout_id,
-      status, workout_instance_id, gym_profile_id, section_minutes,
+      status, workout_instance_id, gym_profile_id, section_minutes, created_at,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
         rest_seconds, reason, was_performed, exercise:exercises(name)
       )
     `)
     .eq("user_id", userId)
-    .eq("session_date", date)
-    .maybeSingle();
-  if (error || !data) {
+    .eq("session_date", date);
+  if (error || !rows) {
     if (error) console.error("fetchTodaySession failed:", error);
     return null;
   }
+  const data = pickDaySession(
+    rows.map((r: any) => ({ ...r, createdAt: r.created_at ?? "" })),
+  );
+  if (!data) return null;
   return {
     id: data.id,
     sessionDate: data.session_date,
@@ -409,7 +426,11 @@ export interface SaveSessionInput {
 export async function saveGeneratedSession(input: SaveSessionInput): Promise<string | null> {
   try {
     const existing = await fetchTodaySession(input.userId, input.date);
-    if (existing && existing.status !== "suggested") return existing.id;
+    // The write boundary holds the same rule as the hook: never overwrite a
+    // session the user chose, and never overwrite one already under way.
+    if (existing && (existing.status !== "suggested" || existing.source === "user_pick")) {
+      return existing.id;
+    }
 
     const row = {
       user_id: input.userId,
@@ -426,11 +447,21 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
       status: "suggested",
       inputs_snapshot: input.inputsSnapshot ?? null,
     };
-    const { data, error } = await supabase
-      .from("generated_sessions")
-      .upsert(row, { onConflict: "user_id,session_date" })
-      .select("id")
-      .single();
+    // Not an upsert on (user_id, session_date): that pair is no longer unique.
+    // Only one PENDING session per day is, and a partial index can't back
+    // ON CONFLICT — so rewrite the suggestion we already have, or start one.
+    const { data, error } = existing
+      ? await supabase
+          .from("generated_sessions")
+          .update(row)
+          .eq("id", existing.id)
+          .select("id")
+          .single()
+      : await supabase
+          .from("generated_sessions")
+          .insert(row)
+          .select("id")
+          .single();
     if (error) throw error;
 
     const { error: delError } = await supabase
@@ -502,4 +533,149 @@ export async function completeSession(
     .update({ status: "completed" })
     .eq("id", sessionId);
   if (sessError) console.error("completeSession status failed:", sessError);
+}
+
+// ---------- Adopting a catalog workout ----------
+
+export interface AdoptWorkoutInput {
+  userId: string;
+  capturedWorkoutId: string;
+  /** Sampled once by the caller — the app's no-two-clocks rule. */
+  date: string;
+}
+
+/**
+ * Make a captured workout today's session and return its id.
+ *
+ * Inside the suggest-only boundary: this runs from the user's tap, never from
+ * a compute. Spec §4.
+ *
+ * The pending session for the day is marked skipped rather than overwritten,
+ * so "suggested X, did Y instead" survives as a signal. A session already
+ * COMPLETED on this date is left exactly as it is — rewriting it would make
+ * the rotation lookback reach past a day that was genuinely trained.
+ *
+ * The session is stored unstamped (`split_day` NULL): a workout served whole
+ * is not a push, pull or legs day, so the rotation stands still.
+ */
+export async function adoptCapturedWorkout(
+  input: AdoptWorkoutInput,
+): Promise<string | null> {
+  try {
+    const workout = await fetchCapturedWorkout(input.capturedWorkoutId);
+    if (!workout) throw new Error("workout not found");
+    if (workout.items.length === 0) throw new Error("workout has no movements");
+
+    const [{ data: pending }, { data: firstRow }, { data: gym }, checkin] =
+      await Promise.all([
+        supabase
+          .from("generated_sessions")
+          .select("id")
+          .eq("user_id", input.userId)
+          .eq("session_date", input.date)
+          .in("status", ["suggested", "accepted"]),
+        supabase
+          .from("generated_sessions")
+          .select("session_date")
+          .eq("user_id", input.userId)
+          .order("session_date", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("gym_profiles")
+          .select("id")
+          .eq("user_id", input.userId)
+          .eq("is_active", true)
+          .maybeSingle(),
+        fetchTodayCheckin(input.userId, input.date),
+      ]);
+
+    // Stand the pending session down first: the partial unique index allows
+    // only one per day, so the insert below would collide with it.
+    for (const row of pending ?? []) {
+      const { error: skipError } = await supabase
+        .from("generated_sessions")
+        .update({ status: "skipped" })
+        .eq("id", row.id);
+      if (skipError) throw skipError;
+    }
+
+    const { data: session, error: insError } = await supabase
+      .from("generated_sessions")
+      .insert({
+        user_id: input.userId,
+        session_date: input.date,
+        gym_profile_id: gym?.id ?? null,
+        // No check-in is required to start a workout you chose yourself; the
+        // day's check-in is attached when there happens to be one.
+        checkin_id: checkin?.id ?? null,
+        split_day: null,
+        ramp_week: rampWeek(firstRow?.session_date ?? null, input.date),
+        source: "user_pick",
+        served_captured_workout_id: workout.workoutId,
+        // We did not compose its sections, so we do not time them.
+        section_minutes: null,
+        status: "suggested",
+        inputs_snapshot: null,
+      })
+      .select("id")
+      .single();
+    if (insError) throw insError;
+
+    const items = capturedWorkoutToSessionItems(
+      workout.items.map((i) => ({
+        exerciseId: i.exerciseId,
+        sets: i.sets,
+        reps: i.reps,
+        restSeconds: i.restSeconds,
+      })),
+    );
+    const { error: itemError } = await supabase
+      .from("generated_session_items")
+      .insert(
+        items.map((i) => ({
+          session_id: session.id,
+          exercise_id: i.exerciseId,
+          item_order: i.itemOrder,
+          section: i.section,
+          target_sets: i.targetSets,
+          target_reps: i.targetReps,
+          rest_seconds: i.restSeconds,
+          reason: i.reason,
+        })),
+      );
+    if (itemError) throw itemError;
+
+    return session.id;
+  } catch (e) {
+    const err = e as { code?: string; message?: string; details?: string };
+    console.error(
+      "adoptCapturedWorkout failed:",
+      err?.code ?? "", err?.message ?? String(e), err?.details ?? "",
+    );
+    return null;
+  }
+}
+
+/** Today's session, whatever its state — what Start needs to know before it
+ *  replaces the day. */
+export async function fetchDayStatus(
+  userId: string,
+  date: string,
+): Promise<{ hasPending: boolean; hasCompleted: boolean; inProgress: boolean }> {
+  const { data, error } = await supabase
+    .from("generated_sessions")
+    .select("status, workout_instance_id")
+    .eq("user_id", userId)
+    .eq("session_date", date);
+  if (error) {
+    console.error("fetchDayStatus failed:", error);
+    return { hasPending: false, hasCompleted: false, inProgress: false };
+  }
+  const rows = data ?? [];
+  return {
+    hasPending: rows.some((r) => r.status === "suggested" || r.status === "accepted"),
+    hasCompleted: rows.some((r) => r.status === "completed"),
+    inProgress: rows.some((r) => r.status === "accepted" && r.workout_instance_id),
+  };
 }
