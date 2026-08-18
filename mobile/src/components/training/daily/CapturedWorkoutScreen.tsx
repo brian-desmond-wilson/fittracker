@@ -6,9 +6,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import {
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ExternalLink, Plus, Trash2,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ExternalLink, Play, Plus,
+  Trash2,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { supabase } from "@/src/lib/supabase";
+import { adoptCapturedWorkout, fetchDayStatus } from "@/src/lib/supabase/daily";
+import { getLocalDateString } from "@/src/components/workout-session/helpers";
 import {
   fetchCapturedWorkout,
   replaceCapturedWorkoutItems,
@@ -50,6 +54,7 @@ export function CapturedWorkoutScreen() {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   const editing = draft !== null;
 
@@ -176,6 +181,63 @@ export function CapturedWorkoutScreen() {
     }
     setDraft(null);
     await load();
+  };
+
+  /** Two buttons, resolved to the user's answer. */
+  const confirm = (title: string, message: string, go: string): Promise<boolean> =>
+    new Promise((resolve) => {
+      Alert.alert(title, message, [
+        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+        { text: go, onPress: () => resolve(true) },
+      ]);
+    });
+
+  // Adopts this workout as today's session and hands off to the logging screen
+  // the Today tab uses — from there it IS a daily session, so acceptance,
+  // completion and the performed backfill all work unchanged.
+  const start = async () => {
+    if (!workout || starting) return;
+    setStarting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Not signed in", "Sign in to start a workout.");
+        return;
+      }
+      const today = getLocalDateString(); // one clock sample
+      const day = await fetchDayStatus(user.id, today);
+
+      // No check-in gate: you have overridden the recommendation by choosing
+      // this, so there is nothing left for a check-in to shape.
+      if (day.inProgress) {
+        const ok = await confirm(
+          "Start this instead?",
+          "You're partway through today's session. It'll be set aside — what you've already logged is kept.",
+          "Start this",
+        );
+        if (!ok) return;
+      } else if (day.hasCompleted && !day.hasPending) {
+        const ok = await confirm(
+          "Start this as well?",
+          "You've already trained today. This will be a second session.",
+          "Start it",
+        );
+        if (!ok) return;
+      }
+
+      const sessionId = await adoptCapturedWorkout({
+        userId: user.id,
+        capturedWorkoutId: workout.workoutId,
+        date: today,
+      });
+      if (!sessionId) {
+        Alert.alert("Couldn't start it", "Something went wrong setting up the session. Try again.");
+        return;
+      }
+      router.push({ pathname: `/workout/${sessionId}`, params: { mode: "daily" } });
+    } finally {
+      setStarting(false);
+    }
   };
 
   const header = (
@@ -485,6 +547,28 @@ export function CapturedWorkoutScreen() {
             </TouchableOpacity>
           )}
         </ScrollView>
+
+        {/* Not while editing — you're changing the workout, not starting it.
+            A workout with no movements has nothing to log. */}
+        {!editing && shownItems.length > 0 && (
+          <TouchableOpacity
+            style={[styles.startButton, { bottom: 16 + insets.bottom }]}
+            onPress={start}
+            disabled={starting}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Start ${workout.name} as today's session`}
+          >
+            {starting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Play size={18} color="#FFFFFF" />
+            )}
+            <Text style={styles.startText}>
+              {starting ? "Starting…" : "Start Workout"}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ExerciseSearchModal
@@ -508,7 +592,15 @@ const styles = StyleSheet.create({
   headerActionMuted: { opacity: 0.5 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   missing: { fontSize: 15, color: colors.mutedForeground, textAlign: "center" },
-  scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 112 },
+  startButton: {
+    position: "absolute", left: 20, right: 20, flexDirection: "row", gap: 8,
+    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
+  },
+  startText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
   title: { fontSize: 24, fontWeight: "700", color: colors.foreground },
   titleInput: {
     backgroundColor: colors.input, borderRadius: 8,
