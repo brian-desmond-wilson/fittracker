@@ -101,4 +101,11 @@ export interface StoredSession extends ComposedSession {
   items: (SessionItem & { id: string; name: string; wasPerformed: boolean | null })[];
   /** Empty for pre-block sessions and workouts served whole. */
   blocks: StoredBlock[];
+  /**
+   * What this session was composed from. NULL means the compose never
+   * finished — it is stamped last — so the session is still recomposable.
+   * The tab recomposes a suggested session whose inputs no longer match this;
+   * matching it is what lets a rerolled block survive a refetch.
+   */
+  composeSignature: string | null;
 }

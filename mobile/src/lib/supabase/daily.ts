@@ -387,7 +387,8 @@ export async function fetchTodaySession(
     .from("generated_sessions")
     .select(`
       id, session_date, split_day, ramp_week, source, served_captured_workout_id,
-      status, workout_instance_id, gym_profile_id, section_minutes, created_at,
+      status, workout_instance_id, gym_profile_id, section_minutes,
+      compose_signature, created_at,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
         rest_seconds, reason, was_performed, exercise:exercises(name)
@@ -449,6 +450,7 @@ export async function fetchTodaySession(
         name: b.name,
       }))
       .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
+    composeSignature: data.compose_signature ?? null,
   };
 }
 
@@ -460,6 +462,9 @@ export interface SaveSessionInput {
   session: ComposedSession;
   /** Block plan for a block-composed session; empty for legacy shapes. */
   blocks: BlockPick[];
+  /** The compose inputs, hashed by the caller. Stamped onto the row last, so
+   *  a session that carries it is one that finished writing. */
+  composeSignature: string;
   inputsSnapshot: unknown;
 }
 
@@ -545,7 +550,11 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
     // session with items and no plan to explain them, and a suggestion is only
     // recomposed when its inputs change, so that window does not close by
     // itself. The rows to prune are the ones read at the top of this function,
-    // before any write: an insert made a new session, so it has none.
+    // before any write: an insert made a new session, so it has none. Scoping
+    // the delete to those ids means a row another writer INSERTED in the
+    // meantime survives — its id cannot be in a list read before it existed.
+    // It says nothing about a row updated in place, which the upsert above
+    // would have overwritten anyway.
     if (blocks.length > 0) {
       const { error: blkError } = await supabase.from("generated_session_blocks").upsert(
         blocks.map((b) => ({
@@ -574,6 +583,21 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
         .in("id", staleBlockIds);
       if (pruneError) throw pruneError;
     }
+
+    // Stamped LAST, on its own, and never as part of the row above. The tab
+    // treats a session carrying the current signature as one it already built
+    // and leaves it alone — which is what lets a rerolled block survive a
+    // refetch. Everything above can fail partway; a signature written before
+    // them would mark a half-written session as finished and nothing would
+    // ever recompose it, so the stamp has to mean "all of that landed".
+    //
+    // Its own failure is not the save's failure: the session is written and
+    // correct, it is merely unclaimed, and the next load composes it again.
+    const { error: sigError } = await supabase
+      .from("generated_sessions")
+      .update({ compose_signature: input.composeSignature })
+      .eq("id", data.id);
+    if (sigError) console.error("saveGeneratedSession signature stamp failed:", sigError);
     return data.id;
   } catch (e) {
     // The bare object logs as "{"code":"PGRST…" and truncates in the on-device

@@ -219,6 +219,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         // Exercise-level composition has no block plan. Task 13 wires the
         // block engine in here.
         blocks: [],
+        composeSignature: signature,
         inputsSnapshot: aiBody,
       });
       if (runId !== runIdRef.current) return;
