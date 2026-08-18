@@ -22,7 +22,7 @@ const shortlists: BlockShortlists = {
 
 describe("composeBlockFallback", () => {
   it("takes the top candidate of every offered block, in block order", () => {
-    const picks = composeBlockFallback(shortlists);
+    const picks = composeBlockFallback(shortlists, 120);
     expect(picks.map((p) => p.block)).toEqual(["warmup", "mobility", "main", "cooldown"]);
     expect(picks.find((p) => p.block === "main")!.workoutId).toBe("m1");
   });
@@ -30,18 +30,18 @@ describe("composeBlockFallback", () => {
     const jumbled: BlockShortlists = {
       cooldown: [cand("cd1")], main: [cand("m1")], warmup: [cand("wu1")],
     };
-    expect(composeBlockFallback(jumbled).map((p) => p.block))
+    expect(composeBlockFallback(jumbled, 120).map((p) => p.block))
       .toEqual(["warmup", "main", "cooldown"]);
   });
   it("skips empty shortlists", () => {
-    const picks = composeBlockFallback({ ...shortlists, conditioning: [] });
-    expect(picks.some((p) => p.block === "conditioning")).toBe(false);
+    const picks = composeBlockFallback({ ...shortlists, conditioning: [], mobility: [] }, 120);
+    expect(picks.map((p) => p.block)).toEqual(["warmup", "main", "cooldown"]);
   });
   it("carries the candidate's name, minutes and rounds note, and no reason", () => {
     const trimmed: BlockShortlists = {
       main: [{ ...cand("m1", 40), name: "Murph-ish", roundsNote: "Do 3 of 4 rounds" }],
     };
-    expect(composeBlockFallback(trimmed)[0]).toEqual({
+    expect(composeBlockFallback(trimmed, 60)[0]).toEqual({
       block: "main",
       workoutId: "m1",
       builtinKey: null,
@@ -54,9 +54,68 @@ describe("composeBlockFallback", () => {
     });
   });
   it("carries a built-in by its key, with no workout id", () => {
-    const picks = composeBlockFallback({ warmup: [cand("builtin-warmup-full", 7, true)] });
+    const picks = composeBlockFallback({ warmup: [cand("builtin-warmup-full", 7, true)] }, 60);
     expect(picks[0].builtinKey).toBe("builtin-warmup-full");
     expect(picks[0].workoutId).toBeNull();
+  });
+
+  it("skips a candidate that doesn't fit and takes the next one that does", () => {
+    const picks = composeBlockFallback({ main: [cand("long", 50), cand("short", 20)] }, 20);
+    expect(picks.map((p) => p.workoutId)).toEqual(["short"]);
+  });
+
+  it("counts a candidate that lands exactly on the ceiling as fitting", () => {
+    const picks = composeBlockFallback({ main: [cand("exact", 22), cand("small", 5)] }, 20);
+    expect(picks[0].workoutId).toBe("exact"); // 22 into 20 + 10%
+  });
+
+  it("spends the budget as it walks, so later blocks see what's left", () => {
+    const picks = composeBlockFallback(
+      { main: [cand("m", 40)], cooldown: [cand("cd-long", 10), cand("cd-short", 4)] },
+      40,
+    );
+    expect(picks.map((p) => p.workoutId)).toEqual(["m", "cd-short"]);
+  });
+
+  it("falls to the shortest candidate rather than dropping a block", () => {
+    const picks = composeBlockFallback(
+      { main: [cand("long", 50), cand("mid", 40), cand("short", 30)] },
+      20,
+    );
+    // A short main is still a main; nothing here fits 22 minutes.
+    expect(picks.map((p) => p.workoutId)).toEqual(["short"]);
+  });
+
+  it("drops conditioning — and only conditioning — when nothing fits", () => {
+    const picks = composeBlockFallback(
+      { main: [cand("m", 40)], conditioning: [cand("c", 20)], cooldown: [cand("cd", 5)] },
+      40,
+    );
+    expect(picks.map((p) => p.block)).toEqual(["main", "cooldown"]);
+  });
+
+  it("keeps a day of envelope maxima inside the ceiling", () => {
+    // The 75-minute case: every envelope at its maximum sums to 100, which the
+    // validator would reject. The fallback is the path taken when the model's
+    // answer was rejected, so it must not hand the same overrun back.
+    const maxima: BlockShortlists = {
+      warmup: [cand("wu", 10)],
+      mobility: [cand("mo", 10)],
+      main: [cand("m", 50)],
+      conditioning: [cand("c", 20)],
+      cooldown: [cand("cd", 10)],
+    };
+    const picks = composeBlockFallback(maxima, 75);
+    expect(picks.map((p) => p.block)).toEqual(["warmup", "mobility", "main", "cooldown"]);
+    expect(picks.reduce((s, p) => s + p.minutes, 0)).toBe(80); // ≤ 82.5
+  });
+
+  it("an unusable budget bounds nothing — a session still comes back", () => {
+    // This path cannot refuse the way the validator can.
+    for (const budget of [NaN, 0, -30]) {
+      const picks = composeBlockFallback(shortlists, budget);
+      expect(picks.map((p) => p.workoutId)).toEqual(["wu1", "mo1", "m1", "cd1"]);
+    }
   });
 });
 
