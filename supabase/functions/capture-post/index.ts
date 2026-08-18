@@ -279,30 +279,43 @@ Respond as JSON: {"summary": string}`,
       const items = (Array.isArray(body.items) ? body.items : []) as {
         name?: string; sets?: number | null; reps?: string | null; duration?: string | null;
       }[];
+      // A bare name is not something to classify. The rules below forbid empty
+      // roles and empty primary muscles, so with nothing to read the model
+      // invents both — and invented tags validate, save, and stamp the workout
+      // classified. Worse than a wasted call: a wrong answer nobody rechecks.
+      if (items.length === 0 && !caption && !rawProtocol) {
+        throw new Error('items, caption, or rawProtocol is required');
+      }
 
       const SYSTEM = `You classify one saved workout for a daily session
 recommender that assembles five-phase days: warmup -> mobility -> main ->
 conditioning -> cooldown.
 
 Rules:
-- "block_roles": every phase this workout could serve, from exactly that
-  vocabulary, lowercase. Multi-role is normal (a stretching routine serves
-  mobility and cooldown). A loaded strength or metcon piece is "main"; short
-  high-heart-rate finishers are "conditioning". NEVER empty — every workout
-  serves at least one phase, and "main" is the answer when nothing else fits.
+- "block_roles": every phase this workout could serve, written as exactly
+  these tokens and no others: "warmup", "mobility", "main", "conditioning",
+  "cooldown". Lowercase, no spaces, no hyphens — "warm-up" is not a value.
+  Multi-role is normal (a stretching routine serves mobility and cooldown). A
+  loaded strength or metcon piece is "main"; short high-heart-rate finishers
+  are "conditioning". NEVER empty — every workout serves at least one phase,
+  and "main" is the answer when nothing else fits.
 - "primary_muscles"/"secondary_muscles": use ONLY names from the provided
   muscle list, spelled exactly as they appear there. Primary = what the
   workout is for; secondary = what assists. Never put the same muscle in both.
   "primary_muscles" must NEVER be empty: when the caption is vague, or the
   workout is full-body, judge from the movement names and list the regions the
   work plainly loads.
-- "est_minutes": how long one honest pass takes, INCLUDING the written rounds
-  and sensible rests. A whole number between 1 and 240 — not a range, not a
-  string. Rounds repeat the WHOLE movement list; a movement's own set count is
-  its own, so never multiply the two together. Given a range of rounds
-  ("3-4"), estimate the TOP of the range: the number must describe the full
-  prescription as written, because the app trims rounds down from it and needs
-  the two to agree.
+- "est_minutes": how long the whole prescription takes start to finish, done
+  honestly — INCLUDING the written rounds and sensible rests. A whole number
+  between 1 and 240; not a range, not a string. Rounds repeat the WHOLE
+  movement list; a movement's own set count is its own, so never multiply the
+  two together. Given a range of rounds ("3-4"), estimate the TOP of the
+  range: the number must describe the full prescription as written, because
+  the app trims rounds down from it and needs the two to agree.
+  NEVER null and never omitted. Nothing states a duration in most captions —
+  that is normal, and you estimate anyway, from the movements, how many there
+  are, and the work each one is. An unestimated workout is dropped from every
+  session the recommender builds, so a rough number beats no number.
 - "intensity": low | moderate | high — systemic effort of the workout as
   written, not of its hardest movement.
 - "skill_level": Beginner | Intermediate | Advanced — the technical demand of
@@ -313,9 +326,17 @@ Respond as JSON:
  "secondary_muscles": string[], "est_minutes": number,
  "intensity": string, "skill_level": string}`;
 
+      // Labelled, because the numbers are the input to a duration estimate and
+      // a bare "8" beside "sets: 4" could be reps, seconds or rounds. The
+      // values are the creator's verbatim strings ("21-15-9", "AMRAP",
+      // "hold to failure"), so a prefix labels them where a suffix would not.
       const movementLines = items
-        .map((i) => [i.name, i.sets ? `${i.sets} sets` : null, i.reps, i.duration]
-          .filter(Boolean).join(' · '))
+        .map((i) => [
+          i.name,
+          i.sets ? `sets: ${i.sets}` : null,
+          i.reps ? `reps: ${i.reps}` : null,
+          i.duration ? `duration: ${i.duration}` : null,
+        ].filter(Boolean).join(' · '))
         .filter((l) => l !== '')
         .join('\n');
       const user = [
@@ -323,7 +344,7 @@ Respond as JSON:
         rounds ? `Rounds: ${rounds}` : '',
         `Movements:\n${movementLines || '(none listed)'}`,
         rawProtocol ? `Prescription as written:\n${rawProtocol}` : '',
-        caption ? `Original caption:\n${caption.slice(0, 2000)}` : '',
+        caption ? `Original caption:\n${caption}` : '',
       ].filter((l) => l !== '')
         // Appended after the filter so this separator survives it.
         .concat('', `Allowed muscles: ${muscles.join(', ')}`)
