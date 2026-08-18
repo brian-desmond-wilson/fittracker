@@ -775,7 +775,17 @@ export async function completeSession(
     .from("captured_workout_muscles")
     .select("captured_workout_id, is_primary, muscle_region:muscle_regions(name)")
     .in("captured_workout_id", ids);
-  if (muscleError) console.error("completeSession muscle read failed:", muscleError);
+  if (muscleError) {
+    // Not recoverable later, so not written now. The muscles are denormalized
+    // at time of performance precisely so nothing ever rewrites them — and
+    // nothing does; this runs once, from the finish handler. Carrying on past
+    // a blip would write rows that are present, unique-constrained and
+    // permanently muscle-blind, and coverage would read the day as trained
+    // while hitting nothing. A missing row is the same day read as untrained,
+    // which at least errs toward more recovery rather than less.
+    console.error("completeSession: ledger skipped, muscle read failed:", muscleError);
+    return;
+  }
   const musclesByWorkout = new Map<string, { name: string; isPrimary: boolean }[]>();
   for (const m of (muscleRows ?? []) as any[]) {
     const name = m.muscle_region?.name;
