@@ -63,9 +63,14 @@ import {
   confirmConceptRating,
   fetchMealLibrary,
   logMeal,
+  saveLogAsMeal,
   undoMealLog,
   MealLoggedButDecrementFailed,
+  type SourceSuggestion,
 } from "@/src/lib/supabase/mealLibrary";
+import { resolveSourceName } from "./meals/MealSourceFields";
+import { KeepLogModal } from "./meals/KeepLogModal";
+import type { MealSourceKind } from "@/src/lib/mealLibraryView";
 import { tasteAskFor } from "@/src/lib/tasteAsk";
 import { markSuggestionActedOn } from "@/src/lib/supabase/eatNextLog";
 import type { ConceptRating } from "@/src/types/nutrition-preferences";
@@ -138,6 +143,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // Edit-meal modal
   const [editingMeal, setEditingMeal] = useState<MealLog | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  // The log being saved to the Meal Library retroactively (editor → keep).
+  const [keepingLog, setKeepingLog] = useState<MealLog | null>(null);
+  const [savingKeep, setSavingKeep] = useState(false);
 
   // Quick adjustment modal
   const [quickAdjustVisible, setQuickAdjustVisible] = useState(false);
@@ -426,6 +434,26 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   useEffect(() => {
     fetchAllSavedFoods();
   }, [fetchAllSavedFoods]);
+
+  // For the log sheet's keep switch and the log editor's save action. Served
+  // from the library cache the recommender on this screen already populates,
+  // so in practice this costs no extra round trip. Empty on failure — the
+  // source field still works, it just offers no chips.
+  const [sourceSuggestions, setSourceSuggestions] = useState<SourceSuggestion[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const library = await fetchMealLibrary();
+        if (!cancelled) setSourceSuggestions(library.sourceSuggestions);
+      } catch (e) {
+        console.error("Error fetching source suggestions:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Pull the user back to Today when they start a logging action — typing
   // in the search bar or opening the add form. Otherwise results/input
@@ -1173,15 +1201,56 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
       if (error) throw error;
 
+      // The keep switch: the log above is already safe, so this runs after it
+      // and fails on its own — a library the save couldn't reach must not cost
+      // the day its record of the meal. The just-written log is claimed by the
+      // backfill inside `saveLogAsMeal` (its meal_id is still null).
+      //
+      // Category rides the logging slot: a thing kept from the Snack slot is
+      // filed under Snacks. Refiling to Shakes or anywhere else is a library
+      // edit, deliberately not a question this form asks.
+      let kept = false;
+      if (addForm.keep) {
+        try {
+          await saveLogAsMeal(
+            user.id,
+            {
+              name: mealData.name,
+              calories: mealData.calories,
+              protein: mealData.protein,
+              carbs: mealData.carbs,
+              fats: mealData.fats,
+              sugars: mealData.sugars,
+              sodium_mg: mealData.sodium_mg,
+              fiber_g: mealData.fiber_g,
+              saved_food_id: null,
+            },
+            {
+              category: mealType,
+              source_kind: addForm.keepSourceKind,
+              source_name: resolveSourceName(addForm.keepSourceKind, addForm.keepSourceName),
+            },
+          );
+          kept = true;
+        } catch (e) {
+          console.error("keep for next time:", e);
+          Alert.alert(
+            "Logged, but couldn't save it for next time",
+            "Today's log is safe. You can still save it from the Meal Library later.",
+          );
+        }
+      }
+
       if (inserted?.id) {
         const calLabel = mealData.calories ? `${mealData.calories} cal` : null;
-        showUndoFor(
-          inserted.id,
-          calLabel
-            ? `Logged ${mealData.name} · ${calLabel}`
-            : `Logged ${mealData.name}`,
-          null,
-        );
+        const parts = [
+          calLabel ? `Logged ${mealData.name} · ${calLabel}` : `Logged ${mealData.name}`,
+          // Undo removes today's log only; the kept meal outlives it on
+          // purpose — "I didn't eat this today" and "I'll never order this
+          // again" are different claims.
+          ...(kept ? ["saved to library"] : []),
+        ];
+        showUndoFor(inserted.id, parts.join(" · "), null);
       }
 
       // Invalidate cache for the date the meal was added to
@@ -1336,6 +1405,64 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       Alert.alert("Error", "Failed to save changes");
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  // The retroactive keep (editor → "Save to Meal Library"): same write the
+  // log sheet's switch runs, fed from the stored log instead of the form.
+  const handleKeepLog = async (
+    log: MealLog,
+    source: { kind: MealSourceKind; name: string | null },
+  ) => {
+    try {
+      setSavingKeep(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const { linkedLogs } = await saveLogAsMeal(
+        user.id,
+        {
+          name: log.name,
+          calories: log.calories,
+          protein: log.protein,
+          carbs: log.carbs,
+          fats: log.fats,
+          sugars: log.sugars,
+          sodium_mg: log.sodium_mg,
+          fiber_g: log.fiber_g,
+          saved_food_id: log.saved_food_id,
+        },
+        {
+          category: log.meal_type,
+          source_kind: source.kind,
+          source_name: source.name,
+        },
+      );
+      setKeepingLog(null);
+      // The backfill re-parented this day's matching logs; refetch so the
+      // rail's rows carry their new provenance.
+      setMealsCache((prev) => {
+        const next = new Map(prev);
+        next.delete(log.date);
+        return next;
+      });
+      await fetchMealsForDate(viewingDate, true);
+      // Nothing on this screen visibly changes when the save lands, so the
+      // save has to say so itself — unlike the promotion shelf, where the row
+      // disappearing is the receipt.
+      Alert.alert(
+        "Saved to your Meal Library",
+        linkedLogs > 1
+          ? `“${log.name}” joined the library, along with ${linkedLogs - 1} earlier ${linkedLogs - 1 === 1 ? "log" : "logs"} of it.`
+          : `You can now search and log “${log.name}” any day.`,
+      );
+    } catch (e) {
+      console.error("save log as meal:", e);
+      Alert.alert(
+        "Couldn't save that as a meal",
+        e instanceof Error ? e.message : "Try again.",
+      );
+    } finally {
+      setSavingKeep(false);
     }
   };
 
@@ -2276,6 +2403,22 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           setEditingMeal(null);
           handleDeleteMeal(mealId);
         }}
+        // The editor closes first: the keep modal replaces it rather than
+        // stacking on it — two card-over-scrim layers would fight for the
+        // same center of the same screen.
+        onSaveToLibrary={(log) => {
+          setEditingMeal(null);
+          setKeepingLog(log);
+        }}
+      />
+
+      {/* Retroactive keep — the source question for a log being saved late. */}
+      <KeepLogModal
+        log={keepingLog}
+        suggestions={sourceSuggestions}
+        saving={savingKeep}
+        onClose={() => setKeepingLog(null)}
+        onSave={handleKeepLog}
       />
 
       {/* Quick Adjustment Modal */}
@@ -2334,6 +2477,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         onManualOpenChange={setLogSheetManual}
         onSubmitManual={handleAddMeal}
         submitting={loggingFoodId !== null}
+        sourceSuggestions={sourceSuggestions}
       />
 
       {/* Undo snackbar */}

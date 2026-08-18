@@ -62,6 +62,10 @@ interface MealLogEditorModalProps {
   onSave: (updates: MealLogEdit) => void;
   /** Setting the portion to none is a deletion, not a zero-calorie receipt. */
   onDelete?: (mealId: string) => void;
+  /** Offered only for a log that names no meal — the retroactive door for a
+   *  hand-typed thing you now know you'll eat again. The parent runs the small
+   *  source flow; this modal only surfaces the way in. */
+  onSaveToLibrary?: (log: MealLog) => void;
 }
 
 const MEAL_TYPES: { value: MealType; label: string }[] = [
@@ -103,6 +107,7 @@ export function MealLogEditorModal({
   onClose,
   onSave,
   onDelete,
+  onSaveToLibrary,
 }: MealLogEditorModalProps) {
   const [name, setName] = useState("");
   const [mealType, setMealType] = useState<MealType>("breakfast");
@@ -420,6 +425,22 @@ export function MealLogEditorModal({
               accessibilityLabel="Edit exact amounts"
             >
               <Text style={styles.exactLinkText}>Edit exact amounts</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* The retroactive keep: a log that names no meal is a thing the
+              library has never heard of, and this is where you notice —
+              looking at yesterday's shake. Hidden for logs that came FROM a
+              meal; those are already kept. */}
+          {meal && meal.meal_id === null && onSaveToLibrary && (
+            <TouchableOpacity
+              onPress={() => onSaveToLibrary(meal)}
+              disabled={saving}
+              style={styles.exactLink}
+              accessibilityRole="button"
+              accessibilityLabel="Save to Meal Library"
+            >
+              <Text style={styles.exactLinkText}>Save to Meal Library</Text>
             </TouchableOpacity>
           )}
         </Card>

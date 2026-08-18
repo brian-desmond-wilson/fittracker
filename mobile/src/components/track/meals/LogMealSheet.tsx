@@ -17,6 +17,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -32,6 +33,8 @@ import { mealFaceUrlFor } from "@/src/lib/mealFace";
 import { computeMealTotals } from "@/src/lib/supabase/mealLibrary";
 import type { MealAddFormState } from "./useMealAddForm";
 import { monogram } from "@/src/lib/vendorMonogram";
+import { MealSourceFields } from "./MealSourceFields";
+import type { SourceSuggestion } from "@/src/lib/supabase/mealLibrary";
 
 const MEAL_TYPES: { value: MealType; label: string }[] = [
   { value: "breakfast", label: "Breakfast" },
@@ -91,6 +94,9 @@ interface LogMealSheetProps {
   onManualOpenChange: (open: boolean) => void;
   onSubmitManual: () => void;
   submitting: boolean;
+  /** For the keep switch's source picker — vendors you keep plus names your
+   *  meals already carry. */
+  sourceSuggestions: SourceSuggestion[];
 }
 
 /** The picture the shelves would show for this meal — its own, else the first
@@ -146,6 +152,7 @@ export function LogMealSheet({
   onManualOpenChange,
   onSubmitManual,
   submitting,
+  sourceSuggestions,
 }: LogMealSheetProps) {
   const [contextOpen, setContextOpen] = React.useState(false);
 
@@ -452,6 +459,35 @@ export function LogMealSheet({
                 </View>
                 <View style={styles.half} />
               </View>
+
+              {/* The gym-shake door: a typed log is gone the moment it is
+                  saved, and re-buying the same thing next week means re-typing
+                  it. The switch keeps it — the log still lands on today, and
+                  the thing itself joins the Meal Library, searchable from this
+                  very sheet next time. */}
+              <View style={styles.keepRow}>
+                <View style={styles.keepBody}>
+                  <Text style={styles.keepLabel}>Keep this for next time</Text>
+                  <Text style={styles.keepSub}>
+                    Saves it to your Meal Library so you can log it again with one tap.
+                  </Text>
+                </View>
+                <Switch
+                  value={form.keep}
+                  onValueChange={form.setKeep}
+                  disabled={submitting}
+                />
+              </View>
+              {form.keep && (
+                <MealSourceFields
+                  sourceKind={form.keepSourceKind}
+                  onSourceKindChange={form.setKeepSourceKind}
+                  sourceName={form.keepSourceName}
+                  onSourceNameChange={form.setKeepSourceName}
+                  suggestions={sourceSuggestions}
+                  disabled={submitting}
+                />
+              )}
             </>
           ) : (
             <>
@@ -718,6 +754,17 @@ const styles = StyleSheet.create({
 
   label: { ...typography.section, marginTop: spacing.lg, marginBottom: spacing.sm },
   subLabel: { ...typography.caption, marginBottom: spacing.xs },
+  // Same line geometry as MealBuilder's switch rows, so "keep this" reads as
+  // the same kind of decision there and here.
+  keepRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.lg,
+  },
+  keepBody: { flex: 1, gap: 2 },
+  keepLabel: { ...typography.body, color: colors.text },
+  keepSub: { ...typography.caption, color: colors.textFaint },
   input: {
     backgroundColor: colors.surface2,
     borderWidth: 1,

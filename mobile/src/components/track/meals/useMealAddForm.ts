@@ -1,5 +1,6 @@
 import { useState, Dispatch, SetStateAction } from "react";
 import { MealType, SavedFood } from "@/src/types/track";
+import type { MealSourceKind } from "@/src/lib/mealLibraryView";
 
 // Bundles the manual "Log Meal" form field state so the screen doesn't carry a
 // dozen loose useState hooks. Behavior is unchanged from the inline version.
@@ -26,6 +27,14 @@ export interface MealAddFormState {
   setSodiumMg: Dispatch<SetStateAction<string>>;
   fiberG: string;
   setFiberG: Dispatch<SetStateAction<string>>;
+  // "Keep this for next time" — save the typed thing to the Meal Library as
+  // well as logging it, so it can be searched and re-logged on another day.
+  keep: boolean;
+  setKeep: Dispatch<SetStateAction<boolean>>;
+  keepSourceKind: MealSourceKind;
+  setKeepSourceKind: Dispatch<SetStateAction<MealSourceKind>>;
+  keepSourceName: string;
+  setKeepSourceName: Dispatch<SetStateAction<string>>;
   // Reset to defaults, dating the form to `base` (the viewing date).
   reset: (base: Date) => void;
   // Quick-fill name + macros from a recent-food chip.
@@ -44,6 +53,12 @@ export function useMealAddForm(): MealAddFormState {
   const [sugars, setSugars] = useState("");
   const [sodiumMg, setSodiumMg] = useState("");
   const [fiberG, setFiberG] = useState("");
+  const [keep, setKeep] = useState(false);
+  // "Bought out" leads because the keep switch exists for the spontaneous
+  // purchase — a gym shake, a restaurant plate. A home recipe worth keeping
+  // goes through the meal builder, where it can carry its ingredients.
+  const [keepSourceKind, setKeepSourceKind] = useState<MealSourceKind>("out");
+  const [keepSourceName, setKeepSourceName] = useState("");
 
   const reset = (base: Date) => {
     setSelectedDate(base);
@@ -56,6 +71,9 @@ export function useMealAddForm(): MealAddFormState {
     setSugars("");
     setSodiumMg("");
     setFiberG("");
+    setKeep(false);
+    setKeepSourceKind("out");
+    setKeepSourceName("");
   };
 
   const fillFromChip = (food: SavedFood) => {
@@ -90,6 +108,12 @@ export function useMealAddForm(): MealAddFormState {
     setSodiumMg,
     fiberG,
     setFiberG,
+    keep,
+    setKeep,
+    keepSourceKind,
+    setKeepSourceKind,
+    keepSourceName,
+    setKeepSourceName,
     reset,
     fillFromChip,
   };
