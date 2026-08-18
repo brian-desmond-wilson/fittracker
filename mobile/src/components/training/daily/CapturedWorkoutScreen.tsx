@@ -13,6 +13,8 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { adoptCapturedWorkout, fetchDayStatus } from "@/src/lib/supabase/daily";
 import { getLocalDateString } from "@/src/components/workout-session/helpers";
+import { StartModeSheet } from "@/src/components/workout-session/StartModeSheet";
+import type { SessionMode } from "@/src/components/workout-session/StartModeSheet";
 import {
   fetchCapturedWorkout,
   replaceCapturedWorkoutItems,
@@ -55,6 +57,7 @@ export function CapturedWorkoutScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [modeSheetOpen, setModeSheetOpen] = useState(false);
 
   const editing = draft !== null;
 
@@ -195,7 +198,7 @@ export function CapturedWorkoutScreen() {
   // Adopts this workout as today's session and hands off to the logging screen
   // the Today tab uses — from there it IS a daily session, so acceptance,
   // completion and the performed backfill all work unchanged.
-  const start = async () => {
+  const start = async (recordMode: SessionMode, startedAtMs: number) => {
     if (!workout || starting) return;
     setStarting(true);
     try {
@@ -234,7 +237,14 @@ export function CapturedWorkoutScreen() {
         Alert.alert("Couldn't start it", "Something went wrong setting up the session. Try again.");
         return;
       }
-      router.push({ pathname: `/workout/${sessionId}`, params: { mode: "daily" } });
+      router.push({
+        pathname: `/workout/${sessionId}`,
+        params: {
+          mode: "daily",
+          recordMode,
+          startedAtMs: String(startedAtMs),
+        },
+      });
     } finally {
       setStarting(false);
     }
@@ -554,7 +564,7 @@ export function CapturedWorkoutScreen() {
           {!editing && shownItems.length > 0 && (
             <TouchableOpacity
               style={styles.startButton}
-              onPress={start}
+              onPress={() => setModeSheetOpen(true)}
               disabled={starting}
               activeOpacity={0.8}
               accessibilityRole="button"
@@ -579,6 +589,18 @@ export function CapturedWorkoutScreen() {
         onClose={() => setPickerOpen(false)}
         onSelectExercise={addExercise}
       />
+
+      {workout && (
+        <StartModeSheet
+          visible={modeSheetOpen}
+          workoutName={workout.name}
+          onStart={(recordMode, startedAtMs) => {
+            setModeSheetOpen(false);
+            start(recordMode, startedAtMs);
+          }}
+          onClose={() => setModeSheetOpen(false)}
+        />
+      )}
     </>
   );
 }
