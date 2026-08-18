@@ -237,6 +237,92 @@ Respond as JSON: {"summary": string}`,
       return json({ summary: summary === '' ? null : summary });
     }
 
+    // Block-recommender tags for one captured workout. Suggest only: returns
+    // tags the client validates (workoutTagValidate.ts) and saves itself.
+    // Used at capture time, from the edit screen, and by the lazy backfill.
+    if (body.action === 'classify') {
+      if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
+      const name = String(body.name ?? '').trim();
+      if (!name) throw new Error('name is required');
+      const rounds = String(body.rounds ?? '').trim();
+      const caption = String(body.caption ?? '').trim();
+      const rawProtocol = String(body.rawProtocol ?? '').trim();
+      const muscles = (Array.isArray(body.muscles) ? body.muscles : []) as string[];
+      // Without a vocabulary the model has nothing to name a primary muscle
+      // from, and the validator rejects an answer with none — so an empty list
+      // is a guaranteed-wasted model call. Fail before spending it.
+      if (muscles.length === 0) throw new Error('muscles is required');
+      const items = (Array.isArray(body.items) ? body.items : []) as {
+        name?: string; sets?: number | null; reps?: string | null; duration?: string | null;
+      }[];
+
+      const SYSTEM = `You classify one saved workout for a daily session
+recommender that assembles five-phase days: warmup -> mobility -> main ->
+conditioning -> cooldown.
+
+Rules:
+- "block_roles": every phase this workout could serve, from exactly that
+  vocabulary, lowercase. Multi-role is normal (a stretching routine serves
+  mobility and cooldown). A loaded strength or metcon piece is "main"; short
+  high-heart-rate finishers are "conditioning". NEVER empty — every workout
+  serves at least one phase, and "main" is the answer when nothing else fits.
+- "primary_muscles"/"secondary_muscles": use ONLY names from the provided
+  muscle list, spelled exactly as they appear there. Primary = what the
+  workout is for; secondary = what assists. Never put the same muscle in both.
+  "primary_muscles" must NEVER be empty: when the caption is vague, or the
+  workout is full-body, judge from the movement names and list the regions the
+  work plainly loads.
+- "est_minutes": how long one honest pass takes, INCLUDING the written rounds
+  and sensible rests. A whole number between 1 and 240 — not a range, not a
+  string. Rounds repeat the WHOLE movement list; a movement's own set count is
+  its own, so never multiply the two together. Given a range of rounds
+  ("3-4"), estimate the middle.
+- "intensity": low | moderate | high — systemic effort of the workout as
+  written, not of its hardest movement.
+- "skill_level": Beginner | Intermediate | Advanced — the technical demand of
+  its hardest movement.
+
+Respond as JSON:
+{"block_roles": string[], "primary_muscles": string[],
+ "secondary_muscles": string[], "est_minutes": number,
+ "intensity": string, "skill_level": string}`;
+
+      const movementLines = items
+        .map((i) => [i.name, i.sets ? `${i.sets} sets` : null, i.reps, i.duration]
+          .filter(Boolean).join(' · '))
+        .filter((l) => l !== '')
+        .join('\n');
+      const user = [
+        `Workout: ${name}`,
+        rounds ? `Rounds: ${rounds}` : '',
+        `Movements:\n${movementLines || '(none listed)'}`,
+        rawProtocol ? `Prescription as written:\n${rawProtocol}` : '',
+        caption ? `Original caption:\n${caption.slice(0, 2000)}` : '',
+      ].filter((l) => l !== '')
+        // Appended after the filter so this separator survives it.
+        .concat('', `Allowed muscles: ${muscles.join(', ')}`)
+        .join('\n');
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: SYSTEM },
+            { role: 'user', content: user },
+          ],
+        }),
+      });
+      if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') throw new Error('empty model response');
+      // Parsed only to fail fast; the client validates every field.
+      return json({ tags: JSON.parse(content) });
+    }
+
     if (body.action === 'extract') {
       if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
       const caption = String(body.caption ?? '').trim();
