@@ -38,6 +38,11 @@ const SECTION_RANK: Record<SessionSection, number> = {
   warmup: 0, mobility: 1, main: 2, accessory: 3, bfr: 4, cooldown: 5,
 };
 
+/** Where a reroll parks its new item rows until the sequence is rebuilt. Past
+ *  any real session's length, so the staging order is never mistaken for a
+ *  position in the day. */
+const REROLL_ITEM_ORDER_BASE = 1000;
+
 // ---------- Gyms ----------
 
 const GYM_PRESETS: Record<string, string[]> = {
@@ -824,6 +829,18 @@ export async function completeSession(
  * the day past the budget. section_minutes is what the Today tab sums for its
  * planned-minutes line, so it is recomputed from the blocks as they now stand
  * — §6 says the totals re-flow, and nothing else would ever put them right.
+ * compose_signature is deliberately left alone: a reroll modifies a plan built
+ * from those inputs, it does not compose a new one from different ones.
+ *
+ * These are four statements and not a transaction, and unlike a compose there
+ * is no later pass to tidy up after one — a reroll is a decision the user made
+ * and nothing recomputes it. So the block row, which is the half the Today tab
+ * renders, is written LAST. A failure before it leaves the plan on screen
+ * exactly as it was, which is what returning false says, and the stale half is
+ * the invisible one: the session's item rows already belong to the new
+ * workout. Starting the day would then log the new block's movements under the
+ * old block's name. Better than the reverse — a name the user chose over
+ * movements that were never it — but still wrong, and worth knowing about.
  */
 export async function rerollBlock(
   sessionId: string,
@@ -856,19 +873,6 @@ export async function rerollBlock(
       return false;
     }
 
-    const { error: upError } = await supabase
-      .from("generated_session_blocks")
-      .update({
-        captured_workout_id: next.workoutId,
-        builtin_key: next.builtinKey,
-        name: next.name,
-        minutes: next.minutes,
-        rounds_note: next.roundsNote,
-        reason: null, // the model's reason explained the OLD pick
-      })
-      .eq("id", current.id);
-    if (upError) throw upError;
-
     // Replace just this block's loggable items. Safe to key on the section
     // because the block→section map is injective: conditioning is the only
     // block that lands in `accessory`, and `bfr` has no block at all. A
@@ -889,7 +893,13 @@ export async function rerollBlock(
           items.map((i) => ({
             session_id: sessionId,
             exercise_id: i.exerciseId,
-            item_order: i.itemOrder,
+            // A staging value, not the answer: renumberSessionItems below puts
+            // the sequence back. It is deliberately past every composed item's
+            // order, because that renumber is non-fatal — and if it doesn't
+            // run, "the rerolled block sorts last" is at least a stable,
+            // predictable wrong, where starting from 0 would interleave these
+            // rows among the others in no defined order.
+            item_order: REROLL_ITEM_ORDER_BASE + i.itemOrder,
             section: i.section,
             target_sets: i.targetSets,
             target_reps: i.targetReps,
@@ -900,9 +910,25 @@ export async function rerollBlock(
         if (insError) throw insError;
       }
     }
-    // Both of these are derived from the swap rather than part of it, so
-    // neither is allowed to report a reroll that happened as one that didn't.
     await renumberSessionItems(sessionId);
+
+    // Last, and the only step whose failure the caller hears about — see the
+    // docblock. Everything above is invisible until this names the new pick.
+    const { error: upError } = await supabase
+      .from("generated_session_blocks")
+      .update({
+        captured_workout_id: next.workoutId,
+        builtin_key: next.builtinKey,
+        name: next.name,
+        minutes: next.minutes,
+        rounds_note: next.roundsNote,
+        reason: null, // the model's reason explained the OLD pick
+      })
+      .eq("id", current.id);
+    if (upError) throw upError;
+
+    // Derived from the swap rather than part of it, so it is not allowed to
+    // report a reroll that happened as one that didn't.
     const reflowed: SectionMinutes = { ...((sess.section_minutes ?? {}) as SectionMinutes) };
     for (const b of blockRows) {
       const section = SECTION_FOR_BLOCK[b.block as BlockRole];
