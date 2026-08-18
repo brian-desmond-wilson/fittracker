@@ -3,6 +3,7 @@
 import { supabase } from "../supabase";
 import { validateWorkoutTags } from "../workoutTagValidate";
 import { daysBetween } from "../dailyCoverage";
+import { addDays, getLocalDateString, parseLocalDate } from "../dates";
 import type { CapturedWorkoutEntry } from "../../types/capture";
 import type {
   BlockRole,
@@ -24,13 +25,30 @@ export async function fetchMuscleRegionNames(): Promise<string[]> {
   return (data ?? []).map((r) => r.name);
 }
 
+/** How far back a performance can still change what gets recommended. The
+ *  rules tier saturates its recency score at 7 days and gates a main repeat at
+ *  4, so anything older already scores exactly like never-done — this is that
+ *  horizon with room to spare, so those numbers can move without this read
+ *  silently capping them. */
+const RECENCY_WINDOW_DAYS = 30;
+
 /** Every reviewed catalog workout with its tags and ledger recency —
  *  the block recommender's whole world. `today` is the caller's one clock
- *  sample. */
+ *  sample.
+ *
+ *  NULL on a failed read, never `[]`. An empty catalog is a legitimate answer
+ *  the composer acts on — it builds an all-built-in day and saves it — so a
+ *  network blip returning the same value would persist a recovery-shaped day
+ *  the user never asked for, with nothing to distinguish it from a genuinely
+ *  empty catalog. A failed ledger read is fatal for the same reason and not a
+ *  softer one: recency-blind, every workout reads as never performed, the
+ *  repeat gate stops holding, and the session that comes out is wrong rather
+ *  than absent. */
 export async function fetchTaggedWorkouts(
   userId: string,
   today: string,
-): Promise<TaggedWorkout[]> {
+): Promise<TaggedWorkout[] | null> {
+  const since = getLocalDateString(addDays(parseLocalDate(today), -RECENCY_WINDOW_DAYS));
   const [workoutsRes, usageRes] = await Promise.all([
     supabase
       .from("captured_workouts")
@@ -40,30 +58,27 @@ export async function fetchTaggedWorkouts(
         source:captured_sources!inner(extraction_status),
         wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name))
       `)
-      .eq("user_id", userId),
-    // Newest first, and only rows that still name a workout: a deleted
-    // workout's row can never date-stamp anything, so letting it through
-    // would only spend the row budget below. That budget is what bounds this
-    // read — at five blocks a day it covers roughly three months, and a
-    // workout last done before then simply reads as never done, which errs
-    // toward offering it.
+      .eq("user_id", userId)
+      // A save that never finished leaves a pending source; its half-built
+      // workout is not catalog. The !inner join is what lets this filter the
+      // workouts rather than just their embedded source.
+      .eq("source.extraction_status", "reviewed"),
+    // Bounded by date rather than by row count: a row limit with no tiebreak
+    // truncates rows sharing the boundary date in whatever order the server
+    // returns them, which makes the read a non-function of the data. Only
+    // rows that still name a workout — a deleted workout's row can never
+    // date-stamp anything.
     supabase
       .from("captured_workout_usage")
       .select("captured_workout_id, performed_date")
       .eq("user_id", userId)
       .not("captured_workout_id", "is", null)
-      .order("performed_date", { ascending: false })
-      .limit(500),
+      .gte("performed_date", since)
+      .order("performed_date", { ascending: false }),
   ]);
-  if (workoutsRes.error) {
-    console.error("fetchTaggedWorkouts failed:", workoutsRes.error);
-    return [];
-  }
-  // Recency is a nice-to-have, not the read: without it every workout reads
-  // as never performed and the variety weighting flattens. Say so and carry
-  // on rather than returning an empty catalog.
-  if (usageRes.error) {
-    console.error("fetchTaggedWorkouts usage read failed:", usageRes.error);
+  if (workoutsRes.error || usageRes.error) {
+    console.error("fetchTaggedWorkouts failed:", workoutsRes.error ?? usageRes.error);
+    return null;
   }
 
   const lastPerformed = new Map<string, number>();
@@ -83,7 +98,6 @@ export async function fetchTaggedWorkouts(
   }
 
   return (workoutsRes.data ?? [])
-    .filter((row: any) => row.source?.extraction_status === "reviewed")
     .map((row: any): TaggedWorkout => ({
       workoutId: row.id,
       name: row.name,
@@ -107,14 +121,19 @@ export async function fetchTaggedWorkouts(
 
 /** Write tags: the row's columns plus a replace of the muscle junction.
  *
- *  Order is the whole design here, because these are three statements and not
+ *  Order is the whole design here, because these are four statements and not
  *  a transaction. `classified_at` is what makes a workout visible to the
  *  recommender, and a workout visible with no muscles is one the soreness
  *  gate can never exclude — a chest workout offered on a chest-sore day,
  *  forever. So the muscles land first and the stamp goes last, and the
- *  junction is replaced by upserting the new rows and pruning the rest
- *  rather than by emptying it first: a failure partway leaves too many
- *  muscles, which merely over-excludes, never none.
+ *  junction is replaced by upserting the new rows and deleting the old ones
+ *  BY ID rather than by emptying it first. The ids are read before the
+ *  upsert, so the delete can only ever remove rows this call saw — never one
+ *  a concurrent tagging of the same workout has just written. Two backfills
+ *  racing (an aborted daily run's in-flight classify calls, plus the one a
+ *  pull-to-refresh starts) therefore converge on the union of what they
+ *  each claimed, and a failure partway leaves too many muscles, which merely
+ *  over-excludes, never none.
  *
  *  This is the ONLY place `classified_at` is stamped. The validator always
  *  returns it null — null is exactly what the recommender reads as "untagged,
@@ -127,9 +146,17 @@ export async function saveWorkoutTags(
   tags: Omit<WorkoutTags, "classifiedAt">,
 ): Promise<boolean> {
   try {
-    // Refused rather than written: see above — stamping a workout with no
-    // muscles is the one outcome this function must never produce, and the
-    // validator never asks for it.
+    // Refused rather than written, both of them: a stamped workout with no
+    // muscles is invisible to the soreness gate, and a stamped workout with
+    // no roles is invisible to all five blocks — tagged on screen, absent
+    // from every session, and never offered for classification again because
+    // the stamp says it was. `block_roles <@ ARRAY[…]` accepts '{}', so the
+    // database will not catch this one, and the tag editor calls this
+    // function directly, so neither will the validator.
+    if (tags.blockRoles.length === 0) {
+      console.error("saveWorkoutTags failed: no block roles to serve");
+      return false;
+    }
     if (tags.muscles.length === 0) {
       console.error("saveWorkoutTags failed: no muscles to attach");
       return false;
@@ -160,6 +187,14 @@ export async function saveWorkoutTags(
     }
     if (byRegion.size === 0) throw new Error("no muscle name matched a region");
 
+    // Read the old rows BEFORE writing: these ids, and only these, are what
+    // the delete below is allowed to touch.
+    const { data: existing, error: readError } = await supabase
+      .from("captured_workout_muscles")
+      .select("id, muscle_region_id")
+      .eq("captured_workout_id", workoutId);
+    if (readError) throw readError;
+
     const { error: upError } = await supabase
       .from("captured_workout_muscles")
       .upsert([...byRegion.values()], {
@@ -167,13 +202,19 @@ export async function saveWorkoutTags(
       });
     if (upError) throw upError;
 
-    // Drop whatever an earlier tagging left that this one doesn't claim.
-    const { error: pruneError } = await supabase
-      .from("captured_workout_muscles")
-      .delete()
-      .eq("captured_workout_id", workoutId)
-      .not("muscle_region_id", "in", `(${[...byRegion.keys()].join(",")})`);
-    if (pruneError) throw pruneError;
+    // Drop what an earlier tagging left that this one doesn't claim. Scoped
+    // to the ids read above, so a row another writer added in the meantime
+    // survives whether or not this call knows about its muscle.
+    const staleIds = (existing ?? [])
+      .filter((r: any) => !byRegion.has(r.muscle_region_id))
+      .map((r: any) => r.id);
+    if (staleIds.length > 0) {
+      const { error: pruneError } = await supabase
+        .from("captured_workout_muscles")
+        .delete()
+        .in("id", staleIds);
+      if (pruneError) throw pruneError;
+    }
 
     const { error } = await supabase
       .from("captured_workouts")
@@ -235,11 +276,14 @@ export async function classifyWorkout(
   }
 }
 
-/** The coverage window's ledger rows. */
+/** The coverage window's ledger rows. NULL on a failed read, for the reason
+ *  fetchTaggedWorkouts gives: no rows means a week of rest, which is a real
+ *  state the composer plans around, and a blip that borrows that answer makes
+ *  every muscle look neglected and every recommendation wrong. */
 export async function fetchUsage(
   userId: string,
   sinceDate: string,
-): Promise<UsageRow[]> {
+): Promise<UsageRow[] | null> {
   const { data, error } = await supabase
     .from("captured_workout_usage")
     .select("captured_workout_id, performed_date, block, muscles")
@@ -247,7 +291,7 @@ export async function fetchUsage(
     .gte("performed_date", sinceDate);
   if (error) {
     console.error("fetchUsage failed:", error);
-    return [];
+    return null;
   }
   return (data ?? []).map((r: any) => ({
     capturedWorkoutId: r.captured_workout_id,
@@ -271,9 +315,14 @@ export interface RecordUsageInput {
 }
 
 /** Upsert, not insert: a retried completion must not double-count a
- *  workout's muscles in the coverage weighting. */
-export async function recordUsage(input: RecordUsageInput): Promise<void> {
-  if (input.entries.length === 0) return;
+ *  workout's muscles in the coverage weighting.
+ *
+ *  Reports whether the ledger actually took it. A lost write means today's
+ *  training never counts toward the coverage that steers tomorrow's pick,
+ *  and the unique constraint below makes retrying free — so the caller is
+ *  told rather than left to assume. */
+export async function recordUsage(input: RecordUsageInput): Promise<boolean> {
+  if (input.entries.length === 0) return true;
   const { error } = await supabase.from("captured_workout_usage").upsert(
     input.entries.map((e) => ({
       user_id: input.userId,
@@ -289,5 +338,9 @@ export async function recordUsage(input: RecordUsageInput): Promise<void> {
     // writer.
     { onConflict: "user_id,captured_workout_id,performed_date,block" },
   );
-  if (error) console.error("recordUsage failed:", error);
+  if (error) {
+    console.error("recordUsage failed:", error);
+    return false;
+  }
+  return true;
 }
