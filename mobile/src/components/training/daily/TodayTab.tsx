@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   RefreshControl,
@@ -10,7 +10,10 @@ import { useDailySession } from "@/src/hooks/useDailySession";
 import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySectionMinutes";
 import { GymSheet } from "./GymSheet";
 import { CheckinSheet } from "./CheckinSheet";
+import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
+import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
 import type { SessionSection } from "@/src/types/daily";
+import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 const SECTION_TITLES: Record<SessionSection, string> = {
   warmup: "Warm-up",
@@ -29,8 +32,26 @@ export default function TodayTab() {
   const { session, checkin, activeGym, gyms, loading, error, refetch } =
     useDailySession(refreshKey);
   const [refreshing, setRefreshing] = useState(false);
+  // Set when today's session is a workout served whole — either one you
+  // started from the catalog, or one the composer chose to serve.
+  const [served, setServed] = useState<CapturedWorkoutEntry | null>(null);
 
   const bump = () => setRefreshKey((k) => k + 1);
+
+  const servedId = session?.servedCapturedWorkoutId ?? null;
+  useEffect(() => {
+    if (!servedId) {
+      setServed(null);
+      return;
+    }
+    let alive = true;
+    fetchCapturedWorkout(servedId).then((w) => {
+      if (alive) setServed(w);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [servedId]);
 
   // The estimate stored with the session, or one derived from the items on
   // screen when there is none — a session composed before these existed, or a
@@ -88,7 +109,7 @@ export default function TodayTab() {
             <Text style={styles.emptyTitle}>Couldn't build today's session</Text>
             <Text style={styles.emptyText}>{error.message}</Text>
           </View>
-        ) : !checkin ? (
+        ) : !checkin && !session ? (
           <View style={styles.center}>
             <Sparkles size={32} color={colors.primary} />
             <Text style={styles.emptyTitle}>Check in to build today's session</Text>
@@ -110,29 +131,82 @@ export default function TodayTab() {
           <>
             <View style={styles.sessionHeader}>
               <Text style={styles.sessionTitle}>
-                {session.splitDay === "push" ? "Push day" : session.splitDay === "pull" ? "Pull day" : "Leg day"}
+                {served
+                  ? served.name
+                  : session.splitDay === "push"
+                    ? "Push day"
+                    : session.splitDay === "pull"
+                      ? "Pull day"
+                      : "Leg day"}
               </Text>
               <View style={styles.badges}>
                 {session.rampWeek <= 2 && (
                   <Text style={styles.rampBadge}>Re-entry week {session.rampWeek}</Text>
                 )}
                 <Text style={styles.sourceBadge}>
-                  {session.source === "ai" ? "AI composed" : "Rules composed"}
+                  {session.source === "user_pick"
+                    ? "From your catalog"
+                    : session.source === "ai"
+                      ? "AI composed"
+                      : "Rules composed"}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => setCheckinVisible(true)}>
+              {/* A workout served whole was not composed against your time or
+                  soreness, so neither number describes it. */}
+              {!served && checkin && (
+                <>
+                  <TouchableOpacity onPress={() => setCheckinVisible(true)}>
+                    <Text style={styles.editCheckin}>
+                      Energy {checkin.energy}/10 · {checkin.minutesAvailable} min · edit
+                    </Text>
+                  </TouchableOpacity>
+                  {plannedMinutes > 0 && (
+                    <Text style={styles.plannedTotal}>
+                      ≈{plannedMinutes} min planned of {checkin.minutesAvailable}
+                    </Text>
+                  )}
+                </>
+              )}
+              {served && (
                 <Text style={styles.editCheckin}>
-                  Energy {checkin.energy}/10 · {checkin.minutesAvailable} min · edit
-                </Text>
-              </TouchableOpacity>
-              {plannedMinutes > 0 && (
-                <Text style={styles.plannedTotal}>
-                  ≈{plannedMinutes} min planned of {checkin.minutesAvailable}
+                  {formatWorkoutHeadline(served.items.length, served.rounds)}
                 </Text>
               )}
             </View>
 
-            {SECTION_ORDER.map((section) => {
+            {served && served.description && (
+              <Text style={styles.servedDescription}>{served.description}</Text>
+            )}
+
+            {/* One unsectioned list: we did not compose this workout, so
+                imposing our warm-up/accessory/cooldown headings on it would
+                assert a shape the creator never gave it. */}
+            {served
+              ? served.items.map((item, i) => {
+                  const prescription = formatWorkoutItem(item);
+                  return (
+                    <TouchableOpacity
+                      key={`${item.exerciseId}-${i}`}
+                      style={styles.itemCard}
+                      activeOpacity={0.7}
+                      onPress={() =>
+                        router.push(`/(tabs)/training/exercise/${item.exerciseId}` as never)
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item.name}. Open the exercise.`}
+                    >
+                      <View style={styles.itemBody}>
+                        <Text style={styles.itemName}>{item.name}</Text>
+                        {prescription !== "" && (
+                          <Text style={styles.itemMeta}>{prescription}</Text>
+                        )}
+                        {item.notes && <Text style={styles.itemReason}>{item.notes}</Text>}
+                      </View>
+                      <ChevronRight size={18} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  );
+                })
+              : SECTION_ORDER.map((section) => {
               const items = session.items.filter((i) => i.section === section);
               if (items.length === 0) return null;
               return (
@@ -176,7 +250,7 @@ export default function TodayTab() {
         )}
       </ScrollView>
 
-      {session && checkin && session.status !== "completed" && (
+      {session && session.status !== "completed" && (
         <TouchableOpacity style={styles.startButton} onPress={startSession} activeOpacity={0.8}>
           <Play size={18} color="#FFFFFF" />
           <Text style={styles.buttonText}>
@@ -225,6 +299,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2, overflow: "hidden",
   },
   editCheckin: { fontSize: 13, color: colors.primary, marginTop: 8 },
+  servedDescription: {
+    fontSize: 14, color: colors.mutedForeground, lineHeight: 20, marginBottom: 4,
+  },
   plannedTotal: { fontSize: 13, color: colors.mutedForeground, marginTop: 4 },
   section: { marginTop: 16 },
   sectionHeader: {
