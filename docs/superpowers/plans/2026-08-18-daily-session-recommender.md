@@ -24,6 +24,7 @@
 | File | Responsibility |
 |---|---|
 | `supabase/migrations/20260818100000_block_recommender.sql` | Create: workout tag columns, `captured_workout_muscles`, `captured_workout_usage`, `generated_session_blocks`; widen section CHECK with `mobility` |
+| `supabase/migrations/20260818110000_block_recommender_fixes.sql` | Create: review amendments — see "Task 1 amendments" below |
 | `mobile/src/types/dailyBlocks.ts` | Create: all block-recommender types |
 | `mobile/src/types/daily.ts` | Modify: add `"mobility"` to `SessionSection`; add `blocks` to `StoredSession` |
 | `mobile/src/types/capture.ts` | Modify: `CapturedWorkoutEntry.tags` |
@@ -321,6 +322,38 @@ Run: `npm test` — expected: all existing suites pass (the widened union is add
 ```bash
 git add -A && git commit -m "feat(daily): schema and types for the block recommender"
 ```
+
+#### Task 1 amendments (from code review — migration `20260818110000_block_recommender_fixes.sql`)
+
+The first migration shipped with a delete-breaking constraint and some missing
+hardening. The amendment migration, and the final schema every later task
+codes against:
+
+1. **`generated_session_blocks` gains `name TEXT NOT NULL`** — the block's
+   display name captured at compose time. `ON DELETE SET NULL` on
+   `captured_workout_id` performs an UPDATE, and the original
+   `CHECK (captured_workout_id IS NOT NULL OR builtin_key IS NOT NULL)` is
+   enforced on UPDATE, so deleting a captured workout that had ever appeared
+   in a block aborted the whole DELETE — breaking the shipped swipe-to-delete.
+   The check is now **mutual exclusion**: `CHECK (captured_workout_id IS NULL
+   OR builtin_key IS NULL)`. After a workout delete both columns are NULL and
+   the row survives as named history.
+2. **`captured_workout_usage` gains `UNIQUE (user_id, captured_workout_id,
+   performed_date, block)`** — a retried completion would otherwise
+   double-count that workout's muscles in the coverage weighting. Ledger
+   writes upsert on this key.
+3. **`captured_workout_usage.captured_workout_id` is now nullable, `ON DELETE
+   SET NULL`** — CASCADE erased training history, contradicting the whole
+   point of denormalizing muscles onto the row. `UsageRow.capturedWorkoutId`
+   is `string | null` accordingly.
+4. **`captured_workouts.block_roles` gains a value CHECK** against the five
+   roles — an untyped client plus a free-text array meant a classifier typo
+   ("warm_up") would write cleanly and make that workout invisible forever.
+5. **`generated_session_blocks.block_order` is dropped** — `UNIQUE (session_id,
+   block)` plus the fixed five-role order made it derivable and driftable.
+   Readers sort by `BLOCK_ORDER` (Task 6) instead.
+6. **Two redundant indexes dropped** (leading columns of existing UNIQUEs).
+   `captured_workout_usage_user_date` stays — it matches the coverage query.
 
 ---
 
@@ -1221,7 +1254,14 @@ git commit -m "feat(daily): recovery gate, body focus, per-block shortlists"
 
 **Files:**
 - Create: `mobile/src/lib/dailyBlockCompose.ts`
+- Modify: `mobile/src/types/dailyBlocks.ts` (`BlockPick` gains `name`)
 - Test: `mobile/src/lib/__tests__/dailyBlockCompose.test.ts`
+
+**Type change first:** `BlockPick` gains `name: string` — the block's display
+name, carried from the chosen candidate and stored on the row so a session's
+history survives the workout being deleted (see Task 1 amendments). Since
+`StoredBlock extends BlockPick`, delete the now-duplicated `name` from
+`StoredBlock`, leaving it `extends BlockPick { id: string }`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1380,6 +1420,9 @@ function pickFrom(candidate: BlockCandidate, block: BlockRole, reason: string | 
     block,
     workoutId: candidate.workoutId,
     builtinKey: candidate.builtinKey,
+    // Carried onto the row, not resolved by join at read time: a session's
+    // history has to survive the workout being deleted.
+    name: candidate.name,
     minutes: candidate.minutes,
     roundsNote: candidate.roundsNote,
     reason,
@@ -1774,6 +1817,9 @@ export async function fetchTaggedWorkouts(
 
   const lastPerformed = new Map<string, number>();
   for (const row of usageRes.data ?? []) {
+    // A deleted workout leaves its ledger row with a null id — the training
+    // still counts for coverage, but there is nothing left to date-stamp.
+    if (!row.captured_workout_id) continue;
     if (lastPerformed.has(row.captured_workout_id)) continue;
     lastPerformed.set(
       row.captured_workout_id,
@@ -1919,9 +1965,11 @@ export interface RecordUsageInput {
   entries: { capturedWorkoutId: string; block: BlockRole; muscles: WorkoutMuscle[] }[];
 }
 
+/** Upsert, not insert: a retried completion must not double-count a
+ *  workout's muscles in the coverage weighting. */
 export async function recordUsage(input: RecordUsageInput): Promise<void> {
   if (input.entries.length === 0) return;
-  const { error } = await supabase.from("captured_workout_usage").insert(
+  const { error } = await supabase.from("captured_workout_usage").upsert(
     input.entries.map((e) => ({
       user_id: input.userId,
       captured_workout_id: e.capturedWorkoutId,
@@ -1930,6 +1978,7 @@ export async function recordUsage(input: RecordUsageInput): Promise<void> {
       muscles: e.muscles,
       session_id: input.sessionId,
     })),
+    { onConflict: "user_id,captured_workout_id,performed_date,block" },
   );
   if (error) console.error("recordUsage failed:", error);
 }
@@ -2122,25 +2171,24 @@ Add to the select (inside the existing backtick string, after the `items:` join)
 
 ```ts
       blocks:generated_session_blocks(
-        id, block, captured_workout_id, builtin_key, minutes, rounds_note,
-        reason, block_order, workout:captured_workouts(name)
+        id, block, name, captured_workout_id, builtin_key, minutes,
+        rounds_note, reason
       )
 ```
 
 Add imports at the top of the file:
 
 ```ts
-import { builtinByKey } from "../dailyBuiltins";
-import { SECTION_FOR_BLOCK } from "../dailyBlockCompose";
+import { BLOCK_ORDER, SECTION_FOR_BLOCK } from "../dailyBlockCompose";
 import { recordUsage } from "./workoutTags";
 import type { BlockPick, StoredBlock } from "../../types/dailyBlocks";
 ```
 
-And map blocks in the returned object (after `items`):
+And map blocks in the returned object (after `items`). The name is stored on
+the row, so a block whose workout was later deleted still reads as history:
 
 ```ts
     blocks: (((data as any).blocks ?? []) as any[])
-      .sort((a, b) => a.block_order - b.block_order)
       .map((b): StoredBlock => ({
         id: b.id,
         block: b.block,
@@ -2149,8 +2197,9 @@ And map blocks in the returned object (after `items`):
         minutes: b.minutes,
         roundsNote: b.rounds_note,
         reason: b.reason,
-        name: b.workout?.name ?? builtinByKey(b.builtin_key ?? "")?.name ?? "Routine",
-      })),
+        name: b.name,
+      }))
+      .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
 ```
 
 - [ ] **Step 2: Write blocks in `saveGeneratedSession`**
@@ -2180,15 +2229,15 @@ After the items insert (line 487), add:
     if (blkDelError) throw blkDelError;
     if (input.blocks.length > 0) {
       const { error: blkError } = await supabase.from("generated_session_blocks").insert(
-        input.blocks.map((b, idx) => ({
+        input.blocks.map((b) => ({
           session_id: data.id,
           block: b.block,
+          name: b.name,
           captured_workout_id: b.workoutId,
           builtin_key: b.builtinKey,
           minutes: b.minutes,
           rounds_note: b.roundsNote,
           reason: b.reason,
-          block_order: idx,
         })),
       );
       if (blkError) throw blkError;
@@ -2333,6 +2382,7 @@ export async function rerollBlock(
       .update({
         captured_workout_id: next.workoutId,
         builtin_key: next.builtinKey,
+        name: next.name,
         minutes: next.minutes,
         rounds_note: next.roundsNote,
         reason: null, // the model's reason explained the OLD pick
@@ -2349,7 +2399,7 @@ export async function rerollBlock(
     if (delError) throw delError;
     if (next.workoutId) {
       const items = await blockPicksToItems([
-        { block, workoutId: next.workoutId, builtinKey: null,
+        { block, workoutId: next.workoutId, builtinKey: null, name: next.name,
           minutes: next.minutes, roundsNote: next.roundsNote, reason: null },
       ]);
       if (items.length > 0) {
