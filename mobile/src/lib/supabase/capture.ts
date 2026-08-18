@@ -331,6 +331,17 @@ function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
         restSeconds: it.rest_seconds ?? null,
         notes: it.notes ?? null,
       })),
+    // Placeholder until the tag columns are actually selected — Task 10 does
+    // the real read. Untagged is the honest default: every workout captured
+    // before the block recommender existed genuinely has no tags.
+    tags: {
+      blockRoles: [],
+      muscles: [],
+      estMinutes: null,
+      intensity: null,
+      skillLevel: null,
+      classifiedAt: null,
+    },
   };
 }
 

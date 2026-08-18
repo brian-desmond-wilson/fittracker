@@ -28,7 +28,7 @@ const MAX_SECTION_MINUTES = 180;
  */
 const OVERRUN_TOLERANCE = 1.25;
 
-const SECTIONS: SessionSection[] = ["warmup", "main", "accessory", "bfr", "cooldown"];
+const SECTIONS: SessionSection[] = ["warmup", "mobility", "main", "accessory", "bfr", "cooldown"];
 
 /**
  * Seconds of work in one set of the given prescription.

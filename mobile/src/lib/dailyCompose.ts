@@ -10,7 +10,7 @@ import type {
 } from "../types/daily";
 import { validateSectionMinutes } from "./dailySectionMinutes";
 
-const SECTIONS: SessionSection[] = ["warmup", "main", "accessory", "bfr", "cooldown"];
+const SECTIONS: SessionSection[] = ["warmup", "mobility", "main", "accessory", "bfr", "cooldown"];
 
 /** Top-of-rank fill, one pass, no exercise used twice. Accessory and BFR
  *  draw from what's left of the main pool — they are main-muscle work at

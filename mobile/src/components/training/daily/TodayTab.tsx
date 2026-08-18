@@ -17,12 +17,13 @@ import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 const SECTION_TITLES: Record<SessionSection, string> = {
   warmup: "Warm-up",
+  mobility: "Mobility",
   main: "Main work",
   accessory: "Accessories",
   bfr: "BFR finisher",
   cooldown: "Cooldown",
 };
-const SECTION_ORDER: SessionSection[] = ["warmup", "main", "accessory", "bfr", "cooldown"];
+const SECTION_ORDER: SessionSection[] = ["warmup", "mobility", "main", "accessory", "bfr", "cooldown"];
 
 export default function TodayTab() {
   const router = useRouter();

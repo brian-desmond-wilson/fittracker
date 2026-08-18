@@ -2,7 +2,7 @@
 // Spec: docs/superpowers/specs/2026-08-16-daily-training-design.md §3, §5.
 
 export type SplitDay = "push" | "pull" | "legs";
-export type SessionSection = "warmup" | "main" | "accessory" | "bfr" | "cooldown";
+export type SessionSection = "warmup" | "mobility" | "main" | "accessory" | "bfr" | "cooldown";
 export type SkillStateLevel = "beginner" | "intermediate" | "advanced";
 
 export interface GymProfile {
@@ -96,4 +96,6 @@ export interface StoredSession extends ComposedSession {
   workoutInstanceId: string | null;
   gymProfileId: string | null;
   items: (SessionItem & { id: string; name: string; wasPerformed: boolean | null })[];
+  /** Empty for pre-block sessions and workouts served whole. */
+  blocks: import("./dailyBlocks").StoredBlock[];
 }

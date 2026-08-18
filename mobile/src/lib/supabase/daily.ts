@@ -409,6 +409,9 @@ export async function fetchTodaySession(
         reason: i.reason,
         wasPerformed: i.was_performed,
       })),
+    // Not read yet — Task 12 joins generated_session_blocks here. Empty is
+    // also the truthful answer for every session composed before blocks.
+    blocks: [],
   };
 }
 

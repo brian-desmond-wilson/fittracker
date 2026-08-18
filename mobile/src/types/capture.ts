@@ -139,6 +139,8 @@ export interface CapturedWorkoutEntry {
     captionText: string | null;
   } | null;
   items: CapturedWorkoutItemEntry[];
+  /** Block-recommender tags. classifiedAt null = never classified. */
+  tags: import("./dailyBlocks").WorkoutTags;
 }
 
 export interface CatalogFilters {
