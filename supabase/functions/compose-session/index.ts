@@ -36,8 +36,10 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
-/** A failure that came from OpenAI rather than from us, carrying its status so
- *  the caller can tell "retry later" from "stop" (same as capture-post). */
+/** A failure that came from OpenAI rather than from us, carrying its status
+ *  instead of flattening it to 500 (same as capture-post, where a catalog-wide
+ *  backfill loop already reads it). Nothing here reads it yet — the daily ask
+ *  retries once on any failure and then stands on the rules tier. */
 class UpstreamError extends Error {
   readonly status: number;
   constructor(status: number, detail: string) {
@@ -106,11 +108,14 @@ deterministic engine already handled soreness, time, recency and skill; your
 job is the judgment call of which combination makes the most coherent day.
 
 Rules:
-- Pick EXACTLY ONE candidate for each block you are shown, from that block's
-  own list, named by its exact "id" — the text before the first " · " on the
-  candidate's line, copied character for character. Never invent an id, never
-  answer with a name where an id belongs, and never give one block a candidate
-  from another block's list.
+- Pick EXACTLY ONE candidate for each block you are shown — conditioning
+  aside, which is the one block you may drop, when dropping it makes a better
+  day or when the minutes don't allow it. Every other block you are shown
+  appears exactly once, main above all.
+- Take each pick from that block's own list and name it by its exact "id" —
+  the text before the first " · " on the candidate's line, copied character
+  for character. Never invent an id, never answer with a name where an id
+  belongs, and never give one block a candidate from another block's list.
 - Name ONLY blocks you were shown. A block with no section below is not part
   of today: leave it out of your answer entirely rather than naming it to say
   you skipped it. Days come up short a block on purpose — a day with no MAIN
@@ -323,9 +328,11 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error('compose-session:', e);
-    // An upstream failure answers with the upstream's own status, so a caller
-    // can tell "retry later" from "stop". Only blocks mode raises one; the
-    // exercise path throws plain Errors and still answers 500, unchanged.
+    // An upstream failure answers with the upstream's own status, preserved
+    // for a caller that learns to back off — today's client retries once on
+    // any failure and then falls back, and reads no status at all. Only blocks
+    // mode raises one; the exercise path throws plain Errors and still answers
+    // 500, unchanged.
     const status = e instanceof UpstreamError && e.status >= 400 && e.status <= 599
       ? e.status
       : 500;
