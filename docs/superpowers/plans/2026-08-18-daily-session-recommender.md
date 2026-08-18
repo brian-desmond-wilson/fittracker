@@ -2604,7 +2604,7 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
       if (
         existing &&
         existing.blocks.length > 0 &&
-        (existing as any).composeSignature === signature
+        existing.composeSignature === signature
       ) {
         setSession(existing);
         setLoading(false);
@@ -2685,15 +2685,12 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
           sectionMinutes,
         },
         blocks: picks,
-        // Shortlists ride along for reroll; aiBody for audit, same as before;
-        // the signature so the next load can tell "already composed from these
-        // inputs" from "inputs changed, recompose" without overwriting a
-        // reroll. `fetchTodaySession` reads it back as `composeSignature`.
-        inputsSnapshot: {
-          aiBody,
-          shortlists: shortlists as BlockShortlists,
-          signature,
-        },
+        // Written to its own column, LAST, after the items and blocks land —
+        // so a partial failure leaves it null and the next load recomposes
+        // rather than trusting a plan that was never finished (Task 12 review).
+        composeSignature: signature,
+        // Shortlists ride along for reroll; aiBody for audit, same as before.
+        inputsSnapshot: { aiBody, shortlists: shortlists as BlockShortlists },
       });
 ```
 
