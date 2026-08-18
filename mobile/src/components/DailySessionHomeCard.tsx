@@ -34,16 +34,30 @@ export function DailySessionHomeCard() {
 
   if (!loaded) return null;
 
+  // A block day is named after the workout it is built around, and a day with
+  // no main block is a recovery day. Neither stamps a split, so falling
+  // through to the push/pull/legs ternary called every one of them a leg day.
+  const mainBlock = session?.blocks.find((b) => b.block === "main") ?? null;
   const title = !session
     ? "Check in to build today's session"
     : session.status === "completed"
       ? "Today's session — done 💪"
+      : mainBlock ? `${mainBlock.name} is ready`
+      : session.blocks.length > 0 ? "Recovery day is ready"
+      : session.servedCapturedWorkoutId ? "Today's workout is ready"
       : session.splitDay === "push" ? "Push day is ready"
       : session.splitDay === "pull" ? "Pull day is ready"
       : "Leg day is ready";
 
+  // Blocks, not movements, for a block day: a recovery day of built-ins has
+  // nothing loggable under it and read as "0 movements".
+  const composedBy = session?.source === "ai" ? "AI composed"
+    : session?.source === "user_pick" ? "from your catalog"
+    : "rules composed";
   const subtitle = session
-    ? `${session.items.length} movements · ${session.source === "ai" ? "AI composed" : "rules composed"}`
+    ? `${session.blocks.length > 0
+        ? `${session.blocks.length} blocks`
+        : `${session.items.length} movements`} · ${composedBy}`
     : "Soreness, energy, time — ten seconds";
 
   return (

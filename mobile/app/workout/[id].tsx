@@ -385,6 +385,7 @@ export default function WorkoutSessionPage() {
           .from('generated_sessions')
           .select(`
             id, split_day, workout_instance_id, served_captured_workout_id,
+            blocks:generated_session_blocks(block, name),
             items:generated_session_items(
               id, exercise_id, item_order, section, target_sets, target_reps,
               rest_seconds,
@@ -400,12 +401,19 @@ export default function WorkoutSessionPage() {
           ? await fetchCapturedWorkout(sessionData.served_captured_workout_id)
           : null;
         setServedWorkout(served);
-        // A workout served whole carries its own name; only a composed session
-        // is named after the split it was built for.
+        // A workout served whole carries its own name; a block day is named
+        // after its main workout, or is a recovery day when it has none. Only
+        // an exercise-level session is named after a split — a block day
+        // stamps none, and reading a NULL split as legs called every one of
+        // them a leg day.
+        const blocks = (sessionData as any).blocks ?? [];
+        const mainBlock = blocks.find((b: any) => b.block === 'main');
         templateName = served
           ? served.name
-          : sessionData.split_day === 'push' ? 'Push Day'
-            : sessionData.split_day === 'pull' ? 'Pull Day' : 'Leg Day';
+          : mainBlock ? mainBlock.name
+            : blocks.length > 0 ? 'Recovery Day'
+              : sessionData.split_day === 'push' ? 'Push Day'
+                : sessionData.split_day === 'pull' ? 'Pull Day' : 'Leg Day';
         sortedExercises = [...(sessionData.items || [])]
           .sort((a: any, b: any) => a.item_order - b.item_order)
           .map((item: any) => ({
