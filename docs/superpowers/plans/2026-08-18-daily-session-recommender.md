@@ -2204,6 +2204,12 @@ the row, so a block whose workout was later deleted still reads as history:
 
 - [ ] **Step 2: Write blocks in `saveGeneratedSession`**
 
+The amended schema's source check is mutual exclusion, not presence — a block
+row with BOTH `captured_workout_id` and `builtin_key` NULL is now legal, so
+that a deleted workout can leave named history behind. That makes this writer
+solely responsible for giving every block a source. Drop any pick carrying
+neither, and log it; the client is untyped and nothing else will catch it.
+
 Change `SaveSessionInput` to carry picks:
 
 ```ts
