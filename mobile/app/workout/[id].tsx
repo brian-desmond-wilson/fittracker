@@ -326,6 +326,36 @@ export default function WorkoutSessionPage() {
         ? { kind: 'duration', seconds: set.duration_seconds }
         : { kind: 'none' };
 
+  /**
+   * How long the session took, and when it ended.
+   *
+   * Live measures the wall clock. Backfill cannot: the workout happened this
+   * morning and you are logging it this evening, so elapsed time would call a
+   * forty-minute session ten hours long. Its length is the span of the sets
+   * you entered instead.
+   */
+  const recordedSpan = (): { durationSeconds: number; endedAtIso: string } => {
+    if (recordMode !== 'backfill') {
+      return { durationSeconds: elapsedSeconds(), endedAtIso: new Date().toISOString() };
+    }
+    const { resolvedByKey } = sessionTimes();
+    let earliest: number | null = null;
+    let latest: number | null = null;
+    resolvedByKey.forEach((r) => {
+      if (r.startMs !== null) earliest = earliest === null ? r.startMs : Math.min(earliest, r.startMs);
+      if (r.endMs !== null) latest = latest === null ? r.endMs : Math.max(latest, r.endMs);
+    });
+    // No set carries a time yet — the session is the instant you said it
+    // started, not the hours since.
+    const anchor = startedAt?.getTime() ?? Date.now();
+    const start = earliest ?? anchor;
+    const end = latest ?? anchor;
+    return {
+      durationSeconds: Math.max(0, Math.round((end - start) / 1000)),
+      endedAtIso: new Date(end).toISOString(),
+    };
+  };
+
   // One resolution for the whole session, used to draw the chips AND to write
   // the rows — computing it twice is how the two would drift apart.
   const sessionTimes = () =>
@@ -1193,7 +1223,7 @@ export default function WorkoutSessionPage() {
           user_id: userId,
           session_number: nextSessionNumber,
           session_date: today,
-          started_at: new Date().toISOString(),
+          started_at: (startedAt ?? new Date()).toISOString(),
           duration_seconds: 0,
         })
         .select('id')
@@ -1312,10 +1342,10 @@ export default function WorkoutSessionPage() {
       if (workoutSessionIdRef.current) {
         const { error } = await supabase
           .from('workout_sessions')
-          .update({
-            ended_at: new Date().toISOString(),
-            duration_seconds: elapsedSeconds(),
-          })
+          .update((() => {
+            const span = recordedSpan();
+            return { ended_at: span.endedAtIso, duration_seconds: span.durationSeconds };
+          })())
           .eq('id', workoutSessionIdRef.current);
         if (error) throw error;
       }
@@ -1329,7 +1359,7 @@ export default function WorkoutSessionPage() {
           .update({
             status: 'in_progress',
             completion_status: completedCount === exerciseStates.length ? 'completed' : 'partial',
-            duration_seconds: elapsedSeconds(),
+            duration_seconds: recordedSpan().durationSeconds,
           })
           .eq('id', workoutInstanceId);
         if (error) throw error;
@@ -1338,7 +1368,7 @@ export default function WorkoutSessionPage() {
       const completedCount = exerciseStates.filter(e => e.completed).length;
       Alert.alert(
         '💪 Progress Saved!',
-        `${completedCount}/${exerciseStates.length} exercises completed.\nDuration: ${formatDuration(elapsedSeconds())}\nYou can continue this workout later.`,
+        `${completedCount}/${exerciseStates.length} exercises completed.\nDuration: ${formatDuration(recordedSpan().durationSeconds)}\nYou can continue this workout later.`,
         [{ text: 'Done', onPress: () => router.back() }]
       );
     } catch (err) {
@@ -1364,10 +1394,10 @@ export default function WorkoutSessionPage() {
       if (workoutSessionIdRef.current) {
         const { error } = await supabase
           .from('workout_sessions')
-          .update({
-            ended_at: new Date().toISOString(),
-            duration_seconds: elapsedSeconds(),
-          })
+          .update((() => {
+            const span = recordedSpan();
+            return { ended_at: span.endedAtIso, duration_seconds: span.durationSeconds };
+          })())
           .eq('id', workoutSessionIdRef.current);
         if (error) throw error;
       }
@@ -1382,7 +1412,7 @@ export default function WorkoutSessionPage() {
           .select('duration_seconds')
           .eq('workout_instance_id', workoutInstanceId);
         
-        const totalDuration = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || elapsedSeconds();
+        const totalDuration = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || recordedSpan().durationSeconds;
         
         const { error } = await supabase
           .from('workout_instances')
