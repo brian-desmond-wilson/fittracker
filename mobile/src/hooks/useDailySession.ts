@@ -283,21 +283,41 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       );
 
       // ---- AI tier: one ask per question signature ----
-      // Walked in block order and then sorted, so the signature is a function
-      // of what was offered and not of the order the shortlist builder happens
-      // to insert its keys in.
+      // Each id carries the block it was offered for, then the whole lot is
+      // sorted. Sorting makes the key a function of what was offered rather
+      // than of the order the shortlist builder inserts its keys in; the block
+      // prefix is what keeps the sort from also erasing WHICH block each id
+      // was offered for, so a retag that moves a workout from conditioning to
+      // main is a different question and reads as one.
       const shortlistIds = BLOCK_ORDER
-        .flatMap((block) => shortlists[block] ?? [])
-        .map((c) => c.workoutId ?? c.builtinKey ?? "")
+        .flatMap((block) => (shortlists[block] ?? []).map(
+          (c) => `${block}:${c.workoutId ?? c.builtinKey ?? ""}`,
+        ))
         .sort()
         .join(",");
-      // The question the composer was asked, and nothing else. The active gym
-      // was part of it for the exercise-level engine and is deliberately not
-      // part of it here: a block day picks whole workouts, which are never
-      // equipment-filtered, so switching gyms cannot change the answer — and
-      // recomposing anyway would spend an AI call and throw away a reroll to
-      // arrive back at the same day. The row keeps the gym it was stamped with
-      // until something that IS an input changes.
+      // The question the composer was asked, and nothing else.
+      //
+      // The active gym was part of it for the exercise-level engine and is
+      // deliberately not part of it here: a block day picks whole workouts,
+      // which are never equipment-filtered, so switching gyms cannot change
+      // the answer — and recomposing anyway would spend an AI call and throw
+      // away a reroll to arrive back at the same day. The row keeps the gym it
+      // was stamped with until something that IS an input changes.
+      //
+      // Three more things reach the model but are deliberately NOT in the key,
+      // so two questions that differ only in these share a cache entry and a
+      // stored day. All three are judged worth less than the recompute and the
+      // lost reroll they would cost, and all three are recorded here rather
+      // than discovered later:
+      //   - `soreness` — it steers the shortlists, so any soreness edit that
+      //     changes what is on offer already moves `shortlistIds`. One that
+      //     doesn't could still change the model's phrasing.
+      //   - `relaxedMain` — derived from the same shortlists, and it only
+      //     changes how the day is described, never which workouts are in it.
+      //   - within-block RANK. The sort discards the order the rules tier put
+      //     the candidates in, so a coverage shift that re-ranks an unchanged
+      //     set reads as the same question. Same property the exercise-level
+      //     signature had, kept knowingly.
       const signature = [
         today, todayCheckin.id, todayCheckin.minutesAvailable,
         todayCheckin.energy, recovery ? "recovery" : "train", shortlistIds,
@@ -383,6 +403,20 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // the day is written, and a stale run that got past it would persist a
       // plan built from inputs the user has already changed.
       if (runId !== runIdRef.current) return;
+      // blockPicksToItems answers `[]` for a failed read and for a day of
+      // built-ins alike, and only one of those is fine — a pick that names a
+      // catalog workout always has movements to contribute. The plan is still
+      // written, because it is correct and worth showing, but it goes in
+      // unclaimed: the gate above would otherwise refuse to recompose it, and
+      // a blip would leave the day with a full block plan and nothing under it
+      // to log, all day.
+      const itemsMissing = items.length === 0 && picks.some((p) => p.workoutId !== null);
+      if (itemsMissing) {
+        console.warn(
+          "compose: no loggable items for a plan with catalog workouts —",
+          "saving unclaimed so the next load repairs it",
+        );
+      }
       // One entry per block, and no two blocks share a section — conditioning
       // is the only block that lands in `accessory`, and `bfr` has no block at
       // all — so nothing here can overwrite anything else.
@@ -405,8 +439,9 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         blocks: picks,
         // Written to its own column, LAST, after the items and blocks land —
         // so a partial failure leaves it null and the next load recomposes
-        // rather than trusting a plan that was never finished.
-        composeSignature: signature,
+        // rather than trusting a plan that was never finished. Withheld here
+        // for the same reason when we can already see that they didn't.
+        composeSignature: itemsMissing ? null : signature,
         // Shortlists ride along for reroll; aiBody for audit, same as before.
         inputsSnapshot: { aiBody, shortlists },
       });
