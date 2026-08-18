@@ -546,14 +546,12 @@ export function CapturedWorkoutScreen() {
               </Text>
             </TouchableOpacity>
           )}
-        </ScrollView>
 
-        {/* A bar below the scroll view, not floating over it: the protocol
-            lines are the last thing on the page and the button was sitting on
-            top of them. Not while editing — you're changing the workout, not
-            starting it. A workout with no movements has nothing to log. */}
-        {!editing && shownItems.length > 0 && (
-          <View style={[styles.startBar, { paddingBottom: 12 + insets.bottom }]}>
+          {/* The last thing on the page, scrolling with it: you read the
+              workout, and starting it is what you do at the end. Not while
+              editing — you're changing the workout, not starting it. A workout
+              with no movements has nothing to log. */}
+          {!editing && shownItems.length > 0 && (
             <TouchableOpacity
               style={styles.startButton}
               onPress={start}
@@ -571,8 +569,9 @@ export function CapturedWorkoutScreen() {
                 {starting ? "Starting…" : "Start Workout"}
               </Text>
             </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </ScrollView>
+
       </View>
 
       <ExerciseSearchModal
@@ -596,14 +595,9 @@ const styles = StyleSheet.create({
   headerActionMuted: { opacity: 0.5 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   missing: { fontSize: 15, color: colors.mutedForeground, textAlign: "center" },
-  scroll: { paddingHorizontal: 20, paddingBottom: 24 },
-  startBar: {
-    paddingHorizontal: 20, paddingTop: 12,
-    backgroundColor: colors.background,
-    borderTopWidth: 1, borderTopColor: colors.border,
-  },
+  scroll: { paddingHorizontal: 20, paddingBottom: 40 },
   startButton: {
-    flexDirection: "row", gap: 8,
+    flexDirection: "row", gap: 8, marginTop: 28,
     backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14,
     alignItems: "center", justifyContent: "center",
   },
