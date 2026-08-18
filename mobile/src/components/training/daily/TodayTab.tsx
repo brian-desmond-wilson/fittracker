@@ -68,12 +68,20 @@ export default function TodayTab() {
   const [rerolling, setRerolling] = useState<BlockRole | null>(null);
   // A declined reroll, kept beside the block that declined it. `rerollBlock`
   // answers a plain false whether the block has nowhere left to go, the day
-  // has moved past `suggested`, or a write failed — and nothing the hook
-  // hands us says which in advance — so the note names the overwhelmingly
-  // common one and the other two are logged where they happen.
+  // has moved past `suggested`, or a write failed part-way — so the line it
+  // sets must not name a cause. The write-failure case is the one that
+  // matters: it can leave the new workout's items under the old block's name,
+  // and telling the user there was simply nothing to swap in would be the one
+  // reading with consequences behind it.
   const [rerollNote, setRerollNote] = useState<BlockRole | null>(null);
 
-  const bump = () => setRefreshKey((k) => k + 1);
+  // Any recompose invalidates a decline: the shortlists it was refused from
+  // are exactly what a recompose rebuilds. Cleared here rather than at the
+  // call sites so the check-in sheet and the gym sheet cannot forget.
+  const bump = () => {
+    setRerollNote(null);
+    setRefreshKey((k) => k + 1);
+  };
 
   const servedId = session?.servedCapturedWorkoutId ?? null;
   useEffect(() => {
@@ -119,13 +127,16 @@ export default function TodayTab() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setRerollNote(null);
     bump();
     setTimeout(() => setRefreshing(false), 600);
   };
 
+  // A reload can replace the very blocks these controls sit on, so they are
+  // out of action for its duration as well as for another block's swap.
+  const rerollBusy = rerolling !== null || loading;
+
   const reroll = async (block: BlockRole) => {
-    if (!session || rerolling) return;
+    if (!session || rerollBusy) return;
     setRerolling(block);
     setRerollNote(null);
     const changed = await rerollBlock(session.id, block);
@@ -335,9 +346,18 @@ export default function TodayTab() {
                             {canReroll && (
                               <TouchableOpacity
                                 onPress={() => reroll(block.block)}
-                                disabled={rerolling !== null}
+                                disabled={rerollBusy}
+                                style={
+                                  rerollBusy && rerolling !== block.block
+                                    ? styles.rerollDisabled
+                                    : undefined
+                                }
                                 accessibilityRole="button"
                                 accessibilityLabel={`Swap the ${BLOCK_TITLES[block.block].toLowerCase()} for another one`}
+                                accessibilityState={{
+                                  disabled: rerollBusy,
+                                  busy: rerolling === block.block,
+                                }}
                                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                               >
                                 {rerolling === block.block
@@ -401,9 +421,9 @@ export default function TodayTab() {
                           {builtinKey !== null && (
                             <Text style={styles.nudge}>{gapNudge(builtinKey)}</Text>
                           )}
-                          {rerollNote === block.block && (
+                          {canReroll && rerollNote === block.block && (
                             <Text style={styles.blockEmpty}>
-                              Nothing else to swap in for this block right now.
+                              Couldn't swap this block right now.
                             </Text>
                           )}
                         </View>
@@ -515,6 +535,7 @@ const styles = StyleSheet.create({
   },
   errorBannerText: { fontSize: 13, color: "#F59E0B", lineHeight: 18 },
   blockHeaderRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  rerollDisabled: { opacity: 0.4 },
   blockCard: {
     backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
     borderRadius: 10, padding: 12, gap: 4,
