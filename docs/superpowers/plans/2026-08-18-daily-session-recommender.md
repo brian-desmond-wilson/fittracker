@@ -1880,7 +1880,9 @@ export async function fetchTaggedWorkouts(
  *  here are invisible by design rather than by accident (Task 7 review). */
 export async function saveWorkoutTags(
   workoutId: string,
-  tags: WorkoutTags,
+  // Omit the stamp: this function IS the stamp. Taking a `classifiedAt` it
+  // silently discards would read like a second stamping site (Task 7 review).
+  tags: Omit<WorkoutTags, "classifiedAt">,
 ): Promise<boolean> {
   try {
     const { error } = await supabase
@@ -2994,7 +2996,6 @@ In the screen's `save` function (line ~160), after `updateCapturedWorkout` succe
       estMinutes: Number.isFinite(est) && est >= 1 && est <= 240 ? est : null,
       intensity: draft.intensity,
       skillLevel: workout.tags.skillLevel,
-      classifiedAt: workout.tags.classifiedAt ?? new Date().toISOString(),
     });
 ```
 
