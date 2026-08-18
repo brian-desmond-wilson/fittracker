@@ -40,29 +40,27 @@ function pickFrom(candidate: BlockCandidate, block: BlockRole, reason: string | 
 }
 
 /**
- * Top of every offered shortlist, in block order, kept inside the same ceiling
- * the validator applies.
+ * The rules-only session: per block, in block order, the highest-ranked
+ * candidate the budget still allows. It spends against the validator's ceiling
+ * because of when it runs — this is the path taken when the model's answer was
+ * rejected, often for overrunning, and handing the same day back with the
+ * rationale stripped would make the rejection meaningless.
  *
- * It bounds itself because of when it runs: this is the path taken precisely
- * when the model's answer was rejected, and a day of envelope maxima is one of
- * the things that gets rejected (the envelopes are independent ranges, so their
- * maxima can sum past the budget). Handing the same overrun straight back —
- * only with the rationale stripped — would make the rejection meaningless and
- * quietly give someone with 75 minutes a 100-minute plan.
- *
- * Rank still decides: a candidate that doesn't fit is skipped, never re-ranked
- * by size. Blocks are walked in the order they are performed, so support work
- * commits before main does — which is what main's envelope floor already
- * assumed, and the worst it can cost main is its shortest candidate.
+ * It spends against that ceiling; it does not guarantee it. When nothing in a
+ * block fits, conditioning drops out and every other block keeps its shortest
+ * candidate and overruns — and below the 75-minute conditioning floor there is
+ * nothing optional to drop, so the overrun can cascade: 45 minutes of envelope
+ * maxima composes to 60. Deliberate. The durations are the creators', not ours
+ * to shrink, and a complete session that runs long beats a mutilated one. The
+ * Today tab flags a plan that overruns what the user said they had.
  */
 export function composeBlockFallback(
   shortlists: BlockShortlists,
   minutesAvailable: number,
 ): BlockPick[] {
   // Unlike the validator, this path cannot refuse: a budget that isn't a
-  // positive number bounds nothing, and you still get a session. NaN needs no
-  // guard of its own here — it fails the comparison and lands on the same
-  // unbounded ceiling, where the validator would have had to refuse instead.
+  // positive number (NaN included — it fails the comparison) bounds nothing,
+  // and you still get a session.
   const ceiling = minutesAvailable > 0 ? minutesAvailable * OVERRUN_TOLERANCE : Infinity;
 
   const picks: BlockPick[] = [];
@@ -70,10 +68,11 @@ export function composeBlockFallback(
   for (const block of BLOCK_ORDER) {
     const list = shortlists[block];
     if (!list || list.length === 0) continue;
+    // Rank decides; a candidate that doesn't fit is skipped, never re-ranked by
+    // size. Nothing fits at all: conditioning is the optional block and drops
+    // out, every other block keeps its shortest — a short warm-up is still a
+    // warm-up, and a day without one isn't the session we promised.
     const fitted = list.find((c) => total + c.minutes <= ceiling);
-    // Nothing fits: conditioning is the optional block by design and drops out.
-    // Every other block is wanted, so it takes its shortest candidate instead —
-    // a short warm-up is still a warm-up.
     if (!fitted && block === "conditioning") continue;
     const chosen = fitted ?? list.reduce((a, b) => (b.minutes < a.minutes ? b : a));
     picks.push(pickFrom(chosen, block, null));
@@ -96,6 +95,11 @@ const str = (v: unknown): string | null =>
  * entry the model invented is evidence the rest of the answer is invented too.
  * A repeated block is the one exception: it is redundant rather than wrong, so
  * the first mention stands and the rest of the answer survives.
+ *
+ * The rule is not free: rejecting an otherwise good answer over one malformed
+ * sibling entry can replace a day that fit with a rules day that runs longer,
+ * since the fallback overruns rather than drop a block. Still the right trade —
+ * a long day is visible, a missing cool-down is not.
  */
 export function validateBlockComposition(
   raw: unknown,

@@ -110,6 +110,37 @@ describe("composeBlockFallback", () => {
     expect(picks.reduce((s, p) => s + p.minutes, 0)).toBe(80); // ≤ 82.5
   });
 
+  it("more than one block can take its shortest candidate", () => {
+    const picks = composeBlockFallback(
+      {
+        main: [cand("m-long", 40), cand("m-short", 35)],
+        cooldown: [cand("cd-long", 9), cand("cd-short", 6)],
+      },
+      30,
+    );
+    // Once main busts the ceiling, every later block is over it too. The
+    // escape has to keep working, not fire once.
+    expect(picks.map((p) => p.workoutId)).toEqual(["m-short", "cd-short"]);
+  });
+
+  it("a short day runs long rather than losing a block, on purpose", () => {
+    // blockEnvelopes(45) at its maxima. Below the 75-minute conditioning floor
+    // there is no optional block to drop, so the overrun cascades — and that
+    // is the accepted outcome: the durations are the creators', not ours to
+    // shrink, and the Today tab is where an overrun gets flagged.
+    const maxima: BlockShortlists = {
+      warmup: [cand("wu", 10)],
+      mobility: [cand("mo", 10)],
+      main: [cand("m", 30)],
+      cooldown: [cand("cd", 10)],
+    };
+    const picks = composeBlockFallback(maxima, 45);
+    expect(picks.map((p) => p.block)).toEqual(["warmup", "mobility", "main", "cooldown"]);
+    const total = picks.reduce((s, p) => s + p.minutes, 0);
+    expect(total).toBe(60);
+    expect(total).toBeGreaterThan(45 * 1.1);
+  });
+
   it("an unusable budget bounds nothing — a session still comes back", () => {
     // This path cannot refuse the way the validator can.
     for (const budget of [NaN, 0, -30]) {
