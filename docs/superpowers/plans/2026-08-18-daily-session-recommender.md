@@ -1565,6 +1565,11 @@ describe("validateWorkoutTags", () => {
     expect(validateWorkoutTags({ ...good, block_roles: ["hiit"] }, allowed)).toBeNull();
   });
 
+  it("no primary muscle = unusable — it would be immune to the soreness gate", () => {
+    expect(validateWorkoutTags({ ...good, primary_muscles: [] }, allowed)).toBeNull();
+    expect(validateWorkoutTags({ ...good, primary_muscles: ["Traps"] }, allowed)).toBeNull();
+  });
+
   it("nonsense minutes become null, not a rejection", () => {
     expect(validateWorkoutTags({ ...good, est_minutes: 600 }, allowed)!.estMinutes).toBeNull();
     expect(validateWorkoutTags({ ...good, est_minutes: "x" }, allowed)!.estMinutes).toBeNull();
@@ -1617,6 +1622,12 @@ export function validateWorkoutTags(
     .filter((v): v is BlockRole => ROLES.includes(v as BlockRole));
   if (blockRoles.length === 0) return null;
 
+  // A workout with no primary muscle is unusable, not merely under-described:
+  // the soreness gate reads primaries, so it would be permanently immune —
+  // a chest workout offered on a chest-sore day (Task 5 review). Roles and at
+  // least one primary muscle are the two hard requirements; everything else
+  // degrades to null.
+
   const names = (v: unknown): string[] =>
     (Array.isArray(v) ? v : []).filter(
       (m): m is string => typeof m === "string" && allowedMuscles.has(m),
@@ -1625,6 +1636,8 @@ export function validateWorkoutTags(
   const primarySet = new Set(primaries);
   const secondaries = [...new Set(names(r.secondary_muscles))]
     .filter((m) => !primarySet.has(m));
+
+  if (primaries.length === 0) return null;
 
   const est = typeof r.est_minutes === "number" &&
     Number.isFinite(r.est_minutes) &&
@@ -2528,6 +2541,10 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
         soreness: todayCheckin.soreness,
         envelopes,
         rampWeek: week,
+        // Told, not inferred: spec §6's "recovery days are mobility and
+        // cool-down only" is a rule about the day, not a consequence of the
+        // envelope array's shape (Task 5 review).
+        recoveryDay: recovery,
       });
       const fallbackPicks = composeBlockFallback(shortlists);
 
@@ -2955,6 +2972,18 @@ In the screen's `save` function (line ~160), after `updateCapturedWorkout` succe
       skillLevel: workout.tags.skillLevel,
       classifiedAt: workout.tags.classifiedAt ?? new Date().toISOString(),
     });
+```
+
+**Do not stamp `classifiedAt` on a workout with no primary muscle.** A
+workout with no muscles is immune to the soreness gate — a chest workout the
+classifier failed to tag can be offered on a chest-sore day — and this editor
+is the one path to "classified" that never passes through the tag validator
+(Task 5 review). If the workout carries no primary muscle, leave
+`classifiedAt` null and tell the user the workout needs classifying before
+the recommender will use it, pointing them at the "Tag for the recommender"
+button. Task 7's validator enforces the same rule on the AI path.
+
+```ts
 ```
 
 Styles (match the screen's existing palette):
