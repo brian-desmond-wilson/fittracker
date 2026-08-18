@@ -2380,6 +2380,12 @@ Add to `daily.ts`:
  * Swap ONE block for the next shortlist candidate (spec §6). Only a
  * still-suggested session rerolls — an accepted or completed day is history.
  * The shortlists ride in inputs_snapshot, written at compose time.
+ *
+ * The day's total re-flows here: a swap is bounded by the block's own
+ * envelope, but main's envelope can be 25 minutes wide, so a reroll can push
+ * the day past the budget. Recompute the total after the swap and surface it
+ * — §6 says the totals re-flow, and the Today tab reads them back (Task 6
+ * review).
  */
 export async function rerollBlock(
   sessionId: string,
@@ -2546,7 +2552,12 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
         // envelope array's shape (Task 5 review).
         recoveryDay: recovery,
       });
-      const fallbackPicks = composeBlockFallback(shortlists);
+      // Budget-aware: the fallback runs precisely when the model's answer was
+      // rejected, often for overrunning, so handing back the same overrun
+      // would make the rejection meaningless (Task 6 review).
+      const fallbackPicks = composeBlockFallback(
+        shortlists, todayCheckin.minutesAvailable,
+      );
 
       // ---- AI tier: one ask per question signature ----
       const shortlistIds = Object.values(shortlists)
