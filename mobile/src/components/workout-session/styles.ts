@@ -715,6 +715,26 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  exerciseNameRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  exerciseNameGrow: { flex: 1 },
+  modeBadge: {
+    paddingVertical: 3, paddingHorizontal: 9, borderRadius: 20,
+  },
+  modeBadgeLive: { backgroundColor: '#14532D' },
+  modeBadgeBackfill: { backgroundColor: '#422006' },
+  modeBadgeText: { fontSize: 11, fontWeight: '600' },
+  modeBadgeTextLive: { color: '#86EFAC' },
+  modeBadgeTextBackfill: { color: '#FCD34D' },
+  setTimeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1, borderColor: '#6b7280', borderStyle: 'dashed',
+    borderRadius: 8, paddingVertical: 5, paddingHorizontal: 12,
+  },
+  setTimeChipFilled: { borderColor: '#F59E0B', borderStyle: 'solid' },
+  setTimeChipText: { fontSize: 12, color: '#9ca3af', fontWeight: '600' },
+  setTimeChipTextFilled: { color: '#F59E0B' },
   // A captured workout served whole: the creator's prescription, shown as
   // reference above the logging controls rather than parsed into them.
   servedProtocol: {

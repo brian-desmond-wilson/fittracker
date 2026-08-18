@@ -45,6 +45,9 @@ import { supabase } from '@/src/lib/supabase';
 import { acceptSession, completeSession } from '@/src/lib/supabase/daily';
 import { fetchCapturedWorkout } from '@/src/lib/supabase/capture';
 import { formatWorkoutItem } from '@/src/lib/workoutFormat';
+import { formatSetTimeChip, resolveSession, setKey } from '@/src/lib/setTiming';
+import type { SetTimeInput } from '@/src/lib/setTiming';
+import { SetTimeSheet } from '@/src/components/workout-session/SetTimeSheet';
 import type { CapturedWorkoutEntry } from '@/src/types/capture';
 
 import {
@@ -72,7 +75,11 @@ import { TickingDuration } from '@/src/components/workout-session/TickingDuratio
 export default function WorkoutSessionPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id, instanceId, programInstanceId, mode } = useLocalSearchParams<{ id: string; instanceId?: string; programInstanceId?: string; mode?: string }>();
+  const { id, instanceId, programInstanceId, mode, recordMode: recordModeParam, startedAtMs } =
+    useLocalSearchParams<{
+      id: string; instanceId?: string; programInstanceId?: string; mode?: string;
+      recordMode?: string; startedAtMs?: string;
+    }>();
   // Daily mode: `id` is a generated_sessions.id, parentage is NULL, and the
   // template shape is built from generated_session_items instead of a program.
   const isDaily = mode === 'daily';
@@ -100,6 +107,13 @@ export default function WorkoutSessionPage() {
   const exerciseInstanceIdsRef = React.useRef<Record<number, string>>({});
   const creatingExerciseInstance = React.useRef<Record<number, boolean>>({});
   const [startedAt, setStartedAt] = useState<Date | null>(null);
+  // Live runs the per-set timer; backfill replaces it with times you type in.
+  // Held in state, not read from the param each render, so the header can flip
+  // it when you answered the question on the way in wrongly.
+  const [recordMode, setRecordMode] = useState<'live' | 'backfill'>(
+    recordModeParam === 'backfill' ? 'backfill' : 'live',
+  );
+  const [timingSetIndex, setTimingSetIndex] = useState<number | null>(null);
   
   const [exerciseStates, setExerciseStates] = useState<ExerciseState[]>([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
@@ -300,6 +314,31 @@ export default function WorkoutSessionPage() {
     // It had no opener at all before this — the modal was unreachable.
     setShowRestTimer(true);
   };
+
+  const clockLabel = (ms: number) =>
+    new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  /** What one set carries: a real span, a bare duration, or nothing yet. */
+  const setTimeInputOf = (set: SetEntry): SetTimeInput =>
+    set.started_at !== null && set.completed_at !== null
+      ? { kind: 'span', startMs: set.started_at, endMs: set.completed_at }
+      : set.duration_seconds !== null
+        ? { kind: 'duration', seconds: set.duration_seconds }
+        : { kind: 'none' };
+
+  // One resolution for the whole session, used to draw the chips AND to write
+  // the rows — computing it twice is how the two would drift apart.
+  const sessionTimes = () =>
+    resolveSession(
+      startedAt?.getTime() ?? Date.now(),
+      exerciseStates.flatMap((state, exIdx) =>
+        state.sets.map((set, setIdx) => ({
+          exIdx,
+          setIdx,
+          input: setTimeInputOf(set),
+        })),
+      ),
+    );
 
   const loadWorkout = async () => {
     try {
@@ -550,6 +589,8 @@ export default function WorkoutSessionPage() {
           completed: true,
           started_at: null,
           completed_at: null,
+          duration_seconds: null,
+          timing_source: null,
           rest_seconds: null,
         }));
         
@@ -572,6 +613,8 @@ export default function WorkoutSessionPage() {
               completed: true,
               started_at: null,
               completed_at: null,
+              duration_seconds: null,
+              timing_source: null,
               rest_seconds: null,
             };
           }
@@ -586,6 +629,8 @@ export default function WorkoutSessionPage() {
             completed: false,
             started_at: null,
             completed_at: null,
+            duration_seconds: null,
+            timing_source: null,
             rest_seconds: null,
           };
         });
@@ -621,8 +666,13 @@ export default function WorkoutSessionPage() {
       if (savedDurationSeconds > 0) {
         setStartedAt(new Date(Date.now() - savedDurationSeconds * 1000));
       } else {
-        // Use existing started_at if resuming, otherwise new Date
-        setStartedAt(workoutStartedAt || new Date());
+        // Use existing started_at if resuming; otherwise the time you said the
+        // workout happened, falling back to now for a live session.
+        const givenStart = startedAtMs ? new Date(Number(startedAtMs)) : null;
+        setStartedAt(
+          workoutStartedAt ||
+            (givenStart && !Number.isNaN(givenStart.getTime()) ? givenStart : new Date()),
+        );
       }
 
     } catch (err: any) {
@@ -925,6 +975,8 @@ export default function WorkoutSessionPage() {
         completed: false,
         started_at: null,
         completed_at: null,
+        duration_seconds: null,
+        timing_source: null,
         rest_seconds: null,
       };
       
@@ -932,6 +984,39 @@ export default function WorkoutSessionPage() {
       newStates[currentExerciseIndex] = {
         ...newStates[currentExerciseIndex],
         sets: [...warmupSets, newWarmupSet, ...workingSets],
+      };
+      return newStates;
+    });
+  };
+
+  // The prescription is a starting point, not a cap: an extra set because it
+  // felt good, or a prescribed set split in two because it didn't.
+  const addWorkingSet = () => {
+    setExerciseStates(prev => {
+      const newStates = [...prev];
+      const currentSets = newStates[currentExerciseIndex].sets;
+      const warmupSets = currentSets.filter(s => s.is_warmup);
+      const workingSets = currentSets.filter(s => !s.is_warmup);
+
+      const newWorkingSet = {
+        set_number: workingSets.length + 1,
+        weight_lbs: null,
+        actual_reps: null,
+        is_warmup: false,
+        difficulty: null,
+        increase_weight_next: false,
+        notes: null,
+        completed: false,
+        started_at: null,
+        completed_at: null,
+        duration_seconds: null,
+        timing_source: null,
+        rest_seconds: null,
+      };
+
+      newStates[currentExerciseIndex] = {
+        ...newStates[currentExerciseIndex],
+        sets: [...warmupSets, ...workingSets, newWorkingSet],
       };
       return newStates;
     });
@@ -1129,6 +1214,9 @@ export default function WorkoutSessionPage() {
 
   const saveExerciseInstance = async (exerciseIdx: number) => {
     const state = exerciseStates[exerciseIdx];
+    // Resolved once for the whole session so a duration typed into set 3 lands
+    // at the same clock time it was showing on screen.
+    const { resolvedByKey } = sessionTimes();
     const wiId = workoutInstanceId || await createWorkoutInstance();
     if (!wiId) return;
 
@@ -1187,6 +1275,7 @@ export default function WorkoutSessionPage() {
       
       const dbSetNumber = i + 1;
       // Use upsert to handle edge cases where set might already exist
+      const timing = resolvedByKey.get(setKey(exerciseIdx, i));
       await supabase.from('set_instances').upsert({
         exercise_instance_id: exInstanceId,
         user_id: userId,
@@ -1199,6 +1288,10 @@ export default function WorkoutSessionPage() {
         difficulty: set.difficulty,
         increase_weight_next: set.increase_weight_next,
         notes: set.notes,
+        started_at: timing?.startMs ? new Date(timing.startMs).toISOString() : null,
+        ended_at: timing?.endMs ? new Date(timing.endMs).toISOString() : null,
+        duration_seconds: timing?.durationSeconds ?? null,
+        timing_source: set.timing_source,
       }, { onConflict: 'exercise_instance_id,set_number' });
     }
   };
@@ -1352,6 +1445,17 @@ export default function WorkoutSessionPage() {
     );
   }
 
+  const { resolvedByKey, chainStartByKey, inputByKey } = sessionTimes();
+  const sessionAnchorMs = startedAt?.getTime() ?? Date.now();
+  const timeChipFor = (setIdx: number) => {
+    const resolved = resolvedByKey.get(setKey(currentExerciseIndex, setIdx))
+      ?? { startMs: null, endMs: null, durationSeconds: null };
+    return {
+      label: formatSetTimeChip(resolved, clockLabel),
+      hasTime: resolved.durationSeconds !== null,
+    };
+  };
+
   const targetRepsDisplay = currentExercise.exercise.target_reps_max && 
     currentExercise.exercise.target_reps_max !== currentExercise.exercise.target_reps_min
     ? `${currentExercise.exercise.target_reps_min}-${currentExercise.exercise.target_reps_max}`
@@ -1382,6 +1486,10 @@ export default function WorkoutSessionPage() {
     servedWorkout?.rawProtocol &&
       servedWorkout.items.every((i) => formatWorkoutItem(i) === ''),
   );
+
+  const timingSet =
+    timingSetIndex !== null ? currentExercise.sets[timingSetIndex] ?? null : null;
+  const timingKey = setKey(currentExerciseIndex, timingSetIndex ?? 0);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -1618,7 +1726,40 @@ export default function WorkoutSessionPage() {
           </View>
 
           {/* Exercise Info */}
-          <Text style={styles.exerciseName}>{getExercise(currentExercise.exercise).name}</Text>
+          <View style={styles.exerciseNameRow}>
+            <Text style={[styles.exerciseName, styles.exerciseNameGrow]}>
+              {getExercise(currentExercise.exercise).name}
+            </Text>
+            {/* Which mode this session is in, and a way out of the wrong one. */}
+            <TouchableOpacity
+              onPress={() =>
+                setRecordMode((m) => (m === 'live' ? 'backfill' : 'live'))
+              }
+              style={[
+                styles.modeBadge,
+                recordMode === 'backfill' ? styles.modeBadgeBackfill : styles.modeBadgeLive,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                recordMode === 'backfill'
+                  ? 'Backfill mode. Switch to live.'
+                  : 'Live mode. Switch to backfill.'
+              }
+            >
+              <Text
+                style={[
+                  styles.modeBadgeText,
+                  recordMode === 'backfill'
+                    ? styles.modeBadgeTextBackfill
+                    : styles.modeBadgeTextLive,
+                ]}
+              >
+                {recordMode === 'backfill'
+                  ? `Backfill · ${startedAt ? clockLabel(startedAt.getTime()) : ''}`
+                  : 'Live'}
+              </Text>
+            </TouchableOpacity>
+          </View>
           {servedPrescription !== null ? (
             /* The creator's own words for this movement, shown rather than
                parsed. The logger's fields sit underneath as the starting
@@ -1665,6 +1806,10 @@ export default function WorkoutSessionPage() {
                   onStartTimer={handleStartSetTimer}
                   onStopTimer={handleStopSetTimer}
                   timerStartedAt={isActiveSet ? activeSetTimer : null}
+                  recordMode={recordMode}
+                  timeChipLabel={timeChipFor(actualIdx).label}
+                  hasTime={timeChipFor(actualIdx).hasTime}
+                  onPressTime={() => setTimingSetIndex(actualIdx)}
                 />
               );
             })}
@@ -1675,7 +1820,12 @@ export default function WorkoutSessionPage() {
 
           {/* Working Sets Section */}
           <View style={styles.setsSection}>
-            <Text style={styles.setsSectionTitle}>Working Sets</Text>
+            <View style={styles.setsSectionHeader}>
+              <Text style={styles.setsSectionTitle}>Working Sets</Text>
+              <TouchableOpacity onPress={addWorkingSet} accessibilityRole="button">
+                <Text style={styles.addWarmupText}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
             {currentExercise.sets.filter(s => !s.is_warmup).map((set, idx) => {
               const actualIdx = currentExercise.sets.findIndex(
                 s => !s.is_warmup && s.set_number === set.set_number
@@ -1697,6 +1847,10 @@ export default function WorkoutSessionPage() {
                   onStartTimer={handleStartSetTimer}
                   onStopTimer={handleStopSetTimer}
                   timerStartedAt={isActiveSet ? activeSetTimer : null}
+                  recordMode={recordMode}
+                  timeChipLabel={timeChipFor(actualIdx).label}
+                  hasTime={timeChipFor(actualIdx).hasTime}
+                  onPressTime={() => setTimingSetIndex(actualIdx)}
                 />
               );
             })}
@@ -1787,6 +1941,47 @@ export default function WorkoutSessionPage() {
           </View>
         </View>
       </Modal>
+
+      {/* Backfill: the time for one set, typed in rather than measured. */}
+      {timingSet && timingSetIndex !== null && (
+        <SetTimeSheet
+          visible
+          setNumber={timingSet.set_number}
+          exerciseName={getExercise(currentExercise.exercise).name}
+          current={inputByKey.get(timingKey) ?? { kind: 'none' }}
+          chainStartMs={chainStartByKey.get(timingKey) ?? sessionAnchorMs}
+          onSave={(input) => {
+            updateSet(
+              currentExerciseIndex,
+              timingSetIndex,
+              input.kind === 'span'
+                ? {
+                    started_at: input.startMs,
+                    completed_at: input.endMs,
+                    duration_seconds: Math.max(
+                      0,
+                      Math.round((input.endMs - input.startMs) / 1000),
+                    ),
+                    timing_source: 'entered',
+                  }
+                : input.kind === 'duration'
+                  ? {
+                      started_at: null,
+                      completed_at: null,
+                      duration_seconds: input.seconds,
+                      timing_source: 'entered',
+                    }
+                  : {
+                      started_at: null,
+                      completed_at: null,
+                      duration_seconds: null,
+                      timing_source: null,
+                    },
+            );
+          }}
+          onClose={() => setTimingSetIndex(null)}
+        />
+      )}
     </View>
   );
 }

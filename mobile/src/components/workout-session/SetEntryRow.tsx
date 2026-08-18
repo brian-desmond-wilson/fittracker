@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, TextInput } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { Trash2, Timer, Moon, Play, Square, Check } from "lucide-react-native";
+import { Trash2, Timer, Moon, Play, Square, Check, Clock, ClockPlus } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { styles } from "./styles";
 import { getDifficultyColor } from "./helpers";
 import { SetEntry } from "./types";
 import { DifficultyPicker } from "./DifficultyPicker";
+import { formatSetDuration } from "@/src/lib/setTiming";
 import { TickingDuration } from "./TickingDuration";
 
 interface SetEntryRowProps {
@@ -24,6 +25,13 @@ interface SetEntryRowProps {
   onStopTimer: () => void;
   /** When the active set's timer started, or null when it isn't running. */
   timerStartedAt: number | null;
+  /** Live runs the timer; backfill replaces it with a time you type in. */
+  recordMode: "live" | "backfill";
+  /** The chip's label in backfill mode — a span, a duration, or an invitation. */
+  timeChipLabel: string;
+  /** True once this set carries a time, so the chip stops looking empty. */
+  hasTime: boolean;
+  onPressTime: () => void;
 }
 
 export function SetEntryRow({
@@ -40,6 +48,10 @@ export function SetEntryRow({
   onStartTimer,
   onStopTimer,
   timerStartedAt,
+  recordMode,
+  timeChipLabel,
+  hasTime,
+  onPressTime,
 }: SetEntryRowProps) {
   const [localWeight, setLocalWeight] = useState(set.weight_lbs?.toString() || '');
   const [localReps, setLocalReps] = useState(set.actual_reps?.toString() || '');
@@ -49,31 +61,51 @@ export function SetEntryRow({
     if (set.actual_reps !== null) setLocalReps(set.actual_reps.toString());
   }, [set.weight_lbs, set.actual_reps]);
 
-  /** A recorded duration, or a dash when there is nothing to show. */
-  const durationOrDash = (seconds: number | null) => {
-    if (seconds === null || seconds === 0) return '--';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `0:${secs.toString().padStart(2, '0')}`;
-  };
+  /** A recorded duration, or a dash when there is nothing to show. Hours get
+   *  their own field — "539:14" is not a thing anyone can read. */
+  const durationOrDash = (seconds: number | null) =>
+    seconds === null || seconds === 0 ? '--' : formatSetDuration(seconds);
 
   const handleComplete = () => {
     const weight = parseFloat(localWeight) || 0;
     const reps = parseInt(localReps) || 0;
+    const now = Date.now();
+    // In backfill the set's times came from you, and completed_at IS the end
+    // you gave it. Stamping "now" over that produced a duration measured from
+    // this morning to this evening — nine hours for one set of swings.
+    const timing =
+      recordMode === 'backfill'
+        ? {}
+        : {
+            completed_at: now,
+            // The timer ran, so this was measured rather than remembered.
+            // Without a start there is nothing to claim.
+            ...(set.started_at !== null
+              ? {
+                  duration_seconds: Math.max(
+                    0,
+                    Math.round((now - set.started_at) / 1000),
+                  ),
+                  timing_source: 'measured' as const,
+                }
+              : {}),
+          };
     onUpdate({
       weight_lbs: weight,
       actual_reps: reps,
       completed: true,
-      completed_at: Date.now(),
+      ...timing,
     });
     onComplete();
   };
 
   // Completed set - new design with tap-to-edit and swipe-to-delete
   if (set.completed) {
-    const setDuration = set.started_at && set.completed_at
-      ? Math.floor((set.completed_at - set.started_at) / 1000)
-      : null;
+    const setDuration = set.duration_seconds !== null
+      ? set.duration_seconds
+      : set.started_at && set.completed_at
+        ? Math.floor((set.completed_at - set.started_at) / 1000)
+        : null;
 
     const renderRightActions = () => (
       <TouchableOpacity
@@ -168,8 +200,26 @@ export function SetEntryRow({
             </View>
           )}
         </View>
-        {/* Timer control */}
-        {!isTimerRunning ? (
+        {/* Live times itself; backfill takes the time from you. */}
+        {recordMode === "backfill" ? (
+          <TouchableOpacity
+            style={[styles.setTimeChip, hasTime && styles.setTimeChipFilled]}
+            onPress={onPressTime}
+            accessibilityRole="button"
+            accessibilityLabel={
+              hasTime ? `Set time ${timeChipLabel}. Change it.` : "Set the time for this set"
+            }
+          >
+            {hasTime ? (
+              <Clock size={13} color="#F59E0B" />
+            ) : (
+              <ClockPlus size={13} color="#9ca3af" />
+            )}
+            <Text style={[styles.setTimeChipText, hasTime && styles.setTimeChipTextFilled]}>
+              {timeChipLabel}
+            </Text>
+          </TouchableOpacity>
+        ) : !isTimerRunning ? (
           <TouchableOpacity style={styles.timerStartButton} onPress={onStartTimer}>
             <Play size={14} color="#4ade80" />
             <Text style={styles.timerStartText}>Start</Text>
