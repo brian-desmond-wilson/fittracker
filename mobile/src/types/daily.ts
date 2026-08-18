@@ -1,7 +1,10 @@
 // Types for Daily Training Phase 2 — the daily loop.
 // Spec: docs/superpowers/specs/2026-08-16-daily-training-design.md §3, §5.
+import type { StoredBlock } from "./dailyBlocks";
 
 export type SplitDay = "push" | "pull" | "legs";
+/** `mobility` is the block recommender's dynamic warm-up phase, sitting
+ *  between the warm-up and the main work. */
 export type SessionSection = "warmup" | "mobility" | "main" | "accessory" | "bfr" | "cooldown";
 export type SkillStateLevel = "beginner" | "intermediate" | "advanced";
 
@@ -97,5 +100,5 @@ export interface StoredSession extends ComposedSession {
   gymProfileId: string | null;
   items: (SessionItem & { id: string; name: string; wasPerformed: boolean | null })[];
   /** Empty for pre-block sessions and workouts served whole. */
-  blocks: import("./dailyBlocks").StoredBlock[];
+  blocks: StoredBlock[];
 }

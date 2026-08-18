@@ -1,5 +1,6 @@
 // Types for Daily Training Phase 1 — social capture.
 // Spec: docs/superpowers/specs/2026-08-16-daily-training-design.md
+import type { WorkoutTags } from "./dailyBlocks";
 
 export type CapturePlatform = "instagram" | "tiktok" | "other";
 
@@ -140,7 +141,7 @@ export interface CapturedWorkoutEntry {
   } | null;
   items: CapturedWorkoutItemEntry[];
   /** Block-recommender tags. classifiedAt null = never classified. */
-  tags: import("./dailyBlocks").WorkoutTags;
+  tags: WorkoutTags;
 }
 
 export interface CatalogFilters {
