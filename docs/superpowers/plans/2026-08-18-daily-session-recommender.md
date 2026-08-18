@@ -2959,7 +2959,15 @@ Extend the draft shape (`draftFrom`, line 28 area) with `blockRoles`, `estMinute
                   );
                 })}
               </View>
-              <Text style={styles.tagEditorLabel}>Estimated minutes</Text>
+              {/* The number must describe the FULL written prescription — the
+                  top of a rounds range, not the middle — because the fitter
+                  trims down from it and advertises the trimmed figure to the
+                  athlete. A well-meaning manual midpoint reintroduces the
+                  skew the classify prompt was fixed to avoid (Task 8 review).
+                  Say so in the label. */}
+              <Text style={styles.tagEditorLabel}>
+                Estimated minutes (all rounds as written)
+              </Text>
               <TextInput
                 style={styles.tagInput}
                 keyboardType="number-pad"
