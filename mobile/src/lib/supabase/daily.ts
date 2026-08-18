@@ -5,17 +5,38 @@
 import { supabase } from "../supabase";
 import { lastStampedSplitDay, rampWeek } from "../dailySplit";
 import { capturedWorkoutToSessionItems, pickDaySession } from "../dailyAdopt";
+import { BLOCK_ORDER, SECTION_FOR_BLOCK, nextCandidate } from "../dailyBlockCompose";
 import { fetchCapturedWorkout } from "./capture";
+import { recordUsage } from "./workoutTags";
+import type {
+  BlockCandidate,
+  BlockPick,
+  BlockRole,
+  StoredBlock,
+} from "../../types/dailyBlocks";
 import type {
   ComposedSession,
   DailyCheckin,
   GymProfile,
   SectionMinutes,
   SessionCandidate,
+  SessionItem,
+  SessionSection,
   SkillStateLevel,
   SplitDay,
   StoredSession,
 } from "../../types/daily";
+
+/**
+ * The order a session's sections are shown and trained in. `item_order` is one
+ * sequence across the whole session — the logging screen sorts every item by it
+ * and walks them in that order — so anything that rewrites part of the list has
+ * to put the sequence back. Mirrors the Today tab's section order; `bfr` has no
+ * block and keeps the slot it already had.
+ */
+const SECTION_RANK: Record<SessionSection, number> = {
+  warmup: 0, mobility: 1, main: 2, accessory: 3, bfr: 4, cooldown: 5,
+};
 
 // ---------- Gyms ----------
 
@@ -370,6 +391,10 @@ export async function fetchTodaySession(
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
         rest_seconds, reason, was_performed, exercise:exercises(name)
+      ),
+      blocks:generated_session_blocks(
+        id, block, name, captured_workout_id, builtin_key, minutes,
+        rounds_note, reason
       )
     `)
     .eq("user_id", userId)
@@ -409,9 +434,21 @@ export async function fetchTodaySession(
         reason: i.reason,
         wasPerformed: i.was_performed,
       })),
-    // Not read yet — Task 12 joins generated_session_blocks here. Empty is
-    // also the truthful answer for every session composed before blocks.
-    blocks: [],
+    // Empty is the truthful answer for a session composed before blocks and
+    // for a workout served whole. The name comes off the row rather than a
+    // join, so a block whose workout was later deleted still reads as history.
+    blocks: (((data as any).blocks ?? []) as any[])
+      .map((b): StoredBlock => ({
+        id: b.id,
+        block: b.block,
+        workoutId: b.captured_workout_id,
+        builtinKey: b.builtin_key,
+        minutes: b.minutes,
+        roundsNote: b.rounds_note,
+        reason: b.reason,
+        name: b.name,
+      }))
+      .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
   };
 }
 
@@ -421,6 +458,8 @@ export interface SaveSessionInput {
   gymProfileId: string | null;
   checkinId: string | null;
   session: ComposedSession;
+  /** Block plan for a block-composed session; empty for legacy shapes. */
+  blocks: BlockPick[];
   inputsSnapshot: unknown;
 }
 
@@ -488,6 +527,53 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
       );
       if (insError) throw insError;
     }
+
+    // The amended CHECK is mutual exclusion, not presence: both columns NULL is
+    // legal now, so a deleted workout can leave named history behind. That
+    // makes this writer the only thing standing between a sourceless pick and a
+    // block that can never be rerolled, logged or opened — the client is
+    // untyped and the database will not catch it.
+    const blocks = input.blocks.filter((b) => {
+      if (b.workoutId || b.builtinKey) return true;
+      console.error("saveGeneratedSession: dropped block with no source:", b.block, b.name);
+      return false;
+    });
+
+    // Upsert onto UNIQUE (session_id, block), then prune what this plan no
+    // longer claims — the same shape workoutTags uses, and for the same reason.
+    // Deleting first would open a window in which a failed insert leaves the
+    // session with items and no plan to explain them, and a suggestion is only
+    // recomposed when its inputs change, so that window does not close by
+    // itself. The rows to prune are the ones read at the top of this function,
+    // before any write: an insert made a new session, so it has none.
+    if (blocks.length > 0) {
+      const { error: blkError } = await supabase.from("generated_session_blocks").upsert(
+        blocks.map((b) => ({
+          session_id: data.id,
+          block: b.block,
+          name: b.name,
+          captured_workout_id: b.workoutId,
+          builtin_key: b.builtinKey,
+          minutes: b.minutes,
+          rounds_note: b.roundsNote,
+          reason: b.reason,
+        })),
+        { onConflict: "session_id,block" },
+      );
+      if (blkError) throw blkError;
+    }
+
+    const keptBlocks = new Set(blocks.map((b) => b.block));
+    const staleBlockIds = (existing?.blocks ?? [])
+      .filter((b) => !keptBlocks.has(b.block))
+      .map((b) => b.id);
+    if (staleBlockIds.length > 0) {
+      const { error: pruneError } = await supabase
+        .from("generated_session_blocks")
+        .delete()
+        .in("id", staleBlockIds);
+      if (pruneError) throw pruneError;
+    }
     return data.id;
   } catch (e) {
     // The bare object logs as "{"code":"PGRST…" and truncates in the on-device
@@ -498,6 +584,94 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
       err?.code ?? "", err?.message ?? String(e), err?.details ?? "",
     );
     return null;
+  }
+}
+
+/** A block plan's catalog workouts as loggable session items — built-in
+ *  blocks contribute none (their movements aren't exercise rows). Sections
+ *  map per spec §7 (conditioning → accessory).
+ *
+ *  One query covers every workout, so the rows arrive interleaved by
+ *  `exercise_order` across workouts; partitioning a sorted list preserves each
+ *  workout's own order within its group. The picks are walked in block order
+ *  rather than the caller's, because `itemOrder` is the sequence the logging
+ *  screen trains in and a warm-up must not land after the cool-down. */
+export async function blockPicksToItems(picks: BlockPick[]): Promise<SessionItem[]> {
+  const workoutIds = picks.map((p) => p.workoutId).filter((id): id is string => id !== null);
+  if (workoutIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("captured_workout_exercises")
+    .select("captured_workout_id, exercise_id, exercise_order, target_sets, target_reps, rest_seconds")
+    .in("captured_workout_id", workoutIds)
+    .order("exercise_order", { ascending: true });
+  if (error) {
+    console.error("blockPicksToItems failed:", error);
+    return [];
+  }
+  const byWorkout = new Map<string, any[]>();
+  for (const row of data ?? []) {
+    const list = byWorkout.get(row.captured_workout_id) ?? [];
+    list.push(row);
+    byWorkout.set(row.captured_workout_id, list);
+  }
+  const items: SessionItem[] = [];
+  const ordered = [...picks].sort(
+    (a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block),
+  );
+  for (const pick of ordered) {
+    if (!pick.workoutId) continue;
+    for (const row of byWorkout.get(pick.workoutId) ?? []) {
+      items.push({
+        exerciseId: row.exercise_id,
+        section: SECTION_FOR_BLOCK[pick.block],
+        itemOrder: items.length,
+        targetSets: row.target_sets,
+        targetReps: row.target_reps,
+        restSeconds: row.rest_seconds,
+        reason: null,
+      });
+    }
+  }
+  return items;
+}
+
+/** Rebuild `item_order` as one sequence across the session, in section order.
+ *
+ *  A reroll replaces one section's items in place, and whatever numbers those
+ *  new rows carry are read by the logging screen as where in the day they
+ *  belong — so without this a rerolled warm-up is logged after the cool-down,
+ *  and two rerolls of different blocks collide on the same numbers.
+ *
+ *  Best-effort, and deliberately not fatal: a failure here leaves a correct
+ *  plan in a wrong order, which is worse to report as a failed reroll than to
+ *  leave standing. */
+async function renumberSessionItems(sessionId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("generated_session_items")
+    .select("id, section, item_order")
+    .eq("session_id", sessionId);
+  if (error) {
+    console.error("renumberSessionItems read failed:", error);
+    return;
+  }
+  const ordered = [...(data ?? [])].sort((a: any, b: any) => {
+    const bySection = (SECTION_RANK[a.section as SessionSection] ?? 99)
+      - (SECTION_RANK[b.section as SessionSection] ?? 99);
+    return bySection !== 0 ? bySection : a.item_order - b.item_order;
+  });
+  // In parallel, not in sequence: replacing the first block shifts every item
+  // after it, so this is most of the session, and a round trip each would be
+  // felt on the tap that started it.
+  const results = await Promise.all(
+    ordered
+      .map((row: any, i: number) => ({ row, i }))
+      .filter(({ row, i }) => row.item_order !== i)
+      .map(({ row, i }) =>
+        supabase.from("generated_session_items").update({ item_order: i }).eq("id", row.id),
+      ),
+  );
+  for (const r of results) {
+    if (r.error) console.error("renumberSessionItems update failed:", r.error);
   }
 }
 
@@ -535,7 +709,182 @@ export async function completeSession(
     .from("generated_sessions")
     .update({ status: "completed" })
     .eq("id", sessionId);
-  if (sessError) console.error("completeSession status failed:", sessError);
+  if (sessError) {
+    // The day is not on record as trained, so it must not be on record in the
+    // ledger either — coverage would then steer tomorrow away from muscles a
+    // retried completion has yet to claim.
+    console.error("completeSession status failed:", sessError);
+    return;
+  }
+
+  // The ledger records what actually ran — composed blocks and workouts served
+  // whole alike. Muscles are denormalized now, so a later retag never rewrites
+  // history. maybeSingle, not single: the row can be gone (deleted, or another
+  // device's write) and the status update above has already landed, so there is
+  // nothing here worth throwing over.
+  const { data: sess, error: readError } = await supabase
+    .from("generated_sessions")
+    .select(`
+      user_id, session_date, served_captured_workout_id,
+      blocks:generated_session_blocks(block, captured_workout_id)
+    `)
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (readError || !sess) {
+    if (readError) console.error("completeSession ledger read failed:", readError);
+    return;
+  }
+  const entries: { capturedWorkoutId: string; block: BlockRole }[] = [];
+  for (const b of ((sess as any).blocks ?? []) as any[]) {
+    if (b.captured_workout_id) {
+      entries.push({ capturedWorkoutId: b.captured_workout_id, block: b.block });
+    }
+  }
+  // A workout served whole writes no block rows — the adopt path, and the
+  // composer's own serve-whole answer. It counts as the day's main work.
+  if (entries.length === 0 && sess.served_captured_workout_id) {
+    entries.push({ capturedWorkoutId: sess.served_captured_workout_id, block: "main" });
+  }
+  if (entries.length === 0) return;
+  const ids = [...new Set(entries.map((e) => e.capturedWorkoutId))];
+  const { data: muscleRows, error: muscleError } = await supabase
+    .from("captured_workout_muscles")
+    .select("captured_workout_id, is_primary, muscle_region:muscle_regions(name)")
+    .in("captured_workout_id", ids);
+  if (muscleError) console.error("completeSession muscle read failed:", muscleError);
+  const musclesByWorkout = new Map<string, { name: string; isPrimary: boolean }[]>();
+  for (const m of (muscleRows ?? []) as any[]) {
+    const name = m.muscle_region?.name;
+    if (!name) continue;
+    const list = musclesByWorkout.get(m.captured_workout_id) ?? [];
+    list.push({ name, isPrimary: !!m.is_primary });
+    musclesByWorkout.set(m.captured_workout_id, list);
+  }
+  // recordUsage returns false on a failed write: the day's training then never
+  // counts toward the coverage that steers tomorrow's pick, and the unique
+  // constraint makes a retry safe. Log it loudly rather than dropping it on
+  // the floor.
+  const ledgerWritten = await recordUsage({
+    userId: sess.user_id,
+    sessionId,
+    performedDate: sess.session_date,
+    entries: entries.map((e) => ({
+      ...e,
+      muscles: musclesByWorkout.get(e.capturedWorkoutId) ?? [],
+    })),
+  });
+  if (!ledgerWritten) {
+    console.error("completeSession: ledger write failed for session", sessionId);
+  }
+}
+
+/**
+ * Swap ONE block for the next shortlist candidate (spec §6). Only a
+ * still-suggested session rerolls — an accepted or completed day is history.
+ * The shortlists ride in inputs_snapshot, written at compose time; a session
+ * composed before that existed, or a workout adopted whole (which stores no
+ * snapshot at all), simply has nothing to cycle and the reroll declines.
+ *
+ * The day's total re-flows here: a swap is bounded by the block's own
+ * envelope, but main's envelope can be 25 minutes wide, so a reroll can push
+ * the day past the budget. section_minutes is what the Today tab sums for its
+ * planned-minutes line, so it is recomputed from the blocks as they now stand
+ * — §6 says the totals re-flow, and nothing else would ever put them right.
+ */
+export async function rerollBlock(
+  sessionId: string,
+  block: BlockRole,
+): Promise<boolean> {
+  try {
+    const { data: sess, error } = await supabase
+      .from("generated_sessions")
+      .select(`
+        status, inputs_snapshot, section_minutes,
+        blocks:generated_session_blocks(id, block, minutes, captured_workout_id, builtin_key)
+      `)
+      .eq("id", sessionId)
+      .single();
+    if (error || !sess) throw error ?? new Error("session not found");
+    if (sess.status !== "suggested") return false;
+
+    const shortlists = (sess.inputs_snapshot as any)?.shortlists ?? {};
+    const list = (shortlists[block] ?? []) as BlockCandidate[];
+    const blockRows = ((sess as any).blocks ?? []) as any[];
+    const current = blockRows.find((b) => b.block === block);
+    if (!current) return false;
+    const next = nextCandidate(list, current.captured_workout_id ?? current.builtin_key ?? "");
+    if (!next) return false;
+    // Both columns NULL is legal now — it is how a deleted workout leaves named
+    // history — so writing a sourceless candidate would quietly turn a live
+    // block into one, with nothing left to log or reroll from.
+    if (!next.workoutId && !next.builtinKey) {
+      console.error("rerollBlock: shortlist candidate has no source:", block, next.name);
+      return false;
+    }
+
+    const { error: upError } = await supabase
+      .from("generated_session_blocks")
+      .update({
+        captured_workout_id: next.workoutId,
+        builtin_key: next.builtinKey,
+        name: next.name,
+        minutes: next.minutes,
+        rounds_note: next.roundsNote,
+        reason: null, // the model's reason explained the OLD pick
+      })
+      .eq("id", current.id);
+    if (upError) throw upError;
+
+    // Replace just this block's loggable items. Safe to key on the section
+    // because the block→section map is injective: conditioning is the only
+    // block that lands in `accessory`, and `bfr` has no block at all. A
+    // built-in replacement contributes none, so the delete stands alone.
+    const { error: delError } = await supabase
+      .from("generated_session_items")
+      .delete()
+      .eq("session_id", sessionId)
+      .eq("section", SECTION_FOR_BLOCK[block]);
+    if (delError) throw delError;
+    if (next.workoutId) {
+      const items = await blockPicksToItems([
+        { block, workoutId: next.workoutId, builtinKey: null, name: next.name,
+          minutes: next.minutes, roundsNote: next.roundsNote, reason: null },
+      ]);
+      if (items.length > 0) {
+        const { error: insError } = await supabase.from("generated_session_items").insert(
+          items.map((i) => ({
+            session_id: sessionId,
+            exercise_id: i.exerciseId,
+            item_order: i.itemOrder,
+            section: i.section,
+            target_sets: i.targetSets,
+            target_reps: i.targetReps,
+            rest_seconds: i.restSeconds,
+            reason: null,
+          })),
+        );
+        if (insError) throw insError;
+      }
+    }
+    // Both of these are derived from the swap rather than part of it, so
+    // neither is allowed to report a reroll that happened as one that didn't.
+    await renumberSessionItems(sessionId);
+    const reflowed: SectionMinutes = { ...((sess.section_minutes ?? {}) as SectionMinutes) };
+    for (const b of blockRows) {
+      const section = SECTION_FOR_BLOCK[b.block as BlockRole];
+      if (!section) continue;
+      reflowed[section] = b.id === current.id ? next.minutes : b.minutes;
+    }
+    const { error: minError } = await supabase
+      .from("generated_sessions")
+      .update({ section_minutes: reflowed })
+      .eq("id", sessionId);
+    if (minError) console.error("rerollBlock section_minutes re-flow failed:", minError);
+    return true;
+  } catch (e) {
+    console.error("rerollBlock failed:", e);
+    return false;
+  }
 }
 
 // ---------- Adopting a catalog workout ----------

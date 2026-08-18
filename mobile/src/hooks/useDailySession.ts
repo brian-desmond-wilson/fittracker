@@ -216,6 +216,9 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         gymProfileId: activeGym?.id ?? null,
         checkinId: todayCheckin.id,
         session: composed,
+        // Exercise-level composition has no block plan. Task 13 wires the
+        // block engine in here.
+        blocks: [],
         inputsSnapshot: aiBody,
       });
       if (runId !== runIdRef.current) return;
