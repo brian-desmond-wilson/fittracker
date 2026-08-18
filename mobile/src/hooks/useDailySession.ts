@@ -4,31 +4,69 @@
 // event-driven recompute — never timers, one clock sample per compute.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { getLocalDateString } from "../components/workout-session/helpers";
-import { nextSplitDay, rampWeek } from "../lib/dailySplit";
-import { buildCandidatePools, resolveProgressions } from "../lib/dailyCandidates";
-import { sessionBudget } from "../lib/dailyBudget";
-import { composeFallback, validateAiSession } from "../lib/dailyCompose";
-import { estimateSectionMinutes } from "../lib/dailySectionMinutes";
+// Canonical home for the calendar-date helpers — lib/dates.ts, not the
+// workout-session re-export, which exists only for older call sites.
+import { addDays, getLocalDateString, parseLocalDate } from "../lib/dates";
+import { rampWeek } from "../lib/dailySplit";
+import { muscleCoverage } from "../lib/dailyCoverage";
+import { blockEnvelopes } from "../lib/dailyBlockBudget";
+import { isRecoveryDay, buildBlockShortlists } from "../lib/dailyBlockShortlist";
 import {
-  fetchBfrFlag,
-  fetchCandidateData,
+  composeBlockFallback,
+  validateBlockComposition,
+  BLOCK_ORDER,
+  SECTION_FOR_BLOCK,
+} from "../lib/dailyBlockCompose";
+import {
+  blockPicksToItems,
   fetchGyms,
   fetchTodayCheckin,
   fetchTodaySession,
   saveGeneratedSession,
 } from "../lib/supabase/daily";
+import {
+  classifyWorkout,
+  fetchMuscleRegionNames,
+  fetchTaggedWorkouts,
+  fetchUsage,
+} from "../lib/supabase/workoutTags";
 import { fetchCapturedWorkouts } from "../lib/supabase/capture";
+import type { BlockPick } from "../types/dailyBlocks";
 import type {
-  ComposedSession,
   DailyCheckin,
   GymProfile,
+  SectionMinutes,
   StoredSession,
 } from "../types/daily";
 
 const AI_RETRY_DELAY_MS = 1_200;
-const aiAnswerBySignature = new Map<string, ComposedSession | null>();
+const aiAnswerBySignature = new Map<string, BlockPick[] | null>();
 const aiAskInFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * How far back the ledger read reaches. `muscleCoverage` weighs performances
+ * 0-7 days old and discards the rest, so seven would do; the extra day means
+ * the edge of the window is the arithmetic's and never the read's. Nothing
+ * here needs to reach further — a workout's own last performance arrives with
+ * `fetchTaggedWorkouts`, which keeps its own 30-day horizon.
+ */
+const COVERAGE_WINDOW_DAYS = 8;
+
+/**
+ * Lazy classification, at most one attempt per workout per day per app run.
+ *
+ * Keyed by workout id, and it does two jobs. It coalesces overlapping loads
+ * onto one call, because the run-id guard cannot cancel a request already in
+ * flight — it only stops the caller from reading the answer, and a
+ * pull-to-refresh during a first-run backfill would otherwise put a second
+ * copy of every classify call on the wire. And it stops a workout that cannot
+ * be classified — a caption the model can make nothing of — from costing an
+ * OpenAI call on every single pull-to-refresh, forever.
+ *
+ * Module scope, so tomorrow or a restart tries again. That is what the failure
+ * is worth: the workout is out of play for today, not for good.
+ */
+const classifyByWorkout = new Map<string, { date: string; done: Promise<unknown> }>();
 
 async function askComposeSession(body: object): Promise<unknown> {
   let lastError: unknown = null;
@@ -103,82 +141,148 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       }
 
       const activeGym = gymList.find((g) => g.isActive) ?? null;
-      const [data, bfr, capturedWorkouts] = await Promise.all([
-        fetchCandidateData(user.id),
-        fetchBfrFlag(user.id),
+      // Calendar arithmetic, not 24-hour arithmetic: a day either side of a
+      // clock change is still a day, and formatting the result back through
+      // toISOString would hand the database a UTC date, which is the wrong day
+      // for half the world.
+      const sinceDate = getLocalDateString(
+        addDays(parseLocalDate(today), -COVERAGE_WINDOW_DAYS),
+      );
+      const [captured, usage, muscleNames, firstRow] = await Promise.all([
         fetchCapturedWorkouts(user.id),
+        fetchUsage(user.id, sinceDate),
+        fetchMuscleRegionNames(),
+        supabase
+          .from("generated_sessions")
+          .select("session_date")
+          .eq("user_id", user.id)
+          .order("session_date", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+          .then((r) => r.data),
       ]);
       if (runId !== runIdRef.current) return;
 
-      // ---- Rules tier ----
-      const splitDay = nextSplitDay(data.lastCompletedSplitDay);
-      const week = rampWeek(data.firstSessionDate, today);
-      const gymEquipment = new Set(activeGym?.equipmentNames ?? []);
-      if (gymEquipment.size === 0) {
-        // No gym configured: assume bodyweight basics rather than nothing.
-        ["Bodyweight", "Floor", "Wall", "Mat"].forEach((n) => gymEquipment.add(n));
+      // ---- Lazy classification backfill (spec §3.1, §8): tag what isn't
+      // tagged, in place, before shortlisting. A failure leaves that workout
+      // out of play today; tomorrow retries. See classifyByWorkout for why an
+      // attempt is remembered rather than repeated on every refresh.
+      const untagged = captured.filter((w) => w.tags.classifiedAt === null);
+      if (untagged.length > 0 && muscleNames.length > 0) {
+        await Promise.all(untagged.map((w) => {
+          const prior = classifyByWorkout.get(w.workoutId);
+          if (prior && prior.date === today) return prior.done;
+          const done = classifyWorkout(w, muscleNames).catch(() => null);
+          classifyByWorkout.set(w.workoutId, { date: today, done });
+          return done;
+        }));
       }
-      if (bfr) gymEquipment.add("Bands");
+      const tagged = await fetchTaggedWorkouts(user.id, today);
+      if (runId !== runIdRef.current) return;
+      // null = the read FAILED, which is not the same as an empty catalog.
+      // An empty catalog composes a legitimate built-ins-only day, so saving
+      // one on a network blip would persist a recovery-shaped day the user
+      // never had. Abort instead — the tab reports it and a pull-to-refresh
+      // retries, which is honest in a way a wrong day would not be.
+      if (tagged === null) throw new Error("couldn't read your workout catalog");
+      // Same for the ledger: recency-blind, every workout reads as
+      // never-performed, the 4-day repeat gate stops holding and the recency
+      // score saturates for everything. `[]` is a real state (a week of rest).
+      if (usage === null) throw new Error("couldn't read your training history");
 
-      const pools = buildCandidatePools(data.candidates, {
-        splitDay,
-        gymEquipment,
+      // ---- Rules tier ----
+      const week = rampWeek(firstRow?.session_date ?? null, today);
+      const recovery = isRecoveryDay(todayCheckin);
+      const coverage = muscleCoverage(usage, today);
+      const envelopes = blockEnvelopes(todayCheckin.minutesAvailable, recovery);
+      const { shortlists, relaxedMain } = buildBlockShortlists(tagged, {
+        coverage,
         soreness: todayCheckin.soreness,
-      });
-      pools.main = resolveProgressions(pools.main, {
-        skillState: data.skillState,
-        regressions: data.regressions,
-        byExerciseId: data.byExerciseId,
-      });
-      const budget = sessionBudget({
-        minutes: todayCheckin.minutesAvailable,
+        envelopes,
         rampWeek: week,
-        energy: todayCheckin.energy,
+        // Told, not inferred: spec §6's "recovery days are mobility and
+        // cool-down only" is a rule about the day, not a consequence of the
+        // envelope array's shape.
+        recoveryDay: recovery,
       });
-      const fallbackItems = composeFallback(pools, budget);
+      // Budget-aware: the fallback runs precisely when the model's answer was
+      // rejected, often for overrunning, so handing back the same overrun
+      // would make the rejection meaningless.
+      const fallbackPicks = composeBlockFallback(
+        shortlists, todayCheckin.minutesAvailable,
+      );
 
       // ---- AI tier: one ask per question signature ----
-      const offeredIds = new Set(
-        [...pools.warmup, ...pools.main, ...pools.cooldown].map((c) => c.exerciseId),
-      );
-      const offeredWorkoutIds = new Set(capturedWorkouts.map((w) => w.workoutId));
+      // Walked in block order and then sorted, so the signature is a function
+      // of what was offered and not of the order the shortlist builder happens
+      // to insert its keys in.
+      const shortlistIds = BLOCK_ORDER
+        .flatMap((block) => shortlists[block] ?? [])
+        .map((c) => c.workoutId ?? c.builtinKey ?? "")
+        .sort()
+        .join(",");
+      // The question the composer was asked, and nothing else. The active gym
+      // was part of it for the exercise-level engine and is deliberately not
+      // part of it here: a block day picks whole workouts, which are never
+      // equipment-filtered, so switching gyms cannot change the answer — and
+      // recomposing anyway would spend an AI call and throw away a reroll to
+      // arrive back at the same day. The row keeps the gym it was stamped with
+      // until something that IS an input changes.
       const signature = [
-        today, splitDay, todayCheckin.id, activeGym?.id ?? "no-gym",
-        todayCheckin.minutesAvailable, todayCheckin.energy,
-        [...offeredIds].sort().join(","),
+        today, todayCheckin.id, todayCheckin.minutesAvailable,
+        todayCheckin.energy, recovery ? "recovery" : "train", shortlistIds,
       ].join("::");
 
-      let composed: ComposedSession = {
-        splitDay, rampWeek: week, source: "rules_fallback",
-        servedCapturedWorkoutId: null, items: fallbackItems,
-        sectionMinutes: estimateSectionMinutes(fallbackItems),
-      };
+      // A reroll is a user decision, and recomposing would overwrite it: the
+      // hook recomposes any still-suggested session on every load, and
+      // saveGeneratedSession replaces the block rows wholesale. So stop early
+      // when the day already on file was composed from exactly these inputs —
+      // a changed check-in, or a catalog change that moved the shortlists,
+      // changes the signature, which is precisely when a recompose IS wanted.
+      if (
+        existing &&
+        existing.blocks.length > 0 &&
+        existing.composeSignature === signature
+      ) {
+        setSession(existing);
+        setLoading(false);
+        return;
+      }
 
       const aiBody = {
-        splitDay,
+        mode: "blocks",
         minutes: todayCheckin.minutesAvailable,
-        budget,
-        candidates: [
-          ...pools.warmup, ...pools.main, ...pools.cooldown,
-        ].map((c) => ({
-          id: c.exerciseId,
-          name: c.name,
-          pool: c.section,
-          isCapture: c.isCapture,
-          skillLevel: c.skillLevel,
-          muscles: c.muscles.filter((m) => m.isPrimary).map((m) => m.name),
-          lastPerformedDaysAgo: c.lastPerformedDaysAgo,
-          regressedFrom: c.regressedFromId,
-          equipmentUnknown: c.equipmentUnknown,
-        })),
-        capturedWorkouts: capturedWorkouts.map((w) => ({
-          id: w.workoutId,
-          name: w.name,
-          itemCount: w.items.length,
-          muscles: "",
-        })),
+        energy: todayCheckin.energy,
+        soreness: todayCheckin.soreness,
+        relaxedMain,
+        coverage: {
+          neglected: coverage.neglected.slice(0, 8),
+          yesterday: [...coverage.yesterday],
+        },
+        shortlists: Object.fromEntries(
+          Object.entries(shortlists).map(([block, list]) => [
+            block,
+            (list ?? []).map((c) => ({
+              id: c.workoutId ?? c.builtinKey,
+              name: c.name,
+              minutes: c.minutes,
+              roundsNote: c.roundsNote,
+              focus: c.focus,
+              builtin: c.builtinKey !== null,
+              muscles: c.muscles.filter((m) => m.isPrimary).map((m) => m.name),
+              // Null for a built-in, which has no history to have — and the
+              // edge function drops the field for one anyway, because "never
+              // done" on a generic reads as an argument for it over a capture.
+              lastPerformedDaysAgo:
+                tagged.find((w) => w.workoutId === c.workoutId)?.lastPerformedDaysAgo ?? null,
+              score: c.score,
+            })),
+          ]),
+        ),
       };
 
+      let picks: BlockPick[] = fallbackPicks;
+      let source: "ai" | "rules_fallback" = "rules_fallback";
       try {
         let cached = aiAnswerBySignature.get(signature);
         if (cached === undefined) {
@@ -189,38 +293,52 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
             ask.finally(() => aiAskInFlight.delete(signature));
           }
           const raw = await ask;
-          const validated = validateAiSession(
-            raw, offeredIds, offeredWorkoutIds, todayCheckin.minutesAvailable,
+          cached = validateBlockComposition(
+            raw, shortlists, todayCheckin.minutesAvailable,
           );
-          cached = validated
-            ? { splitDay, rampWeek: week, source: "ai" as const,
-                servedCapturedWorkoutId: validated.servedCapturedWorkoutId,
-                items: validated.items,
-                // The model's own timings when they held up; our arithmetic
-                // when they didn't, so the sections are never left untimed.
-                sectionMinutes: validated.sectionMinutes
-                  ?? estimateSectionMinutes(validated.items) }
-            : null;
           aiAnswerBySignature.set(signature, cached);
         }
-        if (cached) composed = cached;
+        if (cached) {
+          picks = cached;
+          source = "ai";
+        }
       } catch (e) {
-        // AI failure is not an error state — rules stand alone (spec §5.4).
+        // AI failure is not an error state — rules stand alone (spec §5).
         console.warn("compose-session ask failed:", e);
       }
       if (runId !== runIdRef.current) return;
 
+      const items = await blockPicksToItems(picks);
+      // Guarded here and not only before the ask: this is the last await before
+      // the day is written, and a stale run that got past it would persist a
+      // plan built from inputs the user has already changed.
+      if (runId !== runIdRef.current) return;
+      // One entry per block, and no two blocks share a section — conditioning
+      // is the only block that lands in `accessory`, and `bfr` has no block at
+      // all — so nothing here can overwrite anything else.
+      const sectionMinutes: SectionMinutes = Object.fromEntries(
+        picks.map((p) => [SECTION_FOR_BLOCK[p.block], p.minutes]),
+      );
       const sessionId = await saveGeneratedSession({
         userId: user.id,
         date: today,
         gymProfileId: activeGym?.id ?? null,
         checkinId: todayCheckin.id,
-        session: composed,
-        // Exercise-level composition has no block plan. Task 13 wires the
-        // block engine in here.
-        blocks: [],
+        session: {
+          splitDay: null, // block sessions never move the PPL rotation
+          rampWeek: week,
+          source,
+          servedCapturedWorkoutId: null,
+          items,
+          sectionMinutes,
+        },
+        blocks: picks,
+        // Written to its own column, LAST, after the items and blocks land —
+        // so a partial failure leaves it null and the next load recomposes
+        // rather than trusting a plan that was never finished.
         composeSignature: signature,
-        inputsSnapshot: aiBody,
+        // Shortlists ride along for reroll; aiBody for audit, same as before.
+        inputsSnapshot: { aiBody, shortlists },
       });
       if (runId !== runIdRef.current) return;
       if (sessionId) {
