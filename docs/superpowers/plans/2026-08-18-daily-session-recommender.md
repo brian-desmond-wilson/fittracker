@@ -2717,6 +2717,15 @@ git commit -m "feat(daily): the Today engine composes five blocks from whole cat
 
 **Files:**
 - Modify: `mobile/src/components/training/daily/TodayTab.tsx`
+- Modify: `mobile/src/components/DailySessionHomeCard.tsx`
+- Modify: `app/workout/[id].tsx`
+
+**Every screen that names the day must stop saying "Leg day."** A block session
+stores `split_day` NULL, and all three of these fall through a
+push/pull/legs ternary to a leg-day label (Task 13 review). So a five-block
+day currently reads "Leg day is ready" on Home and "Leg Day" atop the logging
+screen. Each needs the same treatment the Today tab gets below: name the day
+after its main workout, or call it a recovery day when there is no main.
 
 - [ ] **Step 1: Render the block session**
 
