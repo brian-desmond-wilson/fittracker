@@ -2543,6 +2543,12 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
       }
       const tagged = await fetchTaggedWorkouts(user.id, today);
       if (runId !== runIdRef.current) return;
+      // null = the read FAILED, which is not the same as an empty catalog.
+      // An empty catalog composes a legitimate built-ins-only day, so saving
+      // one on a network blip would persist a recovery-shaped day the user
+      // never had (Task 9 review). Abort instead — the tab keeps whatever it
+      // was already showing and a pull-to-refresh retries.
+      if (tagged === null) throw new Error("couldn't read your workout catalog");
 
       // ---- Rules tier ----
       const week = rampWeek(firstRow?.session_date ?? null, today);
