@@ -8,6 +8,8 @@ import { getLocalDateString } from "@/src/components/workout-session/helpers";
 import { fetchTodaySession } from "@/src/lib/supabase/daily";
 import type { StoredSession } from "@/src/types/daily";
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 /** Compact Home surface for the generated daily session. Read-only: it shows
  *  what exists and routes to the Today tab; composition happens there. */
 export function DailySessionHomeCard() {
@@ -56,8 +58,8 @@ export function DailySessionHomeCard() {
     : "rules composed";
   const subtitle = session
     ? `${session.blocks.length > 0
-        ? `${session.blocks.length} blocks`
-        : `${session.items.length} movements`} · ${composedBy}`
+        ? plural(session.blocks.length, "block")
+        : plural(session.items.length, "movement")} · ${composedBy}`
     : "Soreness, energy, time — ten seconds";
 
   return (
