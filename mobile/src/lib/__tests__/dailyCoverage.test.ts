@@ -18,6 +18,23 @@ describe("muscleCoverage", () => {
     expect(cov.neglected).toHaveLength(TRAINABLE_MUSCLES.length);
   });
 
+  it("empty ledger: ties break alphabetically, not by declaration order", () => {
+    const cov = muscleCoverage([], today);
+    expect(cov.neglected).toEqual(
+      [...TRAINABLE_MUSCLES].sort((a, b) => a.localeCompare(b)),
+    );
+  });
+
+  it("today's training counts — the session being composed isn't in the ledger yet", () => {
+    const cov = muscleCoverage([row("2026-08-18", [["Chest", true]])], today);
+    expect(cov.load["Chest"]).toBeCloseTo(1);
+  });
+
+  it("day 7 is the last day in the window", () => {
+    const cov = muscleCoverage([row("2026-08-11", [["Lats", true]])], today);
+    expect(cov.load["Lats"]).toBeCloseTo(1 / 8);
+  });
+
   it("yesterday's primaries land in `yesterday`; secondaries do not", () => {
     const cov = muscleCoverage(
       [row("2026-08-17", [["Chest", true], ["Triceps", false]])], today);
