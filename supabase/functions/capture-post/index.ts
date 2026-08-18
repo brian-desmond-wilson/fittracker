@@ -47,6 +47,19 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
+/** A failure that came from OpenAI rather than from us, carrying its status so
+ *  the caller can tell "retry later" from "stop". The backfill classifies a
+ *  whole catalog in a row: flattened to one generic failure it re-hammers a
+ *  rate limit, and repeats a doomed call N times on a bad key. */
+class UpstreamError extends Error {
+  readonly status: number;
+  constructor(status: number, detail: string) {
+    super(`openai ${status}: ${detail.slice(0, 300)}`);
+    this.name = 'UpstreamError';
+    this.status = status;
+  }
+}
+
 type Platform = 'instagram' | 'tiktok' | 'other';
 
 function detectPlatform(url: string): Platform {
@@ -328,7 +341,7 @@ Respond as JSON:
           ],
         }),
       });
-      if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      if (!res.ok) throw new UpstreamError(res.status, await res.text());
       const data = await res.json();
       const content = data.choices?.[0]?.message?.content;
       if (typeof content !== 'string') throw new Error('empty model response');
@@ -444,6 +457,12 @@ Respond as JSON:
     throw new Error(`unknown action: ${String(body.action)}`);
   } catch (e) {
     console.error('capture-post:', e);
-    return json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
+    // An upstream failure answers with the upstream's own status, so a caller
+    // looping over a catalog can back off on a 429 and give up on a bad key.
+    // Ours stay 500: this function has no other status to confuse them with.
+    const status = e instanceof UpstreamError && e.status >= 400 && e.status <= 599
+      ? e.status
+      : 500;
+    return json({ error: e instanceof Error ? e.message : 'Unknown error' }, status);
   }
 });
