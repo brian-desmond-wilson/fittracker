@@ -39,6 +39,11 @@ export interface SetEntry {
   started_at: number | null; // timestamp when timer started
   completed_at: number | null; // timestamp when set was logged
   rest_seconds: number | null; // rest time before this set
+  /** How long the set took. Authoritative when typed in; otherwise derived. */
+  duration_seconds: number | null;
+  /** Whether the timer produced these numbers or you did. A measured 4:12 and
+   *  a remembered 4:12 are not equally trustworthy. */
+  timing_source: "measured" | "entered" | null;
 }
 
 export interface ExerciseState {
