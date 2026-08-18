@@ -65,11 +65,24 @@ describe("buildBlockShortlists", () => {
 
   it("sore-dominated mains are excluded; done-3-days-ago is excluded", () => {
     const sore = workout({ workoutId: "sore" });
-    const recent = workout({ workoutId: "recent", lastPerformedDaysAgo: 3 });
+    // Glutes, not the default Chest: otherwise soreness excludes this one too
+    // and the recency window is never the reason it left.
+    const recent = workout({
+      workoutId: "recent", lastPerformedDaysAgo: 3,
+      tags: { muscles: muscles([["Glutes", true]]) } as any,
+    });
     const ok = workout({ workoutId: "ok", tags: { muscles: muscles([["Quads", true]]) } as any });
     const ctx = { ...baseCtx(), soreness: { Chest: 2 } };
     const { shortlists } = buildBlockShortlists([sore, recent, ok], ctx);
     expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["ok"]);
+  });
+
+  it("the repeat window is four days: three days ago is out, four is in", () => {
+    const three = workout({ workoutId: "three", lastPerformedDaysAgo: 3 });
+    const four = workout({ workoutId: "four", lastPerformedDaysAgo: 4 });
+    const { shortlists, relaxedMain } = buildBlockShortlists([three, four], baseCtx());
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["four"]);
+    expect(relaxedMain).toBe(false);
   });
 
   it("advanced workouts sit out ramp weeks 1-2", () => {
@@ -96,6 +109,55 @@ describe("buildBlockShortlists", () => {
     }], "2026-08-18");
     const { shortlists } = buildBlockShortlists([chest, legs], { ...baseCtx(), coverage: cov });
     expect(shortlists.main![0].workoutId).toBe("legs");
+  });
+
+  it("yesterday's muscles are penalised even when freshness ties", () => {
+    const chest = workout({ workoutId: "chest" });
+    const legs = workout({ workoutId: "legs", tags: { muscles: muscles([["Quads", true]]) } as any });
+    // Chest: one primary yesterday = 7/8 load. Quads: a primary two days ago
+    // (6/8) plus a secondary six days ago (1/8) = the same 7/8, with no claim
+    // on yesterday. Freshness and recency both tie, so only the penalty can
+    // decide — and the names are ordered so the tiebreak would flip the answer.
+    const cov = muscleCoverage([
+      { capturedWorkoutId: "a", performedDate: "2026-08-17", block: "main",
+        muscles: muscles([["Chest", true]]) },
+      { capturedWorkoutId: "b", performedDate: "2026-08-16", block: "main",
+        muscles: muscles([["Quads", true]]) },
+      { capturedWorkoutId: "c", performedDate: "2026-08-12", block: "main",
+        muscles: muscles([["Quads", false]]) },
+    ], "2026-08-18");
+    expect(cov.load.Chest).toBe(cov.load.Quads);
+    const { shortlists } = buildBlockShortlists([chest, legs], { ...baseCtx(), coverage: cov });
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["legs", "chest"]);
+  });
+
+  it("among equally fresh mains, the one done longer ago wins", () => {
+    // Same muscles, so freshness ties; named so the alphabetical tiebreak
+    // would give the opposite order if recency stopped counting toward score.
+    const zulu = workout({ workoutId: "zulu", lastPerformedDaysAgo: 7 });
+    const alpha = workout({ workoutId: "alpha", lastPerformedDaysAgo: 4 });
+    const { shortlists } = buildBlockShortlists([zulu, alpha], baseCtx());
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["zulu", "alpha"]);
+  });
+
+  it("one untouched muscle beats three half-trained ones", () => {
+    const narrow = workout({
+      workoutId: "narrow", tags: { muscles: muscles([["Quads", true]]) } as any,
+    });
+    const broad = workout({
+      workoutId: "broad",
+      tags: {
+        muscles: muscles([["Chest", true], ["Shoulders", true], ["Triceps", true]]),
+      } as any,
+    });
+    // Each of broad's three primaries sits at half load; narrow's is untouched.
+    // Freshness is the mean, so narrow wins — summing would hand it to broad.
+    const cov = muscleCoverage([{
+      capturedWorkoutId: "a", performedDate: "2026-08-14", block: "main",
+      muscles: muscles([["Chest", true], ["Shoulders", true], ["Triceps", true]]),
+    }], "2026-08-18");
+    const { shortlists } = buildBlockShortlists([narrow, broad], { ...baseCtx(), coverage: cov });
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["narrow", "broad"]);
   });
 
   it("equal scores break on name, not on catalog order", () => {
@@ -161,6 +223,46 @@ describe("buildBlockShortlists", () => {
     expect(shortlists.mobility!.map((c) => c.workoutId)).toContain("mob-shoulders");
   });
 
+  it("shortlists are capped at five mains and three catalog support picks", () => {
+    const mains = [1, 2, 3, 4, 5, 6].map((n) => workout({ workoutId: `m${n}` }));
+    const warmups = [1, 2, 3, 4].map((n) => workout({
+      workoutId: `wu${n}`,
+      tags: { blockRoles: ["warmup"], muscles: muscles([["Core", true]]), estMinutes: 8 } as any,
+    }));
+    const { shortlists } = buildBlockShortlists([...mains, ...warmups], baseCtx());
+    expect(shortlists.main).toHaveLength(5);
+    expect(shortlists.warmup).toHaveLength(4); // three from the catalog, then the built-in
+    expect(shortlists.warmup![3].builtinKey).toBe("builtin-warmup-upper");
+  });
+
+  it("a built-in is clamped to a short day's ceiling", () => {
+    const { shortlists } = buildBlockShortlists([], {
+      ...baseCtx(),
+      envelopes: blockEnvelopes(30, false), // support compresses to 3-5 minutes
+    });
+    const builtin = shortlists.warmup![shortlists.warmup!.length - 1];
+    expect(builtin.builtinKey).toBe("builtin-warmup-full");
+    expect(builtin.minutes).toBe(5); // the routine ships at 7
+  });
+
+  it("conditioning gates on role, focus and soreness, and still gets no built-in", () => {
+    const main = workout({ workoutId: "m" }); // Chest, so an upper day
+    const cond = (workoutId: string, muscle: string) => workout({
+      workoutId,
+      tags: {
+        blockRoles: ["conditioning"], muscles: muscles([[muscle, true]]), estMinutes: 15,
+      } as any,
+    });
+    const { shortlists } = buildBlockShortlists(
+      [main, cond("c-upper", "Lats"), cond("c-lower", "Quads"), cond("c-sore", "Triceps")],
+      { ...baseCtx(), envelopes: blockEnvelopes(90, false), soreness: { Triceps: 2 } },
+    );
+    // c-lower clashes with the day's focus; c-sore is sore; "m" has no
+    // conditioning role. Nothing left to append a built-in to it (spec §3.3).
+    expect(shortlists.conditioning!.map((c) => c.workoutId)).toEqual(["c-upper"]);
+    expect(shortlists.conditioning!.every((c) => c.builtinKey === null)).toBe(true);
+  });
+
   it("no conditioning shortlist under 75 minutes, and no built-in for it above", () => {
     const sixty = buildBlockShortlists([workout({ workoutId: "m" })], baseCtx());
     expect(sixty.shortlists.conditioning).toBeUndefined();
@@ -174,6 +276,30 @@ describe("buildBlockShortlists", () => {
     const { shortlists, relaxedMain } = buildBlockShortlists([recent], baseCtx());
     expect(relaxedMain).toBe(true);
     expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["recent"]);
+  });
+
+  it("relaxes recency before soreness dominance (spec §8's order)", () => {
+    const sore = workout({ workoutId: "sore" }); // never done, but Chest is sore
+    const recent = workout({
+      workoutId: "recent", lastPerformedDaysAgo: 1,
+      tags: { muscles: muscles([["Quads", true]]) } as any,
+    });
+    const ctx = { ...baseCtx(), soreness: { Chest: 3 } };
+    const { shortlists, relaxedMain } = buildBlockShortlists([sore, recent], ctx);
+    // Relaxing soreness first would have offered "sore" instead.
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["recent"]);
+    expect(relaxedMain).toBe(true);
+  });
+
+  it("an all-sore catalog still fields a main, on the last rung", () => {
+    const sore = workout({ workoutId: "sore" });
+    const alsoSore = workout({
+      workoutId: "also-sore", tags: { muscles: muscles([["Quads", true]]) } as any,
+    });
+    const ctx = { ...baseCtx(), soreness: { Chest: 2, Quads: 3 } };
+    const { shortlists, relaxedMain } = buildBlockShortlists([sore, alsoSore], ctx);
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["also-sore", "sore"]);
+    expect(relaxedMain).toBe(true);
   });
 
   it("relaxes when the strict pool exists but nothing in it fits the envelope", () => {
