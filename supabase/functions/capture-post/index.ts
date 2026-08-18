@@ -276,7 +276,9 @@ Rules:
   and sensible rests. A whole number between 1 and 240 — not a range, not a
   string. Rounds repeat the WHOLE movement list; a movement's own set count is
   its own, so never multiply the two together. Given a range of rounds
-  ("3-4"), estimate the middle.
+  ("3-4"), estimate the TOP of the range: the number must describe the full
+  prescription as written, because the app trims rounds down from it and needs
+  the two to agree.
 - "intensity": low | moderate | high — systemic effort of the workout as
   written, not of its hardest movement.
 - "skill_level": Beginner | Intermediate | Advanced — the technical demand of
