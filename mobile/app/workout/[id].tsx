@@ -43,6 +43,9 @@ import {
 import { colors } from '@/src/lib/colors';
 import { supabase } from '@/src/lib/supabase';
 import { acceptSession, completeSession } from '@/src/lib/supabase/daily';
+import { fetchCapturedWorkout } from '@/src/lib/supabase/capture';
+import { formatWorkoutItem } from '@/src/lib/workoutFormat';
+import type { CapturedWorkoutEntry } from '@/src/types/capture';
 
 import {
   SCREEN_WIDTH,
@@ -80,6 +83,10 @@ export default function WorkoutSessionPage() {
   const [error, setError] = useState<string | null>(null);
   
   const [template, setTemplate] = useState<WorkoutTemplate | null>(null);
+  // Set when this session is a captured workout served whole. Its prescription
+  // is SHOWN, never parsed into the logger's numbers: "21-15-9" and "AMRAP"
+  // are real answers that a rep field would silently turn into something else.
+  const [servedWorkout, setServedWorkout] = useState<CapturedWorkoutEntry | null>(null);
   const [workoutInstanceId, setWorkoutInstanceId] = useState<string | null>(instanceId || null);
   const workoutInstanceIdRef = React.useRef<string | null>(instanceId || null);
   const creatingWorkoutInstance = React.useRef(false);
@@ -308,7 +315,7 @@ export default function WorkoutSessionPage() {
         const { data: sessionData, error: sessionError } = await supabase
           .from('generated_sessions')
           .select(`
-            id, split_day, workout_instance_id,
+            id, split_day, workout_instance_id, served_captured_workout_id,
             items:generated_session_items(
               id, exercise_id, item_order, section, target_sets, target_reps,
               rest_seconds,
@@ -319,8 +326,17 @@ export default function WorkoutSessionPage() {
           .single();
         if (sessionError) throw sessionError;
         sessionRow = { id: sessionData.id, workout_instance_id: sessionData.workout_instance_id };
-        templateName = sessionData.split_day === 'push' ? 'Push Day'
-          : sessionData.split_day === 'pull' ? 'Pull Day' : 'Leg Day';
+
+        const served = sessionData.served_captured_workout_id
+          ? await fetchCapturedWorkout(sessionData.served_captured_workout_id)
+          : null;
+        setServedWorkout(served);
+        // A workout served whole carries its own name; only a composed session
+        // is named after the split it was built for.
+        templateName = served
+          ? served.name
+          : sessionData.split_day === 'push' ? 'Push Day'
+            : sessionData.split_day === 'pull' ? 'Pull Day' : 'Leg Day';
         sortedExercises = [...(sessionData.items || [])]
           .sort((a: any, b: any) => a.item_order - b.item_order)
           .map((item: any) => ({
@@ -1341,6 +1357,32 @@ export default function WorkoutSessionPage() {
     ? `${currentExercise.exercise.target_reps_min}-${currentExercise.exercise.target_reps_max}`
     : `${currentExercise.exercise.target_reps_min}`;
 
+  // The served workout's items were copied into session items in order, so
+  // position lines them up; the id check keeps an edited workout from putting
+  // the wrong creator's line under a movement.
+  const servedItem = servedWorkout
+    ? servedWorkout.items[currentExerciseIndex]?.exerciseId ===
+      currentExercise.exercise.exercise_id
+      ? servedWorkout.items[currentExerciseIndex]
+      : servedWorkout.items.find(
+          (i) => i.exerciseId === currentExercise.exercise.exercise_id,
+        ) ?? null
+    : null;
+  // null = not a served workout, show the composed target. '' = served, but
+  // the creator prescribed nothing for this movement — show nothing rather
+  // than an invented number.
+  const servedPrescription = servedWorkout
+    ? servedItem
+      ? formatWorkoutItem(servedItem)
+      : ''
+    : null;
+  const servedNote = servedItem?.notes ?? null;
+  // Only worth the space when the parse gave us nothing per movement.
+  const servedProtocolFallback = Boolean(
+    servedWorkout?.rawProtocol &&
+      servedWorkout.items.every((i) => formatWorkoutItem(i) === ''),
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -1418,6 +1460,23 @@ export default function WorkoutSessionPage() {
           {showSummary ? 'Summary' : `${currentExerciseIndex + 1} / ${exerciseStates.length} exercises`} • Swipe to navigate
         </Text>
       </View>
+
+      {/* Rounds belong to the workout, not to any one movement, so they sit
+          here where they apply to all of it. The raw protocol is the fallback
+          when the parse produced no per-movement prescription at all — the
+          creator's words are the ground truth we can always fall back to. */}
+      {servedWorkout && !showSummary && (servedWorkout.rounds || servedProtocolFallback) && (
+        <View style={styles.servedProtocol}>
+          {!!servedWorkout.rounds && (
+            <Text style={styles.servedRounds}>
+              Repeat the whole list {servedWorkout.rounds} times
+            </Text>
+          )}
+          {servedProtocolFallback && (
+            <Text style={styles.servedProtocolText}>{servedWorkout.rawProtocol}</Text>
+          )}
+        </View>
+      )}
 
       <Animated.View
         style={[styles.content, { transform: [{ translateX: swipeAnim }] }]}
@@ -1560,9 +1619,19 @@ export default function WorkoutSessionPage() {
 
           {/* Exercise Info */}
           <Text style={styles.exerciseName}>{getExercise(currentExercise.exercise).name}</Text>
-          <Text style={styles.exerciseTarget}>
-            {currentExercise.exercise.target_sets} sets × {targetRepsDisplay} reps
-          </Text>
+          {servedPrescription !== null ? (
+            /* The creator's own words for this movement, shown rather than
+               parsed. The logger's fields sit underneath as the starting
+               point for what you actually did. */
+            servedPrescription !== '' && (
+              <Text style={styles.exerciseTarget}>{servedPrescription}</Text>
+            )
+          ) : (
+            <Text style={styles.exerciseTarget}>
+              {currentExercise.exercise.target_sets} sets × {targetRepsDisplay} reps
+            </Text>
+          )}
+          {servedNote && <Text style={styles.lastPerformance}>{servedNote}</Text>}
           {currentExercise.last_weight && (
             <Text style={styles.lastPerformance}>
               Last: {currentExercise.last_reps} × {currentExercise.last_weight} lbs

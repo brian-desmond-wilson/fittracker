@@ -715,4 +715,27 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // A captured workout served whole: the creator's prescription, shown as
+  // reference above the logging controls rather than parsed into them.
+  servedProtocol: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    gap: 4,
+  },
+  servedRounds: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  servedProtocolText: {
+    color: colors.mutedForeground,
+    fontSize: 13,
+    lineHeight: 19,
+  },
 });
