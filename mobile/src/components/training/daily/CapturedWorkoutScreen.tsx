@@ -548,26 +548,30 @@ export function CapturedWorkoutScreen() {
           )}
         </ScrollView>
 
-        {/* Not while editing — you're changing the workout, not starting it.
-            A workout with no movements has nothing to log. */}
+        {/* A bar below the scroll view, not floating over it: the protocol
+            lines are the last thing on the page and the button was sitting on
+            top of them. Not while editing — you're changing the workout, not
+            starting it. A workout with no movements has nothing to log. */}
         {!editing && shownItems.length > 0 && (
-          <TouchableOpacity
-            style={[styles.startButton, { bottom: 16 + insets.bottom }]}
-            onPress={start}
-            disabled={starting}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={`Start ${workout.name} as today's session`}
-          >
-            {starting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Play size={18} color="#FFFFFF" />
-            )}
-            <Text style={styles.startText}>
-              {starting ? "Starting…" : "Start Workout"}
-            </Text>
-          </TouchableOpacity>
+          <View style={[styles.startBar, { paddingBottom: 12 + insets.bottom }]}>
+            <TouchableOpacity
+              style={styles.startButton}
+              onPress={start}
+              disabled={starting}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={`Start ${workout.name} as today's session`}
+            >
+              {starting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Play size={18} color="#FFFFFF" />
+              )}
+              <Text style={styles.startText}>
+                {starting ? "Starting…" : "Start Workout"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -592,13 +596,16 @@ const styles = StyleSheet.create({
   headerActionMuted: { opacity: 0.5 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   missing: { fontSize: 15, color: colors.mutedForeground, textAlign: "center" },
-  scroll: { paddingHorizontal: 20, paddingBottom: 112 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 24 },
+  startBar: {
+    paddingHorizontal: 20, paddingTop: 12,
+    backgroundColor: colors.background,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
   startButton: {
-    position: "absolute", left: 20, right: 20, flexDirection: "row", gap: 8,
+    flexDirection: "row", gap: 8,
     backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14,
     alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
   },
   startText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
   title: { fontSize: 24, fontWeight: "700", color: colors.foreground },
