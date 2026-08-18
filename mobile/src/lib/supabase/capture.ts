@@ -331,16 +331,18 @@ function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
         restSeconds: it.rest_seconds ?? null,
         notes: it.notes ?? null,
       })),
-    // Placeholder until the tag columns are actually selected — Task 10 does
-    // the real read. Untagged is the honest default: every workout captured
-    // before the block recommender existed genuinely has no tags.
     tags: {
-      blockRoles: [],
-      muscles: [],
-      estMinutes: null,
-      intensity: null,
-      skillLevel: null,
-      classifiedAt: null,
+      blockRoles: row.block_roles ?? [],
+      muscles: (row.wmuscles ?? [])
+        .map((m: any) => ({
+          name: m.muscle_region?.name ?? "",
+          isPrimary: !!m.is_primary,
+        }))
+        .filter((m: any) => m.name !== ""),
+      estMinutes: row.est_minutes ?? null,
+      intensity: row.intensity ?? null,
+      skillLevel: row.skill_level ?? null,
+      classifiedAt: row.classified_at ?? null,
     },
   };
 }
@@ -355,6 +357,8 @@ export async function fetchCapturedWorkouts(
     .from("captured_workouts")
     .select(`
       id, name, rounds, raw_protocol, description, notes, created_at,
+      block_roles, est_minutes, intensity, skill_level, classified_at,
+      wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
       source:captured_sources!inner(
         id, platform, source_url, poster_handle, thumbnail_url, caption_text,
         extraction_status
@@ -388,6 +392,8 @@ export async function fetchCapturedWorkout(
     .from("captured_workouts")
     .select(`
       id, name, rounds, raw_protocol, description, notes, created_at,
+      block_roles, est_minutes, intensity, skill_level, classified_at,
+      wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
       source:captured_sources!inner(
         id, platform, source_url, poster_handle, thumbnail_url, caption_text,
         extraction_status
