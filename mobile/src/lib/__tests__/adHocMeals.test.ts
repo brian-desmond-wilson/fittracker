@@ -1,6 +1,7 @@
 import {
   adHocCandidates,
   adHocSummary,
+  matchingLogIds,
   AD_HOC_MIN_TIMES,
   type AdHocLogRow,
 } from "../adHocMeals";
@@ -110,5 +111,34 @@ describe("adHocSummary", () => {
       Array.from({ length: 3 }, (_, i) => log({ calories: null, date: `2026-08-0${i + 1}` })),
     );
     expect(adHocSummary(c)).toBe("3× logged");
+  });
+});
+
+describe("matchingLogIds", () => {
+  const row = (id: string, name: string) => ({ id, name });
+
+  it("matches the same name typed with different case and spacing", () => {
+    const ids = matchingLogIds(
+      [
+        row("a", "Nuts About Bulking"),
+        row("b", "nuts about bulking"),
+        row("c", "  Nuts About Bulking "),
+      ],
+      "NUTS ABOUT BULKING",
+    );
+    expect(ids).toEqual(["a", "b", "c"]);
+  });
+
+  it("leaves other names alone", () => {
+    const ids = matchingLogIds(
+      [row("a", "Nuts About Bulking"), row("b", "Chipotle Bowl")],
+      "Nuts About Bulking",
+    );
+    expect(ids).toEqual(["a"]);
+  });
+
+  it("never matches on an empty name", () => {
+    expect(matchingLogIds([row("a", ""), row("b", "  ")], "")).toEqual([]);
+    expect(matchingLogIds([row("a", "")], "   ")).toEqual([]);
   });
 });

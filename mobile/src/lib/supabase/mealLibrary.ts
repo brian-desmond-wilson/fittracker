@@ -7,7 +7,7 @@ import { buildBorrowedFoodImages, withBorrowedImage } from "../foodImageBorrow";
 import { invalidateBorrowedFoodImages } from "./borrowedFoodImages";
 import { getLocalDateString } from "../dates";
 import type { InventoryNutrition } from "../mealLibraryView";
-import type { AdHocLogRow } from "../adHocMeals";
+import { matchingLogIds, type AdHocLogRow } from "../adHocMeals";
 import type { ConceptRating, FoodConcept } from "@/src/types/nutrition-preferences";
 import type {
   Meal,
@@ -660,6 +660,82 @@ export async function promoteAdHocMeal(
     notes: null,
     items: [{ saved_food_id: savedFoodId, servings: 1, small_pieces_ok: false }],
   });
+}
+
+/**
+ * Keep a spontaneously-logged thing for next time.
+ *
+ * The gym shake problem: something you buy on impulse is not an inventory
+ * item, not a delivery, and was never a library meal — yet you will order it
+ * again, and re-typing it each time leaves the library claiming you never eat
+ * it. This is the log-time (and log-editing-time) door into the same promotion
+ * machinery the library's own shelf uses; the only extra work is claiming
+ * history.
+ *
+ * After the meal exists, every meal-less log wearing the same name — including
+ * the one just written, and yesterday's — is linked to it, so "times eaten"
+ * and "last eaten" are honest from the first day and the name stops haunting
+ * the promotion shelf. The backfill is best-effort by design: the meal is the
+ * deliverable, and a failed link leaves those logs exactly as promotable as
+ * they were before.
+ */
+export async function saveLogAsMeal(
+  userId: string,
+  log: {
+    name: string;
+    calories: number | null;
+    protein: number | null;
+    carbs: number | null;
+    fats: number | null;
+    sugars: number | null;
+    sodium_mg: number | null;
+    fiber_g: number | null;
+    /** The product behind the log, when it came from one — the meal then
+     *  references it instead of inventing a duplicate food. */
+    saved_food_id: string | null;
+  },
+  meta: {
+    category: Meal["category"];
+    source_kind: Meal["source_kind"];
+    source_name: string | null;
+  },
+): Promise<{ mealId: string; linkedLogs: number }> {
+  const mealId = await promoteAdHocMeal(
+    userId,
+    { ...log, savedFoodId: log.saved_food_id },
+    meta,
+  );
+
+  let linkedLogs = 0;
+  try {
+    // Ids come back filtered in code rather than by an ilike pattern: the fold
+    // is the same one the promotion shelf groups by, and a name containing
+    // `%` or `_` must not widen the match.
+    const { data, error } = await supabase
+      .from("meal_logs")
+      .select("id, name")
+      .is("meal_id", null);
+    if (error) throw error;
+    const ids = matchingLogIds(
+      (data ?? []) as Array<{ id: string; name: string }>,
+      log.name,
+    );
+    if (ids.length > 0) {
+      const { error: linkError } = await supabase
+        .from("meal_logs")
+        .update({ meal_id: mealId })
+        .in("id", ids);
+      if (linkError) throw linkError;
+      linkedLogs = ids.length;
+    }
+  } catch (e) {
+    console.error("saveLogAsMeal: history backfill failed:", e);
+  }
+
+  // The linked logs change lastLoggedByMealId and timesLogged — drop the
+  // cache promoteAdHocMeal already invalidated once more, after the writes.
+  invalidateMealLibrary();
+  return { mealId, linkedLogs };
 }
 
 /**

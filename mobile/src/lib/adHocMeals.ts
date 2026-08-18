@@ -118,6 +118,24 @@ export function adHocCandidates(
   );
 }
 
+/**
+ * The logs a newly created meal should claim as its own history — same name,
+ * folded the same way `adHocCandidates` groups ("chipotle bowl" and "Chipotle
+ * Bowl" are the same dinner typed twice). Pure so the matching rule is
+ * testable; the caller does the reads and writes.
+ *
+ * An empty name matches nothing: a blank could never have produced a meal,
+ * and claiming every other blank row would weld unrelated logs together.
+ */
+export function matchingLogIds(
+  rows: Array<{ id: string; name: string }>,
+  name: string,
+): string[] {
+  const key = fold(name);
+  if (key === "") return [];
+  return rows.filter((r) => fold(r.name) === key).map((r) => r.id);
+}
+
 /** The line under the name: "eaten 6× · last Aug 2 · not in your library". */
 export function adHocSummary(c: AdHocCandidate): string {
   const cals = c.calories != null ? ` · ~${Math.round(c.calories)} cal` : "";
