@@ -6,28 +6,26 @@
 // This is the doorway: repeat ad-hoc logs, and one tap to make each one a
 // real meal.
 import React, { useState } from "react";
-import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Button, Card, SectionHeader } from "@/src/components/ui";
 import { adHocSummary, AD_HOC_MIN_TIMES, type AdHocCandidate } from "@/src/lib/adHocMeals";
 import { CATEGORY_LABELS, CATEGORY_SECTION_ORDER, type MealCategory } from "@/src/types/meal-library";
 import type { MealSourceKind } from "@/src/lib/mealLibraryView";
+import type { SourceSuggestion } from "@/src/lib/supabase/mealLibrary";
+import { MealSourceFields, resolveSourceName } from "../MealSourceFields";
 
 interface AdHocSectionProps {
   candidates: AdHocCandidate[];
+  /** Vendors you keep plus names your meals already carry. */
+  sourceSuggestions: SourceSuggestion[];
   onPromote: (
     candidate: AdHocCandidate,
     meta: { category: MealCategory; source_kind: MealSourceKind; source_name: string | null },
   ) => Promise<void>;
 }
 
-const SOURCES: Array<{ kind: MealSourceKind; label: string }> = [
-  { kind: "home", label: "Made it" },
-  { kind: "packaged", label: "Packaged" },
-  { kind: "out", label: "Ate out" },
-];
-
-export function AdHocSection({ candidates, onPromote }: AdHocSectionProps) {
+export function AdHocSection({ candidates, sourceSuggestions, onPromote }: AdHocSectionProps) {
   const [target, setTarget] = useState<AdHocCandidate | null>(null);
   const [category, setCategory] = useState<MealCategory>("lunch");
   const [sourceKind, setSourceKind] = useState<MealSourceKind>("home");
@@ -50,12 +48,7 @@ export function AdHocSection({ candidates, onPromote }: AdHocSectionProps) {
       await onPromote(target, {
         category,
         source_kind: sourceKind,
-        // The DB refuses a name on a home-made meal and requires one
-        // otherwise; falling back to the label keeps a blank field legal.
-        source_name:
-          sourceKind === "home"
-            ? null
-            : sourceName.trim() || (sourceKind === "packaged" ? "Packaged" : "Eaten out"),
+        source_name: resolveSourceName(sourceKind, sourceName),
       });
       setTarget(null);
     } finally {
@@ -118,38 +111,14 @@ export function AdHocSection({ candidates, onPromote }: AdHocSectionProps) {
               })}
             </View>
 
-            <Text style={s.label}>Where it comes from</Text>
-            <View style={s.segTrack}>
-              {SOURCES.map(({ kind, label }) => {
-                const active = sourceKind === kind;
-                return (
-                  <TouchableOpacity
-                    key={kind}
-                    style={[s.segment, active && s.segmentActive]}
-                    onPress={() => setSourceKind(kind)}
-                    disabled={saving}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                  >
-                    <Text style={[s.segmentText, active && s.segmentTextActive]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {sourceKind !== "home" && (
-              <>
-                <Text style={s.label}>{sourceKind === "out" ? "Where from" : "Brand"}</Text>
-                <TextInput
-                  style={s.input}
-                  value={sourceName}
-                  onChangeText={setSourceName}
-                  placeholder={sourceKind === "out" ? "DoorDash · Chipotle" : "Thistle"}
-                  placeholderTextColor={colors.textMuted}
-                  editable={!saving}
-                />
-              </>
-            )}
+            <MealSourceFields
+              sourceKind={sourceKind}
+              onSourceKindChange={setSourceKind}
+              sourceName={sourceName}
+              onSourceNameChange={setSourceName}
+              suggestions={sourceSuggestions}
+              disabled={saving}
+            />
 
             <View style={s.actions}>
               <View style={s.actionButton}>
@@ -199,33 +168,6 @@ const s = StyleSheet.create({
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { ...typography.buttonSm, color: colors.textMuted },
   chipTextActive: { color: colors.onBrand },
-  segTrack: {
-    flexDirection: "row",
-    backgroundColor: colors.surface2,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.xs,
-  },
-  segment: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: spacing.md,
-    borderRadius: radii.pill,
-  },
-  segmentActive: { backgroundColor: colors.brand },
-  segmentText: { ...typography.buttonSm, color: colors.textMuted },
-  segmentTextActive: { color: colors.onBrand },
-  input: {
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.control,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    fontSize: 16, // §4.5 defines no input token
-    color: colors.text,
-  },
   actions: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
   actionButton: { flex: 1 },
 });

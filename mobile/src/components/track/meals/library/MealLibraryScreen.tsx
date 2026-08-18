@@ -101,7 +101,7 @@ export function MealLibraryScreen({
   refreshKey,
 }: MealLibraryScreenProps) {
   const insets = useSafeAreaInsets();
-  const { cards, adHoc, loading, failed, reload } = useMealLibraryCards();
+  const { cards, adHoc, data, loading, failed, reload } = useMealLibraryCards();
 
   const [segment, setSegment] = useState<LibrarySegment>("available");
   const [category, setCategory] = useState<MealCategory | null>(null);
@@ -495,7 +495,11 @@ export function MealLibraryScreen({
               admitting what it is missing, which would be a non-sequitur
               under a category tab or a search. */}
           {segment === "all" && !searching && !favoritesOnly && category === null && (
-            <AdHocSection candidates={adHoc} onPromote={handlePromote} />
+            <AdHocSection
+              candidates={adHoc}
+              sourceSuggestions={data?.sourceSuggestions ?? []}
+              onPromote={handlePromote}
+            />
           )}
         </Animated.ScrollView>
       </View>
