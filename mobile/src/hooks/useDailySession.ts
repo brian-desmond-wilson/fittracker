@@ -53,20 +53,64 @@ const aiAskInFlight = new Map<string, Promise<unknown>>();
 const COVERAGE_WINDOW_DAYS = 8;
 
 /**
- * Lazy classification, at most one attempt per workout per day per app run.
- *
- * Keyed by workout id, and it does two jobs. It coalesces overlapping loads
- * onto one call, because the run-id guard cannot cancel a request already in
- * flight — it only stops the caller from reading the answer, and a
- * pull-to-refresh during a first-run backfill would otherwise put a second
- * copy of every classify call on the wire. And it stops a workout that cannot
- * be classified — a caption the model can make nothing of — from costing an
- * OpenAI call on every single pull-to-refresh, forever.
- *
- * Module scope, so tomorrow or a restart tries again. That is what the failure
- * is worth: the workout is out of play for today, not for good.
+ * Attempts per workout per day. Not one, deliberately: `classifyWorkout`
+ * answers null for a caption the model made nothing of AND for a call that
+ * never reached it, and a single attempt treats those the same — eleven
+ * workouts failing together on a spotty connection would bench the whole
+ * catalog until tomorrow, and the pull-to-refresh that follows the signal
+ * coming back would compose a built-ins-only day instead of repairing it.
+ * Three attempts cost three calls in the worst case and cover a transient
+ * failure; a caption that can never be classified still stops costing calls.
  */
-const classifyByWorkout = new Map<string, { date: string; done: Promise<unknown> }>();
+const CLASSIFY_ATTEMPTS_PER_DAY = 3;
+/** In-flight classify calls at once. Each is an OpenAI round trip, and the
+ *  compose blocks on all of them. */
+const CLASSIFY_POOL = 4;
+/**
+ * Workouts one compose will try to classify. The backfill exists to bring
+ * today's catalog into play, not to process a library: today's eleven fit
+ * inside this in a single run, and the share extension's several hundred would
+ * otherwise mean several hundred concurrent OpenAI calls, near-certain rate
+ * limiting, and a spinner measured in minutes. The overflow is not lost — the
+ * catalog arrives newest-first, so a run takes the most recently captured, and
+ * the rest are picked up by the loads that follow.
+ */
+const CLASSIFY_PER_RUN = 12;
+
+/** What a workout's classification has cost today, and the call still on the
+ *  wire if there is one. Module scope, so tomorrow or a restart starts over. */
+interface ClassifyState {
+  date: string;
+  attempts: number;
+  inFlight: Promise<unknown> | null;
+}
+
+/**
+ * Lazy classification state, keyed by workout id.
+ *
+ * `inFlight` coalesces overlapping loads onto one call, because the run-id
+ * guard cannot cancel a request already on the wire — it only stops the caller
+ * from reading the answer, so a pull-to-refresh during a first-run backfill
+ * would otherwise put a second copy of every classify call out there.
+ * `attempts` is what stops a workout that can never be classified from costing
+ * a call on every single refresh, forever.
+ */
+const classifyByWorkout = new Map<string, ClassifyState>();
+
+/** Run `task` over `items`, at most `limit` at a time. `next++` needs no lock:
+ *  the read and the increment are one synchronous step. */
+async function pooled<T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<unknown>,
+): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) await task(items[next++]);
+    }),
+  );
+}
 
 async function askComposeSession(body: object): Promise<unknown> {
   let lastError: unknown = null;
@@ -165,17 +209,43 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
 
       // ---- Lazy classification backfill (spec §3.1, §8): tag what isn't
       // tagged, in place, before shortlisting. A failure leaves that workout
-      // out of play today; tomorrow retries. See classifyByWorkout for why an
-      // attempt is remembered rather than repeated on every refresh.
-      const untagged = captured.filter((w) => w.tags.classifiedAt === null);
-      if (untagged.length > 0 && muscleNames.length > 0) {
-        await Promise.all(untagged.map((w) => {
+      // out of play today; the next refresh retries it, up to its budget, and
+      // tomorrow starts over. See classifyByWorkout and the three constants
+      // above for what bounds this.
+      if (muscleNames.length > 0) {
+        const due = captured
+          .filter((w) => w.tags.classifiedAt === null)
+          .filter((w) => {
+            const s = classifyByWorkout.get(w.workoutId);
+            // Fresh, still on the wire, or with budget left. A workout that
+            // has spent today's budget takes no slot, so it can't crowd out
+            // one that has never been tried.
+            return !s || s.date !== today
+              || s.inFlight !== null || s.attempts < CLASSIFY_ATTEMPTS_PER_DAY;
+          })
+          .slice(0, CLASSIFY_PER_RUN);
+        await pooled(due, CLASSIFY_POOL, (w) => {
           const prior = classifyByWorkout.get(w.workoutId);
-          if (prior && prior.date === today) return prior.done;
-          const done = classifyWorkout(w, muscleNames).catch(() => null);
-          classifyByWorkout.set(w.workoutId, { date: today, done });
+          const state: ClassifyState = prior && prior.date === today
+            ? prior
+            : { date: today, attempts: 0, inFlight: null };
+          classifyByWorkout.set(w.workoutId, state);
+          // Join the call already out there rather than adding to it; it is
+          // the same question and it already spent an attempt.
+          if (state.inFlight) return state.inFlight;
+          if (state.attempts >= CLASSIFY_ATTEMPTS_PER_DAY) return Promise.resolve(null);
+          state.attempts += 1;
+          // The catch precedes the bookkeeping, so nothing here can reject and
+          // leave `inFlight` pointing at a settled call forever.
+          const done = classifyWorkout(w, muscleNames)
+            .catch(() => null)
+            .then((tags) => {
+              state.inFlight = null;
+              return tags;
+            });
+          state.inFlight = done;
           return done;
-        }));
+        });
       }
       const tagged = await fetchTaggedWorkouts(user.id, today);
       if (runId !== runIdRef.current) return;
