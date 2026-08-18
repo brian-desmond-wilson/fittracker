@@ -2828,7 +2828,15 @@ Under the badges, for a recovery day add (after the source badge block, inside t
               )}
 ```
 
-The existing `plannedMinutes` line already sums `sectionMinutes`, which Task 13 writes from block minutes — no change needed.
+The existing `plannedMinutes` line already sums `sectionMinutes`, which Task 13
+writes from block minutes. It does need one change: **when the planned total
+exceeds the minutes the user said they had, say so.** The rules fallback keeps
+every block even when a block's shortest candidate busts the budget — a
+complete session that runs long beats a mutilated one, and the durations are
+the creators', not ours to shrink — so a short day can legitimately plan 60
+minutes against a 45-minute budget (Task 6 review). That is honest only if the
+screen admits it. Style the total as a warning and append "— runs long" when
+`plannedMinutes > checkin.minutesAvailable`.
 
 - [ ] **Step 3: Styles**
 
