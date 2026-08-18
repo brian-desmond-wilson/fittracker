@@ -12,6 +12,7 @@ import { builtinByKey } from "@/src/lib/dailyBuiltins";
 import { SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
 import { GymSheet } from "./GymSheet";
 import { CheckinSheet } from "./CheckinSheet";
+import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
 import { rerollBlock } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
@@ -156,6 +157,12 @@ export default function TodayTab() {
 
   return (
     <View style={styles.container}>
+      {/* Every recompute keeps the plan on screen, so this is the only thing
+          that says one is happening — and iOS never draws RefreshControl's
+          own spinner, so the app draws this one. Covers the pull as well as
+          the check-in save, the gym switch and the reroll, all of which
+          reload the day without a gesture. */}
+      <RefreshIndicator visible={refreshing || (loading && session !== null)} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -169,8 +176,15 @@ export default function TodayTab() {
             hook keeps the day it last read, so a failed refresh still has a
             good plan in hand — showing "couldn't build" instead of that plan
             would throw away the day over a blip. An error with nothing behind
-            it still takes the screen. */}
-        {loading ? (
+            it still takes the screen.
+
+            The full-screen spinner is for having nothing to show, and only
+            that. Every reload re-runs the whole compute — auth, gyms,
+            check-in, catalog, ledger, the classification backfill — so
+            blanking on `loading` threw the plan away for seconds at a time
+            over a one-block reroll or a check-in edit. The plan stays;
+            RefreshIndicator above says a reload is running. */}
+        {loading && !session ? (
           <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
         ) : !session ? (
           error ? (
