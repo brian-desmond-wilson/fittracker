@@ -8,6 +8,7 @@ describe("built-in fallback library", () => {
         expect(hit).toBeDefined();
         expect(hit!.movements.length).toBeGreaterThanOrEqual(3);
         expect(hit!.minutes).toBeGreaterThanOrEqual(5);
+        expect(hit!.minutes).toBeLessThanOrEqual(10);
       }
     }
   });
@@ -16,6 +17,7 @@ describe("built-in fallback library", () => {
     const keys = BUILTINS.map((b) => b.key);
     expect(new Set(keys).size).toBe(keys.length);
     for (const key of keys) expect(key).toMatch(/^builtin-(warmup|mobility|cooldown)-(upper|lower|full)$/);
+    for (const b of BUILTINS) expect(b.key).toBe(`builtin-${b.role}-${b.focus}`);
   });
 
   it("findBuiltin matches role and focus", () => {

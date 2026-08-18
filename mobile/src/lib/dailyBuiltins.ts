@@ -11,7 +11,7 @@ export const BUILTINS: BuiltinRoutine[] = [
     movements: [
       { name: "Jumping Jacks", prescription: "60s" },
       { name: "Arm Circles", prescription: "15 each way" },
-      { name: "Band Pull-Aparts", prescription: "2 × 15" },
+      { name: "Wall Slides", prescription: "2 × 15" },
       { name: "Scapular Push-ups", prescription: "2 × 10" },
     ],
   },
@@ -92,7 +92,7 @@ export const BUILTINS: BuiltinRoutine[] = [
       { name: "Child's Pose", prescription: "60s" },
       { name: "Seated Hamstring Stretch", prescription: "45s each side" },
       { name: "Doorway Chest Stretch", prescription: "45s each side" },
-      { name: "Slow Nasal Breathing, Lying Down", prescription: "2 min" },
+      { name: "Slow Nasal Breathing, Lying Down", prescription: "120s" },
     ],
   },
 ];
