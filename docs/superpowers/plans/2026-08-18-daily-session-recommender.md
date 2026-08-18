@@ -1872,7 +1872,12 @@ export async function fetchTaggedWorkouts(
 }
 
 /** Write tags: the row's columns plus a wholesale replace of the muscle
- *  junction — it's a handful of rows, same doctrine as saveGym. */
+ *  junction — it's a handful of rows, same doctrine as saveGym.
+ *
+ *  This is the ONLY place `classified_at` is stamped. The validator always
+ *  returns it null — null is exactly what the recommender reads as "untagged,
+ *  ignore this workout" — so tags that were validated but never saved through
+ *  here are invisible by design rather than by accident (Task 7 review). */
 export async function saveWorkoutTags(
   workoutId: string,
   tags: WorkoutTags,
@@ -2993,14 +2998,15 @@ In the screen's `save` function (line ~160), after `updateCapturedWorkout` succe
     });
 ```
 
-**Do not stamp `classifiedAt` on a workout with no primary muscle.** A
-workout with no muscles is immune to the soreness gate — a chest workout the
-classifier failed to tag can be offered on a chest-sore day — and this editor
-is the one path to "classified" that never passes through the tag validator
-(Task 5 review). If the workout carries no primary muscle, leave
-`classifiedAt` null and tell the user the workout needs classifying before
-the recommender will use it, pointing them at the "Tag for the recommender"
-button. Task 7's validator enforces the same rule on the AI path.
+**Do not save at all when the workout has no primary muscle.** A workout with
+no muscles is immune to the soreness gate — a chest workout the classifier
+failed to tag can be offered on a chest-sore day — and this editor is the one
+path to "classified" that never passes through the tag validator (Task 5
+review). `saveWorkoutTags` stamps `classified_at` unconditionally, so the
+guard has to be here: if the workout carries no primary muscle, skip the tag
+save entirely and tell the user it needs classifying before the recommender
+will use it, pointing them at the "Tag for the recommender" button. Task 7's
+validator enforces the same rule on the AI path.
 
 ```ts
 ```
