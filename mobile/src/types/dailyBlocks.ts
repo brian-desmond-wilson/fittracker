@@ -91,6 +91,10 @@ export interface BlockPick {
   block: BlockRole;
   workoutId: string | null;
   builtinKey: string | null;
+  /** Carried from the chosen candidate and stored on the row, not resolved
+   *  from a join — so the block still reads correctly after its workout is
+   *  deleted. */
+  name: string;
   minutes: number;
   roundsNote: string | null;
   reason: string | null;
@@ -99,7 +103,4 @@ export interface BlockPick {
 /** A generated_session_blocks row, ready for display. */
 export interface StoredBlock extends BlockPick {
   id: string;
-  /** Stored on the row, captured at compose time — not resolved from a join,
-   *  so the block still reads correctly after its workout is deleted. */
-  name: string;
 }
