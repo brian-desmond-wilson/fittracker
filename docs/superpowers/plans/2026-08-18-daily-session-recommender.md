@@ -1204,6 +1204,10 @@ export function buildBlockShortlists(
       .sort((a, b) => b.score - a.score)
       .slice(0, SUPPORT_SHORTLIST);
 
+    // Built-ins are appended directly, NOT run through fitToEnvelope: they
+    // ship at 6-8 minutes and a compressed short-day envelope (3-5) would
+    // reject them outright, breaking the promise that every session is
+    // complete. Clamp to the ceiling instead.
     const builtin = findBuiltin(role as "warmup" | "mobility" | "cooldown", builtinFocus);
     if (builtin) {
       list.push({
@@ -1477,6 +1481,10 @@ export function validateBlockComposition(
   // Main is not optional when it was offered.
   if ((shortlists.main?.length ?? 0) > 0 && !picks.has("main")) return null;
 
+  // A non-finite budget makes every comparison false, so the overrun check
+  // would silently pass anything. Refuse rather than validate against NaN —
+  // the time envelopes already fall back to a short day upstream.
+  if (!Number.isFinite(minutesAvailable) || minutesAvailable <= 0) return null;
   const total = [...picks.values()].reduce((s, p) => s + p.minutes, 0);
   if (total > minutesAvailable * OVERRUN_TOLERANCE) return null;
 
