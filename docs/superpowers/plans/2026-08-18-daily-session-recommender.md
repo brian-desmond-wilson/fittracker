@@ -2720,6 +2720,13 @@ git commit -m "feat(daily): the Today engine composes five blocks from whole cat
 - Modify: `mobile/src/components/DailySessionHomeCard.tsx`
 - Modify: `app/workout/[id].tsx`
 
+**A read failure must not throw away the day already on screen.** The tab's
+`error ?` branch currently precedes its session branch, so a transient network
+blip replaces a perfectly good plan with "Couldn't build today's session" —
+even though the hook still holds the session in state (Task 13 review).
+Reorder so an error over an existing session renders as a banner above the
+plan, and only takes the whole screen when there is no session to show.
+
 **Every screen that names the day must stop saying "Leg day."** A block session
 stores `split_day` NULL, and all three of these fall through a
 push/pull/legs ternary to a leg-day label (Task 13 review). So a five-block
