@@ -2,12 +2,24 @@
 // captureReview: the model suggests, the client decides what is usable.
 // Roles and at least one primary muscle are the hard requirements; every
 // other field degrades to null.
+//
+// Degrading is not the same as harmless. A null estMinutes fails
+// fitToEnvelope, so a workout that validates without one is stamped
+// classified, reads as tagged in the UI, and is invisible to every shortlist
+// until someone fills the number in. It degrades anyway because the tag
+// editor can repair it — where muscles reject instead, because a workout with
+// no primary muscle is not something the editor asks the user to fix, and
+// it would sit in the catalog immune to the soreness gate.
 import type { BlockRole, WorkoutIntensity, WorkoutTags } from "../types/dailyBlocks";
 
 const ROLES: BlockRole[] = ["warmup", "mobility", "main", "conditioning", "cooldown"];
 const INTENSITIES: WorkoutIntensity[] = ["low", "moderate", "high"];
 const SKILLS = ["Beginner", "Intermediate", "Advanced"] as const;
-/** Matches the est_minutes CHECK on captured_workouts (BETWEEN 1 AND 240). */
+/** The est_minutes CHECK on captured_workouts is BETWEEN 1 AND 240; this is
+ *  a shade stricter, because the range is tested before the rounding. The
+ *  column would take a 240.4 rounded down to 240, and we degrade it to null
+ *  instead — a classifier emitting a fractional four-hour workout is emitting
+ *  noise, and null is the safe direction to send noise. */
 const MAX_MINUTES = 240;
 
 /** Null means "unusable" — the workout stays untagged and out of play. */
