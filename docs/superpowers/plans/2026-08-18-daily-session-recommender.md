@@ -2365,7 +2365,11 @@ Append to `completeSession`, after the status update succeeds:
     list.push({ name, isPrimary: !!m.is_primary });
     musclesByWorkout.set(m.captured_workout_id, list);
   }
-  await recordUsage({
+  // recordUsage returns false on a failed write: the day's training then
+  // never counts toward the coverage that steers tomorrow's pick, and the
+  // unique constraint makes a retry safe. Log it loudly rather than dropping
+  // it on the floor (Task 9 review).
+  const ledgerWritten = await recordUsage({
     userId: sess.user_id,
     sessionId,
     performedDate: sess.session_date,
@@ -2374,6 +2378,9 @@ Append to `completeSession`, after the status update succeeds:
       muscles: musclesByWorkout.get(e.capturedWorkoutId) ?? [],
     })),
   });
+  if (!ledgerWritten) {
+    console.error("completeSession: ledger write failed for session", sessionId);
+  }
 ```
 
 Add `BlockRole` to the dailyBlocks type import.
@@ -2549,6 +2556,10 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
       // never had (Task 9 review). Abort instead — the tab keeps whatever it
       // was already showing and a pull-to-refresh retries.
       if (tagged === null) throw new Error("couldn't read your workout catalog");
+      // Same for the ledger: recency-blind, every workout reads as
+      // never-performed, the 4-day repeat gate stops holding and the recency
+      // score saturates for everything. `[]` is a real state (a week of rest).
+      if (usage === null) throw new Error("couldn't read your training history");
 
       // ---- Rules tier ----
       const week = rampWeek(firstRow?.session_date ?? null, today);
