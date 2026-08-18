@@ -111,10 +111,13 @@ function rankFitted(
     .slice(0, limit);
 }
 
-/** Freshness of a workout's primaries against the week's load, 0..1-ish. The
- *  mean, not the sum: a workout tagged with more muscles must not out-score a
- *  focused one just for being tagged more thoroughly. A workout the classifier
- *  left muscle-less scores as if its muscles were trained hard today. */
+/** Freshness of a workout's primaries against the week's load, in (0, 1] — 1
+ *  is untouched all week, and it falls but never reaches 0 as load climbs.
+ *  The mean, not the sum: a workout tagged with more muscles must not
+ *  out-score a focused one just for being tagged more thoroughly, so hitting
+ *  one untouched muscle beats hitting three half-trained ones. A workout the
+ *  classifier left muscle-less scores as if its muscles were trained hard
+ *  today. */
 function freshness(w: TaggedWorkout, coverage: MuscleCoverage): number {
   const primaries = w.tags.muscles.filter((m) => m.isPrimary).map((m) => m.name);
   if (primaries.length === 0) return 0.5;
@@ -127,14 +130,38 @@ function recency(w: TaggedWorkout): number {
   return w.lastPerformedDaysAgo === null ? 1 : Math.min(1, w.lastPerformedDaysAgo / 7);
 }
 
+/**
+ * Two of spec §4 step 3's three ranking criteria: neglected-coverage overlap
+ * (weighted double) and recency, with a flat penalty for going straight back
+ * at yesterday's muscles. Duration fit — the third — is deliberately absent:
+ * every candidate here already fits its envelope, and the AI tier sees each
+ * one's `minutes` and `roundsNote` when it makes the final call, so scoring
+ * the fit again would only bias the rules tier toward the middle of a range
+ * the model can judge better in context.
+ */
 function scoreMain(w: TaggedWorkout, coverage: MuscleCoverage): number {
   const primaries = w.tags.muscles.filter((m) => m.isPrimary).map((m) => m.name);
   const yesterdayPenalty = primaries.some((m) => coverage.yesterday.has(m)) ? 0.5 : 0;
   return freshness(w, coverage) * 2 + recency(w) - yesterdayPenalty;
 }
 
-function soreDominated(w: TaggedWorkout, soreness: Record<string, number>): boolean {
+/** Any primary at soreness ≥2 — which is stricter than spec §4's "dominated
+ *  by muscles at soreness ≥2". A full-body workout with three primaries, one
+ *  of them sore, leaves the strict tier on that one muscle and can label an
+ *  otherwise ordinary day a compromise. Deliberate: it matches the existing
+ *  exercise-level gate in dailyCandidates.ts, and §8's relaxation ladder is
+ *  the release valve. Renaming it to match what it does, not what §4 says. */
+function hasSorePrimary(w: TaggedWorkout, soreness: Record<string, number>): boolean {
   return w.tags.muscles.some((m) => m.isPrimary && (soreness[m.name] ?? 0) >= 2);
+}
+
+/** Spec §4 step 4: a support or conditioning workout must share body focus
+ *  with at least one main candidate. A full-body workout pairs with anything,
+ *  and a null constraint (no main today) rules nothing out. */
+function sharesMainFocus(w: TaggedWorkout, mainFocuses: Set<BodyFocus> | null): boolean {
+  if (mainFocuses === null) return true;
+  const focus = workoutFocus(w.tags.muscles);
+  return focus === "full" || mainFocuses.has(focus);
 }
 
 export function buildBlockShortlists(
@@ -151,7 +178,11 @@ export function buildBlockShortlists(
   let relaxedMain = false;
 
   // ---- Main (skipped entirely on a recovery day) ----
-  let mainFocuses = new Set<BodyFocus>(["full"]);
+  /** The focuses support work has to pair with, or null when there is no main
+   *  to pair with at all — a recovery day, or a catalog too thin to field one.
+   *  Null means unconstrained: with no main in the session, an upper-body
+   *  warm-up clashes with nothing. */
+  let mainFocuses: Set<BodyFocus> | null = null;
   const mainEnv = envFor("main");
   if (!ctx.recoveryDay && mainEnv) {
     const pool = byRole("main")
@@ -160,7 +191,7 @@ export function buildBlockShortlists(
       // level" — pinned during planning, where the spec was silent.
       .filter((w) => !(ctx.rampWeek <= 2 && w.tags.skillLevel === "Advanced"));
 
-    const unsore = (w: TaggedWorkout) => !soreDominated(w, ctx.soreness);
+    const unsore = (w: TaggedWorkout) => !hasSorePrimary(w, ctx.soreness);
     const unrepeated = (w: TaggedWorkout) =>
       w.lastPerformedDaysAgo === null || w.lastPerformedDaysAgo >= MAIN_REPEAT_DAYS;
 
@@ -185,11 +216,15 @@ export function buildBlockShortlists(
     if (main.length > 0) mainFocuses = new Set(main.map((c) => c.focus));
   }
 
-  // The built-in flavor follows the top main candidate — the likeliest pick —
-  // while the catalog support candidates match ANY main candidate's focus
-  // (spec §4 step 4). A recovery day and a mainless day both land on
-  // full-body, which is what a day with nothing to pair against wants.
-  const builtinFocus: BodyFocus = shortlists.main?.[0]?.focus ?? "full";
+  // Catalog support candidates may match ANY main candidate's focus (spec §4
+  // step 4), but the built-in is one routine and has to commit before the AI
+  // has picked. So it commits only when the whole main shortlist agrees; when
+  // the shortlist is split — or there is no main at all — it takes the
+  // full-body routine, which is never the wrong flavour for the pick that
+  // lands. Following the top candidate alone would put an upper-body cool-down
+  // on a session whose main turned out to be legs.
+  const mainFocusList = [...(mainFocuses ?? [])];
+  const builtinFocus: BodyFocus = mainFocusList.length === 1 ? mainFocusList[0] : "full";
 
   // ---- Support blocks ----
   const supportRoles: BuiltinRoutine["role"][] = ctx.recoveryDay
@@ -200,12 +235,9 @@ export function buildBlockShortlists(
     if (!env) continue;
     // No soreness gate here, deliberately: mobility and stretching for a sore
     // muscle are the point, and a warm-up precedes work main has already
-    // sore-gated. A recovery day has no main to pair with, so focus is open.
+    // sore-gated.
     const list = rankFitted(
-      byRole(role).filter((w) => {
-        const focus = workoutFocus(w.tags.muscles);
-        return ctx.recoveryDay || focus === "full" || mainFocuses.has(focus);
-      }),
+      byRole(role).filter((w) => sharesMainFocus(w, mainFocuses)),
       env,
       (w) => freshness(w, ctx.coverage) + recency(w),
       SUPPORT_SHORTLIST,
@@ -236,11 +268,9 @@ export function buildBlockShortlists(
   const condEnv = envFor("conditioning");
   if (!ctx.recoveryDay && condEnv) {
     shortlists.conditioning = rankFitted(
-      byRole("conditioning").filter((w) => {
-        const focus = workoutFocus(w.tags.muscles);
-        return (focus === "full" || mainFocuses.has(focus)) &&
-          !soreDominated(w, ctx.soreness);
-      }),
+      byRole("conditioning").filter(
+        (w) => sharesMainFocus(w, mainFocuses) && !hasSorePrimary(w, ctx.soreness),
+      ),
       condEnv,
       (w) => freshness(w, ctx.coverage),
       SUPPORT_SHORTLIST,

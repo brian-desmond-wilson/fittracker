@@ -124,6 +124,32 @@ describe("buildBlockShortlists", () => {
     expect(shortlists.warmup![shortlists.warmup!.length - 1].builtinKey).toBe("builtin-warmup-upper");
   });
 
+  it("a split main shortlist takes the full-body built-in, not the top pick's flavour", () => {
+    const upper = workout({ workoutId: "m-upper" });
+    const lower = workout({ workoutId: "m-lower", tags: { muscles: muscles([["Quads", true]]) } as any });
+    const { shortlists } = buildBlockShortlists([upper, lower], baseCtx());
+    // The AI may take either main, so the appended cool-down must suit both.
+    expect(new Set(shortlists.main!.map((c) => c.focus))).toEqual(new Set(["upper", "lower"]));
+    expect(shortlists.cooldown![shortlists.cooldown!.length - 1].builtinKey)
+      .toBe("builtin-cooldown-full");
+  });
+
+  it("with no main candidate, support work is not held to a focus", () => {
+    const upperWu = workout({
+      workoutId: "wu-upper",
+      tags: { blockRoles: ["warmup"], muscles: muscles([["Shoulders", true]]), estMinutes: 8 } as any,
+    });
+    const lowerWu = workout({
+      workoutId: "wu-lower",
+      tags: { blockRoles: ["warmup"], muscles: muscles([["Quads", true]]), estMinutes: 8 } as any,
+    });
+    // No main-role workout in the catalog at all — nothing for a warm-up to clash with.
+    const { shortlists } = buildBlockShortlists([upperWu, lowerWu], baseCtx());
+    expect(shortlists.main).toEqual([]);
+    expect(shortlists.warmup!.map((c) => c.workoutId ?? c.builtinKey))
+      .toEqual(expect.arrayContaining(["wu-upper", "wu-lower"]));
+  });
+
   it("soreness never gates a support block — stretching a sore muscle is the point", () => {
     const main = workout({ workoutId: "m" }); // upper focus, Chest
     const mob = workout({
