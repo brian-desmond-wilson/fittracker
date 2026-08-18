@@ -468,8 +468,16 @@ export interface SaveSessionInput {
   /** Block plan for a block-composed session; empty for legacy shapes. */
   blocks: BlockPick[];
   /** The compose inputs, hashed by the caller. Stamped onto the row last, so
-   *  a session that carries it is one that finished writing. */
-  composeSignature: string;
+   *  a session that carries it is one that finished writing.
+   *
+   *  NULL leaves the session deliberately unclaimed: the plan is written and
+   *  correct, but the caller knows something about it did not land — items
+   *  that never arrived, most of all — and wants the next load to compose it
+   *  again rather than have the Today tab's "already built from these inputs"
+   *  gate refuse to. Same reasoning as writing the stamp last, one step
+   *  earlier: the signature means "all of this landed", so a caller that knows
+   *  it didn't must be able to say so. */
+  composeSignature: string | null;
   inputsSnapshot: unknown;
 }
 
@@ -595,6 +603,12 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
     // refetch. Everything above can fail partway; a signature written before
     // them would mark a half-written session as finished and nothing would
     // ever recompose it, so the stamp has to mean "all of that landed".
+    //
+    // A null signature is WRITTEN rather than skipped. Rewriting a session
+    // replaced its block rows, so the signature already on the row describes a
+    // plan that no longer exists — leaving it there would be a claim about
+    // blocks that are gone, and clearing it is the truthful record of a
+    // session nothing has finished composing.
     //
     // Its own failure is not the save's failure: the session is written and
     // correct, it is merely unclaimed, and the next load composes it again.
