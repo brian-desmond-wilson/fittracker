@@ -4,12 +4,42 @@
 // Spec §4 steps 4-5.
 import type { BlockEnvelope, BlockRole } from "../types/dailyBlocks";
 
-/** Under this many total minutes, support blocks compress (spec §8). */
+/**
+ * Under this many total minutes, support blocks compress (spec §8).
+ *
+ * Known consequence, not a bug: the threshold is a step, so crossing it moves
+ * main the wrong way. A 44-minute day gives main 29-35; a 45-minute day gives
+ * it 15-30 — one more minute of budget lowers main's ceiling by five and
+ * halves its floor, because support blocks stop compressing and may now ask
+ * for 10 minutes each instead of 5. Smoothing that out means replacing the
+ * spec's compression rule with a proportional one, which is a spec change.
+ */
 const SHORT_DAY = 45;
 /** Conditioning only exists when the budget clears this (spec §4). */
 const CONDITIONING_FLOOR = 75;
 /** A roundless workout may be capped down by at most this factor. */
 const CAP_TOLERANCE = 1.25;
+/**
+ * Extension only fires below this fraction of a block's floor. Adding a whole
+ * round costs the athlete real work, so it has to buy a real gap rather than
+ * a rounding error: 29 minutes in a 30-45 block is a slightly short block, and
+ * the roundless path is allowed to leave it alone, so the rounds path must not
+ * be the more aggressive of the two.
+ */
+const EXTEND_BELOW = 0.8;
+/**
+ * What a broken budget falls back to.
+ *
+ * A missing, non-finite or non-positive budget is not a request for a
+ * zero-minute session, it is a bad input — and NaN is the dangerous one,
+ * because NaN envelopes fail silently: every comparison in `fitToEnvelope` is
+ * false against NaN, so every candidate passes through unfitted and unnoted,
+ * and the day comes out unbounded with nothing flagging it. Twenty minutes is
+ * the shortest day this arithmetic already produces a sane shape for, and
+ * falling back to it keeps the promise that you always get a session
+ * (spec §5). A small but genuine budget is left alone.
+ */
+const FALLBACK_BUDGET = 20;
 
 /**
  * What each block of today's session may cost, in the order the blocks are
@@ -27,21 +57,23 @@ const CAP_TOLERANCE = 1.25;
  * budget from asking for a main block of zero or negative minutes.
  */
 export function blockEnvelopes(minutes: number, recoveryDay: boolean): BlockEnvelope[] {
+  const budget = Number.isFinite(minutes) && minutes > 0 ? minutes : FALLBACK_BUDGET;
+
   if (recoveryDay) {
     // Mobility and cool-down only, deliberately (spec §6). Split roughly 60/40
     // toward mobility — the stretching is the session, the cool-down closes it.
     // The 10- and 5-minute floors mean a recovery day is never shorter than 15
     // minutes even when the budget is, which is the right way round: a
     // ten-minute recovery day is not worth presenting as a session.
-    const mobility = Math.max(10, Math.round(minutes * 0.6));
-    const cooldown = Math.max(5, Math.min(minutes - mobility, Math.round(minutes * 0.4)));
+    const mobility = Math.max(10, Math.round(budget * 0.6));
+    const cooldown = Math.max(5, Math.min(budget - mobility, Math.round(budget * 0.4)));
     return [
       { block: "mobility", minMinutes: 5, maxMinutes: mobility },
       { block: "cooldown", minMinutes: 5, maxMinutes: cooldown },
     ];
   }
 
-  const short = minutes < SHORT_DAY;
+  const short = budget < SHORT_DAY;
   const supportMin = short ? 3 : 5;
   const supportMax = short ? 5 : 10;
   const support = (block: BlockRole): BlockEnvelope =>
@@ -52,7 +84,7 @@ export function blockEnvelopes(minutes: number, recoveryDay: boolean): BlockEnve
   const cooldown = support("cooldown");
   // Conditioning is the first thing a tight day gives up: below 75 minutes,
   // buying it would come straight out of the main workout.
-  const conditioning: BlockEnvelope | null = minutes >= CONDITIONING_FLOOR
+  const conditioning: BlockEnvelope | null = budget >= CONDITIONING_FLOOR
     ? { block: "conditioning", minMinutes: 10, maxMinutes: 20 }
     : null;
 
@@ -63,8 +95,8 @@ export function blockEnvelopes(minutes: number, recoveryDay: boolean): BlockEnve
   const maxTaken = aroundMain.reduce((s, e) => s + e.maxMinutes, 0);
   const main: BlockEnvelope = {
     block: "main",
-    minMinutes: Math.max(10, minutes - maxTaken),
-    maxMinutes: Math.max(15, minutes - minTaken),
+    minMinutes: Math.max(10, budget - maxTaken),
+    maxMinutes: Math.max(15, budget - minTaken),
   };
 
   return [warmup, mobility, main, ...(conditioning ? [conditioning] : []), cooldown];
@@ -132,6 +164,11 @@ export function fitToEnvelope(
         }
       }
       // Even one round busts the block. Nothing left to cut.
+      //
+      // Note that a workout with rounds never gets the roundless cap, so the
+      // doctrine sometimes costs minutes: 46 over 4 rounds in a 30-45 block
+      // drops to 35 ("do 3 of 4") where a cap would have shaved one minute.
+      // That is the price of only ever prescribing work someone can perform.
       return null;
     }
     // Roundless: a modest overage caps; past tolerance it doesn't fit.
@@ -141,9 +178,13 @@ export function fitToEnvelope(
     return null;
   }
 
-  // Under the floor. With rounds we can extend (at most doubling); without,
-  // a short workout is simply a short block — allowed as-is.
-  if (n !== null) {
+  // Under the floor. With rounds we can extend (at most doubling), but only
+  // when the shortfall is worth a whole round; without rounds — or within
+  // reach of the floor — a short workout is simply a short block, allowed
+  // as-is. A trim can land here too and is likewise kept: 70 minutes over 2
+  // rounds in a 40-65 block becomes a 35-minute single round, under the floor
+  // but honest, because the floor is soft and the ceiling is not.
+  if (n !== null && estMinutes < env.minMinutes * EXTEND_BELOW) {
     const k = Math.min(n * 2, Math.ceil((n * env.minMinutes) / estMinutes));
     if (k > n) {
       const minutes = Math.round((estMinutes * k) / n);

@@ -87,9 +87,32 @@ describe("fitToEnvelope", () => {
     expect(fitToEnvelope(50, "1", mainEnv)).toEqual({ minutes: 45, roundsNote: "Cap at 45 min" });
   });
 
+  it("a shortfall too small to be worth a round is left alone", () => {
+    // 29 in a 30-45 block is a slightly short block, not a gap: buying a
+    // fourth round to close one minute would cost a third more work.
+    expect(fitToEnvelope(29, "3", mainEnv)).toEqual({ minutes: 29, roundsNote: null });
+  });
+
   it("a nonsense estimate never fits", () => {
     expect(fitToEnvelope(NaN, "4", mainEnv)).toBeNull();
     expect(fitToEnvelope(0, "4", mainEnv)).toBeNull();
+  });
+});
+
+describe("broken budgets", () => {
+  it("a non-finite or non-positive budget falls back to a short day", () => {
+    for (const bad of [NaN, 0, -30, Infinity]) {
+      for (const recovery of [false, true]) {
+        expect(blockEnvelopes(bad, recovery)).toEqual(blockEnvelopes(20, recovery));
+      }
+    }
+  });
+
+  it("no envelope ever carries NaN", () => {
+    for (const e of blockEnvelopes(NaN, false)) {
+      expect(Number.isFinite(e.minMinutes)).toBe(true);
+      expect(Number.isFinite(e.maxMinutes)).toBe(true);
+    }
   });
 });
 
