@@ -2594,6 +2594,23 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
         todayCheckin.energy, recovery ? "recovery" : "train", shortlistIds,
       ].join("::");
 
+      // A reroll is a user decision, and recomposing would overwrite it: the
+      // hook recomposes any still-suggested session on every load, and
+      // saveGeneratedSession replaces the block rows wholesale (Task 12
+      // review). So stop early when the day already on file was composed from
+      // exactly these inputs — the signature is stored alongside the session,
+      // and a changed check-in or gym changes it, which is precisely when a
+      // recompose IS wanted.
+      if (
+        existing &&
+        existing.blocks.length > 0 &&
+        (existing as any).composeSignature === signature
+      ) {
+        setSession(existing);
+        setLoading(false);
+        return;
+      }
+
       const aiBody = {
         mode: "blocks",
         minutes: todayCheckin.minutesAvailable,
@@ -2668,8 +2685,15 @@ Replace lines 105-220 (from `const activeGym = ...` through the `saveGeneratedSe
           sectionMinutes,
         },
         blocks: picks,
-        // Shortlists ride along for reroll; aiBody for audit, same as before.
-        inputsSnapshot: { aiBody, shortlists: shortlists as BlockShortlists },
+        // Shortlists ride along for reroll; aiBody for audit, same as before;
+        // the signature so the next load can tell "already composed from these
+        // inputs" from "inputs changed, recompose" without overwriting a
+        // reroll. `fetchTodaySession` reads it back as `composeSignature`.
+        inputsSnapshot: {
+          aiBody,
+          shortlists: shortlists as BlockShortlists,
+          signature,
+        },
       });
 ```
 
