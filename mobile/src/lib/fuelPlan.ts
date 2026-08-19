@@ -45,6 +45,10 @@ export const DEFAULT_BUDGET_WEIGHTS: Record<MealType, number> = {
   dinner: 1.4,
   snack: 0.4,
   dessert: 0.3,
+  // No window is ever DEFINED as a beverage window (the DB forbids it), so
+  // this weight can only be read if that invariant breaks; zero makes the
+  // failure inert rather than budget-shifting.
+  beverage: 0,
 };
 
 /** How long a derived legacy window stays open past its profile point time. */
@@ -149,6 +153,9 @@ export interface FuelLogInput {
   calories: number;
   protein: number;
   name: string;
+  /** FALSE only for a beverage the owner said doesn't fill a window: the log
+   *  floats — on the rail, in the totals, invisible to the plan. */
+  countsAsMeal: boolean;
 }
 
 export interface AttributedLog extends FuelLogInput {
@@ -177,6 +184,11 @@ export function attributeLogs(
   windows: FuelWindow[],
 ): AttributedLog[] {
   return logs.map((log) => {
+    // A non-counting beverage never claims a window, however squarely its
+    // time lands in one — that's the whole meaning of the switch. Decided
+    // here, at the single door every log passes through, so no downstream
+    // reader (window states, budgets, missed notes) needs its own check.
+    if (!log.countsAsMeal) return { ...log, windowId: null };
     const containing = windows.filter((w) => distanceToWindow(log.loggedAtMinutes, w) === 0);
     const typed = containing.find((w) => w.mealType === log.mealType);
     if (typed) return { ...log, windowId: typed.id };

@@ -108,7 +108,22 @@ export interface ShoppingListItem {
 }
 
 // Meal & Nutrition Types
-export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "dessert";
+//
+// `beverage` is a logging slot with no window of its own: a drink draws on the
+// rail at the time it was drunk, and whether it FILLS the eating window that
+// time lands in is a separate per-log fact (`counts_as_meal`), not a property
+// of the slot. Everything that plans or renders windows must treat a
+// non-counting beverage as invisible.
+export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "dessert" | "beverage";
+
+/** What a drink IS — multi-select, because one shake can be high-protein AND
+ *  high-calorie at once. What it DOES to the day is `counts_as_meal`. */
+export type BeverageKind =
+  | "protein_shake"
+  | "weight_gain_shake"
+  | "smoothie"
+  | "energy_drink"
+  | "other";
 
 export interface InventoryUsage {
   id: string;
@@ -135,6 +150,11 @@ export interface MealLog {
   meal_id: string | null; // Link to meals (Meal Library provenance)
   servings: number; // Serving multiplier (e.g., 0.5, 1.0, 2.0)
   logged_at: string;
+  /** Non-null exactly when meal_type is "beverage" (DB check). */
+  beverage_kinds: BeverageKind[] | null;
+  /** TRUE for every food log; a beverage log carries the switch's answer.
+   *  FALSE means the planner treats this log as if it weren't there. */
+  counts_as_meal: boolean;
 }
 
 // Saved Foods (Personal Food Library) - for quick meal logging

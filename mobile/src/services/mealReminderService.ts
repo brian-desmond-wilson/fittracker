@@ -16,6 +16,11 @@ function bodyFor(mealType: MealType): { title: string; body: string } {
       return { title: "Snack", body: "Time for a snack. Tap to log it." };
     case "dessert":
       return { title: "Dessert", body: "Time for dessert. Tap to log it." };
+    case "beverage":
+      // Unreachable today: reminders are scheduled from eating windows, and no
+      // window can be a beverage window. Copy exists so the exhaustive switch
+      // stays exhaustive rather than the type asserting it away.
+      return { title: "Beverage", body: "Time for a drink. Tap to log it." };
   }
 }
 

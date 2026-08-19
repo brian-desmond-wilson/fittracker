@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { colors } from "@/src/lib/colors";
 import { MealLog, MealType } from "@/src/types/track";
 
-const ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
+const ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert", "beverage"];
 
 const COLORS: Record<MealType, string> = {
   breakfast: "#F59E0B",
@@ -11,6 +11,7 @@ const COLORS: Record<MealType, string> = {
   dinner: "#3B82F6",
   snack: "#8B5CF6",
   dessert: "#EC4899",
+  beverage: "#14B8A6",
 };
 
 const LABELS: Record<MealType, string> = {
@@ -19,6 +20,7 @@ const LABELS: Record<MealType, string> = {
   dinner: "D",
   snack: "S",
   dessert: "Ds",
+  beverage: "Bv",
 };
 
 interface MealsDistributionBarProps {
@@ -36,6 +38,7 @@ export function MealsDistributionBar({ meals }: MealsDistributionBarProps) {
     dinner: 0,
     snack: 0,
     dessert: 0,
+    beverage: 0,
   };
   for (const m of meals) {
     byType[m.meal_type] += m.calories ?? 0;

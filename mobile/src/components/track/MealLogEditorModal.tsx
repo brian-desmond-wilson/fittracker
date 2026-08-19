@@ -18,6 +18,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Switch,
   TouchableOpacity,
   TextInput,
   ScrollView,
@@ -25,7 +26,8 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Button, Card } from "@/src/components/ui";
-import { MealLog, MealType } from "@/src/types/track";
+import { BeverageKind, MealLog, MealType } from "@/src/types/track";
+import { BEVERAGE_KINDS, BEVERAGE_KIND_LABELS } from "@/src/types/meal-library";
 import {
   baseMacros,
   clampPercent,
@@ -47,6 +49,10 @@ export interface MealLogEdit extends PortionMacros {
   meal_type: MealType;
   servings: number;
   logged_at: string;
+  /** Present only when the log being edited is a beverage — food logs must
+   *  not have their (null, true) beverage facts touched. */
+  beverage_kinds?: BeverageKind[];
+  counts_as_meal?: boolean;
 }
 
 interface MealLogEditorModalProps {
@@ -115,6 +121,10 @@ export function MealLogEditorModal({
   const [loggedAt, setLoggedAt] = useState<Date>(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showExact, setShowExact] = useState(false);
+  // A beverage log edits its beverage facts where a food log edits its slot.
+  const isBeverage = meal?.meal_type === "beverage";
+  const [bevKinds, setBevKinds] = useState<BeverageKind[]>([]);
+  const [bevCounts, setBevCounts] = useState(false);
   // Raw fields, live only while the exact-amounts escape hatch is open. They
   // seed from the CURRENT scaled values, because that is what "exact" means
   // once a portion has been applied.
@@ -131,6 +141,10 @@ export function MealLogEditorModal({
     setLoggedAt(new Date(meal.logged_at));
     setShowTimePicker(false);
     setShowExact(false);
+    setBevKinds(meal.beverage_kinds ?? []);
+    // The stored answer, not the tag default: the owner may have overridden
+    // it at log time, and editing a portion must not silently flip it back.
+    setBevCounts(meal.counts_as_meal !== false);
   }, [meal]);
 
   // The 100% amounts — what the "was" line reports and everything scales from.
@@ -197,6 +211,13 @@ export function MealLogEditorModal({
       meal_type: mealType,
       servings: showExact ? 1 : servingsForPercent(percent),
       logged_at: loggedAt.toISOString(),
+      // Only for a beverage: a food log's (null, true) must stay untouched.
+      ...(isBeverage
+        ? {
+            beverage_kinds: bevKinds.length > 0 ? bevKinds : (["other"] as BeverageKind[]),
+            counts_as_meal: bevCounts,
+          }
+        : {}),
     });
   };
 
@@ -251,33 +272,80 @@ export function MealLogEditorModal({
               </View>
             </View>
 
-            {/* Grouped, mutually exclusive, shared track: the segmented
-                treatment (rule 21), which also fits all five on one line
-                where the old chips wrapped onto two. */}
-            <Text style={styles.label}>Meal Type</Text>
-            <View style={styles.segTrack}>
-              {MEAL_TYPES.map((t) => {
-                const active = mealType === t.value;
-                return (
-                  <TouchableOpacity
-                    key={t.value}
-                    onPress={() => setMealType(t.value)}
-                    style={[styles.segment, active && styles.segmentActive]}
-                    disabled={saving}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={t.label}
-                  >
-                    <Text
-                      style={[styles.segmentText, active && styles.segmentTextActive]}
-                      numberOfLines={1}
-                    >
-                      {t.label}
+            {/* A beverage edits its beverage facts; food edits its slot. The
+                five-slot segment would show a beverage as belonging nowhere,
+                and moving a drink into "Lunch" is not an edit this sheet
+                should offer — the two-door split at logging is the decision,
+                and this sheet only refines it. */}
+            {isBeverage ? (
+              <>
+                <Text style={styles.label}>What kind of drink?</Text>
+                <View style={styles.bevChips}>
+                  {BEVERAGE_KINDS.map((kind) => {
+                    const active = bevKinds.includes(kind);
+                    return (
+                      <TouchableOpacity
+                        key={kind}
+                        style={[styles.bevChip, active && styles.bevChipActive]}
+                        onPress={() =>
+                          setBevKinds((prev) =>
+                            prev.includes(kind)
+                              ? prev.filter((k) => k !== kind)
+                              : [...prev, kind],
+                          )
+                        }
+                        disabled={saving}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text style={[styles.bevChipText, active && styles.bevChipTextActive]}>
+                          {BEVERAGE_KIND_LABELS[kind]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.bevSwitchRow}>
+                  <View style={styles.bevSwitchBody}>
+                    <Text style={styles.bevSwitchLabel}>Counts as a meal</Text>
+                    <Text style={styles.bevSwitchSub}>
+                      Fills the eating window its time lands in.
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                  </View>
+                  <Switch value={bevCounts} onValueChange={setBevCounts} disabled={saving} />
+                </View>
+              </>
+            ) : (
+              <>
+                {/* Grouped, mutually exclusive, shared track: the segmented
+                    treatment (rule 21), which also fits all five on one line
+                    where the old chips wrapped onto two. */}
+                <Text style={styles.label}>Meal Type</Text>
+                <View style={styles.segTrack}>
+                  {MEAL_TYPES.map((t) => {
+                    const active = mealType === t.value;
+                    return (
+                      <TouchableOpacity
+                        key={t.value}
+                        onPress={() => setMealType(t.value)}
+                        style={[styles.segment, active && styles.segmentActive]}
+                        disabled={saving}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={t.label}
+                      >
+                        <Text
+                          style={[styles.segmentText, active && styles.segmentTextActive]}
+                          numberOfLines={1}
+                        >
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             <Text style={styles.label}>How much did you eat?</Text>
             <View style={styles.presetRow}>
@@ -548,6 +616,30 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: colors.brand },
   segmentText: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
   segmentTextActive: { color: colors.onBrand },
+
+  // Same chips-and-switch treatment as the log sheet's beverage section, so
+  // logging a drink and editing one read as the same form.
+  bevChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  bevChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  bevChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  bevChipText: { ...typography.buttonSm, color: colors.textMuted },
+  bevChipTextActive: { color: colors.onBrand },
+  bevSwitchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  bevSwitchBody: { flex: 1, gap: 2 },
+  bevSwitchLabel: { ...typography.body, color: colors.text },
+  bevSwitchSub: { ...typography.caption, color: colors.textFaint },
 
   presetRow: { flexDirection: "row", gap: spacing.sm },
   // Standalone toggles, not a shared track: tinted-brand active state.

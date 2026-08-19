@@ -28,6 +28,7 @@ const SLOT_LABELS: Record<MealType, string> = {
   dinner: "Dinner",
   snack: "Snack",
   dessert: "Dessert",
+  beverage: "Beverage",
 };
 
 const COLLAPSED = 6;

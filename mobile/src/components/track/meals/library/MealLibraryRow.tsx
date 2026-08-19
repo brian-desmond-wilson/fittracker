@@ -11,6 +11,7 @@ import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tok
 import { Badge, Card } from "@/src/components/ui";
 import { substitutionLine, type MealCard } from "@/src/lib/mealLibraryView";
 import { monogram } from "@/src/lib/vendorMonogram";
+import { beverageKindsLine } from "@/src/types/meal-library";
 
 interface MealLibraryRowProps {
   card: MealCard;
@@ -76,6 +77,11 @@ function MealLibraryRowInner({
             {meal.name}
           </Text>
           {source.name && <Text style={s.source} numberOfLines={1}>{source.name}</Text>}
+          {meal.beverage_kinds && (
+            <Text style={s.meta} numberOfLines={1}>
+              {beverageKindsLine(meal.beverage_kinds)}
+            </Text>
+          )}
           <Text style={s.meta} numberOfLines={2}>
             {nutrition.totals.calories} cal · {Math.round(nutrition.totals.protein)}g P
             {" · "}{Math.round(nutrition.totals.fiber_g)}g fiber

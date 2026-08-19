@@ -11,6 +11,7 @@ import { Star } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import type { MealCard } from "@/src/lib/mealLibraryView";
 import { monogram } from "@/src/lib/vendorMonogram";
+import { beverageKindsLine } from "@/src/types/meal-library";
 
 interface MealShelfCardProps {
   card: MealCard;
@@ -79,6 +80,11 @@ function MealShelfCardInner({ card, onPress, onToggleFavorite, onLog, busyMealId
         ) : (
           <Text style={s.meta} numberOfLines={1}>
             {card.nutrition.totals.calories} cal · {Math.round(card.nutrition.totals.protein)}g P
+          </Text>
+        )}
+        {card.meal.beverage_kinds && (
+          <Text style={s.meta} numberOfLines={1}>
+            {beverageKindsLine(card.meal.beverage_kinds)}
           </Text>
         )}
         <TouchableOpacity

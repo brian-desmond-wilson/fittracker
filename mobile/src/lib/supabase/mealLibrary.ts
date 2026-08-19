@@ -16,7 +16,8 @@ import type {
   MealTotals,
   MealWithItems,
 } from "@/src/types/meal-library";
-import type { MealType, SavedFood } from "@/src/types/track";
+import { beverageCountsAsMealDefault } from "@/src/types/meal-library";
+import type { BeverageKind, MealType, SavedFood } from "@/src/types/track";
 
 // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -486,6 +487,8 @@ export interface MealInput {
   is_complete_portion: boolean;
   image_primary_url: string | null;
   notes: string | null;
+  /** What the drink is, when this entry is one. Null for food. */
+  beverage_kinds: BeverageKind[] | null;
   items: MealItemInput[];
 }
 
@@ -618,6 +621,8 @@ export async function promoteAdHocMeal(
     category: Meal["category"];
     source_kind: Meal["source_kind"];
     source_name: string | null;
+    /** What the drink is, when the thing being kept is one. */
+    beverage_kinds?: BeverageKind[] | null;
   },
 ): Promise<string> {
   invalidateMealLibrary();
@@ -658,6 +663,7 @@ export async function promoteAdHocMeal(
     is_complete_portion: false,
     image_primary_url: null,
     notes: null,
+    beverage_kinds: meta.beverage_kinds ?? null,
     items: [{ saved_food_id: savedFoodId, servings: 1, small_pieces_ok: false }],
   });
 }
@@ -698,6 +704,8 @@ export async function saveLogAsMeal(
     category: Meal["category"];
     source_kind: Meal["source_kind"];
     source_name: string | null;
+    /** What the drink is, when the thing being kept is one. */
+    beverage_kinds?: BeverageKind[] | null;
   },
 ): Promise<{ mealId: string; linkedLogs: number }> {
   const mealId = await promoteAdHocMeal(
@@ -918,6 +926,15 @@ export async function logMeal(
       servings: s,
       meal_id: meal.id,
       logged_at: loggedAt,
+      // Derived from the meal INSIDE the one write path every "log this meal"
+      // door calls, so a Boost logged from the library, a suggestion chip, or
+      // a fuel pick all carry the same beverage facts without each caller
+      // remembering to.
+      beverage_kinds: opts.mealType === "beverage" ? meal.beverage_kinds ?? ["other"] : null,
+      counts_as_meal:
+        opts.mealType === "beverage"
+          ? beverageCountsAsMealDefault(meal.beverage_kinds ?? [])
+          : true,
     };
   });
 

@@ -3,7 +3,7 @@
 // CHECK constraints in 20260729100000_meal_library_schema.sql — the practical
 // enum contract (house convention).
 import type { ConceptRating } from "./nutrition-preferences";
-import type { MealType, SavedFood } from "./track";
+import type { BeverageKind, MealType, SavedFood } from "./track";
 
 export type MealCategory =
   | "breakfast"
@@ -12,7 +12,8 @@ export type MealCategory =
   | "snack"
   | "dessert"
   | "shake"
-  | "emergency";
+  | "emergency"
+  | "beverage";
 
 /** Emergency Calories is held ALONE. It is deliberately excluded from ordinary
  *  suggestions, so "this is an emergency meal and also a breakfast" has no
@@ -50,6 +51,7 @@ export const CATEGORY_SECTION_ORDER: MealCategory[] = [
   "snack",
   "dessert",
   "shake",
+  "beverage",
 ];
 
 export const CATEGORY_LABELS: Record<MealCategory, string> = {
@@ -60,6 +62,7 @@ export const CATEGORY_LABELS: Record<MealCategory, string> = {
   snack: "Snacks",
   dessert: "Desserts",
   shake: "Shakes",
+  beverage: "Beverages",
 };
 
 /** Singular, for a chip that files ONE meal rather than a shelf holding many.
@@ -72,6 +75,7 @@ export const CATEGORY_CHIP_LABELS: Record<MealCategory, string> = {
   snack: "Snack",
   dessert: "Dessert",
   shake: "Shake",
+  beverage: "Beverage",
 };
 
 /** Picker order — the day, then the two kinds that aren't times of day. */
@@ -82,8 +86,46 @@ export const CATEGORY_PICKER_ORDER: MealCategory[] = [
   "snack",
   "dessert",
   "shake",
+  "beverage",
   "emergency",
 ];
+
+/** Tag order on the beverage sheet — the two shakes first, since they are the
+ *  reason the split exists. */
+export const BEVERAGE_KINDS: BeverageKind[] = [
+  "protein_shake",
+  "weight_gain_shake",
+  "smoothie",
+  "energy_drink",
+  "other",
+];
+
+export const BEVERAGE_KIND_LABELS: Record<BeverageKind, string> = {
+  protein_shake: "Protein Shake",
+  weight_gain_shake: "Weight Gain Shake",
+  smoothie: "Smoothie",
+  energy_drink: "Energy Drink",
+  other: "Other",
+};
+
+/** "Protein Shake · Energy Drink" — the kinds as one caption, in tag order
+ *  rather than selection order, so two cards never disagree about the same
+ *  pair. */
+export function beverageKindsLine(kinds: readonly BeverageKind[]): string {
+  return BEVERAGE_KINDS.filter((k) => kinds.includes(k))
+    .map((k) => BEVERAGE_KIND_LABELS[k])
+    .join(" · ");
+}
+
+/**
+ * The "Counts as a meal" switch's starting position, from what the drink is:
+ * a weight-gain shake replaces a meal, everything else rides along. A DEFAULT
+ * only — the switch is always the owner's to flip, and the answer stored on
+ * the log is the switch's, never this function's.
+ */
+export function beverageCountsAsMealDefault(kinds: readonly BeverageKind[]): boolean {
+  return kinds.includes("weight_gain_shake");
+}
 
 export type MealRole =
   | "pre_workout"
@@ -109,6 +151,7 @@ export const MEAL_TYPE_LABELS: Record<MealType, string> = {
   dinner: "Dinner",
   snack: "Snack",
   dessert: "Dessert",
+  beverage: "Beverage",
 };
 
 /** Logging slot when meals.default_meal_type is null (spec §5.1). */
@@ -120,6 +163,7 @@ export const CATEGORY_DEFAULT_MEAL_TYPE: Record<MealCategory, MealType> = {
   dessert: "dessert",
   shake: "snack",
   emergency: "snack",
+  beverage: "beverage",
 };
 
 export interface Meal {
@@ -154,6 +198,9 @@ export interface Meal {
    *  `mealFaceUrlFor`. */
   image_primary_url: string | null;
   notes: string | null;
+  /** What the drink is, when this entry is one — pre-fills the log sheet's
+   *  tags and the counts-as-meal default. Null for food. */
+  beverage_kinds: BeverageKind[] | null;
   /** Set by hand from the meal page. A meal is archived when this is set OR
    *  when the retirement rule says so; clearing it hands the meal back to the
    *  automatic rule. */

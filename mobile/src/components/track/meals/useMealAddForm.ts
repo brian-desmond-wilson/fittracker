@@ -1,5 +1,6 @@
 import { useState, Dispatch, SetStateAction } from "react";
-import { MealType, SavedFood } from "@/src/types/track";
+import { BeverageKind, MealType, SavedFood } from "@/src/types/track";
+import { beverageCountsAsMealDefault } from "@/src/types/meal-library";
 import type { MealSourceKind } from "@/src/lib/mealLibraryView";
 
 // Bundles the manual "Log Meal" form field state so the screen doesn't carry a
@@ -35,6 +36,16 @@ export interface MealAddFormState {
   setKeepSourceKind: Dispatch<SetStateAction<MealSourceKind>>;
   keepSourceName: string;
   setKeepSourceName: Dispatch<SetStateAction<string>>;
+  // Beverage mode. `bevKinds` is what the drink is (multi-select);
+  // `bevCountsAsMeal` is what it does to the day. The switch follows the tags
+  // (weight-gain ⇒ meal) until the owner flips it by hand, after which the
+  // hand answer sticks — that's the `null = follow the tags` encoding.
+  bevKinds: BeverageKind[];
+  toggleBevKind: (kind: BeverageKind) => void;
+  bevCountsOverride: boolean | null;
+  setBevCountsOverride: Dispatch<SetStateAction<boolean | null>>;
+  /** The switch's current answer: the override when set, else the tags'. */
+  bevCountsAsMeal: boolean;
   // Reset to defaults, dating the form to `base` (the viewing date).
   reset: (base: Date) => void;
   // Quick-fill name + macros from a recent-food chip.
@@ -59,6 +70,13 @@ export function useMealAddForm(): MealAddFormState {
   // goes through the meal builder, where it can carry its ingredients.
   const [keepSourceKind, setKeepSourceKind] = useState<MealSourceKind>("out");
   const [keepSourceName, setKeepSourceName] = useState("");
+  const [bevKinds, setBevKinds] = useState<BeverageKind[]>([]);
+  const [bevCountsOverride, setBevCountsOverride] = useState<boolean | null>(null);
+
+  const toggleBevKind = (kind: BeverageKind) =>
+    setBevKinds((prev) =>
+      prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
+    );
 
   const reset = (base: Date) => {
     setSelectedDate(base);
@@ -74,6 +92,8 @@ export function useMealAddForm(): MealAddFormState {
     setKeep(false);
     setKeepSourceKind("out");
     setKeepSourceName("");
+    setBevKinds([]);
+    setBevCountsOverride(null);
   };
 
   const fillFromChip = (food: SavedFood) => {
@@ -108,6 +128,11 @@ export function useMealAddForm(): MealAddFormState {
     setSodiumMg,
     fiberG,
     setFiberG,
+    bevKinds,
+    toggleBevKind,
+    bevCountsOverride,
+    setBevCountsOverride,
+    bevCountsAsMeal: bevCountsOverride ?? beverageCountsAsMealDefault(bevKinds),
     keep,
     setKeep,
     keepSourceKind,

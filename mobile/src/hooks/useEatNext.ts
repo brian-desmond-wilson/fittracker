@@ -20,6 +20,7 @@ import {
 import { getLocalDateString } from "@/src/lib/dates";
 import { recordSuggestions } from "@/src/lib/supabase/eatNextLog";
 import { shouldRetire } from "@/src/lib/mealRetirement";
+import { beverageCountsAsMealDefault, defaultMealTypeFor } from "@/src/types/meal-library";
 import { daysBetweenLocalDates } from "@/src/lib/stockState";
 
 /** Mirrors `nutrition_constraints.max_prep_minutes`'s own schema default
@@ -295,7 +296,13 @@ export function useEatNext(refreshKey?: number): UseEatNextValue {
           getLocalDateString(new Date(meal.created_at)),
           today,
         ),
-      }));
+      })).filter(
+        // "Eat next" answers "what should I eat" — a drink that doesn't count
+        // as a meal is not an answer, same guard as the fuel picks.
+        (meal) =>
+          defaultMealTypeFor(meal) !== "beverage" ||
+          beverageCountsAsMealDefault(meal.beverage_kinds ?? []),
+      );
 
       // The score input assembly lives in `mealScoreInput.ts` (pure, tested).
       // `MealBuilder` still carries its own copy — migrating it is a recorded

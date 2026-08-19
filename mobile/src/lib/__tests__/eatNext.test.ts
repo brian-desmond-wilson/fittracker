@@ -89,6 +89,7 @@ function scored(over: {
       image_primary_url: null,
       notes: null,
       archived_at: null,
+      beverage_kinds: null,
       created_at: "",
       updated_at: "",
       items: [],

@@ -49,7 +49,7 @@ import {
   type MealLibraryData,
 } from "@/src/lib/supabase/mealLibrary";
 import { getLocalDateString } from "@/src/lib/dates";
-import { defaultMealTypeFor } from "@/src/types/meal-library";
+import { beverageCountsAsMealDefault, defaultMealTypeFor } from "@/src/types/meal-library";
 import type { MealLog } from "@/src/types/track";
 
 const DEFAULT_MAX_PREP_MINUTES = 5;
@@ -321,6 +321,10 @@ export function useFuelPlan(
         calories: Number(l.calories ?? 0),
         protein: Number(l.protein ?? 0),
         name: l.name,
+        // Strict false: rows written before the column existed arrive as
+        // undefined through the untyped client and must count, as they always
+        // have.
+        countsAsMeal: l.counts_as_meal !== false,
       })),
       windows,
     );
@@ -388,6 +392,14 @@ export function useFuelPlan(
           today,
         ),
       }),
+    ).filter(
+      // A drink that doesn't count as a meal must never be PICKED to fill a
+      // window — suggesting a Red Bull for lunch is the planner form of the
+      // bug the counts-as-meal switch exists to prevent. A weight-gain shake
+      // defaults to counting, so it stays suggestible.
+      (meal) =>
+        defaultMealTypeFor(meal) !== "beverage" ||
+        beverageCountsAsMealDefault(meal.beverage_kinds ?? []),
     );
 
     const rescueByMealId = new Map(

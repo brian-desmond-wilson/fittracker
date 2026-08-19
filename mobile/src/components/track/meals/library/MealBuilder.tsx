@@ -433,6 +433,10 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         is_complete_portion: completePortion,
         image_primary_url: photo,
         notes: notes.trim() || null,
+        // Carried through unchanged: the builder has no tag UI (drinks are
+        // saved from the log sheet), and dropping them on edit would strip a
+        // beverage of what it is.
+        beverage_kinds: initial?.beverage_kinds ?? null,
         // Clamped here as well as in the stepper: an item seeded from
         // `initial.items` above MAX_SERVINGS would otherwise be re-saved
         // unclamped if the user never tapped ±, and the whole point of the cap

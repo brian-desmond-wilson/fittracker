@@ -67,6 +67,7 @@ const SLOT_LABELS: Record<MealType, string> = {
   dinner: "Dinner",
   snack: "Snack",
   dessert: "Dessert",
+  beverage: "Beverage",
 };
 
 /** Height of the condensed bar that stands in for the header once you scroll.

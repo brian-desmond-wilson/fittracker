@@ -49,6 +49,7 @@ const log = (over: Partial<FuelLogInput> = {}): FuelLogInput => ({
   calories: 440,
   protein: 24,
   name: "Muesli",
+  countsAsMeal: true,
   ...over,
 });
 
@@ -122,6 +123,31 @@ describe("attributeLogs", () => {
   it("puts a log inside its window", () => {
     const [a] = attributeLogs([log()], DAY);
     expect(a.windowId).toBe("w-breakfast");
+  });
+
+  it("a non-counting beverage floats, even squarely inside a window", () => {
+    const redBull = log({
+      id: "l-bev",
+      mealType: "beverage",
+      loggedAtMinutes: 8 * 60, // dead center of breakfast
+      countsAsMeal: false,
+    });
+    const [a] = attributeLogs([redBull], DAY);
+    expect(a.windowId).toBeNull();
+    // And the window it floated through is still unfed: live, not done.
+    const [state] = windowStates(DAY, [a], 8 * 60 + 30);
+    expect(state.status).toBe("live");
+  });
+
+  it("a counts-as-meal beverage fills the window its time lands in", () => {
+    const gainer = log({
+      id: "l-gainer",
+      mealType: "beverage",
+      loggedAtMinutes: 12 * 60 + 30, // inside lunch
+      countsAsMeal: true,
+    });
+    const [a] = attributeLogs([gainer], DAY);
+    expect(a.windowId).toBe("w-lunch");
   });
 
   it("prefers the matching meal type when windows overlap", () => {

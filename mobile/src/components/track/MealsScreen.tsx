@@ -40,7 +40,7 @@ import { colors, icons, spacing } from "@/src/theme/tokens";
 import { Button, Card, EmptyState, IconButton, UndoToast } from "@/src/components/ui";
 import type { UndoToastContent } from "@/src/components/ui";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
-import { MealLog, MealType, SavedFood } from "@/src/types/track";
+import { BeverageKind, MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
 import {
   getProductByBarcode,
@@ -249,6 +249,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
   // so the form never asks for what the entry point already knew.
   const [logSheetOpen, setLogSheetOpen] = useState(false);
   const [logSheetManual, setLogSheetManual] = useState(false);
+  // The sheet's beverage mode: no slot picker, tag row, counts-as-meal switch.
+  const [logSheetBeverage, setLogSheetBeverage] = useState(false);
   const [logSheetAt, setLogSheetAt] = useState<Date>(new Date());
   const [logSheetQuery, setLogSheetQuery] = useState("");
   const [loggingFoodId, setLoggingFoodId] = useState<string | null>(null);
@@ -1116,7 +1118,9 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
    * roughly when, a quick chip knows the kind of thing — and the sheet
    * inherits it instead of asking.
    */
-  const openLogSheet = (opts: { mealType?: MealType; at?: Date; manual?: boolean } = {}) => {
+  const openLogSheet = (
+    opts: { mealType?: MealType; at?: Date; manual?: boolean; beverage?: boolean } = {},
+  ) => {
     resetForm();
     addForm.setSelectedDate(viewingDate);
     // On a past day the clock time is meaningless, so a log lands at midday
@@ -1125,24 +1129,31 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
       ? new Date()
       : new Date(new Date(viewingDate).setHours(12, 0, 0, 0));
     const at = opts.at ?? fallbackAt;
-    // With no slot named by the caller, the clock names one: the window that
-    // instant falls in. Otherwise every log would open on breakfast.
+    // Beverage mode fixes the slot: the clock decides where it draws on the
+    // rail, and the counts-as-meal switch decides whether it fills a window —
+    // there is no slot question left to ask or infer.
+    // Otherwise, with no slot named by the caller, the clock names one: the
+    // window that instant falls in — else every log would open on breakfast.
     addForm.setMealType(
-      opts.mealType ??
-        mealTypeForMinutes(
-          fuel.model?.windows ?? [],
-          at.getHours() * 60 + at.getMinutes(),
-        ),
+      opts.beverage
+        ? "beverage"
+        : opts.mealType ??
+            mealTypeForMinutes(
+              fuel.model?.windows ?? [],
+              at.getHours() * 60 + at.getMinutes(),
+            ),
     );
     setLogSheetAt(at);
     setLogSheetQuery("");
     setLogSheetManual(opts.manual ?? false);
+    setLogSheetBeverage(opts.beverage ?? false);
     setLogSheetOpen(true);
   };
 
   const closeLogSheet = () => {
     setLogSheetOpen(false);
     setLogSheetManual(false);
+    setLogSheetBeverage(false);
     setLogSheetQuery("");
   };
 
@@ -1191,6 +1202,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         // The sheet's own clock — set from the entry point, so a log written
         // through a missed window's ghost lands in that window's slot.
         logged_at: logSheetAt.toISOString(),
+        // A beverage with no tags picked is still a beverage — "other" rather
+        // than a blocked log (the DB requires at least one kind).
+        beverage_kinds: logSheetBeverage
+          ? addForm.bevKinds.length > 0
+            ? addForm.bevKinds
+            : (["other"] satisfies BeverageKind[])
+          : null,
+        counts_as_meal: logSheetBeverage ? addForm.bevCountsAsMeal : true,
       };
 
       const { data: inserted, error } = await supabase
@@ -1229,6 +1248,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
               category: mealType,
               source_kind: addForm.keepSourceKind,
               source_name: resolveSourceName(addForm.keepSourceKind, addForm.keepSourceName),
+              beverage_kinds: mealData.beverage_kinds,
             },
           );
           kept = true;
@@ -1432,9 +1452,12 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           saved_food_id: log.saved_food_id,
         },
         {
+          // "beverage" is itself a category, so a retro-kept drink files onto
+          // the Beverages shelf with its kinds intact.
           category: log.meal_type,
           source_kind: source.kind,
           source_name: source.name,
+          beverage_kinds: log.beverage_kinds,
         },
       );
       setKeepingLog(null);
@@ -1729,6 +1752,15 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           uses_inventory: willUseInventory,
           inventory_items: willUseInventory && match ? [{ id: match.id, quantity: 1 }] : null,
           logged_at: logSheetAt.toISOString(),
+          // A Chobani tapped from the beverage sheet's recents is a beverage
+          // log wearing the sheet's tags and switch; the inventory decrement
+          // above already happened either way.
+          beverage_kinds: logSheetBeverage
+            ? addForm.bevKinds.length > 0
+              ? addForm.bevKinds
+              : (["other"] satisfies BeverageKind[])
+            : null,
+          counts_as_meal: logSheetBeverage ? addForm.bevCountsAsMeal : true,
         })
         .select()
         .single();
@@ -2243,39 +2275,32 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
 
                 {/* Quick add chips — the mock's bottom row. Anything the plan
                     didn't suggest is one tap into the form (R13). */}
-                {(
-                  <View style={styles.quickChipsRow}>
-                    {(
-                      [
-                        ["Meal", null],
-                        ["Snack", "snack"],
-                        ["Dessert", "dessert"],
-                      ] as Array<[string, MealType | null]>
-                    ).map(([label, type]) => (
-                      <TouchableOpacity
-                        key={label}
-                        style={styles.quickChip}
-                        onPress={() => openLogSheet(type ? { mealType: type } : {})}
-                        activeOpacity={0.7}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Add a ${label.toLowerCase()}`}
-                      >
-                        <Plus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
-                        <Text style={styles.quickChipText}>{label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity
-                      style={styles.quickChip}
-                      onPress={() => searchInputRef.current?.focus()}
-                      activeOpacity={0.7}
-                      accessibilityRole="button"
-                      accessibilityLabel="Search foods"
-                    >
-                      <Search size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
-                      <Text style={styles.quickChipText}>Search</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                {/* Two doors, matching the two kinds of consumption: food,
+                    which has a slot, and drink, which has only a time. Snack
+                    and Dessert went — the form asks the slot — and Search
+                    went because the header already has one. */}
+                <View style={styles.quickChipsRow}>
+                  <TouchableOpacity
+                    style={styles.quickChip}
+                    onPress={() => openLogSheet()}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Log a meal"
+                  >
+                    <Plus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                    <Text style={styles.quickChipText}>Meal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quickChip}
+                    onPress={() => openLogSheet({ beverage: true })}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Log a beverage"
+                  >
+                    <Plus size={icons.sm} color={colors.text} strokeWidth={icons.strokeWidth} />
+                    <Text style={styles.quickChipText}>Beverage</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </Animated.ScrollView>
@@ -2478,6 +2503,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         onSubmitManual={handleAddMeal}
         submitting={loggingFoodId !== null}
         sourceSuggestions={sourceSuggestions}
+        beverage={logSheetBeverage}
       />
 
       {/* Undo snackbar */}

@@ -29,6 +29,7 @@ import { Button, WhenSheet } from "@/src/components/ui";
 import type { MealType, SavedFood } from "@/src/types/track";
 import type { MealWithItems } from "@/src/types/meal-library";
 import { mergeLogResults } from "@/src/lib/logResults";
+import { BEVERAGE_KINDS, BEVERAGE_KIND_LABELS } from "@/src/types/meal-library";
 import { mealFaceUrlFor } from "@/src/lib/mealFace";
 import { computeMealTotals } from "@/src/lib/supabase/mealLibrary";
 import type { MealAddFormState } from "./useMealAddForm";
@@ -97,6 +98,10 @@ interface LogMealSheetProps {
   /** For the keep switch's source picker — vendors you keep plus names your
    *  meals already carry. */
   sourceSuggestions: SourceSuggestion[];
+  /** Beverage mode: no slot picker (the clock decides where it draws on the
+   *  rail), a what-kind tag row, and a "Counts as a meal" switch that decides
+   *  whether it fills the window its time lands in. */
+  beverage: boolean;
 }
 
 /** The picture the shelves would show for this meal — its own, else the first
@@ -153,6 +158,7 @@ export function LogMealSheet({
   onSubmitManual,
   submitting,
   sourceSuggestions,
+  beverage,
 }: LogMealSheetProps) {
   const [contextOpen, setContextOpen] = React.useState(false);
 
@@ -306,7 +312,9 @@ export function LogMealSheet({
             accessibilityLabel="Drag down to close"
           />
           <View style={styles.headRow}>
-            <Text style={styles.title}>{manualOpen ? "Type something new" : "Log something"}</Text>
+            <Text style={styles.title}>
+              {manualOpen ? "Type something new" : beverage ? "Log a beverage" : "Log something"}
+            </Text>
             <TouchableOpacity
               onPress={manualOpen ? () => onManualOpenChange(false) : onClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -324,10 +332,15 @@ export function LogMealSheet({
             onPress={() => setContextOpen((v) => !v)}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel={`Logging to ${labelFor(mealType)}, ${dayLabel} at ${fmtClock(loggedAt)}. Tap to change.`}
+            accessibilityLabel={
+              beverage
+                ? `Logging a beverage, ${dayLabel} at ${fmtClock(loggedAt)}. Tap to change the time.`
+                : `Logging to ${labelFor(mealType)}, ${dayLabel} at ${fmtClock(loggedAt)}. Tap to change.`
+            }
           >
             <Text style={styles.ctxText}>
-              {labelFor(mealType)} · {dayLabel}, {fmtClock(loggedAt)}
+              {/* No slot in beverage mode: the clock is the whole context. */}
+              {beverage ? "Beverage" : labelFor(mealType)} · {dayLabel}, {fmtClock(loggedAt)}
             </Text>
             <ChevronRight
               size={icons.sm}
@@ -341,8 +354,9 @@ export function LogMealSheet({
           visible={contextOpen}
           loggedAt={loggedAt}
           onLoggedAtChange={onLoggedAtChange}
-          mealType={mealType}
-          onMealTypeChange={onMealTypeChange}
+          // Clock alone in beverage mode — a drink has no slot to pick.
+          mealType={beverage ? undefined : mealType}
+          onMealTypeChange={beverage ? undefined : onMealTypeChange}
           dayLabel={dayLabel}
           onClose={() => setContextOpen(false)}
         />
@@ -459,6 +473,51 @@ export function LogMealSheet({
                 </View>
                 <View style={styles.half} />
               </View>
+
+              {beverage && (
+                <>
+                  {/* What the drink IS — multi-select, one shake can be
+                      high-protein AND high-calorie. Nothing selected reads as
+                      "other" at write time rather than blocking the log. */}
+                  <Text style={styles.label}>What kind of drink?</Text>
+                  <View style={styles.bevChips}>
+                    {BEVERAGE_KINDS.map((kind) => {
+                      const active = form.bevKinds.includes(kind);
+                      return (
+                        <TouchableOpacity
+                          key={kind}
+                          style={[styles.bevChip, active && styles.bevChipActive]}
+                          onPress={() => form.toggleBevKind(kind)}
+                          disabled={submitting}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text style={[styles.bevChipText, active && styles.bevChipTextActive]}>
+                            {BEVERAGE_KIND_LABELS[kind]}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* What the drink DOES — follows the tags until flipped by
+                      hand, then the hand answer sticks. */}
+                  <View style={styles.keepRow}>
+                    <View style={styles.keepBody}>
+                      <Text style={styles.keepLabel}>Counts as a meal</Text>
+                      <Text style={styles.keepSub}>
+                        Fills the eating window its time lands in. Off, it rides
+                        along without touching the plan.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={form.bevCountsAsMeal}
+                      onValueChange={(v) => form.setBevCountsOverride(v)}
+                      disabled={submitting}
+                    />
+                  </View>
+                </>
+              )}
 
               {/* The gym-shake door: a typed log is gone the moment it is
                   saved, and re-buying the same thing next week means re-typing
@@ -762,6 +821,18 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginTop: spacing.lg,
   },
+  bevChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  bevChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  bevChipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  bevChipText: { ...typography.buttonSm, color: colors.textMuted },
+  bevChipTextActive: { color: colors.onBrand },
   keepBody: { flex: 1, gap: 2 },
   keepLabel: { ...typography.body, color: colors.text },
   keepSub: { ...typography.caption, color: colors.textFaint },
