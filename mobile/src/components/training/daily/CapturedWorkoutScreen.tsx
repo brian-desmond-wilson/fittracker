@@ -655,6 +655,10 @@ export function CapturedWorkoutScreen() {
               <TextInput
                 style={[styles.input, styles.estInput]}
                 keyboardType="number-pad"
+                // 240 is the ceiling, so three digits is every legal value. A
+                // twenty-digit paste survives sanitising — it is all digits —
+                // and this is what stops it, in the field rather than at save.
+                maxLength={3}
                 value={draft!.estMinutes}
                 // keyboardType is only a hint — a paste or a hardware keyboard
                 // gets past it. Sanitising as typed means "35kg" becomes 35 in
