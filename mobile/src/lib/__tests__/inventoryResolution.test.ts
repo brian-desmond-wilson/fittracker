@@ -19,6 +19,40 @@ const inv = (o: Partial<ResolutionInventoryRow> = {}): ResolutionInventoryRow =>
 });
 
 describe("resolveInventoryMatches", () => {
+  it("identity wins over everything: stock stamped as this product resolves first", () => {
+    const rows = [
+      inv({ id: "other", barcode: "b1", totalQuantity: 5, conceptIds: ["c1"] }),
+      inv({ id: "mine", savedFoodId: "sf1", totalQuantity: 1, conceptIds: ["c1"] }),
+    ];
+    // The barcode row would match tier 2 and the concept row tier 3 — but a
+    // package that SAYS it is this product outranks both.
+    const m = resolveInventoryMatches([item({ barcode: "b1", conceptIds: ["c1"] })], rows);
+    expect(m.get("sf1")).toBe("mine");
+  });
+
+  it("an empty identity row is terminal — no substitution while claiming this product", () => {
+    const rows = [
+      inv({ id: "mine", savedFoodId: "sf1", totalQuantity: 0, conceptIds: ["c1"] }),
+      inv({ id: "cousin", totalQuantity: 3, conceptIds: ["c1"] }),
+    ];
+    // The product is positively identified and simply out of stock. Falling
+    // through would decrement a different product of the same type.
+    expect(resolveInventoryMatches([item({ conceptIds: ["c1"] })], rows).size).toBe(0);
+  });
+
+  it("two stocked packages of one product: soonest-expiring wins, like concepts", () => {
+    const rows = [
+      inv({ id: "later", savedFoodId: "sf1", totalQuantity: 2, daysLeft: 9 }),
+      inv({ id: "sooner", savedFoodId: "sf1", totalQuantity: 1, daysLeft: 2 }),
+    ];
+    expect(resolveInventoryMatches([item()], rows).get("sf1")).toBe("sooner");
+  });
+
+  it("an unstamped row still resolves by barcode — the belt under the FK", () => {
+    const rows = [inv({ id: "legacy", barcode: "b1", totalQuantity: 1 })];
+    expect(resolveInventoryMatches([item({ barcode: "b1" })], rows).get("sf1")).toBe("legacy");
+  });
+
   it("matches by barcode when in stock", () => {
     const got = resolveInventoryMatches(
       [item({ barcode: "123" })],

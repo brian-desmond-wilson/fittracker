@@ -1,11 +1,18 @@
 // Resolves a meal item's saved food to the inventory row its logging should
 // decrement (spec §7.3). Pure so it is unit-testable; the query module
 // assembles the inputs. Precedence:
-//   1. exact barcode match — TERMINAL regardless of stock. A barcode hit
+//   1. product identity — an inventory row that SAYS it is a package of this
+//      product (`food_inventory.saved_food_id`, 2026-08-19 spec). In-stock
+//      rows win; an empty identity row is TERMINAL for the same reason a
+//      barcode hit is: the product is positively identified, there is simply
+//      nothing left of it, and falling through to a concept match would
+//      decrement a different product of the same type while claiming this one.
+//   2. exact barcode match — TERMINAL regardless of stock. A barcode hit
 //      positively identifies the product; if that row is empty there is simply
 //      nothing to decrement, and falling through would decrement a different
-//      SKU that merely shares a concept.
-//   2. shared-concept match with stock. 0 candidates = none (under-matching
+//      SKU that merely shares a concept. Kept as the belt under the FK: rows
+//      the backfill could not stamp still resolve.
+//   3. shared-concept match with stock. 0 candidates = none (under-matching
 //      stays the honest failure mode for ABSENCE). 2+ candidates: pick
 //      deterministically — soonest expiration, then largest quantity, then id.
 //      DESIGN CHANGE (inventory refinement Phase 3, 2026-08-11): plurality
@@ -24,6 +31,10 @@ export interface ResolutionItem {
 
 export interface ResolutionInventoryRow {
   id: string;
+  /** The product this stock is a package of — identity, not substitution.
+   *  Optional because synthetic callers predate the column; absent reads as
+   *  unstamped and resolution falls through to barcode, then concept. */
+  savedFoodId?: string | null;
   barcode: string | null;
   /** Days until expiry when known (negative = expired). Optional because the
    *  logging path's rows carry it and synthetic callers may not; a null/absent
@@ -56,8 +67,23 @@ export function resolveInventoryMatches(
   const out = new Map<string, string>();
   const inStock = inventory.filter((r) => r.totalQuantity > 0);
   for (const it of items) {
-    // Searched against the FULL inventory, not just in-stock rows — see the
-    // precedence note above. The falsy-barcode guard is load-bearing: it makes
+    // Tier 1: identity. Prefer an in-stock package of the exact product; if
+    // every package of it is empty, that is the answer (terminal), not a cue
+    // to substitute — see the precedence note above.
+    const identityRows = inventory.filter((r) => r.savedFoodId === it.savedFoodId);
+    if (identityRows.length > 0) {
+      const stocked = identityRows
+        .filter((r) => r.totalQuantity > 0)
+        .sort((a, b) => {
+          const ad = a.daysLeft ?? Infinity;
+          const bd = b.daysLeft ?? Infinity;
+          return ad - bd || b.totalQuantity - a.totalQuantity || a.id.localeCompare(b.id);
+        });
+      if (stocked.length > 0) out.set(it.savedFoodId, stocked[0].id);
+      continue;
+    }
+    // Tier 2: barcode. Searched against the FULL inventory, not just in-stock
+    // rows — see the precedence note above. The falsy-barcode guard is load-bearing: it makes
     // a null === null false match structurally impossible, and correctly treats
     // an empty-string barcode as "no barcode".
     const barcodeRow = it.barcode

@@ -14,6 +14,7 @@ import { Camera, Check, Images } from "lucide-react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge, Button, LoadingState } from "@/src/components/ui";
 import { supabase } from "@/src/lib/supabase";
+import { findOrCreateProduct } from "@/src/services/savedFoodsService";
 import { replaceItemLocations } from "@/src/lib/supabase/inventory";
 import type { FoodLocation } from "@/src/types/track";
 
@@ -176,8 +177,29 @@ export function BulkCaptureModal({ visible, onClose, onApplied, attachBarcode }:
           await replaceItemLocations(newItem.id, [
             { location: "pantry", quantity: p.quantity, is_ready_to_consume: true, notes: null },
           ]);
+          // Identity: the product this stock is a package of. A capture has no
+          // nutrition to give a new product record; the intelligence pass and
+          // a later label scan fill that in.
+          const product = await findOrCreateProduct({
+            name: p.name,
+            brand: p.brand ?? null,
+            barcode: attachBarcode && newChosen.length === 1 ? attachBarcode : null,
+          });
+          if (product) {
+            const { error: fkErr } = await supabase
+              .from("food_inventory")
+              .update({ saved_food_id: product.id })
+              .eq("id", newItem.id);
+            if (fkErr) console.error("stamping product identity (capture):", fkErr);
+          }
           supabase.functions
-            .invoke("inventory-intelligence", { body: { inventoryIds: [newItem.id] } })
+            .invoke("inventory-intelligence", {
+              // Both halves in one call — same concepts for product and stock.
+              body: {
+                inventoryIds: [newItem.id],
+                ...(product?.created ? { savedFoodIds: [product.id] } : {}),
+              },
+            })
             .then(({ error: e }) => {
               if (e) console.error("inventory-intelligence (capture):", e);
             });

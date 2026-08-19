@@ -33,6 +33,8 @@ interface InventoryRowRaw {
   id: string;
   name: string;
   barcode: string | null;
+  /** The product this stock is a package of (identity FK, 2026-08-19 spec). */
+  saved_food_id: string | null;
   expiration_date: string | null;
   /** Read for `buildBorrowedFoodImages` only — the eating half of the app has
    *  no photographs of its own, and this is where they live. */
@@ -187,7 +189,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       // from the product actually in the fridge rather than the one it was
       // built with (`mealNutrition`). `food_inventory` carries its own
       // nutrition — an inventory row IS a product — so no join is needed.
-      .select("id, name, barcode, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, fiber_g, saturated_fat_g, sodium_mg, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
+      .select("id, name, barcode, saved_food_id, expiration_date, image_primary_url, calories, protein, carbs, fats, sugars, fiber_g, saturated_fat_g, sodium_mg, locations:food_inventory_locations(quantity, is_ready_to_consume)"),
     // No .eq() filter: profiles is keyed by `id` (not user_id) and its RLS
     // select policy is `auth.uid() = id`, so this returns exactly the
     // caller's row — maybeSingle() cannot see a second one.
@@ -291,6 +293,7 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       id: r.id,
       name: r.name,
       barcode: r.barcode,
+      savedFoodId: r.saved_food_id,
       totalQuantity: state.totalQuantity,
       daysLeft: state.daysLeft,
       conceptIds: conceptIdsByInventoryId.get(r.id) ?? [],

@@ -51,8 +51,8 @@ export function NewFoodSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View style={s.scrim}>
         <View style={s.sheet}>
-          <Text style={s.title}>New food</Text>
-          <Text style={s.sub}>It&apos;ll be saved to your foods and added to this meal.</Text>
+          <Text style={s.title}>New product</Text>
+          <Text style={s.sub}>It&apos;ll be saved to your products and added to this meal.</Text>
 
           <View style={s.field}>
             <Text style={s.label}>NAME</Text>

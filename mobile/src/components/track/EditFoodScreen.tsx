@@ -20,6 +20,7 @@ import { Button, handOffToast } from "@/src/components/ui";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { uploadImage } from "@/src/lib/imageUpload";
+import { findOrCreateProduct } from "@/src/services/savedFoodsService";
 import { FoodLocation, StorageType, FoodCategory, FoodSubcategory } from "@/src/types/track";
 import {
   deleteInventoryItem,
@@ -1027,6 +1028,32 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted
 
         foodItemId = newItem.id;
 
+        // Identity: which PRODUCT this stock is a package of (2026-08-19
+        // spec). Found by barcode or exact name+brand, created from the same
+        // fields otherwise — never a second copy of identity. Best-effort: the
+        // item on the shelf is the primary fact, and an unstamped row still
+        // resolves by barcode until the backfill idiom catches it.
+        const product = await findOrCreateProduct({
+          name: itemData.name,
+          brand: itemData.brand,
+          barcode: itemData.barcode,
+          serving_size: itemData.serving_size,
+          calories: itemData.calories,
+          protein: itemData.protein,
+          carbs: itemData.carbs,
+          fats: itemData.fats,
+          sugars: itemData.sugars,
+          sodium_mg: itemData.sodium_mg,
+          fiber_g: itemData.fiber_g,
+        });
+        if (product) {
+          const { error: fkError } = await supabase
+            .from("food_inventory")
+            .update({ saved_food_id: product.id })
+            .eq("id", foodItemId);
+          if (fkError) console.error("stamping product identity:", fkError);
+        }
+
         // Runs after the item row exists, so foodItemId is real.
         //
         // ⚠️ CREATE PATH ONLY — the rollback below DELETES the item row. That
@@ -1089,7 +1116,15 @@ export function EditFoodScreen({ item, onClose, onSave, isNew = false, onDeleted
         // and Shopping. Failure is non-fatal by design: the item still exists,
         // and FoodMatchingScreen's "Needs review" remains the backstop.
         supabase.functions
-          .invoke("inventory-intelligence", { body: { inventoryIds: [foodItemId] } })
+          .invoke("inventory-intelligence", {
+            // Both halves in ONE call, so the product and its stock land on
+            // the same concepts rather than whatever two separate name-match
+            // runs would pick.
+            body: {
+              inventoryIds: [foodItemId],
+              ...(product?.created ? { savedFoodIds: [product.id] } : {}),
+            },
+          })
           .then(({ error }) => {
             if (error) console.error("inventory-intelligence (on add):", error);
           });

@@ -603,7 +603,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
             {unlinked && (
               <View style={s.linkLine}>
                 <Text style={s.linkText}>
-                  Not linked — this meal can&apos;t be checked against your kitchen
+                  No ingredient type yet — this meal can&apos;t be checked against your kitchen
                 </Text>
                 {suggestion && (
                   <TouchableOpacity
@@ -839,7 +839,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
               onPress={() => setNewFood({ name: search.trim(), barcode: null })}
             >
               <Plus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
-              <Text style={s.resultAction}>Create “{search.trim()}” as a new food</Text>
+              <Text style={s.resultAction}>Create “{search.trim()}” as a new product</Text>
             </TouchableOpacity>
           )}
         </View>

@@ -421,3 +421,75 @@ export async function getRecentFoods(limit: number = 5): Promise<RecentFoodItem[
 
   return result;
 }
+
+/**
+ * The product record for something entering the kitchen — found if it exists,
+ * created if not. Never a copy: this is the class an inventory instance
+ * references (2026-08-19 product-identity spec).
+ *
+ * Find by barcode first (a barcode IS a SKU; `saved_foods` is unique on it per
+ * user), then by exact name+brand — the only name rule safe to automate. Two
+ * barcode-less adds under slightly different names mint two products, which is
+ * accepted: the repair chip exists, and a wrong automatic adoption would be a
+ * silent lie about identity.
+ *
+ * Returns null instead of throwing: the item on the shelf is the primary fact,
+ * so callers log and carry on with an unstamped row — the backfill idiom
+ * recovers those.
+ */
+export async function findOrCreateProduct(product: {
+  name: string;
+  brand: string | null;
+  barcode: string | null;
+  serving_size?: string | null;
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fats?: number | null;
+  sugars?: number | null;
+  sodium_mg?: number | null;
+  fiber_g?: number | null;
+}): Promise<{ id: string; created: boolean } | null> {
+  try {
+    const name = product.name.trim();
+    if (!name) return null;
+
+    if (product.barcode) {
+      const { data } = await supabase
+        .from("saved_foods")
+        .select("id")
+        .eq("barcode", product.barcode)
+        .maybeSingle();
+      if (data) return { id: data.id, created: false };
+    }
+
+    const byName = await supabase
+      .from("saved_foods")
+      .select("id, brand")
+      .ilike("name", name);
+    const brandNorm = (product.brand ?? "").trim().toLowerCase();
+    const nameHit = (byName.data ?? []).find(
+      (f) => ((f.brand ?? "").trim().toLowerCase()) === brandNorm,
+    );
+    if (nameHit) return { id: nameHit.id, created: false };
+
+    const created = await createSavedFood({
+      name,
+      brand: product.brand?.trim() || null,
+      barcode: product.barcode?.trim() || null,
+      serving_size: product.serving_size ?? null,
+      calories: product.calories ?? null,
+      protein: product.protein ?? null,
+      carbs: product.carbs ?? null,
+      fats: product.fats ?? null,
+      sugars: product.sugars ?? null,
+      sodium_mg: product.sodium_mg ?? null,
+      fiber_g: product.fiber_g ?? null,
+      is_favorite: false,
+    } as Parameters<typeof createSavedFood>[0]);
+    return { id: created.id, created: true };
+  } catch (error) {
+    console.error("findOrCreateProduct:", error);
+    return null;
+  }
+}
