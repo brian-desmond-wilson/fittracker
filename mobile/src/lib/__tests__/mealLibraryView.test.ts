@@ -295,8 +295,10 @@ describe("mealAvailability", () => {
 // -- segments, search, sort -------------------------------------------------
 
 describe("inSegment", () => {
-  it("Available keeps orderable meals — 'I could order that' is an answer", () => {
-    expect(inSegment(card({ availability: "not_tracked" }), "available")).toBe(true);
+  it("Available is a stock report — eaten-out meals live under All only", () => {
+    expect(inSegment(card({ availability: "available" }), "available")).toBe(true);
+    expect(inSegment(card({ availability: "not_tracked" }), "available")).toBe(false);
+    expect(inSegment(card({ availability: "not_tracked" }), "all")).toBe(true);
     expect(inSegment(card({ availability: "unavailable" }), "available")).toBe(false);
   });
 

@@ -334,15 +334,17 @@ export const SORT_LABELS: Record<LibrarySort, string> = {
 };
 
 /**
- * The Available segment shows what you could eat right now — which includes
- * restaurant meals, because "I could order that" is a real answer to "what
- * can I eat", and excludes archived ones whatever their stock says.
+ * The Available segment shows what is in your kitchen right now — and only
+ * that. Eaten-out meals once rode along on the reasoning that "I could order
+ * that" answers "what can I eat", but the owner reads Available as a stock
+ * report, and a gym shake or a restaurant plate is not stock: they live under
+ * All. Archived meals are excluded whatever their stock says.
  */
 export function inSegment(card: MealCard, segment: LibrarySegment): boolean {
   if (segment === "archive") return card.isArchived;
   if (card.isArchived) return false;
   if (segment === "all") return true;
-  return card.availability !== "unavailable";
+  return card.availability === "available";
 }
 
 /** All words must appear, case-insensitively, in the name or the source —
