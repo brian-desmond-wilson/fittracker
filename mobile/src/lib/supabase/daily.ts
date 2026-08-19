@@ -479,6 +479,11 @@ export interface SaveSessionInput {
    *  it didn't must be able to say so. */
   composeSignature: string | null;
   inputsSnapshot: unknown;
+  /** A second session on a day already trained. The completed session stays
+   *  exactly as it is; this INSERTS a new suggestion beside it. Only legal
+   *  when the day's session is completed — the pending-per-day unique index
+   *  forbids two open ones, and the hook only offers the button then. */
+  appendToDay?: boolean;
 }
 
 /** Upsert today's suggestion. Regeneration (gym/check-in change) replaces the
@@ -486,9 +491,15 @@ export interface SaveSessionInput {
 export async function saveGeneratedSession(input: SaveSessionInput): Promise<string | null> {
   try {
     const existing = await fetchTodaySession(input.userId, input.date);
+    const appending = input.appendToDay === true && existing?.status === "completed";
     // The write boundary holds the same rule as the hook: never overwrite a
     // session the user chose, and never overwrite one already under way.
-    if (existing && (existing.status !== "suggested" || existing.source === "user_pick")) {
+    // Appending is not overwriting — the completed row is left untouched and
+    // a fresh suggestion is inserted beside it.
+    if (
+      !appending &&
+      existing && (existing.status !== "suggested" || existing.source === "user_pick")
+    ) {
       return existing.id;
     }
 
@@ -510,7 +521,8 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
     // Not an upsert on (user_id, session_date): that pair is no longer unique.
     // Only one PENDING session per day is, and a partial index can't back
     // ON CONFLICT — so rewrite the suggestion we already have, or start one.
-    const { data, error } = existing
+    // An append always starts one: the existing row is completed history.
+    const { data, error } = existing && !appending
       ? await supabase
           .from("generated_sessions")
           .update(row)

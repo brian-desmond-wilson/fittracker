@@ -52,7 +52,7 @@ export default function TodayTab() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [gymSheetVisible, setGymSheetVisible] = useState(false);
   const [checkinVisible, setCheckinVisible] = useState(false);
-  const { session, checkin, activeGym, gyms, loading, error, refetch } =
+  const { session, checkin, activeGym, gyms, loading, error, refetch, composeAnother } =
     useDailySession(refreshKey);
   const [refreshing, setRefreshing] = useState(false);
   // Set when today's session is a workout served whole — either one you
@@ -516,6 +516,28 @@ export default function TodayTab() {
                 </Text>
               </View>
             )}
+            {/* A finished day used to end the recommender's interest in it.
+                Training twice is real (and so is testing): compose a second
+                session beside the record, steered by what the ledger now says
+                this morning hit. End of the scroll, not pinned — house rule. */}
+            {session.status === "completed" && !loading && (
+              <View style={styles.anotherWrap}>
+                <Text style={styles.anotherCaption}>
+                  Today's session is in the books. Going again? The next one
+                  works around what you already hit.
+                </Text>
+                <TouchableOpacity
+                  style={styles.anotherButton}
+                  onPress={composeAnother}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Build another session for today"
+                >
+                  <Sparkles size={18} color="#FFFFFF" />
+                  <Text style={styles.buttonText}>Build another session</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -645,5 +667,15 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
+  },
+  anotherWrap: { marginTop: 24, gap: 10 },
+  anotherCaption: {
+    fontSize: 13, color: colors.mutedForeground, textAlign: "center",
+    lineHeight: 18,
+  },
+  anotherButton: {
+    flexDirection: "row", gap: 8, backgroundColor: colors.primary,
+    borderRadius: 10, paddingVertical: 14, alignItems: "center",
+    justifyContent: "center",
   },
 });

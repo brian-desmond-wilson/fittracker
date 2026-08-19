@@ -136,6 +136,11 @@ export interface UseDailySessionValue {
   error: Error | null;
   /** Call after any input changes (check-in saved, gym switched). */
   refetch: () => void;
+  /** Compose a fresh session on a day already trained. The completed session
+   *  keeps its record; a new suggestion is built beside it, steered by what
+   *  today's ledger now says was hit. Only meaningful when the day's session
+   *  is completed — a no-op otherwise. */
+  composeAnother: () => void;
 }
 
 export function useDailySession(refreshKey = 0): UseDailySessionValue {
@@ -145,6 +150,10 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const runIdRef = useRef(0);
+  // One-shot: set by composeAnother, consumed by the next load() run. A ref,
+  // not state — it must not survive the run it was asked for, and it must
+  // never itself trigger a render.
+  const composeAnotherRef = useRef(false);
 
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
@@ -178,7 +187,19 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // A workout you picked yourself is never recomposed either, whatever its
       // status: recomposing would quietly undo the choice the moment the tab
       // reloaded or the check-in changed.
-      if (existing && (existing.status !== "suggested" || existing.source === "user_pick")) {
+      //
+      // The one sanctioned way past this gate is composeAnother on a COMPLETED
+      // day — a second session composed beside the record, not over it. The
+      // flag is consumed here so a pull-to-refresh a minute later goes back to
+      // showing the stored day. Completed only: an accepted day is still in
+      // progress, and the pending-per-day index couldn't hold two anyway.
+      const appendToDay =
+        composeAnotherRef.current && existing?.status === "completed";
+      composeAnotherRef.current = false;
+      if (
+        !appendToDay &&
+        existing && (existing.status !== "suggested" || existing.source === "user_pick")
+      ) {
         setSession(existing);
         setLoading(false);
         return;
@@ -343,8 +364,13 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // when the day already on file was composed from exactly these inputs —
       // a changed check-in, or a catalog change that moved the shortlists,
       // changes the signature, which is precisely when a recompose IS wanted.
+      // Suggested only: an append reaches here with a COMPLETED session whose
+      // signature can legitimately match (same check-in, similar shortlists),
+      // and matching must not swallow the second session that was asked for.
       if (
+        !appendToDay &&
         existing &&
+        existing.status === "suggested" &&
         existing.blocks.length > 0 &&
         existing.composeSignature === signature
       ) {
@@ -458,6 +484,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
           sectionMinutes,
         },
         blocks: picks,
+        appendToDay,
         // Written to its own column, LAST, after the items and blocks land —
         // so a partial failure leaves it null and the next load recomposes
         // rather than trusting a plan that was never finished. Withheld here
@@ -479,6 +506,11 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
+  const composeAnother = useCallback(() => {
+    composeAnotherRef.current = true;
+    load();
+  }, [load]);
+
   return {
     session,
     checkin,
@@ -487,5 +519,6 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
     loading,
     error,
     refetch: load,
+    composeAnother,
   };
 }
