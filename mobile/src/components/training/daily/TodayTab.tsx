@@ -9,7 +9,7 @@ import { colors } from "@/src/lib/colors";
 import { useDailySession } from "@/src/hooks/useDailySession";
 import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySectionMinutes";
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
-import { blockDayShape, SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
+import { blockDayShape, BLOCK_TITLES, SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
 import { GymSheet } from "./GymSheet";
 import { CheckinSheet } from "./CheckinSheet";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
@@ -30,13 +30,6 @@ const SECTION_TITLES: Record<SessionSection, string> = {
 };
 const SECTION_ORDER: SessionSection[] = ["warmup", "mobility", "main", "accessory", "bfr", "cooldown"];
 
-const BLOCK_TITLES: Record<BlockRole, string> = {
-  warmup: "Warm-up",
-  mobility: "Mobility",
-  main: "Main workout",
-  conditioning: "Conditioning",
-  cooldown: "Cool-down",
-};
 const NUDGE_FOCUS: Record<string, string> = {
   upper: "an upper-body", lower: "a lower-body", full: "a full-body",
 };

@@ -13,6 +13,17 @@ export const BLOCK_ORDER: BlockRole[] = [
   "warmup", "mobility", "main", "conditioning", "cooldown",
 ];
 
+/** How a block is named to the athlete. Lives here rather than in one screen
+ *  because both the Today card and the catalog list label the same roles, and
+ *  two copies would drift. */
+export const BLOCK_TITLES: Record<BlockRole, string> = {
+  warmup: "Warm-up",
+  mobility: "Mobility",
+  main: "Main workout",
+  conditioning: "Conditioning",
+  cooldown: "Cool-down",
+};
+
 /** §7: mobility is a new section; conditioning reuses the accessory slot. */
 export const SECTION_FOR_BLOCK: Record<BlockRole, SessionSection> = {
   warmup: "warmup",
