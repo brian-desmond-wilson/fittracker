@@ -286,7 +286,7 @@ export function CapturedWorkoutScreen() {
       if (!workout.tags.muscles.some((m) => m.isPrimary)) {
         Alert.alert(
           "Needs classifying first",
-          "This workout has no muscles on it, so the recommender can't hold it back on a sore day. Cancel, then use “Tag for the recommender”.",
+          "This workout has no muscles on it, so the recommender can't hold it back on a sore day. Clear the blocks you picked to save the rest of your edits, then use “Tag for the recommender”.",
         );
         return;
       }
