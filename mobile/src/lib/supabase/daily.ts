@@ -733,6 +733,20 @@ export async function completeSession(
   performedExerciseIds: string[],
 ): Promise<void> {
   const performed = new Set(performedExerciseIds);
+  // The session row comes first now: the false-start check below needs the
+  // workout instance before anything is allowed to write.
+  const { data: sess, error: readError } = await supabase
+    .from("generated_sessions")
+    .select(`
+      user_id, session_date, served_captured_workout_id, workout_instance_id,
+      blocks:generated_session_blocks(block, captured_workout_id)
+    `)
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (readError || !sess) {
+    console.error("completeSession session read failed:", readError ?? "no row");
+    return;
+  }
   const { data: items, error } = await supabase
     .from("generated_session_items")
     .select("id, exercise_id")
@@ -741,6 +755,36 @@ export async function completeSession(
     console.error("completeSession read failed:", error);
     return;
   }
+
+  // A finish with nothing logged is a false start, not history — the same
+  // standard Gym Sessions applies when it hides set-less sessions from the
+  // list. Without this, tapping Finish on an untouched day marks it completed
+  // and writes coverage rows claiming muscles were trained, and the two views
+  // disagree about whether the workout happened — with the recommender taking
+  // the credulous side. The rule is "had something to log and logged nothing":
+  // a day of built-in routines has no item rows and MUST still complete.
+  // Fails open when the instance is missing, since sets can't be checked.
+  if ((items ?? []).length > 0 && sess.workout_instance_id) {
+    const { data: logged, error: setsError } = await supabase
+      .from("exercise_instances")
+      .select("id, sets:set_instances(id)")
+      .eq("workout_instance_id", sess.workout_instance_id);
+    if (setsError) {
+      console.error("completeSession sets read failed:", setsError);
+      return;
+    }
+    const setCount = (logged ?? []).reduce(
+      (sum, ei: any) => sum + ((ei.sets ?? []) as any[]).length, 0,
+    );
+    if (setCount === 0) {
+      console.warn(
+        "completeSession: nothing logged — session stays open, no ledger write",
+        sessionId,
+      );
+      return;
+    }
+  }
+
   for (const item of items ?? []) {
     const { error: upError } = await supabase
       .from("generated_session_items")
@@ -762,21 +806,7 @@ export async function completeSession(
 
   // The ledger records what actually ran — composed blocks and workouts served
   // whole alike. Muscles are denormalized now, so a later retag never rewrites
-  // history. maybeSingle, not single: the row can be gone (deleted, or another
-  // device's write) and the status update above has already landed, so there is
-  // nothing here worth throwing over.
-  const { data: sess, error: readError } = await supabase
-    .from("generated_sessions")
-    .select(`
-      user_id, session_date, served_captured_workout_id,
-      blocks:generated_session_blocks(block, captured_workout_id)
-    `)
-    .eq("id", sessionId)
-    .maybeSingle();
-  if (readError || !sess) {
-    if (readError) console.error("completeSession ledger read failed:", readError);
-    return;
-  }
+  // history.
   const entries: { capturedWorkoutId: string; block: BlockRole }[] = [];
   for (const b of ((sess as any).blocks ?? []) as any[]) {
     if (b.captured_workout_id) {
