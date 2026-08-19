@@ -3,10 +3,11 @@ import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator,
 } from "react-native";
-import { X, Link2, Link2Off, Pencil } from "lucide-react-native";
+import { X, Link2, Link2Off, Pencil, Info } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { saveCapture } from "@/src/lib/supabase/capture";
+import { draftWorkoutFromExercises, draftWorkoutName } from "@/src/lib/captureReview";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
 import type {
   CaptureCategory, CaptureSkillLevel, ExtractedPost, ExtractedWorkoutItem,
@@ -68,6 +69,18 @@ export function CaptureReviewSheet({
     setPost((p) => (p?.workout ? { ...p, workout: { ...p.workout, ...patch } } : p));
   };
 
+  /** The override for a post the AI read as exercises-only. Building the
+   *  workout here — in the sheet, before anything is written — means the save
+   *  path sees an ordinary reviewed workout and needs no special case. */
+  const toggleWorkout = () => {
+    setPost((p) => {
+      if (!p) return p;
+      if (p.workout) return { ...p, workout: null, postType: "single_exercise" };
+      const workout = draftWorkoutFromExercises(p, draftWorkoutName(payload.resolved.captionText));
+      return { ...p, workout, postType: "full_workout" };
+    });
+  };
+
   const patchItem = (i: number, patch: Partial<ExtractedWorkoutItem>) => {
     setPost((p) => {
       if (!p?.workout) return p;
@@ -120,8 +133,14 @@ export function CaptureReviewSheet({
       <View style={styles.container}>
         <View style={styles.header}>
           <View>
+            {/* What the AI found, not what the sheet currently holds — the
+                title must not flip while the user works the override below. */}
             <Text style={styles.title}>
-              {post.postType === "full_workout" ? "Workout found" : "Exercise found"}
+              {payload.post.workout
+                ? "Workout found"
+                : payload.post.exercises.length > 1
+                  ? "Exercises found"
+                  : "Exercise found"}
             </Text>
             {payload.resolved.posterHandle && (
               <Text style={styles.subtitle}>from {payload.resolved.posterHandle}</Text>
@@ -251,6 +270,37 @@ export function CaptureReviewSheet({
             </View>
           ))}
 
+          {/* A post with several movements and no workout looks like a broken
+              import. Say why it happened and offer the way out, in the place
+              the workout itself would have been. */}
+          {post.workoutGap && (
+            <View style={styles.noticeCard}>
+              <View style={styles.noticeHead}>
+                <Info size={16} color={colors.mutedForeground} />
+                <Text style={styles.noticeTitle}>
+                  {post.workout ? "You're building this workout" : "No workout — exercises only"}
+                </Text>
+              </View>
+              <Text style={styles.noticeBody}>
+                {post.workoutGap === "no_prescription"
+                  ? "The caption names the movements but never gives sets or reps, so nothing was read as a workout. These save to your catalog as individual exercises."
+                  : "The caption looked like a workout, but its sets and reps couldn't be matched to these movements. They save to your catalog as individual exercises."}
+                {post.workout
+                  ? " Fill in what you want below — anything you leave blank stays blank, and you can edit it later."
+                  : " If it is a workout, build it yourself:"}
+              </Text>
+              <TouchableOpacity
+                style={[styles.overrideButton, post.workout && styles.overrideButtonOn]}
+                onPress={toggleWorkout}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.overrideText, post.workout && styles.overrideTextOn]}>
+                  {post.workout ? "Don't save a workout" : "Save as a workout anyway"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {post.workout && (
             <View style={styles.card}>
               <Text style={styles.fieldLabel}>Workout name</Text>
@@ -335,7 +385,9 @@ export function CaptureReviewSheet({
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.buttonText}>
-              Add to catalog{post.exercises.length > 1 ? ` (${post.exercises.length} exercises)` : ""}
+              Add to catalog
+              {post.exercises.length > 1 ? ` (${post.exercises.length} exercises` : ""}
+              {post.exercises.length > 1 ? (post.workout ? " + workout)" : ")") : ""}
             </Text>
           )}
         </TouchableOpacity>
@@ -389,6 +441,21 @@ const styles = StyleSheet.create({
     fontSize: 13, color: colors.mutedForeground, lineHeight: 19,
     backgroundColor: colors.input, borderRadius: 8, padding: 10,
   },
+  noticeCard: {
+    backgroundColor: colors.muted, borderRadius: 12, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
+    borderLeftColor: colors.mutedForeground,
+  },
+  noticeHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  noticeTitle: { fontSize: 15, fontWeight: "600", color: colors.foreground },
+  noticeBody: { fontSize: 13, color: colors.mutedForeground, lineHeight: 19 },
+  overrideButton: {
+    marginTop: 12, borderRadius: 8, paddingVertical: 11, alignItems: "center",
+    borderWidth: 1, borderColor: colors.primary,
+  },
+  overrideButtonOn: { borderColor: colors.border },
+  overrideText: { fontSize: 15, fontWeight: "600", color: colors.primary },
+  overrideTextOn: { color: colors.mutedForeground },
   matchChip: {
     flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10,
   },

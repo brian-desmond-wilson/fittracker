@@ -6,7 +6,10 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/components/workout-session/helpers";
 import { fetchTodaySession } from "@/src/lib/supabase/daily";
+import { blockDayShape } from "@/src/lib/dailyBlockCompose";
 import type { StoredSession } from "@/src/types/daily";
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** Compact Home surface for the generated daily session. Read-only: it shows
  *  what exists and routes to the Today tab; composition happens there. */
@@ -34,16 +37,34 @@ export function DailySessionHomeCard() {
 
   if (!loaded) return null;
 
+  // A block day is named after the workout it is built around. A day with no
+  // main is either a recovery day or a catalog with nothing that fits today,
+  // and the shared derivation is what keeps the card from calling the second
+  // one the first. Neither stamps a split, so falling through to the
+  // push/pull/legs ternary called every one of them a leg day.
+  const mainBlock = session?.blocks.find((b) => b.block === "main") ?? null;
+  const shape = blockDayShape(session?.blocks ?? []);
   const title = !session
     ? "Check in to build today's session"
     : session.status === "completed"
       ? "Today's session — done 💪"
+      : mainBlock ? `${mainBlock.name} is ready`
+      : shape === "recovery" ? "Recovery day is ready"
+      : shape === "thin" ? "Support work is ready"
+      : session.servedCapturedWorkoutId ? "Today's workout is ready"
       : session.splitDay === "push" ? "Push day is ready"
       : session.splitDay === "pull" ? "Pull day is ready"
       : "Leg day is ready";
 
+  // Blocks, not movements, for a block day: a recovery day of built-ins has
+  // nothing loggable under it and read as "0 movements".
+  const composedBy = session?.source === "ai" ? "AI composed"
+    : session?.source === "user_pick" ? "from your catalog"
+    : "rules composed";
   const subtitle = session
-    ? `${session.items.length} movements · ${session.source === "ai" ? "AI composed" : "rules composed"}`
+    ? `${session.blocks.length > 0
+        ? plural(session.blocks.length, "block")
+        : plural(session.items.length, "movement")} · ${composedBy}`
     : "Soreness, energy, time — ten seconds";
 
   return (

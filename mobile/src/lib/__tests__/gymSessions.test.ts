@@ -11,8 +11,8 @@ import {
   sessionVolume,
   sessionsOn,
   weekSummary,
-} from "../workoutHistory";
-import type { HistoryExercise, HistorySession, HistorySet } from "../../types/workoutHistory";
+} from "../gymSessions";
+import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
 
 const set = (over: Partial<HistorySet> = {}): HistorySet => ({
   setNumber: 1,

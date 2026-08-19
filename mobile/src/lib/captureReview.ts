@@ -2,12 +2,15 @@
 // shown or written: the model's output is a proposal, and only names/ids that
 // exist in this app survive. Mirrors the fuel-plan doctrine — the model may
 // only speak in the vocabulary it was handed.
+import { decodeCaption } from "./captionText";
 import type {
   CaptureCategory,
   CaptureSkillLevel,
   ExtractedExercise,
   ExtractedPost,
+  ExtractedWorkout,
   ExtractedWorkoutItem,
+  WorkoutGap,
 } from "../types/capture";
 import type { GoalTypeName, MovementCategoryName } from "../types/crossfit";
 
@@ -133,10 +136,70 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
     }
   }
 
+  // A post with several movements and no workout is the case that reads as a
+  // half-finished import. Say which kind it is so the sheet can explain it and
+  // offer the manual build; one exercise on its own is not a gap.
+  let workoutGap: WorkoutGap | null = null;
+  if (!workout && exercises.length > 1) {
+    workoutGap = r.post_type === "full_workout" ? "unusable_prescription" : "no_prescription";
+  }
+
   return {
     postType: workout ? "full_workout" : "single_exercise",
     exercises,
     workout,
+    workoutGap,
+  };
+}
+
+/** Instagram's embed hands back the caption wrapped in attribution:
+ *  `mattycfox on September 4, 2023: "Single Kettlebell Upper Body 💪🔥…`.
+ *  The creator's own headline is what a workout should be called, so strip the
+ *  wrapper and take the first line. */
+const EMBED_PREFIX = /^.{0,80}? on .{0,40}?\d{4}:\s*["“]?/;
+// Emoji, separators and punctuation: a name ends at its last word. Written
+// without unicode property escapes, which Hermes does not support — and the
+// surrogate range is what actually catches an emoji outside the BMP.
+const JUNK = "\\s\\u2000-\\u3300\\uD800-\\uDFFF\\uFE0F\\u200D|.,;:!?*\\-\"'";
+const TRAILING_JUNK = new RegExp(`[${JUNK}]+$`);
+const LEADING_JUNK = new RegExp(`^[${JUNK}]+`);
+
+/** A starting name for a workout the user is building by hand, taken from the
+ *  caption. Only a suggestion — the sheet puts it in an editable field. */
+export function draftWorkoutName(caption: string | null | undefined): string {
+  const decoded = decodeCaption(caption).replace(EMBED_PREFIX, "");
+  const line = decoded.split("\n")[0] ?? "";
+  const trimmed = line.replace(LEADING_JUNK, "").replace(TRAILING_JUNK, "");
+  if (trimmed === "") return "Captured workout";
+  if (trimmed.length <= 60) return trimmed;
+  // Cut at a word boundary so a truncated name still reads as words.
+  const cut = trimmed.slice(0, 60);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).replace(TRAILING_JUNK, "");
+}
+
+/** The workout a user builds when the AI found only exercises: every movement
+ *  in caption order, every target blank. Blank is the honest default — the
+ *  caption never said, and the sheet is where the user fills it in. */
+export function draftWorkoutFromExercises(
+  post: Pick<ExtractedPost, "exercises">,
+  name: string,
+): ExtractedWorkout {
+  return {
+    name,
+    rounds: null,
+    // No raw protocol: there was no prescription in the post to quote.
+    rawProtocol: null,
+    summary: null,
+    items: post.exercises.map((_, exerciseIndex) => ({
+      exerciseIndex,
+      sets: null,
+      reps: null,
+      weight: null,
+      duration: null,
+      restSeconds: null,
+      notes: null,
+    })),
   };
 }
 

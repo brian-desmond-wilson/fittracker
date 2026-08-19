@@ -7,14 +7,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { fetchWorkoutSession } from "@/src/lib/supabase/workoutHistory";
+import { fetchWorkoutSession } from "@/src/lib/supabase/gymSessions";
 import { formatSetDuration } from "@/src/lib/setTiming";
 import {
   formatMinutes, formatVolume, GROUP_LABELS, sessionEmphasis, sessionMinutes,
   sessionPace, sessionVolume,
-} from "@/src/lib/workoutHistory";
+} from "@/src/lib/gymSessions";
 import { GROUP_COLORS } from "./groupColors";
-import type { HistorySession } from "@/src/types/workoutHistory";
+import type { HistorySession } from "@/src/types/gymSessions";
 
 const clock = (isoTime: string | null): string | null =>
   isoTime
@@ -47,7 +47,7 @@ export function SessionDetailScreen({ onClose }: { onClose: () => void }) {
     <View style={styles.header}>
       <TouchableOpacity onPress={onClose} style={styles.back} activeOpacity={0.7}>
         <ChevronLeft size={24} color={colors.foreground} />
-        <Text style={styles.backText}>Workouts</Text>
+        <Text style={styles.backText}>Gym Sessions</Text>
       </TouchableOpacity>
     </View>
   );

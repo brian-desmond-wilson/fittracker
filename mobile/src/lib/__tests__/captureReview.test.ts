@@ -1,4 +1,9 @@
-import { sanitizeExtraction, mapCategory } from "../captureReview";
+import {
+  sanitizeExtraction,
+  mapCategory,
+  draftWorkoutName,
+  draftWorkoutFromExercises,
+} from "../captureReview";
 
 const VALID = {
   libraryIds: new Set(["ex-1", "ex-2"]),
@@ -272,6 +277,100 @@ describe("sanitizeExtraction", () => {
     );
     expect(out!.postType).toBe("single_exercise");
     expect(out!.workout).toBeNull();
+  });
+});
+
+describe("workoutGap", () => {
+  const two = [rawExercise({ name: "Overhead Press" }), rawExercise({ name: "Bent Over Row" })];
+
+  it("flags a multi-exercise post the model called exercises-only", () => {
+    const out = sanitizeExtraction(
+      { post_type: "single_exercise", exercises: two, workout: null },
+      VALID,
+    );
+    expect(out!.workoutGap).toBe("no_prescription");
+  });
+
+  it("flags a claimed workout whose items all failed validation", () => {
+    // Every item points at an exercise index that does not exist, so the
+    // workout is demoted — silently, before this flag existed.
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: two,
+        workout: { name: "Ghost", items: [{ exercise_index: 9, sets: 3 }] },
+      },
+      VALID,
+    );
+    expect(out!.workout).toBeNull();
+    expect(out!.workoutGap).toBe("unusable_prescription");
+  });
+
+  it("stays silent for a single exercise — one movement is not a missing workout", () => {
+    const out = sanitizeExtraction(
+      { post_type: "single_exercise", exercises: [rawExercise()], workout: null },
+      VALID,
+    );
+    expect(out!.workoutGap).toBeNull();
+  });
+
+  it("stays silent when a workout was actually built", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: two,
+        workout: { name: "Real", items: [{ exercise_index: 0, sets: 3, reps: "10" }] },
+      },
+      VALID,
+    );
+    expect(out!.workout).not.toBeNull();
+    expect(out!.workoutGap).toBeNull();
+  });
+});
+
+describe("draftWorkoutName", () => {
+  it("takes the caption's headline out of an Instagram embed prefix", () => {
+    expect(
+      draftWorkoutName(
+        'mattycfox on September 4, 2023: "Single Kettlebell Upper Body workout 💪🏼🔥\n\nLIKE | SHARE | SAVE ✅',
+      ),
+    ).toBe("Single Kettlebell Upper Body workout");
+  });
+
+  it("uses the first line when there is no embed prefix", () => {
+    expect(draftWorkoutName("Leg day finisher 🔥\nThree rounds")).toBe("Leg day finisher");
+  });
+
+  it("truncates a caption that opens with a paragraph", () => {
+    const name = draftWorkoutName("x".repeat(200));
+    expect(name.length).toBeLessThanOrEqual(60);
+  });
+
+  it("falls back when the caption gives nothing usable", () => {
+    expect(draftWorkoutName("🔥🔥🔥")).toBe("Captured workout");
+    expect(draftWorkoutName(null)).toBe("Captured workout");
+  });
+});
+
+describe("draftWorkoutFromExercises", () => {
+  it("lays out one blank item per exercise, in order", () => {
+    const post = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [rawExercise({ name: "A" }), rawExercise({ name: "B" })],
+        workout: null,
+      },
+      VALID,
+    )!;
+    const workout = draftWorkoutFromExercises(post, "My session");
+
+    expect(workout.name).toBe("My session");
+    expect(workout.items.map((i) => i.exerciseIndex)).toEqual([0, 1]);
+    // Blank, not guessed: the caption never said, and inventing a prescription
+    // would put words in the creator's mouth.
+    expect(workout.items.every((i) => i.sets === null && i.reps === null)).toBe(true);
+    expect(workout.rounds).toBeNull();
+    expect(workout.rawProtocol).toBeNull();
   });
 });
 

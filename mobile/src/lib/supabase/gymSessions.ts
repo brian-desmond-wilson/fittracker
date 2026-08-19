@@ -1,4 +1,4 @@
-// Reads for Track > Workouts.
+// Reads for Track > Gym Sessions.
 //
 // The unit is the SESSION, not the workout: the app already models a workout
 // split across two days as two sessions, and keying history on the workout
@@ -8,7 +8,7 @@
 // captured workout started from the catalog — goes through the same instance
 // chain, so one query covers all three.
 import { supabase } from "../supabase";
-import type { HistorySession, SessionSource } from "../../types/workoutHistory";
+import type { HistorySession, SessionSource } from "../../types/gymSessions";
 
 const SPLIT_TITLES: Record<string, string> = {
   push: "Push day",
@@ -146,7 +146,7 @@ function toSession(row: any, sessionCount: number): HistorySession {
  * window would under-report. At a few hundred sessions that never bites; if it
  * ever does, the count belongs in a view.
  */
-export async function fetchWorkoutHistory(
+export async function fetchGymSessions(
   userId: string,
   limit = 200,
 ): Promise<HistorySession[]> {
@@ -158,7 +158,7 @@ export async function fetchWorkoutHistory(
     .order("session_number", { ascending: false })
     .limit(limit);
   if (error) {
-    console.error("fetchWorkoutHistory failed:", error.message, error.details ?? "");
+    console.error("fetchGymSessions failed:", error.message, error.details ?? "");
     return [];
   }
   const rows = data ?? [];

@@ -48,12 +48,12 @@ export const colors = {
     // Track hub's non-nutrition tiles (Task 7). Identity only, same as above:
     // each is the tile's own pre-existing base hex, now named by domain so the
     // tile can pass an `accent` key instead of a hex/rgba pair. `photos` and
-    // `workouts` are literally `warning`/`danger`, but they are IDENTITY here
-    // (a camera tile, a dumbbell tile), not a semantic verdict — a tile must
-    // not have to reach for `colors.danger` to say "Workouts".
+    // `gymSessions` are literally `warning`/`danger`, but they are IDENTITY
+    // here (a camera tile, a dumbbell tile), not a semantic verdict — a tile
+    // must not have to reach for `colors.danger` to say "Gym Sessions".
     measurements: "#EC4899",
     photos: "#F59E0B",
-    workouts: "#EF4444",
+    gymSessions: "#EF4444",
   },
   /**
    * Data-series palette for macro meters — the fills `macroColor()` returns
@@ -67,7 +67,7 @@ export const colors = {
    * marks on a meter, not a domain identity and not a semantic verdict badge:
    * a bar showing 60% of a sodium cap must not repaint because the app's
    * danger red or its water accent changed. Same reasoning Task 7 recorded
-   * for `accents.photos`/`accents.workouts`.
+   * for `accents.photos`/`accents.gymSessions`.
    */
   macros: {
     under: "#3B82F6",   // in progress toward a goal / approaching a cap
