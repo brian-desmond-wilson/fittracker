@@ -394,7 +394,14 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
           if (!ask) {
             ask = askComposeSession(aiBody);
             aiAskInFlight.set(signature, ask);
-            ask.finally(() => aiAskInFlight.delete(signature));
+            // The cleanup is a chain off `ask`, not a second reference to it,
+            // so it is a NEW promise that rejects when both attempts fail —
+            // and nothing awaits it. Dropped, that is a LogBox warning on
+            // exactly the run where the fallback is being tested. The `catch`
+            // ends the chain; the rejection that matters is still `ask`'s own,
+            // handled by the await below, and the map still holds `ask`
+            // itself, so the coalescing is untouched.
+            ask.finally(() => aiAskInFlight.delete(signature)).catch(() => {});
           }
           const raw = await ask;
           cached = validateBlockComposition(
