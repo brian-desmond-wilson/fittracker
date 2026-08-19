@@ -254,11 +254,25 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // one on a network blip would persist a recovery-shaped day the user
       // never had. Abort instead — the tab reports it and a pull-to-refresh
       // retries, which is honest in a way a wrong day would not be.
-      if (tagged === null) throw new Error("couldn't read your workout catalog");
+      //
+      // Both aborts publish the day already on file first. The tab's
+      // banner-over-plan path needs a session to put the banner over, and on a
+      // cold start there is nothing in state to fall back to — so without this
+      // a blip on the first load of the day replaces a perfectly good stored
+      // plan with a full-screen "couldn't build today's session". `existing`
+      // was read successfully at the top of this run; null is the honest answer
+      // when there is genuinely no plan yet, and the tab takes the screen then.
+      if (tagged === null) {
+        setSession(existing);
+        throw new Error("couldn't read your workout catalog");
+      }
       // Same for the ledger: recency-blind, every workout reads as
       // never-performed, the 4-day repeat gate stops holding and the recency
       // score saturates for everything. `[]` is a real state (a week of rest).
-      if (usage === null) throw new Error("couldn't read your training history");
+      if (usage === null) {
+        setSession(existing);
+        throw new Error("couldn't read your training history");
+      }
 
       // ---- Rules tier ----
       const week = rampWeek(firstRow?.session_date ?? null, today);
