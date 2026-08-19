@@ -4,7 +4,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronDown, ChevronRight, MapPin, Play, RotateCw, Sparkles } from "lucide-react-native";
+import { Check, ChevronDown, ChevronRight, MapPin, Play, RotateCw, Sparkles } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { useDailySession } from "@/src/hooks/useDailySession";
 import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySectionMinutes";
@@ -14,7 +14,7 @@ import { GymSheet } from "./GymSheet";
 import { CheckinSheet } from "./CheckinSheet";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
-import { rerollBlock } from "@/src/lib/supabase/daily";
+import { completeSession, rerollBlock } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
 import type { SessionSection } from "@/src/types/daily";
 import type { BlockRole } from "@/src/types/dailyBlocks";
@@ -74,12 +74,18 @@ export default function TodayTab() {
   // and telling the user there was simply nothing to swap in would be the one
   // reading with consequences behind it.
   const [rerollNote, setRerollNote] = useState<BlockRole | null>(null);
+  const [markingDone, setMarkingDone] = useState(false);
+  // Set once a mark-done write has been sent. `completeSession` logs its own
+  // failures and answers nothing, so the only thing that can say the write
+  // didn't land is the day coming back still unfinished.
+  const [doneAttempted, setDoneAttempted] = useState(false);
 
   // Any recompose invalidates a decline: the shortlists it was refused from
   // are exactly what a recompose rebuilds. Cleared here rather than at the
   // call sites so the check-in sheet and the gym sheet cannot forget.
   const bump = () => {
     setRerollNote(null);
+    setDoneAttempted(false);
     setRefreshKey((k) => k + 1);
   };
 
@@ -114,6 +120,11 @@ export default function TodayTab() {
   // recovery, or a catalog with nothing that fits today. Derived once, in the
   // block vocabulary's own module, because the two read identically from here.
   const dayShape = blockDayShape(blocks);
+  // A day whose every block is a built-in has block rows and nothing loggable
+  // under them — built-in movements are app data, not exercise rows. The
+  // logging screen has no first exercise to open and refuses the session, so
+  // the day is finished from here instead.
+  const nothingToLog = blocks.length > 0 && (session?.items.length ?? 0) === 0;
   // Only a still-suggested day rerolls; once it is accepted or done, the plan
   // is what happened and `rerollBlock` would refuse anyway.
   const canReroll = session?.status === "suggested";
@@ -147,6 +158,20 @@ export default function TodayTab() {
     setRerolling(null);
     if (changed) bump();
     else setRerollNote(block);
+  };
+
+  // Nothing to log means nothing to start: the day is a plan you follow off
+  // the card, and finishing it is one tap. `completeSession` stands the status
+  // up and writes the usage ledger — which a day of built-ins has nothing to
+  // put in, since a built-in carries no workout id.
+  const markDone = async () => {
+    if (!session || markingDone) return;
+    setMarkingDone(true);
+    await completeSession(session.id, []);
+    setMarkingDone(false);
+    setDoneAttempted(true);
+    setRerollNote(null);
+    setRefreshKey((k) => k + 1);
   };
 
   const startSession = () => {
@@ -488,17 +513,44 @@ export default function TodayTab() {
                 </View>
               );
             })}
+            {/* The write is silent about its own failure, so this reads the
+                day that came back instead: still unfinished means it didn't
+                land, and the button below is still there to try again. */}
+            {doneAttempted && !loading && session.status !== "completed" && (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>
+                  Couldn't mark today done — check your connection and try again.
+                </Text>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
 
       {session && session.status !== "completed" && (
-        <TouchableOpacity style={styles.startButton} onPress={startSession} activeOpacity={0.8}>
-          <Play size={18} color="#FFFFFF" />
-          <Text style={styles.buttonText}>
-            {session.workoutInstanceId ? "Continue session" : "Start session"}
-          </Text>
-        </TouchableOpacity>
+        nothingToLog ? (
+          <TouchableOpacity
+            style={styles.startButton}
+            onPress={markDone}
+            disabled={markingDone}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Mark today's session done"
+            accessibilityState={{ disabled: markingDone, busy: markingDone }}
+          >
+            {markingDone
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Check size={18} color="#FFFFFF" />}
+            <Text style={styles.buttonText}>Mark today done</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.startButton} onPress={startSession} activeOpacity={0.8}>
+            <Play size={18} color="#FFFFFF" />
+            <Text style={styles.buttonText}>
+              {session.workoutInstanceId ? "Continue session" : "Start session"}
+            </Text>
+          </TouchableOpacity>
+        )
       )}
 
       <GymSheet visible={gymSheetVisible} gyms={gyms}
