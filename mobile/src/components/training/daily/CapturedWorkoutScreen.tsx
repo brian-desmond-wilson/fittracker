@@ -22,8 +22,24 @@ import {
   updateCapturedWorkout,
 } from "@/src/lib/supabase/capture";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
+import { sanitizeInteger } from "@/src/lib/numericInput";
 import { ExerciseSearchModal } from "@/src/components/training/program-detail/workout-wizard/ExerciseSearchModal";
+import {
+  classifyWorkout,
+  fetchMuscleRegionNames,
+  saveWorkoutTags,
+} from "@/src/lib/supabase/workoutTags";
+import type { BlockRole, WorkoutIntensity } from "@/src/types/dailyBlocks";
 import type { CapturedWorkoutEntry, CapturedWorkoutItemEntry } from "@/src/types/capture";
+
+const BLOCK_ROLES: BlockRole[] = [
+  "warmup", "mobility", "main", "conditioning", "cooldown",
+];
+const INTENSITIES: WorkoutIntensity[] = ["low", "moderate", "high"];
+
+/** The captured_workouts.est_minutes CHECK, mirrored so a rejected number is
+ *  named on screen rather than lost to a failed write. */
+const MAX_EST_MINUTES = 240;
 
 /** The form's copy of the workout. Editing works on this, so backing out of
  *  edit mode discards without touching what is on screen underneath. */
@@ -33,6 +49,13 @@ interface Draft {
   notes: string;
   description: string;
   items: CapturedWorkoutItemEntry[];
+  // Recommender tags. Muscles and skill level are deliberately absent: they
+  // are the classifier's to assign, and the save passes the workout's own
+  // through untouched, so nothing here can clear them.
+  blockRoles: BlockRole[];
+  /** Text, because it is a TextInput. Parsed and range-checked in `save`. */
+  estMinutes: string;
+  intensity: WorkoutIntensity | null;
 }
 
 const draftFrom = (w: CapturedWorkoutEntry): Draft => ({
@@ -41,9 +64,35 @@ const draftFrom = (w: CapturedWorkoutEntry): Draft => ({
   notes: w.notes ?? "",
   description: w.description ?? "",
   items: w.items.map((i) => ({ ...i })),
+  blockRoles: [...w.tags.blockRoles],
+  estMinutes: w.tags.estMinutes === null ? "" : String(w.tags.estMinutes),
+  intensity: w.tags.intensity,
 });
 
+/** What still keeps a classified workout out of every session. The classifier
+ *  degrades a missing duration to null rather than rejecting the answer,
+ *  precisely because this screen can repair it (workoutTagValidate's header) —
+ *  so the gap has to be visible here or it is visible nowhere. */
+const tagGaps = (w: CapturedWorkoutEntry): string[] => {
+  const gaps: string[] = [];
+  if (w.tags.blockRoles.length === 0) gaps.push("a block to serve");
+  // fitToEnvelope returns null without one, which drops the workout from
+  // every shortlist while the screen still reads "tagged".
+  if (w.tags.estMinutes === null) gaps.push("an estimated duration");
+  // The soreness gate reads primaries only, so a workout without one can
+  // never be held back on a sore day. Not fixable here — only the classifier
+  // assigns muscles.
+  if (!w.tags.muscles.some((m) => m.isPrimary)) gaps.push("a primary muscle");
+  return gaps;
+};
+
 const blank = (v: string): string | null => (v.trim() === "" ? null : v.trim());
+
+/** "a and b", "a, b and c" — the gaps read as a sentence, not a bullet list. */
+const listPhrase = (parts: string[]): string =>
+  parts.length <= 1
+    ? parts.join("")
+    : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 
 export function CapturedWorkoutScreen() {
   // A pushed screen carries an id, not the row — it loads its own copy, so a
@@ -57,6 +106,7 @@ export function CapturedWorkoutScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [tagging, setTagging] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
 
   const editing = draft !== null;
@@ -76,6 +126,11 @@ export function CapturedWorkoutScreen() {
       // Re-reading on focus would throw away half-typed edits when the
       // exercise picker closes, so a session in progress owns the screen.
       if (editing) return;
+      // Same reason, other cause: backgrounding mid-classification refires
+      // this on resume, and that read would be racing the one the classify
+      // does when it lands. Held until it finishes — then this re-runs, and
+      // the row it reads is the tagged one.
+      if (tagging) return;
       if (!id) return;
       fetchCapturedWorkout(id).then((w) => {
         if (!alive) return;
@@ -85,7 +140,7 @@ export function CapturedWorkoutScreen() {
       return () => {
         alive = false;
       };
-    }, [id, editing]),
+    }, [id, editing, tagging]),
   );
 
   const startEditing = () => workout && setDraft(draftFrom(workout));
@@ -150,12 +205,93 @@ export function CapturedWorkoutScreen() {
     patch({ description: summary });
   };
 
+  /** Ask the classifier for this workout's tags, then re-read the row.
+   *
+   *  Only offered in view mode, and Edit is held shut while it runs, so it can
+   *  never land a fresh row underneath a draft that was seeded from the stale
+   *  one. Backgrounding mid-call costs nothing: `classifyWorkout` saves the
+   *  tags itself, so the durable half is already done, and the focus re-read
+   *  on resume shows them whether or not this continuation survived. */
+  const tagForRecommender = async () => {
+    if (!workout || tagging) return;
+    setTagging(true);
+    try {
+      // [] on a failed read; classifyWorkout refuses that without spending a
+      // request, since the model cannot name a muscle it wasn't given.
+      const names = await fetchMuscleRegionNames();
+      const tags = await classifyWorkout(workout, names);
+      if (!tags) {
+        Alert.alert(
+          "Couldn't tag it",
+          "The classifier didn't come back with anything usable. Try again in a moment.",
+        );
+        return;
+      }
+      await load();
+    } finally {
+      setTagging(false);
+    }
+  };
+
   const save = async () => {
     if (!draft || !workout) return;
     if (draft.name.trim() === "") {
       Alert.alert("Name it first", "A workout needs a name to be findable later.");
       return;
     }
+
+    // ---- Tags. Written only when they actually changed: an untouched save
+    // must not restamp classified_at, and an unclassified workout's empty tag
+    // fields must not be mistaken for an attempt to tag it by hand.
+    // Digits or empty — sanitizeInteger guarantees it on the way in. Empty is
+    // a deliberate "no estimate", which the recommender reads as "can't fit
+    // this into a block"; out of range is a typo and is refused below.
+    const typedEst = draft.estMinutes.trim();
+    const est = typedEst === "" ? null : Number(typedEst);
+    const estOk =
+      est === null || (Number.isInteger(est) && est >= 1 && est <= MAX_EST_MINUTES);
+    const rolesChanged =
+      draft.blockRoles.length !== workout.tags.blockRoles.length ||
+      draft.blockRoles.some((r) => !workout.tags.blockRoles.includes(r));
+    const tagsChanged =
+      rolesChanged ||
+      est !== workout.tags.estMinutes ||
+      draft.intensity !== workout.tags.intensity;
+
+    if (tagsChanged) {
+      // Refused, never coerced. parseInt would read "35kg" as 35 and "abc" as
+      // NaN, and the plan's fallback turned every one of those — plus 0 and
+      // 999 — into null, silently deleting the one number that decides whether
+      // this workout can be fitted into a block at all.
+      if (!estOk) {
+        Alert.alert(
+          "Check the minutes",
+          `Give a whole number of minutes between 1 and ${MAX_EST_MINUTES}, or leave it empty.`,
+        );
+        return;
+      }
+      // Both of these are also refused by saveWorkoutTags, which writes
+      // nothing and returns false — indistinguishable there from a network
+      // failure. Catching them here is what lets a false below mean "the write
+      // failed" and nothing else.
+      if (draft.blockRoles.length === 0) {
+        Alert.alert(
+          "Pick at least one block",
+          "A workout that serves no block is never offered — the recommender has nowhere to put it.",
+        );
+        return;
+      }
+      // Not repairable here: muscles come from the classifier, and one with no
+      // primary is permanently immune to the soreness gate.
+      if (!workout.tags.muscles.some((m) => m.isPrimary)) {
+        Alert.alert(
+          "Needs classifying first",
+          "This workout has no muscles on it, so the recommender can't hold it back on a sore day. Clear the blocks you picked to save the rest of your edits, then use “Tag for the recommender”.",
+        );
+        return;
+      }
+    }
+
     setSaving(true);
     const wroteWorkout = await updateCapturedWorkout(workout.workoutId, {
       name: draft.name.trim(),
@@ -175,11 +311,49 @@ export function CapturedWorkoutScreen() {
         notes: i.notes,
       })),
     );
+    // Stop before the stamp. These two report failure by returning false
+    // rather than throwing, so without this the tag write would run anyway and
+    // land classified_at with the new roles on top of the OLD movement list —
+    // the exact state the ordering below exists to prevent. The draft is kept,
+    // all three writes are idempotent, so a retry converges.
+    if (!wroteWorkout || !wroteItems) {
+      setSaving(false);
+      Alert.alert("Couldn't save", "Your changes are still here. Try again.");
+      return;
+    }
+
+    // Last, deliberately — the same ordering saveWorkoutTags argues for
+    // internally. This write carries classified_at, the stamp that makes a
+    // workout visible to the recommender, so it goes after the writes that
+    // change what the workout IS. A failure here leaves the tags stale or
+    // absent, which costs the workout a day in the shortlist; the other order
+    // would stamp a workout as freshly classified while the movements those
+    // tags describe never landed.
+    //
+    // A false is very nearly always a failed write: the two refusals — no
+    // block role, no muscles — are ruled out above. It can also mean no muscle
+    // name on the workout still matches a region row, which needs one renamed
+    // or deleted between the load and this save. "Try again" cannot clear that
+    // one, hence the second sentence in the alert.
+    const wroteTags =
+      !tagsChanged ||
+      (await saveWorkoutTags(workout.workoutId, {
+        blockRoles: draft.blockRoles,
+        // Straight through: this screen never edits muscles or skill level.
+        muscles: workout.tags.muscles,
+        skillLevel: workout.tags.skillLevel,
+        estMinutes: est,
+        intensity: draft.intensity,
+      }));
     setSaving(false);
 
-    if (!wroteWorkout || !wroteItems) {
-      // The draft is kept so nothing typed is lost to a failed write.
-      Alert.alert("Couldn't save", "Your changes are still here. Try again.");
+    if (!wroteTags) {
+      // The workout itself did save; only the tags didn't. Said plainly, so
+      // backing out now is a known trade rather than a silent one.
+      Alert.alert(
+        "Saved, but not the tags",
+        "The workout is updated. Its recommender tags aren't — try saving again, or re-tag it if that keeps failing.",
+      );
       return;
     }
     setDraft(null);
@@ -266,11 +440,15 @@ export function CapturedWorkoutScreen() {
       {workout && (
         <TouchableOpacity
           onPress={editing ? save : startEditing}
-          disabled={saving}
+          // Shut while a classification is in flight: a draft seeded from the
+          // pre-classify row would be saved back over the tags it just wrote.
+          disabled={saving || tagging}
           activeOpacity={0.7}
           style={styles.headerRight}
         >
-          <Text style={[styles.headerAction, saving && styles.headerActionMuted]}>
+          <Text
+            style={[styles.headerAction, (saving || tagging) && styles.headerActionMuted]}
+          >
             {editing ? (saving ? "Saving…" : "Save") : "Edit"}
           </Text>
         </TouchableOpacity>
@@ -310,6 +488,14 @@ export function CapturedWorkoutScreen() {
   const shownRounds = draft ? blank(draft.rounds) : workout.rounds;
   const shownDescription = draft ? draft.description : workout.description ?? "";
   const shownNotes = draft ? draft.notes : workout.notes ?? "";
+
+  // Read off the loaded row, never the draft: "has this been classified" and
+  // "which muscles are on it" are the classifier's answers, and the draft
+  // holds neither.
+  const classified = workout.tags.classifiedAt !== null;
+  const primaryMuscles = workout.tags.muscles.filter((m) => m.isPrimary).map((m) => m.name);
+  const secondaryMuscles = workout.tags.muscles.filter((m) => !m.isPrimary).map((m) => m.name);
+  const gaps = tagGaps(workout);
 
   return (
     <>
@@ -366,6 +552,157 @@ export function CapturedWorkoutScreen() {
             shownDescription !== "" && (
               <Text style={styles.description}>{shownDescription}</Text>
             )
+          )}
+
+          {/* What the recommender knows about this workout. Four states: the
+              summary when it is tagged, the classify action when it is not,
+              the editor while editing a tagged one, and a pointer back to the
+              action while editing an untagged one — you cannot hand-tag a
+              workout the classifier has never seen, because the muscles the
+              soreness gate reads only ever come from it. */}
+          {!editing && classified && (
+            <View style={styles.tagBlock}>
+              <Text style={styles.tagSummary}>
+                {[
+                  workout.tags.blockRoles.join(" · "),
+                  workout.tags.estMinutes === null
+                    ? null
+                    : `~${workout.tags.estMinutes} min`,
+                  workout.tags.intensity,
+                  workout.tags.skillLevel,
+                ]
+                  .filter(Boolean)
+                  .join("   ·   ")}
+              </Text>
+              {primaryMuscles.length > 0 && (
+                <Text style={styles.tagMuscles}>
+                  Hits {primaryMuscles.join(", ")}
+                  {secondaryMuscles.length > 0 && ` (also ${secondaryMuscles.join(", ")})`}
+                </Text>
+              )}
+              {gaps.length > 0 && (
+                <Text style={styles.tagGap}>
+                  Not offered in a session yet — it still needs {listPhrase(gaps)}.
+                </Text>
+              )}
+            </View>
+          )}
+
+          {!editing && !classified && (
+            <TouchableOpacity
+              style={styles.tagButton}
+              onPress={tagForRecommender}
+              disabled={tagging}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Tag this workout for the recommender"
+              accessibilityState={{ disabled: tagging, busy: tagging }}
+            >
+              <Text style={styles.tagButtonText}>
+                {tagging ? "Tagging…" : "Tag for the recommender"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {editing && !classified && (
+            <Text style={styles.tagHint}>
+              Not tagged for the recommender yet. Save or cancel, then use
+              “Tag for the recommender” — the muscles it needs are the
+              classifier's to assign.
+            </Text>
+          )}
+
+          {editing && classified && (
+            <View style={styles.tagBlock}>
+              <Text style={styles.fieldLabel}>Serves as</Text>
+              <View style={styles.pillRow}>
+                {BLOCK_ROLES.map((role) => {
+                  const on = draft!.blockRoles.includes(role);
+                  return (
+                    <TouchableOpacity
+                      key={role}
+                      style={[styles.pill, on && styles.pillActive]}
+                      onPress={() =>
+                        setDraft((d) =>
+                          d
+                            ? {
+                                ...d,
+                                blockRoles: on
+                                  ? d.blockRoles.filter((r) => r !== role)
+                                  : [...d.blockRoles, role],
+                              }
+                            : d,
+                        )
+                      }
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      // The "Serves as" heading above is visual only, so
+                      // without this the pill reads as a bare "main".
+                      accessibilityLabel={`Serves as ${role}`}
+                    >
+                      <Text style={[styles.pillText, on && styles.pillTextActive]}>
+                        {role}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* All the rounds as written, not a midpoint. The fitter trims
+                  down from this number — it drops rounds until the workout
+                  fits the block, and advertises the trimmed figure — so an
+                  estimate that has already been averaged gets shortened a
+                  second time and every session runs light. */}
+              <Text style={styles.fieldLabel}>
+                Estimated minutes (all rounds as written)
+              </Text>
+              <TextInput
+                style={[styles.input, styles.estInput]}
+                keyboardType="number-pad"
+                // 240 is the ceiling, so three digits is every legal value. A
+                // twenty-digit paste survives sanitising — it is all digits —
+                // and this is what stops it, in the field rather than at save.
+                maxLength={3}
+                value={draft!.estMinutes}
+                // keyboardType is only a hint — a paste or a hardware keyboard
+                // gets past it. Sanitising as typed means "35kg" becomes 35 in
+                // front of you rather than being argued with at save time.
+                onChangeText={(v) => patch({ estMinutes: sanitizeInteger(v) })}
+                placeholder="e.g. 35"
+                placeholderTextColor={colors.mutedForeground}
+              />
+
+              <Text style={styles.fieldLabel}>Intensity</Text>
+              <View style={styles.pillRow}>
+                {INTENSITIES.map((level) => {
+                  const on = draft!.intensity === level;
+                  return (
+                    <TouchableOpacity
+                      key={level}
+                      style={[styles.pill, on && styles.pillActive]}
+                      // Tapping the chosen one clears it: intensity is
+                      // nullable, and there is no other way back to null.
+                      onPress={() => patch({ intensity: on ? null : level })}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Intensity ${level}`}
+                    >
+                      <Text style={[styles.pillText, on && styles.pillTextActive]}>
+                        {level}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {primaryMuscles.length > 0 && (
+                <Text style={styles.tagMuscles}>
+                  Hits {primaryMuscles.join(", ")}
+                  {secondaryMuscles.length > 0 && ` (also ${secondaryMuscles.join(", ")})`}
+                  {" — re-tag to change these."}
+                </Text>
+              )}
+            </View>
           )}
 
           {shownItems.map((item, i) => {
@@ -682,4 +1019,27 @@ const styles = StyleSheet.create({
   },
   sourceRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 24 },
   sourceText: { fontSize: 14, color: colors.primary },
+  // Recommender tags. The pill family matches CaptureReviewSheet's, the other
+  // place in this folder where the same kind of choice is made.
+  tagBlock: { marginBottom: 16 },
+  tagSummary: { fontSize: 13, color: colors.mutedForeground },
+  tagMuscles: { fontSize: 13, color: colors.mutedForeground, marginTop: 4 },
+  tagGap: { fontSize: 13, color: colors.destructive, marginTop: 6, lineHeight: 18 },
+  tagHint: {
+    fontSize: 13, color: colors.mutedForeground, lineHeight: 19, marginTop: 16,
+  },
+  tagButton: {
+    alignSelf: "flex-start", borderWidth: 1, borderColor: colors.primary,
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16,
+  },
+  tagButtonText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  pill: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
+    backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border,
+  },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { fontSize: 12, color: colors.mutedForeground },
+  pillTextActive: { fontSize: 12, color: colors.primaryForeground, fontWeight: "600" },
+  estInput: { alignSelf: "flex-start", minWidth: 100 },
 });
