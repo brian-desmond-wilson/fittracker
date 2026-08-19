@@ -12,6 +12,7 @@ import { SwipeDeleteAction } from "@/src/components/ui/SwipeDeleteAction";
 import { supabase } from "@/src/lib/supabase";
 import { deleteCapturedWorkout } from "@/src/lib/supabase/capture";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
+import { BLOCK_ORDER, BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface SwipeableWorkoutCardProps {
@@ -27,6 +28,7 @@ export function SwipeableWorkoutCard({
   onDeleted,
 }: SwipeableWorkoutCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
+  const roles = BLOCK_ORDER.filter((r) => workout.tags.blockRoles.includes(r));
 
   const handleDelete = () => {
     Alert.alert(
@@ -81,7 +83,15 @@ export function SwipeableWorkoutCard({
         onPress={onPress}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`${workout.name}. Open the workout.`}
+        accessibilityLabel={[
+          workout.name,
+          workout.tags.classifiedAt === null
+            ? "Not yet tagged for the recommender"
+            : roles.length > 0
+              ? `Serves as ${roles.map((r) => BLOCK_TITLES[r].toLowerCase()).join(", ")}`
+              : null,
+          "Open the workout.",
+        ].filter(Boolean).join(". ")}
       >
         {workout.source?.thumbnailUrl && (
           <Image source={{ uri: workout.source.thumbnailUrl }} style={styles.thumb} />
@@ -91,6 +101,23 @@ export function SwipeableWorkoutCard({
           <Text style={styles.cardMeta}>
             {formatWorkoutHeadline(workout.items.length, workout.rounds)}
           </Text>
+          {/* Which parts of a day this can serve. Ordered by BLOCK_ORDER, not
+              by however the tags came back, so the same workout always reads
+              the same way. An untagged workout says so instead — it is
+              invisible to the recommender until someone classifies it. */}
+          {workout.tags.classifiedAt === null ? (
+            <View style={styles.roleRow}>
+              <Text style={[styles.rolePill, styles.rolePillUntagged]}>Untagged</Text>
+            </View>
+          ) : roles.length > 0 ? (
+            <View style={styles.roleRow}>
+              {roles.map((role) => (
+                <Text key={role} style={styles.rolePill}>
+                  {BLOCK_TITLES[role]}
+                </Text>
+              ))}
+            </View>
+          ) : null}
           {workout.source?.posterHandle && (
             <Text style={styles.handle}>{workout.source.posterHandle}</Text>
           )}
@@ -119,4 +146,14 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
   cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
   handle: { fontSize: 13, color: colors.primary, marginTop: 4 },
+  roleRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
+  rolePill: {
+    fontSize: 11, color: colors.primary, borderWidth: 1,
+    borderColor: colors.primary, borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 2,
+    // overflow:hidden makes the radius clip on iOS, where a Text's background
+    // and border otherwise square off at the corners.
+    overflow: "hidden",
+  },
+  rolePillUntagged: { color: colors.mutedForeground, borderColor: colors.border },
 });
