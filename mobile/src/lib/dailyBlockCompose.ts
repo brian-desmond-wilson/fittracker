@@ -159,10 +159,27 @@ export function validateBlockComposition(
   }
 
   if (picks.size === 0) return null;
-  // Main is not optional when it was offered. Judged on the candidates the
-  // shortlist actually holds, not on the key's presence: a thin catalog leaves
-  // `main: []`, and there is no main to miss.
-  if ((shortlists.main?.length ?? 0) > 0 && !picks.has("main")) return null;
+  // Every block that was OFFERED comes back, conditioning aside — which is
+  // exactly what the edge function's prompt asks for, and nothing until now
+  // checked that it got it. Judged on the candidates a shortlist actually
+  // holds, not on the key's presence: a thin catalog leaves `main: []`, and
+  // there is no main to miss.
+  //
+  // Rejecting beats patching the missing block in. The rules fallback picks
+  // for every offered block, so a rejected answer degrades to a complete day
+  // rather than a day half composed by the model and half by us — the trade
+  // this whole tier already makes.
+  //
+  // It is more than tidiness for the warm-up: the screens tell a recovery day
+  // from a catalog too thin to field a main by whether a warm-up block exists,
+  // so an answer that quietly dropped one would tell someone who said they
+  // felt fine that they were beat up.
+  for (const block of BLOCK_ORDER) {
+    // The one optional block (spec §3.3): the model may drop it when the day
+    // is better without it or the minutes don't allow it.
+    if (block === "conditioning") continue;
+    if ((shortlists[block]?.length ?? 0) > 0 && !picks.has(block)) return null;
+  }
 
   // A non-finite budget makes every comparison false, so the overrun check
   // would silently pass anything. Refuse rather than validate against NaN —

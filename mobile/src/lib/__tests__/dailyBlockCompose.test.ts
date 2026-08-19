@@ -225,6 +225,34 @@ describe("validateBlockComposition", () => {
     expect(validateBlockComposition(noMain, shortlists, 60)).toBeNull();
   });
 
+  it("rejects an answer that drops any other block it was offered", () => {
+    const noWarmup = { blocks: valid.blocks.filter((b) => b.block !== "warmup") };
+    expect(validateBlockComposition(noWarmup, shortlists, 60)).toBeNull();
+    const noCooldown = { blocks: valid.blocks.filter((b) => b.block !== "cooldown") };
+    expect(validateBlockComposition(noCooldown, shortlists, 60)).toBeNull();
+  });
+
+  it("rejects a dropped warm-up on a day with no main to pick", () => {
+    // The omission that reads worst. The screens tell a recovery day from a
+    // catalog too thin to field a main by whether there is a warm-up block, so
+    // an answer that loses one turns "nothing fits your 30 minutes" into
+    // "you're beat up" for someone who said they felt fine.
+    const thin: BlockShortlists = {
+      warmup: [cand("wu1", 8)], mobility: [cand("mo1", 8)],
+      main: [], cooldown: [cand("cd1", 6)],
+    };
+    const answer = { blocks: [
+      { block: "mobility", id: "mo1", reason: "hips" },
+      { block: "cooldown", id: "cd1", reason: "stretch" },
+    ]};
+    expect(validateBlockComposition(answer, thin, 60)).toBeNull();
+  });
+
+  it("conditioning is the one block the model may drop", () => {
+    const withConditioning: BlockShortlists = { ...shortlists, conditioning: [cand("c1", 12)] };
+    expect(validateBlockComposition(valid, withConditioning, 60)).toHaveLength(4);
+  });
+
   it("accepts a mainless answer when no main was offered (recovery day)", () => {
     const rec: BlockShortlists = { mobility: [cand("mo1", 30)], cooldown: [cand("cd1", 20)] };
     const answer = { blocks: [
