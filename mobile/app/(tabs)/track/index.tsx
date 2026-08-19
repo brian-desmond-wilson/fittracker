@@ -127,10 +127,10 @@ export default function Track() {
     },
     // Activity & Recovery Section
     {
-      id: "workouts",
-      title: "Workouts",
+      id: "gym-sessions",
+      title: "Gym Sessions",
       icon: "Dumbbell",
-      accent: "workouts",
+      accent: "gymSessions",
       section: "activity",
     },
   ];

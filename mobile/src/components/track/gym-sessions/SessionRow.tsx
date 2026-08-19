@@ -9,9 +9,9 @@ import {
   sessionMinutes,
   sessionPace,
   sessionVolume,
-} from "@/src/lib/workoutHistory";
+} from "@/src/lib/gymSessions";
 import { GROUP_COLORS, SOURCE_COLORS, SOURCE_LABELS } from "./groupColors";
-import type { HistorySession } from "@/src/types/workoutHistory";
+import type { HistorySession } from "@/src/types/gymSessions";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

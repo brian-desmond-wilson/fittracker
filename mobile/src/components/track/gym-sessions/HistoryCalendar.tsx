@@ -5,9 +5,9 @@ import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { emphasisByDate, GROUP_LABELS } from "@/src/lib/workoutHistory";
+import { emphasisByDate, GROUP_LABELS } from "@/src/lib/gymSessions";
 import { GROUP_COLORS } from "./groupColors";
-import type { HistorySession, MuscleGroup } from "@/src/types/workoutHistory";
+import type { HistorySession, MuscleGroup } from "@/src/types/gymSessions";
 
 const DAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = [

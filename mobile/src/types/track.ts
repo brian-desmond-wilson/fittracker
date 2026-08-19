@@ -260,7 +260,7 @@ export type TrackingCategory =
   | "weight"
   | "measurements"
   | "photos"
-  | "workouts"
+  | "gym-sessions"
   | "shopping";
 
 export interface TrackingCategoryConfig {

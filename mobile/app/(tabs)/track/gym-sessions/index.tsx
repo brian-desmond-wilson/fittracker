@@ -1,13 +1,13 @@
 import { useRouter } from "expo-router";
-import { WorkoutHistoryScreen } from "@/src/components/track/workouts/WorkoutHistoryScreen";
+import { GymSessionsScreen } from "@/src/components/track/gym-sessions/GymSessionsScreen";
 
-export default function WorkoutHistoryPage() {
+export default function GymSessionsPage() {
   const router = useRouter();
 
   // Always land on Track index — router.back() would walk linear history if
   // entered from outside the Track tab.
   return (
-    <WorkoutHistoryScreen
+    <GymSessionsScreen
       onClose={() =>
         router.canGoBack() ? router.back() : router.replace("/(tabs)/track")
       }

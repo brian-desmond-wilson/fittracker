@@ -1,10 +1,10 @@
-// The arithmetic behind Track > Workouts. Pure; the screen owns the pixels and
-// supabase/workoutHistory.ts owns the reads.
+// The arithmetic behind Track > Gym Sessions. Pure; the screen owns the pixels and
+// supabase/gymSessions.ts owns the reads.
 import type {
   HistorySession,
   MuscleGroup,
   WeekSummary,
-} from "../types/workoutHistory";
+} from "../types/gymSessions";
 
 /**
  * muscle_regions names → the four groups, verbatim from the seeded table.

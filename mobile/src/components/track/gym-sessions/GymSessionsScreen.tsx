@@ -1,4 +1,4 @@
-// Track > Workouts: what you actually did.
+// Track > Gym Sessions: what you actually did.
 //
 // The counterpart to Training > Workouts, which holds templates. Nothing here
 // is a plan — every row is a session that happened, whatever it came from.
@@ -14,19 +14,19 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/lib/dates";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
-import { fetchWorkoutHistory } from "@/src/lib/supabase/workoutHistory";
+import { fetchGymSessions } from "@/src/lib/supabase/gymSessions";
 import {
   balance, currentStreak, formatMinutes, formatVolume, GROUP_LABELS,
   sessionsOn, weekSummary,
-} from "@/src/lib/workoutHistory";
+} from "@/src/lib/gymSessions";
 import { GROUP_COLORS } from "./groupColors";
 import { SessionRow } from "./SessionRow";
 import { HistoryCalendar } from "./HistoryCalendar";
-import type { HistorySession } from "@/src/types/workoutHistory";
+import type { HistorySession } from "@/src/types/gymSessions";
 
 const BALANCE_DAYS = 14;
 
-export function WorkoutHistoryScreen({ onClose }: { onClose: () => void }) {
+export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [sessions, setSessions] = useState<HistorySession[]>([]);
@@ -44,7 +44,7 @@ export function WorkoutHistoryScreen({ onClose }: { onClose: () => void }) {
       setLoading(false);
       return;
     }
-    setSessions(await fetchWorkoutHistory(user.id));
+    setSessions(await fetchGymSessions(user.id));
     setLoading(false);
   }, []);
 
@@ -72,7 +72,7 @@ export function WorkoutHistoryScreen({ onClose }: { onClose: () => void }) {
   );
 
   const open = (session: HistorySession) =>
-    router.push(`/(tabs)/track/workouts/${session.id}` as never);
+    router.push(`/(tabs)/track/gym-sessions/${session.id}` as never);
 
   const weekDelta = week.sessions - week.sessionsLastWeek;
   const deltaLabel =
@@ -86,7 +86,7 @@ export function WorkoutHistoryScreen({ onClose }: { onClose: () => void }) {
           <TouchableOpacity onPress={onClose} style={styles.back} activeOpacity={0.7}>
             <ChevronLeft size={24} color={colors.foreground} />
           </TouchableOpacity>
-          <Text style={styles.title}>Workouts</Text>
+          <Text style={styles.title}>Gym Sessions</Text>
         </View>
 
         <RefreshIndicator visible={refreshing} />

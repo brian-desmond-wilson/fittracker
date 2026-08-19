@@ -1,6 +1,6 @@
 // One palette for the balance bar, the calendar dots and the session chips, so
 // the page tells a single story rather than three.
-import type { MuscleGroup } from "@/src/types/workoutHistory";
+import type { MuscleGroup } from "@/src/types/gymSessions";
 
 export const GROUP_COLORS: Record<MuscleGroup, string> = {
   push: "#22C55E",

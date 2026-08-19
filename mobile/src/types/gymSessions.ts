@@ -1,4 +1,4 @@
-// Track > Workouts: what actually happened, as opposed to what was planned.
+// Track > Gym Sessions: what actually happened, as opposed to what was planned.
 //
 // Everything here describes instances — a session you performed, the exercises
 // in it, the sets you logged. The templates those came from live in Training.
