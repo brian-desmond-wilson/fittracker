@@ -1,4 +1,9 @@
-import { sanitizeExtraction, mapCategory } from "../captureReview";
+import {
+  sanitizeExtraction,
+  mapCategory,
+  draftWorkoutName,
+  draftWorkoutFromExercises,
+} from "../captureReview";
 
 const VALID = {
   libraryIds: new Set(["ex-1", "ex-2"]),
@@ -320,6 +325,52 @@ describe("workoutGap", () => {
     );
     expect(out!.workout).not.toBeNull();
     expect(out!.workoutGap).toBeNull();
+  });
+});
+
+describe("draftWorkoutName", () => {
+  it("takes the caption's headline out of an Instagram embed prefix", () => {
+    expect(
+      draftWorkoutName(
+        'mattycfox on September 4, 2023: "Single Kettlebell Upper Body workout 💪🏼🔥\n\nLIKE | SHARE | SAVE ✅',
+      ),
+    ).toBe("Single Kettlebell Upper Body workout");
+  });
+
+  it("uses the first line when there is no embed prefix", () => {
+    expect(draftWorkoutName("Leg day finisher 🔥\nThree rounds")).toBe("Leg day finisher");
+  });
+
+  it("truncates a caption that opens with a paragraph", () => {
+    const name = draftWorkoutName("x".repeat(200));
+    expect(name.length).toBeLessThanOrEqual(60);
+  });
+
+  it("falls back when the caption gives nothing usable", () => {
+    expect(draftWorkoutName("🔥🔥🔥")).toBe("Captured workout");
+    expect(draftWorkoutName(null)).toBe("Captured workout");
+  });
+});
+
+describe("draftWorkoutFromExercises", () => {
+  it("lays out one blank item per exercise, in order", () => {
+    const post = sanitizeExtraction(
+      {
+        post_type: "single_exercise",
+        exercises: [rawExercise({ name: "A" }), rawExercise({ name: "B" })],
+        workout: null,
+      },
+      VALID,
+    )!;
+    const workout = draftWorkoutFromExercises(post, "My session");
+
+    expect(workout.name).toBe("My session");
+    expect(workout.items.map((i) => i.exerciseIndex)).toEqual([0, 1]);
+    // Blank, not guessed: the caption never said, and inventing a prescription
+    // would put words in the creator's mouth.
+    expect(workout.items.every((i) => i.sets === null && i.reps === null)).toBe(true);
+    expect(workout.rounds).toBeNull();
+    expect(workout.rawProtocol).toBeNull();
   });
 });
 
