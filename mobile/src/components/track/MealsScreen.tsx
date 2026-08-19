@@ -437,6 +437,33 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchAllSavedFoods();
   }, [fetchAllSavedFoods]);
 
+  // What counts as "drinkable" for the Beverage sheet: any saved food that
+  // has ever been logged AS a beverage. History, not taxonomy — saved foods
+  // carry no drink flag, but a Chobani you logged from the Beverage door once
+  // is a drink forever after. Refreshed each time the beverage sheet opens,
+  // so a drink logged a minute ago is already a recent.
+  const [beverageFoodIds, setBeverageFoodIds] = useState<Set<string>>(new Set());
+  const refreshBeverageFoodIds = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("meal_logs")
+        .select("saved_food_id")
+        .eq("meal_type", "beverage")
+        .not("saved_food_id", "is", null);
+      if (error) throw error;
+      setBeverageFoodIds(
+        new Set(((data ?? []) as Array<{ saved_food_id: string }>).map((r) => r.saved_food_id)),
+      );
+    } catch (e) {
+      // The filter degrades to an empty recents row, never to a crash — and
+      // "Type something new" still logs any drink.
+      console.error("beverage food ids:", e);
+    }
+  }, []);
+  useEffect(() => {
+    refreshBeverageFoodIds();
+  }, [refreshBeverageFoodIds]);
+
   // For the log sheet's keep switch and the log editor's save action. Served
   // from the library cache the recommender on this screen already populates,
   // so in practice this costs no extra round trip. Empty on failure — the
@@ -1147,6 +1174,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setLogSheetQuery("");
     setLogSheetManual(opts.manual ?? false);
     setLogSheetBeverage(opts.beverage ?? false);
+    if (opts.beverage) refreshBeverageFoodIds();
     setLogSheetOpen(true);
   };
 
@@ -2471,15 +2499,34 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         loggedAt={logSheetAt}
         onLoggedAtChange={setLogSheetAt}
         dayLabel={viewingToday ? "today" : formatViewingDate(viewingDate)}
-        recentFoods={recentFoods.map((r) => r.savedFood)}
-        favorites={favorites}
+        // The Beverage sheet offers only drinkable things: foods with beverage
+        // history, meals filed as beverages. The Meal sheet is the mirror —
+        // no beverage-category meals, whose logs would otherwise land in a
+        // food slot. Foods stay unfiltered there: plenty (a Chobani) are
+        // honestly both.
+        recentFoods={
+          logSheetBeverage
+            ? recentFoods.map((r) => r.savedFood).filter((f) => beverageFoodIds.has(f.id))
+            : recentFoods.map((r) => r.savedFood)
+        }
+        favorites={
+          logSheetBeverage ? favorites.filter((f) => beverageFoodIds.has(f.id)) : favorites
+        }
         onLogFood={handleLogFoodDirect}
         loggingFoodId={loggingFoodId}
         query={logSheetQuery}
         onQueryChange={setLogSheetQuery}
         searching={sheetSearching}
-        searchResults={sheetFoodResults}
-        mealResults={sheetMealResults}
+        searchResults={
+          logSheetBeverage
+            ? sheetFoodResults.filter((f) => beverageFoodIds.has(f.id))
+            : sheetFoodResults
+        }
+        mealResults={sheetMealResults.filter((m) =>
+          logSheetBeverage
+            ? defaultMealTypeFor(m) === "beverage"
+            : defaultMealTypeFor(m) !== "beverage",
+        )}
         onLogMeal={handleQuickLogMeal}
         loggingMealId={loggingMealId}
         // Carries what the sheet already asked — the slot and the clock — so

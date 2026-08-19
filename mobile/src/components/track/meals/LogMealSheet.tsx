@@ -368,12 +368,12 @@ export function LogMealSheet({
         >
           {manualOpen ? (
             <>
-              <Text style={styles.label}>Meal name</Text>
+              <Text style={styles.label}>{beverage ? "Beverage name" : "Meal name"}</Text>
               <TextInput
                 style={styles.input}
                 value={form.mealName}
                 onChangeText={form.setMealName}
-                placeholder="e.g., Grilled chicken with rice"
+                placeholder={beverage ? "e.g., Vanilla protein shake" : "e.g., Grilled chicken with rice"}
                 placeholderTextColor={colors.textMuted}
                 editable={!submitting}
                 autoFocus
@@ -659,10 +659,12 @@ export function LogMealSheet({
                 </>
               ) : (
                 <>
-                  <Text style={styles.label}>Recent</Text>
+                  <Text style={styles.label}>{beverage ? "Recent drinks" : "Recent"}</Text>
                   {quickFoods.length === 0 ? (
                     <Text style={styles.emptyNote}>
-                      Nothing logged yet — search above, or type it in below.
+                      {beverage
+                        ? "No drinks logged yet — type one in below, and keep it for next time."
+                        : "Nothing logged yet — search above, or type it in below."}
                     </Text>
                   ) : (
                     <View style={styles.grid}>
@@ -689,7 +691,7 @@ export function LogMealSheet({
             </View>
             <View style={styles.actionButton}>
               <Button
-                label="Log Meal"
+                label={beverage ? "Log Beverage" : "Log Meal"}
                 onPress={onSubmitManual}
                 loading={submitting}
                 disabled={form.mealName.trim().length === 0}
