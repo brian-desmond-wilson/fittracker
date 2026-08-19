@@ -311,17 +311,30 @@ export function CapturedWorkoutScreen() {
         notes: i.notes,
       })),
     );
+    // Stop before the stamp. These two report failure by returning false
+    // rather than throwing, so without this the tag write would run anyway and
+    // land classified_at with the new roles on top of the OLD movement list —
+    // the exact state the ordering below exists to prevent. The draft is kept,
+    // all three writes are idempotent, so a retry converges.
+    if (!wroteWorkout || !wroteItems) {
+      setSaving(false);
+      Alert.alert("Couldn't save", "Your changes are still here. Try again.");
+      return;
+    }
+
     // Last, deliberately — the same ordering saveWorkoutTags argues for
     // internally. This write carries classified_at, the stamp that makes a
     // workout visible to the recommender, so it goes after the writes that
-    // change what the workout IS. A failure partway then leaves the tags stale
-    // or absent, which costs the workout a day in the shortlist; the other
-    // order would stamp a workout as freshly classified while the movements
-    // those tags describe never landed. Retrying is safe either way: nothing
-    // typed is dropped, and all three writes are idempotent.
+    // change what the workout IS. A failure here leaves the tags stale or
+    // absent, which costs the workout a day in the shortlist; the other order
+    // would stamp a workout as freshly classified while the movements those
+    // tags describe never landed.
     //
-    // False here means the write failed. The two refusals — no block role, no
-    // muscles — were already ruled out above.
+    // A false is very nearly always a failed write: the two refusals — no
+    // block role, no muscles — are ruled out above. It can also mean no muscle
+    // name on the workout still matches a region row, which needs one renamed
+    // or deleted between the load and this save. "Try again" cannot clear that
+    // one, hence the second sentence in the alert.
     const wroteTags =
       !tagsChanged ||
       (await saveWorkoutTags(workout.workoutId, {
@@ -334,9 +347,13 @@ export function CapturedWorkoutScreen() {
       }));
     setSaving(false);
 
-    if (!wroteWorkout || !wroteItems || !wroteTags) {
-      // The draft is kept so nothing typed is lost to a failed write.
-      Alert.alert("Couldn't save", "Your changes are still here. Try again.");
+    if (!wroteTags) {
+      // The workout itself did save; only the tags didn't. Said plainly, so
+      // backing out now is a known trade rather than a silent one.
+      Alert.alert(
+        "Saved, but not the tags",
+        "The workout is updated. Its recommender tags aren't — try saving again, or re-tag it if that keeps failing.",
+      );
       return;
     }
     setDraft(null);
