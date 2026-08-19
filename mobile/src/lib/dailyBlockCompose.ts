@@ -202,6 +202,37 @@ export function validateBlockComposition(
   return BLOCK_ORDER.filter((b) => picks.has(b)).map((b) => picks.get(b)!);
 }
 
+/**
+ * Fold blocks the user pinned back into a composed answer. `fixed` are the
+ * stored picks the compose never re-asked about — locked blocks, and the
+ * blocks outside a block-scoped adjust — and they win their slot verbatim: an
+ * AI pick for a fixed slot is discarded, not blended. Result is in performed
+ * order whatever order either input arrived in.
+ */
+export function mergeLockedPicks(aiPicks: BlockPick[], fixed: BlockPick[]): BlockPick[] {
+  const bySlot = new Map<BlockRole, BlockPick>();
+  for (const p of aiPicks) bySlot.set(p.block, p);
+  for (const p of fixed) bySlot.set(p.block, p);
+  return BLOCK_ORDER.filter((b) => bySlot.has(b)).map((b) => bySlot.get(b)!);
+}
+
+/** What the plan costs in minutes. A dismissed block is still on the row —
+ *  undoable, history — but it is not time the user is going to spend. */
+export function plannedBlockMinutes(
+  blocks: readonly { minutes: number; dismissed?: boolean }[],
+): number {
+  return blocks.reduce((sum, b) => sum + (b.dismissed ? 0 : b.minutes), 0);
+}
+
+/** The model's one-sentence day rationale, when the answer carries a usable
+ *  one. Separate from validateBlockComposition on purpose: a bad reason must
+ *  not cost the athlete the whole answer the way a bad pick does. */
+export function extractDayReason(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const reason = (raw as Record<string, unknown>).dayReason;
+  return typeof reason === "string" && reason.trim() !== "" ? reason.trim() : null;
+}
+
 /** The next shortlist entry after the current pick, wrapping; null when the
  *  list has nowhere else to go. Reroll swaps ONE block (spec §6). */
 export function nextCandidate(

@@ -27,6 +27,19 @@ export function isRecoveryDay(checkin: {
   return atTwo >= 3 || (atThree >= 1 && checkin.energy <= 3);
 }
 
+/** What the day actually is once the user has had their say: a recovery call
+ *  stands unless they overrode it ("train anyway"). The override does NOT
+ *  mute soreness — the shortlists still steer around sore primaries and the
+ *  prompt still carries the numbers; it only stops the day collapsing to
+ *  mobility-and-stretching. */
+export function effectiveRecovery(checkin: {
+  energy: number;
+  soreness: Record<string, number>;
+  overrideRecovery: boolean;
+}): boolean {
+  return isRecoveryDay(checkin) && !checkin.overrideRecovery;
+}
+
 const UPPER = new Set([
   "Chest", "Shoulders", "Triceps",
   "Upper Back", "Lats", "Biceps", "Forearms / Grip", "Neck / Traps",

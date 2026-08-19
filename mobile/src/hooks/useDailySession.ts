@@ -6,20 +6,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 // Canonical home for the calendar-date helpers — lib/dates.ts, not the
 // workout-session re-export, which exists only for older call sites.
-import { addDays, getLocalDateString, parseLocalDate } from "../lib/dates";
+import { addDays, getLocalDateString, localDayStartMs, parseLocalDate } from "../lib/dates";
 import { rampWeek } from "../lib/dailySplit";
 import { muscleCoverage } from "../lib/dailyCoverage";
 import { blockEnvelopes } from "../lib/dailyBlockBudget";
-import { isRecoveryDay, buildBlockShortlists } from "../lib/dailyBlockShortlist";
+import {
+  isRecoveryDay,
+  effectiveRecovery,
+  buildBlockShortlists,
+} from "../lib/dailyBlockShortlist";
 import {
   composeBlockFallback,
   validateBlockComposition,
+  mergeLockedPicks,
+  plannedBlockMinutes,
+  extractDayReason,
   BLOCK_ORDER,
   SECTION_FOR_BLOCK,
 } from "../lib/dailyBlockCompose";
 import {
   blockPicksToItems,
   fetchGyms,
+  fetchLatestDebrief,
+  fetchRecentAdjustments,
   fetchTodayCheckin,
   fetchTodaySession,
   saveGeneratedSession,
@@ -31,7 +40,12 @@ import {
   fetchUsage,
 } from "../lib/supabase/workoutTags";
 import { fetchCapturedWorkouts } from "../lib/supabase/capture";
-import type { BlockPick } from "../types/dailyBlocks";
+import type {
+  BlockPick,
+  BlockRole,
+  BlockShortlists,
+  StoredBlock,
+} from "../types/dailyBlocks";
 import type {
   DailyCheckin,
   GymProfile,
@@ -40,7 +54,15 @@ import type {
 } from "../types/daily";
 
 const AI_RETRY_DELAY_MS = 1_200;
-const aiAnswerBySignature = new Map<string, BlockPick[] | null>();
+/** Keyed by ASK key, not by the stored compose signature: the signature
+ *  deliberately ignores locks (flipping one must not recompose the day), but
+ *  the locked set changes which blocks the model is even asked about — so two
+ *  asks that differ only in locks must not share an answer. */
+interface CachedAnswer {
+  picks: BlockPick[] | null;
+  dayReason: string | null;
+}
+const aiAnswerByAskKey = new Map<string, CachedAnswer>();
 const aiAskInFlight = new Map<string, Promise<unknown>>();
 
 /**
@@ -141,6 +163,12 @@ export interface UseDailySessionValue {
    *  today's ledger now says was hit. Only meaningful when the day's session
    *  is completed — a no-op otherwise. */
   composeAnother: () => void;
+  /** Recompose after a BLOCK-scoped adjust instruction: every other block of
+   *  the current suggestion is held fixed for this one compose, so the
+   *  instruction can only move the block it was aimed at. Day-scoped
+   *  instructions just use refetch — the new instruction already changes the
+   *  signature. */
+  recomposeBlock: (block: BlockRole) => void;
 }
 
 export function useDailySession(refreshKey = 0): UseDailySessionValue {
@@ -154,6 +182,10 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
   // not state — it must not survive the run it was asked for, and it must
   // never itself trigger a render.
   const composeAnotherRef = useRef(false);
+  // One-shot, same shape: the block a block-scoped adjust wants re-picked.
+  // Consumed by the next run, which holds every OTHER block fixed for that
+  // one compose.
+  const adjustFocusRef = useRef<BlockRole | null>(null);
 
   const load = useCallback(async () => {
     const runId = ++runIdRef.current;
@@ -196,6 +228,10 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       const appendToDay =
         composeAnotherRef.current && existing?.status === "completed";
       composeAnotherRef.current = false;
+      // Consumed whether or not this run can honor it — a stale focus must
+      // not leak into some later, unrelated recompose.
+      const adjustFocus = adjustFocusRef.current;
+      adjustFocusRef.current = null;
       if (
         !appendToDay &&
         existing && (existing.status !== "suggested" || existing.source === "user_pick")
@@ -213,19 +249,24 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       const sinceDate = getLocalDateString(
         addDays(parseLocalDate(today), -COVERAGE_WINDOW_DAYS),
       );
-      const [captured, usage, muscleNames, firstRow] = await Promise.all([
-        fetchCapturedWorkouts(user.id),
-        fetchUsage(user.id, sinceDate),
-        fetchMuscleRegionNames(),
-        supabase
-          .from("generated_sessions")
-          .select("session_date")
-          .eq("user_id", user.id)
-          .order("session_date", { ascending: true })
-          .limit(1)
-          .maybeSingle()
-          .then((r) => r.data),
-      ]);
+      const [captured, usage, muscleNames, firstRow, adjustments, debrief] =
+        await Promise.all([
+          fetchCapturedWorkouts(user.id),
+          fetchUsage(user.id, sinceDate),
+          fetchMuscleRegionNames(),
+          supabase
+            .from("generated_sessions")
+            .select("session_date")
+            .eq("user_id", user.id)
+            .order("session_date", { ascending: true })
+            .limit(1)
+            .maybeSingle()
+            .then((r) => r.data),
+          fetchRecentAdjustments(user.id),
+          // The coverage window (8 days) is a fine horizon for "how did the
+          // last one land" too — a week-old debrief is the newest worth hearing.
+          fetchLatestDebrief(user.id, `${sinceDate}T00:00:00`),
+        ]);
       if (runId !== runIdRef.current) return;
 
       // ---- Lazy classification backfill (spec §3.1, §8): tag what isn't
@@ -297,7 +338,11 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
 
       // ---- Rules tier ----
       const week = rampWeek(firstRow?.session_date ?? null, today);
-      const recovery = isRecoveryDay(todayCheckin);
+      const recovery = effectiveRecovery(todayCheckin);
+      // Only true when the override is actually changing today's shape — it
+      // rides into the prompt and the signature, and an override sitting idle
+      // on an ordinary day must move neither.
+      const overrodeRecovery = isRecoveryDay(todayCheckin) && !recovery;
       const coverage = muscleCoverage(usage, today);
       const envelopes = blockEnvelopes(todayCheckin.minutesAvailable, recovery);
       const { shortlists, relaxedMain } = buildBlockShortlists(tagged, {
@@ -310,11 +355,47 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         // envelope array's shape.
         recoveryDay: recovery,
       });
+
+      // ---- Blocks the user has pinned ----
+      // Locked blocks always hold; a block-scoped adjust additionally freezes
+      // every block it was NOT aimed at, for this one compose. Fixed blocks
+      // are never re-asked: they leave the shortlists sent to the model, their
+      // minutes leave the budget, and they merge back in verbatim at the end.
+      // Only a still-suggested day has picks to hold — and an append composes
+      // beside a completed day, not on top of it.
+      const suggestedBlocks =
+        !appendToDay && existing?.status === "suggested" ? existing.blocks : [];
+      const fixedByBlock = new Map<BlockRole, StoredBlock>();
+      for (const b of suggestedBlocks) {
+        if (b.locked || (adjustFocus !== null && b.block !== adjustFocus)) {
+          fixedByBlock.set(b.block, b);
+        }
+      }
+      const fixed = [...fixedByBlock.values()];
+      const askShortlists = Object.fromEntries(
+        Object.entries(shortlists).filter(
+          ([block]) => !fixedByBlock.has(block as BlockRole),
+        ),
+      ) as BlockShortlists;
+      // What the model may spend: the day minus what the pinned blocks
+      // already cost (a dismissed built-in costs nothing). Clamped, because
+      // the validator refuses a budget that isn't a positive number.
+      const remainingMinutes = Math.max(
+        5, todayCheckin.minutesAvailable - plannedBlockMinutes(fixed),
+      );
+
       // Budget-aware: the fallback runs precisely when the model's answer was
       // rejected, often for overrunning, so handing back the same overrun
       // would make the rejection meaningless.
-      const fallbackPicks = composeBlockFallback(
-        shortlists, todayCheckin.minutesAvailable,
+      const fallbackPicks = composeBlockFallback(askShortlists, remainingMinutes);
+
+      // The day's standing context for the prompt: instructions given today,
+      // and how the last finished session landed.
+      // localDayStartMs, not parseLocalDate: that anchor is noon by design,
+      // and a noon boundary silently threw away every morning instruction.
+      const dayStartMs = localDayStartMs(today);
+      const todaysInstructions = adjustments.filter(
+        (a) => new Date(a.createdAt).getTime() >= dayStartMs,
       );
 
       // ---- AI tier: one ask per question signature ----
@@ -353,10 +434,24 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       //     the candidates in, so a coverage shift that re-ranks an unchanged
       //     set reads as the same question. Same property the exercise-level
       //     signature had, kept knowingly.
+      // Locks are deliberately NOT in here: pinning a block must not
+      // recompose the rest of the day by itself. Instructions and the debrief
+      // ARE: a new instruction is exactly a request to compose again, and a
+      // fresh debrief is new information the next compose should act on.
       const signature = [
         today, todayCheckin.id, todayCheckin.minutesAvailable,
-        todayCheckin.energy, recovery ? "recovery" : "train", shortlistIds,
+        todayCheckin.energy, recovery ? "recovery" : "train",
+        overrodeRecovery ? "override" : "",
+        `adj:${todaysInstructions.map((a) => a.id).sort().join(",")}`,
+        `deb:${debrief?.sessionId ?? ""}`,
+        shortlistIds,
       ].join("::");
+      // The ask cache's key carries the locked set on top of the signature —
+      // see aiAnswerByAskKey. A block-scoped adjust changes the signature via
+      // its instruction, so the freeze needs no key of its own.
+      const askKey = `${signature}::fx:${
+        fixed.map((b) => `${b.block}:${b.workoutId ?? b.builtinKey}`).sort().join(",")
+      }`;
 
       // A reroll is a user decision, and recomposing would overwrite it: the
       // hook recomposes any still-suggested session on every load, and
@@ -381,16 +476,29 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
 
       const aiBody = {
         mode: "blocks",
-        minutes: todayCheckin.minutesAvailable,
+        // The REMAINING budget: pinned blocks already spent their share, and
+        // the model must add its picks up against what is actually left.
+        minutes: remainingMinutes,
         energy: todayCheckin.energy,
         soreness: todayCheckin.soreness,
         relaxedMain,
+        overrodeRecovery,
+        instructions: todaysInstructions.map((a) => ({
+          block: a.block,
+          text: a.instruction,
+        })),
+        debrief: debrief
+          ? { verdict: debrief.verdict, note: debrief.note }
+          : null,
+        fixedBlocks: fixed.map((b) => ({
+          block: b.block, name: b.name, minutes: b.minutes,
+        })),
         coverage: {
           neglected: coverage.neglected.slice(0, 8),
           yesterday: [...coverage.yesterday],
         },
         shortlists: Object.fromEntries(
-          Object.entries(shortlists).map(([block, list]) => [
+          Object.entries(askShortlists).map(([block, list]) => [
             block,
             (list ?? []).map((c) => ({
               id: c.workoutId ?? c.builtinKey,
@@ -411,15 +519,23 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         ),
       };
 
-      let picks: BlockPick[] = fallbackPicks;
+      // Whatever tier answers, the pinned blocks merge back in verbatim.
+      let picks: BlockPick[] = mergeLockedPicks(fallbackPicks, fixed);
+      let dayReason: string | null = null;
       let source: "ai" | "rules_fallback" = "rules_fallback";
+      // With every block pinned there is nothing to ask — spending a call to
+      // be told "blocks: []" would be pure waste.
+      const anythingToAsk = Object.values(askShortlists)
+        .some((list) => (list?.length ?? 0) > 0);
       try {
-        let cached = aiAnswerBySignature.get(signature);
+        let cached = anythingToAsk
+          ? aiAnswerByAskKey.get(askKey)
+          : { picks: null, dayReason: null };
         if (cached === undefined) {
-          let ask = aiAskInFlight.get(signature);
+          let ask = aiAskInFlight.get(askKey);
           if (!ask) {
             ask = askComposeSession(aiBody);
-            aiAskInFlight.set(signature, ask);
+            aiAskInFlight.set(askKey, ask);
             // The cleanup is a chain off `ask`, not a second reference to it,
             // so it is a NEW promise that rejects when both attempts fail —
             // and nothing awaits it. Dropped, that is a LogBox warning on
@@ -427,16 +543,21 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
             // ends the chain; the rejection that matters is still `ask`'s own,
             // handled by the await below, and the map still holds `ask`
             // itself, so the coalescing is untouched.
-            ask.finally(() => aiAskInFlight.delete(signature)).catch(() => {});
+            ask.finally(() => aiAskInFlight.delete(askKey)).catch(() => {});
           }
           const raw = await ask;
-          cached = validateBlockComposition(
-            raw, shortlists, todayCheckin.minutesAvailable,
-          );
-          aiAnswerBySignature.set(signature, cached);
+          cached = {
+            picks: validateBlockComposition(raw, askShortlists, remainingMinutes),
+            // Kept even when the picks are refused? No — a reason explaining
+            // a day that fell back to rules would narrate blocks the model
+            // didn't pick. The reason rides only with a usable answer.
+            dayReason: extractDayReason(raw),
+          };
+          aiAnswerByAskKey.set(askKey, cached);
         }
-        if (cached) {
-          picks = cached;
+        if (cached.picks) {
+          picks = mergeLockedPicks(cached.picks, fixed);
+          dayReason = cached.dayReason;
           source = "ai";
         }
       } catch (e) {
@@ -482,6 +603,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
           servedCapturedWorkoutId: null,
           items,
           sectionMinutes,
+          dayReason,
         },
         blocks: picks,
         appendToDay,
@@ -511,6 +633,11 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
     load();
   }, [load]);
 
+  const recomposeBlock = useCallback((block: BlockRole) => {
+    adjustFocusRef.current = block;
+    load();
+  }, [load]);
+
   return {
     session,
     checkin,
@@ -520,5 +647,6 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
     error,
     refetch: load,
     composeAnother,
+    recomposeBlock,
   };
 }

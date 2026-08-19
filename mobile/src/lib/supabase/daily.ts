@@ -17,9 +17,12 @@ import type {
 import type {
   ComposedSession,
   DailyCheckin,
+  DebriefVerdict,
   GymProfile,
   SectionMinutes,
+  SessionAdjustment,
   SessionCandidate,
+  SessionDebrief,
   SessionItem,
   SessionSection,
   SkillStateLevel,
@@ -192,7 +195,7 @@ export async function fetchTodayCheckin(
 ): Promise<DailyCheckin | null> {
   const { data, error } = await supabase
     .from("daily_checkins")
-    .select("id, checkin_date, energy, minutes_available, daily_checkin_soreness(severity, muscle_regions(name))")
+    .select("id, checkin_date, energy, minutes_available, override_recovery, daily_checkin_soreness(severity, muscle_regions(name))")
     .eq("user_id", userId)
     .eq("checkin_date", date)
     .maybeSingle();
@@ -210,8 +213,26 @@ export async function fetchTodayCheckin(
     checkinDate: data.checkin_date,
     energy: data.energy,
     minutesAvailable: data.minutes_available,
+    overrideRecovery: !!(data as any).override_recovery,
     soreness,
   };
+}
+
+/** "Train anyway" / "back to recovery": flip the day's override. The caller
+ *  recomposes; the flag itself changes nothing until then. */
+export async function setRecoveryOverride(
+  checkinId: string,
+  value: boolean,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("daily_checkins")
+    .update({ override_recovery: value })
+    .eq("id", checkinId);
+  if (error) {
+    console.error("setRecoveryOverride failed:", error);
+    return false;
+  }
+  return true;
 }
 
 export interface SaveCheckinInput {
@@ -221,6 +242,9 @@ export interface SaveCheckinInput {
   minutesAvailable: number;
   /** muscle_regions.name → severity */
   soreness: Record<string, number>;
+  /** Carried through a re-save so editing energy doesn't silently undo a
+   *  "train anyway". Absent on a fresh check-in = false. */
+  overrideRecovery?: boolean;
 }
 
 export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin | null> {
@@ -233,6 +257,7 @@ export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin
           checkin_date: input.date,
           energy: input.energy,
           minutes_available: input.minutesAvailable,
+          override_recovery: input.overrideRecovery ?? false,
         },
         { onConflict: "user_id,checkin_date" },
       )
@@ -393,14 +418,14 @@ export async function fetchTodaySession(
     .select(`
       id, session_date, split_day, ramp_week, source, served_captured_workout_id,
       status, workout_instance_id, gym_profile_id, section_minutes,
-      compose_signature, created_at,
+      compose_signature, day_reason, created_at,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
         rest_seconds, reason, was_performed, exercise:exercises(name)
       ),
       blocks:generated_session_blocks(
         id, block, name, captured_workout_id, builtin_key, minutes,
-        rounds_note, reason
+        rounds_note, reason, locked, dismissed
       )
     `)
     .eq("user_id", userId)
@@ -453,9 +478,12 @@ export async function fetchTodaySession(
         roundsNote: b.rounds_note,
         reason: b.reason,
         name: b.name,
+        locked: !!b.locked,
+        dismissed: !!b.dismissed,
       }))
       .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
     composeSignature: data.compose_signature ?? null,
+    dayReason: data.day_reason ?? null,
   };
 }
 
@@ -515,6 +543,7 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
       section_minutes: Object.keys(input.session.sectionMinutes).length > 0
         ? input.session.sectionMinutes
         : null,
+      day_reason: input.session.dayReason,
       status: "suggested",
       inputs_snapshot: input.inputsSnapshot ?? null,
     };
@@ -1001,6 +1030,166 @@ export async function rerollBlock(
     console.error("rerollBlock failed:", e);
     return false;
   }
+}
+
+// ---------- Locks, dismissals, adjustments, debriefs ----------
+
+/** Pin or unpin one block. Metadata only: the compose signature ignores locks,
+ *  so flipping one never recomposes the rest of the day by itself. */
+export async function setBlockLocked(blockId: string, locked: boolean): Promise<boolean> {
+  const { error } = await supabase
+    .from("generated_session_blocks")
+    .update({ locked })
+    .eq("id", blockId);
+  if (error) {
+    console.error("setBlockLocked failed:", error);
+    return false;
+  }
+  return true;
+}
+
+/** Wave a built-in off for today (or bring it back). The row stays — undo and
+ *  history — the tab just stops showing it as work or counting its minutes. */
+export async function setBlockDismissed(blockId: string, dismissed: boolean): Promise<boolean> {
+  const { error } = await supabase
+    .from("generated_session_blocks")
+    .update({ dismissed })
+    .eq("id", blockId);
+  if (error) {
+    console.error("setBlockDismissed failed:", error);
+    return false;
+  }
+  return true;
+}
+
+export interface SaveAdjustmentInput {
+  userId: string;
+  sessionId: string | null;
+  block: BlockRole | null; // null = the whole day
+  instruction: string;
+}
+
+export async function saveAdjustment(
+  input: SaveAdjustmentInput,
+): Promise<SessionAdjustment | null> {
+  const { data, error } = await supabase
+    .from("session_adjustments")
+    .insert({
+      user_id: input.userId,
+      session_id: input.sessionId,
+      block: input.block,
+      instruction: input.instruction.trim(),
+    })
+    .select("id, session_id, block, instruction, created_at")
+    .single();
+  if (error || !data) {
+    console.error("saveAdjustment failed:", error);
+    return null;
+  }
+  return {
+    id: data.id,
+    sessionId: data.session_id,
+    block: data.block,
+    instruction: data.instruction,
+    createdAt: data.created_at,
+  };
+}
+
+/** Newest first. One read serves both faces of the sheet: entries stamped
+ *  today ride into the compose prompt, the rest are the tappable shortcuts. */
+export async function fetchRecentAdjustments(
+  userId: string,
+  limit = 10,
+): Promise<SessionAdjustment[]> {
+  const { data, error } = await supabase
+    .from("session_adjustments")
+    .select("id, session_id, block, instruction, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("fetchRecentAdjustments failed:", error);
+    return [];
+  }
+  return (data ?? []).map((d) => ({
+    id: d.id,
+    sessionId: d.session_id,
+    block: d.block,
+    instruction: d.instruction,
+    createdAt: d.created_at,
+  }));
+}
+
+export interface SaveDebriefInput {
+  userId: string;
+  sessionId: string;
+  verdict: DebriefVerdict;
+  note: string | null;
+}
+
+export async function saveDebrief(input: SaveDebriefInput): Promise<boolean> {
+  const { error } = await supabase
+    .from("session_debriefs")
+    .upsert(
+      {
+        user_id: input.userId,
+        session_id: input.sessionId,
+        verdict: input.verdict,
+        note: input.note?.trim() || null,
+      },
+      { onConflict: "session_id" },
+    );
+  if (error) {
+    console.error("saveDebrief failed:", error);
+    return false;
+  }
+  return true;
+}
+
+export async function fetchDebrief(sessionId: string): Promise<SessionDebrief | null> {
+  const { data, error } = await supabase
+    .from("session_debriefs")
+    .select("session_id, verdict, note, created_at")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+  if (error) {
+    console.error("fetchDebrief failed:", error);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    sessionId: data.session_id,
+    verdict: data.verdict,
+    note: data.note,
+    createdAt: data.created_at,
+  };
+}
+
+/** The most recent debrief of the last week — what "how did yesterday land"
+ *  the next compose should hear. Null is a real state: nothing to report. */
+export async function fetchLatestDebrief(
+  userId: string,
+  sinceIso: string,
+): Promise<SessionDebrief | null> {
+  const { data, error } = await supabase
+    .from("session_debriefs")
+    .select("session_id, verdict, note, created_at")
+    .eq("user_id", userId)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("fetchLatestDebrief failed:", error);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    sessionId: data.session_id,
+    verdict: data.verdict,
+    note: data.note,
+    createdAt: data.created_at,
+  };
 }
 
 // ---------- Adopting a catalog workout ----------

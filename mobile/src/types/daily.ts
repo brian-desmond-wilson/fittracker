@@ -1,6 +1,6 @@
 // Types for Daily Training Phase 2 — the daily loop.
 // Spec: docs/superpowers/specs/2026-08-16-daily-training-design.md §3, §5.
-import type { StoredBlock } from "./dailyBlocks";
+import type { BlockRole, StoredBlock } from "./dailyBlocks";
 
 export type SplitDay = "push" | "pull" | "legs";
 /** `mobility` is the block recommender's dynamic warm-up phase, sitting
@@ -25,6 +25,30 @@ export interface DailyCheckin {
   minutesAvailable: number;
   /** muscle_regions.name → severity 1-3 */
   soreness: Record<string, number>;
+  /** "Train anyway": the user overrode today's recovery call. The shortlists
+   *  still steer around soreness; the day just doesn't collapse to
+   *  mobility-and-stretching. */
+  overrideRecovery: boolean;
+}
+
+/** One instruction to the recommender, block-scoped or day-scoped. */
+export interface SessionAdjustment {
+  id: string;
+  sessionId: string | null;
+  /** Null = the whole day. */
+  block: BlockRole | null;
+  instruction: string;
+  createdAt: string; // ISO
+}
+
+export type DebriefVerdict = "too_easy" | "just_right" | "too_much";
+
+/** How a finished session landed, one per session. */
+export interface SessionDebrief {
+  sessionId: string;
+  verdict: DebriefVerdict;
+  note: string | null;
+  createdAt: string; // ISO
 }
 
 /** One exercise as the rules tier sees it — assembled by daily.ts, consumed
@@ -89,6 +113,9 @@ export interface ComposedSession {
   servedCapturedWorkoutId: string | null;
   items: SessionItem[];
   sectionMinutes: SectionMinutes;
+  /** The model's ONE sentence about the day's shape. Null when rules composed
+   *  the day, or the answer carried nothing usable. */
+  dayReason: string | null;
 }
 
 /** A stored generated_sessions row with items joined for display. */

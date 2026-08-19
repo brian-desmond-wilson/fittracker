@@ -1,5 +1,6 @@
 import {
   addDays,
+  localDayStartMs,
   formatDayLabel,
   formatArrival,
   formatArrivalShort,
@@ -211,5 +212,15 @@ describe("formatArrivalShort — the arrival, as a tile caption", () => {
 
   it("says nothing rather than NaN for an unparseable value", () => {
     expect(formatArrivalShort("not a date", NOW)).toBe("—");
+  });
+});
+
+describe("localDayStartMs", () => {
+  it("is local midnight, not noon — a 7am timestamp is inside today", () => {
+    const start = localDayStartMs("2026-08-19");
+    const sevenAm = new Date(2026, 7, 19, 7, 26).getTime();
+    const lastNight = new Date(2026, 7, 18, 23, 59).getTime();
+    expect(sevenAm).toBeGreaterThanOrEqual(start);
+    expect(lastNight).toBeLessThan(start);
   });
 });

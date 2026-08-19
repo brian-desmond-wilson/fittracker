@@ -1,4 +1,6 @@
-import { isRecoveryDay, workoutFocus, buildBlockShortlists } from "../dailyBlockShortlist";
+import {
+  isRecoveryDay, effectiveRecovery, workoutFocus, buildBlockShortlists,
+} from "../dailyBlockShortlist";
 import { blockEnvelopes } from "../dailyBlockBudget";
 import { muscleCoverage } from "../dailyCoverage";
 import type { TaggedWorkout, WorkoutMuscle } from "../../types/dailyBlocks";
@@ -342,5 +344,23 @@ describe("buildBlockShortlists", () => {
     expect(shortlists.conditioning).toBeUndefined();
     expect(shortlists.mobility).toBeDefined();
     expect(shortlists.cooldown).toBeDefined();
+  });
+});
+
+describe("effectiveRecovery", () => {
+  const beatUp = { energy: 3, soreness: { Quads: 3 } };
+  const fine = { energy: 8, soreness: {} };
+
+  it("a recovery-worthy check-in without an override is a recovery day", () => {
+    expect(effectiveRecovery({ ...beatUp, overrideRecovery: false })).toBe(true);
+  });
+
+  it("the override turns a recovery call into a training day", () => {
+    expect(effectiveRecovery({ ...beatUp, overrideRecovery: true })).toBe(false);
+  });
+
+  it("an override on an ordinary day changes nothing", () => {
+    expect(effectiveRecovery({ ...fine, overrideRecovery: true })).toBe(false);
+    expect(effectiveRecovery({ ...fine, overrideRecovery: false })).toBe(false);
   });
 });

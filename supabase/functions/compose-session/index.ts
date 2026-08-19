@@ -138,12 +138,28 @@ Rules:
 - A "(note: ...)" is a round adjustment already computed — repeat it in your
   reason if it matters.
 - "reason" is ONE short sentence to the athlete, plain and specific.
+- Some blocks may arrive ALREADY FIXED — the athlete pinned them. They are
+  context, not choices: build a day that coheres around them, and never name
+  a fixed block in your answer.
+- The athlete's own instructions, when present, outrank every preference
+  above. Honor each one within the candidates offered; when no candidate in a
+  block satisfies an instruction aimed at it, pick the closest thing and say
+  plainly in that block's reason what couldn't be honored and why this is the
+  nearest. Never ignore an instruction silently.
+- A debrief line, when present, is how their last finished session landed.
+  "too_much" means bias toward shorter and lower intensity today; "too_easy"
+  means they had more in the tank — bias the other way.
+- "dayReason" is ONE sentence to the athlete about the day's overall shape —
+  what it trains and why today, given their energy, soreness, and what's been
+  neglected. Plain and specific, like the block reasons. Not a summary of the
+  blocks; the WHY of the day.
 
 An id that wasn't offered, or a block that wasn't shown, costs the athlete the
 WHOLE answer: the day falls back to a mechanical pick with no reasoning at all.
 
 Respond as JSON, block names lowercase and spelled exactly as below:
-{"blocks": [{"block": "warmup"|"mobility"|"main"|"conditioning"|"cooldown",
+{"dayReason": string,
+ "blocks": [{"block": "warmup"|"mobility"|"main"|"conditioning"|"cooldown",
   "id": string, "reason": string}]}`;
 
 /** The candidates in one shortlist the model can actually pick. An entry with
@@ -175,7 +191,16 @@ async function composeBlocks(body: any): Promise<Response> {
   const soreness = (body.soreness ?? {}) as Record<string, unknown>;
   const coverage = (body.coverage ?? {}) as Record<string, unknown>;
   const relaxedMain = body.relaxedMain === true;
+  const overrodeRecovery = body.overrodeRecovery === true;
   const shortlists = (body.shortlists ?? {}) as Record<string, unknown>;
+  // The athlete's one-shot instructions ([{block|null, text}]), how the last
+  // session landed, and the blocks they pinned — all optional, all context.
+  const instructions = (Array.isArray(body.instructions) ? body.instructions : [])
+    .filter((i: any) => i && typeof i.text === 'string' && i.text.trim() !== '');
+  const debrief = body.debrief && typeof body.debrief.verdict === 'string'
+    ? body.debrief : null;
+  const fixedBlocks = (Array.isArray(body.fixedBlocks) ? body.fixedBlocks : [])
+    .filter((b: any) => b && typeof b.block === 'string' && typeof b.name === 'string');
 
   // Presented in the order the day is performed, not the order the client
   // happened to serialise: Object.entries follows insertion order and the
@@ -215,12 +240,42 @@ async function composeBlocks(body: any): Promise<Response> {
     return `${block.toUpperCase()}:\n${rows}`;
   }).join('\n\n');
 
+  const verdictLine: Record<string, string> = {
+    too_easy: 'their last finished session landed TOO EASY — they had more in the tank',
+    just_right: 'their last finished session landed just right',
+    too_much: 'their last finished session landed TOO MUCH — ease today off',
+  };
   const head = [
     `Minutes available: ${minutes}.`
       + (Number.isFinite(energy) ? ` Energy: ${energy}/10.` : '')
       + ` Soreness: ${soreLines}.`,
     `Most neglected muscles this week: ${stringList(coverage.neglected).join(', ') || 'no history yet'}.`,
     `Hit yesterday: ${stringList(coverage.yesterday).join(', ') || 'nothing'}.`,
+    fixedBlocks.length > 0
+      ? 'ALREADY FIXED by the athlete (context only — do not name these blocks, '
+        + 'and their minutes are already spent):\n'
+        + fixedBlocks.map((b: any) =>
+            `  ${String(b.block)} — ${String(b.name)} (~${Number(b.minutes) || '?'} min)`,
+          ).join('\n')
+      : '',
+    instructions.length > 0
+      ? "The athlete's instructions for today (newest first — honor them):\n"
+        + instructions.map((i: any) =>
+            `  ${i.block ? `[${String(i.block)}] ` : '[whole day] '}"${String(i.text).trim()}"`,
+          ).join('\n')
+      : '',
+    debrief
+      ? `Debrief: ${verdictLine[String(debrief.verdict)] ?? String(debrief.verdict)}.`
+        + (typeof debrief.note === 'string' && debrief.note.trim() !== ''
+            ? ` Their note: "${debrief.note.trim()}"`
+            : '')
+      : '',
+    overrodeRecovery
+      ? 'NOTE: the engine recommended a RECOVERY day and the athlete overrode '
+        + 'it — they want to train. Compose a real day, but keep intensity '
+        + 'conservative and steer wide of the sore areas above; say in the '
+        + 'dayReason that today is deliberately careful.'
+      : '',
     hasMain
       ? ''
       : 'NOTE: there is no main workout today — the blocks below are the whole '

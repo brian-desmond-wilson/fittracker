@@ -35,6 +35,18 @@ export const parseLocalDate = (dateStr: string): Date => {
 };
 
 /**
+ * The instant a local calendar day begins, in epoch ms — for "did this
+ * timestamp happen today" checks. NOT `parseLocalDate(...).getTime()`: that
+ * anchor is deliberately NOON (see above), and using it as a day boundary
+ * silently discards the whole morning — a 7am instruction read as
+ * "yesterday's" is how the Today tab's adjust box once failed to recompose.
+ */
+export const localDayStartMs = (dateStr: string): number => {
+  const [y, m, d] = dateStr.split("-").map((s) => parseInt(s, 10));
+  return new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+};
+
+/**
  * A calendar day either side of `d`, as a new `Date`.
  *
  * `setDate` past the end of a month rolls the month and year, and it moves by

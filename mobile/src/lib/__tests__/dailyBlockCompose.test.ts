@@ -3,6 +3,9 @@ import {
   composeBlockFallback,
   validateBlockComposition,
   nextCandidate,
+  mergeLockedPicks,
+  plannedBlockMinutes,
+  extractDayReason,
   BLOCK_ORDER,
   SECTION_FOR_BLOCK,
 } from "../dailyBlockCompose";
@@ -393,5 +396,82 @@ describe("blockDayShape", () => {
   });
   it("no block rows at all is not a block day", () => {
     expect(blockDayShape([])).toBeNull();
+  });
+});
+
+describe("mergeLockedPicks", () => {
+  const pick = (block: BlockRole, id: string, minutes = 10) => ({
+    block, workoutId: id, builtinKey: null, name: id, minutes,
+    roundsNote: null, reason: `picked ${id}`,
+  });
+
+  it("keeps AI picks and inserts fixed blocks at their slots, in block order", () => {
+    const merged = mergeLockedPicks(
+      [pick("warmup", "wu-new"), pick("cooldown", "cd-new")],
+      [pick("main", "m-locked", 40)],
+    );
+    expect(merged.map((p) => p.block)).toEqual(["warmup", "main", "cooldown"]);
+    expect(merged[1].workoutId).toBe("m-locked");
+  });
+
+  it("a fixed block beats an AI pick for the same slot", () => {
+    const merged = mergeLockedPicks(
+      [pick("main", "m-ai")],
+      [pick("main", "m-locked")],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].workoutId).toBe("m-locked");
+  });
+
+  it("a fixed block keeps its stored name, minutes, note and reason verbatim", () => {
+    const locked = {
+      ...pick("mobility", "mo-locked", 7),
+      roundsNote: "Do 2 of 3 rounds", reason: "you locked this",
+    };
+    const merged = mergeLockedPicks([pick("warmup", "wu")], [locked]);
+    expect(merged.find((p) => p.block === "mobility")).toEqual(locked);
+  });
+
+  it("no fixed blocks: the AI picks come back ordered and untouched", () => {
+    const merged = mergeLockedPicks(
+      [pick("cooldown", "cd"), pick("warmup", "wu")],
+      [],
+    );
+    expect(merged.map((p) => p.block)).toEqual(["warmup", "cooldown"]);
+  });
+
+  it("only fixed blocks: the day is exactly the fixed blocks", () => {
+    const merged = mergeLockedPicks([], [pick("main", "m"), pick("warmup", "wu")]);
+    expect(merged.map((p) => p.block)).toEqual(["warmup", "main"]);
+  });
+});
+
+describe("plannedBlockMinutes", () => {
+  it("sums the blocks", () => {
+    expect(plannedBlockMinutes([{ minutes: 8 }, { minutes: 32 }])).toBe(40);
+  });
+  it("a dismissed block costs nothing", () => {
+    expect(plannedBlockMinutes([
+      { minutes: 8, dismissed: false },
+      { minutes: 6, dismissed: true },
+      { minutes: 32 },
+    ])).toBe(40);
+  });
+  it("an empty plan is zero", () => {
+    expect(plannedBlockMinutes([])).toBe(0);
+  });
+});
+
+describe("extractDayReason", () => {
+  it("takes a non-empty dayReason string, trimmed", () => {
+    expect(extractDayReason({ dayReason: "  upper push, legs kept quiet  " }))
+      .toBe("upper push, legs kept quiet");
+  });
+  it("anything else is null", () => {
+    expect(extractDayReason({ dayReason: "   " })).toBeNull();
+    expect(extractDayReason({ dayReason: 42 })).toBeNull();
+    expect(extractDayReason({})).toBeNull();
+    expect(extractDayReason(null)).toBeNull();
+    expect(extractDayReason("upper day")).toBeNull();
   });
 });

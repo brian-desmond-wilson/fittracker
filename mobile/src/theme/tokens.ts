@@ -75,6 +75,21 @@ export const colors = {
     atCap: "#F59E0B",   // at a "do not exceed" cap
     overCap: "#EF4444", // more than 10% past a cap
   },
+  /**
+   * The five blocks of a composed training day — the Today tab's budget bar
+   * and card accents. IDENTITY, not verdicts, same doctrine as `accents`:
+   * `main` is literally `brand` and `conditioning` literally `warning`, but a
+   * conditioning segment is not a warning and must not repaint if the app's
+   * warning amber ever moves. Approved in the Today-redesign mockups
+   * (2026-08-19), which are the decision record for these hues.
+   */
+  blocks: {
+    warmup: "#3B82F6",
+    mobility: "#8B5CF6",
+    main: "#22C55E",
+    conditioning: "#F59E0B",
+    cooldown: "#14B8A6",
+  },
 } as const;
 
 export type AccentKey = keyof typeof colors.accents;

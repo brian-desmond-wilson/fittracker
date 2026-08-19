@@ -103,4 +103,9 @@ export interface BlockPick {
 /** A generated_session_blocks row, ready for display. */
 export interface StoredBlock extends BlockPick {
   id: string;
+  /** Pinned by the user: recomposes merge this row back in verbatim. */
+  locked: boolean;
+  /** A waved-off built-in: still on the row for undo and history, but not
+   *  shown as work and not counted as time. */
+  dismissed: boolean;
 }
