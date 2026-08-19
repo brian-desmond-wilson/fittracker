@@ -596,6 +596,7 @@ export function CapturedWorkoutScreen() {
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Tag this workout for the recommender"
+              accessibilityState={{ disabled: tagging, busy: tagging }}
             >
               <Text style={styles.tagButtonText}>
                 {tagging ? "Tagging…" : "Tag for the recommender"}
@@ -635,6 +636,9 @@ export function CapturedWorkoutScreen() {
                       }
                       accessibilityRole="button"
                       accessibilityState={{ selected: on }}
+                      // The "Serves as" heading above is visual only, so
+                      // without this the pill reads as a bare "main".
+                      accessibilityLabel={`Serves as ${role}`}
                     >
                       <Text style={[styles.pillText, on && styles.pillTextActive]}>
                         {role}
@@ -681,6 +685,7 @@ export function CapturedWorkoutScreen() {
                       onPress={() => patch({ intensity: on ? null : level })}
                       accessibilityRole="button"
                       accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Intensity ${level}`}
                     >
                       <Text style={[styles.pillText, on && styles.pillTextActive]}>
                         {level}
