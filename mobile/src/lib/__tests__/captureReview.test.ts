@@ -275,6 +275,54 @@ describe("sanitizeExtraction", () => {
   });
 });
 
+describe("workoutGap", () => {
+  const two = [rawExercise({ name: "Overhead Press" }), rawExercise({ name: "Bent Over Row" })];
+
+  it("flags a multi-exercise post the model called exercises-only", () => {
+    const out = sanitizeExtraction(
+      { post_type: "single_exercise", exercises: two, workout: null },
+      VALID,
+    );
+    expect(out!.workoutGap).toBe("no_prescription");
+  });
+
+  it("flags a claimed workout whose items all failed validation", () => {
+    // Every item points at an exercise index that does not exist, so the
+    // workout is demoted — silently, before this flag existed.
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: two,
+        workout: { name: "Ghost", items: [{ exercise_index: 9, sets: 3 }] },
+      },
+      VALID,
+    );
+    expect(out!.workout).toBeNull();
+    expect(out!.workoutGap).toBe("unusable_prescription");
+  });
+
+  it("stays silent for a single exercise — one movement is not a missing workout", () => {
+    const out = sanitizeExtraction(
+      { post_type: "single_exercise", exercises: [rawExercise()], workout: null },
+      VALID,
+    );
+    expect(out!.workoutGap).toBeNull();
+  });
+
+  it("stays silent when a workout was actually built", () => {
+    const out = sanitizeExtraction(
+      {
+        post_type: "full_workout",
+        exercises: two,
+        workout: { name: "Real", items: [{ exercise_index: 0, sets: 3, reps: "10" }] },
+      },
+      VALID,
+    );
+    expect(out!.workout).not.toBeNull();
+    expect(out!.workoutGap).toBeNull();
+  });
+});
+
 describe("mapCategory", () => {
   it("maps each capture category onto existing reference-table names", () => {
     expect(mapCategory("strength")).toEqual({ goalType: "Strength", movementCategory: "Weightlifting" });

@@ -8,6 +8,7 @@ import type {
   ExtractedExercise,
   ExtractedPost,
   ExtractedWorkoutItem,
+  WorkoutGap,
 } from "../types/capture";
 import type { GoalTypeName, MovementCategoryName } from "../types/crossfit";
 
@@ -133,10 +134,19 @@ export function sanitizeExtraction(raw: unknown, vocab: ValidVocabulary): Extrac
     }
   }
 
+  // A post with several movements and no workout is the case that reads as a
+  // half-finished import. Say which kind it is so a caller can explain it;
+  // one exercise on its own is not a gap.
+  let workoutGap: WorkoutGap | null = null;
+  if (!workout && exercises.length > 1) {
+    workoutGap = r.post_type === "full_workout" ? "unusable_prescription" : "no_prescription";
+  }
+
   return {
     postType: workout ? "full_workout" : "single_exercise",
     exercises,
     workout,
+    workoutGap,
   };
 }
 

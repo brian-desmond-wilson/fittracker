@@ -76,11 +76,25 @@ export interface ExtractedWorkout {
   items: ExtractedWorkoutItem[];
 }
 
+/** Why a post with several movements produced no workout.
+ *
+ *  A capture that saves five exercises and no workout looks like a bug to the
+ *  person who imported it, and the two causes need different words:
+ *  "no_prescription" — the caption listed movements without sets or reps, so
+ *  the model correctly declined to invent programming; "unusable_prescription"
+ *  — the model DID claim a workout, but none of its items survived validation,
+ *  which used to be a silent demotion. Either way the review sheet says so and
+ *  offers to build the workout by hand. */
+export type WorkoutGap = "no_prescription" | "unusable_prescription";
+
 /** capture-post { action: "extract" } result, after sanitizing. */
 export interface ExtractedPost {
   postType: "single_exercise" | "full_workout";
   exercises: ExtractedExercise[];
   workout: ExtractedWorkout | null;
+  /** Null when a workout exists, or when there is only one exercise — a lone
+   *  movement is an exercise, not a workout that went missing. */
+  workoutGap: WorkoutGap | null;
 }
 
 /** A row in the Catalog tab: an exercise plus its capture provenance. */
