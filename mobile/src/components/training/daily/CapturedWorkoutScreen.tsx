@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, Image,
   ActivityIndicator, StatusBar, TextInput, Alert,
@@ -6,8 +6,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import {
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ExternalLink, Play, Plus,
-  Trash2,
+  Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ExternalLink, Play,
+  Plus, Trash2,
 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
@@ -22,6 +22,9 @@ import {
   updateCapturedWorkout,
 } from "@/src/lib/supabase/capture";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
+import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
+import { formatLastCompleted, isStale } from "@/src/lib/workoutCompletion";
+import type { WorkoutCompletion } from "@/src/lib/workoutCompletion";
 import { sanitizeInteger } from "@/src/lib/numericInput";
 import { ExerciseSearchModal } from "@/src/components/training/program-detail/workout-wizard/ExerciseSearchModal";
 import {
@@ -108,8 +111,34 @@ export function CapturedWorkoutScreen() {
   const [starting, setStarting] = useState(false);
   const [tagging, setTagging] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const [completion, setCompletion] = useState<WorkoutCompletion | null>(null);
+  const today = useMemo(() => getLocalDateString(), []);
 
   const editing = draft !== null;
+
+  const completionStale = completion ? isStale(completion, today) : false;
+  const lastCompletedLabel = completion ? formatLastCompleted(completion, today) : null;
+
+  // Its own effect rather than a limb of the one below: that read is held back
+  // while you are editing or a classification is in flight, and neither has
+  // anything to do with how often this workout has been trained. Refreshing on
+  // every focus is what makes the count right the moment you come back from
+  // finishing it.
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return;
+      let alive = true;
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (!user || !alive) return;
+        fetchWorkoutCompletions(user.id).then((history) => {
+          if (alive) setCompletion(history[id] ?? null);
+        });
+      });
+      return () => {
+        alive = false;
+      };
+    }, [id]),
+  );
 
   const load = useCallback(() => {
     if (!id) return;
@@ -514,9 +543,27 @@ export function CapturedWorkoutScreen() {
           ) : (
             <Text style={styles.title}>{workout.name}</Text>
           )}
-          <Text style={styles.headline}>
+          <Text style={[styles.headline, completion && styles.headlineTight]}>
             {formatWorkoutHeadline(shownItems.length, shownRounds)}
           </Text>
+          {/* What you have done with it, in the same words the card uses. A
+              workout never trained says nothing here rather than "0 times":
+              the screen's job is to get you to do it, not to score you. */}
+          {completion && (
+            <View style={styles.histLine}>
+              <Check
+                size={14}
+                strokeWidth={2.4}
+                color={completionStale ? colors.mutedForeground : colors.primary}
+              />
+              <Text style={[styles.histCount, completionStale && styles.histCountStale]}>
+                Completed {completion.count}×
+              </Text>
+              {lastCompletedLabel && (
+                <Text style={styles.histWhen}>· {lastCompletedLabel}</Text>
+              )}
+            </View>
+          )}
 
           {workout.source?.thumbnailUrl && (
             <Image source={{ uri: workout.source.thumbnailUrl }} style={styles.hero} />
@@ -967,6 +1014,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8,
   },
   headline: { fontSize: 14, color: colors.primary, marginTop: 4, marginBottom: 16 },
+  // The history line belongs to the headline, so the headline gives up its
+  // gap when one is present and the pair breathes as a unit.
+  headlineTight: { marginBottom: 6 },
+  histLine: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 16 },
+  histCount: { fontSize: 14, fontWeight: "600", color: colors.primary },
+  histCountStale: { color: colors.mutedForeground, fontWeight: "400" },
+  histWhen: { fontSize: 14, color: colors.mutedForeground },
   hero: { width: "100%", height: 180, borderRadius: 12, marginBottom: 16 },
   description: {
     fontSize: 15, color: colors.foreground, lineHeight: 22, marginBottom: 16,

@@ -6,13 +6,15 @@
 import React, { useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { ChevronRight } from "lucide-react-native";
+import { Check, ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { SwipeDeleteAction } from "@/src/components/ui/SwipeDeleteAction";
 import { supabase } from "@/src/lib/supabase";
 import { deleteCapturedWorkout } from "@/src/lib/supabase/capture";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
 import { BLOCK_ORDER, BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
+import { formatLastCompleted, isStale } from "@/src/lib/workoutCompletion";
+import type { WorkoutCompletion } from "@/src/lib/workoutCompletion";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface SwipeableWorkoutCardProps {
@@ -20,15 +22,29 @@ interface SwipeableWorkoutCardProps {
   onPress: () => void;
   /** Reload the list — the tab's count comes from it. */
   onDeleted: () => void;
+  /** This workout's history, or null when it has never been completed. The
+   *  card draws nothing at all in that case — an empty state here would be a
+   *  row of dashes on every workout you have not got round to yet. */
+  completion: WorkoutCompletion | null;
+  /** Today's local date, passed in rather than read here so every card in one
+   *  render agrees on what "Yesterday" means. */
+  today: string;
 }
 
 export function SwipeableWorkoutCard({
   workout,
   onPress,
   onDeleted,
+  completion,
+  today,
 }: SwipeableWorkoutCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
   const roles = BLOCK_ORDER.filter((r) => workout.tags.blockRoles.includes(r));
+  // Stale history is drawn muted so the green means "this is current training"
+  // rather than merely "this happened once". The date can still come back null
+  // on an unreadable value, in which case the count stands alone.
+  const stale = completion ? isStale(completion, today) : false;
+  const lastLabel = completion ? formatLastCompleted(completion, today) : null;
 
   const handleDelete = () => {
     Alert.alert(
@@ -85,6 +101,10 @@ export function SwipeableWorkoutCard({
         accessibilityRole="button"
         accessibilityLabel={[
           workout.name,
+          completion
+            ? `Completed ${completion.count} ${completion.count === 1 ? "time" : "times"}` +
+              (lastLabel ? `, last ${lastLabel.toLowerCase()}` : "")
+            : null,
           workout.tags.classifiedAt === null
             ? "Not yet tagged for the recommender"
             : roles.length > 0
@@ -101,6 +121,23 @@ export function SwipeableWorkoutCard({
           <Text style={styles.cardMeta}>
             {formatWorkoutHeadline(workout.items.length, workout.rounds)}
           </Text>
+          {/* What you have actually done with it. Its own line rather than an
+              extra segment on the meta above: a long name and a long date
+              would otherwise compete for one row on a narrow phone, and this
+              line has to be able to vanish whole. */}
+          {completion && (
+            <View style={styles.histLine}>
+              <Check
+                size={13}
+                strokeWidth={2.4}
+                color={stale ? colors.mutedForeground : colors.primary}
+              />
+              <Text style={[styles.histCount, stale && styles.histCountStale]}>
+                {completion.count}×
+              </Text>
+              {lastLabel && <Text style={styles.histWhen}>· {lastLabel}</Text>}
+            </View>
+          )}
           {/* Which parts of a day this can serve. Ordered by BLOCK_ORDER, not
               by however the tags came back, so the same workout always reads
               the same way. An untagged workout says so instead — it is
@@ -146,6 +183,10 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
   cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
   handle: { fontSize: 13, color: colors.primary, marginTop: 4 },
+  histLine: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 5 },
+  histCount: { fontSize: 13, fontWeight: "600", color: colors.primary },
+  histCountStale: { color: colors.mutedForeground, fontWeight: "400" },
+  histWhen: { fontSize: 13, color: colors.mutedForeground },
   roleRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
   rolePill: {
     fontSize: 11, color: colors.primary, borderWidth: 1,

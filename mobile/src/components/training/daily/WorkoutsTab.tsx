@@ -7,7 +7,10 @@ import { useFocusEffect, router } from "expo-router";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
+import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
 import { filterWorkouts } from "@/src/lib/workoutFilter";
+import type { CompletionMap } from "@/src/lib/workoutCompletion";
+import { getLocalDateString } from "@/src/lib/dates";
 import { CaptureFab } from "./CaptureFab";
 import { SwipeableWorkoutCard } from "./SwipeableWorkoutCard";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
@@ -19,14 +22,24 @@ interface WorkoutsTabProps {
 
 export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabProps) {
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
+  const [completions, setCompletions] = useState<CompletionMap>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Fixed for the life of a render pass rather than read inside each card, so
+  // every "Yesterday" on screen means the same day.
+  const today = useMemo(() => getLocalDateString(), []);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const list = await fetchCapturedWorkouts(user.id);
+    // Together: the history is decoration on the list, so making the list wait
+    // for it in sequence would cost a visible beat for nothing.
+    const [list, history] = await Promise.all([
+      fetchCapturedWorkouts(user.id),
+      fetchWorkoutCompletions(user.id),
+    ]);
     setWorkouts(list);
+    setCompletions(history);
     onCountUpdate(list.length);
     setLoading(false);
   }, [onCountUpdate]);
@@ -68,6 +81,8 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
         renderItem={({ item }) => (
           <SwipeableWorkoutCard
             workout={item}
+            completion={completions[item.workoutId] ?? null}
+            today={today}
             onPress={() =>
               router.push(`/(tabs)/training/captured-workout/${item.workoutId}`)
             }
