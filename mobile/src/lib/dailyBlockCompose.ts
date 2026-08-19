@@ -25,6 +25,33 @@ export const SECTION_FOR_BLOCK: Record<BlockRole, SessionSection> = {
 /** The model may overrun the day slightly; past this it stopped adding. */
 const OVERRUN_TOLERANCE = 1.1;
 
+/**
+ * What a stored block plan IS, for the screens that describe it.
+ *
+ * `trained` — there is a main workout, and the day is named after it.
+ * `recovery` — mobility and cool-down only, because the check-in said so
+ *   (spec §6). Recovery envelopes carry no warm-up at all.
+ * `thin` — a training day whose catalog could field no main. Every training
+ *   day gets a warm-up block, because a warm-up built-in always backstops that
+ *   shortlist, so a warm-up beside a missing main is the catalog falling short
+ *   of today's constraints and not the user being beaten up (spec §8).
+ *
+ * Null for a session with no block rows — a legacy composition or a workout
+ * served whole, about which this vocabulary says nothing.
+ *
+ * One derivation, three screens: reading "no main" as recovery in each of them
+ * separately is exactly how a 30-minute day came to be told it was sore.
+ */
+export type BlockDayShape = "trained" | "recovery" | "thin";
+
+export function blockDayShape(
+  blocks: readonly { block: BlockRole }[],
+): BlockDayShape | null {
+  if (blocks.length === 0) return null;
+  if (blocks.some((b) => b.block === "main")) return "trained";
+  return blocks.some((b) => b.block === "warmup") ? "thin" : "recovery";
+}
+
 function pickFrom(candidate: BlockCandidate, block: BlockRole, reason: string | null): BlockPick {
   return {
     block,

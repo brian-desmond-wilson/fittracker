@@ -1,11 +1,12 @@
 import {
+  blockDayShape,
   composeBlockFallback,
   validateBlockComposition,
   nextCandidate,
   BLOCK_ORDER,
   SECTION_FOR_BLOCK,
 } from "../dailyBlockCompose";
-import type { BlockCandidate, BlockShortlists } from "../../types/dailyBlocks";
+import type { BlockCandidate, BlockRole, BlockShortlists } from "../../types/dailyBlocks";
 
 const cand = (id: string, minutes = 10, builtin = false): BlockCandidate => ({
   workoutId: builtin ? null : id,
@@ -344,5 +345,25 @@ describe("SECTION_FOR_BLOCK", () => {
   });
   it("BLOCK_ORDER is the five phases in sequence", () => {
     expect(BLOCK_ORDER).toEqual(["warmup", "mobility", "main", "conditioning", "cooldown"]);
+  });
+});
+
+describe("blockDayShape", () => {
+  const rows = (...blocks: BlockRole[]) => blocks.map((block) => ({ block }));
+
+  it("a main block makes it a trained day", () => {
+    expect(blockDayShape(rows("warmup", "mobility", "main", "cooldown"))).toBe("trained");
+  });
+  it("mobility and cool-down alone is a recovery day", () => {
+    expect(blockDayShape(rows("mobility", "cooldown"))).toBe("recovery");
+  });
+  it("a warm-up with no main is a catalog too thin to field one", () => {
+    // The 30-minute day: main's envelope is 15-21 min and every capture
+    // overruns it. Nothing about the check-in said recovery.
+    expect(blockDayShape(rows("warmup", "mobility", "cooldown"))).toBe("thin");
+    expect(blockDayShape(rows("warmup", "mobility", "conditioning", "cooldown"))).toBe("thin");
+  });
+  it("no block rows at all is not a block day", () => {
+    expect(blockDayShape([])).toBeNull();
   });
 });

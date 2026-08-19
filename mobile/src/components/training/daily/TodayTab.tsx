@@ -9,7 +9,7 @@ import { colors } from "@/src/lib/colors";
 import { useDailySession } from "@/src/hooks/useDailySession";
 import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySectionMinutes";
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
-import { SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
+import { blockDayShape, SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
 import { GymSheet } from "./GymSheet";
 import { CheckinSheet } from "./CheckinSheet";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
@@ -110,6 +110,10 @@ export default function TodayTab() {
 
   const blocks = session?.blocks ?? [];
   const mainBlock = blocks.find((b) => b.block === "main") ?? null;
+  // Why there is no main, when there is none: a check-in that called for
+  // recovery, or a catalog with nothing that fits today. Derived once, in the
+  // block vocabulary's own module, because the two read identically from here.
+  const dayShape = blockDayShape(blocks);
   // Only a still-suggested day rerolls; once it is accepted or done, the plan
   // is what happened and `rerollBlock` would refuse anyway.
   const canReroll = session?.status === "suggested";
@@ -239,13 +243,17 @@ export default function TodayTab() {
               <Text style={styles.sessionTitle}>
                 {served
                   ? served.name
-                  : blocks.length > 0
-                    ? (mainBlock ? mainBlock.name : "Recovery day")
-                    : session.splitDay === "push"
-                      ? "Push day"
-                      : session.splitDay === "pull"
-                        ? "Pull day"
-                        : "Leg day"}
+                  : mainBlock
+                    ? mainBlock.name
+                    : dayShape === "recovery"
+                      ? "Recovery day"
+                      : dayShape === "thin"
+                        ? "Support work only"
+                        : session.splitDay === "push"
+                          ? "Push day"
+                          : session.splitDay === "pull"
+                            ? "Pull day"
+                            : "Leg day"}
               </Text>
               <View style={styles.badges}>
                 {session.rampWeek <= 2 && (
@@ -259,9 +267,19 @@ export default function TodayTab() {
                       : "Rules composed"}
                 </Text>
               </View>
-              {blocks.length > 0 && !mainBlock && (
+              {dayShape === "recovery" && (
                 <Text style={styles.recoveryNote}>
                   You're beat up — mobility and stretching only today, on purpose.
+                </Text>
+              )}
+              {/* Not a recovery day: you said you felt fine, and the catalog
+                  had nothing that fits. Saying "you're beat up" here was the
+                  app inventing a reason it doesn't have. */}
+              {dayShape === "thin" && (
+                <Text style={styles.thinNote}>
+                  Nothing in your catalog fits a main workout
+                  {checkin ? ` in ${checkin.minutesAvailable} minutes` : " today"} — this is
+                  support work only. Capture a shorter workout to fill the main block.
                 </Text>
               )}
               {/* A workout served whole was not composed against your time or
@@ -529,6 +547,9 @@ const styles = StyleSheet.create({
   plannedTotal: { fontSize: 13, color: colors.mutedForeground, marginTop: 4 },
   plannedTotalLong: { fontSize: 13, color: "#F59E0B", marginTop: 4 },
   recoveryNote: { fontSize: 13, color: colors.mutedForeground, marginTop: 6 },
+  // Amber, like the gap nudges: this one is asking for a capture, not
+  // describing a day that went to plan.
+  thinNote: { fontSize: 13, color: "#F59E0B", marginTop: 6, lineHeight: 18 },
   errorBanner: {
     backgroundColor: "#F59E0B1A", borderWidth: 1, borderColor: "#F59E0B",
     borderRadius: 10, padding: 10, marginBottom: 12,
