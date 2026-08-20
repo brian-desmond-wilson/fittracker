@@ -25,7 +25,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, ImageIcon, Link as LinkIcon, Search, X } from "lucide-react-native";
+import { Camera, ImageIcon, ImageOff, Link as LinkIcon, Search, X } from "lucide-react-native";
 import { isFetchableImageAddress } from "@/src/lib/imageAddress";
 import {
   pickDishImage,
@@ -51,6 +51,13 @@ interface PhotoSourceSheetProps {
   /** A local `file://` from camera/library, or an owned `https://` from
    *  search/link. See the header. */
   onPicked: (uri: string) => void;
+  /** Offered as a fifth way out when the slot has somewhere sensible to fall
+   *  back to — a meal's borrowed ingredient photo. Omit and no row appears,
+   *  which is right for a product face: emptying one has no meaning. */
+  onClear?: () => void;
+  /** What clearing MEANS, in the caller's words. "Remove" would be wrong for a
+   *  meal, which falls back to a picture rather than to nothing. */
+  clearLabel?: string;
   onClose: () => void;
 }
 
@@ -66,7 +73,7 @@ const IDLE: SearchState = { status: "idle", candidates: [], configured: true };
 
 export function PhotoSourceSheet({
   visible, title, subtitle, searchQuery, searchScope, replacing = false,
-  onPicked, onClose,
+  onPicked, onClear, clearLabel = "Clear this photo", onClose,
 }: PhotoSourceSheetProps) {
   const [attaching, setAttaching] = useState(false);
   const [search, setSearch] = useState<SearchState>(IDLE);
@@ -296,6 +303,21 @@ export function PhotoSourceSheet({
         {replacing && !attaching && (
           <Text style={s.replaceNote}>This slot already has a photo. Choosing one replaces it.</Text>
         )}
+
+        {/* Below the note it qualifies, and only when the caller has a
+            fallback worth naming. Not styled as destructive: for a meal this
+            hands the picture back to an ingredient, it does not empty it. */}
+        {onClear && !attaching && (
+          <TouchableOpacity
+            style={s.clear}
+            onPress={() => { onClear(); finish(); }}
+            accessibilityRole="button"
+            accessibilityLabel={clearLabel}
+          >
+            <ImageOff size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+            <Text style={s.clearText}>{clearLabel}</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </Modal>
   );
@@ -353,4 +375,10 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   replaceNote: { ...typography.caption, color: colors.textFaint },
+  clear: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: spacing.sm, paddingVertical: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  clearText: { ...typography.buttonSm, color: colors.textMuted },
 });

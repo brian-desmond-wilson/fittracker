@@ -21,8 +21,7 @@ import {
 } from "react-native";
 import DraggableFlatList, { ScaleDecorator, type RenderItemParams } from "react-native-draggable-flatlist";
 import { Swipeable } from "react-native-gesture-handler";
-import * as ImagePicker from "expo-image-picker";
-import { Camera, Images, ImageOff, Link2, Plus, ScanBarcode, Store, Trash2 } from "lucide-react-native";
+import { Camera, Link2, Plus, ScanBarcode, Store, Trash2 } from "lucide-react-native";
 import type { FoodConcept, ConceptRating } from "@/src/types/nutrition-preferences";
 import type { MealCategory, MealRole, MealWithItems } from "@/src/types/meal-library";
 import { MEAL_TYPE_LABELS, ROLE_LABELS, ROLE_ORDER, toggleCategory, toggleRole } from "@/src/types/meal-library";
@@ -39,7 +38,7 @@ import { uploadImage } from "@/src/lib/imageUpload";
 import type { MealInput, MealItemInput, SourceSuggestion } from "@/src/lib/supabase/mealLibrary";
 import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Badge } from "@/src/components/ui";
-import { ItemActionsSheet, type ItemAction } from "@/src/components/track/ItemActionsSheet";
+import { PhotoSourceSheet } from "@/src/components/track/photo/PhotoSourceSheet";
 import { CategoryRail } from "./CategoryRail";
 import { NewFoodSheet } from "./NewFoodSheet";
 import { scoreTone } from "./styles";
@@ -331,6 +330,13 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
     // ── Photo ──────────────────────────────────────────────────────────────
     const putPhoto = async (uri: string | undefined) => {
       if (!uri) return;
+      // Search and Link hand back an `https://` the server already copied into
+      // our own bucket; only the camera and the library hand back a local
+      // `file://`. Uploading the former would try to POST a URL as a file.
+      if (/^https?:/i.test(uri)) {
+        setPhoto(uri);
+        return;
+      }
       setUploading(true);
       // Uploaded now rather than on save: the URL is what gets stored, and a
       // form holding a local file URI would write a path that exists only on
@@ -343,48 +349,6 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       }
       setPhoto(url);
     };
-
-    const pickPhoto = async (fromCamera: boolean) => {
-      const opts: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.7,
-        allowsEditing: true,
-      };
-      try {
-        if (fromCamera) {
-          const permission = await ImagePicker.requestCameraPermissionsAsync();
-          if (!permission.granted) throw new Error("camera permission not granted");
-          const shot = await ImagePicker.launchCameraAsync(opts);
-          if (shot.canceled) return;
-          await putPhoto(shot.assets[0]?.uri);
-          return;
-        }
-        const picked = await ImagePicker.launchImageLibraryAsync(opts);
-        if (picked.canceled) return;
-        await putPhoto(picked.assets[0]?.uri);
-      } catch {
-        // The camera is absent on a simulator and `launchCameraAsync` REJECTS
-        // rather than returning a canceled result, so the library is the honest
-        // fallback rather than a red console error.
-        const picked = await ImagePicker.launchImageLibraryAsync(opts).catch(() => null);
-        if (!picked || picked.canceled) return;
-        await putPhoto(picked.assets[0]?.uri);
-      }
-    };
-
-    // The house sheet, not `Alert`: the system menu renders light chrome over a
-    // dark app and cannot be themed — the same reason the inventory long-press
-    // menu was replaced.
-    const photoActions = (): ItemAction[] => [
-      { label: "Take a photo", icon: Camera, onPress: () => void pickPhoto(true) },
-      { label: "Choose from library", icon: Images, onPress: () => void pickPhoto(false) },
-      // Not "remove": clearing it falls back to the borrowed ingredient
-      // picture, which is what the meal had before and never leaves it
-      // faceless.
-      ...(photo
-        ? [{ label: "Use an ingredient's photo", icon: ImageOff, onPress: () => setPhoto(null) }]
-        : []),
-    ];
 
     // ── Adding foods ───────────────────────────────────────────────────────
     const handleScan = async () => {
@@ -1049,10 +1013,30 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
           </Text>
         </View>
 
-        <ItemActionsSheet
+        {/* The same sheet Edit Product uses, for the same reason: a delivered
+            dish's picture is on the web more often than it is in your camera
+            roll, and the vendor narrows the search the way a brand does.
+
+            It also FIXES the library button. The old themed action sheet ran
+            its handler as it dismissed itself, and iOS silently refuses to
+            present the image picker over a modal that is mid-dismissal — so
+            "Choose from library" did nothing at all. This sheet stays up while
+            the picker runs, which is why the same call works here. */}
+        <PhotoSourceSheet
           visible={photoMenuOpen}
           title="Meal photo"
-          actions={photoActions()}
+          subtitle={[normalisedSourceName, name.trim()].filter(Boolean).join(" · ") || null}
+          searchQuery={name.trim()}
+          searchScope={normalisedSourceName}
+          replacing={photo !== null}
+          onPicked={(uri) => void putPhoto(uri)}
+          // Not "remove": clearing hands the face back to the first
+          // ingredient's photograph, which is what the meal had before and
+          // never leaves it faceless. Withheld on a one-item meal, where the
+          // ingredient's photo IS the meal's and there is nothing to fall back
+          // to that isn't already showing.
+          onClear={photo !== null && items.length > 1 ? () => setPhoto(null) : undefined}
+          clearLabel="Use an ingredient's photo"
           onClose={() => setPhotoMenuOpen(false)}
         />
 
