@@ -206,6 +206,11 @@ export interface IngredientInventoryRow {
   id: string;
   name: string;
   barcode: string | null;
+  /** The product this stock is a package of. Optional for the same reason
+   *  `ResolutionInventoryRow` makes it optional — an unstamped row falls
+   *  through to barcode, then concept. Declared here because callers read it
+   *  directly to tell a stand-in product from one you actually buy. */
+  savedFoodId?: string | null;
   totalQuantity: number;
   conceptIds: string[];
   daysLeft: number | null;

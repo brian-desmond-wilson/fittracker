@@ -34,6 +34,7 @@ import {
 import { suggestConcepts } from "@/src/lib/conceptMatch";
 import { mealIngredients, type IngredientInventoryRow, type MealIngredient } from "@/src/lib/mealLibraryView";
 import { mealFaceUrl } from "@/src/lib/mealFace";
+import { caloriesLabel, isGenericProduct, stockedProductIds } from "@/src/lib/productKind";
 import { uploadImage } from "@/src/lib/imageUpload";
 import type { MealInput, MealItemInput, SourceSuggestion } from "@/src/lib/supabase/mealLibrary";
 import { colors, elevation, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
@@ -229,6 +230,18 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       });
       return new Map(rows.map((r) => [r.item.saved_food_id, r.state]));
     }, [inventory, items, conceptIdsBySavedFoodId]);
+
+    /** Products some package on the shelf names, empty rows included. Built
+     *  once from the whole inventory rather than per row, because the question
+     *  "is anything on record a package of this?" is asked of every search
+     *  result on every keystroke. */
+    const stocked = useMemo(() => stockedProductIds(inventory ?? []), [inventory]);
+    /** A stand-in rather than something you buy — its calories are a reference
+     *  figure, so they are shown with a tilde wherever they appear. */
+    const isGeneric = useCallback(
+      (f: SavedFood) => isGenericProduct(f, stocked),
+      [stocked],
+    );
 
     // The first item WITH a photograph is the meal's face — unless the meal has
     // one of its own, in which case order decides nothing about the picture.
@@ -487,7 +500,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         const isFace = photo === null && item.saved_food_id === faceItemId;
 
         const facts = [
-          `${calories} cal`,
+          caloriesLabel(calories, isGeneric(item.savedFood)),
           state?.kind === "expiring"
             ? (state.daysLeft === 0 ? "expires today" : `${state.daysLeft}d left`)
             : state?.kind === "in_stock" ? "in stock"
@@ -627,7 +640,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
           </ScaleDecorator>
         );
       },
-      [conceptsFor, conceptsById, rowState, photo, faceItemId, saving, onQuickLink],
+      [conceptsFor, conceptsById, rowState, photo, faceItemId, saving, onQuickLink, isGeneric],
     );
 
     // ── The form around the list ───────────────────────────────────────────
@@ -816,17 +829,29 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
             value={search}
             onChangeText={setSearch}
           />
-          {results.map((f) => (
-            <TouchableOpacity key={f.id} style={s.result} onPress={() => addItem(f)}>
-              <Plus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
-              <Text style={s.resultName} numberOfLines={1}>{f.name}</Text>
-              <Text style={s.resultMeta}>
-                {[f.calories != null ? `${f.calories} cal` : null,
-                  resultStock.get(f.id) ? "in stock" : null]
-                  .filter(Boolean).join(" · ")}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {results.map((f) => {
+            const generic = isGeneric(f);
+            return (
+              <TouchableOpacity key={f.id} style={s.result} onPress={() => addItem(f)}>
+                <Plus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+                <Text style={s.resultName} numberOfLines={1}>{f.name}</Text>
+                <Text style={s.resultMeta}>
+                  {[f.calories != null ? caloriesLabel(f.calories, generic) : null,
+                    resultStock.get(f.id) ? "in stock" : null]
+                    .filter(Boolean).join(" · ")}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          {/* Said once under the list rather than as a chip on every row: the
+              tilde is the whole signal, and a word repeated beside it would
+              cost more width than it explains. Withheld when nothing in view
+              carries one, so it reads as a note about what you can see. */}
+          {results.some(isGeneric) && (
+            <Text style={s.hint}>
+              ~ is a reference figure. Real stock replaces it when you have some.
+            </Text>
+          )}
           {onScan && (
             <TouchableOpacity style={s.result} onPress={() => void handleScan()}>
               <ScanBarcode size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
