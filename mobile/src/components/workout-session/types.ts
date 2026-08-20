@@ -19,6 +19,12 @@ export interface ProgramWorkoutExercise {
    *  groups its chapters by. Undefined for a program workout, which has no
    *  blocks and walks as one flat list. */
   section?: string | null;
+  /** The creator's own rep prescription, verbatim — "5/side", "30 sec",
+   *  "21-15-9". Daily items only. Shown rather than parsed: the numeric
+   *  fields below exist to seed the logger's inputs, and turning "5/side"
+   *  into "5 reps" (or "30 sec" into "8 reps") asserted numbers the creator
+   *  never wrote. */
+  raw_reps?: string | null;
 }
 
 export interface WorkoutTemplate {

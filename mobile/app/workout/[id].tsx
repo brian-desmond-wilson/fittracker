@@ -534,8 +534,15 @@ export default function WorkoutSessionPage() {
             id: item.id, // session item id — NEVER written as program_workout_exercise_id
             exercise_id: item.exercise_id,
             exercise_order: item.item_order,
-            target_sets: item.target_sets ?? 3,
+            // ONE set when the creator wrote no set count — a captured
+            // routine is performed once per round, and the block's rounds
+            // note carries the repeats. The old default of 3 invented sets
+            // the creator never prescribed.
+            target_sets: item.target_sets ?? 1,
+            // Seeds the logger's numeric input only; the header shows
+            // raw_reps, the creator's own words.
             target_reps_min: parseInt(item.target_reps ?? '', 10) || 8,
+            raw_reps: item.target_reps ?? null,
             target_reps_max: null,
             superset_group: null,
             exercises: item.exercises,
@@ -2469,6 +2476,14 @@ export default function WorkoutSessionPage() {
             servedPrescription !== '' && (
               <Text style={styles.exerciseTarget}>{servedPrescription}</Text>
             )
+          ) : currentExercise.exercise.raw_reps != null ? (
+            /* A daily item: the creator's prescription, verbatim. Only a
+               set count the creator actually wrote multiplies it. */
+            <Text style={styles.exerciseTarget}>
+              {currentExercise.exercise.target_sets > 1
+                ? `${currentExercise.exercise.target_sets} sets × ${currentExercise.exercise.raw_reps}`
+                : currentExercise.exercise.raw_reps}
+            </Text>
           ) : (
             <Text style={styles.exerciseTarget}>
               {currentExercise.exercise.target_sets} sets × {targetRepsDisplay} reps
