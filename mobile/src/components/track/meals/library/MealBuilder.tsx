@@ -428,7 +428,14 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         return;
       }
       if (items.length === 0) {
-        Alert.alert("No ingredients", "Add at least one saved food.");
+        // The generic line sent an ordered dish's owner hunting for groceries
+        // it will never have. Point at the row that solves it instead.
+        Alert.alert(
+          "No ingredients",
+          sourceKind === "out"
+            ? "An ordered dish is its own ingredient — add it with the one-tap row in the ingredients card."
+            : "Add at least one saved food.",
+        );
         return;
       }
       onSave({
@@ -825,6 +832,24 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         <View style={s.cardBottom} />
 
         <View style={s.card}>
+          {/* An ordered dish IS its only ingredient. A Thistle-style meal gets
+              its product minted by the delivery flow, but a restaurant dish has
+              no flow behind it, and the search below cannot find a product that
+              doesn't exist yet — which read as "I can't save this meal". One
+              tap mints the product from the meal's own name: the same shape as
+              "keep this for next time", started from the library side. */}
+          {sourceKind === "out" && items.length === 0 && name.trim() !== "" && (
+            <TouchableOpacity
+              style={s.result}
+              onPress={() => setNewFood({ name: name.trim(), barcode: null })}
+              accessibilityRole="button"
+            >
+              <Plus size={icons.sm} color={colors.brand} strokeWidth={icons.strokeWidth} />
+              <Text style={s.resultAction} numberOfLines={1}>
+                Add “{name.trim()}” — the dish is the ingredient
+              </Text>
+            </TouchableOpacity>
+          )}
           <TextInput
             style={s.input}
             placeholder="Search saved foods to add…"
