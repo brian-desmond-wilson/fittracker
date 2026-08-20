@@ -827,6 +827,17 @@ export default function WorkoutSessionPage() {
   const builtinRoutine =
     currentStep?.kind === 'builtin' ? builtinByKey(currentStep.builtinKey) : null;
 
+  /** How much of the block the chapter card is about actually got logged.
+   *  A built-in step keeps no completion record, so it counts as done. */
+  const finishedBlock = React.useMemo(() => {
+    if (!transition) return { done: 0, total: 0, allDone: false };
+    const mine = steps.filter((s) => s.block === transition.from);
+    const done = mine.filter(
+      (s) => s.kind === 'builtin' || exerciseStates[s.exerciseIndex]?.completed,
+    ).length;
+    return { done, total: mine.length, allDone: mine.length > 0 && done === mine.length };
+  }, [transition, steps, exerciseStates]);
+
   // Land a resumed session on the step holding its first unfinished exercise.
   // Consumed once — after that the walk is the user's to move. Seams behind
   // the resume point are marked shown, so resuming into the main block does
@@ -865,20 +876,23 @@ export default function WorkoutSessionPage() {
   }, [stepIndex, steps]);
 
   /**
-   * Move the walk, showing the chapter card the first time a seam is crossed
-   * forward. Every navigation goes through here — swipe, dots, overview —
-   * so the card cannot be skipped by one route and shown twice by another.
+   * Move the walk, showing the chapter card the first time a seam is stepped
+   * over. Every navigation goes through here — swipe, dots, overview — so the
+   * card cannot be skipped by one route and shown twice by another.
+   *
+   * The card is cleared on every move that does not raise a new one. It is an
+   * announcement about the step you just left, so carrying it into a step you
+   * navigated to afterwards left a stale "Warm-up complete" standing over the
+   * warm-up you were trying to get back into, with no way past it.
    */
   const goToStep = React.useCallback((next: number) => {
     const clamped = Math.max(0, Math.min(next, steps.length - 1));
     const seam = crossedBoundary(steps, stepIndex, clamped);
-    if (seam) {
-      const key = `${seam.from}>${seam.to}`;
-      if (!shownSeamsRef.current.has(key)) {
-        shownSeamsRef.current.add(key);
-        setTransition(seam);
-      }
-    }
+    const key = seam ? `${seam.from}>${seam.to}` : null;
+    setTransition(
+      key !== null && !shownSeamsRef.current.has(key) ? seam : null,
+    );
+    if (key !== null) shownSeamsRef.current.add(key);
     setShowSummary(false);
     setStepIndex(clamped);
   }, [steps, stepIndex]);
@@ -1272,6 +1286,10 @@ export default function WorkoutSessionPage() {
   
   // Navigate to summary view
   const goToSummary = () => {
+    // Dropped here too, not only in goToStep: the overview can be left by
+    // swiping back, which restores the step directly, and a card still
+    // standing from before would come back with it.
+    setTransition(null);
     setShowSummary(true);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -1912,8 +1930,13 @@ export default function WorkoutSessionPage() {
             >
               <Check size={40} color={tokens.blocks[transition.from]} />
             </View>
+            {/* Only "complete" when it actually is. You can walk off the end
+                of a block having logged none of it, and a card congratulating
+                you for work you skipped is the app inventing a fact. */}
             <Text style={styles.chapterDoneTitle}>
-              {BLOCK_TITLES[transition.from]} complete
+              {finishedBlock.allDone
+                ? `${BLOCK_TITLES[transition.from]} complete`
+                : `Leaving the ${BLOCK_TITLES[transition.from].toLowerCase()}`}
             </Text>
             <Text style={styles.chapterDoneSubtitle}>
               {chapters.find((c) => c.block === transition.from)?.name ?? ''}
@@ -1937,7 +1960,11 @@ export default function WorkoutSessionPage() {
                       </View>
                     )}
                     <View style={styles.chapterStat}>
-                      <Text style={styles.chapterStatValue}>{finished?.stepCount ?? 0}</Text>
+                      <Text style={styles.chapterStatValue}>
+                        {finishedBlock.allDone
+                          ? finished?.stepCount ?? 0
+                          : `${finishedBlock.done}/${finishedBlock.total}`}
+                      </Text>
                       <Text style={styles.chapterStatLabel}>
                         {finished?.builtinKey ? 'ROUTINE' : 'MOVEMENTS'}
                       </Text>

@@ -147,18 +147,24 @@ export function blockProgress(
 }
 
 /**
- * The seam between two chapters, when moving FORWARD across one.
+ * The seam between two chapters, when walking off the end of one into the
+ * next — the moment a chapter card marks.
  *
- * Forward only, deliberately: the chapter card marks finishing a block, and
- * swiping back to fix a set you mislogged is not an event to celebrate. Null
- * whenever either side is unchaptered, so a flat workout never sees one.
+ * The NEXT step, and only that. Two exclusions, both learned the hard way:
+ * backwards is not a finish (swiping back to fix a set you mislogged is not
+ * an event to celebrate), and neither is a jump. Landing on the mobility
+ * block from the overview means the warm-up steps in between were never
+ * walked, so announcing the warm-up complete is a claim about work that was
+ * skipped, not done. Exploring the session must stay free of ceremony.
+ *
+ * Null whenever either side is unchaptered, so a flat workout never sees one.
  */
 export function crossedBoundary(
   steps: ChapterStep[],
   fromIndex: number,
   toIndex: number,
 ): { from: BlockRole; to: BlockRole } | null {
-  if (toIndex <= fromIndex) return null;
+  if (toIndex !== fromIndex + 1) return null;
   const from = steps[fromIndex]?.block ?? null;
   const to = steps[toIndex]?.block ?? null;
   if (from === null || to === null || from === to) return null;

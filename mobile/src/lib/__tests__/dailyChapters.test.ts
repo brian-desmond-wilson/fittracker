@@ -146,7 +146,7 @@ describe("crossedBoundary", () => {
   const blocks = [block("warmup"), block("main")];
   const steps = buildChapterSteps(sections("warmup", "main"), blocks);
 
-  it("names the block being entered when moving forward across a seam", () => {
+  it("names the block being entered when stepping forward off the end of one", () => {
     expect(crossedBoundary(steps, 0, 1)).toEqual({ from: "warmup", to: "main" });
   });
 
@@ -162,5 +162,18 @@ describe("crossedBoundary", () => {
   it("says nothing when either side is unchaptered", () => {
     const flat = buildChapterSteps(sections(null, null), []);
     expect(crossedBoundary(flat, 0, 1)).toBeNull();
+  });
+
+  it("says nothing when the move SKIPS steps — a jump is exploring, not finishing", () => {
+    // warm-up ×2 → main: landing on main from the FIRST warm-up exercise
+    // means the second was never reached, so nothing was completed.
+    const long = buildChapterSteps(sections("warmup", "warmup", "main"), blocks);
+    expect(crossedBoundary(long, 0, 2)).toBeNull();
+    expect(crossedBoundary(long, 1, 2)).toEqual({ from: "warmup", to: "main" });
+  });
+
+  it("says nothing when jumping backwards over several steps", () => {
+    const long = buildChapterSteps(sections("warmup", "warmup", "main"), blocks);
+    expect(crossedBoundary(long, 2, 0)).toBeNull();
   });
 });
