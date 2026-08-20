@@ -42,6 +42,7 @@ import type { UndoToastContent } from "@/src/components/ui";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { BeverageKind, MealLog, MealType, SavedFood } from "@/src/types/track";
 import { supabase } from "@/src/lib/supabase";
+import { beverageLogFacts, inBeverageDoor, inMealDoor } from "@/src/lib/beverageDoors";
 import {
   getProductByBarcode,
   OpenFoodFactsError,
@@ -437,32 +438,14 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     fetchAllSavedFoods();
   }, [fetchAllSavedFoods]);
 
-  // What counts as "drinkable" for the Beverage sheet: any saved food that
-  // has ever been logged AS a beverage. History, not taxonomy — saved foods
-  // carry no drink flag, but a Chobani you logged from the Beverage door once
-  // is a drink forever after. Refreshed each time the beverage sheet opens,
-  // so a drink logged a minute ago is already a recent.
-  const [beverageFoodIds, setBeverageFoodIds] = useState<Set<string>>(new Set());
-  const refreshBeverageFoodIds = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from("meal_logs")
-        .select("saved_food_id")
-        .eq("meal_type", "beverage")
-        .not("saved_food_id", "is", null);
-      if (error) throw error;
-      setBeverageFoodIds(
-        new Set(((data ?? []) as Array<{ saved_food_id: string }>).map((r) => r.saved_food_id)),
-      );
-    } catch (e) {
-      // The filter degrades to an empty recents row, never to a crash — and
-      // "Type something new" still logs any drink.
-      console.error("beverage food ids:", e);
-    }
-  }, []);
-  useEffect(() => {
-    refreshBeverageFoodIds();
-  }, [refreshBeverageFoodIds]);
+  // Which door offers which food is the LABEL's decision — see
+  // beverageDoors.ts. This replaced a history filter ("has it ever been
+  // logged as a beverage"), which was circular: a brand-new Huel was
+  // invisible in the one door built for it.
+  const doorFilter = useCallback(
+    (foods: SavedFood[]) => foods.filter(logSheetBeverage ? inBeverageDoor : inMealDoor),
+    [logSheetBeverage],
+  );
 
   // For the log sheet's keep switch and the log editor's save action. Served
   // from the library cache the recommender on this screen already populates,
@@ -720,6 +703,8 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: apiFood.carbs,
           fats: apiFood.fats,
           sugars: apiFood.sugars,
+          // Barcode lookups don't classify drinks; the correction modal can.
+          beverage_kinds: null,
           saturated_fat_g: apiFood.saturated_fat_g,
           sodium_mg: apiFood.sodium_mg,
           fiber_g: apiFood.fiber_g,
@@ -860,6 +845,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         carbs: food.carbs,
         fats: food.fats,
         sugars: food.sugars,
+        beverage_kinds: null,
         saturated_fat_g: food.saturated_fat_g,
         sodium_mg: food.sodium_mg,
         fiber_g: food.fiber_g,
@@ -899,6 +885,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     saturated_fat_g: number | null;
     sodium_mg: number | null;
     fiber_g: number | null;
+    beverage_kinds: BeverageKind[] | null;
   }) => {
     if (!previewFood) return;
     setPreviewWasEdited(true);
@@ -918,6 +905,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
             saturated_fat_g: next.saturated_fat_g,
             sodium_mg: next.sodium_mg,
             fiber_g: next.fiber_g,
+            beverage_kinds: next.beverage_kinds,
             user_corrected: true,
           })
           .eq("id", (previewFood as SavedFood).id)
@@ -951,6 +939,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           saturated_fat_g: next.saturated_fat_g,
           sodium_mg: next.sodium_mg,
           fiber_g: next.fiber_g,
+          beverage_kinds: next.beverage_kinds,
         } as any;
       });
     }
@@ -1007,6 +996,7 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           carbs: foodData.carbs,
           fats: foodData.fats,
           sugars: foodData.sugars,
+          beverage_kinds: null,
           saturated_fat_g: foodData.saturated_fat_g ?? null,
           sodium_mg: foodData.sodium_mg ?? null,
           fiber_g: foodData.fiber_g ?? null,
@@ -1174,7 +1164,6 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
     setLogSheetQuery("");
     setLogSheetManual(opts.manual ?? false);
     setLogSheetBeverage(opts.beverage ?? false);
-    if (opts.beverage) refreshBeverageFoodIds();
     setLogSheetOpen(true);
   };
 
@@ -1780,15 +1769,20 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
           uses_inventory: willUseInventory,
           inventory_items: willUseInventory && match ? [{ id: match.id, quantity: 1 }] : null,
           logged_at: logSheetAt.toISOString(),
-          // A Chobani tapped from the beverage sheet's recents is a beverage
-          // log wearing the sheet's tags and switch; the inventory decrement
-          // above already happened either way.
-          beverage_kinds: logSheetBeverage
-            ? addForm.bevKinds.length > 0
-              ? addForm.bevKinds
-              : (["other"] satisfies BeverageKind[])
-            : null,
-          counts_as_meal: logSheetBeverage ? addForm.bevCountsAsMeal : true,
+          // A drink tapped straight from recents logs with the sheet's tags if
+          // any were picked, else with the PRODUCT's own label — which is what
+          // makes a labeled Huel fill its window with one tap. Policy and its
+          // tests live in beverageDoors.ts.
+          ...(logSheetBeverage
+            ? (() => {
+                const facts = beverageLogFacts({
+                  formKinds: addForm.bevKinds,
+                  formCountsAsMeal: addForm.bevCountsAsMeal,
+                  foodKinds: food.beverage_kinds,
+                });
+                return { beverage_kinds: facts.kinds, counts_as_meal: facts.countsAsMeal };
+              })()
+            : { beverage_kinds: null, counts_as_meal: true }),
         })
         .select()
         .single();
@@ -2499,29 +2493,18 @@ export function MealsScreen({ onClose }: MealsScreenProps) {
         loggedAt={logSheetAt}
         onLoggedAtChange={setLogSheetAt}
         dayLabel={viewingToday ? "today" : formatViewingDate(viewingDate)}
-        // The Beverage sheet offers only drinkable things: foods with beverage
-        // history, meals filed as beverages. The Meal sheet is the mirror —
-        // no beverage-category meals, whose logs would otherwise land in a
-        // food slot. Foods stay unfiltered there: plenty (a Chobani) are
-        // honestly both.
-        recentFoods={
-          logSheetBeverage
-            ? recentFoods.map((r) => r.savedFood).filter((f) => beverageFoodIds.has(f.id))
-            : recentFoods.map((r) => r.savedFood)
-        }
-        favorites={
-          logSheetBeverage ? favorites.filter((f) => beverageFoodIds.has(f.id)) : favorites
-        }
+        // Each door offers what its label says it should: the Beverage sheet
+        // shows labeled drinks, the Meal sheet shows food plus the
+        // meal-replacement shakes that are honestly both. A soda with lunch
+        // goes through the beverage door at lunchtime.
+        recentFoods={doorFilter(recentFoods.map((r) => r.savedFood))}
+        favorites={doorFilter(favorites)}
         onLogFood={handleLogFoodDirect}
         loggingFoodId={loggingFoodId}
         query={logSheetQuery}
         onQueryChange={setLogSheetQuery}
         searching={sheetSearching}
-        searchResults={
-          logSheetBeverage
-            ? sheetFoodResults.filter((f) => beverageFoodIds.has(f.id))
-            : sheetFoodResults
-        }
+        searchResults={doorFilter(sheetFoodResults)}
         mealResults={sheetMealResults.filter((m) =>
           logSheetBeverage
             ? defaultMealTypeFor(m) === "beverage"

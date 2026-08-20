@@ -8,8 +8,11 @@ import {
   Platform,
   TextInput,
   ScrollView,
+  TouchableOpacity,
 } from "react-native";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { BEVERAGE_KINDS, BEVERAGE_KIND_LABELS } from "@/src/types/meal-library";
+import type { BeverageKind } from "@/src/types/track";
+import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { Button, Card } from "@/src/components/ui";
 
 export interface FoodCorrectionValues {
@@ -24,6 +27,9 @@ export interface FoodCorrectionValues {
   saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
+  /** Null is food; kinds make it a drink. See beverageDoors.ts for what the
+   *  label decides. */
+  beverage_kinds: BeverageKind[] | null;
 }
 
 interface FoodCorrectionModalProps {
@@ -63,6 +69,7 @@ export function FoodCorrectionModal({
   const [sodiumMg, setSodiumMg] = useState("");
   const [fiberG, setFiberG] = useState("");
   const [saturatedFatG, setSaturatedFatG] = useState("");
+  const [bevKinds, setBevKinds] = useState<BeverageKind[]>([]);
 
   useEffect(() => {
     if (visible) {
@@ -77,6 +84,7 @@ export function FoodCorrectionModal({
       setSodiumMg(toStr(initialValues.sodium_mg));
       setFiberG(toStr(initialValues.fiber_g));
       setSaturatedFatG(toStr(initialValues.saturated_fat_g));
+      setBevKinds(initialValues.beverage_kinds ?? []);
     }
   }, [visible, initialValues]);
 
@@ -93,6 +101,9 @@ export function FoodCorrectionModal({
       saturated_fat_g: numOrNull(saturatedFatG),
       sodium_mg: numOrNull(sodiumMg),
       fiber_g: numOrNull(fiberG),
+      // Empty selection is "this is food", stored as null — the DB forbids an
+      // empty array, and food is exactly what no kinds means.
+      beverage_kinds: bevKinds.length > 0 ? bevKinds : null,
     });
   };
 
@@ -262,6 +273,40 @@ export function FoodCorrectionModal({
                   this input the width of every other one. */}
               <View style={styles.halfField} />
             </View>
+
+            {/* What the product IS, not how it was logged once: kinds here
+                decide which quick-log door offers it. No kinds = food.
+                Meal Replacement Shake is the one label that opens both doors
+                and fills the window it lands in by default. */}
+            <Text style={styles.label}>It's a beverage</Text>
+            <View style={styles.kindWrap}>
+              {BEVERAGE_KINDS.map((k) => {
+                const on = bevKinds.includes(k);
+                return (
+                  <TouchableOpacity
+                    key={k}
+                    style={[styles.kindChip, on && styles.kindChipOn]}
+                    onPress={() =>
+                      setBevKinds((prev) =>
+                        on ? prev.filter((x) => x !== k) : [...prev, k],
+                      )
+                    }
+                    disabled={saving}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={BEVERAGE_KIND_LABELS[k]}
+                  >
+                    <Text style={[styles.kindText, on && styles.kindTextOn]}>
+                      {BEVERAGE_KIND_LABELS[k]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.kindHint}>
+              Leave all off for food. Drinks show in the Beverage door; a Meal
+              Replacement Shake shows in meal logging too.
+            </Text>
           </ScrollView>
 
           <View style={styles.actions}>
@@ -285,6 +330,16 @@ export function FoodCorrectionModal({
 }
 
 const styles = StyleSheet.create({
+  kindWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  kindChip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: radii.pill, backgroundColor: colors.surface2,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  kindChipOn: { backgroundColor: tint(colors.brand), borderColor: colors.brand },
+  kindText: { ...typography.caption, color: colors.textMuted },
+  kindTextOn: { color: colors.brand },
+  kindHint: { ...typography.caption, color: colors.textFaint, marginTop: spacing.sm },
   backdrop: {
     flex: 1,
     backgroundColor: colors.scrim,

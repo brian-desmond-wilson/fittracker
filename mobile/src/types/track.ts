@@ -120,6 +120,10 @@ export type MealType = "breakfast" | "lunch" | "dinner" | "snack" | "dessert" | 
  *  high-calorie at once. What it DOES to the day is `counts_as_meal`. */
 export type BeverageKind =
   | "protein_shake"
+  /** A Huel, a Soylent — the drink that is honestly a meal. The one kind
+   *  that earns a beverage a place in MEAL search, and the counts-as-meal
+   *  default flips on with it. */
+  | "meal_replacement_shake"
   | "weight_gain_shake"
   | "smoothie"
   | "energy_drink"
@@ -172,6 +176,9 @@ export interface SavedFood {
   saturated_fat_g: number | null;
   sodium_mg: number | null;
   fiber_g: number | null;
+  /** What this product is when it is a drink; null is food. The label — not
+   *  logging history — is what decides which quick-log door offers it. */
+  beverage_kinds: BeverageKind[] | null;
   serving_size: string | null;
   image_primary_url: string | null;
   image_front_url: string | null;

@@ -427,6 +427,7 @@ export function FoodPreviewModal({
             fats: food.fats ?? null,
             sugars: "sugars" in food ? food.sugars : null,
             saturated_fat_g: "saturated_fat_g" in food ? (food as any).saturated_fat_g : null,
+            beverage_kinds: "beverage_kinds" in food ? (food as any).beverage_kinds : null,
             sodium_mg: "sodium_mg" in food ? (food as any).sodium_mg : null,
             fiber_g: "fiber_g" in food ? (food as any).fiber_g : null,
           }}

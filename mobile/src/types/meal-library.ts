@@ -94,6 +94,7 @@ export const CATEGORY_PICKER_ORDER: MealCategory[] = [
  *  reason the split exists. */
 export const BEVERAGE_KINDS: BeverageKind[] = [
   "protein_shake",
+  "meal_replacement_shake",
   "weight_gain_shake",
   "smoothie",
   "energy_drink",
@@ -102,6 +103,7 @@ export const BEVERAGE_KINDS: BeverageKind[] = [
 
 export const BEVERAGE_KIND_LABELS: Record<BeverageKind, string> = {
   protein_shake: "Protein Shake",
+  meal_replacement_shake: "Meal Replacement Shake",
   weight_gain_shake: "Weight Gain Shake",
   smoothie: "Smoothie",
   energy_drink: "Energy Drink",
@@ -119,12 +121,13 @@ export function beverageKindsLine(kinds: readonly BeverageKind[]): string {
 
 /**
  * The "Counts as a meal" switch's starting position, from what the drink is:
- * a weight-gain shake replaces a meal, everything else rides along. A DEFAULT
- * only — the switch is always the owner's to flip, and the answer stored on
- * the log is the switch's, never this function's.
+ * a shake that replaces or gains a meal fills the window it lands in,
+ * everything else rides along. A DEFAULT only — the switch is always the
+ * owner's to flip, and the answer stored on the log is the switch's, never
+ * this function's.
  */
 export function beverageCountsAsMealDefault(kinds: readonly BeverageKind[]): boolean {
-  return kinds.includes("weight_gain_shake");
+  return kinds.includes("weight_gain_shake") || kinds.includes("meal_replacement_shake");
 }
 
 export type MealRole =
