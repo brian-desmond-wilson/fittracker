@@ -15,6 +15,10 @@ export interface ProgramWorkoutExercise {
   target_reps_max: number | null;
   superset_group: number | null;
   exercises: Exercise | Exercise[]; // Supabase returns array for nested select
+  /** Which section of a composed day this came from — what the live screen
+   *  groups its chapters by. Undefined for a program workout, which has no
+   *  blocks and walks as one flat list. */
+  section?: string | null;
 }
 
 export interface WorkoutTemplate {

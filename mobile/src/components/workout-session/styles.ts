@@ -1,5 +1,8 @@
 import { StyleSheet } from "react-native";
 import { colors } from "@/src/lib/colors";
+// The chapter styles below are new work, so they take their values from the
+// design tokens even though the legacy body of this file still holds raw hex.
+import { colors as t } from "@/src/theme/tokens";
 
 // Styles for the Workout Session screen (extracted from app/workout/[id].tsx).
 export const styles = StyleSheet.create({
@@ -109,6 +112,201 @@ export const styles = StyleSheet.create({
     backgroundColor: '#374151',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  // Chapters — the composed day's blocks, as the live session walks them.
+  // Approved mockups "Live session — segmented flow" (2026-08-19).
+  dayStrip: {
+    flexDirection: 'row',
+    gap: 3,
+    height: 6,
+  },
+  dayStripSegment: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  chapterKicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 8,
+  },
+  chapterKickerTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    flexShrink: 1,
+  },
+  chapterKickerMeta: {
+    fontSize: 11.5,
+    color: t.textFaint,
+  },
+
+  // Chapter card (the between-blocks interstitial)
+  chapterCard: {
+    alignItems: 'stretch',
+  },
+  chapterRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 20,
+    marginBottom: 18,
+  },
+  chapterDoneTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: t.text,
+    textAlign: 'center',
+  },
+  chapterDoneSubtitle: {
+    fontSize: 13.5,
+    color: t.textMuted,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 18,
+  },
+  chapterStats: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 18,
+  },
+  chapterStat: {
+    flex: 1,
+    backgroundColor: t.surface,
+    borderWidth: 1,
+    borderColor: t.border,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  chapterStatValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: t.text,
+  },
+  chapterStatLabel: {
+    fontSize: 10.5,
+    color: t.textFaint,
+    letterSpacing: 0.8,
+    marginTop: 2,
+  },
+  chapterNext: {
+    backgroundColor: t.surface2,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  chapterNextKicker: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  chapterNextName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: t.text,
+    marginTop: 3,
+  },
+  chapterNextList: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: t.border,
+  },
+  chapterNextRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: t.border,
+  },
+  chapterNextRowName: {
+    fontSize: 13,
+    color: t.text,
+    flexShrink: 1,
+  },
+  chapterNextRowRx: {
+    fontSize: 12,
+    color: t.textMuted,
+  },
+  chapterStartButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  chapterStartText: {
+    color: t.onBrand,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  chapterHint: {
+    fontSize: 11.5,
+    color: t.textFaint,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+
+  // Built-in block card (movements to follow, nothing to log)
+  builtinName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: t.text,
+    textAlign: 'center',
+  },
+  builtinLead: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  builtinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: t.border,
+  },
+  builtinRowName: {
+    fontSize: 15,
+    color: t.text,
+    flex: 1,
+  },
+  builtinRowNameDone: {
+    color: t.textFaint,
+    textDecorationLine: 'line-through',
+  },
+  builtinRowRx: {
+    fontSize: 12.5,
+    color: t.textMuted,
+  },
+  builtinMissing: {
+    fontSize: 13,
+    color: t.textMuted,
+    lineHeight: 18,
+    paddingVertical: 12,
+  },
+  builtinDoneButton: {
+    flexDirection: 'row',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  builtinDoneText: {
+    color: t.onBrand,
+    fontSize: 15,
+    fontWeight: '700',
   },
 
   // Content
@@ -652,6 +850,18 @@ export const styles = StyleSheet.create({
   },
   summaryRowContent: {
     flex: 1,
+  },
+  // Section heading over the overview's rows on a composed day.
+  summaryBlockHeading: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginTop: 14,
+    marginBottom: 2,
+  },
+  summaryRowCurrent: {
+    borderWidth: 1,
+    borderColor: t.text,
   },
   summaryExerciseName: {
     color: '#e5e7eb',

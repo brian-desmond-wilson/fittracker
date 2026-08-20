@@ -41,9 +41,20 @@ import {
   Image as ImageIcon,
 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
+import { colors as tokens } from '@/src/theme/tokens';
 import { supabase } from '@/src/lib/supabase';
 import { acceptSession, completeSession } from '@/src/lib/supabase/daily';
-import { blockDayShape } from '@/src/lib/dailyBlockCompose';
+import { blockDayShape, BLOCK_TITLES } from '@/src/lib/dailyBlockCompose';
+import {
+  buildChapterSteps,
+  chapterBlocks,
+  blockProgress,
+  crossedBoundary,
+} from '@/src/lib/dailyChapters';
+import type { ChapterBlockRow } from '@/src/lib/dailyChapters';
+import { builtinByKey } from '@/src/lib/dailyBuiltins';
+import type { BlockRole } from '@/src/types/dailyBlocks';
+import type { SessionSection } from '@/src/types/daily';
 import { fetchCapturedWorkout } from '@/src/lib/supabase/capture';
 import { formatWorkoutItem } from '@/src/lib/workoutFormat';
 import { formatSetTimeChip, resolveSession, setKey } from '@/src/lib/setTiming';
@@ -118,6 +129,33 @@ export default function WorkoutSessionPage() {
   
   const [exerciseStates, setExerciseStates] = useState<ExerciseState[]>([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+
+  // ---- Chapter walk (composed days only) ----
+  // A composed day is performed one block at a time, so the carousel walks
+  // STEPS rather than exercises: every exercise is a step, and a block of
+  // built-in movements is a step with nothing to log. For everything else —
+  // program workouts, captured workouts served whole, pre-block sessions —
+  // `sessionBlocks` stays empty, steps map 1:1 onto exercises, and this whole
+  // layer is inert.
+  const [sessionBlocks, setSessionBlocks] = useState<ChapterBlockRow[]>([]);
+  const [stepIndex, setStepIndex] = useState(0);
+  // The chapter card between blocks. Shown once per seam, crossing forward.
+  const [transition, setTransition] = useState<{ from: BlockRole; to: BlockRole } | null>(null);
+  // Built-in movements you've ticked off, keyed `${builtinKey}:${movement}`.
+  // Local to the session: a built-in has no exercise rows, so there is nothing
+  // to write and nothing to resume.
+  const [builtinTicks, setBuiltinTicks] = useState<Record<string, boolean>>({});
+  // When each block was entered, for the chapter card's recap. A block the
+  // session resumed into mid-way has no honest start time, so it has no entry
+  // here and the card simply omits the time.
+  const blockEnteredAtRef = React.useRef<Partial<Record<BlockRole, number>>>({});
+  // Seams whose chapter card has already been shown. A ref, not state: it must
+  // survive re-renders without causing them, and it is deliberately not
+  // persisted — swiping back and forth re-shows nothing, a fresh session does.
+  const shownSeamsRef = React.useRef<Set<string>>(new Set());
+  // The exercise a resumed session should land on, consumed once the steps
+  // exist. Null when starting fresh, which lands on step 0.
+  const resumeExerciseRef = React.useRef<number | null>(null);
   
   const [showRestTimer, setShowRestTimer] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
@@ -136,24 +174,29 @@ export default function WorkoutSessionPage() {
   // Swipe gesture handling
   const swipeAnim = React.useRef(new Animated.Value(0)).current;
   
-  // Refs to track current values for panResponder (avoids stale closure)
-  const currentExerciseIndexRef = React.useRef(0);
-  const exerciseStatesLengthRef = React.useRef(0);
+  // Refs to track current values for panResponder (avoids stale closure).
+  // The walk is over STEPS now, so these track the step list; on a session
+  // with no blocks a step IS an exercise and the numbers are the same ones
+  // this handler always used.
+  const stepIndexRef = React.useRef(0);
+  const stepsLengthRef = React.useRef(0);
   const showSummaryRef = React.useRef(false);
-  
+  // The chapter card is an overlay over the step it arrived on, so a swipe has
+  // to know it is up: forward dismisses it, back also steps away.
+  const transitionRef = React.useRef(false);
+  // goToStep closes over state that changes every render; the handler is built
+  // once, so it reaches the current one through here.
+  const goToStepRef = React.useRef<(next: number) => void>(() => {});
+
   // Keep refs in sync with state
   React.useEffect(() => {
-    currentExerciseIndexRef.current = currentExerciseIndex;
-  }, [currentExerciseIndex]);
-  
-  React.useEffect(() => {
-    exerciseStatesLengthRef.current = exerciseStates.length;
-  }, [exerciseStates.length]);
-  
+    stepIndexRef.current = stepIndex;
+  }, [stepIndex]);
+
   React.useEffect(() => {
     showSummaryRef.current = showSummary;
   }, [showSummary]);
-  
+
   const panResponder = React.useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -166,10 +209,23 @@ export default function WorkoutSessionPage() {
       },
       onPanResponderRelease: (_, gestureState) => {
         const SWIPE_THRESHOLD = 80;
-        const currentIdx = currentExerciseIndexRef.current;
-        const totalExercises = exerciseStatesLengthRef.current;
+        const currentIdx = stepIndexRef.current;
+        const totalExercises = stepsLengthRef.current;
         const onSummary = showSummaryRef.current;
-        
+
+        // The chapter card sits over the step it announced: swiping forward
+        // dismisses it into that step, swiping back leaves the block again.
+        if (transitionRef.current) {
+          if (gestureState.dx < -SWIPE_THRESHOLD) {
+            setTransition(null);
+          } else if (gestureState.dx > SWIPE_THRESHOLD) {
+            setTransition(null);
+            goToStepRef.current(currentIdx - 1);
+          }
+          Animated.spring(swipeAnim, { toValue: 0, useNativeDriver: true }).start();
+          return;
+        }
+
         if (onSummary) {
           // On summary view, can only swipe right to go back to last exercise
           if (gestureState.dx > SWIPE_THRESHOLD) {
@@ -214,7 +270,7 @@ export default function WorkoutSessionPage() {
               if (isLastExercise) {
                 setShowSummary(true);
               } else {
-                setCurrentExerciseIndex(currentIdx + 1);
+                goToStepRef.current(currentIdx + 1);
               }
               Animated.spring(swipeAnim, {
                 toValue: 0,
@@ -234,7 +290,7 @@ export default function WorkoutSessionPage() {
             swipeAnim.setValue(-SCREEN_WIDTH);
             scrollViewRef.current?.scrollTo({ y: 0, animated: false });
             requestAnimationFrame(() => {
-              setCurrentExerciseIndex(currentIdx - 1);
+              goToStepRef.current(currentIdx - 1);
               Animated.spring(swipeAnim, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -386,7 +442,9 @@ export default function WorkoutSessionPage() {
           .from('generated_sessions')
           .select(`
             id, split_day, workout_instance_id, served_captured_workout_id,
-            blocks:generated_session_blocks(block, name),
+            blocks:generated_session_blocks(
+              block, name, minutes, builtin_key, captured_workout_id, dismissed
+            ),
             items:generated_session_items(
               id, exercise_id, item_order, section, target_sets, target_reps,
               rest_seconds,
@@ -419,6 +477,18 @@ export default function WorkoutSessionPage() {
               : shape === 'thin' ? 'Support Work'
                 : sessionData.split_day === 'push' ? 'Push Day'
                   : sessionData.split_day === 'pull' ? 'Pull Day' : 'Leg Day';
+        // The block plan drives the chapter walk — see dailyChapters.ts. Rows
+        // ride in the order they were stored; buildChapterSteps orders them.
+        setSessionBlocks(
+          (blocks as any[]).map((b) => ({
+            block: b.block,
+            name: b.name,
+            minutes: b.minutes ?? 0,
+            builtinKey: b.builtin_key ?? null,
+            workoutId: b.captured_workout_id ?? null,
+            dismissed: !!b.dismissed,
+          })),
+        );
         sortedExercises = [...(sessionData.items || [])]
           .sort((a: any, b: any) => a.item_order - b.item_order)
           .map((item: any) => ({
@@ -430,6 +500,9 @@ export default function WorkoutSessionPage() {
             target_reps_max: null,
             superset_group: null,
             exercises: item.exercises,
+            // Carried so the screen can chapter the walk; the logger itself
+            // never reads it.
+            section: item.section ?? null,
           }));
         setTemplate({
           id: sessionData.id,
@@ -696,11 +769,14 @@ export default function WorkoutSessionPage() {
 
       setExerciseStates(states);
       
-      // If resuming, find first incomplete exercise to start from
+      // If resuming, find first incomplete exercise to start from. The step
+      // the walk resumes ON is settled by the effect below, which maps this
+      // exercise onto its chapter once the block rows have landed.
       if (effectiveInstanceId) {
         const firstIncompleteIdx = states.findIndex(s => !s.completed);
         if (firstIncompleteIdx > 0) {
           setCurrentExerciseIndex(firstIncompleteIdx);
+          resumeExerciseRef.current = firstIncompleteIdx;
         }
       }
       
@@ -727,6 +803,95 @@ export default function WorkoutSessionPage() {
 
   const currentExercise = exerciseStates[currentExerciseIndex];
   const activeSetIndex = currentExercise?.sets.findIndex(s => !s.completed) ?? -1;
+
+  // ---- Chapter derivations ----
+  const steps = React.useMemo(
+    () => buildChapterSteps(
+      exerciseStates.map(
+        (s) => (s.exercise.section ?? null) as SessionSection | null,
+      ),
+      sessionBlocks,
+    ),
+    [exerciseStates, sessionBlocks],
+  );
+  const chapters = React.useMemo(
+    () => chapterBlocks(steps, sessionBlocks),
+    [steps, sessionBlocks],
+  );
+  /** A chaptered day is the only one that changes shape; everything else keeps
+   *  the flat carousel it has always had. */
+  const chaptered = chapters.length > 0;
+  const currentStep = steps[stepIndex] ?? null;
+  const progress = blockProgress(steps, stepIndex);
+  const currentChapterIdx = chapters.findIndex((c) => c.block === currentStep?.block);
+  const builtinRoutine =
+    currentStep?.kind === 'builtin' ? builtinByKey(currentStep.builtinKey) : null;
+
+  // Land a resumed session on the step holding its first unfinished exercise.
+  // Consumed once — after that the walk is the user's to move. Seams behind
+  // the resume point are marked shown, so resuming into the main block does
+  // not replay the warm-up's chapter card on the next swipe back and forth.
+  React.useEffect(() => {
+    const exerciseIdx = resumeExerciseRef.current;
+    if (exerciseIdx === null || steps.length === 0) return;
+    resumeExerciseRef.current = null;
+    const target = steps.findIndex(
+      (s) => s.kind === 'exercise' && s.exerciseIndex === exerciseIdx,
+    );
+    if (target <= 0) return;
+    for (let i = 1; i <= target; i++) {
+      const seam = crossedBoundary(steps, i - 1, i);
+      if (seam) shownSeamsRef.current.add(`${seam.from}>${seam.to}`);
+    }
+    setStepIndex(target);
+  }, [steps]);
+
+  // The step list is the source of truth for WHERE you are; the exercise index
+  // follows it. One effect, so the two can never be set apart by a caller.
+  React.useEffect(() => {
+    const step = steps[stepIndex];
+    if (step?.kind === 'exercise') setCurrentExerciseIndex(step.exerciseIndex);
+  }, [stepIndex, steps]);
+
+  // Stamp a block's start the first time you stand in it, for the recap on
+  // the chapter card. Only the first entry counts — swiping back into a block
+  // does not restart it.
+  React.useEffect(() => {
+    const block = steps[stepIndex]?.block;
+    if (!block) return;
+    if (blockEnteredAtRef.current[block] === undefined) {
+      blockEnteredAtRef.current[block] = Date.now();
+    }
+  }, [stepIndex, steps]);
+
+  /**
+   * Move the walk, showing the chapter card the first time a seam is crossed
+   * forward. Every navigation goes through here — swipe, dots, overview —
+   * so the card cannot be skipped by one route and shown twice by another.
+   */
+  const goToStep = React.useCallback((next: number) => {
+    const clamped = Math.max(0, Math.min(next, steps.length - 1));
+    const seam = crossedBoundary(steps, stepIndex, clamped);
+    if (seam) {
+      const key = `${seam.from}>${seam.to}`;
+      if (!shownSeamsRef.current.has(key)) {
+        shownSeamsRef.current.add(key);
+        setTransition(seam);
+      }
+    }
+    setShowSummary(false);
+    setStepIndex(clamped);
+  }, [steps, stepIndex]);
+
+  React.useEffect(() => {
+    goToStepRef.current = goToStep;
+  }, [goToStep]);
+  React.useEffect(() => {
+    stepsLengthRef.current = steps.length;
+  }, [steps.length]);
+  React.useEffect(() => {
+    transitionRef.current = transition !== null;
+  }, [transition]);
 
   const handleGenerateImage = async () => {
     if (!userId || !currentExercise) return;
@@ -1111,10 +1276,10 @@ export default function WorkoutSessionPage() {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
   
-  // Navigate from summary back to exercise
+  // Navigate from the overview back into the walk. Takes a STEP index, which
+  // on an unchaptered session is the exercise index it always was.
   const goToExercise = (index: number) => {
-    setShowSummary(false);
-    setCurrentExerciseIndex(index);
+    goToStep(index);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
 
@@ -1568,48 +1733,147 @@ export default function WorkoutSessionPage() {
         </TouchableOpacity>
       </View>
 
-      {/* Progress */}
+      {/* Progress. A composed day reads as chapters — where you are in the
+          block, and where the block sits in the day; everything else keeps
+          the flat bar and one dot per exercise. */}
       <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${(showSummary ? 100 : ((currentExerciseIndex + 1) / (exerciseStates.length + 1)) * 100)}%` },
-            ]}
-          />
-        </View>
-        {/* Exercise dots - tap or swipe to navigate */}
-        <View style={styles.exerciseDots}>
-          {exerciseStates.map((ex, idx) => (
-            <TouchableOpacity
-              key={idx}
-              onPress={() => {
-                setShowSummary(false);
-                setCurrentExerciseIndex(idx);
-                scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-              }}
-              style={[
-                styles.exerciseDot,
-                !showSummary && idx === currentExerciseIndex && styles.exerciseDotActive,
-                ex.completed && styles.exerciseDotCompleted,
-              ]}
-            />
-          ))}
-          {/* Summary dot */}
-          <TouchableOpacity
-            onPress={goToSummary}
-            style={[
-              styles.exerciseDot,
-              styles.exerciseDotSummary,
-              showSummary && styles.exerciseDotActive,
-            ]}
-          >
-            <Flag size={6} color={showSummary ? "#fff" : "#6b7280"} />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.progressText}>
-          {showSummary ? 'Summary' : `${currentExerciseIndex + 1} / ${exerciseStates.length} exercises`} • Swipe to navigate
-        </Text>
+        {chaptered ? (
+          <>
+            {/* The day: one segment per block, weighted by its minutes, so
+                the strip is the shape of the session and not just a count. */}
+            <View style={styles.dayStrip}>
+              {chapters.map((c, idx) => {
+                // Lit as far as you have got. Under the chapter card that is
+                // the block it is congratulating you for, not the one waiting
+                // behind it — the walk has moved, the story has not yet.
+                const reached = transition
+                  ? chapters.findIndex((x) => x.block === transition.from)
+                  : currentChapterIdx;
+                return (
+                  <View
+                    key={c.block}
+                    style={[
+                      styles.dayStripSegment,
+                      {
+                        flex: Math.max(1, c.minutes),
+                        backgroundColor: tokens.blocks[c.block],
+                        opacity: idx <= reached || showSummary ? 1 : 0.25,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+            {/* Silent under the chapter card: the card is announcing the
+                block you just finished, and a kicker naming the one you are
+                about to start contradicts it on the same screen. */}
+            {transition ? null : (
+            <View style={styles.chapterKicker}>
+              <Text
+                style={[
+                  styles.chapterKickerTitle,
+                  { color: currentStep?.block ? tokens.blocks[currentStep.block] : colors.mutedForeground },
+                ]}
+                numberOfLines={1}
+              >
+                {showSummary
+                  ? 'SESSION OVERVIEW'
+                  : currentStep?.block
+                    ? `${BLOCK_TITLES[currentStep.block].toUpperCase()}${
+                        currentStep.kind === 'builtin' ? ' · BUILT-IN' : ''
+                      }`
+                    : 'EXTRA WORK'}
+              </Text>
+              <Text style={styles.chapterKickerMeta}>
+                {showSummary
+                  ? `${chapters.length} blocks`
+                  : progress && currentStep?.kind === 'exercise'
+                    ? `exercise ${progress.index + 1} of ${progress.count}`
+                    : chapters[currentChapterIdx]
+                      ? `~${chapters[currentChapterIdx].minutes} min`
+                      : ''}
+              </Text>
+            </View>
+            )}
+            {/* Dots for THIS block only — the day's position is the strip's
+                job, and 25 dots said nothing about either. */}
+            {transition ? null : (
+            <View style={styles.exerciseDots}>
+              {steps.map((step, idx) => {
+                if (step.block !== currentStep?.block) return null;
+                const done = step.kind === 'exercise'
+                  ? exerciseStates[step.exerciseIndex]?.completed
+                  : false;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => goToExercise(idx)}
+                    style={[
+                      styles.exerciseDot,
+                      !showSummary && idx === stepIndex && styles.exerciseDotActive,
+                      done && styles.exerciseDotCompleted,
+                    ]}
+                  />
+                );
+              })}
+              <TouchableOpacity
+                onPress={goToSummary}
+                style={[
+                  styles.exerciseDot,
+                  styles.exerciseDotSummary,
+                  showSummary && styles.exerciseDotActive,
+                ]}
+              >
+                <Flag size={6} color={showSummary ? "#fff" : "#6b7280"} />
+              </TouchableOpacity>
+            </View>
+            )}
+            {transition ? null : (
+              <Text style={styles.progressText}>
+                {showSummary ? 'Tap anything to jump' : 'Swipe to navigate'}
+              </Text>
+            )}
+          </>
+        ) : (
+          <>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${(showSummary ? 100 : ((currentExerciseIndex + 1) / (exerciseStates.length + 1)) * 100)}%` },
+                ]}
+              />
+            </View>
+            {/* Exercise dots - tap or swipe to navigate */}
+            <View style={styles.exerciseDots}>
+              {exerciseStates.map((ex, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => goToExercise(idx)}
+                  style={[
+                    styles.exerciseDot,
+                    !showSummary && idx === currentExerciseIndex && styles.exerciseDotActive,
+                    ex.completed && styles.exerciseDotCompleted,
+                  ]}
+                />
+              ))}
+              {/* Summary dot */}
+              <TouchableOpacity
+                onPress={goToSummary}
+                style={[
+                  styles.exerciseDot,
+                  styles.exerciseDotSummary,
+                  showSummary && styles.exerciseDotActive,
+                ]}
+              >
+                <Flag size={6} color={showSummary ? "#fff" : "#6b7280"} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.progressText}>
+              {showSummary ? 'Summary' : `${currentExerciseIndex + 1} / ${exerciseStates.length} exercises`} • Swipe to navigate
+            </Text>
+          </>
+        )}
       </View>
 
       {/* Rounds belong to the workout, not to any one movement, so they sit
@@ -1635,20 +1899,178 @@ export default function WorkoutSessionPage() {
       >
         <ScrollView ref={scrollViewRef} contentContainerStyle={styles.contentContainer}>
         
-        {/* Summary View */}
-        {showSummary ? (
+        {/* The chapter card: one block finished, the next one previewed.
+            Shown once per seam, and it sits OVER the step it announced — so
+            dismissing it leaves you exactly where the walk already is. */}
+        {transition && !showSummary ? (
+          <View style={styles.chapterCard}>
+            <View
+              style={[
+                styles.chapterRing,
+                { borderColor: tokens.blocks[transition.from] },
+              ]}
+            >
+              <Check size={40} color={tokens.blocks[transition.from]} />
+            </View>
+            <Text style={styles.chapterDoneTitle}>
+              {BLOCK_TITLES[transition.from]} complete
+            </Text>
+            <Text style={styles.chapterDoneSubtitle}>
+              {chapters.find((c) => c.block === transition.from)?.name ?? ''}
+            </Text>
+
+            <View style={styles.chapterStats}>
+              {(() => {
+                const finished = chapters.find((c) => c.block === transition.from);
+                const enteredAt = blockEnteredAtRef.current[transition.from];
+                const doneIdx = chapters.findIndex((c) => c.block === transition.from);
+                return (
+                  <>
+                    {/* Only when we watched the whole block: a session resumed
+                        into the middle of one has no honest number here. */}
+                    {enteredAt !== undefined && (
+                      <View style={styles.chapterStat}>
+                        <Text style={styles.chapterStatValue}>
+                          {formatDuration(Math.floor((Date.now() - enteredAt) / 1000))}
+                        </Text>
+                        <Text style={styles.chapterStatLabel}>TIME</Text>
+                      </View>
+                    )}
+                    <View style={styles.chapterStat}>
+                      <Text style={styles.chapterStatValue}>{finished?.stepCount ?? 0}</Text>
+                      <Text style={styles.chapterStatLabel}>
+                        {finished?.builtinKey ? 'ROUTINE' : 'MOVEMENTS'}
+                      </Text>
+                    </View>
+                    <View style={styles.chapterStat}>
+                      <Text style={styles.chapterStatValue}>
+                        {doneIdx + 1} of {chapters.length}
+                      </Text>
+                      <Text style={styles.chapterStatLabel}>BLOCKS DONE</Text>
+                    </View>
+                  </>
+                );
+              })()}
+            </View>
+
+            {(() => {
+              const next = chapters.find((c) => c.block === transition.to);
+              if (!next) return null;
+              const preview = steps
+                .slice(next.firstStep, next.firstStep + next.stepCount)
+                .flatMap((s) =>
+                  s.kind === 'exercise'
+                    ? [{
+                        name: getExercise(exerciseStates[s.exerciseIndex].exercise).name,
+                        rx: `${exerciseStates[s.exerciseIndex].sets.length} × ${
+                          exerciseStates[s.exerciseIndex].exercise.target_reps_min
+                        }`,
+                      }]
+                    : (builtinByKey(s.builtinKey)?.movements ?? []).map((m) => ({
+                        name: m.name, rx: m.prescription,
+                      })),
+                )
+                .slice(0, 3);
+              return (
+                <View
+                  style={[
+                    styles.chapterNext,
+                    { borderColor: tokens.blocks[transition.to] },
+                  ]}
+                >
+                  <Text
+                    style={[styles.chapterNextKicker, { color: tokens.blocks[transition.to] }]}
+                  >
+                    UP NEXT — {BLOCK_TITLES[transition.to].toUpperCase()} · ~{next.minutes} MIN
+                  </Text>
+                  <Text style={styles.chapterNextName}>{next.name}</Text>
+                  <View style={styles.chapterNextList}>
+                    {preview.map((p, i) => (
+                      <View key={`${p.name}-${i}`} style={styles.chapterNextRow}>
+                        <Text style={styles.chapterNextRowName} numberOfLines={1}>{p.name}</Text>
+                        <Text style={styles.chapterNextRowRx}>{p.rx}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })()}
+
+            <TouchableOpacity
+              style={styles.chapterStartButton}
+              onPress={() => setTransition(null)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Start the ${BLOCK_TITLES[transition.to].toLowerCase()}`}
+            >
+              <Text style={styles.chapterStartText}>
+                Start {BLOCK_TITLES[transition.to].toLowerCase()} →
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.chapterHint}>or swipe — shows once per block</Text>
+          </View>
+        ) :
+
+        /* Summary View */
+        showSummary ? (
           <View style={styles.summaryCard}>
             <Text style={styles.summaryTitle}>Workout Summary</Text>
             <Text style={styles.summarySubtitle}>
               {exerciseStates.filter(e => e.completed).length} of {exerciseStates.length} exercises completed
             </Text>
             
+            {/* One row per STEP, grouped under its block on a composed day.
+                The rows themselves are unchanged — this only sections them,
+                so tapping still jumps you straight back into the walk. */}
             <View style={styles.summaryList}>
-              {exerciseStates.map((state, idx) => {
+              {steps.map((step, idx) => {
+                const chapterHere = chaptered
+                  ? chapters.find((c) => c.firstStep === idx)
+                  : undefined;
+                const heading = chapterHere ? (
+                  <Text
+                    key={`h-${chapterHere.block}`}
+                    style={[
+                      styles.summaryBlockHeading,
+                      { color: tokens.blocks[chapterHere.block] },
+                    ]}
+                  >
+                    {BLOCK_TITLES[chapterHere.block].toUpperCase()}
+                    {chapterHere.builtinKey ? ' · BUILT-IN' : ''} · ~{chapterHere.minutes} MIN
+                  </Text>
+                ) : null;
+
+                if (step.kind === 'builtin') {
+                  const routine = builtinByKey(step.builtinKey);
+                  return (
+                    <React.Fragment key={`s-${idx}`}>
+                      {heading}
+                      <TouchableOpacity
+                        style={styles.summaryRow}
+                        onPress={() => goToExercise(idx)}
+                      >
+                        <Circle size={20} color="#6b7280" />
+                        <View style={styles.summaryRowContent}>
+                          <Text style={styles.summaryExerciseName} numberOfLines={1}>
+                            {chapters.find((c) => c.block === step.block)?.name
+                              ?? routine?.name ?? 'Routine'}
+                          </Text>
+                          <Text style={styles.summarySetCount}>
+                            {routine ? `${routine.movements.length} movements` : 'follow along'}
+                          </Text>
+                        </View>
+                        <ChevronRight size={18} color="#6b7280" />
+                      </TouchableOpacity>
+                    </React.Fragment>
+                  );
+                }
+
+                const state = exerciseStates[step.exerciseIndex];
+                if (!state) return null;
                 const exercise = getExercise(state.exercise);
                 const completedSets = state.sets.filter(s => s.completed).length;
                 const totalSets = state.sets.length;
-                
+
                 // Determine status
                 let StatusIcon: React.ComponentType<{ size?: number; color?: string }>;
                 let statusColor: string;
@@ -1662,24 +2084,29 @@ export default function WorkoutSessionPage() {
                   StatusIcon = Circle;
                   statusColor = '#6b7280';
                 }
-                
+
                 return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.summaryRow}
-                    onPress={() => goToExercise(idx)}
-                  >
-                    <StatusIcon size={20} color={statusColor} />
-                    <View style={styles.summaryRowContent}>
-                      <Text style={styles.summaryExerciseName} numberOfLines={1}>
-                        {exercise.name}
-                      </Text>
-                      <Text style={styles.summarySetCount}>
-                        {completedSets}/{totalSets} sets
-                      </Text>
-                    </View>
-                    <ChevronRight size={18} color="#6b7280" />
-                  </TouchableOpacity>
+                  <React.Fragment key={`s-${idx}`}>
+                    {heading}
+                    <TouchableOpacity
+                      style={[
+                        styles.summaryRow,
+                        idx === stepIndex && styles.summaryRowCurrent,
+                      ]}
+                      onPress={() => goToExercise(idx)}
+                    >
+                      <StatusIcon size={20} color={statusColor} />
+                      <View style={styles.summaryRowContent}>
+                        <Text style={styles.summaryExerciseName} numberOfLines={1}>
+                          {exercise.name}
+                        </Text>
+                        <Text style={styles.summarySetCount}>
+                          {completedSets}/{totalSets} sets
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color="#6b7280" />
+                    </TouchableOpacity>
+                  </React.Fragment>
                 );
               })}
             </View>
@@ -1713,8 +2140,84 @@ export default function WorkoutSessionPage() {
               </TouchableOpacity>
             </View>
           </View>
+        ) : currentStep?.kind === 'builtin' ? (
+          /* A built-in block: shipped movements, no exercise rows, nothing to
+             log. It is a follow-along card — ticks are local to the session,
+             and finishing it just moves the walk on. */
+          <View style={styles.exerciseCard}>
+            <Text style={styles.builtinName}>
+              {chapters[currentChapterIdx]?.name ?? builtinRoutine?.name ?? 'Routine'}
+            </Text>
+            <Text
+              style={[
+                styles.builtinLead,
+                { color: tokens.blocks[currentStep.block] },
+              ]}
+            >
+              follow along · tick as you go
+            </Text>
+            {(builtinRoutine?.movements ?? []).map((m) => {
+              const key = `${currentStep.builtinKey}:${m.name}`;
+              const ticked = builtinTicks[key] === true;
+              return (
+                <TouchableOpacity
+                  key={m.name}
+                  style={styles.builtinRow}
+                  activeOpacity={0.7}
+                  onPress={() => setBuiltinTicks((t) => ({ ...t, [key]: !ticked }))}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: ticked }}
+                  accessibilityLabel={`${m.name}, ${m.prescription}`}
+                >
+                  {ticked ? (
+                    <CheckCircle2 size={22} color={tokens.blocks[currentStep.block]} />
+                  ) : (
+                    <Circle size={22} color="#6b7280" />
+                  )}
+                  <Text
+                    style={[styles.builtinRowName, ticked && styles.builtinRowNameDone]}
+                    numberOfLines={1}
+                  >
+                    {m.name}
+                  </Text>
+                  <Text style={styles.builtinRowRx}>{m.prescription}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {/* A built-in this build no longer ships still has to be
+                completable — the block is real even when its movements
+                aren't in hand. */}
+            {!builtinRoutine && (
+              <Text style={styles.builtinMissing}>
+                This routine isn't in the app anymore — do your usual{' '}
+                {BLOCK_TITLES[currentStep.block].toLowerCase()} and carry on.
+              </Text>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.builtinDoneButton,
+                { backgroundColor: tokens.blocks[currentStep.block] },
+              ]}
+              onPress={() => {
+                if (stepIndex >= steps.length - 1) goToSummary();
+                else goToExercise(stepIndex + 1);
+              }}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={
+                stepIndex >= steps.length - 1
+                  ? 'Done — go to the session summary'
+                  : `Done — continue to the next block`
+              }
+            >
+              <Check size={18} color={tokens.onBrand} />
+              <Text style={styles.builtinDoneText}>
+                {stepIndex >= steps.length - 1 ? 'Done — finish session' : 'Done — keep going'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : (
-        
+
         /* Exercise Card */
         <View style={styles.exerciseCard}>
           {/* Exercise Image/Icon - Stack all images, show current with opacity */}
@@ -1945,8 +2448,11 @@ export default function WorkoutSessionPage() {
         </ScrollView>
       </Animated.View>
 
-      {/* Bottom Actions - only show when not on summary */}
-      {!showSummary && (
+      {/* Bottom Actions — for an exercise you are logging, and nothing else.
+          The chapter card and a built-in block each carry their own single
+          action, and "Mark as Completed" under either one belongs to whatever
+          exercise the walk happens to be standing on. */}
+      {!showSummary && !transition && currentStep?.kind !== 'builtin' && (
         <View style={styles.bottomActions}>
           <TouchableOpacity
             style={[
