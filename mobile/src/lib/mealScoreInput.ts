@@ -34,7 +34,7 @@ export function brianScoreInputFor(
 ): BrianScoreInput {
   return {
     prepMinutes: meal.prep_minutes,
-    role: meal.role,
+    roles: meal.roles ?? [],
     tasteOverride: meal.taste_override,
     // `?? false` rather than a bare read: the Supabase client is untyped, so a
     // row fetched before the column landed arrives with the field absent, and

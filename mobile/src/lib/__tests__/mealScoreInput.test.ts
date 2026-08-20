@@ -1,6 +1,6 @@
 import { brianScoreInputFor } from "../mealScoreInput";
 import type { FoodConcept } from "@/src/types/nutrition-preferences";
-import type { MealItemWithFood, MealWithItems } from "@/src/types/meal-library";
+import type { MealItemWithFood, MealRole, MealWithItems } from "@/src/types/meal-library";
 import type { SavedFood } from "@/src/types/track";
 
 // ── fixtures ───────────────────────────────────────────────────────────────
@@ -35,7 +35,8 @@ function item(over: Partial<MealItemWithFood> = {}): MealItemWithFood {
 function meal(over: Partial<MealWithItems> = {}): MealWithItems {
   return {
     id: "m1", user_id: "u", name: "Meal", slug: "meal",
-    category: "lunch", categories: ["lunch"], role: "bridge", default_meal_type: null,
+    category: "lunch", categories: ["lunch"], role: "bridge", roles: ["bridge"],
+    default_meal_type: null,
     prep_minutes: 7, taste_override: "like", is_complete_portion: false, notes: null,
     is_favorite: false, source_kind: "home", source_name: null, archived_at: null,
     beverage_kinds: null,
@@ -67,7 +68,7 @@ describe("brianScoreInputFor", () => {
     );
     expect(input).toEqual({
       prepMinutes: 7,
-      role: "bridge",
+      roles: ["bridge"],
       tasteOverride: "like",
       completePortion: false,
       items: [
@@ -107,14 +108,26 @@ describe("brianScoreInputFor", () => {
     expect(input.items[0].protein).toBe(22);
   });
 
-  it("passes a null role and a null taste override straight through", () => {
+  it("passes an empty role set and a null taste override straight through", () => {
     const input = brianScoreInputFor(
-      meal({ role: null, taste_override: null }),
+      meal({ role: null, roles: [], taste_override: null }),
       new Map(),
       new Map(),
     );
-    expect(input.role).toBeNull();
+    expect(input.roles).toEqual([]);
     expect(input.tasteOverride).toBeNull();
+  });
+
+  // The legacy column is a MIRROR, not a source. A row fetched before the join
+  // table landed carries `role` and no `roles`, and reading the old column as a
+  // fallback would resurrect exactly the single-role behaviour this replaced.
+  it("ignores the legacy role column when the set is absent", () => {
+    const input = brianScoreInputFor(
+      meal({ role: "bridge", roles: undefined as unknown as MealRole[] }),
+      new Map(),
+      new Map(),
+    );
+    expect(input.roles).toEqual([]);
   });
 
   it("gives a food with NO concept links an empty concepts array", () => {

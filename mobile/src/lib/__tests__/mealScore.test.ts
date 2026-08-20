@@ -25,7 +25,7 @@ describe("taste", () => {
     // 100cal love(30) vs 300cal neutral(15): (100*30 + 300*15) / 400 = 18.75
     const r = computeBrianScore({
       prepMinutes: 5,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [
         item({ calories: 100, concepts: [{ rating: "love", requiresSmallPieces: false, prepIntensive: false }] }),
@@ -39,7 +39,7 @@ describe("taste", () => {
   it("excludes unlinked items from the taste average", () => {
     const r = computeBrianScore({
       prepMinutes: 5,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [item({ concepts: [] }), item()],
     });
@@ -48,7 +48,7 @@ describe("taste", () => {
 
   it("flags tasteUnknown at neutral 15 when no item is linked", () => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: null,
+      prepMinutes: 5, roles: [], tasteOverride: null,
       items: [item({ concepts: [] })],
     });
     expect(r.taste).toBe(15);
@@ -57,7 +57,7 @@ describe("taste", () => {
 
   it("taste_override replaces the computation entirely", () => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: "love",
+      prepMinutes: 5, roles: [], tasteOverride: "love",
       items: [item({ concepts: [{ rating: "dislike", requiresSmallPieces: false, prepIntensive: false }] })],
     });
     expect(r.taste).toBe(30);
@@ -66,7 +66,7 @@ describe("taste", () => {
 
   it("falls back to unweighted average when linked items have no calories", () => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: null,
+      prepMinutes: 5, roles: [], tasteOverride: null,
       items: [
         item({ calories: null }),
         item({ calories: 0, concepts: [{ rating: "neutral", requiresSmallPieces: false, prepIntensive: false }] }),
@@ -77,7 +77,7 @@ describe("taste", () => {
 
   it("averages multiple concepts on one item", () => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: null,
+      prepMinutes: 5, roles: [], tasteOverride: null,
       items: [item({
         concepts: [
           { rating: "love", requiresSmallPieces: false, prepIntensive: false },
@@ -94,7 +94,7 @@ describe("convenience", () => {
   it.each([
     [0, 25], [2, 25], [3, 20], [5, 20], [6, 12], [10, 12], [11, 5],
   ])("prep %i min → %i", (prep, want) => {
-    const r = computeBrianScore({ prepMinutes: prep, role: null, tasteOverride: null, items });
+    const r = computeBrianScore({ prepMinutes: prep, roles: [], tasteOverride: null, items });
     expect(r.convenience).toBe(want);
   });
   it("applies the prep_intensive penalty once", () => {
@@ -102,7 +102,7 @@ describe("convenience", () => {
       item({ concepts: [{ rating: "love", requiresSmallPieces: false, prepIntensive: true }] }),
       item({ concepts: [{ rating: "love", requiresSmallPieces: false, prepIntensive: true }] }),
     ];
-    const r = computeBrianScore({ prepMinutes: 2, role: null, tasteOverride: null, items: two });
+    const r = computeBrianScore({ prepMinutes: 2, roles: [], tasteOverride: null, items: two });
     expect(r.convenience).toBe(22); // 25 - 3, not 25 - 6
   });
 });
@@ -110,7 +110,7 @@ describe("convenience", () => {
 describe("protein / calories components and totals", () => {
   it("scales totals by servings", () => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: null,
+      prepMinutes: 5, roles: [], tasteOverride: null,
       items: [item({ calories: 290, protein: 26, servings: 1.5 })],
     });
     expect(r.totalCalories).toBeCloseTo(435, 1);
@@ -121,7 +121,7 @@ describe("protein / calories components and totals", () => {
     [45, 15], [40, 15], [39, 12], [30, 12], [29, 8], [20, 8], [19, 4], [10, 4], [9, 0],
   ])("protein %i g → %i", (p, want) => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: null,
+      prepMinutes: 5, roles: [], tasteOverride: null,
       items: [item({ protein: p })],
     });
     expect(r.protein).toBe(want);
@@ -130,7 +130,7 @@ describe("protein / calories components and totals", () => {
     [600, 10], [500, 10], [499, 7], [400, 7], [399, 4], [300, 4], [299, 2],
   ])("non-bridge %i cal → %i", (cal, want) => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: null,
+      prepMinutes: 5, roles: [], tasteOverride: null,
       items: [item({ calories: cal })],
     });
     expect(r.calories).toBe(want);
@@ -139,10 +139,30 @@ describe("protein / calories components and totals", () => {
     [250, 10], [400, 10], [300, 10], [249, 4], [401, 4], [690, 4],
   ])("bridge %i cal → %i", (cal, want) => {
     const r = computeBrianScore({
-      prepMinutes: 5, role: "bridge", tasteOverride: null,
+      prepMinutes: 5, roles: ["bridge"], tasteOverride: null,
       items: [item({ calories: cal })],
     });
     expect(r.calories).toBe(want);
+  });
+
+  // Roles are a SET now. `bridge` relaxes the calorie band because a bridge is
+  // meant to be small, and that stays true of a meal that is a bridge AND
+  // something else — reading only the first role would put a 300-calorie
+  // post-workout bridge back on the ordinary ladder and score it 4.
+  it("bridge held alongside another role still relaxes the band", () => {
+    const r = computeBrianScore({
+      prepMinutes: 5, roles: ["post_workout", "bridge"], tasteOverride: null,
+      items: [item({ calories: 300 })],
+    });
+    expect(r.calories).toBe(10);
+  });
+
+  it("a role set without bridge uses the ordinary ladder", () => {
+    const r = computeBrianScore({
+      prepMinutes: 5, roles: ["post_workout", "calorie_booster"], tasteOverride: null,
+      items: [item({ calories: 300 })],
+    });
+    expect(r.calories).toBe(4);
   });
 });
 
@@ -150,23 +170,23 @@ describe("EoE", () => {
   const flagged = (ok: boolean) =>
     item({ smallPiecesOk: ok, concepts: [{ rating: "like", requiresSmallPieces: true, prepIntensive: false }] });
   it("−5 per unaddressed small-pieces item, floor 0", () => {
-    expect(computeBrianScore({ prepMinutes: 5, role: null, tasteOverride: null, items: [flagged(false)] }).eoe).toBe(10);
+    expect(computeBrianScore({ prepMinutes: 5, roles: [], tasteOverride: null, items: [flagged(false)] }).eoe).toBe(10);
     expect(
       computeBrianScore({
-        prepMinutes: 5, role: null, tasteOverride: null,
+        prepMinutes: 5, roles: [], tasteOverride: null,
         items: [flagged(false), flagged(false), flagged(false), flagged(false)],
       }).eoe,
     ).toBe(0);
   });
   it("small_pieces_ok waives the penalty", () => {
-    expect(computeBrianScore({ prepMinutes: 5, role: null, tasteOverride: null, items: [flagged(true)] }).eoe).toBe(15);
+    expect(computeBrianScore({ prepMinutes: 5, roles: [], tasteOverride: null, items: [flagged(true)] }).eoe).toBe(15);
   });
 });
 
 describe("flags, approval, renormalization", () => {
   it("containsNever disqualifies Approved regardless of score", () => {
     const r = computeBrianScore({
-      prepMinutes: 2, role: null, tasteOverride: "love",
+      prepMinutes: 2, roles: [], tasteOverride: "love",
       items: [
         item({ calories: 600, protein: 40 }),
         item({ concepts: [{ rating: "never", requiresSmallPieces: false, prepIntensive: false }] }),
@@ -179,7 +199,7 @@ describe("flags, approval, renormalization", () => {
   it("Korean Beef Bowl seed profile scores as a core meal", () => {
     // ground beef 1.5×(290cal,26p love) + rice 1×(310,6 love) + sauce 1×(60,1 unlinked)
     const r = computeBrianScore({
-      prepMinutes: 5, role: null, tasteOverride: "love",
+      prepMinutes: 5, roles: [], tasteOverride: "love",
       items: [
         item({ calories: 290, protein: 26, servings: 1.5 }),
         item({ calories: 310, protein: 6 }),
@@ -194,7 +214,7 @@ describe("flags, approval, renormalization", () => {
 
   it("PB&J honestly fails Approved on protein", () => {
     const r = computeBrianScore({
-      prepMinutes: 3, role: null, tasteOverride: null,
+      prepMinutes: 3, roles: [], tasteOverride: null,
       items: [
         item({ calories: 150, protein: 5 }),   // bread (love)
         item({ calories: 190, protein: 8, servings: 2 }), // PB (love)
@@ -207,7 +227,7 @@ describe("flags, approval, renormalization", () => {
 
   it("bridge role substitutes for the 500-cal admission bar", () => {
     const r = computeBrianScore({
-      prepMinutes: 2, role: "bridge", tasteOverride: null,
+      prepMinutes: 2, roles: ["bridge"], tasteOverride: null,
       items: [item({ calories: 300, protein: 32 })],
     });
     expect(r.approved).toBe(true);
@@ -224,7 +244,7 @@ describe("float-epsilon regressions", () => {
     const like = { rating: "like" as const, requiresSmallPieces: false, prepIntensive: false };
     const r = computeBrianScore({
       prepMinutes: 5,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [
         item({ calories: 474, protein: 40, servings: 0.5, smallPiecesOk: true, concepts: [like] }),
@@ -242,7 +262,7 @@ describe("float-epsilon regressions", () => {
     // genuinely non-integer path.
     const r = computeBrianScore({
       prepMinutes: 5,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [
         item({ calories: 200, protein: 10, servings: 1, concepts: [{ rating: "love", requiresSmallPieces: false, prepIntensive: false }] }),
@@ -262,7 +282,7 @@ describe("float-epsilon regressions", () => {
   it("denies Approved on EoE alone when every other criterion passes", () => {
     const r = computeBrianScore({
       prepMinutes: 5,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [
         item({
@@ -284,7 +304,7 @@ describe("float-epsilon regressions", () => {
   it("pins current behavior for an empty item list (Task 13 map-miss fallback)", () => {
     const r = computeBrianScore({
       prepMinutes: 5,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [],
     });
@@ -316,7 +336,7 @@ describe("float-epsilon regressions", () => {
     // sum is still 95, yet Task 11's breakdown bar renders "22/25".
     const r = computeBrianScore({
       prepMinutes: 0,
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [
         item({
@@ -355,7 +375,7 @@ describe("score is derived from the rounded raw, not the exact sum", () => {
     const like = { rating: "like" as const, requiresSmallPieces: false, prepIntensive: false };
     const r = computeBrianScore({
       prepMinutes: 5, // convenience 20
-      role: null,
+      roles: [],
       tasteOverride: null,
       items: [
         item({ calories: 970, protein: 40, servings: 1, concepts: [love] }),
@@ -421,7 +441,7 @@ describe("complete portions", () => {
   const meal = (calories: number, completePortion: boolean, over = {}) =>
     computeBrianScore({
       prepMinutes: 0,
-      role: null,
+      roles: [],
       tasteOverride: "like",
       completePortion,
       items: [item({ calories, protein: 35, concepts: [] })],
@@ -467,7 +487,7 @@ describe("complete portions", () => {
     const asBridge = (completePortion: boolean) =>
       computeBrianScore({
         prepMinutes: 0,
-        role: "bridge",
+        roles: ["bridge"],
         tasteOverride: "like",
         completePortion,
         items: [item({ calories: 300, protein: 35, concepts: [] })],
@@ -478,7 +498,7 @@ describe("complete portions", () => {
   it("defaults to the assembled ladder when the flag is absent", () => {
     const r = computeBrianScore({
       prepMinutes: 0,
-      role: null,
+      roles: [],
       tasteOverride: "like",
       items: [item({ calories: 440, protein: 35, concepts: [] })],
     });

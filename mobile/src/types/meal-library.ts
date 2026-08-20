@@ -142,6 +142,34 @@ export const ROLE_LABELS: Record<MealRole, string> = {
   emergency_catchup: "Emergency Catch-Up",
 };
 
+/** Rail order — the order the builder offers them in and the order the set is
+ *  stored and displayed in, so a meal's roles read the same everywhere. */
+export const ROLE_ORDER: MealRole[] = [
+  "pre_workout",
+  "post_workout",
+  "bridge",
+  "calorie_booster",
+  "emergency_catchup",
+];
+
+/**
+ * A meal can do several jobs, so roles toggle freely — no exclusivity rule and
+ * no floor. Unlike categories, the empty set is the ordinary case: most meals
+ * are not being held for a particular moment, and forcing a role would make
+ * the recommender's "looking for that specific job" question meaningless.
+ *
+ * The result is kept in `ROLE_ORDER` rather than tap order, so two meals with
+ * the same roles always render them the same way round.
+ */
+export function toggleRole(
+  current: readonly MealRole[],
+  next: MealRole,
+): MealRole[] {
+  const set = new Set(current);
+  if (!set.delete(next)) set.add(next);
+  return ROLE_ORDER.filter((r) => set.has(r));
+}
+
 /** Display labels for the logging-slot enum. Lives here beside
  * CATEGORY_LABELS / ROLE_LABELS so every enum these screens render goes
  * through a labels map instead of leaking raw lowercase values into the UI. */
@@ -177,7 +205,13 @@ export interface Meal {
   /** Every category this meal is filed under; it appears on each one's shelf.
    *  Never empty (database trigger), and holds `emergency` only alone. */
   categories: MealCategory[];
+  /** DEPRECATED — the legacy single-role column, kept in sync with the head of
+   *  `roles` so nothing reading it breaks, but authoritative for nothing. Read
+   *  `roles`; every question anyone asks is "is this role among them". */
   role: MealRole | null;
+  /** Every job this meal can do. Empty is ordinary — most meals are not held
+   *  for a particular moment. Order is `ROLE_ORDER`. */
+  roles: MealRole[];
   default_meal_type: MealType | null;
   prep_minutes: number;
   taste_override: ConceptRating | null;

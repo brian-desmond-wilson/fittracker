@@ -25,7 +25,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Camera, Images, ImageOff, Link2, Plus, ScanBarcode, Store, Trash2 } from "lucide-react-native";
 import type { FoodConcept, ConceptRating } from "@/src/types/nutrition-preferences";
 import type { MealCategory, MealRole, MealWithItems } from "@/src/types/meal-library";
-import { MEAL_TYPE_LABELS, ROLE_LABELS, toggleCategory } from "@/src/types/meal-library";
+import { MEAL_TYPE_LABELS, ROLE_LABELS, ROLE_ORDER, toggleCategory, toggleRole } from "@/src/types/meal-library";
 import type { MealType, SavedFood } from "@/src/types/track";
 import { computeBrianScore } from "@/src/lib/mealScore";
 import {
@@ -45,7 +45,6 @@ import { NewFoodSheet } from "./NewFoodSheet";
 import { scoreTone } from "./styles";
 import { monogram } from "@/src/lib/vendorMonogram";
 
-const ROLES: MealRole[] = ["pre_workout", "post_workout", "bridge", "calorie_booster", "emergency_catchup"];
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack", "dessert"];
 
 /** Said the way you'd say it. The stored values ("love", "neutral") were on
@@ -123,7 +122,11 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
     );
     const [sourceName, setSourceName] = useState(initial?.source_name ?? "");
     const [completePortion, setCompletePortion] = useState(initial?.is_complete_portion ?? false);
-    const [role, setRole] = useState<MealRole | null>(initial?.role ?? null);
+    // A SET, like categories. A shake that is genuinely the post-workout meal
+    // AND the calorie booster had to pick one, and was then invisible to the
+    // other question. `initial.role` is deliberately not consulted as a
+    // fallback: it is a mirror of the set, so an empty set means no roles.
+    const [roles, setRoles] = useState<MealRole[]>(initial?.roles ?? []);
     const [prepMinutes, setPrepMinutes] = useState(String(initial?.prep_minutes ?? DEFAULT_PREP_MINUTES));
     const [prepFreeform, setPrepFreeform] = useState(
       !(PREP_PRESETS as readonly number[]).includes(initial?.prep_minutes ?? DEFAULT_PREP_MINUTES),
@@ -161,12 +164,12 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       (
         forItems: BuilderItem[],
         forPrep: number,
-        forRole: MealRole | null,
+        forRoles: readonly MealRole[],
         forTaste: ConceptRating | null,
       ) =>
         computeBrianScore({
           prepMinutes: forPrep,
-          role: forRole,
+          roles: forRoles,
           tasteOverride: forTaste,
           items: forItems.map((it) => ({
             calories: it.savedFood.calories,
@@ -184,8 +187,8 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
     );
 
     const score = useMemo(
-      () => scoreOf(items, prep, role, tasteOverride),
-      [scoreOf, items, prep, role, tasteOverride],
+      () => scoreOf(items, prep, roles, tasteOverride),
+      [scoreOf, items, prep, roles, tasteOverride],
     );
 
     // What the meal scored when the form opened, so the bar can say what THIS
@@ -202,7 +205,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
               savedFood: it.savedFood,
             })),
             initial.prep_minutes,
-            initial.role,
+            initial.roles ?? [],
             initial.taste_override,
           ).score
         : score.score;
@@ -434,7 +437,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
         // reads and what `set_meal_categories` keeps.
         category: categories[0],
         categories,
-        role,
+        roles,
         default_meal_type: defaultMealType,
         prep_minutes: prep,
         taste_override: tasteOverride,
@@ -459,7 +462,7 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
           servings: clampServings(it.servings),
         })),
       });
-    }, [name, items, categories, role, defaultMealType, prep, tasteOverride,
+    }, [name, items, categories, roles, defaultMealType, prep, tasteOverride,
         sourceKind, normalisedSourceName, completePortion, photo, notes, onSave]);
 
     const isDirty = useCallback(() => {
@@ -467,21 +470,21 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
       // Compared as values, not field by field: every field on this form is in
       // here, so a new one added later cannot quietly fall out of the check.
       const before = JSON.stringify({
-        n: initial.name, c: [...initial.categories].sort(), r: initial.role,
+        n: initial.name, c: [...initial.categories].sort(), r: initial.roles ?? [],
         d: initial.default_meal_type, p: initial.prep_minutes, t: initial.taste_override,
         sk: initial.source_kind, sn: initial.source_name, cp: initial.is_complete_portion,
         img: initial.image_primary_url, no: initial.notes,
         i: initial.items.map((it) => [it.saved_food_id, it.servings, it.small_pieces_ok]),
       });
       const now = JSON.stringify({
-        n: name.trim(), c: [...categories].sort(), r: role,
+        n: name.trim(), c: [...categories].sort(), r: roles,
         d: defaultMealType, p: prep, t: tasteOverride,
         sk: sourceKind, sn: normalisedSourceName, cp: completePortion,
         img: photo, no: notes.trim() || null,
         i: items.map((it) => [it.saved_food_id, it.servings, it.small_pieces_ok]),
       });
       return before !== now;
-    }, [initial, name, categories, role, defaultMealType, prep, tasteOverride,
+    }, [initial, name, categories, roles, defaultMealType, prep, tasteOverride,
         sourceKind, normalisedSourceName, completePortion, photo, notes, items]);
 
     useImperativeHandle(ref, () => ({ save: handleSave, isDirty }), [handleSave, isDirty]);
@@ -921,7 +924,8 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
           <View style={s.field}>
             <Text style={s.label}>ROLE <Text style={s.optional}>optional</Text></Text>
             <Text style={s.sub}>
-              Makes the meal eligible when the app is looking for that specific job.
+              Makes the meal eligible when the app is looking for that specific
+              job. Pick as many as it can do.
             </Text>
             <ScrollView
               horizontal
@@ -929,13 +933,13 @@ export const MealBuilder = forwardRef<MealBuilderHandle, MealBuilderProps>(
               style={s.chipScroller}
               contentContainerStyle={s.chipRow}
             >
-              {ROLES.map((r) => {
-                const on = role === r;
+              {ROLE_ORDER.map((r) => {
+                const on = roles.includes(r);
                 return (
                   <TouchableOpacity
                     key={r}
                     style={[s.chip, on && s.chipOn]}
-                    onPress={() => setRole((prev) => (prev === r ? null : r))}
+                    onPress={() => setRoles((prev) => toggleRole(prev, r))}
                     accessibilityRole="button"
                     accessibilityState={{ selected: on }}
                   >

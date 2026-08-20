@@ -650,6 +650,17 @@ function inAnyCategory(
   return m.meal.categories.some((c) => categories.includes(c));
 }
 
+/**
+ * Roles are a SET for the same reason categories are. A shake that is both the
+ * post-workout meal and the calorie booster used to have to pick, and was then
+ * invisible to whichever question it did not pick. Every read of `role` in this
+ * file that asked "is this the bridge" now asks "is bridge among its roles";
+ * `meals.role` survives only as a legacy mirror and is deliberately unread.
+ */
+function hasAnyRole(m: ScoredMeal, roles: ReadonlyArray<MealRole>): boolean {
+  return (m.meal.roles ?? []).some((r) => roles.includes(r));
+}
+
 function candidate(
   m: ScoredMeal,
   preferredRoles: ReadonlyArray<MealRole>,
@@ -657,7 +668,7 @@ function candidate(
   preferredCategories: ReadonlyArray<MealCategory> = [],
   stockByMealId?: Map<string, EatNextStockInfo>,
 ): Candidate {
-  const roleMatch = m.meal.role !== null && preferredRoles.includes(m.meal.role);
+  const roleMatch = hasAnyRole(m, preferredRoles);
   const categoryMatch = inAnyCategory(m, preferredCategories);
   const info = stockByMealId?.get(m.meal.id);
   return {
@@ -812,7 +823,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
       const q = eligible
         .filter(
           (m) =>
-            (m.meal.role === "bridge" || m.meal.role === "calorie_booster") &&
+            hasAnyRole(m, ["bridge", "calorie_booster"]) &&
             m.totals.calories < PROTEIN_SHORT_MAX_CAL,
         )
         .sort(
@@ -866,7 +877,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
     const cands = eligible
       .filter(
         (m) =>
-          m.meal.role === "post_workout" ||
+          hasAnyRole(m, ["post_workout"]) ||
           m.totals.protein >= POST_WORKOUT_MIN_PROTEIN_G,
       )
       .map((m) => candidate(m, ["post_workout"], maxPrepMinutes, [], stockByMealId));
@@ -875,7 +886,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
         context: "post_workout",
         message: null,
         recommendations: toRecs(rank(cands), (c) => [
-          c.meal.role === "post_workout"
+          hasAnyRole(c, ["post_workout"])
             ? "post-workout meal"
             : `post-workout — ${Math.round(c.totals.protein)} g protein`,
         ]),
@@ -893,8 +904,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
       .filter(
         (m) =>
           m.meal.categories.includes("emergency") ||
-          m.meal.role === "emergency_catchup" ||
-          m.meal.role === "calorie_booster",
+          hasAnyRole(m, ["emergency_catchup", "calorie_booster"]),
       )
       // `candidate()` is called only for its `extraReasons` (prep-budget and
       // stock copy) here — the `roleRank`/`stockRank`/`expiringRank` it
@@ -971,7 +981,7 @@ export function recommendEatNext(input: EatNextInput): EatNextResult {
         (m) =>
           !m.meal.categories.includes("emergency") &&
           (inAnyCategory(m, slotCategories) ||
-            m.meal.role === "bridge" ||
+            hasAnyRole(m, ["bridge"]) ||
             m.meal.categories.includes("snack")),
       )
     : eligible.filter((m) => inAnyCategory(m, slotCategories));

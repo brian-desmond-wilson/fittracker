@@ -13,10 +13,11 @@ import type {
   Meal,
   MealCategory,
   MealItemWithFood,
+  MealRole,
   MealTotals,
   MealWithItems,
 } from "@/src/types/meal-library";
-import { beverageCountsAsMealDefault } from "@/src/types/meal-library";
+import { beverageCountsAsMealDefault, ROLE_ORDER } from "@/src/types/meal-library";
 import type { BeverageKind, MealType, SavedFood } from "@/src/types/track";
 
 // ── Fetch ──────────────────────────────────────────────────────────────────
@@ -163,12 +164,16 @@ export function fetchMealLibrary(opts?: { force?: boolean }): Promise<MealLibrar
 }
 
 async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
-  const [meals, mealCategories, vendors, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
+  const [meals, mealCategories, mealRoles, vendors, items, concepts, links, inventory, profile, constraints, logs, adHocLogs] = await Promise.all([
     supabase.from("meals").select("*").order("name"),
     // A meal is filed under one or more categories and appears on every shelf
     // it holds. `meals.category` survives as the PRIMARY one — the single
     // answer the default logging slot needs — and is always among these.
     supabase.from("meal_categories").select("meal_id, category"),
+    // Every job a meal can do. Unlike categories there is no primary and no
+    // floor: `meals.role` is a legacy mirror of the head of this set, and a
+    // meal with no rows here genuinely has no role.
+    supabase.from("meal_roles").select("meal_id, role"),
     // The places food comes from. Read here rather than by the edit page, which
     // is already holding this whole payload — one round trip, and the
     // suggestions can never disagree with the meals they were derived from.
@@ -337,6 +342,13 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     categoriesByMealId.set(r.meal_id, arr);
   }
 
+  const rolesByMealId = new Map<string, MealRole[]>();
+  for (const r of (mealRoles.data ?? []) as Array<{ meal_id: string; role: MealRole }>) {
+    const arr = rolesByMealId.get(r.meal_id) ?? [];
+    arr.push(r.role);
+    rolesByMealId.set(r.meal_id, arr);
+  }
+
   // Vendors first and in their own display order, then anything else a meal
   // already names — deduplicated case-insensitively, so "thistle" typed once
   // does not sit beside the vendor called "Thistle".
@@ -361,6 +373,10 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
       // would appear on no shelf and vanish from the library entirely, which
       // is a worse answer than the one category we already know it has.
       categories: categoriesByMealId.get(m.id) ?? [m.category],
+      // No fallback to the legacy column, and none wanted: an absent set here
+      // means the meal has no role, which is the ordinary case. Sorted into
+      // rail order so the same roles always read the same way round.
+      roles: ROLE_ORDER.filter((r) => (rolesByMealId.get(m.id) ?? []).includes(r)),
       items: byMeal.get(m.id) ?? [],
     })),
     conceptsById: new Map(
@@ -479,7 +495,10 @@ export interface MealInput {
   /** Every category the meal is filed under. Absent means "just the primary",
    *  which is what the builder passes until the Edit page learns the set. */
   categories?: MealCategory[];
-  role: Meal["role"];
+  /** Every job the meal can do. Empty is ordinary. The legacy `meals.role`
+   *  column is written from the head of this by `set_meal_roles`; callers do
+   *  not set it. */
+  roles: MealRole[];
   default_meal_type: Meal["default_meal_type"];
   prep_minutes: number;
   taste_override: Meal["taste_override"];
@@ -502,7 +521,7 @@ export async function createMeal(userId: string, input: MealInput): Promise<stri
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
-  const { items, categories, ...meal } = input;
+  const { items, categories, roles, ...meal } = input;
   // Ordering is load-bearing: meal_items carries a composite FK
   // (meal_id, user_id) -> meals(id, user_id), so the parent row must be
   // committed with a MATCHING user_id before any item can reference it.
@@ -544,6 +563,11 @@ export async function createMeal(userId: string, input: MealInput): Promise<stri
     normalizeCategories(input.category, categories),
   );
   if (catError) console.error("createMeal: could not file categories:", catError);
+  // Also best-effort, and after the categories: a meal with no roles is a
+  // valid meal that the recommender simply never singles out for a job, so a
+  // failure here costs a preference rather than the meal.
+  const { error: roleError } = await setMealRoles(data.id, roles);
+  if (roleError) console.error("createMeal: could not file roles:", roleError);
   return data.id;
 }
 
@@ -573,6 +597,27 @@ export async function setMealCategories(
   const { error } = await supabase.rpc("set_meal_categories", {
     p_meal_id: mealId,
     p_categories: categories,
+  });
+  return { error };
+}
+
+/**
+ * Replace a meal's roles, in rail order.
+ *
+ * One RPC rather than a delete and an insert — not because the database would
+ * refuse an intermediate state (unlike categories, every one of them is legal)
+ * but so a failure between the two cannot leave a meal advertising the roles it
+ * used to have. Returns the error rather than throwing so a best-effort caller
+ * can log it.
+ */
+export async function setMealRoles(
+  mealId: string,
+  roles: MealRole[],
+): Promise<{ error: unknown }> {
+  invalidateMealLibrary(); // D1: this write changes what a read would return
+  const { error } = await supabase.rpc("set_meal_roles", {
+    p_meal_id: mealId,
+    p_roles: roles,
   });
   return { error };
 }
@@ -657,7 +702,7 @@ export async function promoteAdHocMeal(
   return createMeal(userId, {
     name: candidate.name.trim(),
     category: meta.category,
-    role: null,
+    roles: [],
     default_meal_type: null,
     prep_minutes: 0,
     taste_override: null,
@@ -775,7 +820,7 @@ export async function updateMeal(
   const slug = slugify(input.name);
   if (!slug) throw new Error("Name must contain at least one letter or number.");
   if (input.items.length === 0) throw new Error("A meal needs at least one item.");
-  const { items, categories, ...meal } = input;
+  const { items, categories, roles, ...meal } = input;
   const { error } = await supabase
     .from("meals")
     .update({ ...meal, name: input.name.trim(), slug })
@@ -791,6 +836,10 @@ export async function updateMeal(
     normalizeCategories(input.category, categories),
   );
   if (catError) console.error("updateMeal: could not file categories:", catError);
+  // Clearing every role is a real edit, so this runs unconditionally rather
+  // than only when the set is non-empty.
+  const { error: roleError } = await setMealRoles(mealId, roles);
+  if (roleError) console.error("updateMeal: could not file roles:", roleError);
   // Full replace: delete + reinsert. Two client writes, not atomic — a
   // failure between them leaves an item-less meal, which is visible in the
   // UI and recoverable by re-editing (unlike silent divergence). An RPC is

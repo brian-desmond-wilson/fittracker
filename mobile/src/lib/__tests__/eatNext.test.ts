@@ -53,6 +53,9 @@ function scored(over: {
   /** Every category the meal is filed under; defaults to just `category`. */
   categories?: MealCategory[];
   role?: MealRole | null;
+  /** Every job the meal can do. Defaults to just `role`, so the tests written
+   *  when a meal had one role keep asserting exactly what they asserted. */
+  roles?: MealRole[];
   prep?: number;
   calories?: number;
   protein?: number;
@@ -79,6 +82,7 @@ function scored(over: {
       category: over.category ?? "lunch",
       categories: over.categories ?? [over.category ?? "lunch"],
       role: over.role ?? null,
+      roles: over.roles ?? (over.role ? [over.role] : []),
       default_meal_type: null,
       prep_minutes: over.prep ?? 5,
       taste_override: null,
@@ -249,6 +253,36 @@ describe("post_workout", () => {
       pw.meal.id, highP.meal.id,
     ]); // lowP excluded entirely
   });
+  // WHY THIS EXISTS. Roles became a SET so a meal could answer more than one
+  // question. This is that claim, from the post-workout side: the same shake
+  // is named the post-workout meal here AND survives the protein-shortfall
+  // filter below, which under the single `role` column was impossible — it had
+  // to pick one and went missing from the other.
+  it("a meal holding two roles answers both questions", () => {
+    const both = scored({
+      roles: ["post_workout", "calorie_booster"], protein: 30, calories: 290,
+    });
+    const other = scored({ protein: 5, calories: 290 });
+
+    const pw = recommendEatNext(input(trained, [other, both]));
+    expect(pw.context).toBe("post_workout");
+    expect(pw.recommendations[0].mealId).toBe(both.meal.id);
+    expect(pw.recommendations[0].reasons).toContain("post-workout meal");
+
+    // Same meal, no workout, calorie goal hit and protein short: the
+    // calorie_booster arm reaches it. `other` holds no role at all, so a
+    // single-role meal could not have been picked by both branches.
+    const short = recommendEatNext(
+      input(
+        { dayTotals: { ...EMPTY_TOTALS, calories: 2400, protein: 140 } },
+        [other, both],
+      ),
+    );
+    expect(short.context).toBe("goal_hit");
+    expect(short.recommendations).toHaveLength(1);
+    expect(short.recommendations[0].mealId).toBe(both.meal.id);
+  });
+
   it("window closes 180 min after completion", () => {
     const r = recommendEatNext(
       input({ workoutCompletedAtMinutes: 13 * 60 - 181 }, [scored({})]),

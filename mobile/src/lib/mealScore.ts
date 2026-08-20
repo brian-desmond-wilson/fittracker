@@ -127,7 +127,10 @@ export interface ScoreItemInput {
 
 export interface BrianScoreInput {
   prepMinutes: number;
-  role: MealRole | null;
+  /** Every job the meal can do. `bridge` among them relaxes the calorie band
+   *  and the Approved bar — a bridge is meant to be small, and a meal that is
+   *  a bridge AND something else is still meant to be small when used as one. */
+  roles: readonly MealRole[];
   tasteOverride: ConceptRating | null;
   items: ScoreItemInput[];
   /** `meals.is_complete_portion` — sold as one finished portion. Optional so
@@ -153,7 +156,8 @@ export interface BrianScoreResult {
 }
 
 export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
-  const { prepMinutes, role, tasteOverride, items, completePortion = false } = input;
+  const { prepMinutes, roles, tasteOverride, items, completePortion = false } = input;
+  const isBridge = roles.includes("bridge");
   // Two thresholds, kept distinct on purpose (see the constants): the calorie
   // COMPONENT's full-points line and the Brian Approved admission bar coincide
   // today but are separate policy knobs. Both shift together for a meal that
@@ -236,7 +240,7 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
 
   // ── Calories /10 ──
   let calories: number;
-  if (role === "bridge") {
+  if (isBridge) {
     calories =
       totalCalories >= BRIDGE_CAL_MIN && totalCalories <= BRIDGE_CAL_MAX
         ? 10
@@ -268,7 +272,7 @@ export function computeBrianScore(input: BrianScoreInput): BrianScoreResult {
   const approved =
     prepMinutes <= APPROVED_MAX_PREP_MINUTES &&
     totalProtein >= APPROVED_MIN_PROTEIN_G &&
-    (totalCalories >= approvedMinCalories || role === "bridge") &&
+    (totalCalories >= approvedMinCalories || isBridge) &&
     eoe === COMPONENT_MAX.eoe &&
     taste >= APPROVED_MIN_TASTE &&
     !containsNever;
