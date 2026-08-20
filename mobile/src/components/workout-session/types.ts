@@ -29,6 +29,14 @@ export interface WorkoutTemplate {
   program_workout_exercises: ProgramWorkoutExercise[];
 }
 
+/** The tap-back to the video a movement was captured from. */
+export interface ExerciseSourceLink {
+  url: string;
+  platform: string; // 'instagram' | 'tiktok' | 'other'
+  handle: string | null;
+  thumbnailUrl: string | null;
+}
+
 export interface SetEntry {
   id?: string;
   set_number: number;

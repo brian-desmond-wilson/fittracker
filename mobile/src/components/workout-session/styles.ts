@@ -254,6 +254,63 @@ export const styles = StyleSheet.create({
     marginTop: 10,
   },
 
+  // Source tap-back — the video a movement was captured from
+  sourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    backgroundColor: t.surface2,
+    borderWidth: 1,
+    borderColor: t.border,
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingLeft: 6,
+    paddingRight: 12,
+    marginTop: 10,
+    maxWidth: '90%',
+  },
+  sourceThumb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
+  sourceThumbEmpty: {
+    backgroundColor: t.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sourceChipText: {
+    fontSize: 12.5,
+    color: t.text,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  sourceChipWatch: {
+    fontSize: 12.5,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  sourceNote: {
+    fontSize: 12.5,
+    color: t.textMuted,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  chapterWatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingTop: 10,
+  },
+  chapterWatchText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+
   // Built-in block card (movements to follow, nothing to log)
   builtinName: {
     fontSize: 20,

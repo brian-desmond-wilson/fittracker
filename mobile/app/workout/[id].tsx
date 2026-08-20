@@ -38,6 +38,7 @@ import {
   Circle,
   ChevronRight,
   PauseCircle,
+  Play,
   Image as ImageIcon,
 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
@@ -68,11 +69,13 @@ import {
   getExercise,
   generateExerciseImage,
 } from '@/src/components/workout-session/helpers';
+import * as WebBrowser from 'expo-web-browser';
 import {
   Exercise,
   WorkoutTemplate,
   SetEntry,
   ExerciseState,
+  ExerciseSourceLink,
 } from '@/src/components/workout-session/types';
 import { styles } from '@/src/components/workout-session/styles';
 import { DifficultyPicker } from '@/src/components/workout-session/DifficultyPicker';
@@ -153,6 +156,18 @@ export default function WorkoutSessionPage() {
   // survive re-renders without causing them, and it is deliberately not
   // persisted — swiping back and forth re-shows nothing, a fresh session does.
   const shownSeamsRef = React.useRef<Set<string>>(new Set());
+  // ---- Source tap-backs: the video a movement was captured from ----
+  // A block's exercises come from its workout, so the workout's source is the
+  // exact programming being performed; an exercise that arrived from some
+  // other post falls back to its own newest capture. Keyed maps rather than
+  // per-item fields because the same exercise can appear under two blocks.
+  const [blockSource, setBlockSource] =
+    useState<Partial<Record<BlockRole, ExerciseSourceLink>>>({});
+  // The creator's per-movement note from the block's workout, keyed
+  // `${block}:${exerciseId}` — often the form cue you want mid-set.
+  const [blockNotes, setBlockNotes] = useState<Record<string, string>>({});
+  const [exerciseSource, setExerciseSource] =
+    useState<Record<string, ExerciseSourceLink>>({});
   // The exercise a resumed session should land on, consumed once the steps
   // exist. Null when starting fresh, which lands on step 0.
   const resumeExerciseRef = React.useRef<number | null>(null);
@@ -443,7 +458,11 @@ export default function WorkoutSessionPage() {
           .select(`
             id, split_day, workout_instance_id, served_captured_workout_id,
             blocks:generated_session_blocks(
-              block, name, minutes, builtin_key, captured_workout_id, dismissed
+              block, name, minutes, builtin_key, captured_workout_id, dismissed,
+              workout:captured_workouts(
+                source:captured_sources(platform, source_url, poster_handle, thumbnail_url),
+                movements:captured_workout_exercises(exercise_id, notes)
+              )
             ),
             items:generated_session_items(
               id, exercise_id, item_order, section, target_sets, target_reps,
@@ -489,6 +508,26 @@ export default function WorkoutSessionPage() {
             dismissed: !!b.dismissed,
           })),
         );
+        // Each block's tap-back and the creator's per-movement notes, off the
+        // same rows. A block whose workout was deleted simply has neither.
+        const perBlockSource: Partial<Record<BlockRole, ExerciseSourceLink>> = {};
+        const perBlockNotes: Record<string, string> = {};
+        for (const b of blocks as any[]) {
+          const src = b.workout?.source;
+          if (src?.source_url) {
+            perBlockSource[b.block as BlockRole] = {
+              url: src.source_url,
+              platform: src.platform ?? 'other',
+              handle: src.poster_handle ?? null,
+              thumbnailUrl: src.thumbnail_url ?? null,
+            };
+          }
+          for (const m of b.workout?.movements ?? []) {
+            if (m.notes) perBlockNotes[`${b.block}:${m.exercise_id}`] = m.notes;
+          }
+        }
+        setBlockSource(perBlockSource);
+        setBlockNotes(perBlockNotes);
         sortedExercises = [...(sessionData.items || [])]
           .sort((a: any, b: any) => a.item_order - b.item_order)
           .map((item: any) => ({
@@ -547,6 +586,47 @@ export default function WorkoutSessionPage() {
           ...workoutData,
           program_workout_exercises: sortedExercises,
         } as unknown as WorkoutTemplate);
+      }
+
+      // The fallback tap-back: each exercise's own newest reviewed capture,
+      // for movements that arrived from a different post than their block's
+      // workout — and for program workouts, which have no blocks at all.
+      // Client-side filter on owner and status, same pattern as
+      // fetchCandidateData: the junction has no user_id of its own.
+      {
+        const ids = [...new Set(sortedExercises.map((e: any) => e.exercise_id))];
+        if (ids.length > 0) {
+          const { data: srcRows } = await supabase
+            .from('source_exercises')
+            .select(`
+              exercise_id,
+              source:captured_sources!inner(
+                user_id, extraction_status, platform, source_url,
+                poster_handle, thumbnail_url, captured_at
+              )
+            `)
+            .in('exercise_id', ids);
+          const newest: Record<string, { at: string; link: ExerciseSourceLink }> = {};
+          for (const row of (srcRows ?? []) as any[]) {
+            const s = row.source;
+            if (!s || s.user_id !== userId || s.extraction_status !== 'reviewed') continue;
+            if (!s.source_url) continue;
+            const prior = newest[row.exercise_id];
+            if (prior && prior.at >= (s.captured_at ?? '')) continue;
+            newest[row.exercise_id] = {
+              at: s.captured_at ?? '',
+              link: {
+                url: s.source_url,
+                platform: s.platform ?? 'other',
+                handle: s.poster_handle ?? null,
+                thumbnailUrl: s.thumbnail_url ?? null,
+              },
+            };
+          }
+          setExerciseSource(
+            Object.fromEntries(Object.entries(newest).map(([k, v]) => [k, v.link])),
+          );
+        }
       }
 
       // A daily session already linked to an instance resumes into it even when
@@ -826,6 +906,31 @@ export default function WorkoutSessionPage() {
   const currentChapterIdx = chapters.findIndex((c) => c.block === currentStep?.block);
   const builtinRoutine =
     currentStep?.kind === 'builtin' ? builtinByKey(currentStep.builtinKey) : null;
+
+  /** The tap-back for the exercise on screen: its block's workout first (the
+   *  exact programming being performed), its own newest capture otherwise.
+   *  Null for stock movements that were never captured from anywhere. */
+  const currentSource: ExerciseSourceLink | null =
+    currentStep?.kind === 'exercise'
+      ? (currentStep.block ? blockSource[currentStep.block] : undefined)
+          ?? exerciseSource[exerciseStates[currentStep.exerciseIndex]?.exercise.exercise_id]
+          ?? null
+      : null;
+  const currentSourceNote =
+    currentStep?.kind === 'exercise' && currentStep.block
+      ? blockNotes[
+          `${currentStep.block}:${exerciseStates[currentStep.exerciseIndex]?.exercise.exercise_id}`
+        ] ?? null
+      : null;
+
+  const PLATFORM_LABEL: Record<string, string> = {
+    instagram: 'Instagram', tiktok: 'TikTok', other: 'source',
+  };
+  // The in-app sheet (Safari view) — one swipe down and you are back on your
+  // set, timers untouched. Never the raw Linking jump out of the app.
+  const openSource = (url: string) => {
+    WebBrowser.openBrowserAsync(url).catch((e) => console.warn('openSource failed:', e));
+  };
 
   /** How much of the block the chapter card is about actually got logged.
    *  A built-in step keeps no completion record, so it counts as done. */
@@ -2019,6 +2124,30 @@ export default function WorkoutSessionPage() {
                       </View>
                     ))}
                   </View>
+                  {/* Rewatch the whole block's video during the breather. */}
+                  {blockSource[transition.to] && (
+                    <TouchableOpacity
+                      style={styles.chapterWatchRow}
+                      onPress={() => openSource(blockSource[transition.to]!.url)}
+                      activeOpacity={0.7}
+                      accessibilityRole="link"
+                      accessibilityLabel="Watch the next block's video"
+                    >
+                      <Play size={13} color={tokens.blocks[transition.to]} />
+                      <Text
+                        style={[
+                          styles.chapterWatchText,
+                          { color: tokens.blocks[transition.to] },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        watch the video
+                        {blockSource[transition.to]!.handle
+                          ? ` · ${blockSource[transition.to]!.handle}`
+                          : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })()}
@@ -2346,6 +2475,40 @@ export default function WorkoutSessionPage() {
             </Text>
           )}
           {servedNote && <Text style={styles.lastPerformance}>{servedNote}</Text>}
+
+          {/* The video this movement came from — tap to rewatch the form
+              before doing it. The creator's own note for the movement rides
+              underneath when the capture stored one. */}
+          {currentSource && (
+            <TouchableOpacity
+              style={styles.sourceChip}
+              onPress={() => openSource(currentSource.url)}
+              activeOpacity={0.7}
+              accessibilityRole="link"
+              accessibilityLabel={`Watch the original video${
+                currentSource.handle ? ` by ${currentSource.handle}` : ''
+              }`}
+            >
+              {currentSource.thumbnailUrl ? (
+                <Image
+                  source={{ uri: currentSource.thumbnailUrl }}
+                  style={styles.sourceThumb}
+                />
+              ) : (
+                <View style={[styles.sourceThumb, styles.sourceThumbEmpty]}>
+                  <Play size={12} color={tokens.textMuted} />
+                </View>
+              )}
+              <Text style={styles.sourceChipText} numberOfLines={1}>
+                {currentSource.handle ? `${currentSource.handle} · ` : ''}
+                {PLATFORM_LABEL[currentSource.platform] ?? 'source'}
+              </Text>
+              <Text style={styles.sourceChipWatch}>watch</Text>
+            </TouchableOpacity>
+          )}
+          {currentSourceNote && (
+            <Text style={styles.sourceNote}>“{currentSourceNote}”</Text>
+          )}
           {currentExercise.last_weight && (
             <Text style={styles.lastPerformance}>
               Last: {currentExercise.last_reps} × {currentExercise.last_weight} lbs
