@@ -58,6 +58,7 @@ import type { BlockRole } from '@/src/types/dailyBlocks';
 import type { SessionSection } from '@/src/types/daily';
 import { fetchCapturedWorkout } from '@/src/lib/supabase/capture';
 import { formatWorkoutItem } from '@/src/lib/workoutFormat';
+import { assignInstancesToOccurrences } from '@/src/lib/workoutResume';
 import { formatSetTimeChip, resolveSession, setKey } from '@/src/lib/setTiming';
 import type { SetTimeInput } from '@/src/lib/setTiming';
 import { SetTimeSheet } from '@/src/components/workout-session/SetTimeSheet';
@@ -670,8 +671,11 @@ export default function WorkoutSessionPage() {
         .order('created_at', { ascending: false })
         .limit(Math.max(exerciseIds.length, 1) * 10);
 
-      // If resuming an existing workout, load saved exercise/set data
-      let existingExerciseData: Record<string, { 
+      // If resuming an existing workout, load saved exercise/set data.
+      // Keyed by TEMPLATE POSITION, not exercise id — a session can repeat a
+      // movement, and id-keying once handed both occurrences the same
+      // instance (logging the second overwrote the first's sets).
+      let existingExerciseData: Record<number, {
         exercise_instance_id: string;
         status: string;
         sets: Array<{
@@ -747,17 +751,20 @@ export default function WorkoutSessionPage() {
           .order('exercise_order');
 
         if (existingExercises) {
-          for (const ex of existingExercises) {
-            existingExerciseData[ex.exercise_id] = {
+          const assigned = assignInstancesToOccurrences(
+            sortedExercises.map((e) => e.exercise_id),
+            existingExercises,
+          );
+          for (const [exIdx, ex] of assigned) {
+            existingExerciseData[exIdx] = {
               exercise_instance_id: ex.id,
               status: ex.status,
-              sets: (ex.set_instances || []).sort((a: any, b: any) => a.set_number - b.set_number),
+              sets: ((ex as any).set_instances || []).sort(
+                (a: any, b: any) => a.set_number - b.set_number,
+              ),
             };
             // Also populate the ref for race condition safety
-            const exIdx = sortedExercises.findIndex(e => e.exercise_id === ex.exercise_id);
-            if (exIdx >= 0) {
-              exerciseInstanceIdsRef.current[exIdx] = ex.id;
-            }
+            exerciseInstanceIdsRef.current[exIdx] = ex.id;
           }
         }
       }
@@ -776,7 +783,7 @@ export default function WorkoutSessionPage() {
 
       // Initialize exercise states (with existing data if resuming)
       const states: ExerciseState[] = sortedExercises.map((ex, exIdx) => {
-        const existing = existingExerciseData[ex.exercise_id];
+        const existing = existingExerciseData[exIdx];
         const existingSets = existing?.sets || [];
         
         // Build sets: include existing warmups + working sets
