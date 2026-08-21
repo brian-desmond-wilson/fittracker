@@ -24,13 +24,14 @@ import { GymSheet } from "./GymSheet";
 import { SetupSheet } from "./SetupSheet";
 import { AdjustSheet } from "./AdjustSheet";
 import { DebriefSheet } from "./DebriefSheet";
+import { MovementRatingSheet } from "./MovementRatingSheet";
 import { BlockCard } from "./BlockCard";
 import { SessionBudgetBar } from "./SessionBudgetBar";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
 import {
-  completeSession, fetchDebrief, rerollBlock, setBlockDismissed, setBlockLocked,
-  setRecoveryOverride,
+  completeSession, fetchDebrief, fetchSessionRatings, rerollBlock,
+  setBlockDismissed, setBlockLocked, setRecoveryOverride,
 } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
 import type { SessionSection } from "@/src/types/daily";
@@ -100,6 +101,12 @@ export default function TodayTab() {
   // unknown. Drives both the inline card and the one auto-open per mount.
   const [hasDebrief, setHasDebrief] = useState<boolean | null>(null);
   const debriefPromptedRef = useRef(false);
+  // The movement ratings mirror the debrief's pattern exactly: null while
+  // unknown, an inline card as the way back in, one auto-open per mount —
+  // chained AFTER the debrief closes rather than raced against it.
+  const [ratingVisible, setRatingVisible] = useState(false);
+  const [hasRatings, setHasRatings] = useState<boolean | null>(null);
+  const ratingPromptedRef = useRef(false);
   const [togglingOverride, setTogglingOverride] = useState(false);
 
   // Any recompose invalidates a decline: the shortlists it was refused from
@@ -146,10 +153,38 @@ export default function TodayTab() {
         setDebriefVisible(true);
       }
     });
+    fetchSessionRatings(sessionId).then((rated) => {
+      if (!alive) return;
+      setHasRatings(rated.size > 0);
+    });
     return () => {
       alive = false;
     };
   }, [sessionId, sessionCompleted]);
+
+  useEffect(() => {
+    if (!sessionCompleted) setHasRatings(null);
+  }, [sessionCompleted]);
+
+  // The completed day's movements, deduped, minus anything marked
+  // not-performed — what the rating sheet asks about.
+  const ratableMovements = useMemo(() => {
+    if (!session || session.status !== "completed") return [];
+    const seen = new Set<string>();
+    return session.items
+      .filter((i) => i.wasPerformed !== false)
+      .filter((i) => (seen.has(i.exerciseId) ? false : (seen.add(i.exerciseId), true)))
+      .map((i) => ({ exerciseId: i.exerciseId, name: i.name }));
+  }, [session]);
+
+  /** Chain the rating prompt after the debrief resolves — once per mount,
+   *  never over an already-rated day, only when there is something to rate. */
+  const maybePromptRatings = () => {
+    if (hasRatings === false && ratableMovements.length > 0 && !ratingPromptedRef.current) {
+      ratingPromptedRef.current = true;
+      setRatingVisible(true);
+    }
+  };
 
   // The estimate stored with the session, or one derived from the items on
   // screen when there is none — a session composed before these existed, or a
@@ -650,6 +685,20 @@ export default function TodayTab() {
                     </Text>
                   </TouchableOpacity>
                 )}
+                {hasRatings === false && ratableMovements.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.debriefCard}
+                    onPress={() => setRatingVisible(true)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Rate the movements"
+                  >
+                    <Text style={styles.debriefCardTitle}>Rate the movements</Text>
+                    <Text style={styles.debriefCardText}>
+                      Too easy twice in a row levels a movement up.
+                    </Text>
+                  </TouchableOpacity>
+                )}
                 <Text style={styles.anotherCaption}>
                   Today's session is in the books. Going again? The next one
                   works around what you already hit.
@@ -696,8 +745,16 @@ export default function TodayTab() {
       <DebriefSheet
         visible={debriefVisible}
         sessionId={session?.id ?? null}
-        onClose={() => setDebriefVisible(false)}
-        onSaved={() => { setDebriefVisible(false); setHasDebrief(true); }} />
+        onClose={() => { setDebriefVisible(false); maybePromptRatings(); }}
+        onSaved={() => {
+          setDebriefVisible(false); setHasDebrief(true); maybePromptRatings();
+        }} />
+      <MovementRatingSheet
+        visible={ratingVisible}
+        sessionId={session?.id ?? null}
+        movements={ratableMovements}
+        onClose={() => setRatingVisible(false)}
+        onSaved={() => { setRatingVisible(false); setHasRatings(true); }} />
     </View>
   );
 }
