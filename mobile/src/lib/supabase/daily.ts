@@ -4,6 +4,8 @@
 // transitions the user's taps cause.
 import { supabase } from "../supabase";
 import { lastStampedSplitDay, rampWeek } from "../dailySplit";
+import { applyRating } from "../dailySkill";
+import type { MovementRating } from "../dailySkill";
 import { capturedWorkoutToSessionItems, pickDaySession } from "../dailyAdopt";
 import { BLOCK_ORDER, SECTION_FOR_BLOCK, nextCandidate } from "../dailyBlockCompose";
 import { fetchCapturedWorkout } from "./capture";
@@ -1367,4 +1369,135 @@ export async function fetchDayStatus(
     hasCompleted: rows.some((r) => r.status === "completed"),
     inProgress: rows.some((r) => r.status === "accepted" && r.workout_instance_id),
   };
+}
+
+// ---------- Movement ratings → skill state (Phase 3) ----------
+
+/** exercise_id → earned level, for the shortlist ceiling. */
+export async function fetchSkillStates(
+  userId: string,
+): Promise<Record<string, SkillStateLevel>> {
+  const { data, error } = await supabase
+    .from("exercise_skill_state")
+    .select("exercise_id, current_level")
+    .eq("user_id", userId);
+  if (error) {
+    console.error("fetchSkillStates failed:", error);
+    return {};
+  }
+  const out: Record<string, SkillStateLevel> = {};
+  for (const row of data ?? []) out[row.exercise_id] = row.current_level;
+  return out;
+}
+
+/** Which of a session's movements are already rated. */
+export async function fetchSessionRatings(sessionId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("movement_ratings")
+    .select("exercise_id")
+    .eq("session_id", sessionId);
+  if (error) {
+    console.error("fetchSessionRatings failed:", error);
+    return new Set();
+  }
+  return new Set((data ?? []).map((r) => r.exercise_id));
+}
+
+export interface RatingInput {
+  userId: string;
+  sessionId: string;
+  ratings: { exerciseId: string; rating: MovementRating }[];
+}
+
+export interface PromotionResult {
+  exerciseId: string;
+  /** The harder movement the chain offers, when a progression link exists. */
+  toExerciseId: string | null;
+  toName: string | null;
+}
+
+/** Persist one sheet of ratings: movement_ratings rows (the audit trail),
+ *  exercise_skill_state updates through the pure state machine, and the
+ *  promotion signals the sheet celebrates. Null = nothing was written. */
+export async function saveMovementRatings(
+  input: RatingInput,
+): Promise<{ promotions: PromotionResult[] } | null> {
+  if (input.ratings.length === 0) return { promotions: [] };
+  try {
+    const ids = input.ratings.map((r) => r.exerciseId);
+
+    const { error: auditError } = await supabase.from("movement_ratings").upsert(
+      input.ratings.map((r) => ({
+        user_id: input.userId,
+        session_id: input.sessionId,
+        exercise_id: r.exerciseId,
+        rating: r.rating,
+      })),
+      { onConflict: "session_id,exercise_id" },
+    );
+    if (auditError) throw auditError;
+
+    const { data: states, error: stateError } = await supabase
+      .from("exercise_skill_state")
+      .select("exercise_id, current_level, consecutive_too_easy")
+      .eq("user_id", input.userId)
+      .in("exercise_id", ids);
+    if (stateError) throw stateError;
+    const prevById = new Map(
+      (states ?? []).map((s) => [s.exercise_id as string, {
+        currentLevel: s.current_level as SkillStateLevel,
+        consecutiveTooEasy: s.consecutive_too_easy as number,
+      }]),
+    );
+
+    const nextRows = input.ratings.map((r) => {
+      const next = applyRating(prevById.get(r.exerciseId) ?? null, r.rating);
+      return { exerciseId: r.exerciseId, next };
+    });
+
+    const { error: upError } = await supabase.from("exercise_skill_state").upsert(
+      nextRows.map(({ exerciseId, next }) => ({
+        user_id: input.userId,
+        exercise_id: exerciseId,
+        current_level: next.currentLevel,
+        consecutive_too_easy: next.consecutiveTooEasy,
+        last_rating: next.lastRating,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "user_id,exercise_id" },
+    );
+    if (upError) throw upError;
+
+    // Promotions → the chain's next movement, when a link exists.
+    const promotedIds = nextRows.filter((r) => r.next.promoted).map((r) => r.exerciseId);
+    if (promotedIds.length === 0) return { promotions: [] };
+
+    const { data: links, error: linkError } = await supabase
+      .from("movement_scaling_links")
+      .select("from_exercise_id, to_exercise_id, display_order, to:exercises!movement_scaling_links_to_exercise_id_fkey(name)")
+      .eq("scaling_type", "progression")
+      .in("from_exercise_id", promotedIds)
+      .order("display_order", { ascending: true });
+    if (linkError) {
+      // The ratings are saved; only the celebration copy is missing.
+      console.error("saveMovementRatings link lookup failed:", linkError);
+    }
+
+    const firstLink = new Map<string, { id: string; name: string | null }>();
+    for (const l of (links ?? []) as any[]) {
+      if (!firstLink.has(l.from_exercise_id)) {
+        firstLink.set(l.from_exercise_id, { id: l.to_exercise_id, name: l.to?.name ?? null });
+      }
+    }
+    return {
+      promotions: promotedIds.map((id) => ({
+        exerciseId: id,
+        toExerciseId: firstLink.get(id)?.id ?? null,
+        toName: firstLink.get(id)?.name ?? null,
+      })),
+    };
+  } catch (e) {
+    console.error("saveMovementRatings failed:", e);
+    return null;
+  }
 }
