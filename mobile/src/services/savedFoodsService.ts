@@ -463,10 +463,13 @@ export async function findOrCreateProduct(product: {
       if (data) return { id: data.id, created: false };
     }
 
+    // Escaped, exactly like the search above: the name is data, not a
+    // pattern. "100% Whey" must not wildcard-match "100 Grass-Fed Whey" and
+    // stamp stock with the wrong product identity.
     const byName = await supabase
       .from("saved_foods")
       .select("id, brand")
-      .ilike("name", name);
+      .ilike("name", name.replace(/[%_]/g, "\\$&"));
     const brandNorm = (product.brand ?? "").trim().toLowerCase();
     const nameHit = (byName.data ?? []).find(
       (f) => ((f.brand ?? "").trim().toLowerCase()) === brandNorm,
