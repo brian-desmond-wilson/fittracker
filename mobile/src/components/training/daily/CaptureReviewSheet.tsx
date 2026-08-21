@@ -6,7 +6,7 @@ import {
 import { X, Link2, Link2Off, Pencil, Info } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
-import { saveCapture } from "@/src/lib/supabase/capture";
+import { markCaptureRejected, saveCapture } from "@/src/lib/supabase/capture";
 import { draftWorkoutFromExercises, draftWorkoutName } from "@/src/lib/captureReview";
 import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
 import type {
@@ -126,7 +126,27 @@ export function CaptureReviewSheet({
     onSaved();
   };
 
-  const close = () => { setSeededFor(null); onClose(); };
+  const close = () => {
+    // A dismissal is a rejection: keep the source as 'failed' for retry
+    // (spec §4). Fire-and-forget — the close must never wait on the network.
+    // The accept path goes through onSaved, never through here.
+    if (payload) {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (!user) return;
+        markCaptureRejected({
+          userId: user.id,
+          sourceUrl: payload.sourceUrl,
+          platform: payload.resolved.platform,
+          posterHandle: payload.resolved.posterHandle,
+          captionText: payload.resolved.captionText,
+          thumbnailUrl: payload.resolved.thumbnailUrl,
+          rawExtraction: payload.rawExtraction,
+        });
+      });
+    }
+    setSeededFor(null);
+    onClose();
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>

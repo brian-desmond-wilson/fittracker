@@ -347,6 +347,50 @@ function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
   };
 }
 
+export interface RejectCaptureInput {
+  userId: string;
+  sourceUrl: string;
+  platform: string;
+  posterHandle: string | null;
+  captionText: string | null;
+  thumbnailUrl: string | null;
+  rawExtraction: unknown;
+}
+
+/** The review sheet was dismissed without accepting: keep the source row as
+ *  'failed' so the capture isn't lost (spec §4 — "rejecting keeps the source
+ *  row for retry"). saveCapture already reclaims pending/failed rows, so
+ *  re-capturing the same URL heals it. Never downgrades a reviewed row —
+ *  rejecting a duplicate of something already captured is a no-op.
+ *  Best-effort by design: it must never block the close. */
+export async function markCaptureRejected(input: RejectCaptureInput): Promise<void> {
+  try {
+    const existing = await findExistingCapture(input.userId, input.sourceUrl);
+    if (existing) {
+      if (existing.extraction_status === "reviewed") return;
+      const { error } = await supabase
+        .from("captured_sources")
+        .update({ extraction_status: "failed", raw_extraction: input.rawExtraction ?? null })
+        .eq("id", existing.id);
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase.from("captured_sources").insert({
+      user_id: input.userId,
+      platform: input.platform,
+      source_url: input.sourceUrl,
+      poster_handle: input.posterHandle,
+      caption_text: input.captionText,
+      thumbnail_url: input.thumbnailUrl,
+      raw_extraction: input.rawExtraction ?? null,
+      extraction_status: "failed",
+    });
+    if (error) throw error;
+  } catch (e) {
+    console.error("markCaptureRejected failed:", e);
+  }
+}
+
 /** Captured workouts with their movements and provenance, newest first.
  *  Without this read the workouts are write-only: the rows exist and nothing
  *  in the app can show them. */
