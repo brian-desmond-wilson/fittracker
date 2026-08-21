@@ -566,19 +566,22 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       }
       if (runId !== runIdRef.current) return;
 
-      const items = await blockPicksToItems(picks);
+      const itemsRead = await blockPicksToItems(picks);
       // Guarded here and not only before the ask: this is the last await before
       // the day is written, and a stale run that got past it would persist a
       // plan built from inputs the user has already changed.
       if (runId !== runIdRef.current) return;
-      // blockPicksToItems answers `[]` for a failed read and for a day of
-      // built-ins alike, and only one of those is fine — a pick that names a
-      // catalog workout always has movements to contribute. The plan is still
-      // written, because it is correct and worth showing, but it goes in
+      // A failed read answers null; a day of built-ins answers []. Either way
+      // a pick that names a catalog workout always has movements to
+      // contribute, so a plan with catalog picks and nothing under them is
+      // still written — it is correct and worth showing — but it goes in
       // unclaimed: the gate above would otherwise refuse to recompose it, and
       // a blip would leave the day with a full block plan and nothing under it
       // to log, all day.
-      const itemsMissing = items.length === 0 && picks.some((p) => p.workoutId !== null);
+      const items = itemsRead ?? [];
+      const itemsMissing =
+        itemsRead === null ||
+        (items.length === 0 && picks.some((p) => p.workoutId !== null));
       if (itemsMissing) {
         console.warn(
           "compose: no loggable items for a plan with catalog workouts —",

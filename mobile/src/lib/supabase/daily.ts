@@ -686,7 +686,7 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
  *  workout's own order within its group. The picks are walked in block order
  *  rather than the caller's, because `itemOrder` is the sequence the logging
  *  screen trains in and a warm-up must not land after the cool-down. */
-export async function blockPicksToItems(picks: BlockPick[]): Promise<SessionItem[]> {
+export async function blockPicksToItems(picks: BlockPick[]): Promise<SessionItem[] | null> {
   const workoutIds = picks.map((p) => p.workoutId).filter((id): id is string => id !== null);
   if (workoutIds.length === 0) return [];
   const { data, error } = await supabase
@@ -695,8 +695,10 @@ export async function blockPicksToItems(picks: BlockPick[]): Promise<SessionItem
     .in("captured_workout_id", workoutIds)
     .order("exercise_order", { ascending: true });
   if (error) {
+    // NULL, not [] — a failed read must never look like "a day of built-ins".
+    // The reroll path aborts on it; the compose path saves the plan unclaimed.
     console.error("blockPicksToItems failed:", error);
-    return [];
+    return null;
   }
   const byWorkout = new Map<string, any[]>();
   for (const row of data ?? []) {
@@ -964,6 +966,22 @@ export async function rerollBlock(
       return false;
     }
 
+    // The replacement's items are read BEFORE anything is deleted: a failed
+    // read here aborts the whole swap with the plan untouched. Reading after
+    // the delete once let a network blip masquerade as "no movements" and
+    // report a successful reroll over a block with nothing left to log — and
+    // a reroll is a user decision nothing recomputes, so that block stayed
+    // empty for the rest of the day.
+    let items: SessionItem[] = [];
+    if (next.workoutId) {
+      const read = await blockPicksToItems([
+        { block, workoutId: next.workoutId, builtinKey: null, name: next.name,
+          minutes: next.minutes, roundsNote: next.roundsNote, reason: null },
+      ]);
+      if (read === null) return false;
+      items = read;
+    }
+
     // Replace just this block's loggable items. Safe to key on the section
     // because the block→section map is injective: conditioning is the only
     // block that lands in `accessory`, and `bfr` has no block at all. A
@@ -974,32 +992,26 @@ export async function rerollBlock(
       .eq("session_id", sessionId)
       .eq("section", SECTION_FOR_BLOCK[block]);
     if (delError) throw delError;
-    if (next.workoutId) {
-      const items = await blockPicksToItems([
-        { block, workoutId: next.workoutId, builtinKey: null, name: next.name,
-          minutes: next.minutes, roundsNote: next.roundsNote, reason: null },
-      ]);
-      if (items.length > 0) {
-        const { error: insError } = await supabase.from("generated_session_items").insert(
-          items.map((i) => ({
-            session_id: sessionId,
-            exercise_id: i.exerciseId,
-            // A staging value, not the answer: renumberSessionItems below puts
-            // the sequence back. It is deliberately past every composed item's
-            // order, because that renumber is non-fatal — and if it doesn't
-            // run, "the rerolled block sorts last" is at least a stable,
-            // predictable wrong, where starting from 0 would interleave these
-            // rows among the others in no defined order.
-            item_order: REROLL_ITEM_ORDER_BASE + i.itemOrder,
-            section: i.section,
-            target_sets: i.targetSets,
-            target_reps: i.targetReps,
-            rest_seconds: i.restSeconds,
-            reason: null,
-          })),
-        );
-        if (insError) throw insError;
-      }
+    if (items.length > 0) {
+      const { error: insError } = await supabase.from("generated_session_items").insert(
+        items.map((i) => ({
+          session_id: sessionId,
+          exercise_id: i.exerciseId,
+          // A staging value, not the answer: renumberSessionItems below puts
+          // the sequence back. It is deliberately past every composed item's
+          // order, because that renumber is non-fatal — and if it doesn't
+          // run, "the rerolled block sorts last" is at least a stable,
+          // predictable wrong, where starting from 0 would interleave these
+          // rows among the others in no defined order.
+          item_order: REROLL_ITEM_ORDER_BASE + i.itemOrder,
+          section: i.section,
+          target_sets: i.targetSets,
+          target_reps: i.targetReps,
+          rest_seconds: i.restSeconds,
+          reason: null,
+        })),
+      );
+      if (insError) throw insError;
     }
     await renumberSessionItems(sessionId);
 
