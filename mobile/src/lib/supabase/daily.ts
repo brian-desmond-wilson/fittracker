@@ -627,9 +627,15 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
     }
 
     const keptBlocks = new Set(blocks.map((b) => b.block));
-    const staleBlockIds = (existing?.blocks ?? [])
-      .filter((b) => !keptBlocks.has(b.block))
-      .map((b) => b.id);
+    // On an append, `existing` is the day's COMPLETED session — history, not
+    // the row being written. Pruning against it would delete the finished
+    // day's block record wherever the new plan drops a role. A fresh insert
+    // has no stale rows by definition, so the prune list is empty.
+    const staleBlockIds = appending
+      ? []
+      : (existing?.blocks ?? [])
+          .filter((b) => !keptBlocks.has(b.block))
+          .map((b) => b.id);
     if (staleBlockIds.length > 0) {
       const { error: pruneError } = await supabase
         .from("generated_session_blocks")
