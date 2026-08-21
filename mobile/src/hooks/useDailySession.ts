@@ -29,10 +29,12 @@ import {
   fetchGyms,
   fetchLatestDebrief,
   fetchRecentAdjustments,
+  fetchSkillStates,
   fetchTodayCheckin,
   fetchTodaySession,
   saveGeneratedSession,
 } from "../lib/supabase/daily";
+import { userSkillCeiling } from "../lib/dailySkill";
 import {
   classifyWorkout,
   fetchMuscleRegionNames,
@@ -249,7 +251,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       const sinceDate = getLocalDateString(
         addDays(parseLocalDate(today), -COVERAGE_WINDOW_DAYS),
       );
-      const [captured, usage, muscleNames, firstRow, adjustments, debrief] =
+      const [captured, usage, muscleNames, firstRow, adjustments, debrief, skillStates] =
         await Promise.all([
           fetchCapturedWorkouts(user.id),
           fetchUsage(user.id, sinceDate),
@@ -266,6 +268,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
           // The coverage window (8 days) is a fine horizon for "how did the
           // last one land" too — a week-old debrief is the newest worth hearing.
           fetchLatestDebrief(user.id, `${sinceDate}T00:00:00`),
+          fetchSkillStates(user.id),
         ]);
       if (runId !== runIdRef.current) return;
 
@@ -345,6 +348,12 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       const overrodeRecovery = isRecoveryDay(todayCheckin) && !recovery;
       const coverage = muscleCoverage(usage, today);
       const envelopes = blockEnvelopes(todayCheckin.minutesAvailable, recovery);
+      // The EARNED ceiling, floored at Intermediate: skill states start empty
+      // and per-movement levels start beginner, and an unrated history must
+      // not gut a mostly-Intermediate catalog. Advanced is the tier that has
+      // to be earned (three movements rated up to advanced).
+      const earnedCeiling = userSkillCeiling(Object.values(skillStates));
+      const userSkill = earnedCeiling === "Advanced" ? "Advanced" : "Intermediate";
       const { shortlists, relaxedMain } = buildBlockShortlists(tagged, {
         coverage,
         soreness: todayCheckin.soreness,
@@ -354,6 +363,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         // cool-down only" is a rule about the day, not a consequence of the
         // envelope array's shape.
         recoveryDay: recovery,
+        userSkill,
       });
 
       // ---- Blocks the user has pinned ----
@@ -444,6 +454,9 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         overrodeRecovery ? "override" : "",
         `adj:${todaysInstructions.map((a) => a.id).sort().join(",")}`,
         `deb:${debrief?.sessionId ?? ""}`,
+        // A promotion that raises the ceiling is new information: the cached
+        // day must not outlive it.
+        `skill:${userSkill}`,
         shortlistIds,
       ].join("::");
       // The ask cache's key carries the locked set on top of the signature —

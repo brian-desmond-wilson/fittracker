@@ -76,6 +76,10 @@ export interface ShortlistContext {
    *  `isRecoveryDay` to build the envelopes; it passes the same answer here. */
   recoveryDay: boolean;
   rampWeek: number;
+  /** The EARNED ceiling (dailySkill.userSkillCeiling), floored by the caller
+   *  — the hook passes Intermediate minimum so an unrated history doesn't
+   *  gut a mostly-Intermediate catalog on day one. */
+  userSkill: "Beginner" | "Intermediate" | "Advanced";
 }
 
 export interface ShortlistResult {
@@ -171,6 +175,17 @@ function hasSorePrimary(w: TaggedWorkout, soreness: Record<string, number>): boo
 /** Spec §4 step 4: a support or conditioning workout must share body focus
  *  with at least one main candidate. A full-body workout pairs with anything,
  *  and a null constraint (no main today) rules nothing out. */
+const SKILL_RANK: Record<string, number> = { Beginner: 0, Intermediate: 1, Advanced: 2 };
+
+/** A workout above what the user has EARNED is out (spec §4 step 3, "not
+ *  exceed the user's skill level"). Untagged = never gated. Replaces the
+ *  ramp-week stand-in this file carried while skill state was empty. */
+function withinSkill(w: TaggedWorkout, userSkill: string): boolean {
+  const tag = w.tags.skillLevel;
+  if (!tag) return true;
+  return SKILL_RANK[tag] <= (SKILL_RANK[userSkill] ?? 0);
+}
+
 function sharesMainFocus(w: TaggedWorkout, mainFocuses: Set<BodyFocus> | null): boolean {
   if (mainFocuses === null) return true;
   const focus = workoutFocus(w.tags.muscles);
@@ -199,9 +214,12 @@ export function buildBlockShortlists(
   const mainEnv = envFor("main");
   if (!ctx.recoveryDay && mainEnv) {
     const pool = byRole("main")
-      // Advanced workouts sit out the re-entry ramp. There is no per-workout
-      // skill state yet, so the ramp stands in for "not above the user's skill
-      // level" — pinned during planning, where the spec was silent.
+      // Not above the user's EARNED skill (spec §4 step 3). Applied to the
+      // pool every §8 tier draws from, so the relaxation ladder can never
+      // relax it. Untagged workouts are never gated.
+      .filter((w) => withinSkill(w, ctx.userSkill))
+      // Weeks 1-2 stay conservative regardless of earned level: the re-entry
+      // ramp outranks history.
       .filter((w) => !(ctx.rampWeek <= 2 && w.tags.skillLevel === "Advanced"));
 
     const unsore = (w: TaggedWorkout) => !hasSorePrimary(w, ctx.soreness);

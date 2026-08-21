@@ -30,6 +30,9 @@ const baseCtx = () => ({
   envelopes: blockEnvelopes(60, false),
   recoveryDay: false,
   rampWeek: 3,
+  // Day-one app behavior: unrated history floors at Intermediate (the hook
+  // applies the floor), so the factory default mirrors that.
+  userSkill: "Intermediate" as const,
 });
 
 describe("isRecoveryDay", () => {
@@ -88,10 +91,16 @@ describe("buildBlockShortlists", () => {
   });
 
   it("advanced workouts sit out ramp weeks 1-2", () => {
+    // userSkill Advanced throughout, so only the ramp varies here — the
+    // earned-ceiling gate has its own describe block below.
     const adv = workout({ workoutId: "adv", tags: { skillLevel: "Advanced" } as any });
-    const { shortlists } = buildBlockShortlists([adv], { ...baseCtx(), rampWeek: 1 });
+    const { shortlists } = buildBlockShortlists(
+      [adv], { ...baseCtx(), userSkill: "Advanced", rampWeek: 1 },
+    );
     expect(shortlists.main).toHaveLength(0);
-    const later = buildBlockShortlists([adv], { ...baseCtx(), rampWeek: 3 });
+    const later = buildBlockShortlists(
+      [adv], { ...baseCtx(), userSkill: "Advanced", rampWeek: 3 },
+    );
     expect(later.shortlists.main).toHaveLength(1);
   });
 
@@ -362,5 +371,58 @@ describe("effectiveRecovery", () => {
   it("an override on an ordinary day changes nothing", () => {
     expect(effectiveRecovery({ ...fine, overrideRecovery: true })).toBe(false);
     expect(effectiveRecovery({ ...fine, overrideRecovery: false })).toBe(false);
+  });
+});
+
+describe("skill ceiling gate", () => {
+  const advancedMain = () =>
+    workout({ workoutId: "adv", tags: { skillLevel: "Advanced" } as any });
+
+  it("excludes a workout tagged above the user's earned ceiling", () => {
+    const { shortlists } = buildBlockShortlists(
+      [advancedMain()],
+      { ...baseCtx(), userSkill: "Intermediate" },
+    );
+    expect(shortlists.main).toHaveLength(0);
+  });
+
+  it("admits it once the ceiling is earned", () => {
+    const { shortlists } = buildBlockShortlists(
+      [advancedMain()],
+      { ...baseCtx(), userSkill: "Advanced" },
+    );
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["adv"]);
+  });
+
+  it("an untagged skill level is never gated", () => {
+    const untagged = workout({ workoutId: "untagged", tags: { skillLevel: null } as any });
+    const { shortlists } = buildBlockShortlists(
+      [untagged],
+      { ...baseCtx(), userSkill: "Beginner" },
+    );
+    expect(shortlists.main!.map((c) => c.workoutId)).toEqual(["untagged"]);
+  });
+
+  it("the ramp still excludes Advanced in weeks 1-2 even at a high ceiling", () => {
+    const { shortlists } = buildBlockShortlists(
+      [advancedMain()],
+      { ...baseCtx(), userSkill: "Advanced", rampWeek: 1 },
+    );
+    expect(shortlists.main).toHaveLength(0);
+  });
+
+  it("the §8 relaxation ladder never relaxes the skill gate", () => {
+    // The only main candidate is Advanced and recently done: recency would be
+    // relaxed for it, but the skill gate must hold and the day fields no main.
+    const adv = workout({
+      workoutId: "adv", lastPerformedDaysAgo: 1,
+      tags: { skillLevel: "Advanced" } as any,
+    });
+    const { shortlists, relaxedMain } = buildBlockShortlists(
+      [adv],
+      { ...baseCtx(), userSkill: "Intermediate" },
+    );
+    expect(shortlists.main).toHaveLength(0);
+    expect(relaxedMain).toBe(false);
   });
 });
