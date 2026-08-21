@@ -13,6 +13,7 @@
 import React from "react";
 import { Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { Trash2 } from "lucide-react-native";
+import { colors } from "@/src/theme/tokens";
 
 const PANEL_WIDTH = 80;
 /** Matches the card's own corner radius — they have to agree. */
@@ -58,7 +59,7 @@ export function SwipeDeleteAction({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? "Delete"}
       >
-        <Trash2 size={20} color="#FFFFFF" />
+        <Trash2 size={20} color={colors.onBrand} />
         <Text style={styles.text}>Delete</Text>
       </TouchableOpacity>
     </Animated.View>
@@ -73,11 +74,11 @@ const styles = StyleSheet.create({
     overflow: "visible",
   },
   button: {
-    backgroundColor: "#EF4444",
+    backgroundColor: colors.danger,
     justifyContent: "center",
     alignItems: "center",
     height: "100%",
     gap: 4,
   },
-  text: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
+  text: { color: colors.onBrand, fontSize: 12, fontWeight: "600" },
 });
