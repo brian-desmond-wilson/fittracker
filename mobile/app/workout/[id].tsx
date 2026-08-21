@@ -1562,7 +1562,9 @@ export default function WorkoutSessionPage() {
     // Resolved once for the whole session so a duration typed into set 3 lands
     // at the same clock time it was showing on screen.
     const { resolvedByKey } = sessionTimes();
-    const wiId = workoutInstanceId || await createWorkoutInstance();
+    // Ref first: the state can be a render behind when the instance was just
+    // created in this same pass (the finish paths call straight into here).
+    const wiId = workoutInstanceIdRef.current || workoutInstanceId || await createWorkoutInstance();
     if (!wiId) return;
 
     // Reuse existing exercise_instance or create new one (check ref first for race condition safety)
@@ -1667,7 +1669,10 @@ export default function WorkoutSessionPage() {
 
       // Keep workout in_progress (don't mark as completed)
       // Also update total duration on workout_instances for backward compatibility
-      if (workoutInstanceId) {
+      // Ref, not state: the instance may have been created by the save loop
+      // just above, and the state doesn't catch up until the next render.
+      const doneWiId = workoutInstanceIdRef.current || workoutInstanceId;
+      if (doneWiId) {
         const completedCount = exerciseStates.filter(e => e.completed).length;
         const { error } = await supabase
           .from('workout_instances')
@@ -1676,7 +1681,7 @@ export default function WorkoutSessionPage() {
             completion_status: completedCount === exerciseStates.length ? 'completed' : 'partial',
             duration_seconds: recordedSpan().durationSeconds,
           })
-          .eq('id', workoutInstanceId);
+          .eq('id', doneWiId);
         if (error) throw error;
       }
 
@@ -1717,18 +1722,22 @@ export default function WorkoutSessionPage() {
         if (error) throw error;
       }
 
-      // Update workout instance
-      if (workoutInstanceId) {
+      // Update workout instance. Ref, not state: if the save loop above just
+      // created the instance, the state is still null this render — skipping
+      // this block would leave the instance open AND skip the daily
+      // completion backfill while telling the user the workout is complete.
+      const finishWiId = workoutInstanceIdRef.current || workoutInstanceId;
+      if (finishWiId) {
         const allComplete = exerciseStates.every(e => e.completed);
-        
+
         // Calculate total duration from all sessions
         const { data: sessions } = await supabase
           .from('workout_sessions')
           .select('duration_seconds')
-          .eq('workout_instance_id', workoutInstanceId);
-        
+          .eq('workout_instance_id', finishWiId);
+
         const totalDuration = sessions?.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) || recordedSpan().durationSeconds;
-        
+
         const { error } = await supabase
           .from('workout_instances')
           .update({
@@ -1737,7 +1746,7 @@ export default function WorkoutSessionPage() {
             completed_at: new Date().toISOString(),
             duration_seconds: totalDuration,
           })
-          .eq('id', workoutInstanceId);
+          .eq('id', finishWiId);
         if (error) throw error;
 
         if (isDaily) {
