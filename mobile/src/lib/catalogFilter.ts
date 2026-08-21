@@ -10,6 +10,9 @@ export function filterCatalog(entries: CatalogEntry[], f: CatalogFilters): Catal
     if (f.equipment && !e.equipmentTypes.includes(f.equipment)) return false;
     if (f.category && !e.goalTypes.includes(f.category)) return false;
     if (f.handle && !e.sources.some((s) => s.posterHandle === f.handle)) return false;
+    // Exact match: an unrated movement is not "Beginner", it is unrated, and
+    // it stays visible only when no skill pill is active.
+    if (f.skill && e.skillLevel !== f.skill) return false;
     if (q) {
       const inName = e.name.toLowerCase().includes(q);
       const inHandle = e.sources.some((s) => s.posterHandle?.toLowerCase().includes(q));

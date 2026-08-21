@@ -24,7 +24,7 @@ const entry = (overrides: Partial<CatalogEntry> = {}): CatalogEntry => ({
   ...overrides,
 });
 
-const none = { muscle: null, equipment: null, category: null, handle: null, search: "" };
+const none = { muscle: null, equipment: null, category: null, handle: null, skill: null, search: "" };
 
 describe("filterCatalog", () => {
   it("passes everything through with no filters", () => {
@@ -64,5 +64,18 @@ describe("filterCatalog", () => {
       entry({ exerciseId: "ex-2", equipmentTypes: ["Barbell"] }),
     ];
     expect(filterCatalog(list, { ...none, muscle: "Glutes", equipment: "Kettlebell" }).map((e) => e.exerciseId)).toEqual(["ex-1"]);
+  });
+});
+
+describe("skill filter", () => {
+  it("filters by skill level, and a null skill only ever matches no filter", () => {
+    const entries = [
+      entry({ exerciseId: "a", name: "Pull-Up", skillLevel: "Intermediate" }),
+      entry({ exerciseId: "b", name: "Burpee", skillLevel: "Beginner" }),
+      entry({ exerciseId: "c", name: "Mystery", skillLevel: null }),
+    ];
+    const out = filterCatalog(entries, { ...none, skill: "Beginner" });
+    expect(out.map((e) => e.name)).toEqual(["Burpee"]);
+    expect(filterCatalog(entries, { ...none })).toHaveLength(3);
   });
 });

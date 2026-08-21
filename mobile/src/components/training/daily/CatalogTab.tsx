@@ -33,7 +33,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState<Omit<CatalogFilters, "search">>({
-    muscle: null, equipment: null, category: null, handle: null,
+    muscle: null, equipment: null, category: null, handle: null, skill: null,
   });
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -87,6 +87,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
         {rail("Muscle", "muscle", axes.muscles)}
         {rail("Equipment", "equipment", axes.equipment)}
         {rail("Type", "category", axes.categories)}
+        {rail("Skill", "skill", ["Beginner", "Intermediate", "Advanced"])}
         {rail("From", "handle", axes.handles)}
       </View>
 
