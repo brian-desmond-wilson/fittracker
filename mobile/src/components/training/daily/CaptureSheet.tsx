@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -14,6 +14,9 @@ import type { ExtractedPost, ResolvedPost } from "@/src/types/capture";
 
 interface CaptureSheetProps {
   visible: boolean;
+  /** A URL arriving from the iOS share sheet: prefilled and resolved
+   *  immediately, skipping the paste step. */
+  initialUrl?: string | null;
   onClose: () => void;
   /** Hands a sanitized extraction to the review sheet. rawExtraction is the
    *  unsanitized model output, persisted for audit. */
@@ -27,12 +30,26 @@ interface CaptureSheetProps {
 
 type Phase = "url" | "resolving" | "caption" | "extracting";
 
-export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProps) {
+export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: CaptureSheetProps) {
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [phase, setPhase] = useState<Phase>("url");
   const [resolved, setResolved] = useState<ResolvedPost | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  // One auto-resolve per shared URL: a re-render mid-flow must not restart it,
+  // and closing the sheet must not re-fire on the same share.
+  const autoResolvedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!visible || !initialUrl) return;
+    if (autoResolvedRef.current === initialUrl) return;
+    autoResolvedRef.current = initialUrl;
+    setUrl(initialUrl);
+    handleSubmitUrl(initialUrl);
+    // handleSubmitUrl is stable-enough by construction (reads state it was
+    // handed); listing it would re-fire the effect every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, initialUrl]);
 
   const reset = () => {
     setUrl(""); setCaption(""); setPhase("url"); setResolved(null); setErrorText(null);
@@ -91,8 +108,8 @@ export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProp
     }
   };
 
-  const handleSubmitUrl = async () => {
-    const trimmed = url.trim();
+  const handleSubmitUrl = async (raw?: string) => {
+    const trimmed = (raw ?? url).trim();
     if (!/^https?:\/\//.test(trimmed)) {
       setErrorText("Paste a full link, starting with https://");
       return;
@@ -193,7 +210,7 @@ export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProp
 
         <TouchableOpacity
           style={[styles.button, busy && styles.buttonDisabled]}
-          onPress={phase === "caption" ? handleSubmitCaption : handleSubmitUrl}
+          onPress={phase === "caption" ? handleSubmitCaption : () => handleSubmitUrl()}
           disabled={busy}
           activeOpacity={0.8}
         >

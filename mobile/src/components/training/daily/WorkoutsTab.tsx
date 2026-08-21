@@ -20,6 +20,8 @@ import type { CapturedWorkoutEntry } from "@/src/types/capture";
 interface WorkoutsTabProps {
   searchQuery: string;
   onCountUpdate: (count: number) => void;
+  /** A URL from the iOS share sheet, passed through to the capture flow. */
+  shareUrl?: string | null;
 }
 
 /** How the list is ordered. "captured" is what the tab has always done and
@@ -29,7 +31,7 @@ type SortMode = "captured" | "stale";
 
 const workoutId = (w: CapturedWorkoutEntry) => w.workoutId;
 
-export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabProps) {
+export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: WorkoutsTabProps) {
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
   const [completions, setCompletions] = useState<CompletionMap>({});
   const [sort, setSort] = useState<SortMode>("captured");
@@ -143,7 +145,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate }: WorkoutsTabP
       />
       )}
 
-      <CaptureFab onSaved={load} />
+      <CaptureFab onSaved={load} initialUrl={shareUrl ?? null} />
     </GestureHandlerRootView>
   );
 }

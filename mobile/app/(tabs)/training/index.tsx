@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -52,6 +53,19 @@ export default function Training() {
   const [crossfitTab, setCrossfitTab] = useState<CrossFitTab>("classes");
   const [strengthTab, setStrengthTab] = useState<StrengthTab>("programs");
   const [dailyTab, setDailyTab] = useState<DailyTab>("today");
+  // A URL arriving from the iOS share sheet (routed by the root layout).
+  // Consumed into state and cleared from the route immediately, so
+  // re-focusing the tab later doesn't replay the share.
+  const router = useRouter();
+  const { shareUrl } = useLocalSearchParams<{ shareUrl?: string }>();
+  const [pendingShareUrl, setPendingShareUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof shareUrl !== "string" || shareUrl === "") return;
+    setPendingShareUrl(shareUrl);
+    setWorkoutMode("daily");
+    setDailyTab("workouts"); // the Daily tab that hosts the capture flow
+    router.setParams({ shareUrl: undefined });
+  }, [shareUrl, router]);
   const [catalogCount, setCatalogCount] = useState(0);
   const [capturedWorkoutsCount, setCapturedWorkoutsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -182,6 +196,7 @@ export default function Training() {
             <DailyWorkoutsTab
               searchQuery={searchQuery}
               onCountUpdate={setCapturedWorkoutsCount}
+              shareUrl={pendingShareUrl}
             />
           );
         case "exercises":

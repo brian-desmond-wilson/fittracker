@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { TouchableOpacity, StyleSheet } from "react-native";
 import { Plus } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
@@ -16,10 +16,15 @@ import type { ExtractedPost, ResolvedPost } from "@/src/types/capture";
 interface CaptureFabProps {
   /** Fired after a capture is committed, so the host tab reloads its list. */
   onSaved: () => void;
+  /** A URL from the iOS share sheet: opens the capture sheet with it. */
+  initialUrl?: string | null;
 }
 
-export function CaptureFab({ onSaved }: CaptureFabProps) {
+export function CaptureFab({ onSaved, initialUrl }: CaptureFabProps) {
   const [captureVisible, setCaptureVisible] = useState(false);
+  useEffect(() => {
+    if (initialUrl) setCaptureVisible(true);
+  }, [initialUrl]);
   const [reviewPayload, setReviewPayload] = useState<{
     resolved: ResolvedPost; sourceUrl: string; post: ExtractedPost; rawExtraction: unknown;
   } | null>(null);
@@ -47,6 +52,7 @@ export function CaptureFab({ onSaved }: CaptureFabProps) {
 
       <CaptureSheet
         visible={captureVisible}
+        initialUrl={initialUrl ?? null}
         onClose={() => setCaptureVisible(false)}
         onExtracted={handleExtracted}
       />

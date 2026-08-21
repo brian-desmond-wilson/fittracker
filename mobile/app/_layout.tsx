@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
+import { useShareIntent } from "expo-share-intent";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { StatusBar } from "expo-status-bar";
@@ -68,6 +69,23 @@ export default function RootLayout() {
       router.replace("/(auth)/sign-in");
     }
   }, [session, segments, loading]);
+
+  // A post shared from Instagram/TikTok via the iOS share sheet lands here
+  // and is routed straight into the EXISTING capture flow — the training
+  // screen opens the capture sheet with the URL prefilled. Signed out, the
+  // auth redirect above wins and the share is dropped rather than queued.
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntent();
+  useEffect(() => {
+    if (loading || !hasShareIntent) return;
+    const url = shareIntent.webUrl ?? shareIntent.text ?? null;
+    resetShareIntent();
+    if (url && session) {
+      router.push({ pathname: "/(tabs)/training", params: { shareUrl: url } });
+    }
+    // resetShareIntent/shareIntent identities churn with the intent itself;
+    // hasShareIntent is the one signal that matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasShareIntent, loading, session]);
 
   if (loading) {
     return (
