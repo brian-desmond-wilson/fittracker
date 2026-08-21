@@ -2117,9 +2117,14 @@ export default function WorkoutSessionPage() {
                   s.kind === 'exercise'
                     ? [{
                         name: getExercise(exerciseStates[s.exerciseIndex].exercise).name,
-                        rx: `${exerciseStates[s.exerciseIndex].sets.length} × ${
-                          exerciseStates[s.exerciseIndex].exercise.target_reps_min
-                        }`,
+                        // The creator's own words when they exist — "21-15-9",
+                        // "30s each side" — same rule the logger already
+                        // follows; the computed line is only for program-mode
+                        // exercises, which carry no raw prescription.
+                        rx: (exerciseStates[s.exerciseIndex].exercise as any).raw_reps
+                          ?? `${exerciseStates[s.exerciseIndex].sets.length} × ${
+                            exerciseStates[s.exerciseIndex].exercise.target_reps_min
+                          }`,
                       }]
                     : (builtinByKey(s.builtinKey)?.movements ?? []).map((m) => ({
                         name: m.name, rx: m.prescription,
