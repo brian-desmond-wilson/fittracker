@@ -1319,7 +1319,21 @@ export async function adoptCapturedWorkout(
           reason: i.reason,
         })),
       );
-    if (itemError) throw itemError;
+    if (itemError) {
+      // Take the session row back out, or the day is stuck: a user_pick
+      // session is never recomposed, so an item-less one would sit on the
+      // Today tab all day with a Start button that opens an error screen.
+      // If even the delete fails we still report failure — a skipped
+      // suggestion is recoverable (adopt again), a stuck day is not.
+      const { error: undoError } = await supabase
+        .from("generated_sessions")
+        .delete()
+        .eq("id", session.id);
+      if (undoError) {
+        console.error("adoptCapturedWorkout undo failed:", undoError);
+      }
+      throw itemError;
+    }
 
     return session.id;
   } catch (e) {
