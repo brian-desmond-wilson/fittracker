@@ -95,6 +95,26 @@ export const BUILTINS: BuiltinRoutine[] = [
       { name: "Slow Nasal Breathing, Lying Down", prescription: "120s" },
     ],
   },
+  // BFR finishers (Phase 3): built-in-only, rules-appended by
+  // bfrFinisherPick — never in a shortlist, never the model's to pick. The
+  // 30/15/15/15 scheme with short rests is the standard occlusion protocol:
+  // light load, high rep, cuffs stay on through the rests.
+  {
+    key: "builtin-bfr-upper", name: "BFR Arm Finisher", role: "bfr",
+    focus: "upper", minutes: 10,
+    movements: [
+      { name: "Banded Bicep Curls (cuffs on)", prescription: "30-15-15-15, 30s rests" },
+      { name: "Banded Triceps Extensions (cuffs on)", prescription: "30-15-15-15, 30s rests" },
+    ],
+  },
+  {
+    key: "builtin-bfr-lower", name: "BFR Leg Finisher", role: "bfr",
+    focus: "lower", minutes: 10,
+    movements: [
+      { name: "Bodyweight Squats (cuffs on)", prescription: "30-15-15-15, 30s rests" },
+      { name: "Standing Calf Raises (cuffs on)", prescription: "30-15-15-15, 30s rests" },
+    ],
+  },
 ];
 
 export function findBuiltin(

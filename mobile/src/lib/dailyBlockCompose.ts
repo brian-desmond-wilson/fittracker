@@ -6,11 +6,13 @@ import type {
   BlockPick,
   BlockRole,
   BlockShortlists,
+  BodyFocus,
 } from "../types/dailyBlocks";
 import type { SessionSection } from "../types/daily";
+import { findBuiltin } from "./dailyBuiltins";
 
 export const BLOCK_ORDER: BlockRole[] = [
-  "warmup", "mobility", "main", "conditioning", "cooldown",
+  "warmup", "mobility", "main", "conditioning", "bfr", "cooldown",
 ];
 
 /** How a block is named to the athlete. Lives here rather than in one screen
@@ -21,6 +23,7 @@ export const BLOCK_TITLES: Record<BlockRole, string> = {
   mobility: "Mobility",
   main: "Main workout",
   conditioning: "Conditioning",
+  bfr: "BFR finisher",
   cooldown: "Cool-down",
 };
 
@@ -30,6 +33,7 @@ export const SECTION_FOR_BLOCK: Record<BlockRole, SessionSection> = {
   mobility: "mobility",
   main: "main",
   conditioning: "accessory",
+  bfr: "bfr",
   cooldown: "cooldown",
 };
 
@@ -117,6 +121,42 @@ export function composeBlockFallback(
     total += chosen.minutes;
   }
   return picks;
+}
+
+/** One number, two readers: the hook reserves this much of the day's budget
+ *  before composing (so the finisher rides inside the plan, not on top of
+ *  it), and the built-in routines run exactly this long. */
+export const BFR_FINISHER_MINUTES = 10;
+
+export interface BfrContext {
+  bandsAvailable: boolean;
+  minutes: number;
+  recoveryDay: boolean;
+  /** The chosen main pick's focus, or null when the day has no main. */
+  mainFocus: BodyFocus | null;
+}
+
+/** The BFR finisher is rules-appended, never offered to the model: whether it
+ *  runs is a fact about bands, time, and soreness — not a judgment call.
+ *  Spec (2026-08-16 §2): bands always packed → program finishers regularly.
+ *  Same 75-minute floor as conditioning: the optional blocks share it. A day
+ *  with no main fields no finisher — there is nothing to finish. */
+export function bfrFinisherPick(ctx: BfrContext): BlockPick | null {
+  if (!ctx.bandsAvailable || ctx.recoveryDay || ctx.minutes < 75) return null;
+  if (!ctx.mainFocus) return null;
+  // Full-body days take the arm finisher: arms tolerate occlusion volume best
+  // and are the least likely to have been the day's emphasis.
+  const routine = findBuiltin("bfr", ctx.mainFocus === "lower" ? "lower" : "upper");
+  if (!routine) return null;
+  return {
+    block: "bfr",
+    workoutId: null,
+    builtinKey: routine.key,
+    name: routine.name,
+    minutes: routine.minutes,
+    roundsNote: null,
+    reason: null,
+  };
 }
 
 const str = (v: unknown): string | null =>

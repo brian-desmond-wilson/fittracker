@@ -16,6 +16,8 @@ import {
   buildBlockShortlists,
 } from "../lib/dailyBlockShortlist";
 import {
+  bfrFinisherPick,
+  BFR_FINISHER_MINUTES,
   composeBlockFallback,
   validateBlockComposition,
   mergeLockedPicks,
@@ -26,6 +28,7 @@ import {
 } from "../lib/dailyBlockCompose";
 import {
   blockPicksToItems,
+  fetchBfrFlag,
   fetchGyms,
   fetchLatestDebrief,
   fetchRecentAdjustments,
@@ -251,7 +254,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       const sinceDate = getLocalDateString(
         addDays(parseLocalDate(today), -COVERAGE_WINDOW_DAYS),
       );
-      const [captured, usage, muscleNames, firstRow, adjustments, debrief, skillStates] =
+      const [captured, usage, muscleNames, firstRow, adjustments, debrief, skillStates, bfrBands] =
         await Promise.all([
           fetchCapturedWorkouts(user.id),
           fetchUsage(user.id, sinceDate),
@@ -269,6 +272,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
           // last one land" too — a week-old debrief is the newest worth hearing.
           fetchLatestDebrief(user.id, `${sinceDate}T00:00:00`),
           fetchSkillStates(user.id),
+          fetchBfrFlag(user.id),
         ]);
       if (runId !== runIdRef.current) return;
 
@@ -347,7 +351,17 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // on an ordinary day must move neither.
       const overrodeRecovery = isRecoveryDay(todayCheckin) && !recovery;
       const coverage = muscleCoverage(usage, today);
-      const envelopes = blockEnvelopes(todayCheckin.minutesAvailable, recovery);
+      // When the finisher will run, its minutes come OFF the composable
+      // budget rather than riding on top of it — the plan the user sees sums
+      // to what they said they had. Same three gates bfrFinisherPick applies,
+      // minus the main-focus one it can only answer after composition.
+      const bfrReserve =
+        bfrBands && !recovery && todayCheckin.minutesAvailable >= 75
+          ? BFR_FINISHER_MINUTES
+          : 0;
+      const envelopes = blockEnvelopes(
+        todayCheckin.minutesAvailable - bfrReserve, recovery,
+      );
       // The EARNED ceiling, floored at Intermediate: skill states start empty
       // and per-movement levels start beginner, and an unrated history must
       // not gut a mostly-Intermediate catalog. Advanced is the tier that has
@@ -391,7 +405,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // already cost (a dismissed built-in costs nothing). Clamped, because
       // the validator refuses a budget that isn't a positive number.
       const remainingMinutes = Math.max(
-        5, todayCheckin.minutesAvailable - plannedBlockMinutes(fixed),
+        5, todayCheckin.minutesAvailable - bfrReserve - plannedBlockMinutes(fixed),
       );
 
       // Budget-aware: the fallback runs precisely when the model's answer was
@@ -578,6 +592,30 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
         console.warn("compose-session ask failed:", e);
       }
       if (runId !== runIdRef.current) return;
+
+      // ---- BFR finisher: rules-appended, never asked (Phase 3). Whether it
+      // runs is a fact about bands, time, and soreness — not a judgment call.
+      // Its minutes were reserved before composition (bfrReserve above).
+      const mainPick = picks.find((p) => p.block === "main");
+      const mainCandidate = mainPick
+        ? (shortlists.main ?? []).find(
+            (c) => c.workoutId === mainPick.workoutId && c.builtinKey === mainPick.builtinKey,
+          )
+        : null;
+      const bfrPick = bfrFinisherPick({
+        bandsAvailable: bfrBands,
+        minutes: todayCheckin.minutesAvailable,
+        recoveryDay: recovery,
+        // A locked main isn't in today's shortlists; a day with a main still
+        // gets its finisher, defaulting to the arm routine via "full".
+        mainFocus: mainCandidate?.focus ?? (mainPick ? "full" : null),
+      });
+      // A LOCKED finisher already arrived through the fixed-picks merge; a
+      // second append would double the block.
+      if (bfrPick && !picks.some((p) => p.block === "bfr")) {
+        const cooldownIdx = picks.findIndex((p) => p.block === "cooldown");
+        picks.splice(cooldownIdx === -1 ? picks.length : cooldownIdx, 0, bfrPick);
+      }
 
       const itemsRead = await blockPicksToItems(picks);
       // Guarded here and not only before the ask: this is the last await before

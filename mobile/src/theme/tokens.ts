@@ -88,6 +88,10 @@ export const colors = {
     mobility: "#8B5CF6",
     main: "#22C55E",
     conditioning: "#F59E0B",
+    // Phase 3's sixth block, added after the 2026-08-19 mockups: pink, the
+    // one hue family the bar didn't use, and deliberately NOT the danger red
+    // it sits near — a finisher is identity, not a verdict.
+    bfr: "#EC4899",
     cooldown: "#14B8A6",
   },
 } as const;

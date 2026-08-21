@@ -8,10 +8,11 @@
  * work explodes into generated_session_items for logging, `conditioning` is
  * persisted as the existing `accessory` section — writing `section:
  * "conditioning"` violates that table's CHECK at runtime (spec §7). The
- * `bfr` section has no block at all; it belongs to the deferred exercise-level
- * phase.
+ * `bfr` block (Phase 3) maps to the `bfr` section and is built-in-only:
+ * rules-appended when bands, time, and soreness allow, never offered to the
+ * model, never a catalog workout's tag.
  */
-export type BlockRole = "warmup" | "mobility" | "main" | "conditioning" | "cooldown";
+export type BlockRole = "warmup" | "mobility" | "main" | "conditioning" | "bfr" | "cooldown";
 export type WorkoutIntensity = "low" | "moderate" | "high";
 export type BodyFocus = "upper" | "lower" | "full";
 
@@ -54,7 +55,7 @@ export interface UsageRow {
 export interface BuiltinRoutine {
   key: string; // stable id, e.g. "builtin-warmup-upper"
   name: string;
-  role: Extract<BlockRole, "warmup" | "mobility" | "cooldown">;
+  role: Extract<BlockRole, "warmup" | "mobility" | "cooldown" | "bfr">;
   focus: BodyFocus;
   minutes: number;
   movements: { name: string; prescription: string }[];

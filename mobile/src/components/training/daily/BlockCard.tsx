@@ -96,28 +96,35 @@ export function BlockCard({
           ? <Lock size={14} color={colors.warning} />
           : <LockOpen size={14} color={colors.textMuted} />}
       </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.iconBtn, (busy || block.locked) && styles.iconDim]}
-        onPress={onAdjust}
-        disabled={busy || block.locked}
-        accessibilityRole="button"
-        accessibilityLabel={`Tell the recommender what to change about the ${BLOCK_TITLES[block.block].toLowerCase()}`}
-        accessibilityState={{ disabled: busy || block.locked }}
-      >
-        <Sparkles size={14} color={colors.brand} />
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.iconBtn, (busy || block.locked) && !rerolling && styles.iconDim]}
-        onPress={onReroll}
-        disabled={busy || block.locked}
-        accessibilityRole="button"
-        accessibilityLabel={`Swap the ${BLOCK_TITLES[block.block].toLowerCase()} for another one`}
-        accessibilityState={{ disabled: busy || block.locked, busy: rerolling }}
-      >
-        {rerolling
-          ? <ActivityIndicator size="small" color={colors.brand} />
-          : <RotateCw size={14} color={colors.textMuted} />}
-      </TouchableOpacity>
+      {/* The BFR finisher is rules-appended: no shortlist to reroll from, and
+          the adjust vocabulary (and its DB CHECK) doesn't know the block.
+          Its controls are lock and dismiss only. */}
+      {block.block !== "bfr" && (
+        <TouchableOpacity
+          style={[styles.iconBtn, (busy || block.locked) && styles.iconDim]}
+          onPress={onAdjust}
+          disabled={busy || block.locked}
+          accessibilityRole="button"
+          accessibilityLabel={`Tell the recommender what to change about the ${BLOCK_TITLES[block.block].toLowerCase()}`}
+          accessibilityState={{ disabled: busy || block.locked }}
+        >
+          <Sparkles size={14} color={colors.brand} />
+        </TouchableOpacity>
+      )}
+      {block.block !== "bfr" && (
+        <TouchableOpacity
+          style={[styles.iconBtn, (busy || block.locked) && !rerolling && styles.iconDim]}
+          onPress={onReroll}
+          disabled={busy || block.locked}
+          accessibilityRole="button"
+          accessibilityLabel={`Swap the ${BLOCK_TITLES[block.block].toLowerCase()} for another one`}
+          accessibilityState={{ disabled: busy || block.locked, busy: rerolling }}
+        >
+          {rerolling
+            ? <ActivityIndicator size="small" color={colors.brand} />
+            : <RotateCw size={14} color={colors.textMuted} />}
+        </TouchableOpacity>
+      )}
       {block.builtinKey !== null && (
         <TouchableOpacity
           style={[styles.iconBtn, busy && styles.iconDim]}

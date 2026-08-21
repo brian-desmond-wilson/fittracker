@@ -16,7 +16,7 @@ describe("built-in fallback library", () => {
   it("keys are unique and stable-looking", () => {
     const keys = BUILTINS.map((b) => b.key);
     expect(new Set(keys).size).toBe(keys.length);
-    for (const key of keys) expect(key).toMatch(/^builtin-(warmup|mobility|cooldown)-(upper|lower|full)$/);
+    for (const key of keys) expect(key).toMatch(/^builtin-(warmup|mobility|cooldown|bfr)-(upper|lower|full)$/);
     for (const b of BUILTINS) expect(b.key).toBe(`builtin-${b.role}-${b.focus}`);
   });
 

@@ -1,4 +1,5 @@
 import {
+  bfrFinisherPick,
   blockDayShape,
   composeBlockFallback,
   validateBlockComposition,
@@ -374,8 +375,8 @@ describe("SECTION_FOR_BLOCK", () => {
     expect(SECTION_FOR_BLOCK.main).toBe("main");
     expect(SECTION_FOR_BLOCK.cooldown).toBe("cooldown");
   });
-  it("BLOCK_ORDER is the five phases in sequence", () => {
-    expect(BLOCK_ORDER).toEqual(["warmup", "mobility", "main", "conditioning", "cooldown"]);
+  it("BLOCK_ORDER is the six phases in sequence — the finisher lands before the cool-down", () => {
+    expect(BLOCK_ORDER).toEqual(["warmup", "mobility", "main", "conditioning", "bfr", "cooldown"]);
   });
 });
 
@@ -473,5 +474,34 @@ describe("extractDayReason", () => {
     expect(extractDayReason({})).toBeNull();
     expect(extractDayReason(null)).toBeNull();
     expect(extractDayReason("upper day")).toBeNull();
+  });
+});
+
+describe("bfrFinisherPick", () => {
+  const ok = { bandsAvailable: true, minutes: 90, recoveryDay: false, mainFocus: "upper" as const };
+
+  it("programs an upper finisher on an upper day", () => {
+    const pick = bfrFinisherPick(ok);
+    expect(pick?.block).toBe("bfr");
+    expect(pick?.builtinKey).toBe("builtin-bfr-upper");
+    expect(pick?.workoutId).toBeNull();
+  });
+  it("matches a lower day with the lower finisher", () => {
+    expect(bfrFinisherPick({ ...ok, mainFocus: "lower" })?.builtinKey).toBe("builtin-bfr-lower");
+  });
+  it("a full-body day gets the upper finisher (arms recover fastest)", () => {
+    expect(bfrFinisherPick({ ...ok, mainFocus: "full" })?.builtinKey).toBe("builtin-bfr-upper");
+  });
+  it("declines without bands", () => {
+    expect(bfrFinisherPick({ ...ok, bandsAvailable: false })).toBeNull();
+  });
+  it("declines under 75 minutes — same floor as conditioning", () => {
+    expect(bfrFinisherPick({ ...ok, minutes: 74 })).toBeNull();
+  });
+  it("declines on a recovery day", () => {
+    expect(bfrFinisherPick({ ...ok, recoveryDay: true })).toBeNull();
+  });
+  it("declines with no main focus (thin day)", () => {
+    expect(bfrFinisherPick({ ...ok, mainFocus: null })).toBeNull();
   });
 });
