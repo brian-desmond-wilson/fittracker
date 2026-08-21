@@ -448,6 +448,21 @@ Respond as JSON:
         ...library.map((e) => `${e.id} · ${e.name}`),
       ].join('\n');
 
+      // The post's thumbnail rides along when we have one (spec §4 step 3:
+      // "model reads caption + thumbnail"). Only app-owned rehosted URLs are
+      // forwarded — the client passes the capture-thumbs copy, never a
+      // platform CDN link that may already be dead.
+      const thumbnailUrl =
+        typeof body.thumbnailUrl === 'string' && body.thumbnailUrl.startsWith('https://')
+          ? body.thumbnailUrl
+          : null;
+      const userContent = thumbnailUrl
+        ? [
+            { type: 'text', text: user },
+            { type: 'image_url', image_url: { url: thumbnailUrl } },
+          ]
+        : user;
+
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -459,7 +474,7 @@ Respond as JSON:
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: SYSTEM },
-            { role: 'user', content: user },
+            { role: 'user', content: userContent },
           ],
         }),
       });

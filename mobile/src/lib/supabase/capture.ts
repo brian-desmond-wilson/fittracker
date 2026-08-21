@@ -40,6 +40,9 @@ export async function extractPost(input: {
   library: { id: string; name: string }[];
   muscles: string[];
   equipment: string[];
+  /** The rehosted (app-owned) thumbnail — the model reads it beside the
+   *  caption when present. Never a platform CDN link. */
+  thumbnailUrl?: string | null;
 }): Promise<unknown | null> {
   try {
     const { data, error } = await supabase.functions.invoke("capture-post", {
@@ -51,6 +54,7 @@ export async function extractPost(input: {
         library: input.library,
         muscles: input.muscles,
         equipment: input.equipment,
+        thumbnailUrl: input.thumbnailUrl ?? null,
       },
     });
     if (error) throw error;

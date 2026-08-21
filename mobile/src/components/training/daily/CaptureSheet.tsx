@@ -63,6 +63,7 @@ export function CaptureSheet({ visible, onClose, onExtracted }: CaptureSheetProp
         library: index,
         muscles,
         equipment,
+        thumbnailUrl: r.thumbnailUrl,
       });
       const post = sanitizeExtraction(raw, {
         libraryIds: new Set(index.map((e) => e.id)),
