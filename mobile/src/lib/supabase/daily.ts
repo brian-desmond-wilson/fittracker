@@ -17,6 +17,7 @@ import type {
   StoredBlock,
 } from "../../types/dailyBlocks";
 import type {
+  AssumedInputs,
   ComposedSession,
   DailyCheckin,
   DebriefVerdict,
@@ -31,6 +32,8 @@ import type {
   SplitDay,
   StoredSession,
 } from "../../types/daily";
+import { getLocalDateString, addDays, parseLocalDate } from "../dates";
+import { wasRestDay } from "../dailyRest";
 
 /**
  * The order a session's sections are shown and trained in. `item_order` is one
@@ -426,6 +429,7 @@ export async function fetchTodaySession(
       id, session_date, split_day, ramp_week, source, served_captured_workout_id,
       status, workout_instance_id, gym_profile_id, section_minutes,
       compose_signature, day_reason, created_at,
+      assumed:inputs_snapshot->assumed,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
         rest_seconds, reason, was_performed, exercise:exercises(name)
@@ -491,10 +495,166 @@ export async function fetchTodaySession(
       .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
     composeSignature: data.compose_signature ?? null,
     dayReason: data.day_reason ?? null,
-    // A later task teaches this fetch to read it back out of
-    // inputs_snapshot.assumed for a stored tomorrow-draft.
-    assumedInputs: null,
+    assumedInputs: ((data as any).assumed ?? null) as AssumedInputs | null,
   };
+}
+
+/** The most recent check-in on or before `date` — soreness worth carrying
+ *  into a guess. Null = the user has never checked in. */
+export async function fetchLatestCheckin(
+  userId: string,
+  date: string,
+): Promise<DailyCheckin | null> {
+  const { data, error } = await supabase
+    .from("daily_checkins")
+    .select("id, checkin_date, energy, minutes_available, override_recovery, force_recovery, daily_checkin_soreness(severity, muscle_regions(name))")
+    .eq("user_id", userId)
+    .lte("checkin_date", date)
+    .order("checkin_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("fetchLatestCheckin failed:", error);
+    return null;
+  }
+  const soreness: Record<string, number> = {};
+  for (const s of (data as any).daily_checkin_soreness ?? []) {
+    const name = s.muscle_regions?.name;
+    if (name) soreness[name] = s.severity;
+  }
+  return {
+    id: data.id,
+    checkinDate: data.checkin_date,
+    energy: data.energy,
+    minutesAvailable: data.minutes_available,
+    overrideRecovery: !!(data as any).override_recovery,
+    forceRecovery: !!(data as any).force_recovery,
+    soreness,
+  };
+}
+
+/** Session lengths from recent check-ins — the median becomes tomorrow's
+ *  guess. Active-recovery check-ins are excluded: their 15 minutes describe
+ *  a recovery day, not a typical session. */
+export async function fetchRecentCheckinMinutes(
+  userId: string,
+  limit = 14,
+): Promise<number[]> {
+  const { data, error } = await supabase
+    .from("daily_checkins")
+    .select("minutes_available, force_recovery")
+    .eq("user_id", userId)
+    .order("checkin_date", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("fetchRecentCheckinMinutes failed:", error);
+    return [];
+  }
+  return (data ?? [])
+    .filter((r: any) => !r.force_recovery)
+    .map((r: any) => r.minutes_available);
+}
+
+/** Was the day before `date` deliberate rest? Rested row, or a completed
+ *  recovery-shaped session. Steers the compose prompt only. */
+export async function fetchRestedYesterday(
+  userId: string,
+  date: string,
+): Promise<boolean> {
+  const yesterday = getLocalDateString(addDays(parseLocalDate(date), -1));
+  const { data, error } = await supabase
+    .from("generated_sessions")
+    .select("status, blocks:generated_session_blocks(block)")
+    .eq("user_id", userId)
+    .eq("session_date", yesterday);
+  if (error || !data) return false;
+  return wasRestDay(data as any);
+}
+
+/** Every deliberately rested date — the calendar's rest marks. */
+export async function fetchRestDates(userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("generated_sessions")
+    .select("session_date")
+    .eq("user_id", userId)
+    .eq("status", "rested");
+  if (error) {
+    console.error("fetchRestDates failed:", error);
+    return new Set();
+  }
+  return new Set((data ?? []).map((r: any) => r.session_date));
+}
+
+/**
+ * Declare `date` a full rest day. Inside the suggest-only boundary: runs from
+ * the user's tap. Refuses when the day already holds an open session — the UI
+ * only offers rest on an empty day, and a race must not double-book it.
+ */
+export async function restToday(userId: string, date: string): Promise<boolean> {
+  try {
+    const status = await fetchDayStatus(userId, date);
+    // A trained day is never also a rest day: the calendar reads rested rows
+    // unfiltered, so a rest record beside a completed session would mark a
+    // day you actually trained as rest.
+    if (status.hasPending || status.hasCompleted || status.hasRested) return false;
+    const { data: firstRow } = await supabase
+      .from("generated_sessions")
+      .select("session_date")
+      .eq("user_id", userId)
+      .order("session_date", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const { error } = await supabase.from("generated_sessions").insert({
+      user_id: userId,
+      session_date: date,
+      gym_profile_id: null,
+      checkin_id: null,
+      split_day: null, // rest moves no rotation
+      ramp_week: rampWeek(firstRow?.session_date ?? null, date),
+      source: "user_pick",
+      served_captured_workout_id: null,
+      section_minutes: null,
+      status: "rested",
+      day_reason: "Rest day — your call.",
+      inputs_snapshot: { restKind: "full" },
+    });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    console.error("restToday failed:", err?.code ?? "", err?.message ?? String(e));
+    return false;
+  }
+}
+
+/**
+ * Undo a rest day: the rest record goes, and tomorrow's draft goes with it
+ * when the draft is still an untouched guess (suggested + assumed). A draft
+ * the user has already confirmed or started is theirs and stays.
+ */
+export async function unrestToday(userId: string, date: string): Promise<boolean> {
+  const tomorrow = getLocalDateString(addDays(parseLocalDate(date), 1));
+  const { error } = await supabase
+    .from("generated_sessions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("session_date", date)
+    .eq("status", "rested");
+  if (error) {
+    console.error("unrestToday failed:", error);
+    return false;
+  }
+  const { error: draftError } = await supabase
+    .from("generated_sessions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("session_date", tomorrow)
+    .eq("status", "suggested")
+    .not("inputs_snapshot->assumed", "is", null);
+  // The rest record is gone either way — that is the undo. A surviving draft
+  // is recomposed or replaced by tomorrow's normal flow, so log, don't fail.
+  if (draftError) console.error("unrestToday draft delete failed:", draftError);
+  return true;
 }
 
 export interface SaveSessionInput {
@@ -1285,6 +1445,17 @@ export async function adoptCapturedWorkout(
       if (skipError) throw skipError;
     }
 
+    // Training voids a declared rest — the workout you are starting is the
+    // truth about the day now. Tomorrow's draft stays; the morning signature
+    // check recomposes it because today's usage changes coverage.
+    const { error: unrestError } = await supabase
+      .from("generated_sessions")
+      .delete()
+      .eq("user_id", input.userId)
+      .eq("session_date", input.date)
+      .eq("status", "rested");
+    if (unrestError) throw unrestError;
+
     const { data: session, error: insError } = await supabase
       .from("generated_sessions")
       .insert({
@@ -1361,7 +1532,7 @@ export async function adoptCapturedWorkout(
 export async function fetchDayStatus(
   userId: string,
   date: string,
-): Promise<{ hasPending: boolean; hasCompleted: boolean; inProgress: boolean }> {
+): Promise<{ hasPending: boolean; hasCompleted: boolean; inProgress: boolean; hasRested: boolean }> {
   const { data, error } = await supabase
     .from("generated_sessions")
     .select("status, workout_instance_id")
@@ -1369,13 +1540,14 @@ export async function fetchDayStatus(
     .eq("session_date", date);
   if (error) {
     console.error("fetchDayStatus failed:", error);
-    return { hasPending: false, hasCompleted: false, inProgress: false };
+    return { hasPending: false, hasCompleted: false, inProgress: false, hasRested: false };
   }
   const rows = data ?? [];
   return {
     hasPending: rows.some((r) => r.status === "suggested" || r.status === "accepted"),
     hasCompleted: rows.some((r) => r.status === "completed"),
     inProgress: rows.some((r) => r.status === "accepted" && r.workout_instance_id),
+    hasRested: rows.some((r) => r.status === "rested"),
   };
 }
 
