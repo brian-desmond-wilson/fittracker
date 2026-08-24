@@ -92,4 +92,29 @@ describe("pickDaySession", () => {
     ]);
     expect(picked?.id).toBe("done");
   });
+
+  it("surfaces a rested row when the day holds nothing else", () => {
+    const rested = { id: "r1", status: "rested", createdAt: "2026-08-24T20:00:00Z" };
+    expect(pickDaySession([rested])).toBe(rested);
+  });
+
+  it("a pending session beats a rested row", () => {
+    const rested = { id: "r1", status: "rested", createdAt: "2026-08-24T08:00:00Z" };
+    const pending = { id: "p1", status: "suggested", createdAt: "2026-08-24T09:00:00Z" };
+    expect(pickDaySession([rested, pending])).toBe(pending);
+  });
+
+  it("a completed session beats a rested row", () => {
+    const rested = { id: "r1", status: "rested", createdAt: "2026-08-24T08:00:00Z" };
+    const done = { id: "c1", status: "completed", createdAt: "2026-08-24T10:00:00Z" };
+    expect(pickDaySession([rested, done])).toBe(done);
+  });
+
+  it("falls back to the newest rested row", () => {
+    const picked = pickDaySession([
+      row("morning", "rested", "2026-08-24T08:00:00Z"),
+      row("evening", "rested", "2026-08-24T19:00:00Z"),
+    ]);
+    expect(picked?.id).toBe("evening");
+  });
 });

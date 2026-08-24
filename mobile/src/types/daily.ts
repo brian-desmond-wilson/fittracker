@@ -122,7 +122,7 @@ export interface ComposedSession {
 export interface StoredSession extends ComposedSession {
   id: string;
   sessionDate: string;
-  status: "suggested" | "accepted" | "completed" | "skipped";
+  status: "suggested" | "accepted" | "completed" | "skipped" | "rested";
   workoutInstanceId: string | null;
   gymProfileId: string | null;
   items: (SessionItem & { id: string; name: string; wasPerformed: boolean | null })[];

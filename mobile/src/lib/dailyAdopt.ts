@@ -53,7 +53,9 @@ export interface DaySessionRow {
  * The pending one — what you have yet to finish is what the Today tab is for.
  * Failing that, the most recently created completed one, so the tab shows what
  * you did rather than reverting to an empty day. Skipped rows are history and
- * are never shown.
+ * are never shown. A rested row surfaces only when the day held nothing
+ * trained — a deliberate rest is the day's answer, but it never outranks
+ * something the user actually did or has yet to finish.
  */
 export function pickDaySession<T extends DaySessionRow>(rows: T[]): T | null {
   const pending = rows.filter(
@@ -67,6 +69,12 @@ export function pickDaySession<T extends DaySessionRow>(rows: T[]): T | null {
   const completed = rows.filter((r) => r.status === "completed");
   if (completed.length > 0) {
     return [...completed].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  }
+  // A deliberate rest day is the day's answer when nothing was trained —
+  // skipped rows stay invisible, but rest is a decision the tab must show.
+  const rested = rows.filter((r) => r.status === "rested");
+  if (rested.length > 0) {
+    return [...rested].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   }
   return null;
 }
