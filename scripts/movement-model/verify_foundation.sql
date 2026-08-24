@@ -143,4 +143,36 @@ BEGIN
     RAISE EXCEPTION 'V3 FAIL: trigger did not overwrite deliberately-wrong alias_normalized, got %', v_observed;
   END IF;
 END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V4: junction + queue exist (junction stays empty until the Stage 3 backfill)
+  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exercise_equipment';
+  IF NOT FOUND THEN
+    SELECT string_agg(table_schema, ', ') INTO v_observed
+      FROM information_schema.tables WHERE table_name='exercise_equipment';
+    RAISE EXCEPTION 'V4 FAIL: public.exercise_equipment missing (found in schemas: %)', COALESCE(v_observed, 'none');
+  END IF;
+
+  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exercise_match_reviews';
+  IF NOT FOUND THEN
+    SELECT string_agg(table_schema, ', ') INTO v_observed
+      FROM information_schema.tables WHERE table_name='exercise_match_reviews';
+    RAISE EXCEPTION 'V4 FAIL: public.exercise_match_reviews missing (found in schemas: %)', COALESCE(v_observed, 'none');
+  END IF;
+
+  -- V4: standing RLS rule — both new tables must have RLS enabled
+  SELECT relrowsecurity::TEXT INTO v_observed FROM pg_class
+    WHERE relnamespace = 'public'::regnamespace AND relname = 'exercise_equipment';
+  IF v_observed IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'V4 FAIL: public.exercise_equipment RLS not enabled (relrowsecurity=%)', COALESCE(v_observed, 'null');
+  END IF;
+
+  SELECT relrowsecurity::TEXT INTO v_observed FROM pg_class
+    WHERE relnamespace = 'public'::regnamespace AND relname = 'exercise_match_reviews';
+  IF v_observed IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'V4 FAIL: public.exercise_match_reviews RLS not enabled (relrowsecurity=%)', COALESCE(v_observed, 'null');
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
