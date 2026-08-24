@@ -41,7 +41,7 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 - [ ] Core movement set proposed (from live data + CrossFit canon) and user-approved
 - [ ] All 307 rows classified: core movement or explicit outlier, full identity attributes, explicit `is_movement` curation (kept as a pure Movements-tab label per user decision)
 - [ ] Review sheet produced; user approves before any write
-- [ ] Duplicates merged with every downstream FK repointed; loser names kept as aliases
+- [ ] Duplicates merged with every downstream FK repointed (incl. `exercise_match_reviews.resolved_exercise_id`, which is ON DELETE RESTRICT per Task 7 review); loser names kept as aliases
 - [ ] Equipment text array backfilled into the junction; wrong tree placements fixed via attributes
 - [ ] Table backups taken before every destructive step
 - **Exit gate:** every row classified, zero unexplained rows, audit queries green
