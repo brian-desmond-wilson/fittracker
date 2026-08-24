@@ -64,4 +64,41 @@ BEGIN
     RAISE EXCEPTION 'V1 FAIL: public.alias_abbreviations RLS not enabled (relrowsecurity=%)', COALESCE(v_observed, 'null');
   END IF;
 END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+  v_count INTEGER;
+BEGIN
+  -- V2: reference seeds applied
+  IF EXISTS (SELECT 1 FROM public.muscle_regions WHERE name = 'Back') THEN
+    RAISE EXCEPTION 'V2 FAIL: stray Back muscle region still present (id=%)',
+      (SELECT id FROM public.muscle_regions WHERE name = 'Back');
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.muscle_regions WHERE region_group IS NULL) THEN
+    SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed
+      FROM public.muscle_regions WHERE region_group IS NULL;
+    RAISE EXCEPTION 'V2 FAIL: muscle regions without region_group: %', v_observed;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.movement_family_modalities;
+  IF v_count < 29 THEN
+    RAISE EXCEPTION 'V2 FAIL: family-modality junction under-seeded, got % rows (need >= 29)', v_count;
+  END IF;
+
+  IF EXISTS (  -- every family reachable from at least one modality
+    SELECT 1 FROM public.movement_families f
+    WHERE NOT EXISTS (SELECT 1 FROM public.movement_family_modalities m WHERE m.movement_family_id = f.id)
+  ) THEN
+    SELECT string_agg(f.name, ', ' ORDER BY f.name) INTO v_observed
+      FROM public.movement_families f
+      WHERE NOT EXISTS (SELECT 1 FROM public.movement_family_modalities m WHERE m.movement_family_id = f.id);
+    RAISE EXCEPTION 'V2 FAIL: unreachable movement families: %', v_observed;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.alias_abbreviations;
+  IF v_count < 15 THEN
+    RAISE EXCEPTION 'V2 FAIL: abbreviation dictionary under-seeded, got % rows (need >= 15)', v_count;
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
