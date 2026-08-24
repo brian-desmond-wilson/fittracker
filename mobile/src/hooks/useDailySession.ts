@@ -462,8 +462,12 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // recompose the rest of the day by itself. Instructions and the debrief
       // ARE: a new instruction is exactly a request to compose again, and a
       // fresh debrief is new information the next compose should act on.
+      // No checkin id: it is 1:1 with (user, date) and stable across edits,
+      // so `today` already says it — and tomorrow's draft, composed before
+      // its check-in exists, must be able to produce the same signature the
+      // morning's real inputs will.
       const signature = [
-        today, todayCheckin.id, todayCheckin.minutesAvailable,
+        today, todayCheckin.minutesAvailable,
         todayCheckin.energy, recovery ? "recovery" : "train",
         overrodeRecovery ? "override" : "",
         `adj:${todaysInstructions.map((a) => a.id).sort().join(",")}`,
