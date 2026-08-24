@@ -510,6 +510,8 @@ export async function fetchLatestCheckin(
     .select("id, checkin_date, energy, minutes_available, override_recovery, force_recovery, daily_checkin_soreness(severity, muscle_regions(name))")
     .eq("user_id", userId)
     .lte("checkin_date", date)
+    // Three days: older soreness has healed or the user would have said so since.
+    .gte("checkin_date", getLocalDateString(addDays(parseLocalDate(date), -3)))
     .order("checkin_date", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -555,20 +557,35 @@ export async function fetchRecentCheckinMinutes(
     .map((r: any) => r.minutes_available);
 }
 
-/** Was the day before `date` deliberate rest? Rested row, or a completed
- *  recovery-shaped session. Steers the compose prompt only. */
+/** Was the day before `date` deliberate rest? Rested row, a completed
+ *  recovery-shaped session, or a forced-recovery check-in. Steers the
+ *  compose prompt only. */
 export async function fetchRestedYesterday(
   userId: string,
   date: string,
 ): Promise<boolean> {
   const yesterday = getLocalDateString(addDays(parseLocalDate(date), -1));
-  const { data, error } = await supabase
-    .from("generated_sessions")
-    .select("status, blocks:generated_session_blocks(block)")
-    .eq("user_id", userId)
-    .eq("session_date", yesterday);
-  if (error || !data) return false;
-  return wasRestDay(data as any);
+  const [sessionsRes, checkinRes] = await Promise.all([
+    supabase
+      .from("generated_sessions")
+      .select("status, blocks:generated_session_blocks(block)")
+      .eq("user_id", userId)
+      .eq("session_date", yesterday),
+    supabase
+      .from("daily_checkins")
+      .select("force_recovery, override_recovery")
+      .eq("user_id", userId)
+      .eq("checkin_date", yesterday)
+      .maybeSingle(),
+  ]);
+  if (sessionsRes.error) return false;
+  // A forced-recovery check-in IS the rest decision for an active-recovery
+  // day — at draft time its session is neither rested nor completed yet.
+  // Unless "train anyway" overrode it: same precedence effectiveRecovery
+  // gives these two flags everywhere else.
+  const checkinRow = checkinRes.data as any;
+  if (checkinRow?.force_recovery && !checkinRow?.override_recovery) return true;
+  return wasRestDay((sessionsRes.data ?? []) as any);
 }
 
 /** Every deliberately rested date — the calendar's rest marks. */

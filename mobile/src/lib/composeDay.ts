@@ -224,6 +224,10 @@ export async function composeDay(
   // tomorrow starts over. See classifyByWorkout and the three constants
   // above for what bounds this.
   if (muscleNames.length > 0) {
+    // The budget is about the real calendar day, not the day being composed:
+    // a draft compose for tomorrow must not hand today's spent attempts a
+    // fresh allowance, or a rest tap costs the whole budget twice.
+    const budgetDay = getLocalDateString();
     const due = captured
       .filter((w) => w.tags.classifiedAt === null)
       .filter((w) => {
@@ -231,15 +235,15 @@ export async function composeDay(
         // Fresh, still on the wire, or with budget left. A workout that
         // has spent today's budget takes no slot, so it can't crowd out
         // one that has never been tried.
-        return !s || s.date !== date
+        return !s || s.date !== budgetDay
           || s.inFlight !== null || s.attempts < CLASSIFY_ATTEMPTS_PER_DAY;
       })
       .slice(0, CLASSIFY_PER_RUN);
     await pooled(due, CLASSIFY_POOL, (w) => {
       const prior = classifyByWorkout.get(w.workoutId);
-      const state: ClassifyState = prior && prior.date === date
+      const state: ClassifyState = prior && prior.date === budgetDay
         ? prior
-        : { date, attempts: 0, inFlight: null };
+        : { date: budgetDay, attempts: 0, inFlight: null };
       classifyByWorkout.set(w.workoutId, state);
       // Join the call already out there rather than adding to it; it is
       // the same question and it already spent an attempt.

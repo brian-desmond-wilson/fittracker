@@ -429,6 +429,13 @@ export function CapturedWorkoutScreen() {
           "Start it",
         );
         if (!ok) return;
+      } else if (day.hasRested) {
+        const ok = await confirm(
+          "Today is a rest day",
+          "You called today a rest day. Starting this workout clears that and makes it a training day.",
+          "Train anyway",
+        );
+        if (!ok) return;
       }
 
       const sessionId = await adoptCapturedWorkout({

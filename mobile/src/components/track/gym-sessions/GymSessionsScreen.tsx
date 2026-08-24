@@ -46,8 +46,12 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
       setLoading(false);
       return;
     }
-    setSessions(await fetchGymSessions(user.id));
-    setRestDates(await fetchRestDates(user.id));
+    const [gymSessions, rested] = await Promise.all([
+      fetchGymSessions(user.id),
+      fetchRestDates(user.id),
+    ]);
+    setSessions(gymSessions);
+    setRestDates(rested);
     setLoading(false);
   }, []);
 
