@@ -101,4 +101,30 @@ BEGIN
     RAISE EXCEPTION 'V2 FAIL: abbreviation dictionary under-seeded, got % rows (need >= 15)', v_count;
   END IF;
 END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V3: normalizer behavior
+  v_observed := public.normalize_alias('KB Front-Squat!');
+  IF v_observed <> 'kettlebell front squat' THEN
+    RAISE EXCEPTION 'V3 FAIL: abbreviation + punctuation normalization, got %', v_observed;
+  END IF;
+
+  v_observed := public.normalize_alias('  Chest–to–Bar  ');
+  IF v_observed <> 'chest to bar' THEN
+    RAISE EXCEPTION 'V3 FAIL: unicode dash + whitespace, got %', v_observed;
+  END IF;
+
+  v_observed := public.normalize_alias('C2B');
+  IF v_observed <> 'chest to bar' THEN
+    RAISE EXCEPTION 'V3 FAIL: whole-word abbreviation, got %', v_observed;
+  END IF;
+
+  -- V3: alias table + uniqueness live from birth
+  PERFORM 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'exercise_aliases_normalized_key';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V3 FAIL: unique index public.exercise_aliases_normalized_key missing';
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
