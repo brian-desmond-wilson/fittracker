@@ -188,11 +188,14 @@ ALTER TABLE symmetries       ADD COLUMN IF NOT EXISTS name_fragment TEXT, ADD CO
 ALTER TABLE movement_styles  ADD COLUMN IF NOT EXISTS name_fragment TEXT, ADD COLUMN IF NOT EXISTS name_order INTEGER;
 
 -- Family ↔ modality reachability as data (replaces the app's drifted hardcoded map).
+-- Edge table with no attributes of its own → bare composite PK is intentional (no surrogate id/created_at).
 CREATE TABLE IF NOT EXISTS movement_family_modalities (
   movement_family_id UUID NOT NULL REFERENCES movement_families(id) ON DELETE CASCADE,
   movement_category_id UUID NOT NULL REFERENCES movement_categories(id) ON DELETE CASCADE,
   PRIMARY KEY (movement_family_id, movement_category_id)
 );
+-- House style indexes both FK columns of a junction (PK covers movement_family_id first).
+CREATE INDEX IF NOT EXISTS idx_movement_family_modalities_category ON movement_family_modalities(movement_category_id);
 
 -- Abbreviation dictionary for the alias normalizer.
 CREATE TABLE IF NOT EXISTS alias_abbreviations (
@@ -200,7 +203,21 @@ CREATE TABLE IF NOT EXISTS alias_abbreviations (
   expansion TEXT NOT NULL,          -- lowercase words
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Enforce the normalization invariant (idempotently guarded in the shipped file).
+ALTER TABLE alias_abbreviations ADD CONSTRAINT abbrev_normalized CHECK (abbrev ~ '^[a-z0-9]+$');
+
+-- RLS (added by Task 3 quality review — the baseline's default privileges grant anon/authenticated
+-- full writes, and RLS is what neutralizes that on every other table; without it these two tables
+-- were world-writable via PostgREST). Read-only to everyone, no write policy.
+ALTER TABLE movement_family_modalities ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Movement family modalities are viewable by everyone" ON movement_family_modalities FOR SELECT USING (true);
+ALTER TABLE alias_abbreviations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Alias abbreviations are viewable by everyone" ON alias_abbreviations FOR SELECT USING (true);
 ```
+
+The shipped migration wraps the ADD CONSTRAINT and CREATE POLICY statements in `DO` blocks with existence checks so the file re-runs cleanly (verified idempotent on staging). V1 harness assertions also check `pg_class.relrowsecurity` is true for both tables.
+
+**Standing rule for every later migration in this plan (Tasks 6, 7, 8, 9):** any `CREATE TABLE` must ship with `ENABLE ROW LEVEL SECURITY` + explicit policies in the same migration — the baseline's default privileges make an RLS-less table world-writable through the API. Tasks 6 and 7 already include RLS in their SQL; reviewers must treat a missing-RLS table as Critical.
 
 - [ ] **Step 4: Apply to staging and re-run harness**
 
