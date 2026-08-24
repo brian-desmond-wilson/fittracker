@@ -71,3 +71,6 @@ scripts/**/dist/
 
 # Scratch/temp dir
 temp/
+
+# Local DB data dumps (movement-model staging)
+backups/
