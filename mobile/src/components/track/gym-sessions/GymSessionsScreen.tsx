@@ -15,6 +15,7 @@ import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/lib/dates";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { fetchGymSessions } from "@/src/lib/supabase/gymSessions";
+import { fetchRestDates } from "@/src/lib/supabase/daily";
 import {
   balance, currentStreak, formatMinutes, formatVolume, GROUP_LABELS,
   sessionsOn, weekSummary,
@@ -30,6 +31,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [sessions, setSessions] = useState<HistorySession[]>([]);
+  const [restDates, setRestDates] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<"list" | "calendar">("list");
@@ -45,6 +47,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
       return;
     }
     setSessions(await fetchGymSessions(user.id));
+    setRestDates(await fetchRestDates(user.id));
     setLoading(false);
   }, []);
 
@@ -190,6 +193,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                     today={today}
                     selected={selectedDate}
                     onSelect={setSelectedDate}
+                    restDates={restDates}
                   />
                   {selectedDate && (
                     <View style={styles.dayBlock}>

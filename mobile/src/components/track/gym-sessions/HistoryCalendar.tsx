@@ -23,11 +23,14 @@ export function HistoryCalendar({
   today,
   selected,
   onSelect,
+  restDates,
 }: {
   sessions: HistorySession[];
   today: string;
   selected: string | null;
   onSelect: (date: string) => void;
+  /** Deliberate rest days — marked, still untappable (nothing to open). */
+  restDates?: Set<string>;
 }) {
   const [y, m] = today.split("-").map(Number);
   const [cursor, setCursor] = useState({ year: y, month: m - 1 });
@@ -99,6 +102,7 @@ export function HistoryCalendar({
             const isToday = date === today;
             const isSelected = date === selected;
             const count = countByDate.get(date) ?? 0;
+            const isRest = count === 0 && (restDates?.has(date) ?? false);
             return (
               <TouchableOpacity
                 key={date}
@@ -112,7 +116,7 @@ export function HistoryCalendar({
                 accessibilityRole="button"
                 accessibilityLabel={
                   count === 0
-                    ? `${day}, no training`
+                    ? `${day}, ${isRest ? "rest day" : "no training"}`
                     : `${day}, ${count} session${count === 1 ? "" : "s"}, ${
                         GROUP_LABELS[group ?? "untagged"]
                       }`
@@ -121,7 +125,7 @@ export function HistoryCalendar({
                 <Text
                   style={[
                     styles.dayText,
-                    count === 0 && styles.dayTextEmpty,
+                    count === 0 && !isRest && styles.dayTextEmpty,
                     isSelected && styles.dayTextSelected,
                   ]}
                 >
@@ -142,6 +146,7 @@ export function HistoryCalendar({
                         ]}
                       />
                     ))}
+                  {isRest && <View style={styles.dotRest} />}
                 </View>
               </TouchableOpacity>
             );
@@ -186,6 +191,10 @@ const styles = StyleSheet.create({
   dayTextSelected: { color: "#052E16", fontWeight: "700" },
   dots: { flexDirection: "row", gap: 2, height: 8, marginTop: 3 },
   dot: { width: 5, height: 5, borderRadius: 3 },
+  dotRest: {
+    width: 5, height: 5, borderRadius: 3,
+    borderWidth: 1, borderColor: colors.mutedForeground, backgroundColor: "transparent",
+  },
   legend: {
     flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12,
     paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
