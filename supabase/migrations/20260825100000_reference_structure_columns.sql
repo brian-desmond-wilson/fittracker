@@ -28,3 +28,43 @@ CREATE TABLE IF NOT EXISTS alias_abbreviations (
   expansion TEXT NOT NULL,          -- lowercase words
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- The edge table has no attributes of its own (family/modality reachability is the fact being
+-- recorded), so the bare composite PK is intentional: no surrogate id, no created_at.
+COMMENT ON TABLE movement_family_modalities IS 'Edge table: family/modality reachability is the only fact. Composite PK is intentional, not an oversight — no surrogate id or created_at needed.';
+
+-- Reverse-lookup index — house style indexes both FK columns of a junction (the PK already covers movement_family_id first).
+CREATE INDEX IF NOT EXISTS idx_movement_family_modalities_category ON movement_family_modalities(movement_category_id);
+
+-- Enforce the documented normalization invariant (abbrev is stored lowercase, alphanumeric).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'abbrev_normalized' AND conrelid = 'public.alias_abbreviations'::regclass
+  ) THEN
+    ALTER TABLE alias_abbreviations ADD CONSTRAINT abbrev_normalized CHECK (abbrev ~ '^[a-z0-9]+$');
+  END IF;
+END $$;
+
+-- RLS, matching the schema's existing reference-table pattern: readable by everyone, no write policy.
+ALTER TABLE movement_family_modalities ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'movement_family_modalities'
+      AND policyname = 'Movement family modalities are viewable by everyone'
+  ) THEN
+    CREATE POLICY "Movement family modalities are viewable by everyone" ON movement_family_modalities FOR SELECT USING (true);
+  END IF;
+END $$;
+
+ALTER TABLE alias_abbreviations ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'alias_abbreviations'
+      AND policyname = 'Alias abbreviations are viewable by everyone'
+  ) THEN
+    CREATE POLICY "Alias abbreviations are viewable by everyone" ON alias_abbreviations FOR SELECT USING (true);
+  END IF;
+END $$;

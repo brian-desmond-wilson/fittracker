@@ -49,5 +49,19 @@ BEGIN
       FROM information_schema.tables WHERE table_name='alias_abbreviations';
     RAISE EXCEPTION 'V1 FAIL: public.alias_abbreviations missing (found in schemas: %)', COALESCE(v_observed, 'none');
   END IF;
+
+  -- V1: new reference tables have RLS enabled (they hold no per-user data, but every other
+  -- table in the schema locks writes down via RLS — these must not be the silent exception).
+  SELECT relrowsecurity::TEXT INTO v_observed FROM pg_class
+    WHERE relnamespace = 'public'::regnamespace AND relname = 'movement_family_modalities';
+  IF v_observed IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'V1 FAIL: public.movement_family_modalities RLS not enabled (relrowsecurity=%)', COALESCE(v_observed, 'null');
+  END IF;
+
+  SELECT relrowsecurity::TEXT INTO v_observed FROM pg_class
+    WHERE relnamespace = 'public'::regnamespace AND relname = 'alias_abbreviations';
+  IF v_observed IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'V1 FAIL: public.alias_abbreviations RLS not enabled (relrowsecurity=%)', COALESCE(v_observed, 'null');
+  END IF;
 END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
