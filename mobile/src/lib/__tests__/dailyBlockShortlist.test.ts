@@ -1,5 +1,5 @@
 import {
-  isRecoveryDay, effectiveRecovery, workoutFocus, buildBlockShortlists,
+  isRecoveryDay, effectiveRecovery, wouldBeRecoveryDay, workoutFocus, buildBlockShortlists,
 } from "../dailyBlockShortlist";
 import { blockEnvelopes } from "../dailyBlockBudget";
 import { muscleCoverage } from "../dailyCoverage";
@@ -357,8 +357,8 @@ describe("buildBlockShortlists", () => {
 });
 
 describe("effectiveRecovery", () => {
-  const beatUp = { energy: 3, soreness: { Quads: 3 } };
-  const fine = { energy: 8, soreness: {} };
+  const beatUp = { energy: 3, soreness: { Quads: 3 }, forceRecovery: false };
+  const fine = { energy: 8, soreness: {}, forceRecovery: false };
 
   it("a recovery-worthy check-in without an override is a recovery day", () => {
     expect(effectiveRecovery({ ...beatUp, overrideRecovery: false })).toBe(true);
@@ -371,6 +371,25 @@ describe("effectiveRecovery", () => {
   it("an override on an ordinary day changes nothing", () => {
     expect(effectiveRecovery({ ...fine, overrideRecovery: true })).toBe(false);
     expect(effectiveRecovery({ ...fine, overrideRecovery: false })).toBe(false);
+  });
+});
+
+describe("effectiveRecovery with force_recovery", () => {
+  it("forceRecovery makes an unremarkable day a recovery day", () => {
+    expect(effectiveRecovery({ energy: 7, soreness: {}, overrideRecovery: false, forceRecovery: true }))
+      .toBe(true);
+  });
+  it("train-anyway still wins over a forced recovery", () => {
+    expect(effectiveRecovery({ energy: 7, soreness: {}, overrideRecovery: true, forceRecovery: true }))
+      .toBe(false);
+  });
+  it("absent force changes nothing", () => {
+    expect(effectiveRecovery({ energy: 7, soreness: {}, overrideRecovery: false, forceRecovery: false }))
+      .toBe(false);
+  });
+  it("wouldBeRecoveryDay counts a forced day the same as a called one", () => {
+    expect(wouldBeRecoveryDay({ energy: 7, soreness: {}, forceRecovery: true })).toBe(true);
+    expect(wouldBeRecoveryDay({ energy: 7, soreness: {}, forceRecovery: false })).toBe(false);
   });
 });
 

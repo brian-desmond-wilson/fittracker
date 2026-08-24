@@ -197,7 +197,7 @@ export async function fetchTodayCheckin(
 ): Promise<DailyCheckin | null> {
   const { data, error } = await supabase
     .from("daily_checkins")
-    .select("id, checkin_date, energy, minutes_available, override_recovery, daily_checkin_soreness(severity, muscle_regions(name))")
+    .select("id, checkin_date, energy, minutes_available, override_recovery, force_recovery, daily_checkin_soreness(severity, muscle_regions(name))")
     .eq("user_id", userId)
     .eq("checkin_date", date)
     .maybeSingle();
@@ -216,6 +216,7 @@ export async function fetchTodayCheckin(
     energy: data.energy,
     minutesAvailable: data.minutes_available,
     overrideRecovery: !!(data as any).override_recovery,
+    forceRecovery: !!(data as any).force_recovery,
     soreness,
   };
 }
@@ -247,6 +248,9 @@ export interface SaveCheckinInput {
   /** Carried through a re-save so editing energy doesn't silently undo a
    *  "train anyway". Absent on a fresh check-in = false. */
   overrideRecovery?: boolean;
+  /** Active recovery asked for this day's shape directly. Carried through
+   *  re-saves the same way overrideRecovery is. */
+  forceRecovery?: boolean;
 }
 
 export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin | null> {
@@ -260,6 +264,7 @@ export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin
           energy: input.energy,
           minutes_available: input.minutesAvailable,
           override_recovery: input.overrideRecovery ?? false,
+          force_recovery: input.forceRecovery ?? false,
         },
         { onConflict: "user_id,checkin_date" },
       )

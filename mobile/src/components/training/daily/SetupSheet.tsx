@@ -78,6 +78,9 @@ export function SetupSheet({
       soreness,
       // An edit to energy must not silently undo a "train anyway".
       overrideRecovery: existing?.overrideRecovery ?? false,
+      // Same carry rule as the override: editing minutes must not silently
+      // undo an active-recovery day (train-anyway is the way out of one).
+      forceRecovery: existing?.forceRecovery ?? false,
     });
     setSaving(false);
     onSaved();

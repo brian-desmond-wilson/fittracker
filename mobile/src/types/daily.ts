@@ -29,6 +29,9 @@ export interface DailyCheckin {
    *  still steer around soreness; the day just doesn't collapse to
    *  mobility-and-stretching. */
   overrideRecovery: boolean;
+  /** "Active recovery": the user asked for a recovery-shaped day outright.
+   *  overrideRecovery still cancels it — same escape hatch as a called one. */
+  forceRecovery: boolean;
 }
 
 /** One instruction to the recommender, block-scoped or day-scoped. */

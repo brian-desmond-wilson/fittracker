@@ -124,6 +124,7 @@ export function BodyScreen() {
       minutesAvailable: checkin?.minutesAvailable ?? 60,
       soreness: next,
       overrideRecovery: checkin?.overrideRecovery ?? false,
+      forceRecovery: checkin?.forceRecovery ?? false,
     });
     if (saved) setCheckin(saved);
     setSavingRegion(false);

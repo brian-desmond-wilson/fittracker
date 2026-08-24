@@ -19,7 +19,7 @@ import { builtinByKey } from "@/src/lib/dailyBuiltins";
 import {
   blockDayShape, plannedBlockMinutes, BLOCK_TITLES, SECTION_FOR_BLOCK,
 } from "@/src/lib/dailyBlockCompose";
-import { isRecoveryDay } from "@/src/lib/dailyBlockShortlist";
+import { wouldBeRecoveryDay } from "@/src/lib/dailyBlockShortlist";
 import { GymSheet } from "./GymSheet";
 import { SetupSheet } from "./SetupSheet";
 import { AdjustSheet } from "./AdjustSheet";
@@ -219,7 +219,7 @@ export default function TodayTab() {
     : totalSectionMinutes(sectionMinutes);
   // The engine called recovery and the user has already said "train anyway".
   const overrodeRecovery =
-    checkin !== null && checkin.overrideRecovery && isRecoveryDay(checkin);
+    checkin !== null && checkin.overrideRecovery && wouldBeRecoveryDay(checkin);
   const soreCount = checkin ? Object.keys(checkin.soreness).length : 0;
 
   const onRefresh = async () => {

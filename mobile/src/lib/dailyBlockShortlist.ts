@@ -31,13 +31,30 @@ export function isRecoveryDay(checkin: {
  *  stands unless they overrode it ("train anyway"). The override does NOT
  *  mute soreness — the shortlists still steer around sore primaries and the
  *  prompt still carries the numbers; it only stops the day collapsing to
- *  mobility-and-stretching. */
+ *  mobility-and-stretching.
+ *
+ *  Forced recovery is the active-recovery tap asking for a recovery-shaped
+ *  day outright, whether or not the gate would have tripped on its own. The
+ *  same "train anyway" override is its escape hatch, and the override still
+ *  doesn't mute soreness. */
 export function effectiveRecovery(checkin: {
   energy: number;
   soreness: Record<string, number>;
   overrideRecovery: boolean;
+  forceRecovery: boolean;
 }): boolean {
-  return isRecoveryDay(checkin) && !checkin.overrideRecovery;
+  return (isRecoveryDay(checkin) || checkin.forceRecovery) && !checkin.overrideRecovery;
+}
+
+/** Would today be a recovery day absent the user's "train anyway"? The badge
+ *  and the undo path key off this — a forced recovery counts the same as a
+ *  called one, or overriding it becomes a one-way door. */
+export function wouldBeRecoveryDay(checkin: {
+  energy: number;
+  soreness: Record<string, number>;
+  forceRecovery: boolean;
+}): boolean {
+  return isRecoveryDay(checkin) || checkin.forceRecovery;
 }
 
 const UPPER = new Set([

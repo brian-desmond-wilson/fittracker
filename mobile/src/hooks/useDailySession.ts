@@ -11,7 +11,7 @@ import { rampWeek } from "../lib/dailySplit";
 import { muscleCoverage } from "../lib/dailyCoverage";
 import { blockEnvelopes } from "../lib/dailyBlockBudget";
 import {
-  isRecoveryDay,
+  wouldBeRecoveryDay,
   effectiveRecovery,
   buildBlockShortlists,
 } from "../lib/dailyBlockShortlist";
@@ -349,7 +349,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
       // Only true when the override is actually changing today's shape — it
       // rides into the prompt and the signature, and an override sitting idle
       // on an ordinary day must move neither.
-      const overrodeRecovery = isRecoveryDay(todayCheckin) && !recovery;
+      const overrodeRecovery = wouldBeRecoveryDay(todayCheckin) && !recovery;
       const coverage = muscleCoverage(usage, today);
       // When the finisher will run, its minutes come OFF the composable
       // budget rather than riding on top of it — the plan the user sees sums
