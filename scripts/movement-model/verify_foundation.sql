@@ -10,4 +10,44 @@ BEGIN
     RAISE EXCEPTION 'V0 FAIL: exercises count % below 300', (SELECT count(*) FROM public.exercises);
   END IF;
 END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V1: reference structural columns exist
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='muscle_regions' AND column_name='region_group';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='muscle_regions';
+    RAISE EXCEPTION 'V1 FAIL: public.muscle_regions.region_group missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='movement_styles' AND column_name='is_identity';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='movement_styles';
+    RAISE EXCEPTION 'V1 FAIL: public.movement_styles.is_identity missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='load_positions' AND column_name='implies_equipment_id';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='load_positions';
+    RAISE EXCEPTION 'V1 FAIL: public.load_positions.implies_equipment_id missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='movement_family_modalities';
+  IF NOT FOUND THEN
+    SELECT string_agg(table_schema, ', ') INTO v_observed
+      FROM information_schema.tables WHERE table_name='movement_family_modalities';
+    RAISE EXCEPTION 'V1 FAIL: public.movement_family_modalities missing (found in schemas: %)', COALESCE(v_observed, 'none');
+  END IF;
+
+  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='alias_abbreviations';
+  IF NOT FOUND THEN
+    SELECT string_agg(table_schema, ', ') INTO v_observed
+      FROM information_schema.tables WHERE table_name='alias_abbreviations';
+    RAISE EXCEPTION 'V1 FAIL: public.alias_abbreviations missing (found in schemas: %)', COALESCE(v_observed, 'none');
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
