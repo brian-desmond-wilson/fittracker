@@ -127,4 +127,20 @@ BEGIN
     RAISE EXCEPTION 'V3 FAIL: unique index public.exercise_aliases_normalized_key missing';
   END IF;
 END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V3: trigger enforces alias_normalized = normalize_alias(alias) regardless of caller input
+  INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+  SELECT id, 'KB Swing Test', 'garbage', 'wild', 'capture'
+  FROM public.exercises LIMIT 1;
+
+  SELECT alias_normalized INTO v_observed FROM public.exercise_aliases WHERE alias = 'KB Swing Test';
+  DELETE FROM public.exercise_aliases WHERE alias = 'KB Swing Test';
+
+  IF v_observed <> 'kettlebell swing test' THEN
+    RAISE EXCEPTION 'V3 FAIL: trigger did not overwrite deliberately-wrong alias_normalized, got %', v_observed;
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
