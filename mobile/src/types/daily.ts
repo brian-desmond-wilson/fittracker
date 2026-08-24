@@ -34,6 +34,16 @@ export interface DailyCheckin {
   forceRecovery: boolean;
 }
 
+/** The guesses a tomorrow-draft was composed from — stored in the session's
+ *  inputs_snapshot.assumed, and what the morning confirm turns into a real
+ *  check-in. */
+export interface AssumedInputs {
+  energy: number;
+  minutesAvailable: number;
+  /** muscle_regions.name → severity 1-3 */
+  soreness: Record<string, number>;
+}
+
 /** One instruction to the recommender, block-scoped or day-scoped. */
 export interface SessionAdjustment {
   id: string;
@@ -138,4 +148,7 @@ export interface StoredSession extends ComposedSession {
    * matching it is what lets a rerolled block survive a refetch.
    */
   composeSignature: string | null;
+  /** Set when this session is a tomorrow-draft composed from guesses rather
+   *  than a real check-in. NULL for every normally composed session. */
+  assumedInputs: AssumedInputs | null;
 }

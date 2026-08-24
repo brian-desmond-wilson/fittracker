@@ -13,11 +13,9 @@ import { getLocalDateString } from "@/src/lib/dates";
 import { saveCheckin, setActiveGym } from "@/src/lib/supabase/daily";
 import { fetchMuscleRegions } from "@/src/lib/supabase/crossfit";
 import { formatMinutesLabel } from "@/src/lib/timeFormat";
+import { MINUTES_OPTIONS } from "@/src/lib/dailyRest";
 import type { DailyCheckin, GymProfile } from "@/src/types/daily";
 
-// Up to three hours — a session length is however long the athlete actually
-// has, and 90 was the old ceiling talking, not them.
-const MINUTES_OPTIONS = [30, 45, 60, 90, 120, 150, 180];
 // Cycle 0 → 1 → 2 → 3 → 0 on tap: not sore, tender, sore, very sore.
 const SEVERITY_LABEL = ["", "tender", "sore", "very sore"];
 

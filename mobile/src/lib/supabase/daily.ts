@@ -491,6 +491,9 @@ export async function fetchTodaySession(
       .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
     composeSignature: data.compose_signature ?? null,
     dayReason: data.day_reason ?? null,
+    // A later task teaches this fetch to read it back out of
+    // inputs_snapshot.assumed for a stored tomorrow-draft.
+    assumedInputs: null,
   };
 }
 
