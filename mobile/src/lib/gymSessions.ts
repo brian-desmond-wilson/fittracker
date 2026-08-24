@@ -153,6 +153,28 @@ export function weekSummary(sessions: HistorySession[], today: string): WeekSumm
 }
 
 /**
+ * A month as complete calendar weeks, Sunday-first, padded with nulls on both
+ * ends so every row holds exactly seven cells.
+ *
+ * The calendar must render these rows as fixed rows of seven. It originally
+ * poured one flat cell list into a wrapping flexbox with percentage widths;
+ * seven cells of 100/7% overflow the row by a rounding error on some device
+ * widths, every row wrapped at six, and the whole month slid off its weekdays.
+ */
+export function monthWeeks(year: number, month: number): (number | null)[][] {
+  const lead = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const cells: (number | null)[] = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: days }, (_, i) => i + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+/**
  * Consecutive days trained, counting back from today.
  *
  * A streak survives today being empty — it is only 8pm, and killing the number

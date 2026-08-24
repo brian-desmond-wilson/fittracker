@@ -5,7 +5,7 @@ import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { emphasisByDate, GROUP_LABELS } from "@/src/lib/gymSessions";
+import { emphasisByDate, GROUP_LABELS, monthWeeks } from "@/src/lib/gymSessions";
 import { GROUP_COLORS } from "./groupColors";
 import type { HistorySession, MuscleGroup } from "@/src/types/gymSessions";
 
@@ -17,16 +17,6 @@ const MONTHS = [
 
 const iso = (year: number, month: number, day: number): string =>
   `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-
-/** Leading blanks so the 1st lands under its weekday, then the month's days. */
-function monthCells(year: number, month: number): (number | null)[] {
-  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
-  const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return [
-    ...Array.from({ length: firstWeekday }, () => null),
-    ...Array.from({ length: days }, (_, i) => i + 1),
-  ];
-}
 
 export function HistoryCalendar({
   sessions,
@@ -48,7 +38,7 @@ export function HistoryCalendar({
     return counts;
   }, [sessions]);
 
-  const cells = monthCells(cursor.year, cursor.month);
+  const weeks = monthWeeks(cursor.year, cursor.month);
   const step = (by: -1 | 1) =>
     setCursor(({ year, month }) => {
       const next = month + by;
@@ -60,7 +50,7 @@ export function HistoryCalendar({
   // Only the groups actually on screen this month — a legend listing colours
   // you cannot see is noise.
   const shown = new Set<MuscleGroup>();
-  for (const day of cells) {
+  for (const day of weeks.flat()) {
     if (day === null) continue;
     const group = emphasis.get(iso(cursor.year, cursor.month, day));
     if (group) shown.add(group);
@@ -98,62 +88,66 @@ export function HistoryCalendar({
         ))}
       </View>
 
-      <View style={styles.grid}>
-        {cells.map((day, i) => {
-          if (day === null) return <View key={`blank-${i}`} style={styles.cell} />;
-          const date = iso(cursor.year, cursor.month, day);
-          const group = emphasis.get(date);
-          const isToday = date === today;
-          const isSelected = date === selected;
-          const count = countByDate.get(date) ?? 0;
-          return (
-            <TouchableOpacity
-              key={date}
-              style={[
-                styles.cell,
-                isSelected && styles.cellSelected,
-                !isSelected && isToday && styles.cellToday,
-              ]}
-              onPress={() => onSelect(date)}
-              disabled={count === 0}
-              accessibilityRole="button"
-              accessibilityLabel={
-                count === 0
-                  ? `${day}, no training`
-                  : `${day}, ${count} session${count === 1 ? "" : "s"}, ${
-                      GROUP_LABELS[group ?? "untagged"]
-                    }`
-              }
-            >
-              <Text
+      {/* Explicit rows of seven. A wrapping flexbox with 100/7% cells breaks
+          rows at six on some widths — see monthWeeks. */}
+      {weeks.map((week, w) => (
+        <View key={`week-${w}`} style={styles.week}>
+          {week.map((day, i) => {
+            if (day === null) return <View key={`blank-${i}`} style={styles.cell} />;
+            const date = iso(cursor.year, cursor.month, day);
+            const group = emphasis.get(date);
+            const isToday = date === today;
+            const isSelected = date === selected;
+            const count = countByDate.get(date) ?? 0;
+            return (
+              <TouchableOpacity
+                key={date}
                 style={[
-                  styles.dayText,
-                  count === 0 && styles.dayTextEmpty,
-                  isSelected && styles.dayTextSelected,
+                  styles.cell,
+                  isSelected && styles.cellSelected,
+                  !isSelected && isToday && styles.cellToday,
                 ]}
+                onPress={() => onSelect(date)}
+                disabled={count === 0}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  count === 0
+                    ? `${day}, no training`
+                    : `${day}, ${count} session${count === 1 ? "" : "s"}, ${
+                        GROUP_LABELS[group ?? "untagged"]
+                      }`
+                }
               >
-                {day}
-              </Text>
-              <View style={styles.dots}>
-                {group &&
-                  Array.from({ length: Math.min(count, 3) }, (_, n) => (
-                    <View
-                      key={n}
-                      style={[
-                        styles.dot,
-                        {
-                          backgroundColor: isSelected
-                            ? "#052E16"
-                            : GROUP_COLORS[group],
-                        },
-                      ]}
-                    />
-                  ))}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+                <Text
+                  style={[
+                    styles.dayText,
+                    count === 0 && styles.dayTextEmpty,
+                    isSelected && styles.dayTextSelected,
+                  ]}
+                >
+                  {day}
+                </Text>
+                <View style={styles.dots}>
+                  {group &&
+                    Array.from({ length: Math.min(count, 3) }, (_, n) => (
+                      <View
+                        key={n}
+                        style={[
+                          styles.dot,
+                          {
+                            backgroundColor: isSelected
+                              ? "#052E16"
+                              : GROUP_COLORS[group],
+                          },
+                        ]}
+                      />
+                    ))}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
 
       {shown.size > 0 && (
         <View style={styles.legend}>
@@ -181,9 +175,8 @@ const styles = StyleSheet.create({
   weekday: {
     flex: 1, textAlign: "center", fontSize: 11, color: colors.mutedForeground,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap" },
   cell: {
-    width: `${100 / 7}%`, alignItems: "center", paddingVertical: 6,
+    flex: 1, alignItems: "center", paddingVertical: 6,
     borderRadius: 10,
   },
   cellSelected: { backgroundColor: colors.primary },

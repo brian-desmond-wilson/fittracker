@@ -4,6 +4,7 @@ import {
   emphasisByDate,
   formatMinutes,
   formatVolume,
+  monthWeeks,
   muscleGroupOf,
   sessionEmphasis,
   sessionMinutes,
@@ -276,5 +277,28 @@ describe("formatting", () => {
     expect(formatMinutes(0)).toBe("—");
     expect(formatMinutes(45)).toBe("45m");
     expect(formatMinutes(190)).toBe("3h 10m");
+  });
+});
+
+describe("monthWeeks", () => {
+  // August 2026 starts on a Saturday — the strongest misalignment case, and
+  // the exact month the calendar shipped wrong: every date shifted because the
+  // leading blanks were not held to rows of seven.
+  it("aligns August 2026 so the 23rd is a Sunday", () => {
+    const weeks = monthWeeks(2026, 7);
+    expect(weeks).toHaveLength(6);
+    for (const week of weeks) expect(week).toHaveLength(7);
+    expect(weeks[0]).toEqual([null, null, null, null, null, null, 1]);
+    expect(weeks[4][0]).toBe(23); // Sunday column
+    expect(weeks[5]).toEqual([30, 31, null, null, null, null, null]);
+  });
+
+  // February 2026 runs Sunday the 1st to Saturday the 28th: four exact weeks,
+  // no padding on either side.
+  it("needs no padding when the month fills its weeks", () => {
+    const weeks = monthWeeks(2026, 1);
+    expect(weeks).toHaveLength(4);
+    expect(weeks[0][0]).toBe(1);
+    expect(weeks[3][6]).toBe(28);
   });
 });
