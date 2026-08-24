@@ -48,6 +48,8 @@ export function DailySessionHomeCard() {
     ? "Check in to build today's session"
     : session.status === "completed"
       ? "Today's session — done 💪"
+      : session.status === "rested"
+        ? "Rest day — on purpose 😌"
       : mainBlock ? `${mainBlock.name} is ready`
       : shape === "recovery" ? "Recovery day is ready"
       : shape === "thin" ? "Support work is ready"
@@ -61,11 +63,13 @@ export function DailySessionHomeCard() {
   const composedBy = session?.source === "ai" ? "AI composed"
     : session?.source === "user_pick" ? "from your catalog"
     : "rules composed";
-  const subtitle = session
-    ? `${session.blocks.length > 0
-        ? plural(session.blocks.length, "block")
-        : plural(session.items.length, "movement")} · ${composedBy}`
-    : "Soreness, energy, time — ten seconds";
+  const subtitle = !session
+    ? "Soreness, energy, time — ten seconds"
+    : session.status === "rested"
+      ? "Recorded. Tomorrow's plan knows."
+      : `${session.blocks.length > 0
+          ? plural(session.blocks.length, "block")
+          : plural(session.items.length, "movement")} · ${composedBy}`;
 
   return (
     <TouchableOpacity
