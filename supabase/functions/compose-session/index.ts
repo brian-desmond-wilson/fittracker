@@ -251,6 +251,10 @@ async function composeBlocks(body: any): Promise<Response> {
       + ` Soreness: ${soreLines}.`,
     `Most neglected muscles this week: ${stringList(coverage.neglected).join(', ') || 'no history yet'}.`,
     `Hit yesterday: ${stringList(coverage.yesterday).join(', ') || 'nothing'}.`,
+    body.yesterdayWasRest === true
+      ? 'Yesterday was a deliberate rest day. Recovery is banked — full '
+        + 'intensity is on the table today.'
+      : '',
     fixedBlocks.length > 0
       ? 'ALREADY FIXED by the athlete (context only — do not name these blocks, '
         + 'and their minutes are already spent):\n'

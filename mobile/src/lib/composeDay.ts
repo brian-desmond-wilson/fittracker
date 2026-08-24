@@ -29,11 +29,17 @@ import {
 import {
   blockPicksToItems,
   fetchBfrFlag,
+  fetchGyms,
+  fetchLatestCheckin,
   fetchLatestDebrief,
   fetchRecentAdjustments,
+  fetchRecentCheckinMinutes,
+  fetchRestedYesterday,
   fetchSkillStates,
+  fetchTodaySession,
   saveGeneratedSession,
 } from "./supabase/daily";
+import { assumedInputs } from "./dailyRest";
 import { userSkillCeiling } from "./dailySkill";
 import {
   classifyWorkout,
@@ -186,7 +192,10 @@ export async function composeDay(
   const sinceDate = getLocalDateString(
     addDays(parseLocalDate(date), -COVERAGE_WINDOW_DAYS),
   );
-  const [captured, usage, muscleNames, firstRow, adjustments, debrief, skillStates, bfrBands] =
+  const [
+    captured, usage, muscleNames, firstRow, adjustments, debrief, skillStates, bfrBands,
+    restedYesterday,
+  ] =
     await Promise.all([
       fetchCapturedWorkouts(userId),
       fetchUsage(userId, sinceDate),
@@ -205,6 +214,7 @@ export async function composeDay(
       fetchLatestDebrief(userId, `${sinceDate}T00:00:00`),
       fetchSkillStates(userId),
       fetchBfrFlag(userId),
+      fetchRestedYesterday(userId, date),
     ]);
   if (stale()) return { sessionId: null };
 
@@ -388,6 +398,9 @@ export async function composeDay(
   //     the candidates in, so a coverage shift that re-ranks an unchanged
   //     set reads as the same question. Same property the exercise-level
   //     signature had, kept knowingly.
+  //   - `yesterdayWasRest` — like soreness phrasing, it changes how the day
+  //     is described, not which workouts are eligible, and its input
+  //     (yesterday's rows) is stable within a day.
   // Locks are deliberately NOT in here: pinning a block must not
   // recompose the rest of the day by itself. Instructions and the debrief
   // ARE: a new instruction is exactly a request to compose again, and a
@@ -442,6 +455,9 @@ export async function composeDay(
     soreness: checkin.soreness,
     relaxedMain,
     overrodeRecovery,
+    // Deliberate rest is a green light, not neglect: yesterday's empty
+    // usage already cleared the avoid-list, this tells the model why.
+    yesterdayWasRest: restedYesterday,
     instructions: todaysInstructions.map((a) => ({
       block: a.block,
       text: a.instruction,
@@ -602,4 +618,54 @@ export async function composeDay(
     inputsSnapshot: { ...(params.snapshotExtras ?? {}), aiBody, shortlists },
   });
   return { sessionId };
+}
+
+/**
+ * Compose tomorrow's session tonight, from guesses (spec: preview draft).
+ * The draft is an ordinary suggested session for tomorrow's date whose
+ * inputs_snapshot carries `assumed`; the morning check-in either reproduces
+ * its signature (draft kept) or recomposes it. Idempotent: an existing
+ * matching draft short-circuits on the signature gate inside composeDay.
+ */
+export async function composeTomorrowDraft(userId: string): Promise<boolean> {
+  try {
+    const today = getLocalDateString(); // one clock sample
+    const tomorrow = getLocalDateString(addDays(parseLocalDate(today), 1));
+    const [gyms, lastCheckin, recentMinutes, existing] = await Promise.all([
+      fetchGyms(userId),
+      fetchLatestCheckin(userId, today),
+      fetchRecentCheckinMinutes(userId),
+      fetchTodaySession(userId, tomorrow),
+    ]);
+    // A draft the user already touched is theirs — never recompose it here.
+    if (existing && (existing.status !== "suggested" || existing.source === "user_pick")) {
+      return true;
+    }
+    const assumed = assumedInputs(lastCheckin, recentMinutes);
+    const checkin: DailyCheckin = {
+      id: "", // never written: checkinId below is null
+      checkinDate: tomorrow,
+      energy: assumed.energy,
+      minutesAvailable: assumed.minutesAvailable,
+      soreness: assumed.soreness,
+      overrideRecovery: false,
+      forceRecovery: false,
+    };
+    const { sessionId } = await composeDay({
+      userId,
+      date: tomorrow,
+      checkin,
+      checkinId: null,
+      activeGymId: gyms.find((g) => g.isActive)?.id ?? null,
+      existing,
+      appendToDay: false,
+      adjustFocus: null,
+      snapshotExtras: { assumed },
+    });
+    return sessionId !== null;
+  } catch (e) {
+    // A failed draft is a missing preview, not a failed rest day.
+    console.error("composeTomorrowDraft failed:", e);
+    return false;
+  }
 }
