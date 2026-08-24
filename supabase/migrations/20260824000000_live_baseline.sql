@@ -1,5 +1,5 @@
-
-
+-- Live-schema baseline (2026-08-24), for LOCAL replay only (supabase db reset --local).
+-- Contains auth.users triggers + storage policies requiring superuser; never push to a fresh hosted project.
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
