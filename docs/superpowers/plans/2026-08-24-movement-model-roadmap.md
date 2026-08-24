@@ -39,7 +39,7 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 ## Stage 3 — Catalog pass (Phase 4)
 
 - [ ] Core movement set proposed (from live data + CrossFit canon) and user-approved
-- [ ] All 307 rows classified: core movement or explicit outlier, full identity attributes
+- [ ] All 307 rows classified: core movement or explicit outlier, full identity attributes, explicit `is_movement` curation (kept as a pure Movements-tab label per user decision)
 - [ ] Review sheet produced; user approves before any write
 - [ ] Duplicates merged with every downstream FK repointed; loser names kept as aliases
 - [ ] Equipment text array backfilled into the junction; wrong tree placements fixed via attributes

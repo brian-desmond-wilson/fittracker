@@ -28,7 +28,7 @@ A canonical exercise catalog where every exercise derives from a core movement b
 | `generated_name` | Output of the naming function. |
 | `display_name` policy | Custom override if set, else `generated_name`. `name` column remains the display name; a `name_is_custom` boolean records whether it is an override. |
 | `is_core` | Kept: TRUE marks tier-0 core movements. Existing constraint (core ⇒ no parent) kept. |
-| `is_movement` | **Dropped.** "Movement" = tier 0. The Movements/Exercises tab split is an app-layer concern to revisit in the UI phase. |
+| `is_movement` | **Kept, redefined** (user decision 2026-08-24): a pure curation label — "first-class named movement of the sport", i.e. what the Movements tab shows — with zero role in identity, naming, or hierarchy. Its current inconsistencies (e.g. Strict Press core-but-not-movement) are fixed during the Phase 4 catalog pass, which sets it explicitly on every row. |
 
 ### One storage shape per attribute (ends dual storage)
 
