@@ -213,4 +213,51 @@ BEGIN
   END IF;
 END $$;
 ROLLBACK;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V5: catalog identity columns exist on exercises
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='core_movement_id';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V5 FAIL: public.exercises.core_movement_id missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='identity_fingerprint';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V5 FAIL: public.exercises.identity_fingerprint missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='tier';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V5 FAIL: public.exercises.tier missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='generated_name';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V5 FAIL: public.exercises.generated_name missing (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='name_is_custom';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V5 FAIL: public.exercises.name_is_custom missing (existing columns: %)', v_observed;
+  END IF;
+
+  -- V5: core rows must self-reference once backfilled (spec: uniform "has a core")
+  IF EXISTS (SELECT 1 FROM public.exercises WHERE is_core AND core_movement_id IS DISTINCT FROM id) THEN
+    SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed
+      FROM public.exercises WHERE is_core AND core_movement_id IS DISTINCT FROM id;
+    RAISE EXCEPTION 'V5 FAIL: core rows not self-referencing core_movement_id: %', v_observed;
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
