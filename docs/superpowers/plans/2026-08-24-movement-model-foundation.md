@@ -285,6 +285,21 @@ WHERE emr.muscle_region_id = (SELECT id FROM back_row)
   AND NOT EXISTS (   -- skip rows that would violate UNIQUE(exercise_id, muscle_region_id)
     SELECT 1 FROM exercise_muscle_regions e2
     WHERE e2.exercise_id = emr.exercise_id AND e2.muscle_region_id = (SELECT id FROM upper_back));
+
+-- Colliding rows (exercise had both Back and Upper Back) are skipped by the repoint above;
+-- if Back held the primary flag, the surviving Upper Back row must inherit it BEFORE the
+-- delete, or the exercise silently loses its primary-muscle flag (Task 4 review finding:
+-- five staging exercises hit exactly this before the fix).
+UPDATE exercise_muscle_regions ub
+SET is_primary = true
+WHERE ub.muscle_region_id = (SELECT id FROM muscle_regions WHERE name = 'Upper Back')
+  AND ub.is_primary = false
+  AND EXISTS (
+    SELECT 1 FROM exercise_muscle_regions b
+    WHERE b.exercise_id = ub.exercise_id
+      AND b.muscle_region_id = (SELECT id FROM muscle_regions WHERE name = 'Back')
+      AND b.is_primary = true);
+
 DELETE FROM exercise_muscle_regions WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
 DELETE FROM captured_workout_muscles WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
 DELETE FROM daily_checkin_soreness   WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
@@ -323,6 +338,8 @@ INSERT INTO alias_abbreviations (abbrev, expansion) VALUES
   ('rmu','ring muscle up'),('kbs','kettlebell swing'),('wb','wall ball'),('sq','squat')
 ON CONFLICT (abbrev) DO NOTHING;
 ```
+
+The shipped migration additionally ends with a self-verifying `DO` block (mirroring the V2 harness checks, RAISE with observed values). **Standing rule for later data migrations in this plan:** `supabase db push` does not run the harness, so every migration that changes data must end with an in-file assertion block that fails the push closed on drift — the harness is a second net, not the only one.
 
 - [ ] **Step 3: Apply to staging, re-run harness**
 
