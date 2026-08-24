@@ -6,11 +6,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl,
+  Alert, RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
-  Check, ChevronDown, ChevronRight, Clock, Dumbbell, MapPin, Play, Sparkles, Zap,
+  Check, ChevronDown, ChevronRight, Clock, Dumbbell, MapPin, Moon, Play, Sparkles, Zap,
 } from "lucide-react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { useDailySession } from "@/src/hooks/useDailySession";
@@ -20,6 +20,10 @@ import {
   blockDayShape, plannedBlockMinutes, BLOCK_TITLES, SECTION_FOR_BLOCK,
 } from "@/src/lib/dailyBlockCompose";
 import { wouldBeRecoveryDay } from "@/src/lib/dailyBlockShortlist";
+import { ACTIVE_RECOVERY_MINUTES, ASSUMED_ENERGY } from "@/src/lib/dailyRest";
+import { composeTomorrowDraft } from "@/src/lib/composeDay";
+import { addDays, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
+import { supabase } from "@/src/lib/supabase";
 import { GymSheet } from "./GymSheet";
 import { SetupSheet } from "./SetupSheet";
 import { AdjustSheet } from "./AdjustSheet";
@@ -27,14 +31,17 @@ import { DebriefSheet } from "./DebriefSheet";
 import { MovementRatingSheet } from "./MovementRatingSheet";
 import { BlockCard } from "./BlockCard";
 import { SessionBudgetBar } from "./SessionBudgetBar";
+import { RestSheet } from "./RestSheet";
+import { TomorrowPreview } from "./TomorrowPreview";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
 import {
-  completeSession, fetchDebrief, fetchSessionRatings, rerollBlock,
-  setBlockDismissed, setBlockLocked, setRecoveryOverride,
+  completeSession, fetchDebrief, fetchLatestCheckin, fetchSessionRatings,
+  fetchTodaySession, rerollBlock, restToday, saveCheckin, setBlockDismissed,
+  setBlockLocked, setRecoveryOverride, unrestToday,
 } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
-import type { SessionSection } from "@/src/types/daily";
+import type { DailyCheckin, SessionSection, StoredSession } from "@/src/types/daily";
 import type { BlockRole } from "@/src/types/dailyBlocks";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
@@ -74,6 +81,14 @@ export default function TodayTab() {
   // closed. One state, because only one can be open.
   const [adjustScope, setAdjustScope] = useState<BlockRole | "day" | null>(null);
   const [debriefVisible, setDebriefVisible] = useState(false);
+  const [restSheetVisible, setRestSheetVisible] = useState(false);
+  const [restBusy, setRestBusy] = useState(false);
+  // Tomorrow's draft, when one exists — rendered under the rest card and
+  // under a decided day. Null is "none", which is the common case.
+  const [tomorrowDraft, setTomorrowDraft] = useState<StoredSession | null>(null);
+  // Whether the draft fetch has answered. Without it, "no preview" and "not
+  // asked yet" look identical, and the rest card would flash an empty state.
+  const [tomorrowDraftLoaded, setTomorrowDraftLoaded] = useState(false);
   const { session, checkin, activeGym, gyms, loading, error, refetch, composeAnother, recomposeBlock } =
     useDailySession(refreshKey);
   const [refreshing, setRefreshing] = useState(false);
@@ -132,6 +147,27 @@ export default function TodayTab() {
       alive = false;
     };
   }, [servedId]);
+
+  // The preview rides the same refresh cadence as the day itself. Only an
+  // untouched assumed draft renders — once tomorrow arrives and the draft is
+  // confirmed or replaced, this fetch naturally answers null.
+  const sessionStatus = session?.status ?? null;
+  useEffect(() => {
+    let alive = true;
+    setTomorrowDraftLoaded(false);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const tomorrow = getLocalDateString(addDays(parseLocalDate(getLocalDateString()), 1));
+      fetchTodaySession(user.id, tomorrow).then((s) => {
+        if (!alive) return;
+        setTomorrowDraft(
+          s && s.status === "suggested" && s.assumedInputs !== null ? s : null,
+        );
+        setTomorrowDraftLoaded(true);
+      });
+    });
+    return () => { alive = false; };
+  }, [refreshKey, sessionStatus]);
 
   // The debrief follows the session's completion, not the Mark-done tap: a
   // day finished in the logging screen arrives here already completed.
@@ -195,6 +231,26 @@ export default function TodayTab() {
       ? session.sectionMinutes
       : estimateSectionMinutes(session.items);
   }, [session]);
+
+  // The morning sheet opens showing the draft's guesses, so "save without
+  // touching anything" reproduces the signature and keeps the plan.
+  const draftPrefill = useMemo<DailyCheckin | null>(() => {
+    if (checkin || !session?.assumedInputs) return null;
+    return {
+      id: "",
+      checkinDate: getLocalDateString(),
+      energy: session.assumedInputs.energy,
+      minutesAvailable: session.assumedInputs.minutesAvailable,
+      soreness: session.assumedInputs.soreness,
+      overrideRecovery: false,
+      forceRecovery: false,
+    };
+  }, [checkin, session]);
+
+  // A tomorrow-draft still waiting on its morning: the plan exists, the
+  // check-in doesn't. Drives both the banner and the footer's decision.
+  const draftUnconfirmed =
+    !checkin && session?.status === "suggested" && session.assumedInputs !== null;
 
   const blocks = session?.blocks ?? [];
   const mainBlock = blocks.find((b) => b.block === "main") ?? null;
@@ -272,6 +328,89 @@ export default function TodayTab() {
     setDoneAttempted(true);
     setRerollNote(null);
     setRefreshKey((k) => k + 1);
+  };
+
+  // Both choices decide the day, then build tomorrow's preview. The preview
+  // failing is not the decision failing — the day state is what refreshes.
+  const chooseRest = async (kind: "full" | "active") => {
+    if (restBusy) return;
+    setRestBusy(true);
+    let fail: string | null = null;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const today = getLocalDateString();
+      if (kind === "full") {
+        const ok = await restToday(user.id, today);
+        if (!ok) fail = "Couldn't record the rest day.";
+      } else {
+        // A real check-in, forced into recovery shape; the hook composes the
+        // ~15-minute mobility day from it like any other day.
+        const last = await fetchLatestCheckin(user.id, today);
+        const saved = await saveCheckin({
+          userId: user.id,
+          date: today,
+          energy: ASSUMED_ENERGY,
+          minutesAvailable: ACTIVE_RECOVERY_MINUTES,
+          // Today's known soreness, undecayed — the decay is tomorrow's guess,
+          // and this day is being shaped BECAUSE of how things feel now.
+          soreness: last?.soreness ?? {},
+          forceRecovery: true,
+        });
+        if (!saved) fail = "Couldn't set up active recovery.";
+      }
+      // Tomorrow's draft is only worth building once today's decision is on
+      // record — a preview built over a failed decision would describe a day
+      // that never happened.
+      if (fail === null) await composeTomorrowDraft(user.id);
+    } finally {
+      setRestBusy(false);
+      setRestSheetVisible(false);
+      bump();
+    }
+    // The sheet is a presented modal: an alert raised while it is still on
+    // screen goes down with it. Let the dismissal finish first.
+    if (fail) {
+      const message = fail;
+      setTimeout(() => Alert.alert(message, "Check your connection and try again."), 500);
+    }
+  };
+
+  const undoRest = async () => {
+    if (restBusy) return;
+    setRestBusy(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) await unrestToday(user.id, getLocalDateString());
+    setRestBusy(false);
+    bump();
+  };
+
+  // "Looks right": the guesses become the day's real check-in, VERBATIM —
+  // the reload's signature then comes out identical and the plan on screen
+  // survives untouched.
+  const confirmDraft = async () => {
+    if (!session?.assumedInputs || restBusy) return;
+    setRestBusy(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const saved = user
+      ? await saveCheckin({
+          userId: user.id,
+          date: getLocalDateString(),
+          energy: session.assumedInputs.energy,
+          minutesAvailable: session.assumedInputs.minutesAvailable,
+          soreness: session.assumedInputs.soreness,
+        })
+      : null;
+    setRestBusy(false);
+    if (!saved) {
+      Alert.alert("Couldn't confirm the plan", "Check your connection and try again.");
+      return;
+    }
+    // A day of built-ins has nothing loggable under it — the logging screen
+    // refuses it, so confirming is the whole action and the day is followed
+    // off the cards.
+    if (!nothingToLog) startSession();
+    bump();
   };
 
   const startSession = () => {
@@ -384,6 +523,14 @@ export default function TodayTab() {
               <TouchableOpacity style={styles.button} onPress={() => setSetupVisible(true)}>
                 <Text style={styles.buttonText}>Set up my day</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.restLink}
+                onPress={() => setRestSheetVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Make today a rest day"
+              >
+                <Text style={styles.restLinkText}>Make today a rest day</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.center}>
@@ -393,6 +540,34 @@ export default function TodayTab() {
               </Text>
             </View>
           )
+        ) : session.status === "rested" ? (
+          <>
+            <View style={styles.center}>
+              <Moon size={32} color={colors.brand} />
+              <Text style={styles.emptyTitle}>Rest day — on purpose</Text>
+              <Text style={styles.emptyText}>
+                Recorded. Tomorrow's plan knows you rested, not skipped.
+              </Text>
+              <TouchableOpacity
+                style={styles.restLink}
+                onPress={undoRest}
+                disabled={restBusy}
+                accessibilityRole="button"
+                accessibilityLabel="Undo the rest day"
+              >
+                <Text style={styles.restLinkText}>
+                  {restBusy ? "Undoing…" : "Changed my mind — undo"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {tomorrowDraft ? (
+              <TomorrowPreview session={tomorrowDraft} />
+            ) : tomorrowDraftLoaded ? (
+              <Text style={styles.emptyText}>
+                No preview for tomorrow yet — pull to refresh.
+              </Text>
+            ) : null}
+          </>
         ) : (
           <>
             {error && (
@@ -400,6 +575,26 @@ export default function TodayTab() {
                 <Text style={styles.errorBannerText}>
                   Couldn't refresh — this is the plan as it last stood. {error.message}
                 </Text>
+              </View>
+            )}
+            {/* Morning face of the tomorrow-draft: the plan exists, the
+                check-in doesn't. It says what this plan is; the decision
+                itself waits at the end of the scroll, under the plan it
+                decides about. */}
+            {draftUnconfirmed && (
+              <View style={styles.draftBanner}>
+                <Text style={styles.draftBannerTitle}>Built last night from your usual settings</Text>
+                <Text style={styles.draftBannerText}>
+                  Confirm it or tell me what's different this morning.
+                </Text>
+                <TouchableOpacity
+                  style={styles.restLink}
+                  onPress={() => setRestSheetVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Rest again today instead"
+                >
+                  <Text style={styles.restLinkText}>Actually — make today a rest day too</Text>
+                </TouchableOpacity>
               </View>
             )}
             <View style={styles.sessionHeader}>
@@ -604,9 +799,33 @@ export default function TodayTab() {
               </View>
             )}
 
-            {/* End of the scroll, never pinned — house rule. */}
+            {/* End of the scroll, never pinned — house rule. An unconfirmed
+                draft decides the day here, under the plan it decides about;
+                the start is the same tap, so confirming is never a step that
+                leaves you looking at the same screen. */}
             {session.status !== "completed" && (
-              nothingToLog ? (
+              draftUnconfirmed ? (
+                <View style={styles.draftActions}>
+                  <TouchableOpacity
+                    style={styles.draftConfirm}
+                    onPress={confirmDraft}
+                    disabled={restBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Keep this plan and start the session"
+                  >
+                    <Play size={18} color={colors.onBrand} />
+                    <Text style={styles.buttonText}>Looks right — start</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.draftAdjust}
+                    onPress={() => setSetupVisible(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Something changed — open the check-in"
+                  >
+                    <Text style={styles.secondaryButtonText}>Anything change?</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : nothingToLog ? (
                 <TouchableOpacity
                   style={styles.startButton}
                   onPress={markDone}
@@ -715,6 +934,12 @@ export default function TodayTab() {
                 </TouchableOpacity>
               </View>
             )}
+
+            {/* A decided day (recovery session in hand, or finished) with a
+                draft waiting shows tomorrow at the end of the scroll. */}
+            {tomorrowDraft && (session.status === "completed" || dayShape === "recovery") && (
+              <TomorrowPreview session={tomorrowDraft} />
+            )}
           </>
         )}
       </ScrollView>
@@ -722,7 +947,7 @@ export default function TodayTab() {
       <GymSheet visible={gymSheetVisible} gyms={gyms}
         onClose={() => setGymSheetVisible(false)}
         onChanged={() => { setGymSheetVisible(false); bump(); }} />
-      <SetupSheet visible={setupVisible} existing={checkin} gyms={gyms}
+      <SetupSheet visible={setupVisible} existing={checkin ?? draftPrefill} gyms={gyms}
         onClose={() => setSetupVisible(false)}
         onSaved={() => { setSetupVisible(false); bump(); }}
         onManageGyms={() => { setSetupVisible(false); setGymSheetVisible(true); }}
@@ -749,6 +974,11 @@ export default function TodayTab() {
         onSaved={() => {
           setDebriefVisible(false); setHasDebrief(true); maybePromptRatings();
         }} />
+      <RestSheet
+        visible={restSheetVisible}
+        onClose={() => setRestSheetVisible(false)}
+        onChoose={chooseRest}
+      />
       <MovementRatingSheet
         visible={ratingVisible}
         sessionId={session?.id ?? null}
@@ -780,6 +1010,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28, marginTop: 12,
   },
   buttonText: { color: colors.onBrand, fontSize: 15, fontWeight: "600" },
+  restLink: { marginTop: 14, padding: 6 },
+  restLinkText: { fontSize: 14, color: colors.textMuted, textDecorationLine: "underline" },
+  draftBanner: {
+    backgroundColor: colors.surface, borderWidth: 1,
+    borderColor: tint(colors.brand, 0.4), borderRadius: radii.panel,
+    padding: spacing.lg, marginBottom: 12, gap: 4,
+  },
+  draftBannerTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
+  draftBannerText: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
+  draftActions: { flexDirection: "row", gap: 8, marginTop: spacing.xl },
+  draftConfirm: {
+    flex: 1, flexDirection: "row", gap: 8, backgroundColor: colors.brand,
+    borderRadius: radii.control, paddingVertical: 11, alignItems: "center",
+    justifyContent: "center",
+  },
+  draftAdjust: {
+    flex: 1, backgroundColor: colors.surface2, borderWidth: 1,
+    borderColor: colors.border, borderRadius: radii.control,
+    paddingVertical: 11, alignItems: "center",
+  },
   sessionHeader: { marginBottom: 4 },
   sessionTitle: { fontSize: 26, fontWeight: "800", color: colors.text, lineHeight: 31 },
   badges: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },

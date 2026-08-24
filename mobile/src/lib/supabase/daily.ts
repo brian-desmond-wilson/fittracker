@@ -587,16 +587,38 @@ export async function fetchRestDates(userId: string): Promise<Set<string>> {
 
 /**
  * Declare `date` a full rest day. Inside the suggest-only boundary: runs from
- * the user's tap. Refuses when the day already holds an open session — the UI
- * only offers rest on an empty day, and a race must not double-book it.
+ * the user's tap. Refuses when the day already holds a session the user has
+ * confirmed, started or finished — a race must not double-book it. An
+ * untouched tomorrow-draft is the one thing rest may clear, so a second rest
+ * day in a row lands on the day its own draft was holding.
  */
 export async function restToday(userId: string, date: string): Promise<boolean> {
   try {
-    const status = await fetchDayStatus(userId, date);
+    // One direct read, fail-closed: a failed read must refuse, not pass — and
+    // the draft is only cleared once the day is known to be otherwise empty,
+    // so a refusal never costs the user the plan they were shown last night.
+    const { data: dayRows, error: readError } = await supabase
+      .from("generated_sessions")
+      .select("id, status, assumed:inputs_snapshot->assumed")
+      .eq("user_id", userId)
+      .eq("session_date", date);
+    if (readError) throw readError;
+    const rows = dayRows ?? [];
     // A trained day is never also a rest day: the calendar reads rested rows
     // unfiltered, so a rest record beside a completed session would mark a
     // day you actually trained as rest.
-    if (status.hasPending || status.hasCompleted || status.hasRested) return false;
+    if (rows.some((r: any) => r.status === "completed" || r.status === "rested")) return false;
+    const pending = rows.filter((r: any) => r.status === "suggested" || r.status === "accepted");
+    // Only an untouched tomorrow-draft yields the day (spec's consecutive-rest
+    // case); any other open session keeps it.
+    if (pending.some((r: any) => !(r.status === "suggested" && r.assumed != null))) return false;
+    if (pending.length > 0) {
+      const { error: draftError } = await supabase
+        .from("generated_sessions")
+        .delete()
+        .in("id", pending.map((r: any) => r.id));
+      if (draftError) throw draftError;
+    }
     const { data: firstRow } = await supabase
       .from("generated_sessions")
       .select("session_date")
