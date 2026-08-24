@@ -175,4 +175,42 @@ BEGIN
     RAISE EXCEPTION 'V4 FAIL: public.exercise_match_reviews RLS not enabled (relrowsecurity=%)', COALESCE(v_observed, 'null');
   END IF;
 END $$;
+-- V4: review-queue trigger + lifecycle-CHECK behavior (fixture-based, rolled back — harness stays side-effect-free)
+BEGIN;
+DO $$
+DECLARE
+  v_user UUID := gen_random_uuid();
+  v_exercise UUID;
+  v_observed TEXT;
+  v_caught BOOLEAN := false;
+BEGIN
+  -- V4: raw_name_normalized is trigger-enforced, mirroring the exercise_aliases fix
+  INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
+  VALUES (v_user, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'harness-fixture@example.com', 'x', now(), now());
+
+  INSERT INTO public.exercise_match_reviews (user_id, raw_name, raw_name_normalized)
+  VALUES (v_user, 'KB Front-Squat!', 'garbage-should-be-overwritten');
+
+  SELECT raw_name_normalized INTO v_observed
+    FROM public.exercise_match_reviews WHERE user_id = v_user;
+
+  IF v_observed <> 'kettlebell front squat' THEN
+    RAISE EXCEPTION 'V4 FAIL: raw_name_normalized trigger did not overwrite deliberately-wrong value, got %', v_observed;
+  END IF;
+
+  -- V4: lifecycle CHECK rejects a status/resolution-field mismatch
+  SELECT id INTO v_exercise FROM public.exercises LIMIT 1;
+  BEGIN
+    INSERT INTO public.exercise_match_reviews (user_id, raw_name, raw_name_normalized, status, resolved_exercise_id)
+    VALUES (v_user, 'bad row', 'bad row', 'pending', v_exercise);
+  EXCEPTION WHEN check_violation THEN
+    v_caught := true;
+  END;
+
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V4 FAIL: lifecycle check did not reject pending status with resolved_exercise_id set';
+  END IF;
+END $$;
+ROLLBACK;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
