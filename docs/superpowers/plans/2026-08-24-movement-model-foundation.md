@@ -437,7 +437,14 @@ psql "$LIVE_DB" -f scripts/movement-model/audit_worksheet.sql -A -F',' -o docs/s
 head -5 docs/superpowers/audit/attribute-audit-2026-08.csv
 ```
 
-Expected: CSV header then rows like `equipment,Barbell [Free Weights],1,8,,,,,`
+Expected: CSV header then rows like `equipment,Barbell [Free Weights],1,16,,,,,`
+
+**Shipped-script amendments (commit 009db1a, from Task 5 quality review — the SQL block above is the original draft; the shipped file is authoritative):**
+- Dual-stored attributes (load_position, stance, plane_of_motion) count DISTINCT exercises over a UNION of the legacy FK column and the junction table — the draft's `count + count` double-counted, since the junctions were backfilled from the FK columns.
+- Equipment matching normalizes both sides (lower + strip spaces/underscores) and applies the app's LEGACY_EQUIPMENT alias map (mirrored from `mobile/src/lib/dailyCandidates.ts`) — the draft's exact `@>` match showed Bike/Ski as 0 because legacy tags are lowercase dialect (`'bike'`, `'ski_erg'`).
+- Header comment forbids regenerating over a CSV with hand-filled decision cells: new dated filename instead.
+- Use `--csv --pset footer=off` (not `-A -F','`) so values containing commas stay quoted.
+- Minted live credentials are short-lived — re-mint via `supabase db dump --dry-run` at each use; `SET ROLE postgres` after connecting.
 
 - [ ] **Step 3: Commit**
 
