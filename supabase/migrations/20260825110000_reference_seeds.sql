@@ -9,6 +9,20 @@ WHERE emr.muscle_region_id = (SELECT id FROM back_row)
   AND NOT EXISTS (   -- skip rows that would violate UNIQUE(exercise_id, muscle_region_id)
     SELECT 1 FROM exercise_muscle_regions e2
     WHERE e2.exercise_id = emr.exercise_id AND e2.muscle_region_id = (SELECT id FROM upper_back));
+
+-- Colliding rows (exercise already had both Back and Upper Back) were skipped by the repoint
+-- above; if Back held the primary flag, the surviving Upper Back row must inherit it before
+-- Back's row is deleted, or the exercise silently loses its primary-muscle flag.
+UPDATE exercise_muscle_regions ub
+SET is_primary = true
+WHERE ub.muscle_region_id = (SELECT id FROM muscle_regions WHERE name = 'Upper Back')
+  AND ub.is_primary = false
+  AND EXISTS (
+    SELECT 1 FROM exercise_muscle_regions b
+    WHERE b.exercise_id = ub.exercise_id
+      AND b.muscle_region_id = (SELECT id FROM muscle_regions WHERE name = 'Back')
+      AND b.is_primary = true);
+
 DELETE FROM exercise_muscle_regions WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
 DELETE FROM captured_workout_muscles WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
 DELETE FROM daily_checkin_soreness   WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
@@ -46,3 +60,42 @@ INSERT INTO alias_abbreviations (abbrev, expansion) VALUES
   ('du','double under'),('dus','double unders'),('mu','muscle up'),('bmu','bar muscle up'),
   ('rmu','ring muscle up'),('kbs','kettlebell swing'),('wb','wall ball'),('sq','squat')
 ON CONFLICT (abbrev) DO NOTHING;
+
+-- 5) Self-verifying: `supabase db push` does not run the harness, so this migration must fail
+-- closed on live drift by itself, independent of scripts/movement-model/verify_foundation.sql.
+DO $$
+DECLARE
+  v_observed TEXT;
+  v_count INTEGER;
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.muscle_regions WHERE name = 'Back') THEN
+    RAISE EXCEPTION 'reference_seeds FAIL: stray Back muscle region still present (id=%)',
+      (SELECT id FROM public.muscle_regions WHERE name = 'Back');
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.muscle_regions WHERE region_group IS NULL) THEN
+    SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed
+      FROM public.muscle_regions WHERE region_group IS NULL;
+    RAISE EXCEPTION 'reference_seeds FAIL: muscle regions without region_group: %', v_observed;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.movement_family_modalities;
+  IF v_count < 29 THEN
+    RAISE EXCEPTION 'reference_seeds FAIL: family-modality junction under-seeded, got % rows (need >= 29)', v_count;
+  END IF;
+
+  IF EXISTS (  -- every family reachable from at least one modality
+    SELECT 1 FROM public.movement_families f
+    WHERE NOT EXISTS (SELECT 1 FROM public.movement_family_modalities m WHERE m.movement_family_id = f.id)
+  ) THEN
+    SELECT string_agg(f.name, ', ' ORDER BY f.name) INTO v_observed
+      FROM public.movement_families f
+      WHERE NOT EXISTS (SELECT 1 FROM public.movement_family_modalities m WHERE m.movement_family_id = f.id);
+    RAISE EXCEPTION 'reference_seeds FAIL: unreachable movement families: %', v_observed;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.alias_abbreviations;
+  IF v_count < 15 THEN
+    RAISE EXCEPTION 'reference_seeds FAIL: abbreviation dictionary under-seeded, got % rows (need >= 15)', v_count;
+  END IF;
+END $$;
