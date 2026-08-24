@@ -59,6 +59,7 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 - [ ] Reads move to new columns (stored tier, display name, junction truth)
 - [ ] Filter pills read classification data, not name substrings
 - [ ] Capture pipeline routed through the guarded front door + review queue UI
+- [ ] Dictionary-change re-normalization: adding an alias_abbreviations row re-normalizes all exercise_aliases and routes collisions to the review queue (Task 6 review finding — until this lands, the dictionary is append-rarely and any change requires a harness re-run)
 - **Exit gate:** on-device verification of add / edit / capture-match flows
 
 ## Stage 6 — Retire legacy (Phase 7)
