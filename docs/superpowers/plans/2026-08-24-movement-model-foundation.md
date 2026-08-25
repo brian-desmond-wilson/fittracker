@@ -10,8 +10,10 @@
 
 **Conventions:**
 - Repo root: `/Users/brianwilson/code/fittracker`. Credentials in `mobile/.env` (`EXPO_PUBLIC_SUPABASE_URL`, `SERVICE_ROLE`); the repo-root `.env` is dead — never source it.
-- Local staging DB URL: `postgresql://postgres:postgres@127.0.0.1:54322/postgres` (referred to as `$LOCAL_DB`).
-- Test harness: every engine task first adds failing assertions to `scripts/movement-model/verify_foundation.sql`, then implements, then re-runs. The script raises on failure and prints `FOUNDATION VERIFICATION: PASS` on success.
+- Live Postgres access (no DB password exists on this machine): mint a login-role pooler URL by reading the output of `supabase db dump --dry-run`. The minted `cli_login_postgres.<ref>` role has no direct table grants — after connecting, run `SET ROLE postgres;` in-session or table reads hit permission-denied. pg_dump via the script uses `--role postgres` for the same reason. Read-only use unless the task explicitly authorizes writes. Minted credentials are short-lived; re-mint per session.
+- Pointing the app at staging (Task 10 discovery, Expo SDK 54): dev-mode Metro merges `mobile/.env` OVER process env at runtime, so `EXPO_PUBLIC_SUPABASE_URL=... npx expo start` silently keeps talking to PRODUCTION (`EXPO_NO_DOTENV=1` does not help). Any staging smoke test MUST launch with `npx expo start --no-dev` (production-mode transform inlines process env at bundle time), then verify the served bundle contains the staging URL before logging in. Staging smoke auth user: `smoke@test.local` (exists on local staging only).
+- Local staging DB URL: `postgresql://postgres:postgres@127.0.0.1:56322/postgres` (referred to as `$LOCAL_DB`).
+- Test harness: every engine task first adds failing assertions to `scripts/movement-model/verify_foundation.sql`, then implements, then re-runs. The script raises on failure and prints `FOUNDATION VERIFICATION: PASS` on success. Harness conventions (enforced since Task 2's review): the file starts with `\set ON_ERROR_STOP on` so it fails closed regardless of psql flags; each DO block is self-contained (no state shared between blocks); RAISE messages include the actual observed value; table names are schema-qualified (`public.`). When appending V1–V7 blocks from this plan, upgrade their RAISE messages to that convention.
 - Solo repo: work on branch `movement-model-foundation`, merge to `main` when the plan completes. No PRs.
 - Commit after every task.
 
@@ -77,7 +79,7 @@ chmod +x scripts/movement-model/dump_live_data.sh
 
 ```bash
 supabase start && supabase db reset --local
-LOCAL_DB="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+LOCAL_DB="postgresql://postgres:postgres@127.0.0.1:56322/postgres"
 DUMP=$(scripts/movement-model/dump_live_data.sh "<live pooler URL from supabase dashboard or constructed from mobile/.env>")
 psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -c "SET session_replication_role = replica;" -f "$DUMP"
 ```
@@ -140,7 +142,7 @@ git add scripts/movement-model/verify_foundation.sql && git commit -m "test(db):
 ### Task 3: Reference-table structural columns
 
 **Files:**
-- Create: `supabase/migrations/20260824100000_reference_structure_columns.sql`
+- Create: `supabase/migrations/20260825100000_reference_structure_columns.sql`
 - Modify: `scripts/movement-model/verify_foundation.sql`
 
 - [ ] **Step 1: Add failing assertions (V1) to the harness**
@@ -170,7 +172,7 @@ Expected: `ERROR: V1 FAIL: muscle_regions.region_group missing`
 - [ ] **Step 3: Write the migration**
 
 ```sql
--- 20260824100000_reference_structure_columns.sql
+-- 20260825100000_reference_structure_columns.sql
 -- Naming metadata + identity flags + grouping-as-data on reference tables (spec: Reference-table hygiene).
 
 ALTER TABLE muscle_regions ADD COLUMN IF NOT EXISTS region_group TEXT
@@ -188,11 +190,14 @@ ALTER TABLE symmetries       ADD COLUMN IF NOT EXISTS name_fragment TEXT, ADD CO
 ALTER TABLE movement_styles  ADD COLUMN IF NOT EXISTS name_fragment TEXT, ADD COLUMN IF NOT EXISTS name_order INTEGER;
 
 -- Family ↔ modality reachability as data (replaces the app's drifted hardcoded map).
+-- Edge table with no attributes of its own → bare composite PK is intentional (no surrogate id/created_at).
 CREATE TABLE IF NOT EXISTS movement_family_modalities (
   movement_family_id UUID NOT NULL REFERENCES movement_families(id) ON DELETE CASCADE,
   movement_category_id UUID NOT NULL REFERENCES movement_categories(id) ON DELETE CASCADE,
   PRIMARY KEY (movement_family_id, movement_category_id)
 );
+-- House style indexes both FK columns of a junction (PK covers movement_family_id first).
+CREATE INDEX IF NOT EXISTS idx_movement_family_modalities_category ON movement_family_modalities(movement_category_id);
 
 -- Abbreviation dictionary for the alias normalizer.
 CREATE TABLE IF NOT EXISTS alias_abbreviations (
@@ -200,12 +205,26 @@ CREATE TABLE IF NOT EXISTS alias_abbreviations (
   expansion TEXT NOT NULL,          -- lowercase words
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Enforce the normalization invariant (idempotently guarded in the shipped file).
+ALTER TABLE alias_abbreviations ADD CONSTRAINT abbrev_normalized CHECK (abbrev ~ '^[a-z0-9]+$');
+
+-- RLS (added by Task 3 quality review — the baseline's default privileges grant anon/authenticated
+-- full writes, and RLS is what neutralizes that on every other table; without it these two tables
+-- were world-writable via PostgREST). Read-only to everyone, no write policy.
+ALTER TABLE movement_family_modalities ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Movement family modalities are viewable by everyone" ON movement_family_modalities FOR SELECT USING (true);
+ALTER TABLE alias_abbreviations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Alias abbreviations are viewable by everyone" ON alias_abbreviations FOR SELECT USING (true);
 ```
+
+The shipped migration wraps the ADD CONSTRAINT and CREATE POLICY statements in `DO` blocks with existence checks so the file re-runs cleanly (verified idempotent on staging). V1 harness assertions also check `pg_class.relrowsecurity` is true for both tables.
+
+**Standing rule for every later migration in this plan (Tasks 6, 7, 8, 9):** any `CREATE TABLE` must ship with `ENABLE ROW LEVEL SECURITY` + explicit policies in the same migration — the baseline's default privileges make an RLS-less table world-writable through the API. Tasks 6 and 7 already include RLS in their SQL; reviewers must treat a missing-RLS table as Critical.
 
 - [ ] **Step 4: Apply to staging and re-run harness**
 
 ```bash
-psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -f supabase/migrations/20260824100000_reference_structure_columns.sql
+psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -f supabase/migrations/20260825100000_reference_structure_columns.sql
 psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -f scripts/movement-model/verify_foundation.sql
 ```
 
@@ -224,7 +243,7 @@ git add -A && git commit -m "feat(db): reference-table structure - naming metada
 Only facts that do NOT depend on the Stage 2 audit. Fragment/order/identity values for every attribute value come from the audit; the seeds here are structural truths.
 
 **Files:**
-- Create: `supabase/migrations/20260824110000_reference_seeds.sql`
+- Create: `supabase/migrations/20260825110000_reference_seeds.sql`
 - Modify: `scripts/movement-model/verify_foundation.sql`
 
 - [ ] **Step 1: Add failing assertions (V2)**
@@ -257,7 +276,7 @@ Run harness. Expected: `ERROR: V2 FAIL: stray Back muscle region still present`
 - [ ] **Step 2: Write the migration**
 
 ```sql
--- 20260824110000_reference_seeds.sql
+-- 20260825110000_reference_seeds.sql
 
 -- 1) Merge stray 'Back' muscle region into 'Upper Back' (repoint links, dedupe, delete).
 WITH back_row AS (SELECT id FROM muscle_regions WHERE name = 'Back'),
@@ -268,6 +287,21 @@ WHERE emr.muscle_region_id = (SELECT id FROM back_row)
   AND NOT EXISTS (   -- skip rows that would violate UNIQUE(exercise_id, muscle_region_id)
     SELECT 1 FROM exercise_muscle_regions e2
     WHERE e2.exercise_id = emr.exercise_id AND e2.muscle_region_id = (SELECT id FROM upper_back));
+
+-- Colliding rows (exercise had both Back and Upper Back) are skipped by the repoint above;
+-- if Back held the primary flag, the surviving Upper Back row must inherit it BEFORE the
+-- delete, or the exercise silently loses its primary-muscle flag (Task 4 review finding:
+-- five staging exercises hit exactly this before the fix).
+UPDATE exercise_muscle_regions ub
+SET is_primary = true
+WHERE ub.muscle_region_id = (SELECT id FROM muscle_regions WHERE name = 'Upper Back')
+  AND ub.is_primary = false
+  AND EXISTS (
+    SELECT 1 FROM exercise_muscle_regions b
+    WHERE b.exercise_id = ub.exercise_id
+      AND b.muscle_region_id = (SELECT id FROM muscle_regions WHERE name = 'Back')
+      AND b.is_primary = true);
+
 DELETE FROM exercise_muscle_regions WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
 DELETE FROM captured_workout_muscles WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
 DELETE FROM daily_checkin_soreness   WHERE muscle_region_id = (SELECT id FROM muscle_regions WHERE name='Back');
@@ -306,6 +340,8 @@ INSERT INTO alias_abbreviations (abbrev, expansion) VALUES
   ('rmu','ring muscle up'),('kbs','kettlebell swing'),('wb','wall ball'),('sq','squat')
 ON CONFLICT (abbrev) DO NOTHING;
 ```
+
+The shipped migration additionally ends with a self-verifying `DO` block (mirroring the V2 harness checks, RAISE with observed values). **Standing rule for later data migrations in this plan:** `supabase db push` does not run the harness, so every migration that changes data must end with an in-file assertion block that fails the push closed on drift — the harness is a second net, not the only one.
 
 - [ ] **Step 3: Apply to staging, re-run harness**
 
@@ -402,7 +438,14 @@ psql "$LIVE_DB" -f scripts/movement-model/audit_worksheet.sql -A -F',' -o docs/s
 head -5 docs/superpowers/audit/attribute-audit-2026-08.csv
 ```
 
-Expected: CSV header then rows like `equipment,Barbell [Free Weights],1,8,,,,,`
+Expected: CSV header then rows like `equipment,Barbell [Free Weights],1,16,,,,,`
+
+**Shipped-script amendments (commit 009db1a, from Task 5 quality review — the SQL block above is the original draft; the shipped file is authoritative):**
+- Dual-stored attributes (load_position, stance, plane_of_motion) count DISTINCT exercises over a UNION of the legacy FK column and the junction table — the draft's `count + count` double-counted, since the junctions were backfilled from the FK columns.
+- Equipment matching normalizes both sides (lower + strip spaces/underscores) and applies the app's LEGACY_EQUIPMENT alias map (mirrored from `mobile/src/lib/dailyCandidates.ts`) — the draft's exact `@>` match showed Bike/Ski as 0 because legacy tags are lowercase dialect (`'bike'`, `'ski_erg'`).
+- Header comment forbids regenerating over a CSV with hand-filled decision cells: new dated filename instead.
+- Use `--csv --pset footer=off` (not `-A -F','`) so values containing commas stay quoted.
+- Minted live credentials are short-lived — re-mint via `supabase db dump --dry-run` at each use; `SET ROLE postgres` after connecting.
 
 - [ ] **Step 3: Commit**
 
@@ -415,7 +458,7 @@ git add -A && git commit -m "feat(audit): attribute audit worksheet generator + 
 ### Task 6: Alias table and normalizer
 
 **Files:**
-- Create: `supabase/migrations/20260824120000_exercise_aliases.sql`
+- Create: `supabase/migrations/20260825120000_exercise_aliases.sql`
 - Modify: `scripts/movement-model/verify_foundation.sql`
 
 - [ ] **Step 1: Add failing assertions (V3) — normalizer behavior spec**
@@ -444,7 +487,7 @@ Run harness. Expected: `ERROR: ... function normalize_alias(unknown) does not ex
 - [ ] **Step 2: Write the migration**
 
 ```sql
--- 20260824120000_exercise_aliases.sql
+-- 20260825120000_exercise_aliases.sql
 
 CREATE OR REPLACE FUNCTION normalize_alias(raw TEXT) RETURNS TEXT
 LANGUAGE sql STABLE AS $$
@@ -490,7 +533,7 @@ git add -A && git commit -m "feat(db): exercise_aliases with normalizer and birt
 ### Task 7: Equipment junction and match-review queue
 
 **Files:**
-- Create: `supabase/migrations/20260824130000_equipment_junction_and_review_queue.sql`
+- Create: `supabase/migrations/20260825130000_equipment_junction_and_review_queue.sql`
 - Modify: `scripts/movement-model/verify_foundation.sql`
 
 - [ ] **Step 1: Add failing assertions (V4)**
@@ -511,7 +554,7 @@ Run harness. Expected: `ERROR: V4 FAIL: exercise_equipment missing`
 - [ ] **Step 2: Write the migration**
 
 ```sql
--- 20260824130000_equipment_junction_and_review_queue.sql
+-- 20260825130000_equipment_junction_and_review_queue.sql
 -- exercise_equipment existed in the archived tree but never reached live. Recreated here.
 
 CREATE TABLE IF NOT EXISTS exercise_equipment (
@@ -561,7 +604,7 @@ git add -A && git commit -m "feat(db): exercise_equipment junction (live at last
 ### Task 8: Catalog identity columns
 
 **Files:**
-- Create: `supabase/migrations/20260824140000_catalog_identity_columns.sql`
+- Create: `supabase/migrations/20260825140000_catalog_identity_columns.sql`
 - Modify: `scripts/movement-model/verify_foundation.sql`
 
 - [ ] **Step 1: Add failing assertions (V5)**
@@ -592,7 +635,7 @@ Run harness. Expected: `ERROR: V5 FAIL: core_movement_id missing`
 - [ ] **Step 2: Write the migration**
 
 ```sql
--- 20260824140000_catalog_identity_columns.sql
+-- 20260825140000_catalog_identity_columns.sql
 
 ALTER TABLE exercises
   ADD COLUMN IF NOT EXISTS core_movement_id UUID REFERENCES exercises(id) ON DELETE SET NULL,
@@ -631,7 +674,7 @@ git add -A && git commit -m "feat(db): catalog identity columns on exercises"
 The heart of the design. All behavior is specified by assertions first, using throwaway fixture rows inside a rolled-back transaction so the harness never dirties data.
 
 **Files:**
-- Create: `supabase/migrations/20260824150000_identity_engine.sql`
+- Create: `supabase/migrations/20260825150000_identity_engine.sql`
 - Modify: `scripts/movement-model/verify_foundation.sql`
 
 - [ ] **Step 1: Add failing behavioral assertions (V6) to the harness**
@@ -715,7 +758,7 @@ Expected: `ERROR: V6 FAIL: core row tier should be 0` (no engine yet)
 - [ ] **Step 3: Write the engine migration**
 
 ```sql
--- 20260824150000_identity_engine.sql
+-- 20260825150000_identity_engine.sql
 -- Fingerprint, generated name, machine-derived parent and tier. Spec: "Option C".
 
 -- Sorted identity attribute values for an exercise.
@@ -801,7 +844,12 @@ BEGIN
 
   UPDATE exercises SET
     identity_fingerprint = CASE WHEN v_core IS NULL THEN NULL ELSE array_to_string(v_attrs, '|') END,
-    parent_exercise_id   = v_parent,
+    -- Rows with no core movement keep their existing hand-set parent: the legacy hierarchy
+    -- (19 live rows) must survive untouched until the Stage 3 catalog pass assigns cores —
+    -- wiping it here would visibly flatten the app's hierarchy screen (zero-visible-change rule).
+    parent_exercise_id   = CASE WHEN v_is_core THEN NULL
+                                WHEN v_core IS NULL THEN parent_exercise_id
+                                ELSE v_parent END,
     tier = CASE WHEN v_is_core THEN 0 WHEN v_core IS NULL THEN NULL ELSE COALESCE(v_ptier, 0) + 1 END,
     generated_name = v_gen,
     name = CASE WHEN name_is_custom OR v_core IS NULL THEN name ELSE v_gen END,
@@ -855,12 +903,14 @@ Expected: `NOTICE: V6 behavioral assertions passed` then `FOUNDATION VERIFICATIO
 - [ ] **Step 5: Backfill derived state for existing rows (idempotent, no name changes because everything is `name_is_custom`)**
 
 ```bash
+psql "$LOCAL_DB" -tc "SELECT count(*) FROM exercises WHERE parent_exercise_id IS NOT NULL;"   # record BEFORE
 psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -c \
   "SELECT count(recompute_exercise_identity(id)) FROM exercises;"
+psql "$LOCAL_DB" -tc "SELECT count(*) FROM exercises WHERE parent_exercise_id IS NOT NULL;"   # must equal BEFORE
 psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -f scripts/movement-model/verify_foundation.sql
 ```
 
-Expected: count = row count; then `FOUNDATION VERIFICATION: PASS`
+Expected: count = row count; the parent-link count is IDENTICAL before and after (legacy hierarchy preserved — 19 on the 2026-08-24 snapshot); then `FOUNDATION VERIFICATION: PASS`
 
 - [ ] **Step 6: Commit**
 
@@ -895,7 +945,7 @@ Run harness. Expected: `FOUNDATION VERIFICATION: PASS` (V7 passes immediately �
 
 - [ ] **Step 2: Point the app at staging and smoke-test the movement flows**
 
-Run Metro against the local Supabase URL (dedicated simulator instance and unique port, per the usual session-isolation setup), then walk: Movements tab loads → open a movement detail (tier badge renders) → Add Movement wizard through all 3 steps → save → new movement appears. The new triggers fire on that insert; confirm the created row has `identity_fingerprint` and `tier` populated:
+Run Metro against the local Supabase URL (dedicated simulator instance and unique port, per the usual session-isolation setup). Known staging limitation: storage buckets are not in the schema baseline, so exercise images and capture thumbnails will be broken against staging — expected, not a regression. Then walk: Movements tab loads → open a movement detail (tier badge renders) → Add Movement wizard through all 3 steps → save → new movement appears. The new triggers fire on that insert; confirm the created row has `identity_fingerprint` and `tier` populated:
 
 ```bash
 psql "$LOCAL_DB" -tc "SELECT identity_fingerprint IS NOT NULL, tier FROM exercises ORDER BY created_at DESC LIMIT 1;"
@@ -913,6 +963,10 @@ git add -A && git commit -m "test(db): guard against premature legacy drops; app
 
 ### Task 11: Apply to live
 
+Pre-push checks (added by Task 8 review):
+- Verify live has no orphaned `created_by` before pushing: `SELECT count(*) FROM exercises WHERE created_by IS NOT NULL AND created_by NOT IN (SELECT id FROM auth.users);` — expect 0 (staging's replica-mode load has 273 orphans, which is why staging verification used autocommit; live should be clean, and a non-zero count here needs investigation before push).
+- `supabase db push` wraps each migration in a transaction. Staging verification used per-statement autocommit, so before pushing, re-verify each of the six migrations with `psql -1 -f <file>` semantics in mind (any that already ran on staging can be re-run there with `psql -1` for a transactional no-op check).
+
 - [ ] **Step 1: Backup live catalog data**
 
 ```bash
@@ -924,18 +978,22 @@ Expected: prints a `backups/catalog_data_*.sql` path. Do not proceed without it.
 - [ ] **Step 2: Push migrations to live**
 
 ```bash
-supabase db push --linked --dry-run   # review: exactly the five 202608241xxxxx migrations
+supabase migration list --linked      # confirm: none of the six 202608251xxxxx versions already recorded as applied
+supabase db push --linked --dry-run   # review: exactly the six 202608251xxxxx migrations, nothing else
 supabase db push --linked
 ```
 
-- [ ] **Step 3: Backfill derived state on live and verify**
+Version-collision guard: migration versions must never reuse an archived, live-applied version key (the archive contains versions up to `20260824100000_rest_days.sql`; the six new migrations are dated 20260825 for this reason). If the dry-run lists fewer than six, stop — a version collision is silently skipping a migration.
+
+- [ ] **Step 3: Verify live state (the backfill runs inside the identity-engine migration itself — no manual backfill)**
 
 ```bash
-psql "$LIVE_DB" -v ON_ERROR_STOP=1 -c "SELECT count(recompute_exercise_identity(id)) FROM exercises;"
 psql "$LIVE_DB" -v ON_ERROR_STOP=1 -f scripts/movement-model/verify_foundation.sql
+psql "$LIVE_DB" -tc "SELECT count(*) FROM exercises WHERE parent_exercise_id IS NOT NULL;"   # expect same as pre-push count
+psql "$LIVE_DB" -tc "SELECT count(*) FROM exercise_aliases;"                                 # expect one generated alias per core
 ```
 
-Expected: `FOUNDATION VERIFICATION: PASS` against live.
+Expected: `FOUNDATION VERIFICATION: PASS` against live; parent-link count identical to the pre-push live count; core aliases present. (Use the minted login-role URL with `SET ROLE postgres` per Conventions.)
 
 - [ ] **Step 4: Confirm the production app is unaffected** — open the real app (dev build), Movements tab + a detail screen.
 
