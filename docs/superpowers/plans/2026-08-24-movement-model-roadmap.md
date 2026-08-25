@@ -77,6 +77,6 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 
 ## Stage 6 — Retire legacy (Phase 7)
 
-- [ ] Five dual-storage columns, `equipment_types`, `exercises.aliases`, variation-options tables dropped
+- [ ] Legacy drops, exactly (spec Phase 7 wording is authoritative, disambiguated 2026-08-24): columns `goal_type_id` + `movement_style_id`; junctions `exercise_planes_of_motion` + `exercise_load_positions` + `exercise_stances` (their single FK columns SURVIVE as canonical); `equipment_types`; `exercises.aliases`; tables `variation_categories` + `variation_options` + `exercise_variations`. Retire the harness's V7 guard in the same change.
 - [ ] Final verification suite green; spec and artifact updated
 - **Exit gate:** no app code references a dropped column (grep proves it)

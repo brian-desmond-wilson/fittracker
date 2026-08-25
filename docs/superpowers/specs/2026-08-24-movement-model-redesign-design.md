@@ -96,7 +96,7 @@ Matching ladder:
   - Backfill equipment junction from the text array (normalizing the two naming generations).
 - **Phase 5 — Turn the locks.** Validate/enforce fingerprint uniqueness and alias uniqueness; triggers own generated names, parents, tiers from here on.
 - **Phase 6 — App unification (own roadmap phase).** One save path for both wizards (kills the two-wizards-two-outcomes bug), an update path (today edit = delete + recreate), reads move to the new columns, filter pills read classification data instead of name substrings, tier UI reads stored `tier`.
-- **Phase 7 — Retire legacy.** Drop the five dual-storage columns, `equipment_types`, `exercises.aliases`, and the variation-options tables — only after Phase 6 ships.
+- **Phase 7 — Retire legacy.** Precisely (resolving the dual-storage attributes per the final-shape table above, which is authoritative): drop **columns** `goal_type_id` and `movement_style_id` (their attributes live in junctions); drop **junction tables** `exercise_planes_of_motion`, `exercise_load_positions`, `exercise_stances` (their attributes live in the single FK columns, which survive); drop `equipment_types` and `exercises.aliases`; drop the variation-options tables (`variation_categories`, `variation_options`, `exercise_variations`). Only after Phase 6 ships. The harness's V7 guard block, which protects these against premature drops, retires with them.
 
 ### Verification (closes every phase)
 
