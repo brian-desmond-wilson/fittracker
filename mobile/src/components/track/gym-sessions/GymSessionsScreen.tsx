@@ -22,6 +22,7 @@ import {
 import { GROUP_COLORS } from "./groupColors";
 import { SessionRow } from "./SessionRow";
 import { HistoryCalendar } from "./HistoryCalendar";
+import { WeekStrip } from "./WeekStrip";
 import { HeroHeader } from "./HeroHeader";
 import {
   DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail,
@@ -40,6 +41,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const [view, setView] = useState<"history" | "stats" | "calendar">("history");
   const [collapsed, setCollapsed] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [calView, setCalView] = useState<"month" | "week">("month");
 
   // One clock sample per load, the app's no-two-clocks rule.
   const [today] = useState(() => getLocalDateString());
@@ -205,13 +207,38 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 
               {view === "calendar" && (
                 <>
-                  <HistoryCalendar
-                    sessions={sessions}
-                    today={today}
-                    selected={selectedDate}
-                    onSelect={setSelectedDate}
-                    restDates={restDates}
-                  />
+                  <View style={[styles.toggle, styles.calToggle]}>
+                    {(["month", "week"] as const).map((v) => (
+                      <TouchableOpacity
+                        key={v}
+                        style={[styles.toggleTab, calView === v && styles.toggleTabOn]}
+                        onPress={() => setCalView(v)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: calView === v }}
+                      >
+                        <Text style={[styles.toggleText, calView === v && styles.toggleTextOn]}>
+                          {v === "month" ? "Month" : "Week"}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {calView === "month" ? (
+                    <HistoryCalendar
+                      sessions={sessions}
+                      today={today}
+                      selected={selectedDate}
+                      onSelect={setSelectedDate}
+                      restDates={restDates}
+                    />
+                  ) : (
+                    <WeekStrip
+                      rail={rail}
+                      sessions={sessions}
+                      selected={selectedDate}
+                      onSelect={setSelectedDate}
+                    />
+                  )}
                   {selectedDate && (
                     <View style={styles.dayBlock}>
                       <Text style={styles.sectionLabel}>
@@ -269,5 +296,6 @@ const styles = StyleSheet.create({
   toggleTabOn: { backgroundColor: colors.primary },
   toggleText: { fontSize: 13, color: colors.mutedForeground, fontWeight: "600" },
   toggleTextOn: { color: "#052E16" },
+  calToggle: { alignSelf: "flex-start", width: 170, marginBottom: 12 },
   dayBlock: { marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
 });
