@@ -3,7 +3,7 @@
 
 -- Sorted identity attribute values for an exercise.
 CREATE OR REPLACE FUNCTION exercise_identity_attrs(p_id UUID) RETURNS UUID[]
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SET search_path = public AS $$
   SELECT COALESCE(array_agg(v ORDER BY v), '{}') FROM (
     SELECT e.load_position_id AS v FROM exercises e WHERE e.id = p_id AND e.load_position_id IS NOT NULL
     UNION ALL SELECT e.stance_id       FROM exercises e WHERE e.id = p_id AND e.stance_id IS NOT NULL
@@ -19,7 +19,7 @@ $$;
 
 -- Generated name: non-empty fragments of identity values, by name_order, + core noun.
 CREATE OR REPLACE FUNCTION generate_exercise_name(p_id UUID) RETURNS TEXT
-LANGUAGE plpgsql STABLE AS $$
+LANGUAGE plpgsql STABLE SET search_path = public AS $$
 DECLARE
   v_core UUID; v_noun TEXT; v_lp UUID; v_implied UUID; v_frags TEXT;
 BEGIN
@@ -59,11 +59,16 @@ BEGIN
 END $$;
 
 -- Recompute one exercise's derived state. Called by triggers; safe to call directly.
+-- SECURITY DEFINER: identity maintenance is a system invariant — it must run even when the
+-- calling session is an RLS-restricted app role (whose UPDATE on exercises would silently no-op).
 CREATE OR REPLACE FUNCTION recompute_exercise_identity(p_id UUID) RETURNS VOID
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_core UUID; v_is_core BOOLEAN; v_attrs UUID[]; v_parent UUID; v_ptier INTEGER; v_gen TEXT;
 BEGIN
+  -- Serialize concurrent recomputes of the same exercise: without this, two sessions each
+  -- adding a junction row read a partial attribute set and the last write wins (lost update).
+  PERFORM 1 FROM exercises WHERE id = p_id FOR UPDATE;
   SELECT core_movement_id, is_core INTO v_core, v_is_core FROM exercises WHERE id = p_id;
   IF NOT FOUND THEN RETURN; END IF;
   v_attrs := exercise_identity_attrs(p_id);
@@ -96,20 +101,27 @@ BEGIN
     updated_at = now()
   WHERE id = p_id;
 
-  -- Sync the generated alias; a cross-exercise collision goes to the review queue, never a crash.
+  -- Sync the generated alias; a cross-exercise collision is skipped here — Stage 3's alias
+  -- rebuild routes collisions to review. Never a crash.
   IF v_core IS NOT NULL AND v_gen IS NOT NULL AND v_gen <> '' THEN
+    -- Drop stale generated aliases first: per-row junction triggers make every intermediate
+    -- generated name an alias, and leaving that debris squats on names that rightfully
+    -- belong to other exercises (their ON CONFLICT insert would silently lose).
+    DELETE FROM exercise_aliases
+    WHERE exercise_id = p_id AND kind = 'generated'
+      AND alias_normalized <> normalize_alias(v_gen);
     BEGIN
       INSERT INTO exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
       VALUES (p_id, v_gen, normalize_alias(v_gen), 'generated', 'seed')
       ON CONFLICT (alias_normalized) DO NOTHING;
-    EXCEPTION WHEN OTHERS THEN NULL;
+    EXCEPTION WHEN unique_violation THEN NULL;
     END;
   END IF;
 END $$;
 
 -- Triggers. Depth guard stops the UPDATE inside recompute from re-firing itself.
 CREATE OR REPLACE FUNCTION trg_exercise_identity() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   IF pg_trigger_depth() > 1 THEN RETURN NEW; END IF;
   PERFORM recompute_exercise_identity(NEW.id);
@@ -122,7 +134,7 @@ CREATE TRIGGER exercises_identity_recompute
   FOR EACH ROW EXECUTE FUNCTION trg_exercise_identity();
 
 CREATE OR REPLACE FUNCTION trg_junction_identity() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = public AS $$
 DECLARE v_id UUID;
 BEGIN
   v_id := COALESCE(NEW.exercise_id, OLD.exercise_id);
@@ -137,3 +149,44 @@ DROP TRIGGER IF EXISTS exercise_styles_identity ON exercise_movement_styles;
 CREATE TRIGGER exercise_styles_identity
   AFTER INSERT OR UPDATE OR DELETE ON exercise_movement_styles
   FOR EACH ROW EXECUTE FUNCTION trg_junction_identity();
+
+-- Pin search_path on the three earlier-branch functions that predate this convention.
+-- They live in earlier unshipped migrations on this same branch; ALTER here avoids
+-- re-touching those files.
+ALTER FUNCTION normalize_alias(TEXT) SET search_path = public;
+ALTER FUNCTION enforce_alias_normalized() SET search_path = public;
+ALTER FUNCTION enforce_raw_name_normalized() SET search_path = public;
+
+-- Backfill: the migration must achieve its state, not just install machinery.
+-- Idempotent — recompute derives the same state on a re-run. The recompute UPDATE touches
+-- none of the trigger's UPDATE OF columns, so this does not cascade through the triggers.
+DO $$
+BEGIN
+  PERFORM recompute_exercise_identity(id) FROM exercises;
+END $$;
+
+-- Self-verify (standing data-migration rule): assert the achieved state before the
+-- transaction commits, with observed values in every failure message.
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  IF EXISTS (SELECT 1 FROM exercises WHERE is_core AND (identity_fingerprint IS NULL OR tier IS DISTINCT FROM 0)) THEN
+    SELECT string_agg(name || ' (fingerprint=' || COALESCE(identity_fingerprint, 'null')
+                      || ', tier=' || COALESCE(tier::TEXT, 'null') || ')', '; ' ORDER BY name)
+      INTO v_observed
+      FROM exercises WHERE is_core AND (identity_fingerprint IS NULL OR tier IS DISTINCT FROM 0);
+    RAISE EXCEPTION 'identity engine backfill FAIL: core rows without fingerprint/tier 0: %', v_observed;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM exercises WHERE core_movement_id IS NULL AND tier IS NOT NULL) THEN
+    SELECT string_agg(name || ' (tier=' || tier::TEXT || ')', '; ' ORDER BY name) INTO v_observed
+      FROM exercises WHERE core_movement_id IS NULL AND tier IS NOT NULL;
+    RAISE EXCEPTION 'identity engine backfill FAIL: coreless rows with non-null tier: %', v_observed;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM exercises WHERE name_is_custom = false) THEN
+    SELECT count(*)::TEXT INTO v_observed FROM exercises WHERE name_is_custom = false;
+    RAISE EXCEPTION 'identity engine backfill FAIL: % rows with name_is_custom=false (expected 0 at migration time)', v_observed;
+  END IF;
+END $$;

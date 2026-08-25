@@ -330,6 +330,20 @@ BEGIN
     RAISE EXCEPTION 'V6 FAIL: unsuppressed equipment naming, got %', COALESCE(v_observed, 'null');
   END IF;
 
+  -- Stale-alias cleanup: the row-then-junction two-step made 'TB-Goblet TESTSquat' the
+  -- intermediate generated name; once the junction changed it, the old alias must be
+  -- deleted (debris would squat on a name that rightfully belongs to another exercise).
+  IF EXISTS (SELECT 1 FROM public.exercise_aliases
+             WHERE exercise_id = kb_goblet AND kind = 'generated'
+               AND alias_normalized = public.normalize_alias('TB-Goblet TESTSquat')) THEN
+    RAISE EXCEPTION 'V6 FAIL: stale intermediate generated alias not cleaned up';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.exercise_aliases
+                 WHERE exercise_id = kb_goblet AND kind = 'generated'
+                   AND alias_normalized = public.normalize_alias('TB-Goblet TB-Kettlebell TESTSquat')) THEN
+    RAISE EXCEPTION 'V6 FAIL: final generated alias missing after junction change';
+  END IF;
+
   -- Non-custom names track the generator; alias rows sync
   SELECT name INTO v_observed FROM public.exercises WHERE id = back_squat AND NOT name_is_custom;
   IF v_observed IS DISTINCT FROM 'TB-Back TESTSquat' THEN
