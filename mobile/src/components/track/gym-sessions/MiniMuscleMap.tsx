@@ -7,7 +7,6 @@ import { colors } from "@/src/lib/colors";
 
 /** Which silhouette a zone draws on. */
 type Side = "front" | "back";
-interface Zone { side: Side; shapes: React.ReactElement[] }
 
 const lit = colors.primary;
 
@@ -42,6 +41,7 @@ function zoneShapes(region: string, x: number): { side: Side; el: React.ReactEle
   if (k.includes("trap") || k.includes("neck")) return el("back", <Ellipse cx={x + 12} cy={10.5} rx={4.4} ry={1.8} fill={lit} />);
   if (k.includes("upper back") || k.includes("rhomboid")) return el("back", <Rect x={x + 8} y={12} width={8} height={4} rx={2} fill={lit} />);
   if (k.includes("lower back") || k.includes("posterior")) return el("back", <Rect x={x + 8.5} y={19.5} width={7} height={4} rx={2} fill={lit} />);
+  if (k.includes("back")) return el("back", <Rect x={x + 8} y={12} width={8} height={4} rx={2} fill={lit} />);
   if (k.includes("glute")) return el("back", <Ellipse cx={x + 12} cy={25.5} rx={5} ry={2.6} fill={lit} />);
   if (k.includes("quad") || k.includes("hip flexor")) return el("front", <><Rect x={x + 7} y={26} width={4.2} height={7.5} rx={2} fill={lit} /><Rect x={x + 12.8} y={26} width={4.2} height={7.5} rx={2} fill={lit} /></>);
   if (k.includes("hamstring")) return el("back", <><Rect x={x + 7} y={27} width={4.2} height={7} rx={2} fill={lit} /><Rect x={x + 12.8} y={27} width={4.2} height={7} rx={2} fill={lit} /></>);
