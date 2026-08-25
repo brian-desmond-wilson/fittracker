@@ -134,4 +134,19 @@ describe("weekRail", () => {
     expect(rail[2].state).toBe("empty");  // today: not trained yet, not future
     expect(rail[3].state).toBe("future"); // Wednesday
   });
+  it("pins the week start when today is the Sunday itself", () => {
+    const rail = weekRail([], new Set(), "2026-08-23"); // Sunday
+    expect(rail[0].date).toBe("2026-08-23");
+    expect(rail[6].date).toBe("2026-08-29");
+    expect(rail[0].state).toBe("empty");  // today: nothing trained
+    expect(rail[1].state).toBe("future"); // Monday hasn't happened yet
+  });
+  it("pins the week end when today is the Saturday itself", () => {
+    const sessions = [session({ id: "a", date: "2026-08-29" })];
+    const rail = weekRail(sessions, new Set(), "2026-08-29"); // Saturday
+    expect(rail[0].date).toBe("2026-08-23");
+    expect(rail[6].date).toBe("2026-08-29");
+    expect(rail[6].state).toBe("trained");
+    expect(rail.some((d) => d.state === "future")).toBe(false);
+  });
 });
