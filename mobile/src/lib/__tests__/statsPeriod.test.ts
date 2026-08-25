@@ -147,6 +147,9 @@ describe("estimatedOneRepMax", () => {
       set({ weightLbs: 0, reps: 20 }),
     ])).toBeNull();
   });
+  it("takes a true single at face value", () => {
+    expect(estimatedOneRepMax([set({ weightLbs: 200, reps: 1 })])).toBe(200);
+  });
 });
 
 describe("liftCandidates", () => {

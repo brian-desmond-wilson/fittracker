@@ -134,7 +134,7 @@ export function estimatedOneRepMax(sets: HistorySet[]): number | null {
   let best: number | null = null;
   for (const s of sets) {
     if (s.isWarmup || s.weightLbs <= 0 || s.reps <= 0) continue;
-    const e = s.weightLbs * (1 + s.reps / 30);
+    const e = s.reps === 1 ? s.weightLbs : s.weightLbs * (1 + s.reps / 30);
     if (best === null || e > best) best = e;
   }
   return best === null ? null : Math.round(best);
