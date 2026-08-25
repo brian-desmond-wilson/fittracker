@@ -261,6 +261,16 @@ BEGIN
     RAISE EXCEPTION 'V5 FAIL: core rows not self-referencing core_movement_id: %', v_observed;
   END IF;
 
+  -- V5: inverse invariant — every core_movement_id target is itself a core row
+  IF EXISTS (SELECT 1 FROM public.exercises e JOIN public.exercises t ON t.id = e.core_movement_id
+             WHERE NOT t.is_core) THEN
+    SELECT string_agg(DISTINCT e.name || ' -> ' || t.name, '; ' ORDER BY e.name || ' -> ' || t.name)
+      INTO v_observed
+      FROM public.exercises e JOIN public.exercises t ON t.id = e.core_movement_id
+      WHERE NOT t.is_core;
+    RAISE EXCEPTION 'V5 FAIL: rows pointing at a non-core as their core: %', v_observed;
+  END IF;
+
   -- V5: core_movement_id FK must be RESTRICT, not SET NULL — a core with dependents must be
   -- repointed explicitly (Stage 3 merge tooling), never silently orphaned.
   SELECT confdeltype INTO v_deltype
@@ -278,6 +288,7 @@ DECLARE
   lp_back UUID; lp_goblet UUID;
   core_squat UUID; back_squat UUID; kb_goblet UUID;
   wizard_core UUID;
+  v_caught BOOLEAN := false;
   v_observed TEXT;
 BEGIN
   -- Fixture reference values (TB- prefixed so nothing collides with real aliases; isolated from audit outcomes)
@@ -381,11 +392,29 @@ BEGIN
     RAISE EXCEPTION 'V6 FAIL: wizard-shaped core generated alias not synced';
   END IF;
 
-  -- Demotion: a non-core row must not self-reference
+  -- Demotion of a childless core succeeds: self-reference cleared, generated alias deleted
   UPDATE public.exercises SET is_core = false WHERE id = wizard_core;
   IF (SELECT core_movement_id FROM public.exercises WHERE id = wizard_core) IS NOT NULL THEN
     RAISE EXCEPTION 'V6 FAIL: demoted core still self-references, got %',
       (SELECT core_movement_id FROM public.exercises WHERE id = wizard_core)::TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.exercise_aliases WHERE exercise_id = wizard_core AND kind = 'generated') THEN
+    SELECT string_agg(alias_normalized, ', ' ORDER BY alias_normalized) INTO v_observed
+      FROM public.exercise_aliases WHERE exercise_id = wizard_core AND kind = 'generated';
+    RAISE EXCEPTION 'V6 FAIL: demoted core kept generated alias debris: %', v_observed;
+  END IF;
+
+  -- Demoting a core WITH dependents must raise (mirrors the RESTRICT-on-delete precedent)
+  BEGIN
+    UPDATE public.exercises SET is_core = false WHERE id = core_squat;
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := true;
+    IF SQLERRM NOT LIKE '%cannot demote%' THEN
+      RAISE EXCEPTION 'V6 FAIL: with-child demotion raised the wrong error: %', SQLERRM;
+    END IF;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V6 FAIL: demoting a core with dependents did not raise';
   END IF;
 
   RAISE NOTICE 'V6 behavioral assertions passed';

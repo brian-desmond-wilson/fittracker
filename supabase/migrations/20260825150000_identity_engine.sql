@@ -103,7 +103,11 @@ BEGIN
 
   -- Sync the generated alias; a cross-exercise collision is skipped here — Stage 3's alias
   -- rebuild routes collisions to review. Never a crash.
-  IF v_core IS NOT NULL AND v_gen IS NOT NULL AND v_gen <> '' THEN
+  IF v_core IS NULL THEN
+    -- A core-less row holds no generated aliases: a demoted core (or a row whose core was
+    -- cleared) must not leave its old generated name squatting as debris.
+    DELETE FROM exercise_aliases WHERE exercise_id = p_id AND kind = 'generated';
+  ELSIF v_gen IS NOT NULL AND v_gen <> '' THEN
     -- Drop stale generated aliases first: per-row junction triggers make every intermediate
     -- generated name an alias, and leaving that debris squats on names that rightfully
     -- belong to other exercises (their ON CONFLICT insert would silently lose).
@@ -126,6 +130,15 @@ END $$;
 CREATE OR REPLACE FUNCTION enforce_core_self_reference() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
+  -- Demotion guard (mirrors the RESTRICT-on-delete precedent): demotion via UPDATE must not
+  -- silently orphan a derivation tree — dependents must be repointed first (Stage 3 merge tooling).
+  IF TG_OP = 'UPDATE' AND OLD.is_core AND NOT NEW.is_core THEN
+    IF EXISTS (SELECT 1 FROM exercises c WHERE c.core_movement_id = OLD.id AND c.id <> OLD.id) THEN
+      RAISE EXCEPTION 'cannot demote core % — % dependent rows still reference it as core; repoint them first (Stage 3 merge tooling)',
+        OLD.name, (SELECT count(*) FROM exercises c WHERE c.core_movement_id = OLD.id AND c.id <> OLD.id);
+    END IF;
+  END IF;
+
   IF NEW.is_core THEN
     NEW.core_movement_id := NEW.id;
   ELSIF NEW.core_movement_id = NEW.id THEN
