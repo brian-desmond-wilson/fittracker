@@ -19,7 +19,7 @@
 - [ ] **Step 1 (TDD): V8 assertions first** — append a self-contained V8 DO block asserting the END state, run harness, watch it fail on the first check. V8 checks (observed values in every RAISE):
   - `grips` table exists with 9 rows (6 Orientation, 3 Width), RLS enabled, read-only to anon; `exercises.grip_orientation_id` and `exercises.grip_width_id` columns exist with FK → grips ON DELETE SET NULL.
   - movement_styles: exactly 11 rows; `is_identity` true for exactly {Strict, Kipping, Butterfly, Plyometric (Explosive), Assisted, Weighted, Deficit}; no rows named Standard, Unbroken, Alternating, 'Partial / Range-Limited', Controlled.
-  - movement_families: no 'Core', no 'Mobility/Control'; 'Midline' exists; total 27.
+  - movement_families: no 'Core', no 'Mobility/Control'; 'Midline' exists; total 28 (29 − 1 merge; the rename is net zero — the artifact's "keep 27 of 29" counts the 27 untouched values, plus the renamed and the merge-survivor).
   - goal_types: no 'Cool-Down'; total 6; zero exercise_goal_types rows referencing a nonexistent goal.
   - load_positions: no 'Bodyweight'; 'Double Overhead' and 'Waiter' exist (category 'Dumbbell / KB'); 'Hang' category = 'Start Position'; Back/Front/Overhead/Zercher have implies_equipment_id = Barbell's id; total 15.
   - range_depths: no 'Variable / Custom'; total 8; 'Box' has implies_equipment_id = Box equipment id.
