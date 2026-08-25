@@ -359,4 +359,37 @@ BEGIN
   RAISE NOTICE 'V6 behavioral assertions passed';
 END $$;
 ROLLBACK;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V7: nothing the app reads was dropped or renamed (drops happen in Stage 6, spec Phase 7)
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='goal_type_id';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V7 FAIL: legacy goal_type_id dropped early (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='equipment_types';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V7 FAIL: equipment_types dropped early (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='aliases';
+  IF NOT FOUND THEN
+    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
+      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
+    RAISE EXCEPTION 'V7 FAIL: aliases array dropped early (existing columns: %)', v_observed;
+  END IF;
+
+  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='variation_options';
+  IF NOT FOUND THEN
+    SELECT string_agg(table_schema, ', ') INTO v_observed
+      FROM information_schema.tables WHERE table_name='variation_options';
+    RAISE EXCEPTION 'V7 FAIL: variation_options dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
+  END IF;
+END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
