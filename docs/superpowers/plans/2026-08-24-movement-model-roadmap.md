@@ -71,7 +71,9 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 - [ ] Filter pills read classification data, not name substrings
 - [ ] Capture pipeline routed through the guarded front door + review queue UI
 - [ ] Dictionary-change re-normalization: adding an alias_abbreviations row re-normalizes all exercise_aliases and routes collisions to the review queue (Task 6 review finding — until this lands, the dictionary is append-rarely and any change requires a harness re-run)
-- [ ] Minting a user-named exercise must set name_is_custom=true or the engine clobbers the provided name on insert (Task 9 review M4)
+- [ ] Minting a user-named exercise must set name_is_custom=true or the engine clobbers the provided name on insert (Task 9 review M4; the Stage 2 migration flips drift rows true as a stopgap)
+- [ ] Wizard family filter: update for Midline rename and Mobility/Control merge (Stage 2 quality review — until then Midline is reachable only via Show All Families); clean the Cool-Down references in goal handling
+- [ ] Grip columns need a category guard (orientation column must reference an Orientation grip, width a Width grip) before Stage 3 tooling writes them — Stage 2 quality review
 - [ ] Revisit the wide-open authenticated write policies on exercise_equipment and exercise_aliases once the front door exists (Task 9 review I1)
 - **Exit gate:** on-device verification of add / edit / capture-match flows
 
