@@ -8,8 +8,8 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 
 | Stage | Spec phases | Plan | Status |
 |---|---|---|---|
-| 1. Foundation | 0–3 | `2026-08-24-movement-model-foundation.md` | ready |
-| 2. Attribute audit session | 1 (decision gate) | interactive, worksheet from Stage 1 | blocked by 1 |
+| 1. Foundation | 0–3 | `2026-08-24-movement-model-foundation.md` | **done 2026-08-24, live** |
+| 2. Attribute audit session | 1 (decision gate) | interactive, worksheet at `docs/superpowers/audit/attribute-audit-2026-08.csv` | **unblocked — needs user** |
 | 3. Catalog pass | 4 | authored after Stage 2 | blocked by 2 |
 | 4. Turn the locks | 5 | authored with Stage 3 | blocked by 3 |
 | 5. App unification | 6 | authored after Stage 4 | blocked by 4 |
@@ -17,15 +17,15 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 
 ## Stage 1 — Foundation (Phases 0–3)
 
-- [ ] Local staging stood up from a fresh live-schema baseline; migration history repaired
-- [ ] Attribute audit worksheet generated (all 15 attributes, every value, live usage counts)
-- [ ] Reference-table structural columns added (`region_group`, `is_identity`, `name_fragment`, `name_order`, `implies_equipment_id`)
-- [ ] `movement_family_modalities`, `alias_abbreviations` created and seeded
-- [ ] Known-certain reference fixes applied (stray Back region merged, region groups, family↔modality truth)
-- [ ] Catalog identity columns on `exercises` (`core_movement_id`, `identity_fingerprint`, `tier`, `generated_name`, `name_is_custom`)
-- [ ] `exercise_aliases` (+ normalizer), `exercise_equipment`, `exercise_match_reviews` created
-- [ ] Fingerprint / naming / parent / tier engine (functions + triggers) implemented and SQL-tested
-- [ ] Verification suite green on staging; applied to live; verification green on live
+- [x] Local staging stood up from a fresh live-schema baseline; migration history repaired
+- [x] Attribute audit worksheet generated (all 15 attributes, every value, live usage counts)
+- [x] Reference-table structural columns added (`region_group`, `is_identity`, `name_fragment`, `name_order`, `implies_equipment_id`)
+- [x] `movement_family_modalities`, `alias_abbreviations` created and seeded
+- [x] Known-certain reference fixes applied (stray Back region merged, region groups, family↔modality truth)
+- [x] Catalog identity columns on `exercises` (`core_movement_id`, `identity_fingerprint`, `tier`, `generated_name`, `name_is_custom`)
+- [x] `exercise_aliases` (+ normalizer), `exercise_equipment`, `exercise_match_reviews` created
+- [x] Fingerprint / naming / parent / tier engine (functions + triggers) implemented and SQL-tested
+- [x] Verification suite green on staging; applied to live; verification green on live
 - **Exit gate:** schema is live, engine is proven, no behavior change visible in the app yet
 
 ## Stage 2 — Attribute audit session (user + Claude)
