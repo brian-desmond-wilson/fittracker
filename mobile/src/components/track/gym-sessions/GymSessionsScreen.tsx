@@ -14,7 +14,8 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/lib/dates";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
-import { fetchGymSessions } from "@/src/lib/supabase/gymSessions";
+import { fetchGymSessions, fetchWeightSeries } from "@/src/lib/supabase/gymSessions";
+import type { WeightPoint } from "@/src/lib/supabase/gymSessions";
 import { fetchRestDates } from "@/src/lib/supabase/daily";
 import {
   balance, currentStreak, GROUP_LABELS, sessionsOn, weekSummary,
@@ -36,6 +37,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [sessions, setSessions] = useState<HistorySession[]>([]);
   const [restDates, setRestDates] = useState<Set<string>>(new Set());
+  const [weightSeries, setWeightSeries] = useState<WeightPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<"history" | "stats" | "calendar">("history");
@@ -53,14 +55,16 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
       setLoading(false);
       return;
     }
-    const [gymSessions, rested] = await Promise.all([
+    const [gymSessions, rested, weights] = await Promise.all([
       fetchGymSessions(user.id),
       fetchRestDates(user.id),
+      fetchWeightSeries(user.id, `${Number(today.slice(0, 4)) - 1}-01-01`),
     ]);
     setSessions(gymSessions);
     setRestDates(rested);
+    setWeightSeries(weights);
     setLoading(false);
-  }, []);
+  }, [today]);
 
   useFocusEffect(
     useCallback(() => {

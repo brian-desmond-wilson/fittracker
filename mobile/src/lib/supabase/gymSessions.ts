@@ -206,6 +206,32 @@ export async function fetchGymSessions(
     .filter((s) => s.exercises.some((e) => e.sets.length > 0));
 }
 
+export interface WeightPoint {
+  date: string;
+  weightLbs: number;
+}
+
+/** Body weight for the Stats tab's own chart — last entry per day wins. */
+export async function fetchWeightSeries(
+  userId: string,
+  fromDate: string,
+): Promise<WeightPoint[]> {
+  const { data, error } = await supabase
+    .from("weight_logs")
+    .select("date, weight_lbs, logged_at")
+    .eq("user_id", userId)
+    .gte("date", fromDate)
+    .order("date", { ascending: true })
+    .order("logged_at", { ascending: true });
+  if (error) {
+    console.error("fetchWeightSeries failed:", error.message);
+    return [];
+  }
+  const byDay = new Map<string, number>();
+  for (const row of data ?? []) byDay.set(row.date, row.weight_lbs);
+  return [...byDay.entries()].map(([date, weightLbs]) => ({ date, weightLbs }));
+}
+
 /** One session, with everything in it. */
 export async function fetchWorkoutSession(
   sessionId: string,
