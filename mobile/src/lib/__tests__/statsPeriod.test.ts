@@ -1,4 +1,5 @@
 import {
+  bucketIndexFor,
   bucketLabels,
   bucketSeries,
   estimatedOneRepMax,
@@ -115,6 +116,13 @@ describe("bucketSeries", () => {
 });
 
 const sessionCountOf = (group: HistorySession[]) => group.length;
+
+describe("bucketIndexFor", () => {
+  it("places a date in the same bucket bucketSeries would group it into", () => {
+    expect(bucketIndexFor("2026-08-24", "week", TODAY)).toBe(1); // Monday
+    expect(bucketIndexFor("2026-08-01", "month", TODAY)).toBe(0); // week containing Aug 1
+  });
+});
 
 describe("bucketLabels", () => {
   it("names buckets per scope", () => {

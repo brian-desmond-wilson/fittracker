@@ -106,6 +106,11 @@ export function bucketSeries<T>(
   return groups.map(reduce);
 }
 
+/** Which bucket a single date falls into for this scope — same grouping bucketSeries uses. */
+export function bucketIndexFor(date: string, scope: StatScope, today: string): number {
+  return bucketIndex(date, scope, periodRange(scope, today));
+}
+
 function bucketIndex(date: string, scope: StatScope, range: PeriodRange): number {
   if (scope === "week") return dayDiff(date, range.start);
   if (scope === "month") {

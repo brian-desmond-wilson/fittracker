@@ -25,6 +25,7 @@ import { SessionRow } from "./SessionRow";
 import { HistoryCalendar } from "./HistoryCalendar";
 import { WeekStrip } from "./WeekStrip";
 import { HeroHeader } from "./HeroHeader";
+import { StatsTab } from "./StatsTab";
 import {
   calendarWeekSessions, DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail, weeksInARow,
 } from "@/src/lib/sessionPresentation";
@@ -103,10 +104,6 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 
   const open = (session: HistorySession) =>
     router.push(`/(tabs)/track/gym-sessions/${session.id}` as never);
-
-  const weekDelta = week.sessions - week.sessionsLastWeek;
-  const deltaLabel =
-    weekDelta === 0 ? "same as last" : `${weekDelta > 0 ? "+" : ""}${weekDelta} vs last`;
 
   return (
     <>
@@ -198,9 +195,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 
               {view === "stats" && (
                 <>
-                  <View style={styles.weekLine}>
-                    <Text style={styles.weekLineText}>This week · {deltaLabel}</Text>
-                  </View>
+                  <StatsTab sessions={sessions} weightSeries={weightSeries} today={today} />
 
                   {bars.length > 0 && (
                     <View style={styles.balanceBlock}>
@@ -228,10 +223,6 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                       </View>
                     </View>
                   )}
-
-                  <Text style={styles.statsComing}>
-                    Trends, records, and period stats land in Phase 2.
-                  </Text>
                 </>
               )}
 
@@ -321,14 +312,11 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", paddingVertical: 60, gap: 8 },
   emptyTitle: { fontSize: 17, fontWeight: "bold", color: colors.foreground },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
-  weekLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  weekLineText: { fontSize: 12, color: colors.mutedForeground },
   balanceBlock: { marginBottom: 18 },
   sectionLabel: { fontSize: 10, color: colors.mutedForeground, letterSpacing: 1, marginBottom: 7 },
   bar: { flexDirection: "row", height: 7, borderRadius: 4, overflow: "hidden" },
   barLegend: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 6 },
   barLegendText: { fontSize: 10 },
-  statsComing: { fontSize: 12, color: colors.mutedForeground, marginTop: 16, textAlign: "center" },
   toggle: {
     flexDirection: "row", gap: 4, backgroundColor: colors.muted,
     borderRadius: 9, padding: 3, marginBottom: 14,
