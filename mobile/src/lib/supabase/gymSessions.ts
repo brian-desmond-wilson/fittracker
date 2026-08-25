@@ -228,7 +228,7 @@ export async function fetchWeightSeries(
     return [];
   }
   const byDay = new Map<string, number>();
-  for (const row of data ?? []) byDay.set(row.date, row.weight_lbs);
+  for (const row of data ?? []) byDay.set(row.date, Number(row.weight_lbs));
   return [...byDay.entries()].map(([date, weightLbs]) => ({ date, weightLbs }));
 }
 
