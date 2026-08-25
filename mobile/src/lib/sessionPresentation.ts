@@ -2,11 +2,9 @@
 // Pure selectors over HistorySession — fetching stays in supabase/gymSessions.
 // Spec: docs/superpowers/specs/2026-08-24-gym-sessions-redesign-design.md.
 import { dayDiff, formatMinutes, sessionEmphasis, sessionMinutes, toUtc } from "./gymSessions";
+import { goalForWeek } from "./goalHistory";
 import type { HistorySession, MuscleGroup } from "../types/gymSessions";
-
-/** Until the weekly-goals entity lands (Phase 3), the ring measures against
- *  this. One place to delete. */
-export const DEFAULT_WEEKLY_SESSIONS_GOAL = 5;
+import type { WeeklyGoal } from "../types/goals";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -125,24 +123,35 @@ export function calendarWeekSessions(sessions: HistorySession[], today: string):
 }
 
 /**
- * Consecutive calendar weeks trained (≥1 session), ending with the current
- * week. The current week gets the same grace a day gets: empty-so-far doesn't
- * break the run, it just doesn't count yet. Once the goals entity exists
- * (Phase 3) the ≥1 threshold becomes the user's weekly goal.
+ * Consecutive calendar weeks meeting their goal, ending with the current
+ * week. Each week is judged against the goal that was in force that week —
+ * changing today's goal must not rewrite last month's streak. The current
+ * week gets the same grace a day gets: empty-so-far doesn't break the run, it
+ * just doesn't count yet.
  */
-export function weeksInARow(sessions: HistorySession[], today: string): number {
+export function weeksInARow(
+  sessions: HistorySession[],
+  today: string,
+  goals: WeeklyGoal[] = [],
+): number {
   const weekStart = (date: string): string => {
     const utc = toUtc(date);
     return new Date(utc - new Date(utc).getUTCDay() * dayMs).toISOString().slice(0, 10);
   };
-  const trained = new Set(sessions.map((s) => weekStart(s.date)));
+  const countByWeek = new Map<string, number>();
+  for (const s of sessions) {
+    const week = weekStart(s.date);
+    countByWeek.set(week, (countByWeek.get(week) ?? 0) + 1);
+  }
+  const metGoal = (week: string) =>
+    (countByWeek.get(week) ?? 0) >= goalForWeek(goals, week).sessionsTarget;
   let cursor = weekStart(today);
   let weeks = 0;
-  if (!trained.has(cursor)) {
+  if (!metGoal(cursor)) {
     // grace: current week still in progress
     cursor = new Date(toUtc(cursor) - 7 * dayMs).toISOString().slice(0, 10);
   }
-  while (trained.has(cursor)) {
+  while (metGoal(cursor)) {
     weeks += 1;
     cursor = new Date(toUtc(cursor) - 7 * dayMs).toISOString().slice(0, 10);
   }

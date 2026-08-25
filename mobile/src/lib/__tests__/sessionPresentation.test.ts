@@ -1,6 +1,5 @@
 import {
   calendarWeekSessions,
-  DEFAULT_WEEKLY_SESSIONS_GOAL,
   durationLine,
   formatSessionDate,
   mainExerciseCount,
@@ -10,6 +9,7 @@ import {
   weeksInARow,
 } from "../sessionPresentation";
 import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
+import type { WeeklyGoal } from "../../types/goals";
 
 const set = (over: Partial<HistorySet> = {}): HistorySet => ({
   setNumber: 1, reps: 10, weightLbs: 100, volumeLbs: 1000, isWarmup: false,
@@ -109,12 +109,6 @@ describe("regionsHit", () => {
   });
 });
 
-describe("goal default", () => {
-  it("exists until the goals entity lands", () => {
-    expect(DEFAULT_WEEKLY_SESSIONS_GOAL).toBeGreaterThan(0);
-  });
-});
-
 describe("weekRail", () => {
   const today = "2026-08-24"; // Monday; week runs Sun 08-23 .. Sat 08-29
   it("builds Sunday-first with trained, rest, empty, and future days", () => {
@@ -154,23 +148,50 @@ describe("weekRail", () => {
 });
 
 describe("weeksInARow", () => {
-  // Until the goals entity lands, a week counts with ≥1 session.
+  // A goal history with a 1-session target from the start of time reproduces
+  // the old ≥1 rule explicitly, rather than relying on the default (5/week).
+  const lenientGoals: WeeklyGoal[] = [
+    { id: "g1", effectiveFrom: "1970-01-01", sessionsTarget: 1, volumeTargetLbs: null, regionTarget: null },
+  ];
+
   it("counts consecutive trained weeks ending now", () => {
     const sessions = ["2026-08-24", "2026-08-19", "2026-08-12"].map((d) =>
       session({ date: d, id: d }),
     );
-    expect(weeksInARow(sessions, "2026-08-24")).toBe(3);
+    expect(weeksInARow(sessions, "2026-08-24", lenientGoals)).toBe(3);
   });
   it("does not break on the current week before it has a session", () => {
     const sessions = ["2026-08-19", "2026-08-12"].map((d) => session({ date: d, id: d }));
-    expect(weeksInARow(sessions, "2026-08-24")).toBe(2);
+    expect(weeksInARow(sessions, "2026-08-24", lenientGoals)).toBe(2);
   });
   it("breaks on a fully skipped week", () => {
     const sessions = ["2026-08-24", "2026-08-05"].map((d) => session({ date: d, id: d }));
-    expect(weeksInARow(sessions, "2026-08-24")).toBe(1);
+    expect(weeksInARow(sessions, "2026-08-24", lenientGoals)).toBe(1);
   });
   it("is zero with nothing recent", () => {
-    expect(weeksInARow([session({ date: "2026-07-01", id: "old" })], "2026-08-24")).toBe(0);
+    expect(
+      weeksInARow([session({ date: "2026-07-01", id: "old" })], "2026-08-24", lenientGoals),
+    ).toBe(0);
+  });
+  // With no goal history passed, the default goal (5 sessions/week) governs —
+  // a single session a week no longer counts as a streak.
+  it("judges against the default goal when no history is passed", () => {
+    const sessions = ["2026-08-24", "2026-08-19", "2026-08-12"].map((d) =>
+      session({ date: d, id: d }),
+    );
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(0);
+  });
+  it("judges each week by the goal in force that week", () => {
+    const goals: WeeklyGoal[] = [
+      { id: "g2", effectiveFrom: "2026-08-16", sessionsTarget: 2, volumeTargetLbs: null, regionTarget: null },
+      { id: "g1", effectiveFrom: "2026-01-04", sessionsTarget: 1, volumeTargetLbs: null, regionTarget: null },
+    ];
+    const sessions = [
+      session({ id: "a", date: "2026-08-24" }), session({ id: "b", date: "2026-08-25" }),
+      session({ id: "c", date: "2026-08-19" }), session({ id: "d", date: "2026-08-20" }),
+      session({ id: "e", date: "2026-08-12" }), // week of 08-09, goal was 1
+    ];
+    expect(weeksInARow(sessions, "2026-08-24", goals)).toBe(3);
   });
 });
 

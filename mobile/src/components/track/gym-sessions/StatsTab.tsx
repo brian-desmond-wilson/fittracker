@@ -4,14 +4,17 @@ import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "@/src/lib/colors";
 import { formatMinutes, formatVolume, sessionVolume } from "@/src/lib/gymSessions";
+import type { GoalMetric, GoalProgress } from "@/src/lib/goalProgress";
 import {
   bucketIndexFor, bucketLabels, bucketSeries, formattedDelta, liftCandidates, periodRange,
   periodSummary, strengthSeries, summaryDelta, type StatScope,
 } from "@/src/lib/statsPeriod";
 import type { WeightPoint } from "@/src/lib/supabase/gymSessions";
 import type { HistorySession } from "@/src/types/gymSessions";
+import type { PersonalRecord } from "@/src/types/records";
 import { PeriodBars } from "./PeriodBars";
 import { TrendLine } from "./TrendLine";
+import { RecordsSection } from "./RecordsSection";
 
 const BODY_WEIGHT_COLOR = "#60A5FA";
 
@@ -19,10 +22,18 @@ export function StatsTab({
   sessions,
   weightSeries,
   today,
+  progress,
+  onEditGoal,
+  records,
+  onSeeAllRecords,
 }: {
   sessions: HistorySession[];
   weightSeries: WeightPoint[];
   today: string;
+  progress: GoalProgress;
+  onEditGoal: () => void;
+  records: PersonalRecord[];
+  onSeeAllRecords: () => void;
 }) {
   const [scope, setScope] = useState<StatScope>("week");
   const lifts = useMemo(() => liftCandidates(sessions), [sessions]);
@@ -88,6 +99,28 @@ export function StatsTab({
         ))}
       </View>
 
+      <View style={styles.panel}>
+        <View style={styles.goalHead}>
+          <Text style={styles.panelTitle}>Weekly goal</Text>
+          <TouchableOpacity onPress={onEditGoal} accessibilityRole="button">
+            <Text style={styles.edit}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+        {([
+          ["Sessions", progress.sessions, (n: number) => String(n)],
+          ...(progress.volume ? [["Volume", progress.volume, formatVolume] as const] : []),
+          ...(progress.regions ? [["Muscle coverage", progress.regions, (n: number) => String(n)] as const] : []),
+        ] as [string, GoalMetric, (n: number) => string][]).map(([label, m, fmt]) => (
+          <View key={label} style={styles.goalRow}>
+            <Text style={styles.goalLabel}>{label}</Text>
+            <View style={styles.goalTrack}>
+              <View style={[styles.goalFill, { width: `${Math.min((m.done / m.target) * 100, 100)}%` }]} />
+            </View>
+            <Text style={styles.goalValue}>{fmt(m.done)}/{fmt(m.target)}</Text>
+          </View>
+        ))}
+      </View>
+
       <View style={styles.tiles}>
         {tiles.map((t) => (
           <View key={t.label} style={styles.tile}>
@@ -146,6 +179,8 @@ export function StatsTab({
           <TrendLine values={weightBuckets} labels={labels} color={BODY_WEIGHT_COLOR} formatValue={(v) => `${Math.round(v)} lbs`} />
         </View>
       )}
+
+      <RecordsSection records={records} onSeeAll={onSeeAllRecords} />
     </View>
   );
 }
@@ -170,6 +205,13 @@ const styles = StyleSheet.create({
   panel: {
     backgroundColor: colors.muted, borderRadius: 12, padding: 12, marginBottom: 12,
   },
+  goalHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  edit: { fontSize: 12, color: colors.primary, fontWeight: "600" },
+  goalRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
+  goalLabel: { width: 96, fontSize: 12, color: colors.mutedForeground },
+  goalTrack: { flex: 1, height: 6, borderRadius: 99, backgroundColor: colors.background },
+  goalFill: { height: "100%", backgroundColor: colors.primary, borderRadius: 99 },
+  goalValue: { width: 76, fontSize: 10, color: colors.mutedForeground, textAlign: "right" },
   panelTitle: { fontSize: 13, fontWeight: "700", color: colors.foreground, marginBottom: 8 },
   liftRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },
   lift: {

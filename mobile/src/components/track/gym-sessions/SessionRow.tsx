@@ -17,11 +17,13 @@ export function SessionRow({
   today,
   onPress,
   showDate = true,
+  prCount,
 }: {
   session: HistorySession;
   today: string;
   onPress: () => void;
   showDate?: boolean;
+  prCount?: number;
 }) {
   const title = sessionTitle(session);
   const volume = sessionVolume(session);
@@ -79,6 +81,11 @@ export function SessionRow({
           ))}
           {/* Modality/category chip renders here once the movement model
               supplies it — the slot is this comment. */}
+          {prCount ? (
+            <View style={[styles.chip, styles.prChip]}>
+              <Text style={[styles.chipText, styles.prChipText]}>PR ×{prCount}</Text>
+            </View>
+          ) : null}
           {session.sessionCount > 1 && (
             <View style={styles.chip}>
               <Text style={styles.chipText}>
@@ -110,4 +117,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   chipText: { fontSize: 11, color: colors.mutedForeground, fontWeight: "600" },
+  prChip: { backgroundColor: "#241a2e" },
+  prChipText: { color: "#E879F9" },
 });

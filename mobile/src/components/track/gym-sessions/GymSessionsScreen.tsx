@@ -14,22 +14,28 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/lib/dates";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
-import { fetchGymSessions, fetchWeightSeries } from "@/src/lib/supabase/gymSessions";
+import { fetchGymSessions, fetchSetFacts, fetchWeightSeries } from "@/src/lib/supabase/gymSessions";
 import type { WeightPoint } from "@/src/lib/supabase/gymSessions";
 import { fetchRestDates } from "@/src/lib/supabase/daily";
+import { fetchGoalHistory, saveWeeklyGoal } from "@/src/lib/supabase/weeklyGoals";
 import {
   balance, currentStreak, GROUP_LABELS, sessionsOn, weekSummary,
 } from "@/src/lib/gymSessions";
+import { goalForWeek } from "@/src/lib/goalHistory";
+import { goalProgress } from "@/src/lib/goalProgress";
+import { computeRecords, recordsBySession } from "@/src/lib/personalRecords";
+import { periodRange } from "@/src/lib/statsPeriod";
 import { GROUP_COLORS } from "./groupColors";
 import { SessionRow } from "./SessionRow";
 import { HistoryCalendar } from "./HistoryCalendar";
 import { WeekStrip } from "./WeekStrip";
 import { HeroHeader } from "./HeroHeader";
 import { StatsTab } from "./StatsTab";
-import {
-  calendarWeekSessions, DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail, weeksInARow,
-} from "@/src/lib/sessionPresentation";
+import { GoalEditorSheet } from "./GoalEditorSheet";
+import { calendarWeekSessions, weekRail, weeksInARow } from "@/src/lib/sessionPresentation";
 import type { HistorySession } from "@/src/types/gymSessions";
+import type { WeeklyGoal, WeeklyGoalDraft } from "@/src/types/goals";
+import type { SetFact } from "@/src/types/records";
 
 const BALANCE_DAYS = 14;
 
@@ -39,6 +45,9 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const [sessions, setSessions] = useState<HistorySession[]>([]);
   const [restDates, setRestDates] = useState<Set<string>>(new Set());
   const [weightSeries, setWeightSeries] = useState<WeightPoint[]>([]);
+  const [goals, setGoals] = useState<WeeklyGoal[]>([]);
+  const [setFacts, setSetFacts] = useState<SetFact[]>([]);
+  const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<"history" | "stats" | "calendar">("history");
@@ -49,6 +58,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   // One clock sample per load, the app's no-two-clocks rule.
   const [today] = useState(() => getLocalDateString());
   const scrollRef = useRef<ScrollView>(null);
+  const userIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -56,14 +66,19 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
       setLoading(false);
       return;
     }
-    const [gymSessions, rested, weights] = await Promise.all([
+    userIdRef.current = user.id;
+    const [gymSessions, rested, weights, goalHistory, facts] = await Promise.all([
       fetchGymSessions(user.id),
       fetchRestDates(user.id),
       fetchWeightSeries(user.id, `${Number(today.slice(0, 4)) - 1}-01-01`),
+      fetchGoalHistory(user.id),
+      fetchSetFacts(user.id),
     ]);
     setSessions(gymSessions);
     setRestDates(rested);
     setWeightSeries(weights);
+    setGoals(goalHistory);
+    setSetFacts(facts);
     setLoading(false);
   }, [today]);
 
@@ -79,12 +94,27 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
     setRefreshing(false);
   };
 
+  const currentGoal = useMemo(() => goalForWeek(goals, today), [goals, today]);
+  const records = useMemo(() => computeRecords(setFacts), [setFacts]);
+  const prCounts = useMemo(() => recordsBySession(records), [records]);
+  const weekSessions = useMemo(() => {
+    const r = periodRange("week", today);
+    return sessions.filter((s) => s.date >= r.start && s.date <= r.end);
+  }, [sessions, today]);
+  const progress = useMemo(
+    () => goalProgress(weekSessions, currentGoal),
+    [weekSessions, currentGoal],
+  );
+
   const week = useMemo(() => weekSummary(sessions, today), [sessions, today]);
   const streak = useMemo(
     () => currentStreak(sessions, today, restDates),
     [sessions, today, restDates],
   );
-  const weekStreak = useMemo(() => weeksInARow(sessions, today), [sessions, today]);
+  const weekStreak = useMemo(
+    () => weeksInARow(sessions, today, goals),
+    [sessions, today, goals],
+  );
   const bars = useMemo(
     () => balance(sessions, BALANCE_DAYS, today),
     [sessions, today],
@@ -105,6 +135,16 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const open = (session: HistorySession) =>
     router.push(`/(tabs)/track/gym-sessions/${session.id}` as never);
 
+  const saveGoal = async (draft: WeeklyGoalDraft) => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+    await saveWeeklyGoal(userId, periodRange("week", today).start, draft);
+    await load();
+    setGoalSheetOpen(false);
+  };
+
+  const seeAllRecords = () => router.push("/(tabs)/track/gym-sessions/records" as never);
+
   return (
     <>
       <StatusBar barStyle="light-content" />
@@ -120,7 +160,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
           <View style={styles.pinnedHero}>
             <HeroHeader
               goalDone={weekGoalDone}
-              goalTarget={DEFAULT_WEEKLY_SESSIONS_GOAL}
+              goalTarget={currentGoal.sessionsTarget}
               streakDays={streak}
               weeksInARow={weekStreak}
               rail={rail}
@@ -159,7 +199,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
             <>
               <HeroHeader
                 goalDone={weekGoalDone}
-                goalTarget={DEFAULT_WEEKLY_SESSIONS_GOAL}
+                goalTarget={currentGoal.sessionsTarget}
                 streakDays={streak}
                 weeksInARow={weekStreak}
                 rail={rail}
@@ -189,13 +229,22 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                     key={session.id}
                     session={session}
                     today={today}
+                    prCount={prCounts.get(session.id) ?? 0}
                     onPress={() => open(session)}
                   />
                 ))}
 
               {view === "stats" && (
                 <>
-                  <StatsTab sessions={sessions} weightSeries={weightSeries} today={today} />
+                  <StatsTab
+                    sessions={sessions}
+                    weightSeries={weightSeries}
+                    today={today}
+                    progress={progress}
+                    onEditGoal={() => setGoalSheetOpen(true)}
+                    records={records}
+                    onSeeAllRecords={seeAllRecords}
+                  />
 
                   {bars.length > 0 && (
                     <View style={styles.balanceBlock}>
@@ -287,6 +336,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                           session={session}
                           today={today}
                           showDate={false}
+                          prCount={prCounts.get(session.id) ?? 0}
                           onPress={() => open(session)}
                         />
                       ))}
@@ -297,6 +347,12 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
             </>
           )}
         </ScrollView>
+        <GoalEditorSheet
+          visible={goalSheetOpen}
+          goal={currentGoal}
+          onClose={() => setGoalSheetOpen(false)}
+          onSave={saveGoal}
+        />
       </View>
     </>
   );
