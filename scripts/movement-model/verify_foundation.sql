@@ -777,6 +777,44 @@ BEGIN
       COALESCE(v_observed, 'null'), COALESCE(v_order::TEXT, 'null');
   END IF;
 
+  SELECT name_fragment, name_order INTO v_observed, v_order FROM public.movement_styles WHERE name = 'Plyometric (Explosive)';
+  IF v_observed IS DISTINCT FROM 'Plyo' OR v_order IS DISTINCT FROM 14 THEN
+    RAISE EXCEPTION 'V8 FAIL: style Plyometric (Explosive) fragment/order = %/% (expected Plyo/14)',
+      COALESCE(v_observed, 'null'), COALESCE(v_order::TEXT, 'null');
+  END IF;
+
+  -- Modifier styles keep fragments for the prescription renderer but stay non-identity
+  -- (they must never enter a catalog name).
+  PERFORM 1 FROM public.movement_styles WHERE name = 'Pause' AND name_fragment = 'Pause' AND NOT is_identity;
+  IF NOT FOUND THEN
+    SELECT COALESCE(name_fragment, 'null') || '/' || is_identity::TEXT INTO v_observed
+      FROM public.movement_styles WHERE name = 'Pause';
+    RAISE EXCEPTION 'V8 FAIL: style Pause fragment/is_identity = % (expected Pause/false)', COALESCE(v_observed, 'row missing');
+  END IF;
+
+  SELECT name_fragment, name_order INTO v_observed, v_order FROM public.equipment WHERE name = 'Weight Vest';
+  IF v_observed IS DISTINCT FROM 'Vest' OR v_order IS DISTINCT FROM 40 THEN
+    RAISE EXCEPTION 'V8 FAIL: equipment Weight Vest fragment/order = %/% (expected Vest/40)',
+      COALESCE(v_observed, 'null'), COALESCE(v_order::TEXT, 'null');
+  END IF;
+
+  SELECT name_fragment, name_order INTO v_observed, v_order FROM public.equipment WHERE name = 'Parallettes';
+  IF v_observed IS DISTINCT FROM 'Parallette' OR v_order IS DISTINCT FROM 40 THEN
+    RAISE EXCEPTION 'V8 FAIL: equipment Parallettes fragment/order = %/% (expected Parallette/40)',
+      COALESCE(v_observed, 'null'), COALESCE(v_order::TEXT, 'null');
+  END IF;
+
+  SELECT name_fragment INTO v_observed FROM public.equipment WHERE name = 'Jump Rope';
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V8 FAIL: equipment Jump Rope should be silent, fragment = %', v_observed;
+  END IF;
+
+  SELECT COALESCE(name_fragment, '') || '/' || COALESCE(name_order::TEXT, '') INTO v_observed
+    FROM public.stances WHERE name = 'Supine / Prone';
+  IF v_observed IS DISTINCT FROM '/' THEN
+    RAISE EXCEPTION 'V8 FAIL: legacy stance Supine / Prone must be silent, fragment/order = %', v_observed;
+  END IF;
+
   SELECT name_fragment, name_order INTO v_observed, v_order FROM public.symmetries WHERE name = 'Alternating';
   IF v_observed IS DISTINCT FROM 'Alternating' OR v_order IS DISTINCT FROM 35 THEN
     RAISE EXCEPTION 'V8 FAIL: symmetry Alternating fragment/order = %/% (expected Alternating/35)',

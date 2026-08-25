@@ -62,9 +62,12 @@ CREATE INDEX IF NOT EXISTS exercises_grip_width_idx ON public.exercises (grip_wi
 -- Fragment convention: silent values store NULL fragment; the engine emits only
 -- non-empty fragments. Default everywhere: fragment = value name.
 
--- Equipment: name @40; Bodyweight is the silent default.
+-- Equipment: name @40 with approved overrides; Bodyweight and Jump Rope are silent
+-- (double-unders don't carry the words).
 UPDATE public.equipment SET name_fragment = name, name_order = 40 WHERE name <> 'Bodyweight';
-UPDATE public.equipment SET name_fragment = NULL, name_order = NULL WHERE name = 'Bodyweight';
+UPDATE public.equipment SET name_fragment = 'Vest'       WHERE name = 'Weight Vest';
+UPDATE public.equipment SET name_fragment = 'Parallette' WHERE name = 'Parallettes';
+UPDATE public.equipment SET name_fragment = NULL, name_order = NULL WHERE name IN ('Bodyweight','Jump Rope');
 
 -- Load positions: name @45; the barbell group implies Barbell (suppresses the equipment word).
 UPDATE public.load_positions SET name_fragment = name, name_order = 45;
@@ -72,11 +75,12 @@ UPDATE public.load_positions
    SET implies_equipment_id = (SELECT id FROM public.equipment WHERE name = 'Barbell')
  WHERE name IN ('Back','Front','Overhead','Zercher');
 
--- Stances: name @30 with approved overrides; Standard is the silent default.
+-- Stances: name @30 with approved overrides; Standard is the silent default, and the
+-- to-be-retired legacy 'Supine / Prone' must never speak in a generated name.
 UPDATE public.stances SET name_fragment = name, name_order = 30;
 UPDATE public.stances SET name_fragment = 'Wide-Stance'   WHERE name = 'Wide (Sumo)';
 UPDATE public.stances SET name_fragment = 'Narrow-Stance' WHERE name = 'Narrow';
-UPDATE public.stances SET name_fragment = NULL, name_order = NULL WHERE name = 'Standard';
+UPDATE public.stances SET name_fragment = NULL, name_order = NULL WHERE name IN ('Standard','Supine / Prone');
 
 -- Range depths: name @20 with approved overrides; Full is the silent default.
 UPDATE public.range_depths SET name_fragment = name, name_order = 20;
@@ -97,9 +101,17 @@ UPDATE public.movement_styles
                       WHEN 'Dynamic Power'             THEN 14
                     END
  WHERE name IN ('Strict','Kipping','Butterfly','Plyometric (Explosive)','Assisted','Weighted','Deficit');
+UPDATE public.movement_styles SET name_fragment = 'Plyo' WHERE name = 'Plyometric (Explosive)';
+-- Modifier styles keep fragments for the prescription renderer. They stay is_identity=false,
+-- so the engine never puts them in a catalog name; the order is the Execution band.
+UPDATE public.movement_styles SET name_fragment = 'Pause',     name_order = 12 WHERE name = 'Pause';
+UPDATE public.movement_styles SET name_fragment = 'Tempo',     name_order = 12 WHERE name = 'Tempo';
+UPDATE public.movement_styles SET name_fragment = 'Eccentric', name_order = 12 WHERE name = 'Eccentric (Negative)';
+UPDATE public.movement_styles SET name_fragment = 'Hold',      name_order = 12 WHERE name = 'Isometric (Hold)';
 UPDATE public.movement_styles
    SET name_fragment = NULL, name_order = NULL
- WHERE name NOT IN ('Strict','Kipping','Butterfly','Plyometric (Explosive)','Assisted','Weighted','Deficit');
+ WHERE name NOT IN ('Strict','Kipping','Butterfly','Plyometric (Explosive)','Assisted','Weighted','Deficit',
+                    'Pause','Tempo','Eccentric (Negative)','Isometric (Hold)');
 
 -- Symmetries: Alternating @35; every other value is silent (Bilateral is the default).
 UPDATE public.symmetries SET name_fragment = 'Alternating', name_order = 35 WHERE name = 'Alternating';
@@ -249,12 +261,12 @@ UPDATE public.stances SET name = 'Athletic', name_fragment = 'Athletic'
 INSERT INTO public.equipment (name, category, display_order, name_fragment, name_order)
 SELECT 'Jump Rope', 'Bodyweight / Apparatus',
        (SELECT COALESCE(max(display_order), 0) + 1 FROM public.equipment WHERE category = 'Bodyweight / Apparatus'),
-       'Jump Rope', 40
+       NULL, NULL  -- silent: double-unders don't carry the words
  WHERE NOT EXISTS (SELECT 1 FROM public.equipment WHERE name = 'Jump Rope');
 INSERT INTO public.equipment (name, category, display_order, name_fragment, name_order)
 SELECT 'Parallettes', 'Bodyweight / Apparatus',
        (SELECT COALESCE(max(display_order), 0) + 1 FROM public.equipment WHERE category = 'Bodyweight / Apparatus'),
-       'Parallettes', 40
+       'Parallette', 40
  WHERE NOT EXISTS (SELECT 1 FROM public.equipment WHERE name = 'Parallettes');
 INSERT INTO public.equipment (name, category, display_order, name_fragment, name_order)
 SELECT 'GHD', 'Supports / Surfaces',
@@ -269,7 +281,7 @@ SELECT 'Sled', 'Implements',
 INSERT INTO public.equipment (name, category, display_order, name_fragment, name_order)
 SELECT 'Weight Vest', 'Implements',
        (SELECT COALESCE(max(display_order), 0) + 1 FROM public.equipment WHERE category = 'Implements'),
-       'Weight Vest', 40
+       'Vest', 40
  WHERE NOT EXISTS (SELECT 1 FROM public.equipment WHERE name = 'Weight Vest');
 
 -- ============================================================================
