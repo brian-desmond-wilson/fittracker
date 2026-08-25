@@ -2,48 +2,40 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { formatVolume, sessionPace, sessionVolume } from "@/src/lib/gymSessions";
 import {
-  formatVolume,
-  GROUP_LABELS,
-  sessionEmphasis,
-  sessionMinutes,
-  sessionPace,
-  sessionVolume,
-} from "@/src/lib/gymSessions";
-import { sessionTitle } from "@/src/lib/sessionPresentation";
-import { GROUP_COLORS, SOURCE_COLORS, SOURCE_LABELS } from "./groupColors";
+  durationLine, formatSessionDate, mainExerciseCount, regionsHit, sessionTitle,
+} from "@/src/lib/sessionPresentation";
+import { SOURCE_COLORS, SOURCE_LABELS } from "./groupColors";
 import type { HistorySession } from "@/src/types/gymSessions";
+import { MiniMuscleMap } from "./MiniMuscleMap";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/** "Sat 16" — the year is never the question when scanning a log. */
-function shortDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  return `${WEEKDAYS[date.getUTCDay()]} ${d}`;
-}
+const CARD_REGION_CHIPS = 3;
 
 export function SessionRow({
   session,
+  today,
   onPress,
   showDate = true,
 }: {
   session: HistorySession;
+  today: string;
   onPress: () => void;
   showDate?: boolean;
 }) {
   const title = sessionTitle(session);
   const volume = sessionVolume(session);
-  const minutes = sessionMinutes(session);
   const pace = sessionPace(session);
-  const emphasis = sessionEmphasis(session);
+  const duration = durationLine(session);
+  const regions = regionsHit(session);
+  const exercises = mainExerciseCount(session);
   const source = SOURCE_COLORS[session.source] ?? SOURCE_COLORS.unknown;
 
   // Only what is actually known — a session with no timing shouldn't wear a
   // dash where its duration would be.
   const meta = [
-    `${session.exercises.length} exercise${session.exercises.length === 1 ? "" : "s"}`,
-    minutes ? `${minutes} min` : null,
+    `${exercises} exercise${exercises === 1 ? "" : "s"}`,
+    duration,
     volume > 0 ? `${formatVolume(volume)} lbs` : null,
     pace ? `${pace} lb/min` : null,
   ]
@@ -65,12 +57,13 @@ export function SessionRow({
       accessibilityRole="button"
       accessibilityLabel={`${title}, ${meta}. Open the session.`}
     >
+      <MiniMuscleMap regions={regions} />
       <View style={styles.body}>
         <View style={styles.head}>
-          <Text style={styles.name} numberOfLines={1}>
-            {title}
+          <Text style={styles.name} numberOfLines={1}>{title}</Text>
+          <Text style={styles.when}>
+            {showDate ? formatSessionDate(session.date, today) : clock}
           </Text>
-          <Text style={styles.when}>{showDate ? shortDate(session.date) : clock}</Text>
         </View>
         <Text style={styles.meta}>{meta}</Text>
         <View style={styles.chips}>
@@ -79,12 +72,13 @@ export function SessionRow({
               {SOURCE_LABELS[session.source] ?? "Logged"}
             </Text>
           </View>
-          <View style={styles.chip}>
-            <View style={[styles.dot, { backgroundColor: GROUP_COLORS[emphasis] }]} />
-            <Text style={styles.chipText}>{GROUP_LABELS[emphasis]}</Text>
-          </View>
-          {/* A workout done across two days says so, rather than looking like
-              one short session. */}
+          {regions.slice(0, CARD_REGION_CHIPS).map((region) => (
+            <View key={region} style={styles.chip}>
+              <Text style={styles.chipText}>{region}</Text>
+            </View>
+          ))}
+          {/* Modality/category chip renders here once the movement model
+              supplies it — the slot is this comment. */}
           {session.sessionCount > 1 && (
             <View style={styles.chip}>
               <Text style={styles.chipText}>
@@ -101,7 +95,7 @@ export function SessionRow({
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: "row", alignItems: "center", gap: 8,
+    flexDirection: "row", alignItems: "center", gap: 10,
     paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   body: { flex: 1 },
@@ -116,5 +110,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 3,
   },
   chipText: { fontSize: 11, color: colors.mutedForeground, fontWeight: "600" },
-  dot: { width: 6, height: 6, borderRadius: 3 },
 });

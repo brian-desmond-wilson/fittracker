@@ -188,7 +188,12 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 
               {view === "list" ? (
                 sessions.map((session) => (
-                  <SessionRow key={session.id} session={session} onPress={() => open(session)} />
+                  <SessionRow
+                    key={session.id}
+                    session={session}
+                    today={today}
+                    onPress={() => open(session)}
+                  />
                 ))
               ) : (
                 <>
@@ -214,6 +219,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                         <SessionRow
                           key={session.id}
                           session={session}
+                          today={today}
                           showDate={false}
                           onPress={() => open(session)}
                         />
