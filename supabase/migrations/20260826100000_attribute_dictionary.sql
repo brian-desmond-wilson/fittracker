@@ -379,6 +379,12 @@ CREATE TRIGGER exercises_identity_recompute
 -- 11) Recompute backfill: fragments changed every generated name; derive the new state.
 --     All real rows are name_is_custom, so display names cannot change (asserted below).
 -- ============================================================================
+-- Wizard-created rows since Stage 1 land with name_is_custom=false (the app doesn't set it yet
+-- — Stage 5 fixes the app). A user-typed name is custom by definition; flip drift rows rather
+-- than aborting the push on them. Matches Stage 1's backfill semantics. Must run BEFORE the
+-- recompute below, or a drifted row's user-typed name would be overwritten by the generator.
+UPDATE public.exercises SET name_is_custom = true WHERE name_is_custom = false;
+
 DO $$
 BEGIN
   PERFORM public.recompute_exercise_identity(id) FROM public.exercises;
