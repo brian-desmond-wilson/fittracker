@@ -1,4 +1,5 @@
 import {
+  calendarWeekSessions,
   DEFAULT_WEEKLY_SESSIONS_GOAL,
   durationLine,
   formatSessionDate,
@@ -148,5 +149,28 @@ describe("weekRail", () => {
     expect(rail[6].date).toBe("2026-08-29");
     expect(rail[6].state).toBe("trained");
     expect(rail.some((d) => d.state === "future")).toBe(false);
+  });
+});
+
+describe("calendarWeekSessions", () => {
+  const today = "2026-08-24"; // Monday; week runs Sun 08-23 .. Sat 08-29
+  it("counts only sessions inside the Sunday-first calendar week", () => {
+    const sessions = [
+      session({ id: "a", date: "2026-08-23" }), // Sun, in
+      session({ id: "b", date: "2026-08-24" }), // Mon (today), in
+      session({ id: "c", date: "2026-08-22" }), // Sat, OUT — previous week
+      session({ id: "d", date: "2026-08-29" }), // Sat, in (end of week)
+    ];
+    expect(calendarWeekSessions(sessions, today)).toBe(3);
+  });
+  it("counts two sessions on the same date as two", () => {
+    const sessions = [
+      session({ id: "a", date: "2026-08-24" }),
+      session({ id: "b", date: "2026-08-24" }),
+    ];
+    expect(calendarWeekSessions(sessions, today)).toBe(2);
+  });
+  it("is zero with no sessions", () => {
+    expect(calendarWeekSessions([], today)).toBe(0);
   });
 });

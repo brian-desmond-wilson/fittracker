@@ -146,7 +146,7 @@ export function HistoryCalendar({
                         ]}
                       />
                     ))}
-                  {isRest && <View style={styles.dotRest} />}
+                  {isRest && <Text style={styles.restDot}>💤</Text>}
                 </View>
               </TouchableOpacity>
             );
@@ -191,10 +191,7 @@ const styles = StyleSheet.create({
   dayTextSelected: { color: "#052E16", fontWeight: "700" },
   dots: { flexDirection: "row", gap: 2, height: 8, marginTop: 3 },
   dot: { width: 5, height: 5, borderRadius: 3 },
-  dotRest: {
-    width: 5, height: 5, borderRadius: 3,
-    borderWidth: 1, borderColor: colors.mutedForeground, backgroundColor: "transparent",
-  },
+  restDot: { fontSize: 7, lineHeight: 8 },
   legend: {
     flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12,
     paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,

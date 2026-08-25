@@ -2,7 +2,7 @@
 //
 // The counterpart to Training > Workouts, which holds templates. Nothing here
 // is a plan — every row is a session that happened, whatever it came from.
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator, RefreshControl, ScrollView, StatusBar, StyleSheet, Text,
   TouchableOpacity, View,
@@ -25,7 +25,7 @@ import { HistoryCalendar } from "./HistoryCalendar";
 import { WeekStrip } from "./WeekStrip";
 import { HeroHeader } from "./HeroHeader";
 import {
-  DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail,
+  calendarWeekSessions, DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail,
 } from "@/src/lib/sessionPresentation";
 import type { HistorySession } from "@/src/types/gymSessions";
 
@@ -45,6 +45,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 
   // One clock sample per load, the app's no-two-clocks rule.
   const [today] = useState(() => getLocalDateString());
+  const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -87,6 +88,10 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
     () => (selectedDate ? sessionsOn(sessions, selectedDate) : []),
     [sessions, selectedDate],
   );
+  const weekGoalDone = useMemo(
+    () => calendarWeekSessions(sessions, today),
+    [sessions, today],
+  );
 
   const open = (session: HistorySession) =>
     router.push(`/(tabs)/track/gym-sessions/${session.id}` as never);
@@ -108,6 +113,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 
         <RefreshIndicator visible={refreshing} />
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.content}
           scrollEventThrottle={32}
           onScroll={(e) => {
@@ -132,12 +138,13 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <HeroHeader
-                goalDone={week.sessions}
+                goalDone={weekGoalDone}
                 goalTarget={DEFAULT_WEEKLY_SESSIONS_GOAL}
                 streakDays={streak}
                 rail={rail}
                 week={week}
                 collapsed={collapsed}
+                onExpand={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
               />
 
               <View style={styles.toggle}>
@@ -212,7 +219,16 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                       <TouchableOpacity
                         key={v}
                         style={[styles.toggleTab, calView === v && styles.toggleTabOn]}
-                        onPress={() => setCalView(v)}
+                        onPress={() => {
+                          setCalView(v);
+                          if (
+                            v === "week" &&
+                            selectedDate &&
+                            !rail.some((d) => d.date === selectedDate)
+                          ) {
+                            setSelectedDate(null);
+                          }
+                        }}
                         accessibilityRole="button"
                         accessibilityState={{ selected: calView === v }}
                       >

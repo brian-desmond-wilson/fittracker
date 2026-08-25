@@ -1,7 +1,7 @@
 // The page's headline: goal ring, streak, this week as seven pills, and the
 // week's numbers. Collapses to one row when the list needs the screen.
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Flame } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
@@ -33,7 +33,7 @@ function GoalRing({ done, target, size }: { done: number; target: number; size: 
 }
 
 export function HeroHeader({
-  goalDone, goalTarget, streakDays, rail, week, collapsed,
+  goalDone, goalTarget, streakDays, rail, week, collapsed, onExpand,
 }: {
   goalDone: number;
   goalTarget: number;
@@ -41,16 +41,26 @@ export function HeroHeader({
   rail: RailDay[];
   week: WeekSummary;
   collapsed: boolean;
+  onExpand?: () => void;
 }) {
   if (collapsed) {
+    const streakPart = streakDays > 0 ? `🔥 ${streakDays}` : "";
+    const volumePart = week.volumeLbs > 0 ? `${formatVolume(week.volumeLbs)} lbs this week` : "";
+    const compactText =
+      streakPart && volumePart
+        ? `${streakPart} · ${volumePart}`
+        : streakPart || volumePart || "This week";
     return (
-      <View style={styles.compact}>
+      <TouchableOpacity
+        style={styles.compact}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Expand weekly summary"
+        onPress={onExpand}
+      >
         <GoalRing done={goalDone} target={goalTarget} size={34} />
-        <Text style={styles.compactText}>
-          {streakDays > 0 ? `🔥 ${streakDays} · ` : ""}
-          {formatVolume(week.volumeLbs)} lbs this week
-        </Text>
-      </View>
+        <Text style={styles.compactText}>{compactText}</Text>
+      </TouchableOpacity>
     );
   }
   const toGo = Math.max(goalTarget - goalDone, 0);

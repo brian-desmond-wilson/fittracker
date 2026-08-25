@@ -111,3 +111,15 @@ export function weekRail(
     return { date, label: "SMTWTFS"[i], state };
   });
 }
+
+/**
+ * Sessions inside the current Sunday-first calendar week. The goal ring's
+ * window — it must agree with the week rail beside it, not the trailing-7-day
+ * tiles below, and it is the window Phase 2's weeks-in-a-row will reuse.
+ */
+export function calendarWeekSessions(sessions: HistorySession[], today: string): number {
+  const dates = weekRail([], new Set(), today).map((d) => d.date);
+  const start = dates[0];
+  const end = dates[6];
+  return sessions.filter((s) => s.date >= start && s.date <= end).length;
+}
