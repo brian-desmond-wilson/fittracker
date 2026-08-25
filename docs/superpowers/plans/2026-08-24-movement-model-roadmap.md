@@ -9,8 +9,8 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 | Stage | Spec phases | Plan | Status |
 |---|---|---|---|
 | 1. Foundation | 0–3 | `2026-08-24-movement-model-foundation.md` | **done 2026-08-24, live** |
-| 2. Attribute audit session | 1 (decision gate) | interactive, worksheet at `docs/superpowers/audit/attribute-audit-2026-08.csv` | **unblocked — needs user** |
-| 3. Catalog pass | 4 | authored after Stage 2 | blocked by 2 |
+| 2. Attribute audit session | 1 (decision gate) | decision record: Attribute Audit artifact; applied via `2026-08-24-attribute-dictionary.md` | **done 2026-08-24, live** |
+| 3. Catalog pass | 4 | authored next | **unblocked** |
 | 4. Turn the locks | 5 | authored with Stage 3 | blocked by 3 |
 | 5. App unification | 6 | authored after Stage 4 | blocked by 4 |
 | 6. Retire legacy | 7 | authored with Stage 5 | blocked by 5 |
@@ -30,10 +30,10 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 
 ## Stage 2 — Attribute audit session (user + Claude)
 
-- [ ] Rule on all 15 attributes: keep / merge / drop; overlaps resolved (range depth vs Partial/Range-Limited style; symmetry Alternating vs style Alternating)
-- [ ] Rule on every value: keep / merge / rename; missing values added
-- [ ] Every value gets `is_identity`, `name_fragment`, `name_order` (and `implies_equipment_id` for load positions)
-- [ ] Outcome written back into the spec as the final attribute dictionary; seed migration applied
+- [x] Rule on all 15 attributes: keep / merge / drop; overlaps resolved (range depth vs Partial/Range-Limited style; symmetry Alternating vs style Alternating)
+- [x] Rule on every value: keep / merge / rename; missing values added
+- [x] Every value gets `is_identity`, `name_fragment`, `name_order` (and `implies_equipment_id` for load positions)
+- [x] Outcome written back into the spec as the final attribute dictionary; seed migration applied
 - **Exit gate:** user-approved attribute dictionary, applied to live
 
 ## Stage 3 — Catalog pass (Phase 4)
@@ -45,6 +45,7 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 - [ ] Recompute descendants after any core rename or merge (trigger does not fire on name changes)
 - [ ] Never read generated_name on rows with no core movement (it echoes the display name there)
 
+- [ ] Reclassify rows tagged the legacy combined 'Supine / Prone' stance, then drop the value (Stage 2 hand-off)
 - [ ] Core movement set proposed (from live data + CrossFit canon) and user-approved
 - [ ] All 307 rows classified: core movement or explicit outlier, full identity attributes, explicit `is_movement` curation (kept as a pure Movements-tab label per user decision)
 - [ ] Review sheet produced; user approves before any write

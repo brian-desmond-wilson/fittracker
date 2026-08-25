@@ -108,8 +108,22 @@ Audit queries proving: every row has a core movement or explicit outlier status;
 - App UI redesign beyond the save/read unification in Phase 6.
 - The wod_movements Rx/L2/L1 scaling system and `movement_scaling_links` difficulty chains — untouched by this redesign; they layer on top of clean identity.
 
+## Amendments (2026-08-24, Stage 2 — attribute dictionary applied to live)
+
+The Phase 1 attribute audit is complete; the approved dictionary is the Attribute Audit artifact (decision record; all seven contested calls approved as recommended) and it is live via migration `20260826100000_attribute_dictionary.sql`. Summary of what it changed relative to this spec's original tables:
+
+- **New attribute: Grip** — reference table `grips` (category Orientation | Width), two single-select FK columns on exercises (`grip_orientation_id`, `grip_width_id`), identity, naming order band 25. Chin-Up = Supinated ("Underhand" fragment, curated override), Wide-Grip / Close-Grip derivable.
+- **Styles**: 11 values; identity = {Strict, Kipping, Butterfly, Plyometric (Explosive), Assisted, Weighted, Deficit}; modifiers = {Pause, Tempo, Eccentric (Negative), Isometric (Hold)}; dropped Standard, Unbroken, Alternating, Partial / Range-Limited; Controlled merged into Tempo.
+- **Families**: 28 — Core renamed **Midline**; Mobility/Control merged into Mobility.
+- **Goals**: 6 — Cool-Down merged into Recovery.
+- **Load positions**: 15 — added Double Overhead and Waiter; dropped Bodyweight; Hang recategorized "Start Position".
+- **Range depths**: 8 — dropped Variable / Custom; `implies_equipment_id` added (Box implies Box equipment).
+- **Stances**: 13 — added Supine and Prone; Athletic / Partial Squat renamed Athletic; legacy combined "Supine / Prone" retained until the Phase 4 catalog pass reclassifies its rows, then drops.
+- **Equipment**: 30 — added Jump Rope (silent), GHD, Parallettes, Sled, Weight Vest ("Vest").
+- **Engine generalizations**: grips joined the identity fingerprint and the name generator; implied-equipment suppression honors both load-position and range-depth implications; every identity value now carries its name fragment and order (bands: 10 assistance styles, 12 execution, 14 dynamic, 20 range, 25 grip, 30 stance, 35 alternating, 40 equipment, 45 load position).
+- **Naming metadata is data**: silent defaults (Standard stance, Full depth, Bilateral, Pronated, Bodyweight, Jump Rope) carry NULL fragments.
+
 ## Open items
 
 - Core movement list — proposed and approved in Phase 4.
-- Attribute audit outcomes — Phase 1 produces the final dictionary.
 - Whether the Movements/Exercises tab split survives in the app — decided in Phase 6.
