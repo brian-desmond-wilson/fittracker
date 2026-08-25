@@ -270,4 +270,79 @@ BEGIN
     RAISE EXCEPTION 'V5 FAIL: exercises_core_movement_id_fkey confdeltype = % (expected r/RESTRICT)', COALESCE(v_deltype, 'null');
   END IF;
 END $$;
+-- V6: identity engine behavior (fixture-based, rolled back — harness stays side-effect-free)
+BEGIN;
+DO $$
+DECLARE
+  eq_barbell UUID; eq_kb UUID;
+  lp_back UUID; lp_goblet UUID;
+  core_squat UUID; back_squat UUID; kb_goblet UUID;
+  v_observed TEXT;
+BEGIN
+  -- Fixture reference values (TB- prefixed so nothing collides with real aliases; isolated from audit outcomes)
+  INSERT INTO public.equipment (name, category, display_order, name_fragment, name_order)
+    VALUES ('TEST Barbell','Free Weights',990,'TB-Barbell',40) RETURNING id INTO eq_barbell;
+  INSERT INTO public.equipment (name, category, display_order, name_fragment, name_order)
+    VALUES ('TEST Kettlebell','Free Weights',991,'TB-Kettlebell',40) RETURNING id INTO eq_kb;
+  INSERT INTO public.load_positions (name, display_order, category, name_fragment, name_order, implies_equipment_id)
+    VALUES ('TEST Back',990,'Barbell','TB-Back',20,eq_barbell) RETURNING id INTO lp_back;
+  INSERT INTO public.load_positions (name, display_order, category, name_fragment, name_order)
+    VALUES ('TEST Goblet',991,'Dumbbell / KB','TB-Goblet',20) RETURNING id INTO lp_goblet;
+
+  -- Core movement fixture
+  INSERT INTO public.exercises (name, slug, is_core, is_official)
+    VALUES ('TESTSquat','test-squat',true,true) RETURNING id INTO core_squat;
+  UPDATE public.exercises SET core_movement_id = id WHERE id = core_squat;
+
+  IF (SELECT tier FROM public.exercises WHERE id = core_squat) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'V6 FAIL: core row tier should be 0, got %',
+      COALESCE((SELECT tier FROM public.exercises WHERE id = core_squat)::TEXT, 'null');
+  END IF;
+
+  -- Derived: core + {barbell, back} → suppressed equipment → 'TB-Back TESTSquat'
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, load_position_id)
+    VALUES ('placeholder','test-back-squat',true,core_squat,lp_back) RETURNING id INTO back_squat;
+  INSERT INTO public.exercise_equipment (exercise_id, equipment_id) VALUES (back_squat, eq_barbell);
+
+  SELECT generated_name INTO v_observed FROM public.exercises WHERE id = back_squat;
+  IF v_observed IS DISTINCT FROM 'TB-Back TESTSquat' THEN
+    RAISE EXCEPTION 'V6 FAIL: implied-equipment suppression, got %', COALESCE(v_observed, 'null');
+  END IF;
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = back_squat) IS DISTINCT FROM core_squat THEN
+    RAISE EXCEPTION 'V6 FAIL: parent should be core, got %',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = back_squat)::TEXT, 'null');
+  END IF;
+  IF (SELECT tier FROM public.exercises WHERE id = back_squat) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'V6 FAIL: tier should be 1, got %',
+      COALESCE((SELECT tier FROM public.exercises WHERE id = back_squat)::TEXT, 'null');
+  END IF;
+  IF (SELECT identity_fingerprint FROM public.exercises WHERE id = back_squat) IS NULL THEN
+    RAISE EXCEPTION 'V6 FAIL: fingerprint not computed';
+  END IF;
+
+  -- Derived: core + {kettlebell, goblet} → no suppression → 'TB-Goblet TB-Kettlebell TESTSquat'
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, load_position_id)
+    VALUES ('placeholder2','test-goblet-squat',true,core_squat,lp_goblet) RETURNING id INTO kb_goblet;
+  INSERT INTO public.exercise_equipment (exercise_id, equipment_id) VALUES (kb_goblet, eq_kb);
+
+  SELECT generated_name INTO v_observed FROM public.exercises WHERE id = kb_goblet;
+  IF v_observed IS DISTINCT FROM 'TB-Goblet TB-Kettlebell TESTSquat' THEN
+    RAISE EXCEPTION 'V6 FAIL: unsuppressed equipment naming, got %', COALESCE(v_observed, 'null');
+  END IF;
+
+  -- Non-custom names track the generator; alias rows sync
+  SELECT name INTO v_observed FROM public.exercises WHERE id = back_squat AND NOT name_is_custom;
+  IF v_observed IS DISTINCT FROM 'TB-Back TESTSquat' THEN
+    RAISE EXCEPTION 'V6 FAIL: display name should track generated name when not custom, got %',
+      COALESCE(v_observed, 'null');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.exercise_aliases
+                 WHERE exercise_id = back_squat AND kind = 'generated'
+                   AND alias_normalized = public.normalize_alias('TB-Back TESTSquat')) THEN
+    RAISE EXCEPTION 'V6 FAIL: generated alias not synced';
+  END IF;
+
+  RAISE NOTICE 'V6 behavioral assertions passed';
+END $$;
+ROLLBACK;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
