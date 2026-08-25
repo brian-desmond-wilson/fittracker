@@ -78,6 +78,30 @@ describe("toSession estimates and naming sources", () => {
     expect(s.estimatedMinutes).toBe(60);
   });
 
+  it("names a split day from SPLIT_TITLES and estimates from its blocks", () => {
+    const row = {
+      ...baseRow,
+      workout_instance: [{
+        id: "wi1",
+        program_workout: null,
+        generated_session: [{
+          split_day: "push",
+          served_captured_workout_id: null,
+          captured: null,
+          blocks: [
+            { block: "warmup", minutes: 10, captured: null },
+            { block: "main", minutes: 35, captured: [{ name: "Kettlebell Flow" }] },
+          ],
+        }],
+      }],
+    };
+    const s = toSession(row, 1);
+    expect(s.name).toBe("Push day");
+    expect(s.source).toBe("recommended");
+    expect(s.estimatedMinutes).toBe(45);
+    expect(s.mainBlockWorkoutName).toBe("Kettlebell Flow");
+  });
+
   it("leaves everything null when nothing served the session", () => {
     const s = toSession(baseRow, 1);
     expect(s.name).toBeNull();

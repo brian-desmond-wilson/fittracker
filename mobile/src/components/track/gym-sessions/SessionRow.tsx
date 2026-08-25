@@ -10,8 +10,8 @@ import {
   sessionPace,
   sessionVolume,
 } from "@/src/lib/gymSessions";
-import { GROUP_COLORS, SOURCE_COLORS, SOURCE_LABELS } from "./groupColors";
 import { sessionTitle } from "@/src/lib/sessionPresentation";
+import { GROUP_COLORS, SOURCE_COLORS, SOURCE_LABELS } from "./groupColors";
 import type { HistorySession } from "@/src/types/gymSessions";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
