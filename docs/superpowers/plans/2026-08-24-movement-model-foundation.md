@@ -843,7 +843,12 @@ BEGIN
 
   UPDATE exercises SET
     identity_fingerprint = CASE WHEN v_core IS NULL THEN NULL ELSE array_to_string(v_attrs, '|') END,
-    parent_exercise_id   = v_parent,
+    -- Rows with no core movement keep their existing hand-set parent: the legacy hierarchy
+    -- (19 live rows) must survive untouched until the Stage 3 catalog pass assigns cores —
+    -- wiping it here would visibly flatten the app's hierarchy screen (zero-visible-change rule).
+    parent_exercise_id   = CASE WHEN v_is_core THEN NULL
+                                WHEN v_core IS NULL THEN parent_exercise_id
+                                ELSE v_parent END,
     tier = CASE WHEN v_is_core THEN 0 WHEN v_core IS NULL THEN NULL ELSE COALESCE(v_ptier, 0) + 1 END,
     generated_name = v_gen,
     name = CASE WHEN name_is_custom OR v_core IS NULL THEN name ELSE v_gen END,
@@ -897,12 +902,14 @@ Expected: `NOTICE: V6 behavioral assertions passed` then `FOUNDATION VERIFICATIO
 - [ ] **Step 5: Backfill derived state for existing rows (idempotent, no name changes because everything is `name_is_custom`)**
 
 ```bash
+psql "$LOCAL_DB" -tc "SELECT count(*) FROM exercises WHERE parent_exercise_id IS NOT NULL;"   # record BEFORE
 psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -c \
   "SELECT count(recompute_exercise_identity(id)) FROM exercises;"
+psql "$LOCAL_DB" -tc "SELECT count(*) FROM exercises WHERE parent_exercise_id IS NOT NULL;"   # must equal BEFORE
 psql "$LOCAL_DB" -v ON_ERROR_STOP=1 -f scripts/movement-model/verify_foundation.sql
 ```
 
-Expected: count = row count; then `FOUNDATION VERIFICATION: PASS`
+Expected: count = row count; the parent-link count is IDENTICAL before and after (legacy hierarchy preserved — 19 on the 2026-08-24 snapshot); then `FOUNDATION VERIFICATION: PASS`
 
 - [ ] **Step 6: Commit**
 
