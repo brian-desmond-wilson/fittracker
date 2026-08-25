@@ -216,6 +216,7 @@ ROLLBACK;
 DO $$
 DECLARE
   v_observed TEXT;
+  v_deltype "char";
 BEGIN
   -- V5: catalog identity columns exist on exercises
   PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='core_movement_id';
@@ -258,6 +259,15 @@ BEGIN
     SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed
       FROM public.exercises WHERE is_core AND core_movement_id IS DISTINCT FROM id;
     RAISE EXCEPTION 'V5 FAIL: core rows not self-referencing core_movement_id: %', v_observed;
+  END IF;
+
+  -- V5: core_movement_id FK must be RESTRICT, not SET NULL — a core with dependents must be
+  -- repointed explicitly (Stage 3 merge tooling), never silently orphaned.
+  SELECT confdeltype INTO v_deltype
+  FROM pg_constraint
+  WHERE conrelid = 'public.exercises'::regclass AND conname = 'exercises_core_movement_id_fkey';
+  IF v_deltype IS DISTINCT FROM 'r' THEN
+    RAISE EXCEPTION 'V5 FAIL: exercises_core_movement_id_fkey confdeltype = % (expected r/RESTRICT)', COALESCE(v_deltype, 'null');
   END IF;
 END $$;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
