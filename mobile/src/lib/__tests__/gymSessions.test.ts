@@ -187,10 +187,6 @@ describe("weekSummary", () => {
     expect(summary.minutes).toBe(60);
   });
 
-  it("counts the week before it for comparison", () => {
-    expect(weekSummary(sessions, "2026-08-17").sessionsLastWeek).toBe(1);
-  });
-
   it("ignores anything dated after today", () => {
     expect(weekSummary(sessions, "2026-08-15").sessions).toBe(1);
   });

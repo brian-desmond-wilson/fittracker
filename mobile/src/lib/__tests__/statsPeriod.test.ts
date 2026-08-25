@@ -3,12 +3,14 @@ import {
   bucketLabels,
   bucketSeries,
   estimatedOneRepMax,
+  formattedDelta,
   liftCandidates,
   periodRange,
   periodSummary,
   strengthSeries,
   summaryDelta,
 } from "../statsPeriod";
+import { formatMinutes, formatVolume } from "../gymSessions";
 import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
 
 const set = (over: Partial<HistorySet> = {}): HistorySet => ({
@@ -87,6 +89,18 @@ describe("summaryDelta", () => {
     expect(summaryDelta(6, 2, "week")).toBe("+4 vs last week");
     expect(summaryDelta(2, 6, "month")).toBe("-4 vs last month");
     expect(summaryDelta(3, 3, "year")).toBe("same as last year");
+  });
+});
+
+describe("formattedDelta", () => {
+  it("formats the diff through the caller's formatter, unit and all", () => {
+    expect(formattedDelta(150, 60, "week", formatMinutes)).toBe("+1h 30m vs last week");
+  });
+  it("signs a negative diff and formats its absolute value", () => {
+    expect(formattedDelta(1000, 5200, "month", formatVolume)).toBe("-4.2k vs last month");
+  });
+  it("names the previous period on a tie, no sign", () => {
+    expect(formattedDelta(3, 3, "week", formatMinutes)).toBe("same as last week");
   });
 });
 

@@ -5,8 +5,8 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "@/src/lib/colors";
 import { formatMinutes, formatVolume, sessionVolume } from "@/src/lib/gymSessions";
 import {
-  bucketIndexFor, bucketLabels, bucketSeries, liftCandidates, periodRange, periodSummary,
-  strengthSeries, summaryDelta, type StatScope,
+  bucketIndexFor, bucketLabels, bucketSeries, formattedDelta, liftCandidates, periodRange,
+  periodSummary, strengthSeries, summaryDelta, type StatScope,
 } from "@/src/lib/statsPeriod";
 import type { WeightPoint } from "@/src/lib/supabase/gymSessions";
 import type { HistorySession } from "@/src/types/gymSessions";
@@ -27,7 +27,7 @@ export function StatsTab({
   const [scope, setScope] = useState<StatScope>("week");
   const lifts = useMemo(() => liftCandidates(sessions), [sessions]);
   const [liftId, setLiftId] = useState<string | null>(null);
-  const activeLift = liftId ?? lifts[0]?.exerciseId ?? null;
+  const activeLift = lifts.some((l) => l.exerciseId === liftId) ? liftId : lifts[0]?.exerciseId ?? null;
 
   const range = useMemo(() => periodRange(scope, today), [scope, today]);
   const summary = useMemo(() => periodSummary(sessions, range), [sessions, range]);
@@ -55,8 +55,8 @@ export function StatsTab({
 
   const tiles = [
     { label: "WORKOUTS", value: String(summary.workouts), delta: summaryDelta(summary.workouts, summary.prev.workouts, scope) },
-    { label: "TIME", value: formatMinutes(summary.minutes), delta: summaryDelta(Math.round(summary.minutes / 60), Math.round(summary.prev.minutes / 60), scope) },
-    { label: "VOLUME", value: formatVolume(summary.volumeLbs), delta: summaryDelta(Math.round(summary.volumeLbs / 1000), Math.round(summary.prev.volumeLbs / 1000), scope) },
+    { label: "TIME", value: formatMinutes(summary.minutes), delta: formattedDelta(summary.minutes, summary.prev.minutes, scope, formatMinutes) },
+    { label: "VOLUME", value: formatVolume(summary.volumeLbs), delta: formattedDelta(summary.volumeLbs, summary.prev.volumeLbs, scope, formatVolume) },
     { label: "EXERCISES", value: String(summary.exercises), delta: summaryDelta(summary.exercises, summary.prev.exercises, scope) },
   ];
 

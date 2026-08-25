@@ -69,6 +69,4 @@ export interface WeekSummary {
   sessions: number;
   volumeLbs: number;
   minutes: number;
-  /** Last week's session count, for the "+1 vs last" line. */
-  sessionsLastWeek: number;
 }

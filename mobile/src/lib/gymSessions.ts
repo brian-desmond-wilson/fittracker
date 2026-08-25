@@ -140,15 +140,10 @@ export function weekSummary(sessions: HistorySession[], today: string): WeekSumm
     const age = dayDiff(today, s.date);
     return age >= 0 && age < 7;
   });
-  const lastWeek = sessions.filter((s) => {
-    const age = dayDiff(today, s.date);
-    return age >= 7 && age < 14;
-  });
   return {
     sessions: thisWeek.length,
     volumeLbs: thisWeek.reduce((t, s) => t + sessionVolume(s), 0),
     minutes: thisWeek.reduce((t, s) => t + (sessionMinutes(s) ?? 0), 0),
-    sessionsLastWeek: lastWeek.length,
   };
 }
 

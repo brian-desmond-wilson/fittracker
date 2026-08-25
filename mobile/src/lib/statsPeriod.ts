@@ -85,6 +85,20 @@ export function summaryDelta(now: number, prev: number, scope: StatScope): strin
   return `${diff > 0 ? "+" : ""}${diff} vs ${SCOPE_NAMES[scope]}`;
 }
 
+/** Same as summaryDelta, but the diff carries its own unit — "+1h 30m vs last
+ *  week" instead of a bare number. The caller's formatter owns the unit; this
+ *  function only owns the sign and the period name. */
+export function formattedDelta(
+  now: number,
+  prev: number,
+  scope: StatScope,
+  format: (n: number) => string,
+): string {
+  const diff = now - prev;
+  if (diff === 0) return `same as ${SCOPE_NAMES[scope]}`;
+  return `${diff > 0 ? "+" : "-"}${format(Math.abs(diff))} vs ${SCOPE_NAMES[scope]}`;
+}
+
 /**
  * Sessions grouped into the scope's buckets (7 days / month's week-rows /
  * 12 months), reduced by the caller. Bucketing and reducing are separated so
