@@ -1,8 +1,11 @@
 import {
   bucketLabels,
   bucketSeries,
+  estimatedOneRepMax,
+  liftCandidates,
   periodRange,
   periodSummary,
+  strengthSeries,
   summaryDelta,
 } from "../statsPeriod";
 import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
@@ -118,5 +121,60 @@ describe("bucketLabels", () => {
     expect(bucketLabels("week", TODAY)).toEqual(["S", "M", "T", "W", "T", "F", "S"]);
     expect(bucketLabels("month", TODAY)).toEqual(["W1", "W2", "W3", "W4", "W5", "W6"]);
     expect(bucketLabels("year", TODAY)).toEqual(["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]);
+  });
+});
+
+const lift = (
+  date: string,
+  name: string,
+  sets: HistorySet[],
+): HistorySession =>
+  session(date, {
+    exercises: [{
+      id: `ex-${name}-${date}`, exerciseId: `id-${name}`, name, order: 1,
+      difficulty: null, primaryRegions: ["Chest"], sets,
+    }],
+  });
+
+describe("estimatedOneRepMax", () => {
+  it("uses Epley on the best working set", () => {
+    // 165×5 → 165*(1+5/30) = 192.5 → 193
+    expect(estimatedOneRepMax([set({ weightLbs: 165, reps: 5 }), set({ weightLbs: 135, reps: 10 })])).toBe(193);
+  });
+  it("ignores warm-ups and unloaded sets", () => {
+    expect(estimatedOneRepMax([
+      set({ weightLbs: 225, reps: 5, isWarmup: true }),
+      set({ weightLbs: 0, reps: 20 }),
+    ])).toBeNull();
+  });
+});
+
+describe("liftCandidates", () => {
+  it("ranks loaded lifts by working sets and keeps the top four", () => {
+    const sessions = [
+      lift("2026-08-24", "Bench Press", [set(), set(), set()]),
+      lift("2026-08-23", "Bench Press", [set(), set()]),
+      lift("2026-08-22", "Row", [set(), set(), set(), set()]),
+      lift("2026-08-21", "Squat", [set(), set()]),
+      lift("2026-08-20", "OHP", [set()]),
+      lift("2026-08-19", "Curl", [set()]),
+      lift("2026-08-18", "Plank", [set({ weightLbs: 0 })]),
+    ];
+    const names = liftCandidates(sessions).map((c) => c.name);
+    expect(names).toEqual(["Bench Press", "Row", "Squat", "OHP"]);
+  });
+});
+
+describe("strengthSeries", () => {
+  it("takes the bucket's best e1RM for the chosen lift, null when unworked", () => {
+    const sessions = [
+      lift("2026-08-24", "Bench Press", [set({ weightLbs: 165, reps: 5 })]),
+      lift("2026-08-27", "Bench Press", [set({ weightLbs: 170, reps: 3 })]),
+      lift("2026-08-27", "Row", [set({ weightLbs: 300, reps: 1 })]),
+    ];
+    const series = strengthSeries(sessions, "id-Bench Press", "week", TODAY);
+    expect(series[1]).toBe(193);  // Monday
+    expect(series[4]).toBe(187);  // Thursday: 170*(1+3/30) = 187
+    expect(series[0]).toBeNull(); // Sunday: not benched
   });
 });

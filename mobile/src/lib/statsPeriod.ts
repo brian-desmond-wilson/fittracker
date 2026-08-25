@@ -3,7 +3,7 @@
 // ISO strings compared lexically; UTC math only ever steps whole days.
 import { dayDiff, sessionMinutes, sessionVolume, toUtc } from "./gymSessions";
 import { mainExerciseCount } from "./sessionPresentation";
-import type { HistorySession } from "../types/gymSessions";
+import type { HistorySession, HistorySet } from "../types/gymSessions";
 
 export type StatScope = "week" | "month" | "year";
 
@@ -124,4 +124,63 @@ export function bucketLabels(scope: StatScope, today: string): string[] {
   const days = Number(range.end.slice(8));
   const weeks = Math.ceil((lead + days) / 7);
   return Array.from({ length: weeks }, (_, i) => `W${i + 1}`);
+}
+
+/**
+ * Epley on the best working set: w × (1 + reps/30), rounded. Null when
+ * nothing was loaded — a bodyweight day has no 1RM to estimate.
+ */
+export function estimatedOneRepMax(sets: HistorySet[]): number | null {
+  let best: number | null = null;
+  for (const s of sets) {
+    if (s.isWarmup || s.weightLbs <= 0 || s.reps <= 0) continue;
+    const e = s.weightLbs * (1 + s.reps / 30);
+    if (best === null || e > best) best = e;
+  }
+  return best === null ? null : Math.round(best);
+}
+
+export interface LiftCandidate {
+  exerciseId: string;
+  name: string;
+}
+
+const LIFT_PICKER_SIZE = 4;
+
+/** The lifts worth charting: most-trained loaded movements, top four. */
+export function liftCandidates(sessions: HistorySession[]): LiftCandidate[] {
+  const byId = new Map<string, { name: string; workingSets: number }>();
+  for (const s of sessions) {
+    for (const ex of s.exercises) {
+      const loaded = ex.sets.filter((x) => !x.isWarmup && x.weightLbs > 0).length;
+      if (loaded === 0) continue;
+      const row = byId.get(ex.exerciseId) ?? { name: ex.name, workingSets: 0 };
+      row.workingSets += loaded;
+      byId.set(ex.exerciseId, row);
+    }
+  }
+  return [...byId.entries()]
+    .sort((a, b) => b[1].workingSets - a[1].workingSets)
+    .slice(0, LIFT_PICKER_SIZE)
+    .map(([exerciseId, { name }]) => ({ exerciseId, name }));
+}
+
+/** Best e1RM per bucket for one lift; null buckets draw as gaps, not zeros. */
+export function strengthSeries(
+  sessions: HistorySession[],
+  exerciseId: string,
+  scope: StatScope,
+  today: string,
+): (number | null)[] {
+  return bucketSeries(sessions, scope, today, (group) => {
+    let best: number | null = null;
+    for (const s of group) {
+      for (const ex of s.exercises) {
+        if (ex.exerciseId !== exerciseId) continue;
+        const e = estimatedOneRepMax(ex.sets);
+        if (e !== null && (best === null || e > best)) best = e;
+      }
+    }
+    return best;
+  });
 }
