@@ -81,6 +81,7 @@ export function HeroHeader({
               day.state === "trained" && styles.pillTrained,
               day.state === "future" && styles.pillFuture,
             ]}
+            accessibilityLabel={`${day.date}, ${day.state === "rest" ? "rest day" : day.state}`}
           >
             <Text style={[styles.pillText, day.state === "trained" && styles.pillTextTrained]}>
               {day.state === "rest" ? "💤" : day.label}
