@@ -75,3 +75,39 @@ export function regionsHit(session: HistorySession): string[] {
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([region]) => region);
 }
+
+export type RailState = "trained" | "rest" | "empty" | "future";
+export interface RailDay {
+  date: string;
+  /** Single-letter weekday for the pill. */
+  label: string;
+  state: RailState;
+}
+
+const dayMs = 86_400_000;
+
+/**
+ * The current calendar week (Sunday-first) as hero-rail pills. Trained beats
+ * rest when a day somehow has both; days after today are future, not failures.
+ */
+export function weekRail(
+  sessions: HistorySession[],
+  restDates: Set<string>,
+  today: string,
+): RailDay[] {
+  const trained = new Set(sessions.map((s) => s.date));
+  const [y, m, d] = today.split("-").map(Number);
+  const todayUtc = Date.UTC(y, m - 1, d);
+  const sunday = todayUtc - new Date(todayUtc).getUTCDay() * dayMs;
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(sunday + i * dayMs).toISOString().slice(0, 10);
+    const state: RailState = trained.has(date)
+      ? "trained"
+      : restDates.has(date)
+        ? "rest"
+        : date > today
+          ? "future"
+          : "empty";
+    return { date, label: "SMTWTFS"[i], state };
+  });
+}

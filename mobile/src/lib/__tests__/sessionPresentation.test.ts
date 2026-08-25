@@ -5,6 +5,7 @@ import {
   mainExerciseCount,
   regionsHit,
   sessionTitle,
+  weekRail,
 } from "../sessionPresentation";
 import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
 
@@ -109,5 +110,28 @@ describe("regionsHit", () => {
 describe("goal default", () => {
   it("exists until the goals entity lands", () => {
     expect(DEFAULT_WEEKLY_SESSIONS_GOAL).toBeGreaterThan(0);
+  });
+});
+
+describe("weekRail", () => {
+  const today = "2026-08-24"; // Monday; week runs Sun 08-23 .. Sat 08-29
+  it("builds Sunday-first with trained, rest, empty, and future days", () => {
+    const sessions = [session({ id: "a", date: "2026-08-24" })];
+    const rail = weekRail(sessions, new Set(["2026-08-23"]), today);
+    expect(rail.map((d) => d.date)).toEqual([
+      "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26",
+      "2026-08-27", "2026-08-28", "2026-08-29",
+    ]);
+    expect(rail.map((d) => d.state)).toEqual([
+      "rest", "trained", "future", "future", "future", "future", "future",
+    ]);
+    expect(rail[0].label).toBe("S");
+    expect(rail[1].label).toBe("M");
+  });
+  it("marks a past day with nothing as empty, and today as empty until trained", () => {
+    const rail = weekRail([], new Set(), "2026-08-25"); // Tuesday
+    expect(rail[1].state).toBe("empty");  // Monday: passed, nothing
+    expect(rail[2].state).toBe("empty");  // today: not trained yet, not future
+    expect(rail[3].state).toBe("future"); // Wednesday
   });
 });
