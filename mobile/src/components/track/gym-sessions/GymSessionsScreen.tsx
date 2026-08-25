@@ -237,6 +237,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                       sessions={sessions}
                       selected={selectedDate}
                       onSelect={setSelectedDate}
+                      today={today}
                     />
                   )}
                   {selectedDate && (

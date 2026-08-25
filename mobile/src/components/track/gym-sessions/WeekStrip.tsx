@@ -8,12 +8,13 @@ import type { RailDay } from "@/src/lib/sessionPresentation";
 import type { HistorySession } from "@/src/types/gymSessions";
 
 export function WeekStrip({
-  rail, sessions, selected, onSelect,
+  rail, sessions, selected, onSelect, today,
 }: {
   rail: RailDay[];
   sessions: HistorySession[];
   selected: string | null;
   onSelect: (date: string) => void;
+  today: string;
 }) {
   return (
     <View style={styles.strip}>
@@ -21,15 +22,25 @@ export function WeekStrip({
         const daySessions = sessionsOn(sessions, day.date);
         const volume = daySessions.reduce((t, s) => t + sessionVolume(s), 0);
         const isSelected = day.date === selected;
+        const isToday = day.date === today;
         return (
           <TouchableOpacity
             key={day.date}
-            style={[styles.card, isSelected && styles.cardSelected, day.state === "future" && styles.cardFuture]}
+            style={[
+              styles.card,
+              isSelected && styles.cardSelected,
+              day.state === "future" && styles.cardFuture,
+              isToday && !isSelected && styles.cardToday,
+            ]}
             disabled={daySessions.length === 0}
             onPress={() => onSelect(day.date)}
             accessibilityRole="button"
-            accessibilityLabel={`${day.date}, ${
-              day.state === "rest" ? "rest day" : `${daySessions.length} sessions`
+            accessibilityLabel={`${Number(day.date.slice(8))}, ${
+              day.state === "rest"
+                ? "rest day"
+                : daySessions.length === 0
+                  ? "no training"
+                  : `${daySessions.length} session${daySessions.length === 1 ? "" : "s"}`
             }`}
           >
             <Text style={styles.day}>{day.label}</Text>
@@ -55,6 +66,7 @@ const styles = StyleSheet.create({
   },
   cardSelected: { borderColor: colors.primary },
   cardFuture: { opacity: 0.45 },
+  cardToday: { borderColor: colors.border },
   day: { fontSize: 9, color: colors.mutedForeground },
   num: { fontSize: 13, fontWeight: "700", color: colors.foreground },
   numSelected: { color: colors.primary },
