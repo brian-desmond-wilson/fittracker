@@ -1,0 +1,55 @@
+attribute_table,value_name,category_if_any,name_fragment,name_order,is_identity,implies_equipment,notes
+directions (NEW TABLE),Front,,Front,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Lateral,,Lateral,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Rear,,Rear,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Diagonal,,Diagonal,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Reverse,,Reverse,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Walking,,Walking,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Curtsy,,Curtsy,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+directions (NEW TABLE),Low-to-High,,Low-to-High,22,true,,"Direction/Path. Closes the lunge-direction, delt-raise-plane and fly-path gaps; resolves 2 live collisions"
+support_positions (NEW TABLE),Forearm,,,24,true,,Plank/support orientation. Forearm is the silent default
+support_positions (NEW TABLE),Hand,,High,24,true,,Plank/support orientation. Forearm is the silent default
+support_positions (NEW TABLE),Side,,Side,24,true,,Plank/support orientation. Forearm is the silent default
+arm_positions (NEW TABLE),Overhead,,Overhead,26,true,,Humerus position. Resolves the High Cable Curl collision and the straight-arm pulldown outliers
+arm_positions (NEW TABLE),Behind-Body,,Behind-Body,26,true,,Humerus position. Resolves the High Cable Curl collision and the straight-arm pulldown outliers
+arm_positions (NEW TABLE),In-Front,,In-Front,26,true,,Humerus position. Resolves the High Cable Curl collision and the straight-arm pulldown outliers
+arm_positions (NEW TABLE),Across-Body,,Cross-Body,26,true,,Humerus position. Resolves the High Cable Curl collision and the straight-arm pulldown outliers
+arm_positions (NEW TABLE),Braced,,Concentration,26,true,,Humerus position. Resolves the High Cable Curl collision and the straight-arm pulldown outliers
+arm_positions (NEW TABLE),Straight-Arm,,Straight-Arm,26,true,,Humerus position. Resolves the High Cable Curl collision and the straight-arm pulldown outliers
+stances (EXISTING TABLE),Bridge,,Bridge,30,true,,NEW VALUE. Body base position - the natural extension of Seated/Kneeling/Supine/Prone
+stances (EXISTING TABLE),Hollow,,Hollow,30,true,,NEW VALUE. Body base position - the natural extension of Seated/Kneeling/Supine/Prone
+stances (EXISTING TABLE),V-Sit,,V-Sit,30,true,,NEW VALUE. Body base position - the natural extension of Seated/Kneeling/Supine/Prone
+stances (EXISTING TABLE),Squat-Hold,,Squat-Hold,30,true,,NEW VALUE. Body base position - the natural extension of Seated/Kneeling/Supine/Prone
+stances (EXISTING TABLE),Tabletop,,Tabletop,30,true,,NEW VALUE. Body base position - the natural extension of Seated/Kneeling/Supine/Prone
+equipment (EXISTING TABLE),Machine,Machines,Machine,40,true,,NEW VALUE. Machine also repairs the empty fingerprints of the Leg Press / Leg Curl / Triceps Extension cores
+equipment (EXISTING TABLE),Landmine,Implements,Landmine,40,true,,NEW VALUE. Machine also repairs the empty fingerprints of the Leg Press / Leg Curl / Triceps Extension cores
+equipment (EXISTING TABLE),Cable,Machines,Cable,40,true,,"PREVIOUSLY APPROVED ADDENDUM, still unseeded in the DB - the sheet already uses it (30 rows)"
+equipment (EXISTING TABLE),Smith Machine,Machines,Smith Machine,40,true,,"PREVIOUSLY APPROVED ADDENDUM, still unseeded in the DB - the sheet already uses it (1 rows)"
+movement_styles (EXISTING TABLE),Crush,Execution,Crush,14,true,,"NEW VALUE, identity. Isometric adduction of the load (crush/squeeze press). Removes the Close-Grip DB Bench objection"
+bench_angles (NEW TABLE),Flat,,,28,true,,"PREVIOUSLY APPROVED ADDENDUM, still unseeded. Flat is the silent default; Incline/Decline imply equipment Bench (suppressed)"
+bench_angles (NEW TABLE),Incline,,Incline,28,true,Bench,"PREVIOUSLY APPROVED ADDENDUM, still unseeded. Flat is the silent default; Incline/Decline imply equipment Bench (suppressed)"
+bench_angles (NEW TABLE),Decline,,Decline,28,true,Bench,"PREVIOUSLY APPROVED ADDENDUM, still unseeded. Flat is the silent default; Incline/Decline imply equipment Bench (suppressed)"
+symmetries (EXISTING TABLE),Cross-Body / Rotational,,Cross-Body,35,true,,"AMENDMENT to an existing value: give it a name fragment. The ""Unilateral cannot know the word"" rationale does not apply here - Cross-Body is unambiguous. Without it Elbow-To-Knee Crunch generates the bare core name"
+variant_labels (NEW TABLE),advanced,core scope: Crunch,Advanced,48,true,,"G2-scoped to core ""Crunch"". Used by 1 row(s): Advanced Crunch"
+variant_labels (NEW TABLE),chest-to-bar,core scope: Pull-Up,Chest-to-Bar,48,true,,"G2-scoped to core ""Pull-Up"". Used by 1 row(s): Chest-to-Bar"
+variant_labels (NEW TABLE),donkey,core scope: Calf Raise,Donkey,48,true,,"G2-scoped to core ""Calf Raise"". Used by 1 row(s): Donkey Calf Raise"
+variant_labels (NEW TABLE),double-tap,core scope: Mountain Climber,Double-Tap,48,true,,"G2-scoped to core ""Mountain Climber"". Used by 1 row(s): 2 Tap Climbers"
+variant_labels (NEW TABLE),double-under,core scope: Jump Rope,Double-Under,48,true,,"G2-scoped to core ""Jump Rope"". Used by 1 row(s): Double-Under"
+variant_labels (NEW TABLE),ez-bar,core scope: Curl,EZ-Bar,48,true,,"G2-scoped to core ""Curl"". Used by 2 row(s): EZ Bar Spider Curls, EZ-Bar Curl"
+variant_labels (NEW TABLE),grab-reach-pull,core scope: Plank,Grab-Reach-Pull,48,true,,"G2-scoped to core ""Plank"". Used by 1 row(s): Plank Grab, Reach, And Pull"
+variant_labels (NEW TABLE),high-stance,core scope: Leg Press,High-Stance,48,true,,"G2-scoped to core ""Leg Press"". Used by 1 row(s): High Stance Leg Press"
+variant_labels (NEW TABLE),horn,core scope: Curl,Horn,48,true,,"G2-scoped to core ""Curl"". Used by 1 row(s): Kettlebell Horn Curl"
+variant_labels (NEW TABLE),jacks,core scope: Plank,Jack,48,true,,"G2-scoped to core ""Plank"". Used by 1 row(s): Plank Jacks"
+variant_labels (NEW TABLE),lymphatic,core scope: Jump,Lymphatic,48,true,,"G2-scoped to core ""Jump"". Used by 1 row(s): Lymphatic Jumps"
+variant_labels (NEW TABLE),pull-through,core scope: Plank,Pull-Through,48,true,,"G2-scoped to core ""Plank"". Used by 2 row(s): Kettlebell Plank Pull Through, Plank Pull Thru"
+variant_labels (NEW TABLE),reach,core scope: Plank,Reach,48,true,,"G2-scoped to core ""Plank"". Used by 1 row(s): Plank Reaches"
+variant_labels (NEW TABLE),renegade-row,core scope: Plank,Renegade-Row,48,true,,"G2-scoped to core ""Plank"". Used by 1 row(s): Plank Rows"
+variant_labels (NEW TABLE),spider,core scope: Mountain Climber,Spider,48,true,,"G2-scoped to core ""Mountain Climber"". Used by 1 row(s): Spider Plank"
+variant_labels (NEW TABLE),toe-tap,core scope: Crunch,Toe-Tap,48,true,,"G2-scoped to core ""Crunch"". Used by 3 row(s): Cable-Resisted Toe Touches, Toe Tap Crunch, Weighted Toe Tap Crunches"
+variant_labels (NEW TABLE),walkout,core scope: Push-Up,Walkout,48,true,,"G2-scoped to core ""Push-Up"". Used by 1 row(s): Walkout Push-up"
+exercises (NEW COLUMN),core_default_equipment,,,,false,,"NOT in the fingerprint. Name-suppression only: the equipment a core is normally performed with, so children do not repeat it. Same mechanism as load_positions.implies_equipment_id. Required because cores now carry no identity equipment"
+exercises (NEW CORE ROW),Carry,,,,true,,"core row to CREATE; is_core=true, no identity equipment, core_default_equipment=""none""; 1 children"
+exercises (NEW CORE ROW),Bent-Over Row,,,,true,,"core row to CREATE; is_core=true, no identity equipment, core_default_equipment=""Barbell""; 12 children"
+exercises (NEW CORE ROW),Lat Pulldown,,,,true,,"core row to CREATE; is_core=true, no identity equipment, core_default_equipment=""Cable""; 5 children"
+exercises (NEW CORE ROW),Raise,,,,true,,"core row to CREATE; is_core=true, no identity equipment, core_default_equipment=""Dumbbell""; 6 children"
+exercises (NEW CORE ROW),Plank,,,,true,,"core row to CREATE; is_core=true, no identity equipment, core_default_equipment=""Bodyweight,Floor""; 10 children"
