@@ -984,14 +984,15 @@ supabase db push --linked
 
 Version-collision guard: migration versions must never reuse an archived, live-applied version key (the archive contains versions up to `20260824100000_rest_days.sql`; the six new migrations are dated 20260825 for this reason). If the dry-run lists fewer than six, stop — a version collision is silently skipping a migration.
 
-- [ ] **Step 3: Backfill derived state on live and verify**
+- [ ] **Step 3: Verify live state (the backfill runs inside the identity-engine migration itself — no manual backfill)**
 
 ```bash
-psql "$LIVE_DB" -v ON_ERROR_STOP=1 -c "SELECT count(recompute_exercise_identity(id)) FROM exercises;"
 psql "$LIVE_DB" -v ON_ERROR_STOP=1 -f scripts/movement-model/verify_foundation.sql
+psql "$LIVE_DB" -tc "SELECT count(*) FROM exercises WHERE parent_exercise_id IS NOT NULL;"   # expect same as pre-push count
+psql "$LIVE_DB" -tc "SELECT count(*) FROM exercise_aliases;"                                 # expect one generated alias per core
 ```
 
-Expected: `FOUNDATION VERIFICATION: PASS` against live.
+Expected: `FOUNDATION VERIFICATION: PASS` against live; parent-link count identical to the pre-push live count; core aliases present. (Use the minted login-role URL with `SET ROLE postgres` per Conventions.)
 
 - [ ] **Step 4: Confirm the production app is unaffected** — open the real app (dev build), Movements tab + a detail screen.
 
