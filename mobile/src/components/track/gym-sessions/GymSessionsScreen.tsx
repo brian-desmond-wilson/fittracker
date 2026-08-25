@@ -111,6 +111,20 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
           <Text style={styles.title}>Gym Sessions</Text>
         </View>
 
+        {collapsed && !loading && sessions.length > 0 && (
+          <View style={styles.pinnedHero}>
+            <HeroHeader
+              goalDone={weekGoalDone}
+              goalTarget={DEFAULT_WEEKLY_SESSIONS_GOAL}
+              streakDays={streak}
+              rail={rail}
+              week={week}
+              collapsed
+              onExpand={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+            />
+          </View>
+        )}
+
         <RefreshIndicator visible={refreshing} />
         <ScrollView
           ref={scrollRef}
@@ -143,8 +157,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                 streakDays={streak}
                 rail={rail}
                 week={week}
-                collapsed={collapsed}
-                onExpand={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+                collapsed={false}
               />
 
               <View style={styles.toggle}>
@@ -291,6 +304,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 8 },
+  pinnedHero: { paddingHorizontal: 20 },
   back: { minWidth: 40, height: 40, alignItems: "flex-start", justifyContent: "center", paddingHorizontal: 8 },
   title: { fontSize: 22, fontWeight: "700", color: colors.foreground },
   content: { paddingHorizontal: 20, paddingBottom: 40 },
