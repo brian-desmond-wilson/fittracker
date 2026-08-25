@@ -58,6 +58,7 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 - [ ] Fingerprint uniqueness enforced — REPLACING the plain `exercises_fingerprint_idx` from Stage 1 (build the unique index, then drop the plain one; never carry both) ; alias uniqueness already live from Stage 1
 - [ ] Triggers own generated names, parents, tiers
 - [ ] Sibling-recompute on identity change (recomputing X re-derives siblings whose attrs strictly contain X's), or a documented decision that inter-batch drift is acceptable (Task 9 review I5)
+- [ ] Symmetric core-reference validation in enforce_core_self_reference: a non-self core_movement_id must reference an is_core row, read under FOR KEY SHARE of the target — closes both the phantom-core insert gap and the demote-vs-insert race in either commit order (Task 9 final review; until then V5's inverse invariant detects the state post-hoc)
 - [ ] Replace the pg_trigger_depth guards with a session-variable guard before any trigger-driven insert paths exist (Task 9 review I2 — depth guard silently skips recompute for rows inserted from inside another trigger)
 - [ ] Harness assertion: no duplicate generated_name within a core; zero-attribute children flagged (Task 9 review M3/I4)
 - [ ] Movement Model artifact updated to the "after" state
