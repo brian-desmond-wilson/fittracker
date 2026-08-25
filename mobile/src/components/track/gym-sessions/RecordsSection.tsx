@@ -25,17 +25,16 @@ export function RecordsSection({
     <View style={styles.panel}>
       <Text style={styles.title}>Recent records 🏆</Text>
       {records.slice(0, SHOWN).map((r) => (
-        <View key={`${r.exerciseId}-${r.kind}-${r.date}`} style={styles.row}>
+        <View key={`${r.exerciseId}-${r.kind}-${r.date}-${r.sessionId}`} style={styles.row}>
           <Text style={styles.name} numberOfLines={1}>{r.exerciseName}</Text>
           <Text style={styles.value}>{recordLabel(r)}</Text>
           <Text style={styles.beat}>beat {Math.round(r.previous)}</Text>
         </View>
       ))}
-      {records.length > SHOWN && (
-        <TouchableOpacity onPress={onSeeAll} accessibilityRole="button">
-          <Text style={styles.link}>See all {records.length} records ›</Text>
-        </TouchableOpacity>
-      )}
+      {/* records.length is already > 0 here — the early return above guards it. */}
+      <TouchableOpacity onPress={onSeeAll} accessibilityRole="button">
+        <Text style={styles.link}>See all records ›</Text>
+      </TouchableOpacity>
     </View>
   );
 }

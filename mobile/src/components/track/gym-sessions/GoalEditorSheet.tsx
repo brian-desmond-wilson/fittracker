@@ -12,10 +12,11 @@ const SESSION_OPTIONS = [2, 3, 4, 5, 6, 7];
 const VOLUME_OPTIONS = [null, 20000, 40000, 60000, 80000, 100000];
 
 export function GoalEditorSheet({
-  visible, goal, onClose, onSave,
+  visible, goal, saving = false, onClose, onSave,
 }: {
   visible: boolean;
   goal: WeeklyGoal;
+  saving?: boolean;
   onClose: () => void;
   onSave: (draft: WeeklyGoalDraft) => void;
 }) {
@@ -96,11 +97,13 @@ export function GoalEditorSheet({
             </Row>
             {/* Primary action at the end of the scroll, never pinned. */}
             <TouchableOpacity
-              style={styles.save}
+              style={[styles.save, saving && styles.saveDisabled]}
               onPress={() => onSave({ sessionsTarget: sessions, volumeTargetLbs: volume, regionTarget: regions })}
+              disabled={saving}
               accessibilityRole="button"
+              accessibilityState={{ disabled: saving, busy: saving }}
             >
-              <Text style={styles.saveText}>Save goal</Text>
+              <Text style={styles.saveText}>{saving ? "Saving…" : "Save goal"}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancel} onPress={onClose} accessibilityRole="button">
               <Text style={styles.cancelText}>Cancel</Text>
@@ -138,6 +141,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary, borderRadius: 12,
     paddingVertical: 14, alignItems: "center", marginTop: 6,
   },
+  saveDisabled: { opacity: 0.6 },
   saveText: { fontSize: 15, fontWeight: "700", color: "#052E16" },
   cancel: { paddingVertical: 14, alignItems: "center" },
   cancelText: { fontSize: 14, color: colors.mutedForeground },

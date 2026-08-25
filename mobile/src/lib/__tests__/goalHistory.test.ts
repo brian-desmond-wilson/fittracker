@@ -1,4 +1,4 @@
-import { DEFAULT_GOAL, goalForWeek, goalInForce } from "../goalHistory";
+import { DEFAULT_GOAL, goalForWeek, goalInForce, PRE_HISTORY_WEEK_TARGET } from "../goalHistory";
 import type { WeeklyGoal } from "../../types/goals";
 
 const goal = (effectiveFrom: string, sessionsTarget: number): WeeklyGoal => ({
@@ -28,5 +28,15 @@ describe("goalForWeek", () => {
   it("judges a week by its Sunday, not by today", () => {
     expect(goalForWeek(history, "2026-08-26").sessionsTarget).toBe(6); // week of 08-23
     expect(goalForWeek(history, "2026-08-20").sessionsTarget).toBe(4); // week of 08-16
+  });
+});
+
+describe("PRE_HISTORY_WEEK_TARGET", () => {
+  // Kept separate from DEFAULT_GOAL.sessionsTarget: a streak earned before
+  // the goals feature existed must not be silently rewritten by the ring's
+  // default target.
+  it("is lenient — a week happening at all was enough", () => {
+    expect(PRE_HISTORY_WEEK_TARGET).toBe(1);
+    expect(PRE_HISTORY_WEEK_TARGET).toBeLessThan(DEFAULT_GOAL.sessionsTarget);
   });
 });

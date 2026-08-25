@@ -17,6 +17,11 @@ export const DEFAULT_GOAL: WeeklyGoal = {
   regionTarget: null,
 };
 
+/** Before any goal was set, a week counted if it happened at all. Kept
+ *  separate from DEFAULT_GOAL so the ring's default target cannot silently
+ *  redefine a streak the user already earned. */
+export const PRE_HISTORY_WEEK_TARGET = 1;
+
 /** The newest goal effective on or before `date`. */
 export function goalInForce(history: WeeklyGoal[], date: string): WeeklyGoal {
   const applicable = history

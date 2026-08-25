@@ -148,38 +148,42 @@ describe("weekRail", () => {
 });
 
 describe("weeksInARow", () => {
-  // A goal history with a 1-session target from the start of time reproduces
-  // the old ≥1 rule explicitly, rather than relying on the default (5/week).
-  const lenientGoals: WeeklyGoal[] = [
-    { id: "g1", effectiveFrom: "1970-01-01", sessionsTarget: 1, volumeTargetLbs: null, regionTarget: null },
-  ];
-
   it("counts consecutive trained weeks ending now", () => {
     const sessions = ["2026-08-24", "2026-08-19", "2026-08-12"].map((d) =>
       session({ date: d, id: d }),
     );
-    expect(weeksInARow(sessions, "2026-08-24", lenientGoals)).toBe(3);
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(3);
   });
   it("does not break on the current week before it has a session", () => {
     const sessions = ["2026-08-19", "2026-08-12"].map((d) => session({ date: d, id: d }));
-    expect(weeksInARow(sessions, "2026-08-24", lenientGoals)).toBe(2);
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(2);
   });
   it("breaks on a fully skipped week", () => {
     const sessions = ["2026-08-24", "2026-08-05"].map((d) => session({ date: d, id: d }));
-    expect(weeksInARow(sessions, "2026-08-24", lenientGoals)).toBe(1);
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(1);
   });
   it("is zero with nothing recent", () => {
-    expect(
-      weeksInARow([session({ date: "2026-07-01", id: "old" })], "2026-08-24", lenientGoals),
-    ).toBe(0);
+    expect(weeksInARow([session({ date: "2026-07-01", id: "old" })], "2026-08-24")).toBe(0);
   });
-  // With no goal history passed, the default goal (5 sessions/week) governs —
-  // a single session a week no longer counts as a streak.
-  it("judges against the default goal when no history is passed", () => {
-    const sessions = ["2026-08-24", "2026-08-19", "2026-08-12"].map((d) =>
-      session({ date: d, id: d }),
-    );
-    expect(weeksInARow(sessions, "2026-08-24")).toBe(0);
+  // Before any goal was ever set, a week counted if it happened at all — a
+  // 3x/week streak earned before the goals feature existed must survive it.
+  // DEFAULT_GOAL's 5-session target must not silently apply here.
+  it("judges pre-history weeks by whether they happened at all, not the default goal's target", () => {
+    const sessions = [
+      // current week (Sun 08-23 .. Sat 08-29): 3 sessions
+      session({ id: "c1", date: "2026-08-23" }),
+      session({ id: "c2", date: "2026-08-24" }),
+      session({ id: "c3", date: "2026-08-24" }),
+      // prior week (Sun 08-16 .. Sat 08-22): 3 sessions
+      session({ id: "b1", date: "2026-08-17" }),
+      session({ id: "b2", date: "2026-08-19" }),
+      session({ id: "b3", date: "2026-08-21" }),
+      // week before that (Sun 08-09 .. Sat 08-15): 3 sessions
+      session({ id: "a1", date: "2026-08-10" }),
+      session({ id: "a2", date: "2026-08-12" }),
+      session({ id: "a3", date: "2026-08-14" }),
+    ];
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(3);
   });
   it("judges each week by the goal in force that week", () => {
     const goals: WeeklyGoal[] = [

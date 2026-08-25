@@ -4,7 +4,7 @@
 // is a plan — every row is a session that happened, whatever it came from.
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, RefreshControl, ScrollView, StatusBar, StyleSheet, Text,
+  ActivityIndicator, Alert, RefreshControl, ScrollView, StatusBar, StyleSheet, Text,
   TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,6 +48,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const [goals, setGoals] = useState<WeeklyGoal[]>([]);
   const [setFacts, setSetFacts] = useState<SetFact[]>([]);
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
+  const [savingGoal, setSavingGoal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<"history" | "stats" | "calendar">("history");
@@ -97,6 +98,10 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const currentGoal = useMemo(() => goalForWeek(goals, today), [goals, today]);
   const records = useMemo(() => computeRecords(setFacts), [setFacts]);
   const prCounts = useMemo(() => recordsBySession(records), [records]);
+  // computeRecords returns oldest-first (so "previous best" math reads
+  // naturally); the section wants newest-first without disturbing prCounts,
+  // which keys off `records` as computed.
+  const recentRecords = useMemo(() => [...records].reverse(), [records]);
   const weekSessions = useMemo(() => {
     const r = periodRange("week", today);
     return sessions.filter((s) => s.date >= r.start && s.date <= r.end);
@@ -138,9 +143,18 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const saveGoal = async (draft: WeeklyGoalDraft) => {
     const userId = userIdRef.current;
     if (!userId) return;
-    await saveWeeklyGoal(userId, periodRange("week", today).start, draft);
-    await load();
-    setGoalSheetOpen(false);
+    setSavingGoal(true);
+    try {
+      const ok = await saveWeeklyGoal(userId, periodRange("week", today).start, draft);
+      if (!ok) {
+        Alert.alert("Couldn't save", "Your goal didn't save. Check your connection and try again.");
+        return;
+      }
+      await load();
+      setGoalSheetOpen(false);
+    } finally {
+      setSavingGoal(false);
+    }
   };
 
   const seeAllRecords = () => router.push("/(tabs)/track/gym-sessions/records" as never);
@@ -242,7 +256,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                     today={today}
                     progress={progress}
                     onEditGoal={() => setGoalSheetOpen(true)}
-                    records={records}
+                    records={recentRecords}
                     onSeeAllRecords={seeAllRecords}
                   />
 
@@ -350,6 +364,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
         <GoalEditorSheet
           visible={goalSheetOpen}
           goal={currentGoal}
+          saving={savingGoal}
           onClose={() => setGoalSheetOpen(false)}
           onSave={saveGoal}
         />
