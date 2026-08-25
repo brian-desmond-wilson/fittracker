@@ -38,6 +38,13 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 
 ## Stage 3 — Catalog pass (Phase 4)
 
+Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
+- [ ] Batch-recompute in ascending identity-attribute-cardinality order per core (parents finalize before children, else tiers build on stale parents)
+- [ ] After the batch: purge and rebuild ALL kind='generated' aliases from final generated names, routing collisions to the review queue
+- [ ] Canonicalize implied-equipment: when a load position implies equipment, the junction row must consistently exist (or consistently not); assert no duplicate generated_name within a core
+- [ ] Recompute descendants after any core rename or merge (trigger does not fire on name changes)
+- [ ] Never read generated_name on rows with no core movement (it echoes the display name there)
+
 - [ ] Core movement set proposed (from live data + CrossFit canon) and user-approved
 - [ ] All 307 rows classified: core movement or explicit outlier, full identity attributes, explicit `is_movement` curation (kept as a pure Movements-tab label per user decision)
 - [ ] Review sheet produced; user approves before any write
@@ -50,6 +57,9 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 
 - [ ] Fingerprint uniqueness enforced — REPLACING the plain `exercises_fingerprint_idx` from Stage 1 (build the unique index, then drop the plain one; never carry both) ; alias uniqueness already live from Stage 1
 - [ ] Triggers own generated names, parents, tiers
+- [ ] Sibling-recompute on identity change (recomputing X re-derives siblings whose attrs strictly contain X's), or a documented decision that inter-batch drift is acceptable (Task 9 review I5)
+- [ ] Replace the pg_trigger_depth guards with a session-variable guard before any trigger-driven insert paths exist (Task 9 review I2 — depth guard silently skips recompute for rows inserted from inside another trigger)
+- [ ] Harness assertion: no duplicate generated_name within a core; zero-attribute children flagged (Task 9 review M3/I4)
 - [ ] Movement Model artifact updated to the "after" state
 - **Exit gate:** a duplicate insert is rejected by the database in a live test
 
@@ -60,6 +70,8 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 - [ ] Filter pills read classification data, not name substrings
 - [ ] Capture pipeline routed through the guarded front door + review queue UI
 - [ ] Dictionary-change re-normalization: adding an alias_abbreviations row re-normalizes all exercise_aliases and routes collisions to the review queue (Task 6 review finding — until this lands, the dictionary is append-rarely and any change requires a harness re-run)
+- [ ] Minting a user-named exercise must set name_is_custom=true or the engine clobbers the provided name on insert (Task 9 review M4)
+- [ ] Revisit the wide-open authenticated write policies on exercise_equipment and exercise_aliases once the front door exists (Task 9 review I1)
 - **Exit gate:** on-device verification of add / edit / capture-match flows
 
 ## Stage 6 — Retire legacy (Phase 7)
