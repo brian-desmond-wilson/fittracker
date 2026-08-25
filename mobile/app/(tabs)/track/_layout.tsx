@@ -28,6 +28,7 @@ export default function TrackLayout() {
       <Stack.Screen name="photos" />
       <Stack.Screen name="gym-sessions/index" />
       <Stack.Screen name="gym-sessions/[id]" />
+      <Stack.Screen name="gym-sessions/records" />
     </Stack>
   );
 }
