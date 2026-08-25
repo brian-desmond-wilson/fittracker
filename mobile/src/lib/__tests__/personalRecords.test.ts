@@ -2,7 +2,7 @@ import { computeRecords, recordsBySession } from "../personalRecords";
 import type { SetFact } from "../../types/records";
 
 const fact = (over: Partial<SetFact> = {}): SetFact => ({
-  exerciseId: "bench", exerciseName: "Bench Press", sessionId: "s1",
+  exerciseId: "bench", exerciseName: "Bench Press", sessionId: "s1", sessionNumber: 1,
   date: "2026-01-01", weightLbs: 100, reps: 5, volumeLbs: 500, ...over,
 });
 
@@ -63,6 +63,18 @@ describe("computeRecords", () => {
       fact({ weightLbs: 0, volumeLbs: 0, date: "2026-01-08", sessionId: "s2" }),
     ]);
     expect(records.filter((r) => r.kind !== "sessionVolume")).toEqual([]);
+  });
+
+  it("orders two sessions on one day by session number, not id", () => {
+    const records = computeRecords([
+      fact({ date: "2026-01-01", weightLbs: 90, sessionId: "zzz", sessionNumber: 1 }),
+      fact({ date: "2026-01-08", weightLbs: 110, sessionId: "aaa", sessionNumber: 2 }),
+      fact({ date: "2026-01-08", weightLbs: 100, sessionId: "mmm", sessionNumber: 1 }),
+    ]);
+    const weights = records.filter((r) => r.kind === "weight");
+    expect(weights.map((r) => r.value)).toEqual([100, 110]);
+    expect(weights[0].previous).toBe(90);
+    expect(weights[1].previous).toBe(100);
   });
 });
 

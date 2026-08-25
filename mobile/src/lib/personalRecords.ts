@@ -17,6 +17,7 @@ interface Best {
 /** One session's contribution to one exercise. */
 interface SessionRollup {
   sessionId: string;
+  sessionNumber: number;
   date: string;
   exerciseId: string;
   exerciseName: string;
@@ -30,7 +31,7 @@ function rollup(facts: SetFact[]): SessionRollup[] {
   for (const f of facts) {
     const key = `${f.sessionId}|${f.exerciseId}`;
     const row = byKey.get(key) ?? {
-      sessionId: f.sessionId, date: f.date, exerciseId: f.exerciseId,
+      sessionId: f.sessionId, sessionNumber: f.sessionNumber, date: f.date, exerciseId: f.exerciseId,
       exerciseName: f.exerciseName, weight: 0, e1rm: 0, volume: 0,
     };
     row.weight = Math.max(row.weight, f.weightLbs);
@@ -45,9 +46,10 @@ function rollup(facts: SetFact[]): SessionRollup[] {
     row.volume += f.volumeLbs;
     byKey.set(key, row);
   }
-  // Chronological, so "previous best" means what it says.
+  // Chronological, so "previous best" means what it says. Same-day ties break
+  // on session number — the order they were actually logged in, not UUID order.
   return [...byKey.values()].sort((a, b) =>
-    a.date === b.date ? a.sessionId.localeCompare(b.sessionId) : a.date < b.date ? -1 : 1,
+    a.date === b.date ? a.sessionNumber - b.sessionNumber : a.date < b.date ? -1 : 1,
   );
 }
 

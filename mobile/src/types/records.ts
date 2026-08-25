@@ -6,6 +6,7 @@ export interface SetFact {
   exerciseId: string;
   exerciseName: string;
   sessionId: string;
+  sessionNumber: number;
   date: string;
   weightLbs: number;
   reps: number;

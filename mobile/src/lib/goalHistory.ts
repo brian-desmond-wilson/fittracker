@@ -21,7 +21,7 @@ export const DEFAULT_GOAL: WeeklyGoal = {
 export function goalInForce(history: WeeklyGoal[], date: string): WeeklyGoal {
   const applicable = history
     .filter((g) => g.effectiveFrom <= date)
-    .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
+    .sort((a, b) => (a.effectiveFrom === b.effectiveFrom ? 0 : a.effectiveFrom < b.effectiveFrom ? 1 : -1));
   return applicable[0] ?? DEFAULT_GOAL;
 }
 

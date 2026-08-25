@@ -244,7 +244,7 @@ export async function fetchSetFacts(userId: string): Promise<SetFact[]> {
   const { data, error } = await supabase
     .from("workout_sessions")
     .select(`
-      id, session_date,
+      id, session_date, session_number,
       exercises:exercise_instances(
         exercise_id,
         exercise:exercises(name),
@@ -268,6 +268,7 @@ export async function fetchSetFacts(userId: string): Promise<SetFact[]> {
           exerciseId: ex.exercise_id,
           exerciseName: name,
           sessionId: (row as any).id,
+          sessionNumber: Number((row as any).session_number ?? 1),
           date: (row as any).session_date,
           weightLbs: Number(s.actual_weight_lbs ?? 0),
           reps: Number(s.actual_reps ?? 0),

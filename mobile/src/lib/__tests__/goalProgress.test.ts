@@ -42,6 +42,13 @@ describe("majorRegionOf", () => {
     expect(majorRegionOf("Full Body")).toBeNull();
     expect(majorRegionOf("Gills")).toBeNull();
   });
+  // The map mirrors muscle_regions seed strings; a rename there must fail here,
+  // not silently under-count coverage.
+  it("maps every seeded region except Full Body", () => {
+    const SEEDED = ["Biceps","Calves","Chest","Core","Forearms / Grip","Full Body","Glutes","Hamstrings","Hip Abductors","Hip Adductors","Hip Flexors","Lats","Lower Back","Neck / Traps","Obliques","Quads","Shoulders","Triceps","Upper Back"];
+    const unmapped = SEEDED.filter((r) => majorRegionOf(r) === null);
+    expect(unmapped).toEqual(["Full Body"]);
+  });
 });
 
 describe("regionsCoveredIn", () => {

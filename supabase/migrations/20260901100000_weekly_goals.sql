@@ -6,8 +6,9 @@
 CREATE TABLE IF NOT EXISTS weekly_goals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  -- The Sunday that starts the first week this goal governs.
-  effective_from DATE NOT NULL,
+  -- The Sunday that starts the first week this goal governs. The check
+  -- enforces it: any non-Sunday date is rejected.
+  effective_from DATE NOT NULL CHECK (EXTRACT(DOW FROM effective_from) = 0),
   sessions_target INTEGER NOT NULL CHECK (sessions_target BETWEEN 1 AND 14),
   -- NULL means "not part of my goal", which is different from a target of 0.
   volume_target_lbs INTEGER CHECK (volume_target_lbs > 0),
