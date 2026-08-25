@@ -50,11 +50,18 @@ export interface HistorySession {
   startedAt: string | null;
   endedAt: string | null;
   durationSeconds: number | null;
-  name: string;
+  /** Resolved template name; null when nothing served the session a title
+   *  (the UI derives one via sessionTitle()). */
+  name: string | null;
   source: SessionSource;
   /** Set when the session came from a captured workout — links back to it. */
   capturedWorkoutId: string | null;
   capturedWorkoutHandle: string | null;
+  /** Planned length in minutes from whatever template served the session. */
+  estimatedMinutes: number | null;
+  /** For block-composed daily sessions: the captured workout serving the
+   *  'main' block. The naming rule's third preference. */
+  mainBlockWorkoutName: string | null;
   exercises: HistoryExercise[];
 }
 

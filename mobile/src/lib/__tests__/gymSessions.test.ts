@@ -55,10 +55,12 @@ const session = (
   startedAt: null,
   endedAt: null,
   durationSeconds: null,
-  name: "Workout",
+  name: null,
   source: "unknown",
   capturedWorkoutId: null,
   capturedWorkoutHandle: null,
+  estimatedMinutes: null,
+  mainBlockWorkoutName: null,
   exercises,
   ...over,
 });

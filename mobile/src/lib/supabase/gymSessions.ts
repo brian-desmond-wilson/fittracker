@@ -22,30 +22,31 @@ const first = <T>(value: T | T[] | null | undefined): T | null =>
   Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
 
 interface NameAndSource {
-  name: string;
+  name: string | null;
   source: SessionSource;
   capturedWorkoutId: string | null;
   capturedWorkoutHandle: string | null;
+  estimatedMinutes: number | null;
+  mainBlockWorkoutName: string | null;
 }
 
 /** What this session should be called, and where it came from. */
 function describe(instance: any): NameAndSource {
   const generated = first<any>(instance?.generated_session);
   const captured = first<any>(generated?.captured);
+  const blocks: any[] = generated?.blocks ?? [];
+  const mainBlockWorkoutName =
+    first<any>(blocks.find((b) => b.block === "main")?.captured)?.name ?? null;
+  const blockMinutes = blocks.reduce((t, b) => t + (b.minutes ?? 0), 0);
+
   if (generated?.served_captured_workout_id && captured) {
     return {
       name: captured.name,
       source: "catalog",
       capturedWorkoutId: generated.served_captured_workout_id,
       capturedWorkoutHandle: first<any>(captured.source)?.poster_handle ?? null,
-    };
-  }
-  if (generated?.split_day) {
-    return {
-      name: SPLIT_TITLES[generated.split_day] ?? "Session",
-      source: "recommended",
-      capturedWorkoutId: null,
-      capturedWorkoutHandle: null,
+      estimatedMinutes: captured.est_minutes ?? null,
+      mainBlockWorkoutName,
     };
   }
   const program = first<any>(instance?.program_workout);
@@ -55,13 +56,38 @@ function describe(instance: any): NameAndSource {
       source: "program",
       capturedWorkoutId: null,
       capturedWorkoutHandle: null,
+      estimatedMinutes: program.estimated_duration_minutes ?? null,
+      mainBlockWorkoutName,
+    };
+  }
+  if (generated?.split_day) {
+    return {
+      name: SPLIT_TITLES[generated.split_day] ?? null,
+      source: "recommended",
+      capturedWorkoutId: null,
+      capturedWorkoutHandle: null,
+      estimatedMinutes: blockMinutes > 0 ? blockMinutes : null,
+      mainBlockWorkoutName,
+    };
+  }
+  if (generated) {
+    // A block-composed daily session: no single template title.
+    return {
+      name: null,
+      source: "recommended",
+      capturedWorkoutId: null,
+      capturedWorkoutHandle: null,
+      estimatedMinutes: blockMinutes > 0 ? blockMinutes : null,
+      mainBlockWorkoutName,
     };
   }
   return {
-    name: "Workout",
+    name: null,
     source: "unknown",
     capturedWorkoutId: null,
     capturedWorkoutHandle: null,
+    estimatedMinutes: null,
+    mainBlockWorkoutName: null,
   };
 }
 
@@ -69,12 +95,16 @@ const SELECT = `
   id, session_number, session_date, started_at, ended_at, duration_seconds,
   workout_instance:workout_instances(
     id,
-    program_workout:program_workouts(name),
+    program_workout:program_workouts(name, estimated_duration_minutes),
     generated_session:generated_sessions(
       split_day, source, served_captured_workout_id,
       captured:captured_workouts(
-        id, name,
+        id, name, est_minutes,
         source:captured_sources(poster_handle)
+      ),
+      blocks:generated_session_blocks(
+        block, minutes,
+        captured:captured_workouts(name)
       )
     )
   ),
@@ -91,7 +121,7 @@ const SELECT = `
   )
 `;
 
-function toSession(row: any, sessionCount: number): HistorySession {
+export function toSession(row: any, sessionCount: number): HistorySession {
   const instance = first<any>(row.workout_instance);
   const described = describe(instance);
   return {

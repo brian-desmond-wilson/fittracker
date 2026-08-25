@@ -13,6 +13,7 @@ import {
   formatMinutes, formatVolume, GROUP_LABELS, sessionEmphasis, sessionMinutes,
   sessionPace, sessionVolume,
 } from "@/src/lib/gymSessions";
+import { sessionTitle } from "@/src/lib/sessionPresentation";
 import { GROUP_COLORS } from "./groupColors";
 import type { HistorySession } from "@/src/types/gymSessions";
 
@@ -87,7 +88,7 @@ export function SessionDetailScreen({ onClose }: { onClose: () => void }) {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {header}
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>{session.name}</Text>
+          <Text style={styles.title}>{sessionTitle(session)}</Text>
           <Text style={styles.subtitle}>
             {day}
             {span ? ` · ${span}` : ""}

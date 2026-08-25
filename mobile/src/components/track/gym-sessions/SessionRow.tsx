@@ -11,6 +11,7 @@ import {
   sessionVolume,
 } from "@/src/lib/gymSessions";
 import { GROUP_COLORS, SOURCE_COLORS, SOURCE_LABELS } from "./groupColors";
+import { sessionTitle } from "@/src/lib/sessionPresentation";
 import type { HistorySession } from "@/src/types/gymSessions";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -31,6 +32,7 @@ export function SessionRow({
   onPress: () => void;
   showDate?: boolean;
 }) {
+  const title = sessionTitle(session);
   const volume = sessionVolume(session);
   const minutes = sessionMinutes(session);
   const pace = sessionPace(session);
@@ -61,12 +63,12 @@ export function SessionRow({
       onPress={onPress}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`${session.name}, ${meta}. Open the session.`}
+      accessibilityLabel={`${title}, ${meta}. Open the session.`}
     >
       <View style={styles.body}>
         <View style={styles.head}>
           <Text style={styles.name} numberOfLines={1}>
-            {session.name}
+            {title}
           </Text>
           <Text style={styles.when}>{showDate ? shortDate(session.date) : clock}</Text>
         </View>

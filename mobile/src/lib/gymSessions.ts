@@ -130,7 +130,7 @@ const toUtc = (iso: string): number => {
   const [y, m, d] = iso.split("-").map(Number);
   return Date.UTC(y, m - 1, d);
 };
-const dayDiff = (a: string, b: string): number =>
+export const dayDiff = (a: string, b: string): number =>
   Math.round((toUtc(a) - toUtc(b)) / dayMs);
 
 /** This week meaning the last 7 days including today, not a calendar week —
