@@ -119,6 +119,26 @@ BEGIN
   END IF;
 END $$;
 
+-- Wizard-shaped inserts predate core_movement_id: the app creates cores with is_core=true
+-- and core_movement_id NULL, which would violate the "core rows self-reference" invariant.
+-- BEFORE trigger corrects NEW in place; the AFTER identity trigger below therefore always
+-- sees the corrected row (AFTER fires after all BEFORE triggers, so ordering is safe).
+CREATE OR REPLACE FUNCTION enforce_core_self_reference() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+  IF NEW.is_core THEN
+    NEW.core_movement_id := NEW.id;
+  ELSIF NEW.core_movement_id = NEW.id THEN
+    -- demoted from core: a non-core row must not self-reference
+    NEW.core_movement_id := NULL;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS exercises_core_self_reference ON exercises;
+CREATE TRIGGER exercises_core_self_reference
+  BEFORE INSERT OR UPDATE OF is_core, core_movement_id ON exercises
+  FOR EACH ROW EXECUTE FUNCTION enforce_core_self_reference();
+
 -- Triggers. Depth guard stops the UPDATE inside recompute from re-firing itself.
 CREATE OR REPLACE FUNCTION trg_exercise_identity() RETURNS TRIGGER
 LANGUAGE plpgsql SET search_path = public AS $$

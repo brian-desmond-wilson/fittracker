@@ -277,6 +277,7 @@ DECLARE
   eq_barbell UUID; eq_kb UUID;
   lp_back UUID; lp_goblet UUID;
   core_squat UUID; back_squat UUID; kb_goblet UUID;
+  wizard_core UUID;
   v_observed TEXT;
 BEGIN
   -- Fixture reference values (TB- prefixed so nothing collides with real aliases; isolated from audit outcomes)
@@ -354,6 +355,37 @@ BEGIN
                  WHERE exercise_id = back_squat AND kind = 'generated'
                    AND alias_normalized = public.normalize_alias('TB-Back TESTSquat')) THEN
     RAISE EXCEPTION 'V6 FAIL: generated alias not synced';
+  END IF;
+
+  -- Wizard-shaped core insert (is_core=true, core_movement_id NULL — the app predates the
+  -- column): the BEFORE trigger must self-reference it and the engine must derive tier 0,
+  -- an empty fingerprint, and a generated alias.
+  INSERT INTO public.exercises (name, slug, is_core, is_official)
+    VALUES ('TESTWizardCore','test-wizard-core',true,true) RETURNING id INTO wizard_core;
+
+  IF (SELECT core_movement_id FROM public.exercises WHERE id = wizard_core) IS DISTINCT FROM wizard_core THEN
+    RAISE EXCEPTION 'V6 FAIL: wizard-shaped core insert did not self-reference, got %',
+      COALESCE((SELECT core_movement_id FROM public.exercises WHERE id = wizard_core)::TEXT, 'null');
+  END IF;
+  IF (SELECT tier FROM public.exercises WHERE id = wizard_core) IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'V6 FAIL: wizard-shaped core tier should be 0, got %',
+      COALESCE((SELECT tier FROM public.exercises WHERE id = wizard_core)::TEXT, 'null');
+  END IF;
+  IF (SELECT identity_fingerprint FROM public.exercises WHERE id = wizard_core) IS DISTINCT FROM '' THEN
+    RAISE EXCEPTION 'V6 FAIL: wizard-shaped core fingerprint should be empty string, got %',
+      COALESCE((SELECT identity_fingerprint FROM public.exercises WHERE id = wizard_core), 'null');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.exercise_aliases
+                 WHERE exercise_id = wizard_core AND kind = 'generated'
+                   AND alias_normalized = public.normalize_alias('TESTWizardCore')) THEN
+    RAISE EXCEPTION 'V6 FAIL: wizard-shaped core generated alias not synced';
+  END IF;
+
+  -- Demotion: a non-core row must not self-reference
+  UPDATE public.exercises SET is_core = false WHERE id = wizard_core;
+  IF (SELECT core_movement_id FROM public.exercises WHERE id = wizard_core) IS NOT NULL THEN
+    RAISE EXCEPTION 'V6 FAIL: demoted core still self-references, got %',
+      (SELECT core_movement_id FROM public.exercises WHERE id = wizard_core)::TEXT;
   END IF;
 
   RAISE NOTICE 'V6 behavioral assertions passed';
