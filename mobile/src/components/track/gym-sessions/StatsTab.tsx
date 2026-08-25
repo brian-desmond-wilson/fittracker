@@ -27,7 +27,17 @@ export function StatsTab({
   const [scope, setScope] = useState<StatScope>("week");
   const lifts = useMemo(() => liftCandidates(sessions), [sessions]);
   const [liftId, setLiftId] = useState<string | null>(null);
-  const activeLift = lifts.some((l) => l.exerciseId === liftId) ? liftId : lifts[0]?.exerciseId ?? null;
+  const scopedLiftIds = useMemo(
+    () => new Set(
+      lifts
+        .filter((l) => strengthSeries(sessions, l.exerciseId, scope, today).some((v) => v !== null))
+        .map((l) => l.exerciseId),
+    ),
+    [lifts, sessions, scope, today],
+  );
+  const activeLift = liftId && lifts.some((l) => l.exerciseId === liftId)
+    ? liftId
+    : lifts.find((l) => scopedLiftIds.has(l.exerciseId))?.exerciseId ?? lifts[0]?.exerciseId ?? null;
 
   const range = useMemo(() => periodRange(scope, today), [scope, today]);
   const summary = useMemo(() => periodSummary(sessions, range), [sessions, range]);
@@ -102,7 +112,11 @@ export function StatsTab({
             {lifts.map((l) => (
               <TouchableOpacity
                 key={l.exerciseId}
-                style={[styles.lift, activeLift === l.exerciseId && styles.liftOn]}
+                style={[
+                  styles.lift,
+                  activeLift === l.exerciseId && styles.liftOn,
+                  !scopedLiftIds.has(l.exerciseId) && styles.liftDim,
+                ]}
                 onPress={() => setLiftId(l.exerciseId)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: activeLift === l.exerciseId }}
@@ -113,7 +127,11 @@ export function StatsTab({
               </TouchableOpacity>
             ))}
           </View>
-          <TrendLine values={strength} labels={labels} formatValue={(v) => `${Math.round(v)} lbs`} />
+          {strength.some((v) => v !== null) ? (
+            <TrendLine values={strength} labels={labels} formatValue={(v) => `${Math.round(v)} lbs`} />
+          ) : (
+            <Text style={styles.emptyLine}>No sets this {scope}.</Text>
+          )}
         </View>
       )}
 
@@ -159,6 +177,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, maxWidth: 120,
   },
   liftOn: { backgroundColor: "#052E16" },
+  liftDim: { opacity: 0.5 },
   liftText: { fontSize: 11, color: colors.mutedForeground, fontWeight: "600" },
   liftTextOn: { color: "#4ADE80" },
+  emptyLine: { fontSize: 12, color: colors.mutedForeground, paddingVertical: 24, textAlign: "center" },
 });
