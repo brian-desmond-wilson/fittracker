@@ -126,7 +126,7 @@ export function sessionPace(session: HistorySession): number | null {
 }
 
 const dayMs = 86_400_000;
-const toUtc = (iso: string): number => {
+export const toUtc = (iso: string): number => {
   const [y, m, d] = iso.split("-").map(Number);
   return Date.UTC(y, m - 1, d);
 };
