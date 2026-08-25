@@ -49,8 +49,10 @@
 
 - [ ] Spec-compliance review against the artifact's decision record (every table above vs live staging state) + quality review (merge/repoint correctness under dedupe, engine amendment fidelity, live-drift defenses). Fix loops per the standing process.
 
-### Task 3: Push to live (Task-11 gate pattern, unchanged)
+### Task 3: Push to live (Task-11 gate pattern, plus freshness gates from the quality review)
 
+- [ ] **Freshness gate (quality-review requirement):** re-run `dump_live_data.sh` against live, re-restore staging's catalog tables from that fresh dump (replica-mode load, same as Task 1 of the foundation plan), re-apply the six Stage 1 migrations are already in the schema — only DATA is restored — then re-apply THIS migration and re-run the harness. The 18:07 pre-Stage-1 dump is stale by definition; the rehearsal must run against live's actual current rows.
+- [ ] **Expected-change note:** core fingerprints CHANGE in this push (8 of 9 cores carry style junctions that are now identity-flagged — e.g. Squat's fingerprint gains the Strict uuid). This is correct, not corruption; do not treat core-fingerprint stability as an invariant. Generated aliases for the 9 cores are expected to stay exactly the 9 core names.
 - [ ] Gates: migration list clean → orphan check 0 → staging `psql -1` rehearsal of THIS migration → fresh backup via dump script (NOTE: dump list doesn't yet include grips/new tables — that's fine, this migration doesn't destroy anything the dump misses; the Back-merge lesson doesn't apply since all drops here are reference values whose exercise references are nulled, not deleted) → dry-run lists exactly this one migration → push → live harness PASS → live spot checks (counts per V8) → anon API probes (grips readable, not writable).
 - [ ] Merge branch to main, push, delete branch.
 
