@@ -955,6 +955,10 @@ git add -A && git commit -m "test(db): guard against premature legacy drops; app
 
 ### Task 11: Apply to live
 
+Pre-push checks (added by Task 8 review):
+- Verify live has no orphaned `created_by` before pushing: `SELECT count(*) FROM exercises WHERE created_by IS NOT NULL AND created_by NOT IN (SELECT id FROM auth.users);` — expect 0 (staging's replica-mode load has 273 orphans, which is why staging verification used autocommit; live should be clean, and a non-zero count here needs investigation before push).
+- `supabase db push` wraps each migration in a transaction. Staging verification used per-statement autocommit, so before pushing, re-verify each of the six migrations with `psql -1 -f <file>` semantics in mind (any that already ran on staging can be re-run there with `psql -1` for a transactional no-op check).
+
 - [ ] **Step 1: Backup live catalog data**
 
 ```bash

@@ -48,7 +48,7 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 
 ## Stage 4 — Turn the locks (Phase 5)
 
-- [ ] Fingerprint uniqueness enforced; alias uniqueness already live from Stage 1
+- [ ] Fingerprint uniqueness enforced — REPLACING the plain `exercises_fingerprint_idx` from Stage 1 (build the unique index, then drop the plain one; never carry both) ; alias uniqueness already live from Stage 1
 - [ ] Triggers own generated names, parents, tiers
 - [ ] Movement Model artifact updated to the "after" state
 - **Exit gate:** a duplicate insert is rejected by the database in a live test
