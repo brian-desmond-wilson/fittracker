@@ -33,18 +33,20 @@ function GoalRing({ done, target, size }: { done: number; target: number; size: 
 }
 
 export function HeroHeader({
-  goalDone, goalTarget, streakDays, rail, week, collapsed, onExpand,
+  goalDone, goalTarget, streakDays, weeksInARow, rail, week, collapsed, onExpand,
 }: {
   goalDone: number;
   goalTarget: number;
   streakDays: number;
+  weeksInARow: number;
   rail: RailDay[];
   week: WeekSummary;
   collapsed: boolean;
   onExpand?: () => void;
 }) {
   if (collapsed) {
-    const streakPart = streakDays > 0 ? `🔥 ${streakDays}` : "";
+    const streakPart =
+      streakDays > 0 ? `🔥 ${streakDays}${weeksInARow > 1 ? ` · ${weeksInARow}w` : ""}` : "";
     const volumePart = week.volumeLbs > 0 ? `${formatVolume(week.volumeLbs)} lbs this week` : "";
     const compactText =
       streakPart && volumePart
@@ -76,7 +78,7 @@ export function HeroHeader({
             <View style={styles.streak}>
               <Flame size={11} color="#86EFAC" />
               <Text style={styles.streakText}>
-                {streakDays}-day streak
+                {streakDays}-day streak{weeksInARow > 1 ? ` · ${weeksInARow} weeks in a row` : ""}
               </Text>
             </View>
           )}

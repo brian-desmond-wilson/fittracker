@@ -1,7 +1,7 @@
 // How a session presents itself: title, date, headline numbers.
 // Pure selectors over HistorySession — fetching stays in supabase/gymSessions.
 // Spec: docs/superpowers/specs/2026-08-24-gym-sessions-redesign-design.md.
-import { dayDiff, formatMinutes, sessionEmphasis, sessionMinutes } from "./gymSessions";
+import { dayDiff, formatMinutes, sessionEmphasis, sessionMinutes, toUtc } from "./gymSessions";
 import type { HistorySession, MuscleGroup } from "../types/gymSessions";
 
 /** Until the weekly-goals entity lands (Phase 3), the ring measures against
@@ -122,4 +122,29 @@ export function calendarWeekSessions(sessions: HistorySession[], today: string):
   const start = dates[0];
   const end = dates[6];
   return sessions.filter((s) => s.date >= start && s.date <= end).length;
+}
+
+/**
+ * Consecutive calendar weeks trained (≥1 session), ending with the current
+ * week. The current week gets the same grace a day gets: empty-so-far doesn't
+ * break the run, it just doesn't count yet. Once the goals entity exists
+ * (Phase 3) the ≥1 threshold becomes the user's weekly goal.
+ */
+export function weeksInARow(sessions: HistorySession[], today: string): number {
+  const weekStart = (date: string): string => {
+    const utc = toUtc(date);
+    return new Date(utc - new Date(utc).getUTCDay() * dayMs).toISOString().slice(0, 10);
+  };
+  const trained = new Set(sessions.map((s) => weekStart(s.date)));
+  let cursor = weekStart(today);
+  let weeks = 0;
+  if (!trained.has(cursor)) {
+    // grace: current week still in progress
+    cursor = new Date(toUtc(cursor) - 7 * dayMs).toISOString().slice(0, 10);
+  }
+  while (trained.has(cursor)) {
+    weeks += 1;
+    cursor = new Date(toUtc(cursor) - 7 * dayMs).toISOString().slice(0, 10);
+  }
+  return weeks;
 }

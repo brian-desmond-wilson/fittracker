@@ -25,7 +25,7 @@ import { HistoryCalendar } from "./HistoryCalendar";
 import { WeekStrip } from "./WeekStrip";
 import { HeroHeader } from "./HeroHeader";
 import {
-  calendarWeekSessions, DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail,
+  calendarWeekSessions, DEFAULT_WEEKLY_SESSIONS_GOAL, weekRail, weeksInARow,
 } from "@/src/lib/sessionPresentation";
 import type { HistorySession } from "@/src/types/gymSessions";
 
@@ -75,7 +75,11 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   };
 
   const week = useMemo(() => weekSummary(sessions, today), [sessions, today]);
-  const streak = useMemo(() => currentStreak(sessions, today), [sessions, today]);
+  const streak = useMemo(
+    () => currentStreak(sessions, today, restDates),
+    [sessions, today, restDates],
+  );
+  const weekStreak = useMemo(() => weeksInARow(sessions, today), [sessions, today]);
   const bars = useMemo(
     () => balance(sessions, BALANCE_DAYS, today),
     [sessions, today],
@@ -117,6 +121,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
               goalDone={weekGoalDone}
               goalTarget={DEFAULT_WEEKLY_SESSIONS_GOAL}
               streakDays={streak}
+              weeksInARow={weekStreak}
               rail={rail}
               week={week}
               collapsed
@@ -155,6 +160,7 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                 goalDone={weekGoalDone}
                 goalTarget={DEFAULT_WEEKLY_SESSIONS_GOAL}
                 streakDays={streak}
+                weeksInARow={weekStreak}
                 rail={rail}
                 week={week}
                 collapsed={false}

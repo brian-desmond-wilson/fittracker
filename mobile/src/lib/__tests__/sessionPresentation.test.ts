@@ -7,6 +7,7 @@ import {
   regionsHit,
   sessionTitle,
   weekRail,
+  weeksInARow,
 } from "../sessionPresentation";
 import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
 
@@ -149,6 +150,27 @@ describe("weekRail", () => {
     expect(rail[6].date).toBe("2026-08-29");
     expect(rail[6].state).toBe("trained");
     expect(rail.some((d) => d.state === "future")).toBe(false);
+  });
+});
+
+describe("weeksInARow", () => {
+  // Until the goals entity lands, a week counts with ≥1 session.
+  it("counts consecutive trained weeks ending now", () => {
+    const sessions = ["2026-08-24", "2026-08-19", "2026-08-12"].map((d) =>
+      session({ date: d, id: d }),
+    );
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(3);
+  });
+  it("does not break on the current week before it has a session", () => {
+    const sessions = ["2026-08-19", "2026-08-12"].map((d) => session({ date: d, id: d }));
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(2);
+  });
+  it("breaks on a fully skipped week", () => {
+    const sessions = ["2026-08-24", "2026-08-05"].map((d) => session({ date: d, id: d }));
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(1);
+  });
+  it("is zero with nothing recent", () => {
+    expect(weeksInARow([session({ date: "2026-07-01", id: "old" })], "2026-08-24")).toBe(0);
   });
 });
 
