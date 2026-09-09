@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { computeTiers, type TierRow } from '../movementTier';
+import { generateUniqueSlug } from './frontDoor';
 import type {
   GoalType,
   Exercise,
@@ -1041,44 +1042,9 @@ export async function fetchMovementWithAttributes(exerciseId: string): Promise<E
   return data;
 }
 
-/**
- * Generate a unique slug for a movement name
- * If the base slug exists, appends a number (e.g., squat-2, squat-3)
- */
-async function generateUniqueSlug(name: string): Promise<string> {
-  const baseSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-
-  // Check if base slug exists
-  const { data: existing } = await supabase
-    .from('exercises')
-    .select('slug')
-    .eq('slug', baseSlug)
-    .single();
-
-  // If no conflict, use base slug
-  if (!existing) {
-    return baseSlug;
-  }
-
-  // If conflict, find the next available number
-  let counter = 2;
-  while (counter < 100) { // Safety limit
-    const numberedSlug = `${baseSlug}-${counter}`;
-    const { data: existingNumbered } = await supabase
-      .from('exercises')
-      .select('slug')
-      .eq('slug', numberedSlug)
-      .single();
-
-    if (!existingNumbered) {
-      return numberedSlug;
-    }
-    counter++;
-  }
-
-  // Fallback: append timestamp
-  return `${baseSlug}-${Date.now()}`;
-}
+// generateUniqueSlug moved to the front-door module (Stage 5, Task 1) — the
+// collision-probing behavior is unchanged; this legacy module now shares the
+// single implementation. (See imports at the top of this file.)
 
 /**
  * Create a new movement
