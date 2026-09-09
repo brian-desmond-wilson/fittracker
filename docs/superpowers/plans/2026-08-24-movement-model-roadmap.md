@@ -81,6 +81,10 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 
 ## Stage 6 — Retire legacy (Phase 7)
 
+Hardening hand-offs from the Stage 5 quality review (2026-09-09, pre-existing conditions surfaced by hostile probing — address here or in a dedicated hardening pass):
+- [ ] Private rows can infiltrate the official hierarchy: parent candidacy has no ownership/officialness filter, so a user's private row can become an official row's parent (dangling for other users) and can squat a (core, fingerprint) slot blocking official curation. Scope parent candidacy and/or the fingerprint constraint, or filter private rows from official-hierarchy reads.
+- [ ] Wild-alias carve-out is a global resolution-poisoning vector (any user teaches any wording onto any exercise) and the everyone-readable alias table leaks private exercise names — revisit alias visibility/scoping once multi-user matters.
+
 - [ ] Legacy drops, exactly (spec Phase 7 wording is authoritative, disambiguated 2026-08-24): columns `goal_type_id` + `movement_style_id`; junctions `exercise_planes_of_motion` + `exercise_load_positions` + `exercise_stances` (their single FK columns SURVIVE as canonical); `equipment_types`; `exercises.aliases`; tables `variation_categories` + `variation_options` + `exercise_variations`. Retire the harness's V7 guard in the same change.
 - [ ] Final verification suite green; spec and artifact updated
 - **Exit gate:** no app code references a dropped column (grep proves it)
