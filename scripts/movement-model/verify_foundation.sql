@@ -1486,4 +1486,353 @@ BEGIN
   END IF;
 END $$;
 ROLLBACK;
+DO $$
+DECLARE
+  v_tgtype INT2;
+  v_observed TEXT;
+BEGIN
+  -- V11: Stage 5 re-normalization engine wired — statement-level AFTER trigger
+  -- on alias_abbreviations for all three commands; both functions SECURITY
+  -- DEFINER with pinned search_path.
+  SELECT tgtype INTO v_tgtype FROM pg_trigger
+   WHERE tgrelid = 'public.alias_abbreviations'::regclass
+     AND tgname = 'alias_abbreviations_renormalize' AND NOT tgisinternal;
+  IF v_tgtype IS NULL THEN
+    SELECT string_agg(tgname, ', ' ORDER BY tgname) INTO v_observed
+      FROM pg_trigger WHERE tgrelid = 'public.alias_abbreviations'::regclass AND NOT tgisinternal;
+    RAISE EXCEPTION 'V11 FAIL: trigger alias_abbreviations_renormalize missing (triggers present: %)',
+      COALESCE(v_observed, 'none');
+  END IF;
+  IF (v_tgtype & 1) <> 0 OR (v_tgtype & 2) <> 0 OR (v_tgtype & 28) <> 28 THEN
+    RAISE EXCEPTION 'V11 FAIL: alias_abbreviations_renormalize has the wrong shape (tgtype=%, expected statement-level AFTER INSERT OR UPDATE OR DELETE)', v_tgtype;
+  END IF;
+
+  SELECT string_agg(t.fn, ', ' ORDER BY t.fn) INTO v_observed
+    FROM (VALUES ('renormalize_exercise_aliases'), ('route_alias_renorm_loser')) t(fn)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = t.fn
+        AND p.prosecdef
+        AND array_to_string(COALESCE(p.proconfig, '{}'), ',') LIKE '%search_path=public%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: functions missing SECURITY DEFINER / search_path=public: %', v_observed;
+  END IF;
+END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V11: Stage 5 policy shapes — exact per-table sets, qual essentials on
+  -- every tightened write policy, and the wild-alias carve-out pinned.
+  SELECT string_agg(policyname || '/' || cmd || '/' || array_to_string(roles, '+') || '/' || COALESCE(qual, '~'),
+                    '; ' ORDER BY policyname) INTO v_observed
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'equipment';
+  IF v_observed IS DISTINCT FROM 'Equipment are viewable by everyone/SELECT/public/true' THEN
+    RAISE EXCEPTION 'V11 FAIL: equipment policy set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  SELECT string_agg(policyname || ':' || cmd, '; ' ORDER BY policyname) INTO v_observed
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercise_equipment';
+  IF v_observed IS DISTINCT FROM
+     'exercise_equipment delete on own exercises:DELETE; exercise_equipment insert on own exercises:INSERT; exercise_equipment update on own exercises:UPDATE; exercise_equipment viewable by everyone:SELECT' THEN
+    RAISE EXCEPTION 'V11 FAIL: exercise_equipment policy set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  SELECT string_agg(policyname || ':' || cmd, '; ' ORDER BY policyname) INTO v_observed
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercise_scoring_types';
+  IF v_observed IS DISTINCT FROM
+     'Exercise scoring types are viewable by everyone:SELECT; exercise_scoring_types delete on own exercises:DELETE; exercise_scoring_types insert on own exercises:INSERT; exercise_scoring_types update on own exercises:UPDATE' THEN
+    RAISE EXCEPTION 'V11 FAIL: exercise_scoring_types policy set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  SELECT string_agg(policyname || ':' || cmd, '; ' ORDER BY policyname) INTO v_observed
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercise_aliases';
+  IF v_observed IS DISTINCT FROM
+     'aliases delete on own exercises:DELETE; aliases insert on own exercises:INSERT; aliases update on own exercises:UPDATE; aliases viewable by everyone:SELECT; wild aliases insertable by authenticated:INSERT' THEN
+    RAISE EXCEPTION 'V11 FAIL: exercise_aliases policy set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  SELECT string_agg(tablename || '.' || policyname, '; ' ORDER BY tablename, policyname) INTO v_observed
+    FROM pg_policies
+   WHERE schemaname = 'public'
+     AND tablename IN ('exercise_equipment', 'exercise_scoring_types', 'exercise_aliases')
+     AND cmd IN ('INSERT', 'UPDATE', 'DELETE')
+     AND policyname <> 'wild aliases insertable by authenticated'
+     AND (roles IS DISTINCT FROM ARRAY['authenticated']::name[]
+          OR COALESCE(qual, with_check) NOT LIKE '%created_by = auth.uid()%'
+          OR COALESCE(qual, with_check) NOT LIKE '%is_official = false%'
+          OR COALESCE(with_check, qual) NOT LIKE '%created_by = auth.uid()%'
+          OR COALESCE(with_check, qual) NOT LIKE '%is_official = false%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: write policies missing the own-non-official essentials: %', v_observed;
+  END IF;
+
+  SELECT with_check INTO v_observed FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'exercise_aliases'
+     AND policyname = 'wild aliases insertable by authenticated';
+  IF v_observed IS DISTINCT FROM '(kind = ''wild''::text)' THEN
+    RAISE EXCEPTION 'V11 FAIL: wild-alias carve-out WITH CHECK diverges: %', COALESCE(v_observed, 'null');
+  END IF;
+END $$;
+-- V11: re-normalization behavior (fixture-based, rolled back — harness stays
+-- side-effect-free). An abbreviation INSERT renormalizes every alias; the
+-- manufactured collision routes the LOSER (newer created_at) to the review
+-- queue and removes it; the abbreviation DELETE renormalizes back.
+BEGIN;
+DO $$
+DECLARE
+  v_user UUID := gen_random_uuid();
+  v_ex UUID; v_pullup UUID;
+  v_w1 UUID; v_l1 UUID; v_p1 UUID;
+  v_observed TEXT;
+  v_review RECORD;
+  v_count INTEGER;
+BEGIN
+  INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
+  VALUES (v_user, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'v11-renorm-fixture@example.com', 'x', now(), now());
+
+  SELECT id INTO v_pullup FROM public.exercises WHERE name = 'Pull-Up' AND is_core LIMIT 1;
+  IF v_pullup IS NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: Pull-Up core missing from the catalog';
+  END IF;
+
+  INSERT INTO public.exercises (name, slug, is_official, created_by, name_is_custom)
+  VALUES ('ZZV11 Renorm Fixture', 'zz-v11-renorm-fixture', false, v_user, true)
+  RETURNING id INTO v_ex;
+
+  -- Winner (older, on Pull-Up): already holds the post-abbreviation form.
+  INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source, created_at)
+  VALUES (v_pullup, 'Zz Eleven Gadget Row', 'x', 'wild', 'curation', now() - interval '1 day')
+  RETURNING id INTO v_w1;
+  -- Loser (newer, on the fixture exercise): lands on the same form once the
+  -- abbreviation exists.
+  INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+  VALUES (v_ex, 'Zzv11widget Row', 'x', 'wild', 'curation')
+  RETURNING id INTO v_l1;
+  -- Bystander: renormalizes without any collision.
+  INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+  VALUES (v_ex, 'Zzv11widget Pull', 'x', 'wild', 'curation')
+  RETURNING id INTO v_p1;
+
+  SELECT alias_normalized INTO v_observed FROM public.exercise_aliases WHERE id = v_l1;
+  IF v_observed IS DISTINCT FROM 'zzv11widget row' THEN
+    RAISE EXCEPTION 'V11 FAIL: fixture starting normalization wrong, got %', COALESCE(v_observed, 'null');
+  END IF;
+
+  -- The dictionary write under test.
+  INSERT INTO public.alias_abbreviations (abbrev, expansion) VALUES ('zzv11widget', 'zz eleven gadget');
+
+  SELECT alias_normalized INTO v_observed FROM public.exercise_aliases WHERE id = v_p1;
+  IF v_observed IS DISTINCT FROM 'zz eleven gadget pull' THEN
+    RAISE EXCEPTION 'V11 FAIL: alias not renormalized after abbreviation INSERT, got %', COALESCE(v_observed, 'null');
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.exercise_aliases WHERE id = v_l1) THEN
+    RAISE EXCEPTION 'V11 FAIL: collision loser still in exercise_aliases (normalized=%)',
+      (SELECT alias_normalized FROM public.exercise_aliases WHERE id = v_l1);
+  END IF;
+  SELECT alias_normalized INTO v_observed FROM public.exercise_aliases WHERE id = v_w1;
+  IF v_observed IS DISTINCT FROM 'zz eleven gadget row' THEN
+    RAISE EXCEPTION 'V11 FAIL: collision winner disturbed, got %', COALESCE(v_observed, 'null');
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.exercise_match_reviews WHERE raw_name = 'Zzv11widget Row';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: expected exactly 1 routed review for the loser, found %', v_count;
+  END IF;
+  SELECT * INTO v_review FROM public.exercise_match_reviews WHERE raw_name = 'Zzv11widget Row';
+  IF v_review.status IS DISTINCT FROM 'pending'
+     OR v_review.user_id IS DISTINCT FROM v_user
+     OR v_review.raw_name_normalized IS DISTINCT FROM 'zz eleven gadget row'
+     OR v_review.candidates::text NOT LIKE '%' || v_ex || '%'
+     OR v_review.candidates::text NOT LIKE '%' || v_pullup || '%' THEN
+    RAISE EXCEPTION 'V11 FAIL: routed review malformed (status=%, user=%, normalized=%, candidates=%)',
+      v_review.status, v_review.user_id, v_review.raw_name_normalized, v_review.candidates;
+  END IF;
+
+  -- DELETE direction: dropping the abbreviation renormalizes back.
+  DELETE FROM public.alias_abbreviations WHERE abbrev = 'zzv11widget';
+  SELECT alias_normalized INTO v_observed FROM public.exercise_aliases WHERE id = v_p1;
+  IF v_observed IS DISTINCT FROM 'zzv11widget pull' THEN
+    RAISE EXCEPTION 'V11 FAIL: alias not renormalized after abbreviation DELETE, got %', COALESCE(v_observed, 'null');
+  END IF;
+
+  RAISE NOTICE 'V11 re-normalization assertions passed';
+END $$;
+ROLLBACK;
+-- V11: RLS behavior of the tightened policies (fixture-based, rolled back).
+-- Role plumbing: SET LOCAL ROLE + request.jwt.claim.sub is exactly what
+-- auth.uid() reads, mirroring PostgREST.
+BEGIN;
+DO $$
+BEGIN
+  INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
+  VALUES ('aaaaaaaa-0000-4000-8000-000000000a0a', '00000000-0000-0000-0000-000000000000',
+          'authenticated', 'authenticated', 'v11-rls-owner@example.com', 'x', now(), now()),
+         ('bbbbbbbb-0000-4000-8000-000000000b0b', '00000000-0000-0000-0000-000000000000',
+          'authenticated', 'authenticated', 'v11-rls-other@example.com', 'x', now(), now());
+  INSERT INTO public.exercises (id, name, slug, is_official, created_by, name_is_custom)
+  VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', 'ZZV11 RLS Fixture', 'zz-v11-rls-fixture',
+          false, 'aaaaaaaa-0000-4000-8000-000000000a0a', true);
+END $$;
+SET LOCAL ROLE anon;
+DO $$
+DECLARE
+  v_eq UUID; v_sc UUID;
+  v_caught BOOLEAN;
+BEGIN
+  -- The dictionary alignment: anon reads equipment like every other dictionary.
+  IF (SELECT count(*) FROM public.equipment) < 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: anon cannot read the equipment dictionary';
+  END IF;
+  SELECT id INTO v_eq FROM public.equipment LIMIT 1;
+  SELECT id INTO v_sc FROM public.scoring_types LIMIT 1;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_equipment (exercise_id, equipment_id)
+    VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', v_eq);
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: anon INSERT into exercise_equipment was not rejected';
+  END IF;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_scoring_types (exercise_id, scoring_type_id)
+    VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', v_sc);
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: anon INSERT into exercise_scoring_types was not rejected';
+  END IF;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+    VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', 'Zz V11 Anon Wild', 'x', 'wild', 'capture');
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: anon INSERT into exercise_aliases was not rejected (wild carve-out must be authenticated-only)';
+  END IF;
+END $$;
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', 'bbbbbbbb-0000-4000-8000-000000000b0b', true);
+DO $$
+DECLARE
+  v_official UUID; v_eq UUID; v_sc UUID; v_alias UUID;
+  v_caught BOOLEAN;
+  n INTEGER;
+BEGIN
+  -- uB: not the owner of the fixture exercise, no official rows of their own.
+  IF auth.uid() IS DISTINCT FROM 'bbbbbbbb-0000-4000-8000-000000000b0b'::uuid THEN
+    RAISE EXCEPTION 'V11 FAIL: jwt plumbing broken (auth.uid()=%)', COALESCE(auth.uid()::text, 'null');
+  END IF;
+  SELECT id INTO v_official FROM public.exercises WHERE is_official AND is_core ORDER BY name LIMIT 1;
+  SELECT id INTO v_eq FROM public.equipment LIMIT 1;
+  SELECT id INTO v_sc FROM public.scoring_types LIMIT 1;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_equipment (exercise_id, equipment_id) VALUES (v_official, v_eq);
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: authenticated INSERT of exercise_equipment onto an OFFICIAL exercise was not rejected';
+  END IF;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_equipment (exercise_id, equipment_id)
+    VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', v_eq);
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: authenticated INSERT of exercise_equipment onto ANOTHER USER''s exercise was not rejected';
+  END IF;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_scoring_types (exercise_id, scoring_type_id) VALUES (v_official, v_sc);
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: authenticated INSERT of exercise_scoring_types onto an OFFICIAL exercise was not rejected';
+  END IF;
+
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+    VALUES (v_official, 'Zz V11 Locked Short', 'x', 'short', 'curation');
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: authenticated INSERT of a NON-WILD alias onto an OFFICIAL exercise was not rejected';
+  END IF;
+
+  -- THE CARVE-OUT: a wild alias onto an OFFICIAL exercise must succeed (the
+  -- review queue link+teach flow and re-capture self-resolution depend on it).
+  INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+  VALUES (v_official, 'Zz V11 Wild Carveout', 'x', 'wild', 'capture')
+  RETURNING id INTO v_alias;
+  IF v_alias IS NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: wild-alias carve-out INSERT onto an official exercise failed';
+  END IF;
+
+  -- ...but UPDATE/DELETE of official-row aliases stays locked, even for the
+  -- alias this same user just taught (RLS filters to zero rows, no error).
+  UPDATE public.exercise_aliases SET alias = 'Zz V11 Wild Carveout Renamed' WHERE id = v_alias;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'V11 FAIL: UPDATE of an official-row alias affected % row(s) (expected 0)', n;
+  END IF;
+  DELETE FROM public.exercise_aliases WHERE id = v_alias;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'V11 FAIL: DELETE of an official-row alias removed % row(s) (expected 0)', n;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.exercise_aliases WHERE id = v_alias) THEN
+    RAISE EXCEPTION 'V11 FAIL: official-row wild alias vanished despite the RLS lock';
+  END IF;
+END $$;
+SELECT set_config('request.jwt.claim.sub', 'aaaaaaaa-0000-4000-8000-000000000a0a', true);
+DO $$
+DECLARE
+  v_eq UUID; v_sc UUID; v_alias UUID;
+  n INTEGER;
+BEGIN
+  -- uA: owner of the fixture exercise — every junction writable, full alias
+  -- lifecycle on the own row.
+  SELECT id INTO v_eq FROM public.equipment LIMIT 1;
+  SELECT id INTO v_sc FROM public.scoring_types LIMIT 1;
+
+  INSERT INTO public.exercise_equipment (exercise_id, equipment_id)
+  VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', v_eq);
+  INSERT INTO public.exercise_scoring_types (exercise_id, scoring_type_id)
+  VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', v_sc);
+  INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+  VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', 'Zz V11 Own Short', 'x', 'short', 'curation')
+  RETURNING id INTO v_alias;
+
+  UPDATE public.exercise_aliases SET alias = 'Zz V11 Own Short Two' WHERE id = v_alias;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: owner UPDATE of an own-row alias affected % row(s) (expected 1)', n;
+  END IF;
+  DELETE FROM public.exercise_aliases WHERE id = v_alias;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: owner DELETE of an own-row alias removed % row(s) (expected 1)', n;
+  END IF;
+  DELETE FROM public.exercise_equipment WHERE exercise_id = 'eeeeeeee-0000-4000-8000-000000000e0e';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: owner DELETE of an own-row equipment junction removed % row(s) (expected 1)', n;
+  END IF;
+  DELETE FROM public.exercise_scoring_types WHERE exercise_id = 'eeeeeeee-0000-4000-8000-000000000e0e';
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: owner DELETE of an own-row scoring junction removed % row(s) (expected 1)', n;
+  END IF;
+
+  RAISE NOTICE 'V11 RLS assertions passed';
+END $$;
+RESET ROLE;
+ROLLBACK;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
