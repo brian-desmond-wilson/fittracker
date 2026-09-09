@@ -282,10 +282,13 @@ BEGIN
   PERFORM set_config('fittracker.identity_recompute_active', '', true);
 END $$;
 
--- The DELETE repair pass. Not SECURITY DEFINER itself (matching the other
--- trigger shims) — the drain it calls is.
+-- The DELETE repair pass. SECURITY DEFINER: trigger functions run as the
+-- INVOKING user, and section 4 revokes the engine entry points from
+-- anon/authenticated — definer rights keep the shim's recompute_core_family
+-- call working for app-user deletes (enforce_core_self_reference precedent,
+-- Stage 4 I3). The shim only reads the transition table and delegates.
 CREATE OR REPLACE FUNCTION public.trg_exercise_delete_identity() RETURNS TRIGGER
-LANGUAGE plpgsql SET search_path = public AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_family UUID;
 BEGIN
   -- Inside an engine pass the worklist owns the family — skip (I2).
@@ -311,6 +314,35 @@ CREATE TRIGGER exercises_identity_delete
   AFTER DELETE ON public.exercises
   REFERENCING OLD TABLE AS deleted_rows
   FOR EACH STATEMENT EXECUTE FUNCTION public.trg_exercise_delete_identity();
+
+-- The Stage 4 shims, re-created byte-identical EXCEPT for SECURITY DEFINER +
+-- pinned search_path. REQUIRED by section 4's privilege hygiene: a trigger
+-- function executes as the user whose write fired it, so once EXECUTE on
+-- recompute_exercise_identity is revoked from authenticated, an invoker-rights
+-- shim would fail every app-user catalog write from inside its own trigger.
+-- Definer rights make "engine triggers run as owner" actually true. The shims
+-- contain nothing but the guard check and the delegation call.
+CREATE OR REPLACE FUNCTION public.trg_exercise_identity() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF COALESCE(current_setting('fittracker.identity_recompute_active', true), '') = 'on' THEN
+    RETURN NEW;                     -- engine write: the worklist handles siblings itself
+  END IF;
+  PERFORM recompute_exercise_identity(NEW.id);
+  RETURN NEW;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.trg_junction_identity() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_id UUID;
+BEGIN
+  IF COALESCE(current_setting('fittracker.identity_recompute_active', true), '') = 'on' THEN
+    RETURN COALESCE(NEW, OLD);      -- engine write: the worklist handles siblings itself
+  END IF;
+  v_id := COALESCE(NEW.exercise_id, OLD.exercise_id);
+  PERFORM recompute_exercise_identity(v_id);
+  RETURN COALESCE(NEW, OLD);
+END $$;
 
 -- ============================================================================
 -- 3) Policy pass. Drop-and-recreate by name keeps every branch idempotent and
@@ -410,13 +442,35 @@ CREATE POLICY "aliases delete on own exercises" ON public.exercise_aliases
                     AND e.created_by = auth.uid() AND e.is_official = false));
 
 -- ============================================================================
--- 4) Self-verify (fail closed, observed values). 4a-4c structural; 4d
+-- 4) Function privilege hygiene (merge_exercise_into precedent, Stage 3
+--    review class). Supabase default privileges hand EXECUTE on every new
+--    public function to anon/authenticated, which makes SECURITY DEFINER
+--    workers RPC-callable at POST /rest/v1/rpc/<fn>:
+--      * route_alias_renorm_loser was a working RLS bypass — any caller could
+--        delete ANY alias by id with definer rights (official rows included)
+--        and mint a review row attributed to the alias owner;
+--      * recompute_core_family / recompute_exercise_identity /
+--        recompute_exercise_identity_row are engine-internal (the last two
+--        carried Stage 4 default grants — swept here).
+--    App code calls none of them (grep of mobile/src + supabase/functions:
+--    zero rpc references, 2026-09-08). The engine reaches them exclusively
+--    through the SECURITY DEFINER trigger shims above, which run as owner
+--    and are unaffected. Trigger-returning functions need nothing — PostgREST
+--    cannot expose them. REVOKE is idempotent by nature.
+-- ============================================================================
+REVOKE ALL ON FUNCTION public.route_alias_renorm_loser(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.recompute_core_family(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.recompute_exercise_identity(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.recompute_exercise_identity_row(UUID) FROM PUBLIC, anon, authenticated;
+
+-- ============================================================================
+-- 5) Self-verify (fail closed, observed values). 5a-5d structural; 5e
 --    behavioral on fixtures created AND fully removed in-file. An in-file
 --    functional re-normalization test would mutate the live dictionary, so the
 --    behavioral proof lives in the harness (V11) fixture, which rolls back.
 -- ============================================================================
 
--- 4a) re-normalization engine wired: statement-level AFTER trigger on all
+-- 5a) re-normalization engine wired: statement-level AFTER trigger on all
 --     three commands; both functions SECURITY DEFINER with pinned search_path.
 DO $$
 DECLARE
@@ -449,7 +503,7 @@ BEGIN
   END IF;
 END $$;
 
--- 4b) DELETE-recompute engine wired: statement-level AFTER DELETE trigger with
+-- 5b) DELETE-recompute engine wired: statement-level AFTER DELETE trigger with
 --     the transition table; the extracted drain exists with definer rights;
 --     the orchestrator delegates to it (reuse, not duplication).
 DO $$
@@ -494,7 +548,41 @@ BEGIN
   END IF;
 END $$;
 
--- 4c) policy shapes: exact per-table sets from pg_policies, plus the qual
+-- 5c) privilege hygiene holds: none of the four engine/worker functions is
+--     EXECUTE-able by anon or authenticated (has_function_privilege reads
+--     proacl with PUBLIC-grant inheritance, so anon=false also proves no
+--     PUBLIC grant survived), and every trigger shim that reaches them runs
+--     with definer rights.
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  SELECT string_agg(t.role || ' -> ' || t.fn, '; ' ORDER BY t.fn, t.role) INTO v_observed
+    FROM (SELECT r.role, f.fn
+            FROM (VALUES ('anon'), ('authenticated')) r(role)
+            CROSS JOIN (VALUES ('public.route_alias_renorm_loser(uuid)'),
+                               ('public.recompute_core_family(uuid)'),
+                               ('public.recompute_exercise_identity(uuid)'),
+                               ('public.recompute_exercise_identity_row(uuid)')) f(fn)) t
+   WHERE has_function_privilege(t.role, t.fn, 'EXECUTE');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'renormalize_and_policies: engine functions still EXECUTE-able over RPC: %', v_observed;
+  END IF;
+
+  SELECT string_agg(t.fn, ', ' ORDER BY t.fn) INTO v_observed
+    FROM (VALUES ('trg_exercise_identity'), ('trg_junction_identity'),
+                 ('trg_exercise_delete_identity')) t(fn)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = t.fn
+        AND p.prosecdef
+        AND array_to_string(COALESCE(p.proconfig, '{}'), ',') LIKE '%search_path=public%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'renormalize_and_policies: trigger shims lacking SECURITY DEFINER / search_path=public (their engine calls would fail for app users after the revokes): %', v_observed;
+  END IF;
+END $$;
+
+-- 5d) policy shapes: exact per-table sets from pg_policies, plus the qual
 --     essentials on every tightened write policy.
 DO $$
 DECLARE
@@ -557,7 +645,7 @@ BEGIN
   END IF;
 END $$;
 
--- 4d) behavioral: deleting a mid-tree derivation repairs its family (children
+-- 5e) behavioral: deleting a mid-tree derivation repairs its family (children
 --     re-parent upward, tiers re-derive), an outlier delete is a no-op, and a
 --     bulk delete settles in one pass. Fixture rows (RP- prefixed) are created
 --     AND fully removed in-file, so the committed state is untouched and a
@@ -572,7 +660,7 @@ BEGIN
   SELECT id INTO sy_alt  FROM symmetries WHERE name = 'Alternating';
   SELECT id INTO gw_wide FROM grips WHERE name = 'Wide' AND category = 'Width';
   IF st_wide IS NULL OR sy_alt IS NULL OR gw_wide IS NULL THEN
-    RAISE EXCEPTION 'renormalize_and_policies 4d: dictionary rows missing (Wide (Sumo)=%, Alternating=%, Wide grip=%)',
+    RAISE EXCEPTION 'renormalize_and_policies 5e: dictionary rows missing (Wide (Sumo)=%, Alternating=%, Wide grip=%)',
       COALESCE(st_wide::text, 'null'), COALESCE(sy_alt::text, 'null'), COALESCE(gw_wide::text, 'null');
   END IF;
 
@@ -585,7 +673,7 @@ BEGIN
     VALUES ('RPFIXTUREB', 'rp-fixture-b', true, rp_core, st_wide, sy_alt) RETURNING id INTO rp_b;
   IF (SELECT parent_exercise_id FROM exercises WHERE id = rp_b) IS DISTINCT FROM rp_a
      OR (SELECT tier FROM exercises WHERE id = rp_b) IS DISTINCT FROM 2 THEN
-    RAISE EXCEPTION 'renormalize_and_policies 4d: starting shape wrong — B parent/tier = %/% (expected A/2)',
+    RAISE EXCEPTION 'renormalize_and_policies 5e: starting shape wrong — B parent/tier = %/% (expected A/2)',
       COALESCE((SELECT parent_exercise_id FROM exercises WHERE id = rp_b)::text, 'null'),
       COALESCE((SELECT tier FROM exercises WHERE id = rp_b)::text, 'null');
   END IF;
@@ -595,7 +683,7 @@ BEGIN
   DELETE FROM exercises WHERE id = rp_a;
   IF (SELECT parent_exercise_id FROM exercises WHERE id = rp_b) IS DISTINCT FROM rp_core
      OR (SELECT tier FROM exercises WHERE id = rp_b) IS DISTINCT FROM 1 THEN
-    RAISE EXCEPTION 'renormalize_and_policies 4d: after deleting A, B parent/tier = %/% (expected core/1)',
+    RAISE EXCEPTION 'renormalize_and_policies 5e: after deleting A, B parent/tier = %/% (expected core/1)',
       COALESCE((SELECT parent_exercise_id FROM exercises WHERE id = rp_b)::text, 'null'),
       COALESCE((SELECT tier FROM exercises WHERE id = rp_b)::text, 'null');
   END IF;
@@ -608,13 +696,13 @@ BEGIN
   INSERT INTO exercises (name, slug, is_official, core_movement_id, stance_id, symmetry_id, grip_width_id)
     VALUES ('RPFIXTUREC', 'rp-fixture-c', true, rp_core, st_wide, sy_alt, gw_wide) RETURNING id INTO rp_c;
   IF (SELECT tier FROM exercises WHERE id = rp_c) IS DISTINCT FROM 3 THEN
-    RAISE EXCEPTION 'renormalize_and_policies 4d: bulk fixture shape wrong — C tier = % (expected 3)',
+    RAISE EXCEPTION 'renormalize_and_policies 5e: bulk fixture shape wrong — C tier = % (expected 3)',
       COALESCE((SELECT tier FROM exercises WHERE id = rp_c)::text, 'null');
   END IF;
   DELETE FROM exercises WHERE id IN (rp_a, rp_b);
   IF (SELECT parent_exercise_id FROM exercises WHERE id = rp_c) IS DISTINCT FROM rp_core
      OR (SELECT tier FROM exercises WHERE id = rp_c) IS DISTINCT FROM 1 THEN
-    RAISE EXCEPTION 'renormalize_and_policies 4d: after bulk delete, C parent/tier = %/% (expected core/1)',
+    RAISE EXCEPTION 'renormalize_and_policies 5e: after bulk delete, C parent/tier = %/% (expected core/1)',
       COALESCE((SELECT parent_exercise_id FROM exercises WHERE id = rp_c)::text, 'null'),
       COALESCE((SELECT tier FROM exercises WHERE id = rp_c)::text, 'null');
   END IF;
@@ -631,6 +719,6 @@ BEGIN
   IF EXISTS (SELECT 1 FROM exercises WHERE slug LIKE 'rp-fixture-%') THEN
     SELECT string_agg(slug, ', ' ORDER BY slug) INTO v_observed
       FROM exercises WHERE slug LIKE 'rp-fixture-%';
-    RAISE EXCEPTION 'renormalize_and_policies 4d: fixture rows not cleaned up: %', v_observed;
+    RAISE EXCEPTION 'renormalize_and_policies 5e: fixture rows not cleaned up: %', v_observed;
   END IF;
 END $$;

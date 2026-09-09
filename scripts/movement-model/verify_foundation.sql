@@ -1554,6 +1554,32 @@ BEGIN
   IF v_observed IS NOT NULL THEN
     RAISE EXCEPTION 'V11 FAIL: functions not delegating to recompute_core_family under the session guard: %', v_observed;
   END IF;
+
+  -- V11: privilege hygiene (merge_exercise_into precedent) — no engine/worker
+  -- function is RPC-callable by anon or authenticated (anon=false also proves
+  -- no PUBLIC grant), and every shim that reaches them carries definer rights.
+  SELECT string_agg(t.role || ' -> ' || t.fn, '; ' ORDER BY t.fn, t.role) INTO v_observed
+    FROM (SELECT r.role, f.fn
+            FROM (VALUES ('anon'), ('authenticated')) r(role)
+            CROSS JOIN (VALUES ('public.route_alias_renorm_loser(uuid)'),
+                               ('public.recompute_core_family(uuid)'),
+                               ('public.recompute_exercise_identity(uuid)'),
+                               ('public.recompute_exercise_identity_row(uuid)')) f(fn)) t
+   WHERE has_function_privilege(t.role, t.fn, 'EXECUTE');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: engine functions still EXECUTE-able over RPC: %', v_observed;
+  END IF;
+  SELECT string_agg(t.fn, ', ' ORDER BY t.fn) INTO v_observed
+    FROM (VALUES ('trg_exercise_identity'), ('trg_junction_identity'),
+                 ('trg_exercise_delete_identity')) t(fn)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = t.fn
+        AND p.prosecdef
+        AND array_to_string(COALESCE(p.proconfig, '{}'), ',') LIKE '%search_path=public%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: trigger shims lacking SECURITY DEFINER / search_path=public: %', v_observed;
+  END IF;
 END $$;
 -- V11: DELETE-recompute behavior (fixture-based, rolled back — harness stays
 -- side-effect-free). Deleting a mid-tree derivation re-parents its children
@@ -1828,6 +1854,23 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
   IF NOT v_caught THEN
     RAISE EXCEPTION 'V11 FAIL: anon INSERT into exercise_aliases was not rejected (wild carve-out must be authenticated-only)';
+  END IF;
+
+  -- Privilege hygiene, live: the definer worker must be DENIED to anon (not
+  -- run and return false) — this is the RLS-bypass class the revoke closes.
+  v_caught := false;
+  BEGIN
+    PERFORM public.route_alias_renorm_loser('00000000-0000-4000-8000-000000000000');
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: anon EXECUTE of route_alias_renorm_loser was not denied';
+  END IF;
+  v_caught := false;
+  BEGIN
+    PERFORM public.recompute_core_family('00000000-0000-4000-8000-000000000000');
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: anon EXECUTE of recompute_core_family was not denied';
   END IF;
 END $$;
 RESET ROLE;
