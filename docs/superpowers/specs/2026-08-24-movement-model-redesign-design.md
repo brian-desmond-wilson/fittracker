@@ -127,3 +127,7 @@ The Phase 1 attribute audit is complete; the approved dictionary is the Attribut
 
 - Core movement list — proposed and approved in Phase 4.
 - Whether the Movements/Exercises tab split survives in the app — decided in Phase 6.
+
+## Amendment — Stage 3 catalog pass applied (2026-09-08)
+
+`20260908100000_catalog_pass.sql` is LIVE. Catalog state: 287 exercises = 48 cores (43 kept/promoted + 5 new rows: Plank, Carry, Bent-Over Row, Lat Pulldown, Raise) + 187 derivations (tiers 144/38/5) + 52 outliers; 25 duplicates merged with full FK repointing, loser names kept as wild aliases; 299 aliases total; zero fingerprint collisions per core (Stage 4 lock precondition met). Dictionary additions live: directions (8), support_positions (3), arm_positions (6), bench_angles (3, Incline/Decline imply Bench), variant_labels (17, core-scoped, in the fingerprint, guardrails G1–G3 enforced/harnessed), stances +4 (legacy 'Supine / Prone' retired), equipment +4, style Crush, Cross-Body fragment. `exercises.core_default_equipment` is naming-only suppression (cores carry no equipment junction rows). Engine: fingerprint + name generator extended to the new bands (22/24/26/28/48); parent selection tiebreaker `, id ASC` added; grip category guard live. Open item "Core movement list" is resolved (approved at Gates A/B). Verification: harness V0–V9 PASS on live.

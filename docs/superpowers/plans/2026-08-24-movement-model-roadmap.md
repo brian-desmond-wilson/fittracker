@@ -39,20 +39,20 @@ This is the tracking checklist for the whole redesign. Detailed implementation p
 ## Stage 3 — Catalog pass (Phase 4)
 
 Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
-- [ ] Batch-recompute in ascending identity-attribute-cardinality order per core (parents finalize before children, else tiers build on stale parents)
-- [ ] After the batch: purge and rebuild ALL kind='generated' aliases from final generated names, routing collisions to the review queue
-- [ ] Canonicalize implied-equipment: when a load position implies equipment, the junction row must consistently exist (or consistently not); assert no duplicate generated_name within a core
-- [ ] Recompute descendants after any core rename or merge (trigger does not fire on name changes)
-- [ ] Never read generated_name on rows with no core movement (it echoes the display name there)
+- [x] Batch-recompute in ascending identity-attribute-cardinality order per core (parents finalize before children, else tiers build on stale parents)
+- [x] After the batch: purge and rebuild ALL kind='generated' aliases from final generated names, routing collisions to the review queue
+- [x] Canonicalize implied-equipment: when a load position implies equipment, the junction row must consistently exist (or consistently not); assert no duplicate generated_name within a core
+- [x] Recompute descendants after any core rename or merge (trigger does not fire on name changes)
+- [x] Never read generated_name on rows with no core movement (it echoes the display name there)
 
-- [ ] Reclassify rows tagged the legacy combined 'Supine / Prone' stance, then drop the value (Stage 2 hand-off)
-- [ ] Core movement set proposed (from live data + CrossFit canon) and user-approved
-- [ ] All 307 rows classified: core movement or explicit outlier, full identity attributes, explicit `is_movement` curation (kept as a pure Movements-tab label per user decision)
-- [ ] Review sheet produced; user approves before any write
-- [ ] Duplicates merged with every downstream FK repointed (incl. `exercise_match_reviews.resolved_exercise_id`, which is ON DELETE RESTRICT per Task 7 review); loser names kept as aliases
-- [ ] Equipment text array backfilled into the junction; wrong tree placements fixed via attributes
-- [ ] Table backups taken before every destructive step
-- **Exit gate:** every row classified, zero unexplained rows, audit queries green
+- [x] Reclassify rows tagged the legacy combined 'Supine / Prone' stance, then drop the value (Stage 2 hand-off)
+- [x] Core movement set proposed (from live data + CrossFit canon) and user-approved
+- [x] All 307 rows classified: core movement or explicit outlier, full identity attributes, explicit `is_movement` curation (kept as a pure Movements-tab label per user decision)
+- [x] Review sheet produced; user approves before any write
+- [x] Duplicates merged with every downstream FK repointed (incl. `exercise_match_reviews.resolved_exercise_id`, which is ON DELETE RESTRICT per Task 7 review); loser names kept as aliases
+- [x] Equipment text array backfilled into the junction; wrong tree placements fixed via attributes
+- [x] Table backups taken before every destructive step
+- **Exit gate:** every row classified, zero unexplained rows, audit queries green — MET 2026-09-08: `20260908100000_catalog_pass.sql` applied to LIVE (287 exercises = 48 cores + 187 derives + 52 outliers, 25 merges, 299 aliases, zero fingerprint collisions; harness V0-V9 PASS on live). Stage 4 unblocked.
 
 ## Stage 4 — Turn the locks (Phase 5)
 
