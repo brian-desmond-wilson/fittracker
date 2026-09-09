@@ -5,9 +5,10 @@
 -- Convention: each DO block is self-contained (no state shared between blocks); RAISE messages include the actual value observed.
 DO $$
 BEGIN
-  -- V0: baseline sanity — catalog present
-  IF (SELECT count(*) FROM public.exercises) < 300 THEN
-    RAISE EXCEPTION 'V0 FAIL: exercises count % below 300', (SELECT count(*) FROM public.exercises);
+  -- V0: baseline sanity — catalog present (floor moved 300 -> 287: the Stage 3
+  -- catalog pass merged 25 duplicates away, 307 + 5 new cores - 25 = 287)
+  IF (SELECT count(*) FROM public.exercises) < 287 THEN
+    RAISE EXCEPTION 'V0 FAIL: exercises count % below 287', (SELECT count(*) FROM public.exercises);
   END IF;
 END $$;
 DO $$
@@ -595,16 +596,17 @@ DECLARE
   v_observed TEXT;
   v_count INTEGER;
 BEGIN
-  -- V8: movement_styles — exactly 11 rows; identity flag on exactly the approved seven
+  -- V8: movement_styles — exactly 12 rows (Stage 3 added Crush); identity flag
+  -- on exactly the approved eight (Stage 2 seven + Crush)
   SELECT count(*) INTO v_count FROM public.movement_styles;
-  IF v_count <> 11 THEN
+  IF v_count <> 12 THEN
     SELECT string_agg(name, ', ' ORDER BY display_order) INTO v_observed FROM public.movement_styles;
-    RAISE EXCEPTION 'V8 FAIL: movement_styles count % (expected 11): %', v_count, v_observed;
+    RAISE EXCEPTION 'V8 FAIL: movement_styles count % (expected 12): %', v_count, v_observed;
   END IF;
 
   SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed FROM public.movement_styles WHERE is_identity;
-  IF v_observed IS DISTINCT FROM 'Assisted, Butterfly, Deficit, Kipping, Plyometric (Explosive), Strict, Weighted' THEN
-    RAISE EXCEPTION 'V8 FAIL: identity styles are {%} (expected {Assisted, Butterfly, Deficit, Kipping, Plyometric (Explosive), Strict, Weighted})',
+  IF v_observed IS DISTINCT FROM 'Assisted, Butterfly, Crush, Deficit, Kipping, Plyometric (Explosive), Strict, Weighted' THEN
+    RAISE EXCEPTION 'V8 FAIL: identity styles are {%} (expected {Assisted, Butterfly, Crush, Deficit, Kipping, Plyometric (Explosive), Strict, Weighted})',
       COALESCE(v_observed, 'none');
   END IF;
 
@@ -696,7 +698,9 @@ BEGIN
       COALESCE((SELECT id FROM public.equipment WHERE name = 'Box')::TEXT, 'missing');
   END IF;
 
-  -- V8: stances — Supine + Prone added, Athletic renamed, legacy Supine / Prone kept; total 13
+  -- V8: stances — Supine + Prone added, Athletic renamed; Stage 3 added the five
+  -- body-base values and retired legacy Supine / Prone (V9 asserts the retirement);
+  -- total 17
   SELECT count(*) INTO v_count FROM public.stances WHERE name IN ('Supine','Prone');
   IF v_count <> 2 THEN
     SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed FROM public.stances WHERE name IN ('Supine','Prone');
@@ -709,17 +713,13 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.stances WHERE name = 'Athletic / Partial Squat') THEN
     RAISE EXCEPTION 'V8 FAIL: Athletic / Partial Squat not renamed';
   END IF;
-  PERFORM 1 FROM public.stances WHERE name = 'Supine / Prone';
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'V8 FAIL: legacy Supine / Prone stance dropped early (retires in Stage 3)';
-  END IF;
   SELECT count(*) INTO v_count FROM public.stances;
-  IF v_count <> 13 THEN
+  IF v_count <> 17 THEN
     SELECT string_agg(name, ', ' ORDER BY display_order) INTO v_observed FROM public.stances;
-    RAISE EXCEPTION 'V8 FAIL: stances count % (expected 13): %', v_count, v_observed;
+    RAISE EXCEPTION 'V8 FAIL: stances count % (expected 17): %', v_count, v_observed;
   END IF;
 
-  -- V8: equipment — five additions; total 30
+  -- V8: equipment — Stage 2's five additions plus Stage 3's four; total 34
   SELECT count(*) INTO v_count FROM public.equipment
     WHERE name IN ('Jump Rope','GHD','Parallettes','Sled','Weight Vest');
   IF v_count <> 5 THEN
@@ -728,9 +728,9 @@ BEGIN
     RAISE EXCEPTION 'V8 FAIL: new equipment (% of 5 present): {%}', v_count, COALESCE(v_observed, 'none');
   END IF;
   SELECT count(*) INTO v_count FROM public.equipment;
-  IF v_count <> 30 THEN
+  IF v_count <> 34 THEN
     SELECT string_agg(name, ', ' ORDER BY category, display_order) INTO v_observed FROM public.equipment;
-    RAISE EXCEPTION 'V8 FAIL: equipment count % (expected 30): %', v_count, v_observed;
+    RAISE EXCEPTION 'V8 FAIL: equipment count % (expected 34): %', v_count, v_observed;
   END IF;
 END $$;
 DO $$
@@ -809,11 +809,8 @@ BEGIN
     RAISE EXCEPTION 'V8 FAIL: equipment Jump Rope should be silent, fragment = %', v_observed;
   END IF;
 
-  SELECT COALESCE(name_fragment, '') || '/' || COALESCE(name_order::TEXT, '') INTO v_observed
-    FROM public.stances WHERE name = 'Supine / Prone';
-  IF v_observed IS DISTINCT FROM '/' THEN
-    RAISE EXCEPTION 'V8 FAIL: legacy stance Supine / Prone must be silent, fragment/order = %', v_observed;
-  END IF;
+  -- (the "legacy Supine / Prone is silent" spot check retired with the value
+  -- itself in Stage 3 — V9 asserts the row is gone)
 
   SELECT name_fragment, name_order INTO v_observed, v_order FROM public.symmetries WHERE name = 'Alternating';
   IF v_observed IS DISTINCT FROM 'Alternating' OR v_order IS DISTINCT FROM 35 THEN
@@ -838,4 +835,312 @@ BEGIN
     RAISE EXCEPTION 'V8 FAIL: silent defaults carrying fragments: %', v_observed;
   END IF;
 END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V9: Stage 3 catalog-pass structure — the four new attribute dictionaries and
+  -- variant_labels exist with RLS enabled (standing rule)
+  SELECT string_agg(t.name, ', ' ORDER BY t.name) INTO v_observed
+    FROM (VALUES ('directions'), ('support_positions'), ('arm_positions'), ('bench_angles'), ('variant_labels')) t(name)
+   WHERE NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                      WHERE n.nspname = 'public' AND c.relname = t.name AND c.relrowsecurity);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: Stage 3 tables missing or without RLS: %', v_observed;
+  END IF;
+
+  -- V9: exercises gained the five attribute FKs + core_default_equipment
+  SELECT string_agg(t.col, ', ' ORDER BY t.col) INTO v_observed
+    FROM (VALUES ('direction_id'), ('support_position_id'), ('arm_position_id'),
+                 ('bench_angle_id'), ('variant_label_id'), ('core_default_equipment')) t(col)
+   WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'exercises' AND column_name = t.col);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: exercises columns missing: %', v_observed;
+  END IF;
+
+  -- V9: G1/G2 structure — variant labels are reference rows (no free text), each
+  -- scoped to exactly one core via a mandatory FK, unique per (core, slug)
+  PERFORM 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'variant_labels'
+      AND column_name = 'core_movement_id' AND is_nullable = 'NO';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V9 FAIL: variant_labels.core_movement_id missing or nullable (G2 requires a mandatory core scope)';
+  END IF;
+  PERFORM 1 FROM pg_constraint
+    WHERE conrelid = 'public.variant_labels'::regclass AND contype = 'f'
+      AND confrelid = 'public.exercises'::regclass;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V9 FAIL: variant_labels.core_movement_id is not a FK to exercises';
+  END IF;
+  PERFORM 1 FROM pg_index i
+    JOIN pg_attribute a1 ON a1.attrelid = i.indrelid AND a1.attnum = i.indkey[0]
+    JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = i.indkey[1]
+   WHERE i.indrelid = 'public.variant_labels'::regclass AND i.indisunique AND i.indnkeyatts = 2
+     AND a1.attname = 'core_movement_id' AND a2.attname = 'slug';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V9 FAIL: variant_labels lacks the UNIQUE (core_movement_id, slug) constraint';
+  END IF;
+
+  -- V9: the identity-recompute trigger fires on the five new identity columns
+  SELECT string_agg(t.col, ', ' ORDER BY t.col) INTO v_observed
+    FROM (VALUES ('direction_id'), ('support_position_id'), ('arm_position_id'),
+                 ('bench_angle_id'), ('variant_label_id')) t(col)
+   WHERE NOT EXISTS (SELECT 1 FROM pg_trigger tr
+                      JOIN pg_attribute a ON a.attrelid = tr.tgrelid AND a.attname = t.col
+                     WHERE tr.tgrelid = 'public.exercises'::regclass
+                       AND tr.tgname = 'exercises_identity_recompute'
+                       AND a.attnum = ANY (tr.tgattr::int2[]));
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: exercises_identity_recompute does not fire on: %', v_observed;
+  END IF;
+
+  -- V9: grip category guard installed (Stage 2 hand-off)
+  PERFORM 1 FROM pg_trigger
+    WHERE tgrelid = 'public.exercises'::regclass AND tgname = 'exercises_grip_categories';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V9 FAIL: exercises_grip_categories trigger missing';
+  END IF;
+END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V9: dictionary contents — directions (8, all speaking at band 22)
+  SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed FROM public.directions;
+  IF v_observed IS DISTINCT FROM 'Curtsy, Diagonal, Front, Lateral, Low-to-High, Rear, Reverse, Walking' THEN
+    RAISE EXCEPTION 'V9 FAIL: directions are {%}', COALESCE(v_observed, 'none');
+  END IF;
+  SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed FROM public.directions
+   WHERE name_fragment IS DISTINCT FROM name OR name_order IS DISTINCT FROM 22;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: directions off the fragment=name/22 convention: %', v_observed;
+  END IF;
+
+  -- V9: support_positions (3; Forearm is the silent default)
+  SELECT string_agg(name || '=' || COALESCE(name_fragment, '~') || '/' || COALESCE(name_order::TEXT, '~'),
+                    ', ' ORDER BY display_order) INTO v_observed
+    FROM public.support_positions;
+  IF v_observed IS DISTINCT FROM 'Forearm=~/~, Hand=High/24, Side=Side/24' THEN
+    RAISE EXCEPTION 'V9 FAIL: support_positions = {%} (expected {Forearm=~/~, Hand=High/24, Side=Side/24})',
+      COALESCE(v_observed, 'none');
+  END IF;
+
+  -- V9: arm_positions (6 at band 26; Across-Body speaks as Cross-Body, Braced as Concentration)
+  SELECT string_agg(name || '=' || COALESCE(name_fragment, '~') || '/' || COALESCE(name_order::TEXT, '~'),
+                    ', ' ORDER BY display_order) INTO v_observed
+    FROM public.arm_positions;
+  IF v_observed IS DISTINCT FROM
+     'Overhead=Overhead/26, Behind-Body=Behind-Body/26, In-Front=In-Front/26, Across-Body=Cross-Body/26, Braced=Concentration/26, Straight-Arm=Straight-Arm/26' THEN
+    RAISE EXCEPTION 'V9 FAIL: arm_positions = {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  -- V9: bench_angles (3 at band 28; Flat silent; Incline/Decline imply Bench)
+  SELECT string_agg(name || '=' || COALESCE(name_fragment, '~') || '/' || COALESCE(name_order::TEXT, '~')
+                    || '/' || COALESCE((SELECT q.name FROM public.equipment q WHERE q.id = implies_equipment_id), '~'),
+                    ', ' ORDER BY display_order) INTO v_observed
+    FROM public.bench_angles;
+  IF v_observed IS DISTINCT FROM 'Flat=~/~/~, Incline=Incline/28/Bench, Decline=Decline/28/Bench' THEN
+    RAISE EXCEPTION 'V9 FAIL: bench_angles = {%} (expected Flat silent, Incline/Decline at 28 implying Bench)',
+      COALESCE(v_observed, 'none');
+  END IF;
+
+  -- V9: variant_labels — exactly the 17 approved labels, each on its approved core
+  SELECT string_agg(c.name || ':' || vl.slug, ', ' ORDER BY c.name, vl.slug) INTO v_observed
+    FROM public.variant_labels vl JOIN public.exercises c ON c.id = vl.core_movement_id;
+  IF v_observed IS DISTINCT FROM
+     'Calf Raise:donkey, Crunch:double, Crunch:elbow-reach, Crunch:toe-tap, Curl:ez-bar, Curl:horn, Jump Rope:double-under, Leg Press:high-stance, Mountain Climber:double-tap, Mountain Climber:spider, Plank:grab-reach-pull, Plank:jacks, Plank:pull-through, Plank:reach, Plank:renegade-row, Pull-Up:chest-to-bar, Push-Up:walkout' THEN
+    RAISE EXCEPTION 'V9 FAIL: variant label set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+  SELECT string_agg(slug, ', ' ORDER BY slug) INTO v_observed FROM public.variant_labels
+   WHERE name_order IS DISTINCT FROM 48 OR COALESCE(name_fragment, '') = '';
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: variant labels off band 48 or fragmentless: %', v_observed;
+  END IF;
+
+  -- V9: Cross-Body / Rotational symmetry amendment (speaks at 35)
+  SELECT COALESCE(name_fragment, '~') || '/' || COALESCE(name_order::TEXT, '~') INTO v_observed
+    FROM public.symmetries WHERE name = 'Cross-Body / Rotational';
+  IF v_observed IS DISTINCT FROM 'Cross-Body/35' THEN
+    RAISE EXCEPTION 'V9 FAIL: Cross-Body / Rotational fragment/order = % (expected Cross-Body/35)',
+      COALESCE(v_observed, 'missing');
+  END IF;
+
+  -- V9: legacy 'Supine / Prone' stance retired by the catalog pass
+  IF EXISTS (SELECT 1 FROM public.stances WHERE name = 'Supine / Prone') THEN
+    RAISE EXCEPTION 'V9 FAIL: legacy Supine / Prone stance still present';
+  END IF;
+END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+  v_count INTEGER;
+BEGIN
+  -- V9: post-pass catalog invariants. Cores carry no equipment junction rows —
+  -- their default kit lives in core_default_equipment (naming-only)
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+   WHERE e.is_core AND EXISTS (SELECT 1 FROM public.exercise_equipment ee WHERE ee.exercise_id = e.id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: cores carrying equipment junction rows: %', v_observed;
+  END IF;
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e WHERE NOT e.is_core AND e.core_default_equipment IS NOT NULL;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: non-core rows carrying core_default_equipment: %', v_observed;
+  END IF;
+
+  -- V9: the five Stage 3 core rows carry their approved defaults
+  SELECT string_agg(e.name || '=' || COALESCE(e.core_default_equipment, '~'), ', ' ORDER BY e.name)
+    INTO v_observed
+    FROM public.exercises e
+   WHERE e.is_core AND e.name IN ('Plank', 'Carry', 'Bent-Over Row', 'Lat Pulldown', 'Raise');
+  IF v_observed IS DISTINCT FROM
+     'Bent-Over Row=Barbell, Carry=~, Lat Pulldown=Cable, Plank=Bodyweight, Floor, Raise=Dumbbell' THEN
+    RAISE EXCEPTION 'V9 FAIL: new-core defaults diverge: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  -- V9: identity — every row with a core has a fingerprint, and fingerprints are
+  -- unique within a core
+  SELECT count(*) INTO v_count FROM public.exercises
+   WHERE core_movement_id IS NOT NULL AND identity_fingerprint IS NULL;
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'V9 FAIL: % rows with a core but no fingerprint', v_count;
+  END IF;
+  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
+    SELECT 'core ' || c.name || ' x' || count(*) AS msg
+      FROM public.exercises e JOIN public.exercises c ON c.id = e.core_movement_id
+     GROUP BY c.name, e.core_movement_id, e.identity_fingerprint
+    HAVING count(*) > 1
+  ) d;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: duplicate identity fingerprints within a core: %', v_observed;
+  END IF;
+
+  -- V9: G2 — a row's variant label must be scoped to that row's own core
+  SELECT string_agg(e.name || ' (label ' || vl.slug || ' scoped to ' || c.name || ')', '; ' ORDER BY e.name)
+    INTO v_observed
+    FROM public.exercises e
+    JOIN public.variant_labels vl ON vl.id = e.variant_label_id
+    JOIN public.exercises c ON c.id = vl.core_movement_id
+   WHERE vl.core_movement_id IS DISTINCT FROM e.core_movement_id;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL (G2): variant labels used outside their core scope: %', v_observed;
+  END IF;
+
+  -- V9: G3 ceiling — no core carries more than 6 variant-labelled children
+  SELECT string_agg(c.name || ' x' || d.n, '; ' ORDER BY c.name) INTO v_observed
+    FROM (SELECT e.core_movement_id, count(*) AS n
+            FROM public.exercises e
+           WHERE e.variant_label_id IS NOT NULL AND NOT e.is_core
+           GROUP BY e.core_movement_id
+          HAVING count(*) > 6) d
+    JOIN public.exercises c ON c.id = d.core_movement_id;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL (G3): cores exceeding 6 variant-labelled children: %', v_observed;
+  END IF;
+
+  -- V9: G3 flag (warning, not failure) — a label pattern used by >= 3 rows across
+  -- >= 2 cores suggests a missing shared attribute
+  SELECT string_agg(d.slug || ' (' || d.rows || ' rows / ' || d.cores || ' cores)', '; ' ORDER BY d.slug)
+    INTO v_observed
+    FROM (SELECT vl.slug, count(e.id) AS rows, count(DISTINCT vl.core_movement_id) AS cores
+            FROM public.variant_labels vl
+            JOIN public.exercises e ON e.variant_label_id = vl.id
+           GROUP BY vl.slug
+          HAVING count(e.id) >= 3 AND count(DISTINCT vl.core_movement_id) >= 2) d;
+  IF v_observed IS NOT NULL THEN
+    RAISE WARNING 'V9 FLAG (G3): variant label patterns recurring across cores (candidate shared attributes): %', v_observed;
+  END IF;
+END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+  v_count INTEGER;
+BEGIN
+  -- V9: engine spot checks — the blessed generated names that exercise the new
+  -- bands (variant 48, arm position 26, Crush style 14, Cross-Body symmetry 35,
+  -- core-default equipment suppression)
+  SELECT string_agg(bad.v, E'\n') INTO v_observed FROM (
+    SELECT 'Double Crunch -> ' || COALESCE(generated_name, 'null') FROM public.exercises
+     WHERE id = '8c35133e-f9c9-4b6c-8a25-fb894bcf4201' AND generated_name IS DISTINCT FROM 'Double Crunch'
+    UNION ALL
+    SELECT 'Cross-Body Elbow-Reach Crunch -> ' || COALESCE(generated_name, 'null') FROM public.exercises
+     WHERE id = '47fb4553-1439-437f-b929-da8f132151bd' AND generated_name IS DISTINCT FROM 'Cross-Body Elbow-Reach Crunch'
+    UNION ALL
+    SELECT 'Crush Alternating Dumbbell Press -> ' || COALESCE(generated_name, 'null') FROM public.exercises
+     WHERE id = '98ca656f-c6d2-497e-b734-84e4ce38fa8f' AND generated_name IS DISTINCT FROM 'Crush Alternating Dumbbell Press'
+    UNION ALL
+    SELECT 'Alternating Dumbbell Grab-Reach-Pull Plank -> ' || COALESCE(generated_name, 'null') FROM public.exercises
+     WHERE id = 'ee95e859-8e5e-4346-a3b0-9869a8c7d86b' AND generated_name IS DISTINCT FROM 'Alternating Dumbbell Grab-Reach-Pull Plank'
+  ) bad(v);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: sampled generated names diverge:\n%', v_observed;
+  END IF;
+
+  -- V9: documented Single-Arm Powerbomb suppression — the string aliases
+  -- Overhead Extension ONLY, and the Powerbomb row minted no generated alias
+  SELECT count(*) INTO v_count FROM public.exercise_aliases
+   WHERE alias_normalized = public.normalize_alias('Overhead Dumbbell Triceps Extension');
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'V9 FAIL: ''Overhead Dumbbell Triceps Extension'' has % alias rows (expected exactly 1)', v_count;
+  END IF;
+  PERFORM 1 FROM public.exercise_aliases
+   WHERE exercise_id = '730c9097-4ef9-410d-81fc-d0e0d79113ac'          -- Overhead Extension
+     AND alias_normalized = public.normalize_alias('Overhead Dumbbell Triceps Extension')
+     AND kind = 'generated';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V9 FAIL: ''Overhead Dumbbell Triceps Extension'' does not alias Overhead Extension';
+  END IF;
+  SELECT string_agg(alias, ', ' ORDER BY alias) INTO v_observed FROM public.exercise_aliases
+   WHERE exercise_id = '6dfbc753-9048-4a32-8a9a-3e90d3d24cd3'          -- Single-Arm Overhead Triceps Extension
+     AND kind = 'generated';
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: Powerbomb row carries generated aliases despite the documented suppression: %', v_observed;
+  END IF;
+
+  -- V9: grip categories hold at the data level (the behavioral check follows)
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+    LEFT JOIN public.grips go ON go.id = e.grip_orientation_id
+    LEFT JOIN public.grips gw ON gw.id = e.grip_width_id
+   WHERE (e.grip_orientation_id IS NOT NULL AND go.category IS DISTINCT FROM 'Orientation')
+      OR (e.grip_width_id IS NOT NULL AND gw.category IS DISTINCT FROM 'Width');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V9 FAIL: rows with cross-category grip references: %', v_observed;
+  END IF;
+END $$;
+-- V9: grip category guard behavior (fixture-based, rolled back — harness stays side-effect-free)
+BEGIN;
+DO $$
+DECLARE
+  v_exercise UUID;
+  v_width UUID;
+  v_orientation UUID;
+  v_caught BOOLEAN := false;
+BEGIN
+  SELECT id INTO v_exercise FROM public.exercises ORDER BY created_at, id LIMIT 1;
+  SELECT id INTO v_width FROM public.grips WHERE category = 'Width' ORDER BY display_order LIMIT 1;
+  SELECT id INTO v_orientation FROM public.grips WHERE category = 'Orientation' ORDER BY display_order LIMIT 1;
+
+  BEGIN
+    UPDATE public.exercises SET grip_orientation_id = v_width WHERE id = v_exercise;
+  EXCEPTION WHEN raise_exception THEN
+    v_caught := true;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V9 FAIL: grip guard accepted a Width grip in grip_orientation_id';
+  END IF;
+
+  v_caught := false;
+  BEGIN
+    UPDATE public.exercises SET grip_width_id = v_orientation WHERE id = v_exercise;
+  EXCEPTION WHEN raise_exception THEN
+    v_caught := true;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V9 FAIL: grip guard accepted an Orientation grip in grip_width_id';
+  END IF;
+END $$;
+ROLLBACK;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
