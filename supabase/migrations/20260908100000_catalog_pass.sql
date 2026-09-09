@@ -15,6 +15,14 @@
 -- End state (from the blessed projection): 287 exercises = 48 cores + 187
 -- derivations + 52 outliers; 25 duplicates merged away; tiers 48/144/38/5.
 
+-- Fail fast on lock contention: the ALTER TABLE in section 4 needs a brief
+-- ACCESS EXCLUSIVE lock on exercises; without a timeout the migration would
+-- queue behind long-running app transactions and stall all traffic behind it.
+-- A timeout aborts the single wrapping transaction cleanly — the operator
+-- retries in a quiet window. (SET LOCAL requires a transaction block; this
+-- file always runs inside one, under psql -1 / db push.)
+SET LOCAL lock_timeout = '5s';
+
 -- ============================================================================
 -- 1) New reference tables: directions, support_positions, arm_positions,
 --    bench_angles (standing rule: every CREATE TABLE ships RLS + policies in
@@ -254,6 +262,13 @@ CREATE INDEX IF NOT EXISTS exercises_arm_position_idx ON public.exercises (arm_p
 CREATE INDEX IF NOT EXISTS exercises_bench_angle_idx ON public.exercises (bench_angle_id);
 CREATE INDEX IF NOT EXISTS exercises_variant_label_idx ON public.exercises (variant_label_id);
 
+-- The merge pass (section 9) repoints every FK table by exercise_id;
+-- exercise_instances (ON DELETE RESTRICT, app-hot) had no index on that column,
+-- so each of the 25 merges would seq-scan it. Plain CREATE INDEX: this file
+-- runs in one transaction (CONCURRENTLY is impossible here), and the index
+-- earns its keep for app reads afterwards, so it stays.
+CREATE INDEX IF NOT EXISTS idx_exercise_instances_exercise ON public.exercise_instances (exercise_id);
+
 -- Grip category guard (Stage 2 hand-off): the two grip FK columns must stay in
 -- their categories. Trigger, matching house style (CHECK cannot subquery).
 CREATE OR REPLACE FUNCTION public.enforce_grip_categories() RETURNS TRIGGER
@@ -275,9 +290,13 @@ CREATE TRIGGER exercises_grip_categories
   FOR EACH ROW EXECUTE FUNCTION enforce_grip_categories();
 
 -- ============================================================================
--- 5) Engine amendments (CREATE OR REPLACE; recompute_exercise_identity is
---    untouched — SECURITY DEFINER, search_path pinning, FOR UPDATE locking,
---    stale-alias cleanup and parent preservation stay as shipped in 20260825150000)
+-- 5) Engine amendments (CREATE OR REPLACE). recompute_exercise_identity is
+--    re-issued with ONE functional change: the parent-candidate ORDER BY gains
+--    a final id tiebreaker (bulk-seeded rows share created_at, so without it
+--    parent choice among equal-cardinality candidates was planner-dependent —
+--    staging and live could disagree). Everything else — SECURITY DEFINER,
+--    search_path pinning, FOR UPDATE locking, stale-alias cleanup and parent
+--    preservation — stays as shipped in 20260825150000.
 -- ============================================================================
 
 -- exercise_identity_attrs gains direction, support position, arm position,
@@ -389,6 +408,73 @@ BEGIN
   ) f WHERE f.frag IS NOT NULL AND f.frag <> '';
 
   RETURN trim(concat_ws(' ', v_frags, v_noun));
+END $$;
+
+-- Recompute one exercise's derived state. Verbatim from 20260825150000 except:
+-- (1) the parent-candidate ORDER BY appends `c.id ASC` as a deterministic
+--     tiebreaker (see the section banner), and
+-- (2) the alias-sync comment no longer claims Stage 3 routes collisions to
+--     review — the Stage 3 rebuild asserts the exact blessed alias set instead.
+CREATE OR REPLACE FUNCTION public.recompute_exercise_identity(p_id UUID) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_core UUID; v_is_core BOOLEAN; v_attrs UUID[]; v_parent UUID; v_ptier INTEGER; v_gen TEXT;
+BEGIN
+  -- Serialize concurrent recomputes of the same exercise: without this, two sessions each
+  -- adding a junction row read a partial attribute set and the last write wins (lost update).
+  PERFORM 1 FROM exercises WHERE id = p_id FOR UPDATE;
+  SELECT core_movement_id, is_core INTO v_core, v_is_core FROM exercises WHERE id = p_id;
+  IF NOT FOUND THEN RETURN; END IF;
+  v_attrs := exercise_identity_attrs(p_id);
+  v_gen := generate_exercise_name(p_id);
+
+  IF v_is_core OR v_core IS NULL THEN
+    v_parent := NULL;                                          -- cores and outliers have no parent
+  ELSE
+    SELECT c.id, c.tier INTO v_parent, v_ptier
+    FROM exercises c
+    WHERE c.core_movement_id = v_core AND c.id <> p_id
+      AND exercise_identity_attrs(c.id) <@ v_attrs
+      AND cardinality(exercise_identity_attrs(c.id)) < cardinality(v_attrs)
+    ORDER BY cardinality(exercise_identity_attrs(c.id)) DESC, c.created_at ASC, c.id ASC
+    LIMIT 1;
+    IF v_parent IS NULL THEN v_parent := v_core; v_ptier := 0; END IF;
+  END IF;
+
+  UPDATE exercises SET
+    identity_fingerprint = CASE WHEN v_core IS NULL THEN NULL ELSE array_to_string(v_attrs, '|') END,
+    -- Rows with no core movement keep their existing hand-set parent: the legacy hierarchy
+    -- (19 live rows) must survive untouched until the Stage 3 catalog pass assigns cores —
+    -- wiping it here would visibly flatten the app's hierarchy screen (zero-visible-change rule).
+    parent_exercise_id   = CASE WHEN v_is_core THEN NULL
+                                WHEN v_core IS NULL THEN parent_exercise_id
+                                ELSE v_parent END,
+    tier = CASE WHEN v_is_core THEN 0 WHEN v_core IS NULL THEN NULL ELSE COALESCE(v_ptier, 0) + 1 END,
+    generated_name = v_gen,
+    name = CASE WHEN name_is_custom OR v_core IS NULL THEN name ELSE v_gen END,
+    updated_at = now()
+  WHERE id = p_id;
+
+  -- Sync the generated alias; a cross-exercise collision is skipped here — Stage 3's alias
+  -- rebuild re-mints the final set and asserts it exactly. Never a crash.
+  IF v_core IS NULL THEN
+    -- A core-less row holds no generated aliases: a demoted core (or a row whose core was
+    -- cleared) must not leave its old generated name squatting as debris.
+    DELETE FROM exercise_aliases WHERE exercise_id = p_id AND kind = 'generated';
+  ELSIF v_gen IS NOT NULL AND v_gen <> '' THEN
+    -- Drop stale generated aliases first: per-row junction triggers make every intermediate
+    -- generated name an alias, and leaving that debris squats on names that rightfully
+    -- belong to other exercises (their ON CONFLICT insert would silently lose).
+    DELETE FROM exercise_aliases
+    WHERE exercise_id = p_id AND kind = 'generated'
+      AND alias_normalized <> normalize_alias(v_gen);
+    BEGIN
+      INSERT INTO exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+      VALUES (p_id, v_gen, normalize_alias(v_gen), 'generated', 'seed')
+      ON CONFLICT (alias_normalized) DO NOTHING;
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+  END IF;
 END $$;
 
 -- The five new identity columns must fire the recompute trigger. (A core's
@@ -760,983 +846,8 @@ CREATE TEMP TABLE _cp_merge_wilds (
   alias TEXT NOT NULL
 );
 
--- Fail fast if any staged reference value does not resolve (a silent NULL here
--- would otherwise masquerade as a deliberate blank).
-DO $$
-DECLARE
-  v_observed TEXT;
-BEGIN
-  SELECT string_agg(bad.v, '; ' ORDER BY bad.v) INTO v_observed FROM (
-    SELECT 'family: ' || s.family AS v FROM _cp_rows s
-      WHERE NOT EXISTS (SELECT 1 FROM public.movement_families f WHERE f.name = s.family)
-    UNION SELECT 'modality: ' || s.modality FROM _cp_rows s
-      WHERE NOT EXISTS (SELECT 1 FROM public.movement_categories c WHERE c.name = s.modality)
-    UNION SELECT 'load_position: ' || s.load_position FROM _cp_rows s
-      WHERE s.load_position IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.load_positions x WHERE x.name = s.load_position)
-    UNION SELECT 'stance: ' || s.stance FROM _cp_rows s
-      WHERE s.stance IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.stances x WHERE x.name = s.stance)
-    UNION SELECT 'range_depth: ' || s.range_depth FROM _cp_rows s
-      WHERE s.range_depth IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.range_depths x WHERE x.name = s.range_depth)
-    UNION SELECT 'symmetry: ' || s.symmetry FROM _cp_rows s
-      WHERE s.symmetry IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.symmetries x WHERE x.name = s.symmetry)
-    UNION SELECT 'grip_orientation: ' || s.grip_orientation FROM _cp_rows s
-      WHERE s.grip_orientation IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.grips g WHERE g.name = s.grip_orientation AND g.category = 'Orientation')
-    UNION SELECT 'grip_width: ' || s.grip_width FROM _cp_rows s
-      WHERE s.grip_width IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.grips g WHERE g.name = s.grip_width AND g.category = 'Width')
-    UNION SELECT 'bench_angle: ' || s.bench_angle FROM _cp_rows s
-      WHERE s.bench_angle IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.bench_angles x WHERE x.name = s.bench_angle)
-    UNION SELECT 'direction: ' || s.direction FROM _cp_rows s
-      WHERE s.direction IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.directions x WHERE x.name = s.direction)
-    UNION SELECT 'support_position: ' || s.support_position FROM _cp_rows s
-      WHERE s.support_position IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.support_positions x WHERE x.name = s.support_position)
-    UNION SELECT 'arm_position: ' || s.arm_position FROM _cp_rows s
-      WHERE s.arm_position IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.arm_positions x WHERE x.name = s.arm_position)
-    UNION SELECT 'equipment: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.equipment) n
-      WHERE NOT EXISTS (SELECT 1 FROM public.equipment x WHERE x.name = n)
-    UNION SELECT 'style: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.styles) n
-      WHERE NOT EXISTS (SELECT 1 FROM public.movement_styles x WHERE x.name = n AND x.is_identity)
-    UNION SELECT 'goal: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.goals) n
-      WHERE NOT EXISTS (SELECT 1 FROM public.goal_types x WHERE x.name = n)
-    UNION SELECT 'muscle: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.primary_muscles || s.secondary_muscles) n
-      WHERE NOT EXISTS (SELECT 1 FROM public.muscle_regions x WHERE x.name = n)
-  ) bad(v);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: staged values with no reference row: %', v_observed;
-  END IF;
-
-  -- every staged pre-existing exercise must exist with its sheet name (sanity:
-  -- ids and names captured together on the approved sheet)
-  SELECT string_agg(s.exercise_id::TEXT || ' (' || s.old_name || ')', '; ') INTO v_observed
-    FROM _cp_rows s
-   WHERE NOT s.is_new_core
-     AND NOT EXISTS (SELECT 1 FROM public.exercises e
-                      WHERE e.id = s.exercise_id AND e.name IN (s.old_name, s.final_name));
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: sheet rows not matching live exercises by id+name: %', v_observed;
-  END IF;
-
-  SELECT string_agg(m.loser_id::TEXT || ' (' || m.loser_name || ')', '; ') INTO v_observed
-    FROM _cp_merges m
-   WHERE EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.loser_id)
-     AND NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.loser_id AND e.name = m.loser_name);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: merge losers not matching live exercises by id+name: %', v_observed;
-  END IF;
-END $$;
-
--- ============================================================================
--- 7) Core pass: five new core rows, promotions, curated renames, core-default
---    equipment. Descendants are recomputed in section 11 (a core rename does
---    not retrigger children on its own — the trigger has no name column).
--- ============================================================================
--- new core: Bent-Over Row (canonical slug is freed by the merges below, then claimed in section 8)
-INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
-                              movement_family_id, movement_category_id, core_default_equipment)
-SELECT 'b6879563-ab0d-5bc6-9b44-cab09315d939', 'Bent-Over Row', 'bent-over-row-core', true, true, true, true,
-       (SELECT id FROM public.movement_families WHERE name = 'Pull'),
-       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
-       'Barbell'
- WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = 'b6879563-ab0d-5bc6-9b44-cab09315d939');
--- new core: Carry
-INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
-                              movement_family_id, movement_category_id, core_default_equipment)
-SELECT '87377b27-531d-5a4e-ab8f-4faf947495e3', 'Carry', 'carry', true, true, true, true,
-       (SELECT id FROM public.movement_families WHERE name = 'Carry'),
-       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
-       NULL
- WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '87377b27-531d-5a4e-ab8f-4faf947495e3');
--- new core: Lat Pulldown
-INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
-                              movement_family_id, movement_category_id, core_default_equipment)
-SELECT '90d63ecc-cebe-5ace-806d-45c8560f973f', 'Lat Pulldown', 'lat-pulldown', true, true, false, true,
-       (SELECT id FROM public.movement_families WHERE name = 'Pull'),
-       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
-       'Cable'
- WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '90d63ecc-cebe-5ace-806d-45c8560f973f');
--- new core: Plank
-INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
-                              movement_family_id, movement_category_id, core_default_equipment)
-SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'Plank', 'plank', true, true, false, true,
-       (SELECT id FROM public.movement_families WHERE name = 'Midline'),
-       (SELECT id FROM public.movement_categories WHERE name = 'Gymnastics'),
-       'Bodyweight, Floor'
- WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b');
--- new core: Raise
-INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
-                              movement_family_id, movement_category_id, core_default_equipment)
-SELECT '31994dce-91ac-5b52-9640-98b3c0bb2091', 'Raise', 'raise', true, true, false, true,
-       (SELECT id FROM public.movement_families WHERE name = 'Push/Press'),
-       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
-       'Dumbbell'
- WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '31994dce-91ac-5b52-9640-98b3c0bb2091');
-
--- Promote + rename the 43 sheet cores (9 already core from Stage 1). The BEFORE
--- trigger self-references core_movement_id; the AFTER trigger recomputes.
-UPDATE public.exercises e
-   SET is_core = true,
-       parent_exercise_id = NULL,      -- check_core_no_parent: a core sheds its legacy parent
-       name = s.final_name,
-       name_is_custom = s.name_is_custom,
-       core_default_equipment = s.core_default_equipment,
-       updated_at = now()
-  FROM _cp_rows s
- WHERE s.exercise_id = e.id AND s.kind = 'core' AND NOT s.is_new_core
-   AND (NOT e.is_core
-        OR e.parent_exercise_id IS NOT NULL
-        OR e.name IS DISTINCT FROM s.final_name
-        OR e.name_is_custom IS DISTINCT FROM s.name_is_custom
-        OR e.core_default_equipment IS DISTINCT FROM s.core_default_equipment);
-
--- ============================================================================
--- 8) variant_labels seed (G2: each label scoped to exactly one core, by id)
--- ============================================================================
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'b6439378-a400-4c51-a1fe-c3ce317970cb', 'chest-to-bar', 'Chest-to-Bar', 48  -- core: Pull-Up
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'b6439378-a400-4c51-a1fe-c3ce317970cb' AND slug = 'chest-to-bar');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '98e1ca9d-4297-480a-b06b-7f2b8e7a276f', 'donkey', 'Donkey', 48  -- core: Calf Raise
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '98e1ca9d-4297-480a-b06b-7f2b8e7a276f' AND slug = 'donkey');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'da5fcd1e-b402-41ae-a144-5596aaa510d1', 'double', 'Double', 48  -- core: Crunch
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'da5fcd1e-b402-41ae-a144-5596aaa510d1' AND slug = 'double');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'c2ba5880-c532-4981-8b14-da1be3e6b78f', 'double-tap', 'Double-Tap', 48  -- core: Mountain Climber
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'c2ba5880-c532-4981-8b14-da1be3e6b78f' AND slug = 'double-tap');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'e3cdc5c3-6618-4050-85db-88e4a1a70f29', 'double-under', 'Double-Under', 48  -- core: Jump Rope
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'e3cdc5c3-6618-4050-85db-88e4a1a70f29' AND slug = 'double-under');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'da5fcd1e-b402-41ae-a144-5596aaa510d1', 'elbow-reach', 'Elbow-Reach', 48  -- core: Crunch
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'da5fcd1e-b402-41ae-a144-5596aaa510d1' AND slug = 'elbow-reach');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '01f01e3a-393d-4819-8834-cf25ea1ba04a', 'ez-bar', 'EZ-Bar', 48  -- core: Curl
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '01f01e3a-393d-4819-8834-cf25ea1ba04a' AND slug = 'ez-bar');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'grab-reach-pull', 'Grab-Reach-Pull', 48  -- core: Plank
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'grab-reach-pull');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '2222e3be-0481-4103-827c-8fb0f3eb78c5', 'high-stance', 'High-Stance', 48  -- core: Leg Press
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '2222e3be-0481-4103-827c-8fb0f3eb78c5' AND slug = 'high-stance');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '01f01e3a-393d-4819-8834-cf25ea1ba04a', 'horn', 'Horn', 48  -- core: Curl
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '01f01e3a-393d-4819-8834-cf25ea1ba04a' AND slug = 'horn');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'jacks', 'Jack', 48  -- core: Plank
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'jacks');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'pull-through', 'Pull-Through', 48  -- core: Plank
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'pull-through');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'reach', 'Reach', 48  -- core: Plank
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'reach');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'renegade-row', 'Renegade-Row', 48  -- core: Plank
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'renegade-row');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'c2ba5880-c532-4981-8b14-da1be3e6b78f', 'spider', 'Spider', 48  -- core: Mountain Climber
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'c2ba5880-c532-4981-8b14-da1be3e6b78f' AND slug = 'spider');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT 'da5fcd1e-b402-41ae-a144-5596aaa510d1', 'toe-tap', 'Toe-Tap', 48  -- core: Crunch
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = 'da5fcd1e-b402-41ae-a144-5596aaa510d1' AND slug = 'toe-tap');
-INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
-SELECT '6fe16d57-5b36-42be-828d-70270e41e912', 'walkout', 'Walkout', 48  -- core: Push-Up
- WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
-                    WHERE core_movement_id = '6fe16d57-5b36-42be-828d-70270e41e912' AND slug = 'walkout');
-
--- ============================================================================
--- 9) Merges: 25 duplicate rows fold into their winners. The repoint is driven
---    by pg_constraint at runtime — every FK that references exercises(id) is
---    discovered and repointed (dedupe-skip against any unique index containing
---    the FK column), so a schema addition can never silently orphan rows.
--- ============================================================================
-CREATE OR REPLACE FUNCTION public.merge_exercise_into(p_loser UUID, p_winner UUID) RETURNS VOID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  fk RECORD;
-  idx RECORD;
-  v_cond TEXT;
-  v_loser_name TEXT;
-  v_winner_name TEXT;
-BEGIN
-  IF p_loser = p_winner THEN
-    RAISE EXCEPTION 'merge_exercise_into: loser and winner are the same row (%)', p_loser;
-  END IF;
-  SELECT name INTO v_winner_name FROM exercises WHERE id = p_winner FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'merge_exercise_into: winner % does not exist', p_winner;
-  END IF;
-  SELECT name INTO v_loser_name FROM exercises WHERE id = p_loser FOR UPDATE;
-  IF NOT FOUND THEN
-    RETURN;                                                   -- already merged (idempotent)
-  END IF;
-
-  -- The loser's display name and its legacy array aliases survive as wild
-  -- aliases on the winner (never one that trim-equals the winner's own name).
-  INSERT INTO exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
-  SELECT p_winner, a.alias, normalize_alias(a.alias), 'wild', 'seed'
-    FROM (SELECT v_loser_name AS alias
-          UNION
-          SELECT unnest(l.aliases) FROM exercises l WHERE l.id = p_loser) a
-   WHERE btrim(a.alias) <> v_winner_name
-     AND normalize_alias(a.alias) <> ''
-  ON CONFLICT (alias_normalized) DO NOTHING;
-
-  FOR fk IN
-    SELECT c.oid AS con_oid, c.conrelid::regclass AS tbl, a.attname AS col,
-           c.conrelid = 'public.exercises'::regclass::oid AS self_ref,
-           cardinality(c.conkey) AS ncols
-      FROM pg_constraint c
-      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-     WHERE c.contype = 'f' AND c.confrelid = 'public.exercises'::regclass
-     ORDER BY c.conrelid::regclass::text, a.attname
-  LOOP
-    IF fk.ncols <> 1 THEN
-      RAISE EXCEPTION 'merge_exercise_into: multi-column FK % on % is not supported', fk.con_oid::regclass, fk.tbl;
-    END IF;
-
-    -- Dedupe-skip: for every unique index containing this column, drop loser
-    -- rows whose repointed image already exists on the winner.
-    FOR idx IN
-      SELECT i.indexrelid,
-             (SELECT string_agg(format('t2.%1$I IS NOT DISTINCT FROM t1.%1$I', a2.attname), ' AND ')
-                FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
-                JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum
-               WHERE a2.attname <> fk.col) AS other_cols
-        FROM pg_index i
-       WHERE i.indrelid = fk.tbl AND i.indisunique
-         AND i.indpred IS NULL AND i.indexprs IS NULL
-         AND EXISTS (SELECT 1 FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
-                       JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum
-                      WHERE a2.attname = fk.col)
-       ORDER BY i.indexrelid
-    LOOP
-      EXECUTE format(
-        'DELETE FROM %s t1 WHERE t1.%I = $1 AND EXISTS (SELECT 1 FROM %s t2 WHERE t2.%I = $2 AND %s)',
-        fk.tbl, fk.col, fk.tbl, fk.col, COALESCE(idx.other_cols, 'true'))
-      USING p_loser, p_winner;
-    END LOOP;
-
-    EXECUTE format('UPDATE %s SET %I = $2 WHERE %I = $1%s',
-                   fk.tbl, fk.col, fk.col,
-                   CASE WHEN fk.self_ref THEN ' AND id <> $1' ELSE '' END)
-    USING p_loser, p_winner;
-  END LOOP;
-
-  -- Scaling links that became self-referential collapse away.
-  IF to_regclass('public.movement_scaling_links') IS NOT NULL THEN
-    DELETE FROM movement_scaling_links WHERE from_exercise_id = to_exercise_id;
-  END IF;
-
-  DELETE FROM exercises WHERE id = p_loser;
-END $$;
-
-DO $$
-DECLARE
-  m RECORD;
-BEGIN
-  FOR m IN SELECT * FROM _cp_merges ORDER BY loser_name LOOP
-    IF NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = m.winner_id) THEN
-      RAISE EXCEPTION 'catalog pass FAIL: merge winner % for loser % missing', m.winner_id, m.loser_name;
-    END IF;
-    -- capture the loser''s wild-alias contributions before it disappears, so the
-    -- alias rebuild (section 14) can re-assert them after the generated purge
-    INSERT INTO _cp_merge_wilds (winner_id, alias)
-    SELECT m.winner_id, a.alias
-      FROM public.exercises l
-      CROSS JOIN LATERAL (SELECT l.name AS alias UNION SELECT unnest(l.aliases)) a
-     WHERE l.id = m.loser_id
-       AND btrim(a.alias) <> (SELECT name FROM public.exercises WHERE id = m.winner_id)
-       AND public.normalize_alias(a.alias) <> '';
-    PERFORM public.merge_exercise_into(m.loser_id, m.winner_id);
-  END LOOP;
-END $$;
-
--- the merges above freed the canonical slug for Bent-Over Row
-UPDATE public.exercises SET slug = 'bent-over-row'
- WHERE id = 'b6879563-ab0d-5bc6-9b44-cab09315d939' AND slug IS DISTINCT FROM 'bent-over-row';
-
--- ============================================================================
--- 10) Classification: every surviving row gets its approved attribute set,
---     display name and flags in one row-update (the identity trigger recomputes
---     per row once the statement completes), then the junctions are synced.
--- ============================================================================
-UPDATE public.exercises e
-   SET is_core = (s.kind = 'core'),
-       core_movement_id = s.core_id,
-       is_movement = s.is_movement,
-       name = s.final_name,
-       name_is_custom = s.name_is_custom,
-       core_default_equipment = s.core_default_equipment,
-       movement_family_id = (SELECT id FROM public.movement_families WHERE name = s.family),
-       movement_category_id = (SELECT id FROM public.movement_categories WHERE name = s.modality),
-       goal_type_id = (SELECT id FROM public.goal_types WHERE name = s.goals[1]),
-       load_position_id = (SELECT id FROM public.load_positions WHERE name = s.load_position),
-       stance_id = (SELECT id FROM public.stances WHERE name = s.stance),
-       range_depth_id = (SELECT id FROM public.range_depths WHERE name = s.range_depth),
-       symmetry_id = (SELECT id FROM public.symmetries WHERE name = s.symmetry),
-       grip_orientation_id = (SELECT id FROM public.grips WHERE name = s.grip_orientation AND category = 'Orientation'),
-       grip_width_id = (SELECT id FROM public.grips WHERE name = s.grip_width AND category = 'Width'),
-       bench_angle_id = (SELECT id FROM public.bench_angles WHERE name = s.bench_angle),
-       direction_id = (SELECT id FROM public.directions WHERE name = s.direction),
-       support_position_id = (SELECT id FROM public.support_positions WHERE name = s.support_position),
-       arm_position_id = (SELECT id FROM public.arm_positions WHERE name = s.arm_position),
-       variant_label_id = (SELECT id FROM public.variant_labels
-                            WHERE slug = s.variant_slug AND core_movement_id = s.core_id),
-       -- outliers keep no machine hierarchy: the legacy hand-set parents the
-       -- engine preserves for coreless rows retire with this pass
-       parent_exercise_id = CASE WHEN s.kind = 'outlier' THEN NULL ELSE e.parent_exercise_id END,
-       updated_at = now()
-  FROM _cp_rows s
- WHERE s.exercise_id = e.id;
-
--- Equipment junction := the approved per-row set (cores carry none — the new
--- convention; their defaults live in core_default_equipment as naming metadata).
-DELETE FROM public.exercise_equipment ee
- USING _cp_rows s
- WHERE ee.exercise_id = s.exercise_id
-   AND NOT EXISTS (SELECT 1 FROM unnest(s.equipment) n
-                    JOIN public.equipment q ON q.name = n
-                   WHERE q.id = ee.equipment_id);
-INSERT INTO public.exercise_equipment (exercise_id, equipment_id)
-SELECT s.exercise_id, q.id
-  FROM _cp_rows s
- CROSS JOIN LATERAL unnest(s.equipment) n
-  JOIN public.equipment q ON q.name = n
-ON CONFLICT (exercise_id, equipment_id) DO NOTHING;
-
--- Identity styles := the approved per-row set. Modifier-style junction rows
--- (Tempo, Pause, …) are prescription metadata and stay untouched.
-DELETE FROM public.exercise_movement_styles ems
- USING _cp_rows s, public.movement_styles ms
- WHERE ems.exercise_id = s.exercise_id
-   AND ms.id = ems.movement_style_id AND ms.is_identity
-   AND NOT (ms.name = ANY (s.styles));
-INSERT INTO public.exercise_movement_styles (exercise_id, movement_style_id)
-SELECT s.exercise_id, ms.id
-  FROM _cp_rows s
- CROSS JOIN LATERAL unnest(s.styles) n
-  JOIN public.movement_styles ms ON ms.name = n AND ms.is_identity
-ON CONFLICT (exercise_id, movement_style_id) DO NOTHING;
-
--- Goals := the approved per-row set (legacy goal_type_id was set to the first
--- listed goal above; the junction carries the full set).
-DELETE FROM public.exercise_goal_types x
- USING _cp_rows s
- WHERE x.exercise_id = s.exercise_id
-   AND NOT EXISTS (SELECT 1 FROM unnest(s.goals) n
-                    JOIN public.goal_types g ON g.name = n
-                   WHERE g.id = x.goal_type_id);
-INSERT INTO public.exercise_goal_types (exercise_id, goal_type_id)
-SELECT s.exercise_id, g.id
-  FROM _cp_rows s
- CROSS JOIN LATERAL unnest(s.goals) n
-  JOIN public.goal_types g ON g.name = n
-ON CONFLICT (exercise_id, goal_type_id) DO NOTHING;
-
--- Muscles := the approved per-row sets with the primary/secondary split.
-DELETE FROM public.exercise_muscle_regions x
- USING _cp_rows s
- WHERE x.exercise_id = s.exercise_id
-   AND NOT EXISTS (SELECT 1 FROM unnest(s.primary_muscles || s.secondary_muscles) n
-                    JOIN public.muscle_regions m ON m.name = n
-                   WHERE m.id = x.muscle_region_id);
-UPDATE public.exercise_muscle_regions x
-   SET is_primary = (m.name = ANY (s.primary_muscles))
-  FROM _cp_rows s, public.muscle_regions m
- WHERE x.exercise_id = s.exercise_id AND m.id = x.muscle_region_id
-   AND x.is_primary IS DISTINCT FROM (m.name = ANY (s.primary_muscles));
-INSERT INTO public.exercise_muscle_regions (exercise_id, muscle_region_id, is_primary)
-SELECT s.exercise_id, m.id, (m.name = ANY (s.primary_muscles))
-  FROM _cp_rows s
- CROSS JOIN LATERAL unnest(s.primary_muscles || s.secondary_muscles) n
-  JOIN public.muscle_regions m ON m.name = n
-ON CONFLICT (exercise_id, muscle_region_id) DO NOTHING;
-
--- ============================================================================
--- 11) Deterministic full recompute, ascending identity-attribute cardinality:
---     parents always finalize before their children, so the machine-derived
---     parent/tier chain lands in one pass (covers the core renames too).
--- ============================================================================
-DO $$
-DECLARE
-  r RECORD;
-BEGIN
-  FOR r IN
-    SELECT id FROM public.exercises
-    ORDER BY cardinality(public.exercise_identity_attrs(id)) ASC, created_at ASC, id ASC
-  LOOP
-    PERFORM public.recompute_exercise_identity(r.id);
-  END LOOP;
-END $$;
-
--- ============================================================================
--- 12) Legacy equipment_types array: kept in place (it drops in Stage 6) but
---     updated to the canonical final state so the array and the junction agree
---     — for cores that means their core-default equipment (the array still
---     feeds the app's equipment filters; an empty array would blank them).
--- ============================================================================
-UPDATE public.exercises e
-   SET equipment_types = v.arr
-  FROM (SELECT s.exercise_id,
-               CASE WHEN s.kind = 'core'
-                    THEN COALESCE((SELECT array_agg(btrim(x)) FROM unnest(string_to_array(s.core_default_equipment, ',')) x
-                                    WHERE btrim(x) <> ''), '{}')
-                    ELSE s.equipment
-               END AS arr
-          FROM _cp_rows s) v
- WHERE e.id = v.exercise_id
-   AND e.equipment_types IS DISTINCT FROM v.arr;
-
--- ============================================================================
--- 13) Legacy 'Supine / Prone' stance retires: the classification above is the
---     only writer of stance_id, so zero references must remain.
--- ============================================================================
-DO $$
-DECLARE
-  v_observed TEXT;
-BEGIN
-  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
-    FROM public.exercises e
-    JOIN public.stances s ON s.id = e.stance_id
-   WHERE s.name = 'Supine / Prone';
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: rows still on legacy Supine / Prone stance: %', v_observed;
-  END IF;
-END $$;
--- legacy dual-store junction debris goes with it (the FK would cascade anyway;
--- explicit for the record — 1 row on the 2026-08-24 snapshot)
-DELETE FROM public.exercise_stances es
- USING public.stances s
- WHERE s.id = es.stance_id AND s.name = 'Supine / Prone';
-DELETE FROM public.stances WHERE name = 'Supine / Prone';
-
--- ============================================================================
--- 14) Alias purge + rebuild. Order matters: purge ALL generated aliases (the
---     per-row recomputes above minted every intermediate name as debris; the
---     merge-time wilds landed before the purge and are re-asserted after it),
---     then re-mint generated aliases from the final generated names — only for
---     rows whose generated name differs from their display name — and finally
---     insert the wild set (old display names, sheet-note wilds, legacy array
---     aliases, merge-loser contributions). Generated aliases mint first so a
---     string that is both a row's generated name and one of its wild sources
---     lands as kind='generated'. A mint collision with an alias owned by
---     another exercise routes to exercise_match_reviews instead of failing,
---     except the documented Single-Arm Powerbomb suppression (its generated
---     alias would duplicate sibling Overhead Extension's, because Unilateral
---     is silent in names).
--- ============================================================================
-DELETE FROM public.exercise_aliases WHERE kind = 'generated';
-
--- re-mint generated aliases
-DO $$
-DECLARE
-  r RECORD;
-  v_n INTEGER;
-  v_norm TEXT;
-  v_user UUID;
-BEGIN
-  FOR r IN
-    SELECT e.id, e.name, e.generated_name, e.created_by
-      FROM public.exercises e
-      JOIN _cp_rows s ON s.exercise_id = e.id
-     WHERE e.core_movement_id IS NOT NULL              -- never read generated_name off a coreless row
-       AND e.generated_name IS NOT NULL AND e.generated_name <> ''
-       AND e.generated_name <> e.name
-       AND NOT s.suppress_generated_alias              -- the documented Powerbomb suppression
-     ORDER BY e.name, e.id
-  LOOP
-    v_norm := public.normalize_alias(r.generated_name);
-    INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
-    VALUES (r.id, r.generated_name, v_norm, 'generated', 'seed')
-    ON CONFLICT (alias_normalized) DO NOTHING;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    IF v_n = 0 AND NOT EXISTS (SELECT 1 FROM public.exercise_aliases
-                                WHERE exercise_id = r.id AND alias_normalized = v_norm) THEN
-      -- collision with an alias owned elsewhere: route to review, never fail
-      SELECT COALESCE(r.created_by, (SELECT u.id FROM auth.users u ORDER BY u.created_at, u.id LIMIT 1))
-        INTO v_user;
-      IF v_user IS NULL THEN
-        RAISE EXCEPTION 'catalog pass FAIL: generated-alias collision for % (%) and no auth user to own the review row',
-          r.name, r.generated_name;
-      END IF;
-      INSERT INTO public.exercise_match_reviews (user_id, raw_name, raw_name_normalized, context, candidates, status)
-      SELECT v_user, r.generated_name, v_norm,
-             'catalog-pass generated-alias collision (exercise ' || r.id || ')',
-             '[]'::jsonb, 'pending'
-       WHERE NOT EXISTS (SELECT 1 FROM public.exercise_match_reviews
-                          WHERE raw_name_normalized = v_norm
-                            AND context = 'catalog-pass generated-alias collision (exercise ' || r.id || ')');
-      RAISE WARNING 'catalog pass: generated alias % for % collided; routed to exercise_match_reviews',
-        r.generated_name, r.name;
-    END IF;
-  END LOOP;
-END $$;
-
--- old display names become wild aliases (skip exact keep-names: a trim-equal
--- alias of the row's own final name carries no information)
-INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
-SELECT s.exercise_id, s.old_name, public.normalize_alias(s.old_name), 'wild', 'seed'
-  FROM _cp_rows s
- WHERE s.old_name IS NOT NULL
-   AND btrim(s.old_name) <> s.final_name
-   AND public.normalize_alias(s.old_name) <> ''
-ON CONFLICT (alias_normalized) DO NOTHING;
-
--- sheet-note wild aliases (wild-alias: markers on the approved sheet)
-INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
-SELECT s.exercise_id, a, public.normalize_alias(a), 'wild', 'seed'
-  FROM _cp_rows s
- CROSS JOIN LATERAL unnest(s.note_wild_aliases) a
- WHERE public.normalize_alias(a) <> ''
-ON CONFLICT (alias_normalized) DO NOTHING;
-
--- legacy exercises.aliases array contents become wild aliases (the array drops
--- in Stage 6; from here the alias table is the single source of truth)
-INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
-SELECT e.id, a, public.normalize_alias(a), 'wild', 'seed'
-  FROM public.exercises e
- CROSS JOIN LATERAL unnest(e.aliases) a
- WHERE btrim(a) <> e.name
-   AND public.normalize_alias(a) <> ''
-ON CONFLICT (alias_normalized) DO NOTHING;
-
--- merge-loser contributions, re-asserted post-purge
-INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
-SELECT mw.winner_id, mw.alias, public.normalize_alias(mw.alias), 'wild', 'seed'
-  FROM _cp_merge_wilds mw
-ON CONFLICT (alias_normalized) DO NOTHING;
-
--- ============================================================================
--- 15) SELF-VERIFY (standing rule): assert the achieved end state against the
---     blessed projection before the transaction commits; observed values in
---     every failure message. `db push` does not run the harness, so this file
---     fails the push closed on any drift.
--- ============================================================================
-
--- 15a) population: exactly the staged 287 rows survive, 48/187/52 by kind,
---      every merge loser gone, every winner present
-DO $$
-DECLARE
-  v_observed TEXT;
-  v_count INTEGER;
-BEGIN
-  SELECT count(*) INTO v_count FROM public.exercises;
-  IF v_count <> 287 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: exercises count % (expected 287)', v_count;
-  END IF;
-
-  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
-    FROM public.exercises e WHERE NOT EXISTS (SELECT 1 FROM _cp_rows s WHERE s.exercise_id = e.id);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: unstaged exercises present: %', v_observed;
-  END IF;
-  SELECT string_agg(s.final_name, ', ' ORDER BY s.final_name) INTO v_observed
-    FROM _cp_rows s WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = s.exercise_id);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: staged exercises missing: %', v_observed;
-  END IF;
-
-  SELECT count(*) INTO v_count FROM public.exercises WHERE is_core;
-  IF v_count <> 48 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: core count % (expected 48)', v_count;
-  END IF;
-  SELECT count(*) INTO v_count FROM public.exercises WHERE NOT is_core AND core_movement_id IS NOT NULL;
-  IF v_count <> 187 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: derivation count % (expected 187)', v_count;
-  END IF;
-  SELECT count(*) INTO v_count FROM public.exercises WHERE core_movement_id IS NULL;
-  IF v_count <> 52 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: outlier count % (expected 52)', v_count;
-  END IF;
-
-  SELECT string_agg(m.loser_name, ', ' ORDER BY m.loser_name) INTO v_observed
-    FROM _cp_merges m WHERE EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.loser_id);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: merge losers still present: %', v_observed;
-  END IF;
-  SELECT string_agg(m.loser_name || ' -> ' || m.winner_id, ', ' ORDER BY m.loser_name) INTO v_observed
-    FROM _cp_merges m WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.winner_id);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: merge winners missing: %', v_observed;
-  END IF;
-END $$;
-
--- 15b) per-row end state: display name, custom flag, generated name, core,
---      tier, machine parent, is_movement, family, modality — all 287 rows
---      against the blessed projection
-DO $$
-DECLARE
-  v_bad INTEGER;
-  v_observed TEXT;
-BEGIN
-  SELECT count(*),
-         string_agg(bad.detail, E'\n' ORDER BY bad.detail) FILTER (WHERE bad.rn <= 10)
-    INTO v_bad, v_observed
-  FROM (
-    SELECT row_number() OVER (ORDER BY s.final_name) AS rn,
-           s.final_name || ': ' ||
-           concat_ws('; ',
-             CASE WHEN e.name IS DISTINCT FROM s.final_name
-                  THEN 'name=' || COALESCE(e.name, 'null') END,
-             CASE WHEN e.name_is_custom IS DISTINCT FROM s.name_is_custom
-                  THEN 'name_is_custom=' || e.name_is_custom::TEXT END,
-             CASE WHEN e.generated_name IS DISTINCT FROM s.expected_generated
-                  THEN 'generated=' || COALESCE(e.generated_name, 'null') || ' (expected ' || s.expected_generated || ')' END,
-             CASE WHEN e.core_movement_id IS DISTINCT FROM s.core_id
-                  THEN 'core=' || COALESCE(e.core_movement_id::TEXT, 'null') END,
-             CASE WHEN e.is_core IS DISTINCT FROM (s.kind = 'core')
-                  THEN 'is_core=' || e.is_core::TEXT END,
-             CASE WHEN e.tier IS DISTINCT FROM s.expected_tier
-                  THEN 'tier=' || COALESCE(e.tier::TEXT, 'null') || ' (expected ' || COALESCE(s.expected_tier::TEXT, 'null') || ')' END,
-             CASE WHEN e.parent_exercise_id IS DISTINCT FROM s.expected_parent_id
-                  THEN 'parent=' || COALESCE(e.parent_exercise_id::TEXT, 'null') || ' (expected ' || COALESCE(s.expected_parent_id::TEXT, 'null') || ')' END,
-             CASE WHEN e.is_movement IS DISTINCT FROM s.is_movement
-                  THEN 'is_movement=' || COALESCE(e.is_movement::TEXT, 'null') END,
-             CASE WHEN f.name IS DISTINCT FROM s.family
-                  THEN 'family=' || COALESCE(f.name, 'null') END,
-             CASE WHEN mc.name IS DISTINCT FROM s.modality
-                  THEN 'modality=' || COALESCE(mc.name, 'null') END,
-             CASE WHEN e.core_movement_id IS NOT NULL AND e.identity_fingerprint IS NULL
-                  THEN 'fingerprint=null' END
-           ) AS detail
-      FROM _cp_rows s
-      JOIN public.exercises e ON e.id = s.exercise_id
-      LEFT JOIN public.movement_families f ON f.id = e.movement_family_id
-      LEFT JOIN public.movement_categories mc ON mc.id = e.movement_category_id
-     WHERE e.name IS DISTINCT FROM s.final_name
-        OR e.name_is_custom IS DISTINCT FROM s.name_is_custom
-        OR e.generated_name IS DISTINCT FROM s.expected_generated
-        OR e.core_movement_id IS DISTINCT FROM s.core_id
-        OR e.is_core IS DISTINCT FROM (s.kind = 'core')
-        OR e.tier IS DISTINCT FROM s.expected_tier
-        OR e.parent_exercise_id IS DISTINCT FROM s.expected_parent_id
-        OR e.is_movement IS DISTINCT FROM s.is_movement
-        OR f.name IS DISTINCT FROM s.family
-        OR mc.name IS DISTINCT FROM s.modality
-        OR (e.core_movement_id IS NOT NULL AND e.identity_fingerprint IS NULL)
-  ) bad;
-  IF v_bad > 0 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: % rows diverge from the blessed projection (first 10):\n%', v_bad, v_observed;
-  END IF;
-END $$;
-
--- 15c) attribute columns resolve to exactly the staged values (both directions:
---      a NULL where the sheet has a value is as fatal as the reverse)
-DO $$
-DECLARE
-  v_bad INTEGER;
-  v_observed TEXT;
-BEGIN
-  SELECT count(*), string_agg(bad.detail, E'\n' ORDER BY bad.detail) FILTER (WHERE bad.rn <= 10)
-    INTO v_bad, v_observed
-  FROM (
-    SELECT row_number() OVER (ORDER BY s.final_name) AS rn,
-           s.final_name || ': ' ||
-           concat_ws('; ',
-             CASE WHEN lp.name IS DISTINCT FROM s.load_position THEN 'load_position=' || COALESCE(lp.name, 'null') || '<>' || COALESCE(s.load_position, 'null') END,
-             CASE WHEN st.name IS DISTINCT FROM s.stance THEN 'stance=' || COALESCE(st.name, 'null') || '<>' || COALESCE(s.stance, 'null') END,
-             CASE WHEN rd.name IS DISTINCT FROM s.range_depth THEN 'range_depth=' || COALESCE(rd.name, 'null') || '<>' || COALESCE(s.range_depth, 'null') END,
-             CASE WHEN sy.name IS DISTINCT FROM s.symmetry THEN 'symmetry=' || COALESCE(sy.name, 'null') || '<>' || COALESCE(s.symmetry, 'null') END,
-             CASE WHEN go.name IS DISTINCT FROM s.grip_orientation THEN 'grip_orientation=' || COALESCE(go.name, 'null') || '<>' || COALESCE(s.grip_orientation, 'null') END,
-             CASE WHEN gw.name IS DISTINCT FROM s.grip_width THEN 'grip_width=' || COALESCE(gw.name, 'null') || '<>' || COALESCE(s.grip_width, 'null') END,
-             CASE WHEN ba.name IS DISTINCT FROM s.bench_angle THEN 'bench_angle=' || COALESCE(ba.name, 'null') || '<>' || COALESCE(s.bench_angle, 'null') END,
-             CASE WHEN di.name IS DISTINCT FROM s.direction THEN 'direction=' || COALESCE(di.name, 'null') || '<>' || COALESCE(s.direction, 'null') END,
-             CASE WHEN sp.name IS DISTINCT FROM s.support_position THEN 'support=' || COALESCE(sp.name, 'null') || '<>' || COALESCE(s.support_position, 'null') END,
-             CASE WHEN ap.name IS DISTINCT FROM s.arm_position THEN 'arm_position=' || COALESCE(ap.name, 'null') || '<>' || COALESCE(s.arm_position, 'null') END,
-             CASE WHEN vl.slug IS DISTINCT FROM s.variant_slug THEN 'variant=' || COALESCE(vl.slug, 'null') || '<>' || COALESCE(s.variant_slug, 'null') END
-           ) AS detail
-      FROM _cp_rows s
-      JOIN public.exercises e ON e.id = s.exercise_id
-      LEFT JOIN public.load_positions lp ON lp.id = e.load_position_id
-      LEFT JOIN public.stances st ON st.id = e.stance_id
-      LEFT JOIN public.range_depths rd ON rd.id = e.range_depth_id
-      LEFT JOIN public.symmetries sy ON sy.id = e.symmetry_id
-      LEFT JOIN public.grips go ON go.id = e.grip_orientation_id
-      LEFT JOIN public.grips gw ON gw.id = e.grip_width_id
-      LEFT JOIN public.bench_angles ba ON ba.id = e.bench_angle_id
-      LEFT JOIN public.directions di ON di.id = e.direction_id
-      LEFT JOIN public.support_positions sp ON sp.id = e.support_position_id
-      LEFT JOIN public.arm_positions ap ON ap.id = e.arm_position_id
-      LEFT JOIN public.variant_labels vl ON vl.id = e.variant_label_id
-     WHERE lp.name IS DISTINCT FROM s.load_position
-        OR st.name IS DISTINCT FROM s.stance
-        OR rd.name IS DISTINCT FROM s.range_depth
-        OR sy.name IS DISTINCT FROM s.symmetry
-        OR go.name IS DISTINCT FROM s.grip_orientation
-        OR gw.name IS DISTINCT FROM s.grip_width
-        OR ba.name IS DISTINCT FROM s.bench_angle
-        OR di.name IS DISTINCT FROM s.direction
-        OR sp.name IS DISTINCT FROM s.support_position
-        OR ap.name IS DISTINCT FROM s.arm_position
-        OR vl.slug IS DISTINCT FROM s.variant_slug
-  ) bad;
-  IF v_bad > 0 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: % rows with divergent attribute columns (first 10):\n%', v_bad, v_observed;
-  END IF;
-END $$;
-
--- 15d) junction equality per row: equipment (equivalent to the sheet, which
---      already folds the implied-equipment canonicalization), identity styles,
---      goals, muscles with the primary/secondary split; plus no orphans and
---      the cores-carry-no-equipment convention
-DO $$
-DECLARE
-  v_observed TEXT;
-BEGIN
-  SELECT string_agg(bad.v, E'\n' ORDER BY bad.v) INTO v_observed FROM (
-    SELECT s.final_name || ' equipment: {' ||
-           COALESCE((SELECT string_agg(q.name, ',' ORDER BY q.name)
-                       FROM public.exercise_equipment ee JOIN public.equipment q ON q.id = ee.equipment_id
-                      WHERE ee.exercise_id = s.exercise_id), '') || '} expected {' ||
-           array_to_string(s.equipment, ',') || '}' AS v
-      FROM _cp_rows s
-     WHERE COALESCE((SELECT array_agg(q.name ORDER BY q.name)
-                       FROM public.exercise_equipment ee JOIN public.equipment q ON q.id = ee.equipment_id
-                      WHERE ee.exercise_id = s.exercise_id), '{}')
-           IS DISTINCT FROM (SELECT COALESCE(array_agg(x ORDER BY x), '{}') FROM unnest(s.equipment) x)
-    UNION ALL
-    SELECT s.final_name || ' identity styles: {' ||
-           COALESCE((SELECT string_agg(ms.name, ',' ORDER BY ms.name)
-                       FROM public.exercise_movement_styles x JOIN public.movement_styles ms
-                         ON ms.id = x.movement_style_id AND ms.is_identity
-                      WHERE x.exercise_id = s.exercise_id), '') || '} expected {' ||
-           array_to_string(s.styles, ',') || '}'
-      FROM _cp_rows s
-     WHERE COALESCE((SELECT array_agg(ms.name ORDER BY ms.name)
-                       FROM public.exercise_movement_styles x JOIN public.movement_styles ms
-                         ON ms.id = x.movement_style_id AND ms.is_identity
-                      WHERE x.exercise_id = s.exercise_id), '{}')
-           IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.styles) y)
-    UNION ALL
-    SELECT s.final_name || ' goals: {' ||
-           COALESCE((SELECT string_agg(g.name, ',' ORDER BY g.name)
-                       FROM public.exercise_goal_types x JOIN public.goal_types g ON g.id = x.goal_type_id
-                      WHERE x.exercise_id = s.exercise_id), '') || '} expected {' ||
-           array_to_string(s.goals, ',') || '}'
-      FROM _cp_rows s
-     WHERE COALESCE((SELECT array_agg(g.name ORDER BY g.name)
-                       FROM public.exercise_goal_types x JOIN public.goal_types g ON g.id = x.goal_type_id
-                      WHERE x.exercise_id = s.exercise_id), '{}')
-           IS DISTINCT FROM (SELECT COALESCE(array_agg(gg ORDER BY gg), '{}') FROM unnest(s.goals) gg)
-    UNION ALL
-    SELECT s.final_name || ' primary muscles diverge'
-      FROM _cp_rows s
-     WHERE COALESCE((SELECT array_agg(m.name ORDER BY m.name)
-                       FROM public.exercise_muscle_regions x JOIN public.muscle_regions m ON m.id = x.muscle_region_id
-                      WHERE x.exercise_id = s.exercise_id AND x.is_primary), '{}')
-           IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.primary_muscles) y)
-    UNION ALL
-    SELECT s.final_name || ' secondary muscles diverge'
-      FROM _cp_rows s
-     WHERE COALESCE((SELECT array_agg(m.name ORDER BY m.name)
-                       FROM public.exercise_muscle_regions x JOIN public.muscle_regions m ON m.id = x.muscle_region_id
-                      WHERE x.exercise_id = s.exercise_id AND NOT x.is_primary), '{}')
-           IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.secondary_muscles) y)
-  ) bad(v);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: junction divergence from the sheet:\n%', v_observed;
-  END IF;
-
-  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
-    FROM public.exercises e
-   WHERE e.is_core AND EXISTS (SELECT 1 FROM public.exercise_equipment ee WHERE ee.exercise_id = e.id);
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: cores carrying equipment junction rows: %', v_observed;
-  END IF;
-
-  SELECT count(*)::TEXT INTO v_observed
-    FROM public.exercise_equipment ee
-   WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = ee.exercise_id)
-      OR NOT EXISTS (SELECT 1 FROM public.equipment q WHERE q.id = ee.equipment_id);
-  IF v_observed <> '0' THEN
-    RAISE EXCEPTION 'catalog pass FAIL: % orphaned exercise_equipment rows', v_observed;
-  END IF;
-END $$;
-
--- 15e) identity invariants: no fingerprint duplicates within a core; the only
---      within-core generated-name duplicates are the five DECLARED silent-
---      attribute collisions on the blessed projection (Unilateral/Pronated are
---      silent in names, so the fingerprints differ while the names agree)
-DO $$
-DECLARE
-  v_observed TEXT;
-BEGIN
-  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
-    SELECT 'core ' || c.name || ' fingerprint ' || e.identity_fingerprint || ' x' || count(*) AS msg
-      FROM public.exercises e JOIN public.exercises c ON c.id = e.core_movement_id
-     WHERE e.core_movement_id IS NOT NULL
-     GROUP BY c.name, e.core_movement_id, e.identity_fingerprint
-    HAVING count(*) > 1
-  ) d;
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: duplicate fingerprints within a core: %', v_observed;
-  END IF;
-
-  WITH dupes AS (
-    SELECT e.core_movement_id, e.generated_name, count(*) AS n
-      FROM public.exercises e
-     WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core
-     GROUP BY e.core_movement_id, e.generated_name
-    HAVING count(*) > 1
-  ), declared(core_id, generated_name, n) AS (VALUES
-    ('b6879563-ab0d-5bc6-9b44-cab09315d939', 'Kettlebell Bent-Over Row', 2),
-    ('80d46a74-c62a-4849-920f-22d326bf7cef', 'Cable Chest Fly', 2),
-    ('01f01e3a-393d-4819-8834-cf25ea1ba04a', 'Dumbbell Curl', 2),
-    ('90d63ecc-cebe-5ace-806d-45c8560f973f', 'Straight-Arm Lat Pulldown', 2),
-    ('cb22657b-7dd7-422d-bebb-4f5f7b63f6cb', 'Overhead Dumbbell Triceps Extension', 2)
-  )
-  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
-    SELECT 'undeclared: ' || dp.generated_name || ' x' || dp.n AS msg
-      FROM dupes dp
-     WHERE NOT EXISTS (SELECT 1 FROM declared dc
-                        WHERE dc.core_id::uuid = dp.core_movement_id
-                          AND dc.generated_name = dp.generated_name AND dc.n = dp.n)
-    UNION ALL
-    SELECT 'missing declared: ' || dc.generated_name
-      FROM declared dc
-     WHERE NOT EXISTS (SELECT 1 FROM dupes dp
-                        WHERE dp.core_movement_id = dc.core_id::uuid
-                          AND dp.generated_name = dc.generated_name AND dp.n = dc.n)
-  ) d;
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: within-core generated-name duplicates diverge from the declared set: %', v_observed;
-  END IF;
-END $$;
-
--- 15f) every coreless row is one of the 52 explicit outliers (and no outlier
---      kept a legacy parent), tiers land exactly 48/144/38/5
-DO $$
-DECLARE
-  v_observed TEXT;
-BEGIN
-  WITH outliers(id) AS (VALUES
-    ('0056856b-444d-427d-92a4-899451758fdf'),
-    ('00b1670c-b022-44d1-9587-31655583cdc6'),
-    ('01fbbe48-996b-4630-b89f-4d10d5a8ca25'),
-    ('08dbcd57-b14c-4534-8764-648e2920c811'),
-    ('0b975a66-3c23-44ab-a520-9d839d3aaf50'),
-    ('111bb1b9-85c9-4c92-b78c-cc9eb96dafb1'),
-    ('1325914c-6886-4cce-986a-5b08f50d0bac'),
-    ('225badb2-a9ac-43e0-897a-16e4023a3fdf'),
-    ('24a81876-d389-4ba9-a35a-87bb7ac70fbd'),
-    ('2702fd09-a0d4-40c6-86e0-f42bb9ff9246'),
-    ('2aef1947-7d3b-4bc4-8ae6-6e42a4c352ba'),
-    ('2e76626e-5a55-4c02-b52c-0745fa4a1ec2'),
-    ('3122cd2f-a71d-4a7a-a763-ca90ad843690'),
-    ('4055eaf8-3df8-4865-a5da-3b31bb18a6e4'),
-    ('47273ede-cf88-4d25-9d06-bb71ed30e14c'),
-    ('54b39df9-219e-4870-834c-ee1e9c6199b0'),
-    ('5e35a841-1f39-44e6-ae61-e21317afc890'),
-    ('6569cb89-9e99-4ab8-a92f-006cff2880c3'),
-    ('724ae756-5b28-483c-9c03-28bc160ce128'),
-    ('72b6914d-98c7-4f2e-a642-40b28b240608'),
-    ('73c9e31f-54cf-48e7-ac2c-30bf5750ac51'),
-    ('7daf1c99-796b-4f19-96f0-3076ba8fcb78'),
-    ('81cae4a9-327f-442f-860b-1f7bdaf47c7c'),
-    ('8399fcf6-3332-4b60-a71e-029e073b9b1f'),
-    ('87b6fb0f-2d5e-40b0-a198-67611fbec811'),
-    ('8e470f94-2005-4870-a22b-976ddaf00a95'),
-    ('95669791-297e-4913-9b20-b0bb6ae6033c'),
-    ('9576a843-c3c2-415a-a21d-38c0088a8290'),
-    ('9d9cc729-e8a6-44e4-a91e-3b452f4260a5'),
-    ('9f6fabc9-1edb-4f68-bb95-25cbc62e24d2'),
-    ('a4811178-fb30-4d51-82df-f0f772ffef81'),
-    ('adc07245-37d4-4a20-9925-533207bc4754'),
-    ('b13b9b6a-30eb-493d-afa3-67e818dba85b'),
-    ('b6cb3ae1-3280-47b9-aa09-e1d7da646992'),
-    ('b8793729-fa21-4b33-b0b6-49a88211379f'),
-    ('b94a7298-2a71-4486-8211-790867506907'),
-    ('c0af3ce1-cb39-47c8-a196-f9eb7438bb87'),
-    ('c9cc8b6d-0f84-4fb6-99b9-36f8d9aaaa42'),
-    ('ca567717-d196-41a3-959f-944f3f2aa3a0'),
-    ('cb7af18c-9e72-4cd4-96ee-9ce28dc4e323'),
-    ('ce983988-cf48-41df-a1c3-e2b2155ea8d1'),
-    ('dd9ffabd-3eb7-4ba7-b178-70175e4fd786'),
-    ('dde33be4-942f-4742-afb3-a4085881892a'),
-    ('de507736-f4e7-4083-8a8f-48795c4cb9d9'),
-    ('de68bf32-b80f-4a1f-8ad6-68c6b1ae232c'),
-    ('e85c15ac-0848-4129-ba6c-dd5780f08ba4'),
-    ('e8f336ff-6abe-4f45-a46b-70a95158273d'),
-    ('e92f2281-d98b-4200-a644-0831871d1707'),
-    ('ed1b3bbf-bc3c-46a6-90f3-ae2d097a0bd6'),
-    ('f57a4584-232e-4e44-9fa3-8276a991b076'),
-    ('f7a92fbd-7d0a-4671-a5ae-7ef7adc2075d'),
-    ('fc86b911-7b6d-4999-941c-226a3d78efa1')
-  )
-  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
-    SELECT e.name || ' coreless but not a declared outlier' AS msg
-      FROM public.exercises e
-     WHERE e.core_movement_id IS NULL
-       AND NOT EXISTS (SELECT 1 FROM outliers o WHERE o.id::uuid = e.id)
-    UNION ALL
-    SELECT e.name || ' declared outlier but has a core'
-      FROM public.exercises e JOIN outliers o ON o.id::uuid = e.id
-     WHERE e.core_movement_id IS NOT NULL
-    UNION ALL
-    SELECT e.name || ' outlier with parent/tier'
-      FROM public.exercises e JOIN outliers o ON o.id::uuid = e.id
-     WHERE e.parent_exercise_id IS NOT NULL OR e.tier IS NOT NULL
-  ) d;
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: outlier set diverges: %', v_observed;
-  END IF;
-
-  SELECT string_agg(t.tier_label || '=' || t.n, ', ' ORDER BY t.tier_label) INTO v_observed
-    FROM (SELECT COALESCE(tier::TEXT, 'null') AS tier_label, count(*) AS n
-            FROM public.exercises GROUP BY tier) t;
-  IF v_observed IS DISTINCT FROM '0=48, 1=144, 2=38, 3=5, null=52' THEN
-    RAISE EXCEPTION 'catalog pass FAIL: tier distribution % (expected 0=48, 1=144, 2=38, 3=5, null=52)', v_observed;
-  END IF;
-END $$;
-
--- 15g) variant guardrails: G2 — every variant label belongs to the labelled
---      row's own core; G3 ceiling — no core carries more than 6 variant-
---      labelled children
-DO $$
-DECLARE
-  v_observed TEXT;
-BEGIN
-  SELECT string_agg(e.name || ' (label ' || vl.slug || ' scoped to ' || c.name || ')', '; ' ORDER BY e.name)
-    INTO v_observed
-    FROM public.exercises e
-    JOIN public.variant_labels vl ON vl.id = e.variant_label_id
-    JOIN public.exercises c ON c.id = vl.core_movement_id
-   WHERE vl.core_movement_id IS DISTINCT FROM e.core_movement_id;
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: variant labels used outside their core scope (G2): %', v_observed;
-  END IF;
-
-  SELECT string_agg(c.name || ' x' || d.n, '; ' ORDER BY c.name) INTO v_observed
-    FROM (SELECT e.core_movement_id, count(*) AS n
-            FROM public.exercises e
-           WHERE e.variant_label_id IS NOT NULL AND NOT e.is_core
-           GROUP BY e.core_movement_id
-          HAVING count(*) > 6) d
-    JOIN public.exercises c ON c.id = d.core_movement_id;
-  IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: cores exceeding 6 variant-labelled children (G3): %', v_observed;
-  END IF;
-END $$;
-
--- 15h) alias table: exactly the blessed set — every merge-loser name, every
---      renamed-away name, the sheet-note wilds, the legacy array aliases and
---      the re-minted generated aliases; the Powerbomb suppression holds
+-- The blessed final alias set, staged early: the drift preflight below reads
+-- it before any write; 15h asserts the achieved end state against it.
 CREATE TEMP TABLE _cp_expected_aliases (
   exercise_id UUID NOT NULL,
   alias TEXT NOT NULL,
@@ -2043,6 +1154,1075 @@ INSERT INTO _cp_expected_aliases VALUES
   ('fe1484e2-c645-4c11-95cf-ea1669af44f9', 'Dips', 'wild'),
   ('fe1484e2-c645-4c11-95cf-ea1669af44f9', 'Dips - Tricep Version', 'wild');
 
+-- Fail fast if any staged reference value does not resolve (a silent NULL here
+-- would otherwise masquerade as a deliberate blank).
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  SELECT string_agg(bad.v, '; ' ORDER BY bad.v) INTO v_observed FROM (
+    SELECT 'family: ' || s.family AS v FROM _cp_rows s
+      WHERE NOT EXISTS (SELECT 1 FROM public.movement_families f WHERE f.name = s.family)
+    UNION SELECT 'modality: ' || s.modality FROM _cp_rows s
+      WHERE NOT EXISTS (SELECT 1 FROM public.movement_categories c WHERE c.name = s.modality)
+    UNION SELECT 'load_position: ' || s.load_position FROM _cp_rows s
+      WHERE s.load_position IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.load_positions x WHERE x.name = s.load_position)
+    UNION SELECT 'stance: ' || s.stance FROM _cp_rows s
+      WHERE s.stance IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.stances x WHERE x.name = s.stance)
+    UNION SELECT 'range_depth: ' || s.range_depth FROM _cp_rows s
+      WHERE s.range_depth IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.range_depths x WHERE x.name = s.range_depth)
+    UNION SELECT 'symmetry: ' || s.symmetry FROM _cp_rows s
+      WHERE s.symmetry IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.symmetries x WHERE x.name = s.symmetry)
+    UNION SELECT 'grip_orientation: ' || s.grip_orientation FROM _cp_rows s
+      WHERE s.grip_orientation IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.grips g WHERE g.name = s.grip_orientation AND g.category = 'Orientation')
+    UNION SELECT 'grip_width: ' || s.grip_width FROM _cp_rows s
+      WHERE s.grip_width IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.grips g WHERE g.name = s.grip_width AND g.category = 'Width')
+    UNION SELECT 'bench_angle: ' || s.bench_angle FROM _cp_rows s
+      WHERE s.bench_angle IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.bench_angles x WHERE x.name = s.bench_angle)
+    UNION SELECT 'direction: ' || s.direction FROM _cp_rows s
+      WHERE s.direction IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.directions x WHERE x.name = s.direction)
+    UNION SELECT 'support_position: ' || s.support_position FROM _cp_rows s
+      WHERE s.support_position IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.support_positions x WHERE x.name = s.support_position)
+    UNION SELECT 'arm_position: ' || s.arm_position FROM _cp_rows s
+      WHERE s.arm_position IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.arm_positions x WHERE x.name = s.arm_position)
+    UNION SELECT 'equipment: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.equipment) n
+      WHERE NOT EXISTS (SELECT 1 FROM public.equipment x WHERE x.name = n)
+    UNION SELECT 'style: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.styles) n
+      WHERE NOT EXISTS (SELECT 1 FROM public.movement_styles x WHERE x.name = n AND x.is_identity)
+    UNION SELECT 'goal: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.goals) n
+      WHERE NOT EXISTS (SELECT 1 FROM public.goal_types x WHERE x.name = n)
+    UNION SELECT 'muscle: ' || n FROM _cp_rows s CROSS JOIN LATERAL unnest(s.primary_muscles || s.secondary_muscles) n
+      WHERE NOT EXISTS (SELECT 1 FROM public.muscle_regions x WHERE x.name = n)
+  ) bad(v);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: staged values with no reference row: %', v_observed;
+  END IF;
+
+  -- every staged pre-existing exercise must exist with its sheet name (sanity:
+  -- ids and names captured together on the approved sheet)
+  SELECT string_agg(s.exercise_id::TEXT || ' (' || s.old_name || ')', '; ') INTO v_observed
+    FROM _cp_rows s
+   WHERE NOT s.is_new_core
+     AND NOT EXISTS (SELECT 1 FROM public.exercises e
+                      WHERE e.id = s.exercise_id AND e.name IN (s.old_name, s.final_name));
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: sheet rows not matching live exercises by id+name: %', v_observed;
+  END IF;
+
+  SELECT string_agg(m.loser_id::TEXT || ' (' || m.loser_name || ')', '; ') INTO v_observed
+    FROM _cp_merges m
+   WHERE EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.loser_id)
+     AND NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.loser_id AND e.name = m.loser_name);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: merge losers not matching live exercises by id+name: %', v_observed;
+  END IF;
+
+  -- Drift preflight (mirrors 15a, but BEFORE any write): every live catalog row
+  -- must appear on the approved sheet — as a survivor or as a merge loser. A row
+  -- created since the sheet was cut aborts here, before anything is touched.
+  SELECT string_agg(e.id::TEXT || ' (' || e.name || ')', '; ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+   WHERE NOT EXISTS (SELECT 1 FROM _cp_rows s WHERE s.exercise_id = e.id)
+     AND NOT EXISTS (SELECT 1 FROM _cp_merges m WHERE m.loser_id = e.id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL (preflight): live exercises missing from the approved sheet: %', v_observed;
+  END IF;
+
+  -- Alias drift preflight: an alias row that is neither part of the blessed
+  -- final set nor engine-minted generated debris on a sheet row means aliases
+  -- changed since the sheet was cut — abort before the purge/rebuild below
+  -- destroys the evidence.
+  SELECT string_agg(a.alias || ' (' || a.kind || ' on ' || a.exercise_id || ')', '; ' ORDER BY a.alias)
+    INTO v_observed
+    FROM public.exercise_aliases a
+   WHERE NOT EXISTS (SELECT 1 FROM _cp_expected_aliases x
+                      WHERE x.exercise_id = a.exercise_id
+                        AND public.normalize_alias(x.alias) = a.alias_normalized)
+     AND NOT (a.kind = 'generated'
+              AND (EXISTS (SELECT 1 FROM _cp_rows s WHERE s.exercise_id = a.exercise_id)
+                   OR EXISTS (SELECT 1 FROM _cp_merges m WHERE m.loser_id = a.exercise_id)));
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL (preflight): alias rows unknown to the approved sheet (created since the sheet was cut?): %', v_observed;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- 7) Core pass: five new core rows, promotions, curated renames, core-default
+--    equipment. Descendants are recomputed in section 11 (a core rename does
+--    not retrigger children on its own — the trigger has no name column).
+-- ============================================================================
+-- new core: Bent-Over Row (canonical slug is freed by the merges below, then claimed in section 8)
+INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
+                              movement_family_id, movement_category_id, core_default_equipment)
+SELECT 'b6879563-ab0d-5bc6-9b44-cab09315d939', 'Bent-Over Row', 'bent-over-row-core', true, true, true, true,
+       (SELECT id FROM public.movement_families WHERE name = 'Pull'),
+       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
+       'Barbell'
+ WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = 'b6879563-ab0d-5bc6-9b44-cab09315d939');
+-- new core: Carry
+INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
+                              movement_family_id, movement_category_id, core_default_equipment)
+SELECT '87377b27-531d-5a4e-ab8f-4faf947495e3', 'Carry', 'carry', true, true, true, true,
+       (SELECT id FROM public.movement_families WHERE name = 'Carry'),
+       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
+       NULL
+ WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '87377b27-531d-5a4e-ab8f-4faf947495e3');
+-- new core: Lat Pulldown
+INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
+                              movement_family_id, movement_category_id, core_default_equipment)
+SELECT '90d63ecc-cebe-5ace-806d-45c8560f973f', 'Lat Pulldown', 'lat-pulldown', true, true, false, true,
+       (SELECT id FROM public.movement_families WHERE name = 'Pull'),
+       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
+       'Cable'
+ WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '90d63ecc-cebe-5ace-806d-45c8560f973f');
+-- new core: Plank
+INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
+                              movement_family_id, movement_category_id, core_default_equipment)
+SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'Plank', 'plank', true, true, false, true,
+       (SELECT id FROM public.movement_families WHERE name = 'Midline'),
+       (SELECT id FROM public.movement_categories WHERE name = 'Gymnastics'),
+       'Bodyweight, Floor'
+ WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b');
+-- new core: Raise
+INSERT INTO public.exercises (id, name, slug, is_core, is_official, is_movement, name_is_custom,
+                              movement_family_id, movement_category_id, core_default_equipment)
+SELECT '31994dce-91ac-5b52-9640-98b3c0bb2091', 'Raise', 'raise', true, true, false, true,
+       (SELECT id FROM public.movement_families WHERE name = 'Push/Press'),
+       (SELECT id FROM public.movement_categories WHERE name = 'Weightlifting'),
+       'Dumbbell'
+ WHERE NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = '31994dce-91ac-5b52-9640-98b3c0bb2091');
+
+-- Promote + rename the 43 sheet cores (9 already core from Stage 1). The BEFORE
+-- trigger self-references core_movement_id; the AFTER trigger recomputes.
+UPDATE public.exercises e
+   SET is_core = true,
+       parent_exercise_id = NULL,      -- check_core_no_parent: a core sheds its legacy parent
+       name = s.final_name,
+       name_is_custom = s.name_is_custom,
+       core_default_equipment = s.core_default_equipment,
+       updated_at = now()
+  FROM _cp_rows s
+ WHERE s.exercise_id = e.id AND s.kind = 'core' AND NOT s.is_new_core
+   AND (NOT e.is_core
+        OR e.parent_exercise_id IS NOT NULL
+        OR e.name IS DISTINCT FROM s.final_name
+        OR e.name_is_custom IS DISTINCT FROM s.name_is_custom
+        OR e.core_default_equipment IS DISTINCT FROM s.core_default_equipment);
+
+-- ============================================================================
+-- 8) variant_labels seed (G2: each label scoped to exactly one core, by id)
+-- ============================================================================
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'b6439378-a400-4c51-a1fe-c3ce317970cb', 'chest-to-bar', 'Chest-to-Bar', 48  -- core: Pull-Up
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'b6439378-a400-4c51-a1fe-c3ce317970cb' AND slug = 'chest-to-bar');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '98e1ca9d-4297-480a-b06b-7f2b8e7a276f', 'donkey', 'Donkey', 48  -- core: Calf Raise
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '98e1ca9d-4297-480a-b06b-7f2b8e7a276f' AND slug = 'donkey');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'da5fcd1e-b402-41ae-a144-5596aaa510d1', 'double', 'Double', 48  -- core: Crunch
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'da5fcd1e-b402-41ae-a144-5596aaa510d1' AND slug = 'double');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'c2ba5880-c532-4981-8b14-da1be3e6b78f', 'double-tap', 'Double-Tap', 48  -- core: Mountain Climber
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'c2ba5880-c532-4981-8b14-da1be3e6b78f' AND slug = 'double-tap');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'e3cdc5c3-6618-4050-85db-88e4a1a70f29', 'double-under', 'Double-Under', 48  -- core: Jump Rope
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'e3cdc5c3-6618-4050-85db-88e4a1a70f29' AND slug = 'double-under');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'da5fcd1e-b402-41ae-a144-5596aaa510d1', 'elbow-reach', 'Elbow-Reach', 48  -- core: Crunch
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'da5fcd1e-b402-41ae-a144-5596aaa510d1' AND slug = 'elbow-reach');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '01f01e3a-393d-4819-8834-cf25ea1ba04a', 'ez-bar', 'EZ-Bar', 48  -- core: Curl
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '01f01e3a-393d-4819-8834-cf25ea1ba04a' AND slug = 'ez-bar');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'grab-reach-pull', 'Grab-Reach-Pull', 48  -- core: Plank
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'grab-reach-pull');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '2222e3be-0481-4103-827c-8fb0f3eb78c5', 'high-stance', 'High-Stance', 48  -- core: Leg Press
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '2222e3be-0481-4103-827c-8fb0f3eb78c5' AND slug = 'high-stance');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '01f01e3a-393d-4819-8834-cf25ea1ba04a', 'horn', 'Horn', 48  -- core: Curl
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '01f01e3a-393d-4819-8834-cf25ea1ba04a' AND slug = 'horn');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'jacks', 'Jack', 48  -- core: Plank
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'jacks');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'pull-through', 'Pull-Through', 48  -- core: Plank
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'pull-through');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'reach', 'Reach', 48  -- core: Plank
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'reach');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b', 'renegade-row', 'Renegade-Row', 48  -- core: Plank
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '4ce7951f-71b8-5d07-b3d7-163f3d9eb15b' AND slug = 'renegade-row');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'c2ba5880-c532-4981-8b14-da1be3e6b78f', 'spider', 'Spider', 48  -- core: Mountain Climber
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'c2ba5880-c532-4981-8b14-da1be3e6b78f' AND slug = 'spider');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT 'da5fcd1e-b402-41ae-a144-5596aaa510d1', 'toe-tap', 'Toe-Tap', 48  -- core: Crunch
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = 'da5fcd1e-b402-41ae-a144-5596aaa510d1' AND slug = 'toe-tap');
+INSERT INTO public.variant_labels (core_movement_id, slug, name_fragment, name_order)
+SELECT '6fe16d57-5b36-42be-828d-70270e41e912', 'walkout', 'Walkout', 48  -- core: Push-Up
+ WHERE NOT EXISTS (SELECT 1 FROM public.variant_labels
+                    WHERE core_movement_id = '6fe16d57-5b36-42be-828d-70270e41e912' AND slug = 'walkout');
+
+-- ============================================================================
+-- 9) Merges: 25 duplicate rows fold into their winners. The repoint is driven
+--    by pg_constraint at runtime — every FK that references exercises(id) is
+--    discovered and repointed (dedupe-skip against any unique index containing
+--    the FK column), so a schema addition can never silently orphan rows.
+--    Every dedupe-delete is announced with a NOTICE; for the per-user tables
+--    exercise_skill_state and user_machine_settings the FRESHER of the two
+--    colliding rows wins (the loser row's non-key values are copied onto the
+--    winner's row first when the loser is newer by updated_at/created_at).
+--    The function is single-use scaffolding: never callable from the API
+--    (revoked immediately below) and dropped again before this transaction
+--    commits (asserted in section 15).
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.merge_exercise_into(p_loser UUID, p_winner UUID) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  fk RECORD;
+  idx RECORD;
+  v_cond TEXT;
+  v_loser_name TEXT;
+  v_winner_name TEXT;
+  v_n INTEGER;
+  v_fresh TEXT;
+  v_set TEXT;
+BEGIN
+  IF p_loser = p_winner THEN
+    RAISE EXCEPTION 'merge_exercise_into: loser and winner are the same row (%)', p_loser;
+  END IF;
+  SELECT name INTO v_winner_name FROM exercises WHERE id = p_winner FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'merge_exercise_into: winner % does not exist', p_winner;
+  END IF;
+  SELECT name INTO v_loser_name FROM exercises WHERE id = p_loser FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;                                                   -- already merged (idempotent)
+  END IF;
+
+  -- The loser's display name and its legacy array aliases survive as wild
+  -- aliases on the winner (never one that trim-equals the winner's own name).
+  INSERT INTO exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+  SELECT p_winner, a.alias, normalize_alias(a.alias), 'wild', 'seed'
+    FROM (SELECT v_loser_name AS alias
+          UNION
+          SELECT unnest(l.aliases) FROM exercises l WHERE l.id = p_loser) a
+   WHERE btrim(a.alias) <> v_winner_name
+     AND normalize_alias(a.alias) <> ''
+  ON CONFLICT (alias_normalized) DO NOTHING;
+
+  FOR fk IN
+    SELECT c.oid AS con_oid, c.conrelid::regclass AS tbl, a.attname AS col,
+           c.conrelid = 'public.exercises'::regclass::oid AS self_ref,
+           cardinality(c.conkey) AS ncols
+      FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+     WHERE c.contype = 'f' AND c.confrelid = 'public.exercises'::regclass
+     ORDER BY c.conrelid::regclass::text, a.attname
+  LOOP
+    IF fk.ncols <> 1 THEN
+      RAISE EXCEPTION 'merge_exercise_into: multi-column FK % on % is not supported', fk.con_oid::regclass, fk.tbl;
+    END IF;
+
+    -- Dedupe-skip: for every unique index containing this column, drop loser
+    -- rows whose repointed image already exists on the winner.
+    FOR idx IN
+      SELECT i.indexrelid,
+             (SELECT string_agg(format('t2.%1$I IS NOT DISTINCT FROM t1.%1$I', a2.attname), ' AND ')
+                FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
+                JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum
+               WHERE a2.attname <> fk.col) AS other_cols,
+             (SELECT array_agg(a2.attname::TEXT)
+                FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
+                JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum) AS key_cols
+        FROM pg_index i
+       WHERE i.indrelid = fk.tbl AND i.indisunique
+         AND i.indpred IS NULL AND i.indexprs IS NULL
+         AND EXISTS (SELECT 1 FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
+                       JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum
+                      WHERE a2.attname = fk.col)
+       ORDER BY i.indexrelid
+    LOOP
+      -- Per-user state keeps the FRESHER record (review fix): before the
+      -- dedupe-delete, when the loser's colliding row is newer, copy its
+      -- non-key values onto the winner's row. Special-cased by name for the
+      -- two known per-user tables; everything else keeps the winner's row.
+      IF fk.tbl::TEXT IN ('exercise_skill_state', 'user_machine_settings') THEN
+        SELECT a.attname INTO v_fresh
+          FROM pg_attribute a
+         WHERE a.attrelid = fk.tbl AND a.attnum > 0 AND NOT a.attisdropped
+           AND a.attname IN ('updated_at', 'created_at')
+         ORDER BY CASE a.attname WHEN 'updated_at' THEN 0 ELSE 1 END
+         LIMIT 1;
+        SELECT string_agg(format('%1$I = t1.%1$I', a.attname), ', ') INTO v_set
+          FROM pg_attribute a
+         WHERE a.attrelid = fk.tbl AND a.attnum > 0 AND NOT a.attisdropped
+           AND a.attname <> fk.col
+           AND a.attname <> 'created_at'
+           AND a.attname <> ALL (idx.key_cols)
+           AND NOT EXISTS (SELECT 1 FROM pg_index p
+                            WHERE p.indrelid = fk.tbl AND p.indisprimary
+                              AND a.attnum = ANY (p.indkey::INT2[]));
+        IF v_fresh IS NOT NULL AND v_set IS NOT NULL THEN
+          EXECUTE format(
+            'UPDATE %s t2 SET %s FROM %s t1 WHERE t1.%I = $1 AND t2.%I = $2 AND %s AND t1.%I > t2.%I',
+            fk.tbl, v_set, fk.tbl, fk.col, fk.col, COALESCE(idx.other_cols, 'true'), v_fresh, v_fresh)
+          USING p_loser, p_winner;
+          GET DIAGNOSTICS v_n = ROW_COUNT;
+          IF v_n > 0 THEN
+            RAISE NOTICE 'merge_exercise_into: % fresher loser row(s) copied onto winner in % (loser %, winner %)',
+              v_n, fk.tbl, p_loser, p_winner;
+          END IF;
+        END IF;
+      END IF;
+
+      EXECUTE format(
+        'DELETE FROM %s t1 WHERE t1.%I = $1 AND EXISTS (SELECT 1 FROM %s t2 WHERE t2.%I = $2 AND %s)',
+        fk.tbl, fk.col, fk.tbl, fk.col, COALESCE(idx.other_cols, 'true'))
+      USING p_loser, p_winner;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      IF v_n > 0 THEN
+        RAISE NOTICE 'merge_exercise_into: deduped % row(s) from % (loser %, winner %)',
+          v_n, fk.tbl, p_loser, p_winner;
+      END IF;
+    END LOOP;
+
+    EXECUTE format('UPDATE %s SET %I = $2 WHERE %I = $1%s',
+                   fk.tbl, fk.col, fk.col,
+                   CASE WHEN fk.self_ref THEN ' AND id <> $1' ELSE '' END)
+    USING p_loser, p_winner;
+  END LOOP;
+
+  -- Scaling links that became self-referential collapse away.
+  IF to_regclass('public.movement_scaling_links') IS NOT NULL THEN
+    DELETE FROM movement_scaling_links WHERE from_exercise_id = to_exercise_id;
+  END IF;
+
+  DELETE FROM exercises WHERE id = p_loser;
+END $$;
+
+-- SECURITY DEFINER + default EXECUTE would let PostgREST expose this to API
+-- roles as POST /rest/v1/rpc/merge_exercise_into — any client could merge and
+-- delete catalog rows as postgres, bypassing RLS. Never callable from the API.
+REVOKE ALL ON FUNCTION public.merge_exercise_into(UUID, UUID) FROM PUBLIC, anon, authenticated;
+
+DO $$
+DECLARE
+  m RECORD;
+BEGIN
+  FOR m IN SELECT * FROM _cp_merges ORDER BY loser_name LOOP
+    IF NOT EXISTS (SELECT 1 FROM public.exercises WHERE id = m.winner_id) THEN
+      RAISE EXCEPTION 'catalog pass FAIL: merge winner % for loser % missing', m.winner_id, m.loser_name;
+    END IF;
+    -- capture the loser''s wild-alias contributions before it disappears, so the
+    -- alias rebuild (section 14) can re-assert them after the generated purge
+    INSERT INTO _cp_merge_wilds (winner_id, alias)
+    SELECT m.winner_id, a.alias
+      FROM public.exercises l
+      CROSS JOIN LATERAL (SELECT l.name AS alias UNION SELECT unnest(l.aliases)) a
+     WHERE l.id = m.loser_id
+       AND btrim(a.alias) <> (SELECT name FROM public.exercises WHERE id = m.winner_id)
+       AND public.normalize_alias(a.alias) <> '';
+    PERFORM public.merge_exercise_into(m.loser_id, m.winner_id);
+  END LOOP;
+END $$;
+
+-- Single-use scaffolding: gone before this transaction commits, so no callable
+-- trace of the merge tooling survives the migration (asserted in section 15).
+DROP FUNCTION public.merge_exercise_into(UUID, UUID);
+
+-- the merges above freed the canonical slug for Bent-Over Row
+UPDATE public.exercises SET slug = 'bent-over-row'
+ WHERE id = 'b6879563-ab0d-5bc6-9b44-cab09315d939' AND slug IS DISTINCT FROM 'bent-over-row';
+
+-- ============================================================================
+-- 10) Classification: every surviving row gets its approved attribute set,
+--     display name and flags in one row-update (the identity trigger recomputes
+--     per row once the statement completes), then the junctions are synced.
+-- ============================================================================
+UPDATE public.exercises e
+   SET is_core = (s.kind = 'core'),
+       core_movement_id = s.core_id,
+       is_movement = s.is_movement,
+       name = s.final_name,
+       name_is_custom = s.name_is_custom,
+       core_default_equipment = s.core_default_equipment,
+       movement_family_id = (SELECT id FROM public.movement_families WHERE name = s.family),
+       movement_category_id = (SELECT id FROM public.movement_categories WHERE name = s.modality),
+       goal_type_id = (SELECT id FROM public.goal_types WHERE name = s.goals[1]),
+       load_position_id = (SELECT id FROM public.load_positions WHERE name = s.load_position),
+       stance_id = (SELECT id FROM public.stances WHERE name = s.stance),
+       range_depth_id = (SELECT id FROM public.range_depths WHERE name = s.range_depth),
+       symmetry_id = (SELECT id FROM public.symmetries WHERE name = s.symmetry),
+       grip_orientation_id = (SELECT id FROM public.grips WHERE name = s.grip_orientation AND category = 'Orientation'),
+       grip_width_id = (SELECT id FROM public.grips WHERE name = s.grip_width AND category = 'Width'),
+       bench_angle_id = (SELECT id FROM public.bench_angles WHERE name = s.bench_angle),
+       direction_id = (SELECT id FROM public.directions WHERE name = s.direction),
+       support_position_id = (SELECT id FROM public.support_positions WHERE name = s.support_position),
+       arm_position_id = (SELECT id FROM public.arm_positions WHERE name = s.arm_position),
+       variant_label_id = (SELECT id FROM public.variant_labels
+                            WHERE slug = s.variant_slug AND core_movement_id = s.core_id),
+       -- outliers keep no machine hierarchy: the legacy hand-set parents the
+       -- engine preserves for coreless rows retire with this pass
+       parent_exercise_id = CASE WHEN s.kind = 'outlier' THEN NULL ELSE e.parent_exercise_id END,
+       updated_at = now()
+  FROM _cp_rows s
+ WHERE s.exercise_id = e.id;
+
+-- Equipment junction := the approved per-row set (cores carry none — the new
+-- convention; their defaults live in core_default_equipment as naming metadata).
+DELETE FROM public.exercise_equipment ee
+ USING _cp_rows s
+ WHERE ee.exercise_id = s.exercise_id
+   AND NOT EXISTS (SELECT 1 FROM unnest(s.equipment) n
+                    JOIN public.equipment q ON q.name = n
+                   WHERE q.id = ee.equipment_id);
+INSERT INTO public.exercise_equipment (exercise_id, equipment_id)
+SELECT s.exercise_id, q.id
+  FROM _cp_rows s
+ CROSS JOIN LATERAL unnest(s.equipment) n
+  JOIN public.equipment q ON q.name = n
+ON CONFLICT (exercise_id, equipment_id) DO NOTHING;
+
+-- Identity styles := the approved per-row set. Modifier-style junction rows
+-- (Tempo, Pause, …) are prescription metadata and stay untouched.
+DELETE FROM public.exercise_movement_styles ems
+ USING _cp_rows s, public.movement_styles ms
+ WHERE ems.exercise_id = s.exercise_id
+   AND ms.id = ems.movement_style_id AND ms.is_identity
+   AND NOT (ms.name = ANY (s.styles));
+INSERT INTO public.exercise_movement_styles (exercise_id, movement_style_id)
+SELECT s.exercise_id, ms.id
+  FROM _cp_rows s
+ CROSS JOIN LATERAL unnest(s.styles) n
+  JOIN public.movement_styles ms ON ms.name = n AND ms.is_identity
+ON CONFLICT (exercise_id, movement_style_id) DO NOTHING;
+
+-- Goals := the approved per-row set (legacy goal_type_id was set to the first
+-- listed goal above; the junction carries the full set).
+DELETE FROM public.exercise_goal_types x
+ USING _cp_rows s
+ WHERE x.exercise_id = s.exercise_id
+   AND NOT EXISTS (SELECT 1 FROM unnest(s.goals) n
+                    JOIN public.goal_types g ON g.name = n
+                   WHERE g.id = x.goal_type_id);
+INSERT INTO public.exercise_goal_types (exercise_id, goal_type_id)
+SELECT s.exercise_id, g.id
+  FROM _cp_rows s
+ CROSS JOIN LATERAL unnest(s.goals) n
+  JOIN public.goal_types g ON g.name = n
+ON CONFLICT (exercise_id, goal_type_id) DO NOTHING;
+
+-- Muscles := the approved per-row sets with the primary/secondary split.
+DELETE FROM public.exercise_muscle_regions x
+ USING _cp_rows s
+ WHERE x.exercise_id = s.exercise_id
+   AND NOT EXISTS (SELECT 1 FROM unnest(s.primary_muscles || s.secondary_muscles) n
+                    JOIN public.muscle_regions m ON m.name = n
+                   WHERE m.id = x.muscle_region_id);
+UPDATE public.exercise_muscle_regions x
+   SET is_primary = (m.name = ANY (s.primary_muscles))
+  FROM _cp_rows s, public.muscle_regions m
+ WHERE x.exercise_id = s.exercise_id AND m.id = x.muscle_region_id
+   AND x.is_primary IS DISTINCT FROM (m.name = ANY (s.primary_muscles));
+INSERT INTO public.exercise_muscle_regions (exercise_id, muscle_region_id, is_primary)
+SELECT s.exercise_id, m.id, (m.name = ANY (s.primary_muscles))
+  FROM _cp_rows s
+ CROSS JOIN LATERAL unnest(s.primary_muscles || s.secondary_muscles) n
+  JOIN public.muscle_regions m ON m.name = n
+ON CONFLICT (exercise_id, muscle_region_id) DO NOTHING;
+
+-- ============================================================================
+-- 11) Deterministic full recompute, ascending identity-attribute cardinality:
+--     parents always finalize before their children, so the machine-derived
+--     parent/tier chain lands in one pass (covers the core renames too).
+-- ============================================================================
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN
+    SELECT id FROM public.exercises
+    ORDER BY cardinality(public.exercise_identity_attrs(id)) ASC, created_at ASC, id ASC
+  LOOP
+    PERFORM public.recompute_exercise_identity(r.id);
+  END LOOP;
+END $$;
+
+-- ============================================================================
+-- 12) Legacy equipment_types array: kept in place (it drops in Stage 6) but
+--     updated to the canonical final state so the array and the junction agree
+--     — for cores that means their core-default equipment (the array still
+--     feeds the app's equipment filters; an empty array would blank them).
+-- ============================================================================
+UPDATE public.exercises e
+   SET equipment_types = v.arr
+  FROM (SELECT s.exercise_id,
+               CASE WHEN s.kind = 'core'
+                    THEN COALESCE((SELECT array_agg(btrim(x)) FROM unnest(string_to_array(s.core_default_equipment, ',')) x
+                                    WHERE btrim(x) <> ''), '{}')
+                    ELSE s.equipment
+               END AS arr
+          FROM _cp_rows s) v
+ WHERE e.id = v.exercise_id
+   AND e.equipment_types IS DISTINCT FROM v.arr;
+
+-- ============================================================================
+-- 13) Legacy 'Supine / Prone' stance retires: the classification above is the
+--     only writer of stance_id, so zero references must remain.
+-- ============================================================================
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+    JOIN public.stances s ON s.id = e.stance_id
+   WHERE s.name = 'Supine / Prone';
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: rows still on legacy Supine / Prone stance: %', v_observed;
+  END IF;
+
+  -- variation_options.stance_id references stances ON DELETE SET NULL: a
+  -- surviving reference would be silently blanked by the delete below, so it
+  -- must be zero too, not just exercises.
+  SELECT string_agg(vo.name || ' (' || vo.id || ')', ', ' ORDER BY vo.name) INTO v_observed
+    FROM public.variation_options vo
+    JOIN public.stances s ON s.id = vo.stance_id
+   WHERE s.name = 'Supine / Prone';
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: variation_options still on legacy Supine / Prone stance (delete would SET NULL them): %', v_observed;
+  END IF;
+END $$;
+-- legacy dual-store junction debris goes with it (the FK would cascade anyway;
+-- explicit for the record — 1 row on the 2026-08-24 snapshot)
+DELETE FROM public.exercise_stances es
+ USING public.stances s
+ WHERE s.id = es.stance_id AND s.name = 'Supine / Prone';
+DELETE FROM public.stances WHERE name = 'Supine / Prone';
+
+-- ============================================================================
+-- 14) Alias purge + rebuild. Order matters: purge ALL generated aliases (the
+--     per-row recomputes above minted every intermediate name as debris; the
+--     merge-time wilds landed before the purge and are re-asserted after it),
+--     then re-mint generated aliases from the final generated names — only for
+--     rows whose generated name differs from their display name — and finally
+--     insert the wild set (old display names, sheet-note wilds, legacy array
+--     aliases, merge-loser contributions). Generated aliases mint first so a
+--     string that is both a row's generated name and one of its wild sources
+--     lands as kind='generated'. A mint collision with an alias owned by
+--     another exercise aborts the transaction naming both rows — the blessed
+--     projection declares no such collision, so one appearing here means the
+--     sheets and the engine disagree and the run must not commit. The only
+--     sanctioned near-collision is the documented Single-Arm Powerbomb
+--     suppression (excluded from minting entirely: its generated alias would
+--     duplicate sibling Overhead Extension's, because Unilateral is silent
+--     in names).
+-- ============================================================================
+DELETE FROM public.exercise_aliases WHERE kind = 'generated';
+
+-- re-mint generated aliases
+DO $$
+DECLARE
+  r RECORD;
+  v_n INTEGER;
+  v_norm TEXT;
+BEGIN
+  FOR r IN
+    SELECT e.id, e.name, e.generated_name
+      FROM public.exercises e
+      JOIN _cp_rows s ON s.exercise_id = e.id
+     WHERE e.core_movement_id IS NOT NULL              -- never read generated_name off a coreless row
+       AND e.generated_name IS NOT NULL AND e.generated_name <> ''
+       AND e.generated_name <> e.name
+       AND NOT s.suppress_generated_alias              -- the documented Powerbomb suppression
+     ORDER BY e.name, e.id
+  LOOP
+    v_norm := public.normalize_alias(r.generated_name);
+    INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+    VALUES (r.id, r.generated_name, v_norm, 'generated', 'seed')
+    ON CONFLICT (alias_normalized) DO NOTHING;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    IF v_n = 0 AND NOT EXISTS (SELECT 1 FROM public.exercise_aliases
+                                WHERE exercise_id = r.id AND alias_normalized = v_norm) THEN
+      -- Collision with an alias owned by another exercise: undeclared on the
+      -- blessed projection, so the sheets and the engine disagree — abort
+      -- naming both rows (nothing commits; 15h would refuse this state anyway).
+      RAISE EXCEPTION 'catalog pass FAIL: generated alias % for exercise % already belongs to exercise %',
+        r.generated_name, r.id,
+        (SELECT a.exercise_id FROM public.exercise_aliases a WHERE a.alias_normalized = v_norm);
+    END IF;
+  END LOOP;
+END $$;
+
+-- old display names become wild aliases (skip exact keep-names: a trim-equal
+-- alias of the row's own final name carries no information)
+INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+SELECT s.exercise_id, s.old_name, public.normalize_alias(s.old_name), 'wild', 'seed'
+  FROM _cp_rows s
+ WHERE s.old_name IS NOT NULL
+   AND btrim(s.old_name) <> s.final_name
+   AND public.normalize_alias(s.old_name) <> ''
+ON CONFLICT (alias_normalized) DO NOTHING;
+
+-- sheet-note wild aliases (wild-alias: markers on the approved sheet)
+INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+SELECT s.exercise_id, a, public.normalize_alias(a), 'wild', 'seed'
+  FROM _cp_rows s
+ CROSS JOIN LATERAL unnest(s.note_wild_aliases) a
+ WHERE public.normalize_alias(a) <> ''
+ON CONFLICT (alias_normalized) DO NOTHING;
+
+-- legacy exercises.aliases array contents become wild aliases (the array drops
+-- in Stage 6; from here the alias table is the single source of truth)
+INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+SELECT e.id, a, public.normalize_alias(a), 'wild', 'seed'
+  FROM public.exercises e
+ CROSS JOIN LATERAL unnest(e.aliases) a
+ WHERE btrim(a) <> e.name
+   AND public.normalize_alias(a) <> ''
+ON CONFLICT (alias_normalized) DO NOTHING;
+
+-- merge-loser contributions, re-asserted post-purge
+INSERT INTO public.exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+SELECT mw.winner_id, mw.alias, public.normalize_alias(mw.alias), 'wild', 'seed'
+  FROM _cp_merge_wilds mw
+ON CONFLICT (alias_normalized) DO NOTHING;
+
+-- ============================================================================
+-- 15) SELF-VERIFY (standing rule): assert the achieved end state against the
+--     blessed projection before the transaction commits; observed values in
+--     every failure message. `db push` does not run the harness, so this file
+--     fails the push closed on any drift.
+-- ============================================================================
+
+-- 15a) population: exactly the staged 287 rows survive, 48/187/52 by kind,
+--      every merge loser gone, every winner present
+DO $$
+DECLARE
+  v_observed TEXT;
+  v_count INTEGER;
+BEGIN
+  SELECT count(*) INTO v_count FROM public.exercises;
+  IF v_count <> 287 THEN
+    RAISE EXCEPTION 'catalog pass FAIL: exercises count % (expected 287)', v_count;
+  END IF;
+
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e WHERE NOT EXISTS (SELECT 1 FROM _cp_rows s WHERE s.exercise_id = e.id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: unstaged exercises present: %', v_observed;
+  END IF;
+  SELECT string_agg(s.final_name, ', ' ORDER BY s.final_name) INTO v_observed
+    FROM _cp_rows s WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = s.exercise_id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: staged exercises missing: %', v_observed;
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.exercises WHERE is_core;
+  IF v_count <> 48 THEN
+    RAISE EXCEPTION 'catalog pass FAIL: core count % (expected 48)', v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.exercises WHERE NOT is_core AND core_movement_id IS NOT NULL;
+  IF v_count <> 187 THEN
+    RAISE EXCEPTION 'catalog pass FAIL: derivation count % (expected 187)', v_count;
+  END IF;
+  SELECT count(*) INTO v_count FROM public.exercises WHERE core_movement_id IS NULL;
+  IF v_count <> 52 THEN
+    RAISE EXCEPTION 'catalog pass FAIL: outlier count % (expected 52)', v_count;
+  END IF;
+
+  SELECT string_agg(m.loser_name, ', ' ORDER BY m.loser_name) INTO v_observed
+    FROM _cp_merges m WHERE EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.loser_id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: merge losers still present: %', v_observed;
+  END IF;
+  SELECT string_agg(m.loser_name || ' -> ' || m.winner_id, ', ' ORDER BY m.loser_name) INTO v_observed
+    FROM _cp_merges m WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = m.winner_id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: merge winners missing: %', v_observed;
+  END IF;
+END $$;
+
+-- 15b) per-row end state: display name, custom flag, generated name, core,
+--      tier, machine parent, is_movement, family, modality — all 287 rows
+--      against the blessed projection
+DO $$
+DECLARE
+  v_bad INTEGER;
+  v_observed TEXT;
+BEGIN
+  SELECT count(*),
+         string_agg(bad.detail, E'\n' ORDER BY bad.detail) FILTER (WHERE bad.rn <= 10)
+    INTO v_bad, v_observed
+  FROM (
+    SELECT row_number() OVER (ORDER BY s.final_name) AS rn,
+           s.final_name || ': ' ||
+           concat_ws('; ',
+             CASE WHEN e.name IS DISTINCT FROM s.final_name
+                  THEN 'name=' || COALESCE(e.name, 'null') END,
+             CASE WHEN e.name_is_custom IS DISTINCT FROM s.name_is_custom
+                  THEN 'name_is_custom=' || e.name_is_custom::TEXT END,
+             CASE WHEN e.generated_name IS DISTINCT FROM s.expected_generated
+                  THEN 'generated=' || COALESCE(e.generated_name, 'null') || ' (expected ' || s.expected_generated || ')' END,
+             CASE WHEN e.core_movement_id IS DISTINCT FROM s.core_id
+                  THEN 'core=' || COALESCE(e.core_movement_id::TEXT, 'null') END,
+             CASE WHEN e.is_core IS DISTINCT FROM (s.kind = 'core')
+                  THEN 'is_core=' || e.is_core::TEXT END,
+             CASE WHEN e.tier IS DISTINCT FROM s.expected_tier
+                  THEN 'tier=' || COALESCE(e.tier::TEXT, 'null') || ' (expected ' || COALESCE(s.expected_tier::TEXT, 'null') || ')' END,
+             CASE WHEN e.parent_exercise_id IS DISTINCT FROM s.expected_parent_id
+                  THEN 'parent=' || COALESCE(e.parent_exercise_id::TEXT, 'null') || ' (expected ' || COALESCE(s.expected_parent_id::TEXT, 'null') || ')' END,
+             CASE WHEN e.is_movement IS DISTINCT FROM s.is_movement
+                  THEN 'is_movement=' || COALESCE(e.is_movement::TEXT, 'null') END,
+             CASE WHEN f.name IS DISTINCT FROM s.family
+                  THEN 'family=' || COALESCE(f.name, 'null') END,
+             CASE WHEN mc.name IS DISTINCT FROM s.modality
+                  THEN 'modality=' || COALESCE(mc.name, 'null') END,
+             CASE WHEN e.core_movement_id IS NOT NULL AND e.identity_fingerprint IS NULL
+                  THEN 'fingerprint=null' END
+           ) AS detail
+      FROM _cp_rows s
+      JOIN public.exercises e ON e.id = s.exercise_id
+      LEFT JOIN public.movement_families f ON f.id = e.movement_family_id
+      LEFT JOIN public.movement_categories mc ON mc.id = e.movement_category_id
+     WHERE e.name IS DISTINCT FROM s.final_name
+        OR e.name_is_custom IS DISTINCT FROM s.name_is_custom
+        OR e.generated_name IS DISTINCT FROM s.expected_generated
+        OR e.core_movement_id IS DISTINCT FROM s.core_id
+        OR e.is_core IS DISTINCT FROM (s.kind = 'core')
+        OR e.tier IS DISTINCT FROM s.expected_tier
+        OR e.parent_exercise_id IS DISTINCT FROM s.expected_parent_id
+        OR e.is_movement IS DISTINCT FROM s.is_movement
+        OR f.name IS DISTINCT FROM s.family
+        OR mc.name IS DISTINCT FROM s.modality
+        OR (e.core_movement_id IS NOT NULL AND e.identity_fingerprint IS NULL)
+  ) bad;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION E'catalog pass FAIL: % rows diverge from the blessed projection (first 10):\n%', v_bad, v_observed;
+  END IF;
+END $$;
+
+-- 15c) attribute columns resolve to exactly the staged values (both directions:
+--      a NULL where the sheet has a value is as fatal as the reverse)
+DO $$
+DECLARE
+  v_bad INTEGER;
+  v_observed TEXT;
+BEGIN
+  SELECT count(*), string_agg(bad.detail, E'\n' ORDER BY bad.detail) FILTER (WHERE bad.rn <= 10)
+    INTO v_bad, v_observed
+  FROM (
+    SELECT row_number() OVER (ORDER BY s.final_name) AS rn,
+           s.final_name || ': ' ||
+           concat_ws('; ',
+             CASE WHEN lp.name IS DISTINCT FROM s.load_position THEN 'load_position=' || COALESCE(lp.name, 'null') || '<>' || COALESCE(s.load_position, 'null') END,
+             CASE WHEN st.name IS DISTINCT FROM s.stance THEN 'stance=' || COALESCE(st.name, 'null') || '<>' || COALESCE(s.stance, 'null') END,
+             CASE WHEN rd.name IS DISTINCT FROM s.range_depth THEN 'range_depth=' || COALESCE(rd.name, 'null') || '<>' || COALESCE(s.range_depth, 'null') END,
+             CASE WHEN sy.name IS DISTINCT FROM s.symmetry THEN 'symmetry=' || COALESCE(sy.name, 'null') || '<>' || COALESCE(s.symmetry, 'null') END,
+             CASE WHEN go.name IS DISTINCT FROM s.grip_orientation THEN 'grip_orientation=' || COALESCE(go.name, 'null') || '<>' || COALESCE(s.grip_orientation, 'null') END,
+             CASE WHEN gw.name IS DISTINCT FROM s.grip_width THEN 'grip_width=' || COALESCE(gw.name, 'null') || '<>' || COALESCE(s.grip_width, 'null') END,
+             CASE WHEN ba.name IS DISTINCT FROM s.bench_angle THEN 'bench_angle=' || COALESCE(ba.name, 'null') || '<>' || COALESCE(s.bench_angle, 'null') END,
+             CASE WHEN di.name IS DISTINCT FROM s.direction THEN 'direction=' || COALESCE(di.name, 'null') || '<>' || COALESCE(s.direction, 'null') END,
+             CASE WHEN sp.name IS DISTINCT FROM s.support_position THEN 'support=' || COALESCE(sp.name, 'null') || '<>' || COALESCE(s.support_position, 'null') END,
+             CASE WHEN ap.name IS DISTINCT FROM s.arm_position THEN 'arm_position=' || COALESCE(ap.name, 'null') || '<>' || COALESCE(s.arm_position, 'null') END,
+             CASE WHEN vl.slug IS DISTINCT FROM s.variant_slug THEN 'variant=' || COALESCE(vl.slug, 'null') || '<>' || COALESCE(s.variant_slug, 'null') END
+           ) AS detail
+      FROM _cp_rows s
+      JOIN public.exercises e ON e.id = s.exercise_id
+      LEFT JOIN public.load_positions lp ON lp.id = e.load_position_id
+      LEFT JOIN public.stances st ON st.id = e.stance_id
+      LEFT JOIN public.range_depths rd ON rd.id = e.range_depth_id
+      LEFT JOIN public.symmetries sy ON sy.id = e.symmetry_id
+      LEFT JOIN public.grips go ON go.id = e.grip_orientation_id
+      LEFT JOIN public.grips gw ON gw.id = e.grip_width_id
+      LEFT JOIN public.bench_angles ba ON ba.id = e.bench_angle_id
+      LEFT JOIN public.directions di ON di.id = e.direction_id
+      LEFT JOIN public.support_positions sp ON sp.id = e.support_position_id
+      LEFT JOIN public.arm_positions ap ON ap.id = e.arm_position_id
+      LEFT JOIN public.variant_labels vl ON vl.id = e.variant_label_id
+     WHERE lp.name IS DISTINCT FROM s.load_position
+        OR st.name IS DISTINCT FROM s.stance
+        OR rd.name IS DISTINCT FROM s.range_depth
+        OR sy.name IS DISTINCT FROM s.symmetry
+        OR go.name IS DISTINCT FROM s.grip_orientation
+        OR gw.name IS DISTINCT FROM s.grip_width
+        OR ba.name IS DISTINCT FROM s.bench_angle
+        OR di.name IS DISTINCT FROM s.direction
+        OR sp.name IS DISTINCT FROM s.support_position
+        OR ap.name IS DISTINCT FROM s.arm_position
+        OR vl.slug IS DISTINCT FROM s.variant_slug
+  ) bad;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION E'catalog pass FAIL: % rows with divergent attribute columns (first 10):\n%', v_bad, v_observed;
+  END IF;
+END $$;
+
+-- 15d) junction equality per row: equipment (equivalent to the sheet, which
+--      already folds the implied-equipment canonicalization), identity styles,
+--      goals, muscles with the primary/secondary split; plus no orphans and
+--      the cores-carry-no-equipment convention
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  SELECT string_agg(bad.v, E'\n' ORDER BY bad.v) INTO v_observed FROM (
+    SELECT s.final_name || ' equipment: {' ||
+           COALESCE((SELECT string_agg(q.name, ',' ORDER BY q.name)
+                       FROM public.exercise_equipment ee JOIN public.equipment q ON q.id = ee.equipment_id
+                      WHERE ee.exercise_id = s.exercise_id), '') || '} expected {' ||
+           array_to_string(s.equipment, ',') || '}' AS v
+      FROM _cp_rows s
+     WHERE COALESCE((SELECT array_agg(q.name ORDER BY q.name)
+                       FROM public.exercise_equipment ee JOIN public.equipment q ON q.id = ee.equipment_id
+                      WHERE ee.exercise_id = s.exercise_id), '{}')
+           IS DISTINCT FROM (SELECT COALESCE(array_agg(x ORDER BY x), '{}') FROM unnest(s.equipment) x)
+    UNION ALL
+    SELECT s.final_name || ' identity styles: {' ||
+           COALESCE((SELECT string_agg(ms.name, ',' ORDER BY ms.name)
+                       FROM public.exercise_movement_styles x JOIN public.movement_styles ms
+                         ON ms.id = x.movement_style_id AND ms.is_identity
+                      WHERE x.exercise_id = s.exercise_id), '') || '} expected {' ||
+           array_to_string(s.styles, ',') || '}'
+      FROM _cp_rows s
+     WHERE COALESCE((SELECT array_agg(ms.name ORDER BY ms.name)
+                       FROM public.exercise_movement_styles x JOIN public.movement_styles ms
+                         ON ms.id = x.movement_style_id AND ms.is_identity
+                      WHERE x.exercise_id = s.exercise_id), '{}')
+           IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.styles) y)
+    UNION ALL
+    SELECT s.final_name || ' goals: {' ||
+           COALESCE((SELECT string_agg(g.name, ',' ORDER BY g.name)
+                       FROM public.exercise_goal_types x JOIN public.goal_types g ON g.id = x.goal_type_id
+                      WHERE x.exercise_id = s.exercise_id), '') || '} expected {' ||
+           array_to_string(s.goals, ',') || '}'
+      FROM _cp_rows s
+     WHERE COALESCE((SELECT array_agg(g.name ORDER BY g.name)
+                       FROM public.exercise_goal_types x JOIN public.goal_types g ON g.id = x.goal_type_id
+                      WHERE x.exercise_id = s.exercise_id), '{}')
+           IS DISTINCT FROM (SELECT COALESCE(array_agg(gg ORDER BY gg), '{}') FROM unnest(s.goals) gg)
+    UNION ALL
+    SELECT s.final_name || ' primary muscles diverge'
+      FROM _cp_rows s
+     WHERE COALESCE((SELECT array_agg(m.name ORDER BY m.name)
+                       FROM public.exercise_muscle_regions x JOIN public.muscle_regions m ON m.id = x.muscle_region_id
+                      WHERE x.exercise_id = s.exercise_id AND x.is_primary), '{}')
+           IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.primary_muscles) y)
+    UNION ALL
+    SELECT s.final_name || ' secondary muscles diverge'
+      FROM _cp_rows s
+     WHERE COALESCE((SELECT array_agg(m.name ORDER BY m.name)
+                       FROM public.exercise_muscle_regions x JOIN public.muscle_regions m ON m.id = x.muscle_region_id
+                      WHERE x.exercise_id = s.exercise_id AND NOT x.is_primary), '{}')
+           IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.secondary_muscles) y)
+  ) bad(v);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION E'catalog pass FAIL: junction divergence from the sheet:\n%', v_observed;
+  END IF;
+
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+   WHERE e.is_core AND EXISTS (SELECT 1 FROM public.exercise_equipment ee WHERE ee.exercise_id = e.id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: cores carrying equipment junction rows: %', v_observed;
+  END IF;
+
+  SELECT count(*)::TEXT INTO v_observed
+    FROM public.exercise_equipment ee
+   WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = ee.exercise_id)
+      OR NOT EXISTS (SELECT 1 FROM public.equipment q WHERE q.id = ee.equipment_id);
+  IF v_observed <> '0' THEN
+    RAISE EXCEPTION 'catalog pass FAIL: % orphaned exercise_equipment rows', v_observed;
+  END IF;
+END $$;
+
+-- 15e) identity invariants: no fingerprint duplicates within a core; the only
+--      within-core generated-name duplicates are the five DECLARED silent-
+--      attribute collisions on the blessed projection (Unilateral/Pronated are
+--      silent in names, so the fingerprints differ while the names agree)
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
+    SELECT 'core ' || c.name || ' fingerprint ' || e.identity_fingerprint || ' x' || count(*) AS msg
+      FROM public.exercises e JOIN public.exercises c ON c.id = e.core_movement_id
+     WHERE e.core_movement_id IS NOT NULL
+     GROUP BY c.name, e.core_movement_id, e.identity_fingerprint
+    HAVING count(*) > 1
+  ) d;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: duplicate fingerprints within a core: %', v_observed;
+  END IF;
+
+  WITH dupes AS (
+    SELECT e.core_movement_id, e.generated_name, count(*) AS n
+      FROM public.exercises e
+     WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core
+     GROUP BY e.core_movement_id, e.generated_name
+    HAVING count(*) > 1
+  ), declared(core_id, generated_name, n) AS (VALUES
+    ('b6879563-ab0d-5bc6-9b44-cab09315d939', 'Kettlebell Bent-Over Row', 2),
+    ('80d46a74-c62a-4849-920f-22d326bf7cef', 'Cable Chest Fly', 2),
+    ('01f01e3a-393d-4819-8834-cf25ea1ba04a', 'Dumbbell Curl', 2),
+    ('90d63ecc-cebe-5ace-806d-45c8560f973f', 'Straight-Arm Lat Pulldown', 2),
+    ('cb22657b-7dd7-422d-bebb-4f5f7b63f6cb', 'Overhead Dumbbell Triceps Extension', 2)
+  )
+  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
+    SELECT 'undeclared: ' || dp.generated_name || ' x' || dp.n AS msg
+      FROM dupes dp
+     WHERE NOT EXISTS (SELECT 1 FROM declared dc
+                        WHERE dc.core_id::uuid = dp.core_movement_id
+                          AND dc.generated_name = dp.generated_name AND dc.n = dp.n)
+    UNION ALL
+    SELECT 'missing declared: ' || dc.generated_name
+      FROM declared dc
+     WHERE NOT EXISTS (SELECT 1 FROM dupes dp
+                        WHERE dp.core_movement_id = dc.core_id::uuid
+                          AND dp.generated_name = dc.generated_name AND dp.n = dc.n)
+  ) d;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: within-core generated-name duplicates diverge from the declared set: %', v_observed;
+  END IF;
+END $$;
+
+-- 15f) every coreless row is one of the 52 explicit outliers (and no outlier
+--      kept a legacy parent), tiers land exactly 48/144/38/5
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  WITH outliers(id) AS (VALUES
+    ('0056856b-444d-427d-92a4-899451758fdf'),
+    ('00b1670c-b022-44d1-9587-31655583cdc6'),
+    ('01fbbe48-996b-4630-b89f-4d10d5a8ca25'),
+    ('08dbcd57-b14c-4534-8764-648e2920c811'),
+    ('0b975a66-3c23-44ab-a520-9d839d3aaf50'),
+    ('111bb1b9-85c9-4c92-b78c-cc9eb96dafb1'),
+    ('1325914c-6886-4cce-986a-5b08f50d0bac'),
+    ('225badb2-a9ac-43e0-897a-16e4023a3fdf'),
+    ('24a81876-d389-4ba9-a35a-87bb7ac70fbd'),
+    ('2702fd09-a0d4-40c6-86e0-f42bb9ff9246'),
+    ('2aef1947-7d3b-4bc4-8ae6-6e42a4c352ba'),
+    ('2e76626e-5a55-4c02-b52c-0745fa4a1ec2'),
+    ('3122cd2f-a71d-4a7a-a763-ca90ad843690'),
+    ('4055eaf8-3df8-4865-a5da-3b31bb18a6e4'),
+    ('47273ede-cf88-4d25-9d06-bb71ed30e14c'),
+    ('54b39df9-219e-4870-834c-ee1e9c6199b0'),
+    ('5e35a841-1f39-44e6-ae61-e21317afc890'),
+    ('6569cb89-9e99-4ab8-a92f-006cff2880c3'),
+    ('724ae756-5b28-483c-9c03-28bc160ce128'),
+    ('72b6914d-98c7-4f2e-a642-40b28b240608'),
+    ('73c9e31f-54cf-48e7-ac2c-30bf5750ac51'),
+    ('7daf1c99-796b-4f19-96f0-3076ba8fcb78'),
+    ('81cae4a9-327f-442f-860b-1f7bdaf47c7c'),
+    ('8399fcf6-3332-4b60-a71e-029e073b9b1f'),
+    ('87b6fb0f-2d5e-40b0-a198-67611fbec811'),
+    ('8e470f94-2005-4870-a22b-976ddaf00a95'),
+    ('95669791-297e-4913-9b20-b0bb6ae6033c'),
+    ('9576a843-c3c2-415a-a21d-38c0088a8290'),
+    ('9d9cc729-e8a6-44e4-a91e-3b452f4260a5'),
+    ('9f6fabc9-1edb-4f68-bb95-25cbc62e24d2'),
+    ('a4811178-fb30-4d51-82df-f0f772ffef81'),
+    ('adc07245-37d4-4a20-9925-533207bc4754'),
+    ('b13b9b6a-30eb-493d-afa3-67e818dba85b'),
+    ('b6cb3ae1-3280-47b9-aa09-e1d7da646992'),
+    ('b8793729-fa21-4b33-b0b6-49a88211379f'),
+    ('b94a7298-2a71-4486-8211-790867506907'),
+    ('c0af3ce1-cb39-47c8-a196-f9eb7438bb87'),
+    ('c9cc8b6d-0f84-4fb6-99b9-36f8d9aaaa42'),
+    ('ca567717-d196-41a3-959f-944f3f2aa3a0'),
+    ('cb7af18c-9e72-4cd4-96ee-9ce28dc4e323'),
+    ('ce983988-cf48-41df-a1c3-e2b2155ea8d1'),
+    ('dd9ffabd-3eb7-4ba7-b178-70175e4fd786'),
+    ('dde33be4-942f-4742-afb3-a4085881892a'),
+    ('de507736-f4e7-4083-8a8f-48795c4cb9d9'),
+    ('de68bf32-b80f-4a1f-8ad6-68c6b1ae232c'),
+    ('e85c15ac-0848-4129-ba6c-dd5780f08ba4'),
+    ('e8f336ff-6abe-4f45-a46b-70a95158273d'),
+    ('e92f2281-d98b-4200-a644-0831871d1707'),
+    ('ed1b3bbf-bc3c-46a6-90f3-ae2d097a0bd6'),
+    ('f57a4584-232e-4e44-9fa3-8276a991b076'),
+    ('f7a92fbd-7d0a-4671-a5ae-7ef7adc2075d'),
+    ('fc86b911-7b6d-4999-941c-226a3d78efa1')
+  )
+  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
+    SELECT e.name || ' coreless but not a declared outlier' AS msg
+      FROM public.exercises e
+     WHERE e.core_movement_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM outliers o WHERE o.id::uuid = e.id)
+    UNION ALL
+    SELECT e.name || ' declared outlier but has a core'
+      FROM public.exercises e JOIN outliers o ON o.id::uuid = e.id
+     WHERE e.core_movement_id IS NOT NULL
+    UNION ALL
+    SELECT e.name || ' outlier with parent/tier'
+      FROM public.exercises e JOIN outliers o ON o.id::uuid = e.id
+     WHERE e.parent_exercise_id IS NOT NULL OR e.tier IS NOT NULL
+  ) d;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: outlier set diverges: %', v_observed;
+  END IF;
+
+  SELECT string_agg(t.tier_label || '=' || t.n, ', ' ORDER BY t.tier_label) INTO v_observed
+    FROM (SELECT COALESCE(tier::TEXT, 'null') AS tier_label, count(*) AS n
+            FROM public.exercises GROUP BY tier) t;
+  IF v_observed IS DISTINCT FROM '0=48, 1=144, 2=38, 3=5, null=52' THEN
+    RAISE EXCEPTION 'catalog pass FAIL: tier distribution % (expected 0=48, 1=144, 2=38, 3=5, null=52)', v_observed;
+  END IF;
+END $$;
+
+-- 15g) variant guardrails: G2 — every variant label belongs to the labelled
+--      row's own core; G3 ceiling — no core carries more than 6 variant-
+--      labelled children
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  SELECT string_agg(e.name || ' (label ' || vl.slug || ' scoped to ' || c.name || ')', '; ' ORDER BY e.name)
+    INTO v_observed
+    FROM public.exercises e
+    JOIN public.variant_labels vl ON vl.id = e.variant_label_id
+    JOIN public.exercises c ON c.id = vl.core_movement_id
+   WHERE vl.core_movement_id IS DISTINCT FROM e.core_movement_id;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: variant labels used outside their core scope (G2): %', v_observed;
+  END IF;
+
+  SELECT string_agg(c.name || ' x' || d.n, '; ' ORDER BY c.name) INTO v_observed
+    FROM (SELECT e.core_movement_id, count(*) AS n
+            FROM public.exercises e
+           WHERE e.variant_label_id IS NOT NULL AND NOT e.is_core
+           GROUP BY e.core_movement_id
+          HAVING count(*) > 6) d
+    JOIN public.exercises c ON c.id = d.core_movement_id;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: cores exceeding 6 variant-labelled children (G3): %', v_observed;
+  END IF;
+END $$;
+
+-- 15h) alias table: exactly the blessed set (staged in section 6) — every
+--      merge-loser name, every renamed-away name, the sheet-note wilds, the
+--      legacy array aliases and the re-minted generated aliases; the Powerbomb
+--      suppression holds
 DO $$
 DECLARE
   v_observed TEXT;
@@ -2066,7 +2246,7 @@ BEGIN
                           AND x.kind = a.kind)
   ) d;
   IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: alias table diverges from the blessed set:\n%', v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: alias table diverges from the blessed set:\n%', v_observed;
   END IF;
 
   SELECT count(*) INTO v_count FROM public.exercise_aliases;
@@ -2142,7 +2322,13 @@ BEGIN
      WHERE COALESCE((SELECT generated_name FROM public.exercises WHERE id = 'ee95e859-8e5e-4346-a3b0-9869a8c7d86b'), '') <> 'Alternating Dumbbell Grab-Reach-Pull Plank'
   ) bad(v);
   IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: sampled generated names diverge:\n%', v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: sampled generated names diverge:\n%', v_observed;
+  END IF;
+
+  -- the single-use merge helper must not survive to commit: SECURITY DEFINER
+  -- plus API-role EXECUTE would make it a PostgREST-callable delete-as-postgres
+  IF to_regprocedure('public.merge_exercise_into(uuid, uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: merge_exercise_into() survived to end-of-migration (single-use scaffolding must be dropped)';
   END IF;
 END $$;
 

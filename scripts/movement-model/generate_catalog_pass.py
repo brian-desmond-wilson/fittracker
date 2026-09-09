@@ -503,6 +503,14 @@ w(f"""-- {MIGRATION_NAME}
 -- End state (from the blessed projection): 287 exercises = 48 cores + 187
 -- derivations + 52 outliers; 25 duplicates merged away; tiers 48/144/38/5.
 
+-- Fail fast on lock contention: the ALTER TABLE in section 4 needs a brief
+-- ACCESS EXCLUSIVE lock on exercises; without a timeout the migration would
+-- queue behind long-running app transactions and stall all traffic behind it.
+-- A timeout aborts the single wrapping transaction cleanly — the operator
+-- retries in a quiet window. (SET LOCAL requires a transaction block; this
+-- file always runs inside one, under psql -1 / db push.)
+SET LOCAL lock_timeout = '5s';
+
 -- ============================================================================
 -- 1) New reference tables: directions, support_positions, arm_positions,
 --    bench_angles (standing rule: every CREATE TABLE ships RLS + policies in
@@ -624,6 +632,13 @@ CREATE INDEX IF NOT EXISTS exercises_arm_position_idx ON public.exercises (arm_p
 CREATE INDEX IF NOT EXISTS exercises_bench_angle_idx ON public.exercises (bench_angle_id);
 CREATE INDEX IF NOT EXISTS exercises_variant_label_idx ON public.exercises (variant_label_id);
 
+-- The merge pass (section 9) repoints every FK table by exercise_id;
+-- exercise_instances (ON DELETE RESTRICT, app-hot) had no index on that column,
+-- so each of the 25 merges would seq-scan it. Plain CREATE INDEX: this file
+-- runs in one transaction (CONCURRENTLY is impossible here), and the index
+-- earns its keep for app reads afterwards, so it stays.
+CREATE INDEX IF NOT EXISTS idx_exercise_instances_exercise ON public.exercise_instances (exercise_id);
+
 -- Grip category guard (Stage 2 hand-off): the two grip FK columns must stay in
 -- their categories. Trigger, matching house style (CHECK cannot subquery).
 CREATE OR REPLACE FUNCTION public.enforce_grip_categories() RETURNS TRIGGER
@@ -645,9 +660,13 @@ CREATE TRIGGER exercises_grip_categories
   FOR EACH ROW EXECUTE FUNCTION enforce_grip_categories();
 
 -- ============================================================================
--- 5) Engine amendments (CREATE OR REPLACE; recompute_exercise_identity is
---    untouched — SECURITY DEFINER, search_path pinning, FOR UPDATE locking,
---    stale-alias cleanup and parent preservation stay as shipped in 20260825150000)
+-- 5) Engine amendments (CREATE OR REPLACE). recompute_exercise_identity is
+--    re-issued with ONE functional change: the parent-candidate ORDER BY gains
+--    a final id tiebreaker (bulk-seeded rows share created_at, so without it
+--    parent choice among equal-cardinality candidates was planner-dependent —
+--    staging and live could disagree). Everything else — SECURITY DEFINER,
+--    search_path pinning, FOR UPDATE locking, stale-alias cleanup and parent
+--    preservation — stays as shipped in 20260825150000.
 -- ============================================================================
 
 -- exercise_identity_attrs gains direction, support position, arm position,
@@ -761,6 +780,73 @@ BEGIN
   RETURN trim(concat_ws(' ', v_frags, v_noun));
 END $$;
 
+-- Recompute one exercise's derived state. Verbatim from 20260825150000 except:
+-- (1) the parent-candidate ORDER BY appends `c.id ASC` as a deterministic
+--     tiebreaker (see the section banner), and
+-- (2) the alias-sync comment no longer claims Stage 3 routes collisions to
+--     review — the Stage 3 rebuild asserts the exact blessed alias set instead.
+CREATE OR REPLACE FUNCTION public.recompute_exercise_identity(p_id UUID) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_core UUID; v_is_core BOOLEAN; v_attrs UUID[]; v_parent UUID; v_ptier INTEGER; v_gen TEXT;
+BEGIN
+  -- Serialize concurrent recomputes of the same exercise: without this, two sessions each
+  -- adding a junction row read a partial attribute set and the last write wins (lost update).
+  PERFORM 1 FROM exercises WHERE id = p_id FOR UPDATE;
+  SELECT core_movement_id, is_core INTO v_core, v_is_core FROM exercises WHERE id = p_id;
+  IF NOT FOUND THEN RETURN; END IF;
+  v_attrs := exercise_identity_attrs(p_id);
+  v_gen := generate_exercise_name(p_id);
+
+  IF v_is_core OR v_core IS NULL THEN
+    v_parent := NULL;                                          -- cores and outliers have no parent
+  ELSE
+    SELECT c.id, c.tier INTO v_parent, v_ptier
+    FROM exercises c
+    WHERE c.core_movement_id = v_core AND c.id <> p_id
+      AND exercise_identity_attrs(c.id) <@ v_attrs
+      AND cardinality(exercise_identity_attrs(c.id)) < cardinality(v_attrs)
+    ORDER BY cardinality(exercise_identity_attrs(c.id)) DESC, c.created_at ASC, c.id ASC
+    LIMIT 1;
+    IF v_parent IS NULL THEN v_parent := v_core; v_ptier := 0; END IF;
+  END IF;
+
+  UPDATE exercises SET
+    identity_fingerprint = CASE WHEN v_core IS NULL THEN NULL ELSE array_to_string(v_attrs, '|') END,
+    -- Rows with no core movement keep their existing hand-set parent: the legacy hierarchy
+    -- (19 live rows) must survive untouched until the Stage 3 catalog pass assigns cores —
+    -- wiping it here would visibly flatten the app's hierarchy screen (zero-visible-change rule).
+    parent_exercise_id   = CASE WHEN v_is_core THEN NULL
+                                WHEN v_core IS NULL THEN parent_exercise_id
+                                ELSE v_parent END,
+    tier = CASE WHEN v_is_core THEN 0 WHEN v_core IS NULL THEN NULL ELSE COALESCE(v_ptier, 0) + 1 END,
+    generated_name = v_gen,
+    name = CASE WHEN name_is_custom OR v_core IS NULL THEN name ELSE v_gen END,
+    updated_at = now()
+  WHERE id = p_id;
+
+  -- Sync the generated alias; a cross-exercise collision is skipped here — Stage 3's alias
+  -- rebuild re-mints the final set and asserts it exactly. Never a crash.
+  IF v_core IS NULL THEN
+    -- A core-less row holds no generated aliases: a demoted core (or a row whose core was
+    -- cleared) must not leave its old generated name squatting as debris.
+    DELETE FROM exercise_aliases WHERE exercise_id = p_id AND kind = 'generated';
+  ELSIF v_gen IS NOT NULL AND v_gen <> '' THEN
+    -- Drop stale generated aliases first: per-row junction triggers make every intermediate
+    -- generated name an alias, and leaving that debris squats on names that rightfully
+    -- belong to other exercises (their ON CONFLICT insert would silently lose).
+    DELETE FROM exercise_aliases
+    WHERE exercise_id = p_id AND kind = 'generated'
+      AND alias_normalized <> normalize_alias(v_gen);
+    BEGIN
+      INSERT INTO exercise_aliases (exercise_id, alias, alias_normalized, kind, source)
+      VALUES (p_id, v_gen, normalize_alias(v_gen), 'generated', 'seed')
+      ON CONFLICT (alias_normalized) DO NOTHING;
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+  END IF;
+END $$;
+
 -- The five new identity columns must fire the recompute trigger. (A core's
 -- core_default_equipment is deliberately absent from the list: changing it
 -- affects the CHILDREN's names, not the core's own row — callers recompute
@@ -835,7 +921,23 @@ CREATE TEMP TABLE _cp_merge_wilds (
   winner_id UUID NOT NULL,
   alias TEXT NOT NULL
 );
+""")
 
+# The expected final alias set is staged here (not in 15h) so the drift
+# preflight below can consult it before any write; 15h re-uses the same
+# temp table for its end-state exact-set assert.
+w("""-- The blessed final alias set, staged early: the drift preflight below reads
+-- it before any write; 15h asserts the achieved end state against it.
+CREATE TEMP TABLE _cp_expected_aliases (
+  exercise_id UUID NOT NULL,
+  alias TEXT NOT NULL,
+  kind TEXT NOT NULL
+);""")
+w("INSERT INTO _cp_expected_aliases VALUES")
+w(',\n'.join(f'  ({q(ex_id)}, {q(alias)}, {q(kind)})'
+             for ex_id, alias, kind in sorted(expected_aliases)) + ';')
+
+w("""
 -- Fail fast if any staged reference value does not resolve (a silent NULL here
 -- would otherwise masquerade as a deliberate blank).
 DO $$
@@ -898,6 +1000,34 @@ BEGIN
   IF v_observed IS NOT NULL THEN
     RAISE EXCEPTION 'catalog pass FAIL: merge losers not matching live exercises by id+name: %', v_observed;
   END IF;
+
+  -- Drift preflight (mirrors 15a, but BEFORE any write): every live catalog row
+  -- must appear on the approved sheet — as a survivor or as a merge loser. A row
+  -- created since the sheet was cut aborts here, before anything is touched.
+  SELECT string_agg(e.id::TEXT || ' (' || e.name || ')', '; ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+   WHERE NOT EXISTS (SELECT 1 FROM _cp_rows s WHERE s.exercise_id = e.id)
+     AND NOT EXISTS (SELECT 1 FROM _cp_merges m WHERE m.loser_id = e.id);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL (preflight): live exercises missing from the approved sheet: %', v_observed;
+  END IF;
+
+  -- Alias drift preflight: an alias row that is neither part of the blessed
+  -- final set nor engine-minted generated debris on a sheet row means aliases
+  -- changed since the sheet was cut — abort before the purge/rebuild below
+  -- destroys the evidence.
+  SELECT string_agg(a.alias || ' (' || a.kind || ' on ' || a.exercise_id || ')', '; ' ORDER BY a.alias)
+    INTO v_observed
+    FROM public.exercise_aliases a
+   WHERE NOT EXISTS (SELECT 1 FROM _cp_expected_aliases x
+                      WHERE x.exercise_id = a.exercise_id
+                        AND public.normalize_alias(x.alias) = a.alias_normalized)
+     AND NOT (a.kind = 'generated'
+              AND (EXISTS (SELECT 1 FROM _cp_rows s WHERE s.exercise_id = a.exercise_id)
+                   OR EXISTS (SELECT 1 FROM _cp_merges m WHERE m.loser_id = a.exercise_id)));
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL (preflight): alias rows unknown to the approved sheet (created since the sheet was cut?): %', v_observed;
+  END IF;
 END $$;
 
 -- ============================================================================
@@ -956,6 +1086,13 @@ w("""
 --    by pg_constraint at runtime — every FK that references exercises(id) is
 --    discovered and repointed (dedupe-skip against any unique index containing
 --    the FK column), so a schema addition can never silently orphan rows.
+--    Every dedupe-delete is announced with a NOTICE; for the per-user tables
+--    exercise_skill_state and user_machine_settings the FRESHER of the two
+--    colliding rows wins (the loser row's non-key values are copied onto the
+--    winner's row first when the loser is newer by updated_at/created_at).
+--    The function is single-use scaffolding: never callable from the API
+--    (revoked immediately below) and dropped again before this transaction
+--    commits (asserted in section 15).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.merge_exercise_into(p_loser UUID, p_winner UUID) RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -965,6 +1102,9 @@ DECLARE
   v_cond TEXT;
   v_loser_name TEXT;
   v_winner_name TEXT;
+  v_n INTEGER;
+  v_fresh TEXT;
+  v_set TEXT;
 BEGIN
   IF p_loser = p_winner THEN
     RAISE EXCEPTION 'merge_exercise_into: loser and winner are the same row (%)', p_loser;
@@ -1009,7 +1149,10 @@ BEGIN
              (SELECT string_agg(format('t2.%1$I IS NOT DISTINCT FROM t1.%1$I', a2.attname), ' AND ')
                 FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
                 JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum
-               WHERE a2.attname <> fk.col) AS other_cols
+               WHERE a2.attname <> fk.col) AS other_cols,
+             (SELECT array_agg(a2.attname::TEXT)
+                FROM unnest(i.indkey[0:i.indnkeyatts-1]) k(attnum)
+                JOIN pg_attribute a2 ON a2.attrelid = i.indrelid AND a2.attnum = k.attnum) AS key_cols
         FROM pg_index i
        WHERE i.indrelid = fk.tbl AND i.indisunique
          AND i.indpred IS NULL AND i.indexprs IS NULL
@@ -1018,10 +1161,48 @@ BEGIN
                       WHERE a2.attname = fk.col)
        ORDER BY i.indexrelid
     LOOP
+      -- Per-user state keeps the FRESHER record (review fix): before the
+      -- dedupe-delete, when the loser's colliding row is newer, copy its
+      -- non-key values onto the winner's row. Special-cased by name for the
+      -- two known per-user tables; everything else keeps the winner's row.
+      IF fk.tbl::TEXT IN ('exercise_skill_state', 'user_machine_settings') THEN
+        SELECT a.attname INTO v_fresh
+          FROM pg_attribute a
+         WHERE a.attrelid = fk.tbl AND a.attnum > 0 AND NOT a.attisdropped
+           AND a.attname IN ('updated_at', 'created_at')
+         ORDER BY CASE a.attname WHEN 'updated_at' THEN 0 ELSE 1 END
+         LIMIT 1;
+        SELECT string_agg(format('%1$I = t1.%1$I', a.attname), ', ') INTO v_set
+          FROM pg_attribute a
+         WHERE a.attrelid = fk.tbl AND a.attnum > 0 AND NOT a.attisdropped
+           AND a.attname <> fk.col
+           AND a.attname <> 'created_at'
+           AND a.attname <> ALL (idx.key_cols)
+           AND NOT EXISTS (SELECT 1 FROM pg_index p
+                            WHERE p.indrelid = fk.tbl AND p.indisprimary
+                              AND a.attnum = ANY (p.indkey::INT2[]));
+        IF v_fresh IS NOT NULL AND v_set IS NOT NULL THEN
+          EXECUTE format(
+            'UPDATE %s t2 SET %s FROM %s t1 WHERE t1.%I = $1 AND t2.%I = $2 AND %s AND t1.%I > t2.%I',
+            fk.tbl, v_set, fk.tbl, fk.col, fk.col, COALESCE(idx.other_cols, 'true'), v_fresh, v_fresh)
+          USING p_loser, p_winner;
+          GET DIAGNOSTICS v_n = ROW_COUNT;
+          IF v_n > 0 THEN
+            RAISE NOTICE 'merge_exercise_into: % fresher loser row(s) copied onto winner in % (loser %, winner %)',
+              v_n, fk.tbl, p_loser, p_winner;
+          END IF;
+        END IF;
+      END IF;
+
       EXECUTE format(
         'DELETE FROM %s t1 WHERE t1.%I = $1 AND EXISTS (SELECT 1 FROM %s t2 WHERE t2.%I = $2 AND %s)',
         fk.tbl, fk.col, fk.tbl, fk.col, COALESCE(idx.other_cols, 'true'))
       USING p_loser, p_winner;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      IF v_n > 0 THEN
+        RAISE NOTICE 'merge_exercise_into: deduped % row(s) from % (loser %, winner %)',
+          v_n, fk.tbl, p_loser, p_winner;
+      END IF;
     END LOOP;
 
     EXECUTE format('UPDATE %s SET %I = $2 WHERE %I = $1%s',
@@ -1037,6 +1218,11 @@ BEGIN
 
   DELETE FROM exercises WHERE id = p_loser;
 END $$;
+
+-- SECURITY DEFINER + default EXECUTE would let PostgREST expose this to API
+-- roles as POST /rest/v1/rpc/merge_exercise_into — any client could merge and
+-- delete catalog rows as postgres, bypassing RLS. Never callable from the API.
+REVOKE ALL ON FUNCTION public.merge_exercise_into(UUID, UUID) FROM PUBLIC, anon, authenticated;
 
 DO $$
 DECLARE
@@ -1058,6 +1244,10 @@ BEGIN
     PERFORM public.merge_exercise_into(m.loser_id, m.winner_id);
   END LOOP;
 END $$;
+
+-- Single-use scaffolding: gone before this transaction commits, so no callable
+-- trace of the merge tooling survives the migration (asserted in section 15).
+DROP FUNCTION public.merge_exercise_into(UUID, UUID);
 """)
 
 # canonical slug flips for new cores whose slug was held by a merge loser
@@ -1216,6 +1406,17 @@ BEGIN
   IF v_observed IS NOT NULL THEN
     RAISE EXCEPTION 'catalog pass FAIL: rows still on legacy Supine / Prone stance: %', v_observed;
   END IF;
+
+  -- variation_options.stance_id references stances ON DELETE SET NULL: a
+  -- surviving reference would be silently blanked by the delete below, so it
+  -- must be zero too, not just exercises.
+  SELECT string_agg(vo.name || ' (' || vo.id || ')', ', ' ORDER BY vo.name) INTO v_observed
+    FROM public.variation_options vo
+    JOIN public.stances s ON s.id = vo.stance_id
+   WHERE s.name = 'Supine / Prone';
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: variation_options still on legacy Supine / Prone stance (delete would SET NULL them): %', v_observed;
+  END IF;
 END $$;
 -- legacy dual-store junction debris goes with it (the FK would cascade anyway;
 -- explicit for the record — 1 row on the 2026-08-24 snapshot)
@@ -1234,10 +1435,13 @@ DELETE FROM public.stances WHERE name = 'Supine / Prone';
 --     aliases, merge-loser contributions). Generated aliases mint first so a
 --     string that is both a row's generated name and one of its wild sources
 --     lands as kind='generated'. A mint collision with an alias owned by
---     another exercise routes to exercise_match_reviews instead of failing,
---     except the documented Single-Arm Powerbomb suppression (its generated
---     alias would duplicate sibling Overhead Extension's, because Unilateral
---     is silent in names).
+--     another exercise aborts the transaction naming both rows — the blessed
+--     projection declares no such collision, so one appearing here means the
+--     sheets and the engine disagree and the run must not commit. The only
+--     sanctioned near-collision is the documented Single-Arm Powerbomb
+--     suppression (excluded from minting entirely: its generated alias would
+--     duplicate sibling Overhead Extension's, because Unilateral is silent
+--     in names).
 -- ============================================================================
 DELETE FROM public.exercise_aliases WHERE kind = 'generated';
 
@@ -1247,10 +1451,9 @@ DECLARE
   r RECORD;
   v_n INTEGER;
   v_norm TEXT;
-  v_user UUID;
 BEGIN
   FOR r IN
-    SELECT e.id, e.name, e.generated_name, e.created_by
+    SELECT e.id, e.name, e.generated_name
       FROM public.exercises e
       JOIN _cp_rows s ON s.exercise_id = e.id
      WHERE e.core_movement_id IS NOT NULL              -- never read generated_name off a coreless row
@@ -1266,22 +1469,12 @@ BEGIN
     GET DIAGNOSTICS v_n = ROW_COUNT;
     IF v_n = 0 AND NOT EXISTS (SELECT 1 FROM public.exercise_aliases
                                 WHERE exercise_id = r.id AND alias_normalized = v_norm) THEN
-      -- collision with an alias owned elsewhere: route to review, never fail
-      SELECT COALESCE(r.created_by, (SELECT u.id FROM auth.users u ORDER BY u.created_at, u.id LIMIT 1))
-        INTO v_user;
-      IF v_user IS NULL THEN
-        RAISE EXCEPTION 'catalog pass FAIL: generated-alias collision for % (%) and no auth user to own the review row',
-          r.name, r.generated_name;
-      END IF;
-      INSERT INTO public.exercise_match_reviews (user_id, raw_name, raw_name_normalized, context, candidates, status)
-      SELECT v_user, r.generated_name, v_norm,
-             'catalog-pass generated-alias collision (exercise ' || r.id || ')',
-             '[]'::jsonb, 'pending'
-       WHERE NOT EXISTS (SELECT 1 FROM public.exercise_match_reviews
-                          WHERE raw_name_normalized = v_norm
-                            AND context = 'catalog-pass generated-alias collision (exercise ' || r.id || ')');
-      RAISE WARNING 'catalog pass: generated alias % for % collided; routed to exercise_match_reviews',
-        r.generated_name, r.name;
+      -- Collision with an alias owned by another exercise: undeclared on the
+      -- blessed projection, so the sheets and the engine disagree — abort
+      -- naming both rows (nothing commits; 15h would refuse this state anyway).
+      RAISE EXCEPTION 'catalog pass FAIL: generated alias % for exercise % already belongs to exercise %',
+        r.generated_name, r.id,
+        (SELECT a.exercise_id FROM public.exercise_aliases a WHERE a.alias_normalized = v_norm);
     END IF;
   END LOOP;
 END $$;
@@ -1434,7 +1627,7 @@ BEGIN
         OR (e.core_movement_id IS NOT NULL AND e.identity_fingerprint IS NULL)
   ) bad;
   IF v_bad > 0 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: % rows diverge from the blessed projection (first 10):\\n%', v_bad, v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: % rows diverge from the blessed projection (first 10):\\n%', v_bad, v_observed;
   END IF;
 END $$;
 
@@ -1489,7 +1682,7 @@ BEGIN
         OR vl.slug IS DISTINCT FROM s.variant_slug
   ) bad;
   IF v_bad > 0 THEN
-    RAISE EXCEPTION 'catalog pass FAIL: % rows with divergent attribute columns (first 10):\\n%', v_bad, v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: % rows with divergent attribute columns (first 10):\\n%', v_bad, v_observed;
   END IF;
 END $$;
 
@@ -1552,7 +1745,7 @@ BEGIN
            IS DISTINCT FROM (SELECT COALESCE(array_agg(y ORDER BY y), '{}') FROM unnest(s.secondary_muscles) y)
   ) bad(v);
   IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: junction divergence from the sheet:\\n%', v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: junction divergence from the sheet:\\n%', v_observed;
   END IF;
 
   SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
@@ -1702,19 +1895,12 @@ for sample in SAMPLE_GENS:
         f"     WHERE COALESCE((SELECT generated_name FROM public.exercises WHERE id = {q(o.id)}), '') <> {q(sample)}")
 sample_checks = '\n'.join(sample_lines)
 
-# expected alias staging + checks
-w("""-- 15h) alias table: exactly the blessed set — every merge-loser name, every
---      renamed-away name, the sheet-note wilds, the legacy array aliases and
---      the re-minted generated aliases; the Powerbomb suppression holds
-CREATE TEMP TABLE _cp_expected_aliases (
-  exercise_id UUID NOT NULL,
-  alias TEXT NOT NULL,
-  kind TEXT NOT NULL
-);""")
-w("INSERT INTO _cp_expected_aliases VALUES")
-w(',\n'.join(f'  ({q(ex_id)}, {q(alias)}, {q(kind)})'
-             for ex_id, alias, kind in sorted(expected_aliases)) + ';')
-w(f"""
+# 15h checks (the expected-alias set itself is staged in section 6 so the
+# drift preflight can read it before any write)
+w(f"""-- 15h) alias table: exactly the blessed set (staged in section 6) — every
+--      merge-loser name, every renamed-away name, the sheet-note wilds, the
+--      legacy array aliases and the re-minted generated aliases; the Powerbomb
+--      suppression holds
 DO $$
 DECLARE
   v_observed TEXT;
@@ -1738,7 +1924,7 @@ BEGIN
                           AND x.kind = a.kind)
   ) d;
   IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: alias table diverges from the blessed set:\\n%', v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: alias table diverges from the blessed set:\\n%', v_observed;
   END IF;
 
   SELECT count(*) INTO v_count FROM public.exercise_aliases;
@@ -1804,7 +1990,13 @@ BEGIN
 {sample_checks}
   ) bad(v);
   IF v_observed IS NOT NULL THEN
-    RAISE EXCEPTION 'catalog pass FAIL: sampled generated names diverge:\\n%', v_observed;
+    RAISE EXCEPTION E'catalog pass FAIL: sampled generated names diverge:\\n%', v_observed;
+  END IF;
+
+  -- the single-use merge helper must not survive to commit: SECURITY DEFINER
+  -- plus API-role EXECUTE would make it a PostgREST-callable delete-as-postgres
+  IF to_regprocedure('public.merge_exercise_into(uuid, uuid)') IS NOT NULL THEN
+    RAISE EXCEPTION 'catalog pass FAIL: merge_exercise_into() survived to end-of-migration (single-use scaffolding must be dropped)';
   END IF;
 END $$;
 
