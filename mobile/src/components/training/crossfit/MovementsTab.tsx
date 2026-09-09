@@ -5,14 +5,9 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchMovements, searchMovements, fetchTierMap } from '@/src/lib/supabase/crossfit';
+import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
 import { CatalogItemWizard } from './CatalogItemWizard';
 import { SwipeableMovementCard } from './SwipeableMovementCard';
-
-// Movement with computed tier for display
-interface MovementWithTier extends ExerciseWithVariations {
-  tier?: number;
-}
 
 type MovementCategory = 'All' | 'Lifting' | 'Gymnastics' | 'Cardio' | 'Core';
 
@@ -25,7 +20,7 @@ interface MovementsTabProps {
 export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdate }: MovementsTabProps) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<MovementCategory>('All');
-  const [movements, setMovements] = useState<MovementWithTier[]>([]);
+  const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,16 +32,11 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
   const loadMovements = async () => {
     try {
       setLoading(true);
-      // One query for the hierarchy, not one per row: this used to fire an
-      // RPC for every movement on the list before it could draw a single badge.
-      const [data, tiers] = await Promise.all([fetchMovements(), fetchTierMap()]);
-      const movementsWithTiers = data.map((movement) => ({
-        ...movement,
-        tier: tiers.get(movement.id) ?? 0,
-      }));
-
-      setMovements(movementsWithTiers);
-      onCountUpdate(movementsWithTiers.length);
+      // Tier rides on the row itself (`exercises.tier`, engine-maintained) —
+      // no second hierarchy query, nothing computed client-side.
+      const data = await fetchMovements();
+      setMovements(data);
+      onCountUpdate(data.length);
     } catch (error) {
       console.error('Error loading movements:', error);
     } finally {
@@ -62,20 +52,9 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
 
     try {
       setSearching(true);
-      // The tier map covers the whole table, so it answers for a filtered
-      // result set too — a variation's parent is in it even when the search
-      // that found the variation did not match the parent.
-      const [results, tiers] = await Promise.all([
-        searchMovements(searchQuery.trim()),
-        fetchTierMap(),
-      ]);
-      const resultsWithTiers = results.map((movement) => ({
-        ...movement,
-        tier: tiers.get(movement.id) ?? 0,
-      }));
-
-      setMovements(resultsWithTiers);
-      onCountUpdate(resultsWithTiers.length);
+      const results = await searchMovements(searchQuery.trim());
+      setMovements(results);
+      onCountUpdate(results.length);
     } catch (error) {
       console.error('Error searching movements:', error);
     } finally {

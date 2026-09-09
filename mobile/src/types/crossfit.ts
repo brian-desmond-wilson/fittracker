@@ -335,6 +335,14 @@ export interface Exercise {
   // Movement Hierarchy (Migration 16)
   is_core: boolean;
   parent_exercise_id: string | null;
+
+  // Movement model (Stages 1-4) — engine-maintained, never written by the app.
+  // tier: 0 for cores, 1+ for derivations, null for outliers (no core lineage).
+  tier: number | null;
+  core_movement_id: string | null;
+  // Cores carry their default equipment as a display string ("Kettlebell",
+  // "Bodyweight, Floor"); derivations carry rows in exercise_equipment instead.
+  core_default_equipment: string | null;
 }
 
 export interface VariationCategory {
@@ -376,12 +384,6 @@ export interface ExerciseVariation {
   exercise_id: string;
   variation_option_id: string;
   created_at: string;
-}
-
-// Exercise with computed tier (not stored in DB, computed via get_movement_tier function)
-export interface ExerciseWithTier extends Exercise {
-  tier: number; // 0 = core, 1-4 = variation tiers
-  parent_movement?: Exercise | null; // Optional parent data for display
 }
 
 export interface WODFormat {

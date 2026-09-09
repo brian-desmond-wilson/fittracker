@@ -7,12 +7,8 @@ import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
 
-interface MovementWithTier extends ExerciseWithVariations {
-  tier?: number;
-}
-
 interface SwipeableMovementCardProps {
-  movement: MovementWithTier;
+  movement: ExerciseWithVariations;
   onPress: () => void;
   onDelete: () => void;
   /** Present = an Edit panel appears beside Delete on swipe. */
@@ -234,7 +230,9 @@ function SwipeableMovementCardBase({
                 <View style={styles.coreBadge}>
                   <Text style={styles.coreBadgeText}>Core</Text>
                 </View>
-              ) : movement.tier !== undefined && movement.tier > 0 ? (
+              ) : movement.tier != null && movement.tier > 0 ? (
+                // tier comes straight off the row (engine-maintained).
+                // Outliers carry tier NULL and show no badge at all.
                 <View style={styles.tierBadge}>
                   <Text style={styles.tierBadgeText}>Tier {movement.tier}</Text>
                 </View>

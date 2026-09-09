@@ -1,12 +1,10 @@
 import { supabase } from '../supabase';
-import { computeTiers, type TierRow } from '../movementTier';
 import { generateUniqueSlug } from './frontDoor';
 import type {
   GoalType,
   Exercise,
   ExerciseWithVariations,
   ExerciseWithDetails,
-  ExerciseWithTier,
   VariationCategory,
   VariationOption,
   VariationOptionWithCategory,
@@ -1092,146 +1090,64 @@ export async function createVariationOption(
   return data.id;
 }
 
-/**
- * Compute the tier/depth of a movement in the hierarchy
- * Returns 0 for core movements, 1-4 for variation tiers
- */
-/** The whole hierarchy in one read: enough to walk any chain locally. */
-export interface HierarchyRow extends TierRow {
+// Tier is a STORED column now (Stage 5, Task 3). The engine that owns every
+// exercise write (Stages 1-4) maintains `exercises.tier` — 0 for cores, 1+ for
+// derivations, NULL for outliers — so the client-side hierarchy walker
+// (movementTier.ts), the whole-table tier map, and the per-row
+// `get_movement_tier` RPC call are all gone. Nothing is computed client-side.
+
+/** One rung of a detail page's ancestor chain. */
+export interface AncestorRow {
+  id: string;
   name: string;
   is_core: boolean;
+  tier: number;
+  parent_exercise_id: string | null;
 }
 
 /**
- * Every movement's place in the hierarchy, in one query.
+ * Ancestors of one exercise, immediate parent first hop, root (core) first in
+ * the returned array.
  *
- * The detail page used to climb a chain a row at a time — one select and one
- * tier RPC per ancestor, so a three-deep variation cost six round trips
- * before it could draw its little tree. The table is small; read it once and
- * walk it in memory.
+ * Bounded iterative walk instead of the old whole-table fetch: the DB caps
+ * hierarchy depth at 4 (validate_movement_depth), so at most 4 single-row
+ * lookups replace reading all ~300 rows to draw a two-item tree. Tier comes
+ * from the stored column on each rung.
  */
-export async function fetchHierarchy(): Promise<{
-  rows: HierarchyRow[];
-  tiers: Map<string, number>;
-}> {
-  const { data, error } = await supabase
-    .from('exercises')
-    .select('id, name, is_core, parent_exercise_id');
+export async function fetchAncestors(parentId: string): Promise<AncestorRow[]> {
+  const ancestors: AncestorRow[] = [];
+  const walked = new Set<string>();
+  let currentId: string | null = parentId;
 
-  if (error) {
-    console.error('Error fetching movement hierarchy:', error);
-    return { rows: [], tiers: new Map() };
-  }
-  const rows = (data ?? []) as HierarchyRow[];
-  return { rows, tiers: computeTiers(rows) };
-}
-
-/**
- * Tier for every movement in one query.
- *
- * `computeMovementTier` costs a round trip per movement, and the lists asked
- * for one per row — 43 RPCs to draw the Movements tab. The hierarchy is just
- * `parent_exercise_id`, so fetching those pairs once answers the whole screen.
- *
- * The whole table on purpose, never a filtered slice: a variation's parent
- * has to be present or the walk stops early and the badge reads low.
- */
-export async function fetchTierMap(): Promise<Map<string, number>> {
-  const { data, error } = await supabase
-    .from('exercises')
-    .select('id, parent_exercise_id');
-
-  if (error) {
-    console.error('Error fetching movement hierarchy:', error);
-    return new Map();
-  }
-  return computeTiers((data ?? []) as TierRow[]);
-}
-
-export async function computeMovementTier(exerciseId: string): Promise<number> {
-  const { data, error } = await supabase
-    .rpc('get_movement_tier', { exercise_id_param: exerciseId });
-
-  if (error) {
-    console.error('Error computing movement tier:', error);
-    return 0;
-  }
-
-  return data || 0;
-}
-
-/**
- * Search movements by name/alias and include computed tier
- */
-export async function searchMovementsWithTier(query: string): Promise<ExerciseWithTier[]> {
-  try {
-    // Fetch all movements matching the search query
-    const { data: movements, error } = await supabase
+  while (currentId && !walked.has(currentId) && ancestors.length < 4) {
+    walked.add(currentId);
+    // Explicit annotation: the untyped client would otherwise make `data`'s
+    // type circular through `currentId` (TS7022).
+    const { data, error }: {
+      data: (Omit<AncestorRow, 'tier'> & { tier: number | null }) | null;
+      error: unknown;
+    } = await supabase
       .from('exercises')
-      .select(`
-        *,
-        goal_type:goal_types(*),
-        movement_category:movement_categories(*),
-        parent:exercises!parent_exercise_id(id, name, short_name)
-      `)
-      .or(`name.ilike.%${query}%,aliases.cs.{${query}}`)
-      .order('is_core', { ascending: false }) // Core movements first
-      .order('name');
+      .select('id, name, is_core, tier, parent_exercise_id')
+      .eq('id', currentId)
+      .single();
 
-    if (error) {
-      console.error('Error searching movements:', error);
-      throw error;
+    if (error || !data) {
+      if (error) console.error('Error fetching ancestor:', error);
+      break;
     }
 
-    if (!movements) return [];
-
-    // One hierarchy query rather than one RPC per result.
-    const tiers = await fetchTierMap();
-    const movementsWithTier: ExerciseWithTier[] = movements.map((movement) => ({
-      ...movement,
-      tier: tiers.get(movement.id) ?? 0,
-      parent_movement: movement.parent || null,
-    }));
-
-    // Sort by tier (core first, then tier 1, tier 2, etc.)
-    return movementsWithTier.sort((a, b) => a.tier - b.tier);
-  } catch (error) {
-    console.error('Error in searchMovementsWithTier:', error);
-    throw error;
-  }
-}
-
-/**
- * Fetch a single movement with all its attributes for inheritance
- */
-export async function fetchMovementWithAttributes(exerciseId: string): Promise<ExerciseWithDetails> {
-  const { data, error } = await supabase
-    .from('exercises')
-    .select(`
-      *,
-      goal_type:goal_types(*),
-      movement_category:movement_categories(*),
-      movement_family:movement_families(*),
-      plane_of_motion:planes_of_motion(*),
-      muscle_regions:exercise_muscle_regions(
-        muscle_region_id,
-        is_primary,
-        muscle_region:muscle_regions(*)
-      ),
-      scoring_types:exercise_scoring_types(
-        scoring_type_id,
-        scoring_type:scoring_types(*)
-      )
-    `)
-    .eq('id', exerciseId)
-    .single();
-
-  if (error) {
-    console.error('Error fetching movement with attributes:', error);
-    throw error;
+    ancestors.unshift({
+      id: data.id,
+      name: data.name,
+      is_core: data.is_core,
+      tier: data.tier ?? 0,
+      parent_exercise_id: data.parent_exercise_id,
+    });
+    currentId = data.is_core ? null : data.parent_exercise_id;
   }
 
-  return data;
+  return ancestors;
 }
 
 // generateUniqueSlug moved to the front-door module (Stage 5, Task 1) — the

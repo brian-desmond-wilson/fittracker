@@ -5,14 +5,9 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchAllExercises, searchAllExercises, fetchTierMap } from '@/src/lib/supabase/crossfit';
+import { fetchAllExercises, searchAllExercises } from '@/src/lib/supabase/crossfit';
 import { CatalogItemWizard } from './crossfit/CatalogItemWizard';
 import { SwipeableMovementCard } from './crossfit/SwipeableMovementCard';
-
-// Exercise with computed tier for display
-interface ExerciseWithTier extends ExerciseWithVariations {
-  tier?: number;
-}
 
 type ExerciseCategory = 'All' | 'Lifting' | 'Gymnastics' | 'Cardio' | 'Core';
 
@@ -25,7 +20,7 @@ interface ExercisesTabProps {
 export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdate }: ExercisesTabProps) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<ExerciseCategory>('All');
-  const [exercises, setExercises] = useState<ExerciseWithTier[]>([]);
+  const [exercises, setExercises] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,16 +32,11 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
   const loadExercises = async () => {
     try {
       setLoading(true);
-      // One query for the hierarchy, not one per row: this used to fire an
-      // RPC for every exercise on the list before it could draw a single badge.
-      const [data, tiers] = await Promise.all([fetchAllExercises(), fetchTierMap()]);
-      const exercisesWithTiers = data.map((exercise) => ({
-        ...exercise,
-        tier: tiers.get(exercise.id) ?? 0,
-      }));
-
-      setExercises(exercisesWithTiers);
-      onCountUpdate(exercisesWithTiers.length);
+      // Tier rides on the row itself (`exercises.tier`, engine-maintained) —
+      // no second hierarchy query, nothing computed client-side.
+      const data = await fetchAllExercises();
+      setExercises(data);
+      onCountUpdate(data.length);
     } catch (error) {
       console.error('Error loading exercises:', error);
     } finally {
@@ -62,20 +52,9 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
 
     try {
       setSearching(true);
-      // The tier map covers the whole table, so it answers for a filtered
-      // result set too — a variation's parent is in it even when the search
-      // that found the variation did not match the parent.
-      const [results, tiers] = await Promise.all([
-        searchAllExercises(searchQuery.trim()),
-        fetchTierMap(),
-      ]);
-      const resultsWithTiers = results.map((exercise) => ({
-        ...exercise,
-        tier: tiers.get(exercise.id) ?? 0,
-      }));
-
-      setExercises(resultsWithTiers);
-      onCountUpdate(resultsWithTiers.length);
+      const results = await searchAllExercises(searchQuery.trim());
+      setExercises(results);
+      onCountUpdate(results.length);
     } catch (error) {
       console.error('Error searching exercises:', error);
     } finally {
