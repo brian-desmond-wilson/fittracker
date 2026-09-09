@@ -56,14 +56,14 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 
 ## Stage 4 — Turn the locks (Phase 5)
 
-- [ ] Fingerprint uniqueness enforced — REPLACING the plain `exercises_fingerprint_idx` from Stage 1 (build the unique index, then drop the plain one; never carry both) ; alias uniqueness already live from Stage 1
-- [ ] Triggers own generated names, parents, tiers
-- [ ] Sibling-recompute on identity change (recomputing X re-derives siblings whose attrs strictly contain X's), or a documented decision that inter-batch drift is acceptable (Task 9 review I5)
-- [ ] Symmetric core-reference validation in enforce_core_self_reference: a non-self core_movement_id must reference an is_core row, read under FOR KEY SHARE of the target — closes both the phantom-core insert gap and the demote-vs-insert race in either commit order (Task 9 final review; until then V5's inverse invariant detects the state post-hoc)
-- [ ] Replace the pg_trigger_depth guards with a session-variable guard before any trigger-driven insert paths exist (Task 9 review I2 — depth guard silently skips recompute for rows inserted from inside another trigger)
-- [ ] Harness assertion: no duplicate generated_name within a core; zero-attribute children flagged (Task 9 review M3/I4)
-- [ ] Movement Model artifact updated to the "after" state
-- **Exit gate:** a duplicate insert is rejected by the database in a live test
+- [x] Fingerprint uniqueness enforced — REPLACING the plain `exercises_fingerprint_idx` from Stage 1 (build the unique index, then drop the plain one; never carry both) ; alias uniqueness already live from Stage 1
+- [x] Triggers own generated names, parents, tiers
+- [x] Sibling-recompute on identity change (recomputing X re-derives siblings whose attrs strictly contain X's), or a documented decision that inter-batch drift is acceptable (Task 9 review I5)
+- [x] Symmetric core-reference validation in enforce_core_self_reference: a non-self core_movement_id must reference an is_core row, read under FOR KEY SHARE of the target — closes both the phantom-core insert gap and the demote-vs-insert race in either commit order (Task 9 final review; until then V5's inverse invariant detects the state post-hoc)
+- [x] Replace the pg_trigger_depth guards with a session-variable guard before any trigger-driven insert paths exist (Task 9 review I2 — depth guard silently skips recompute for rows inserted from inside another trigger)
+- [x] Harness assertion: no duplicate generated_name within a core; zero-attribute children flagged (Task 9 review M3/I4)
+- [x] After-state is documented by "The FitTracker Catalog" artifact (cfb9a43f, live state) — supersedes updating the older Movement Model artifact
+- **Exit gate:** MET 2026-09-08 — duplicate insert rejected on LIVE by exercises_fingerprint_key (SQLSTATE 23505, rolled back, catalog untouched). `20260909100000_turn_the_locks.sql` live; harness V0-V10 PASS on live. Stage 5 unblocked.
 
 ## Stage 5 — App unification (Phase 6)
 
