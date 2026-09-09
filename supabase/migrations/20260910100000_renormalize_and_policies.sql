@@ -441,6 +441,24 @@ CREATE POLICY "aliases delete on own exercises" ON public.exercise_aliases
                   WHERE e.id = exercise_aliases.exercise_id
                     AND e.created_by = auth.uid() AND e.is_official = false));
 
+-- 3e) exercises INSERT: the trust boundary every own-non-official policy
+--     above leans on (review finding) — the old WITH CHECK constrained only
+--     role + self-attribution, so a plain authenticated INSERT with
+--     is_official=true minted straight into the official catalog. The policy
+--     keeps its original checks verbatim and gains is_official = false.
+--     is_core is deliberately NOT constrained (the wizard creates core rows
+--     by design). The UPDATE policy already pins officialness immutable for
+--     users: it declares no WITH CHECK, so its USING
+--     (created_by = auth.uid() AND is_official = false) is applied to new
+--     rows too — a user cannot flip an own row official post-insert; 5d
+--     asserts that shape stays.
+DROP POLICY IF EXISTS "Authenticated users can create own exercises" ON public.exercises;
+CREATE POLICY "Authenticated users can create own exercises" ON public.exercises
+  FOR INSERT
+  WITH CHECK ((auth.role() = 'authenticated'::text)
+              AND (created_by = auth.uid())
+              AND (is_official = false));
+
 -- ============================================================================
 -- 4) Function privilege hygiene (merge_exercise_into precedent, Stage 3
 --    review class). Supabase default privileges hand EXECUTE on every new
@@ -642,6 +660,34 @@ BEGIN
      AND policyname = 'wild aliases insertable by authenticated';
   IF v_observed IS DISTINCT FROM '(kind = ''wild''::text)' THEN
     RAISE EXCEPTION 'renormalize_and_policies: wild-alias carve-out WITH CHECK diverges: %', COALESCE(v_observed, 'null');
+  END IF;
+
+  -- exercises INSERT boundary: role + self-attribution + is_official=false,
+  -- and exactly one INSERT policy (a second permissive policy would OR the
+  -- hole right back open)
+  SELECT string_agg(policyname || ' CHECK ' || COALESCE(with_check, '~'), '; ' ORDER BY policyname)
+    INTO v_observed
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercises' AND cmd = 'INSERT';
+  IF v_observed IS DISTINCT FROM
+     'Authenticated users can create own exercises CHECK ((auth.role() = ''authenticated''::text) AND (created_by = auth.uid()) AND (is_official = false))' THEN
+    RAISE EXCEPTION 'renormalize_and_policies: exercises INSERT policy set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  -- exercises UPDATE boundary: no WITH CHECK declared (USING doubles as the
+  -- new-row check, keeping is_official immutable for users) and USING carries
+  -- both essentials
+  PERFORM 1 FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'exercises' AND cmd = 'UPDATE'
+     AND policyname = 'Users can update own custom exercises'
+     AND with_check IS NULL
+     AND qual LIKE '%created_by = auth.uid()%'
+     AND qual LIKE '%is_official = false%';
+  IF NOT FOUND THEN
+    SELECT string_agg(policyname || ' USING ' || COALESCE(qual, '~') || ' CHECK ' || COALESCE(with_check, '~'),
+                      '; ' ORDER BY policyname) INTO v_observed
+      FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercises' AND cmd = 'UPDATE';
+    RAISE EXCEPTION 'renormalize_and_policies: exercises UPDATE policy no longer pins officialness immutable: {%}',
+      COALESCE(v_observed, 'none');
   END IF;
 END $$;
 

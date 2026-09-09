@@ -1714,6 +1714,33 @@ BEGIN
   IF v_observed IS DISTINCT FROM '(kind = ''wild''::text)' THEN
     RAISE EXCEPTION 'V11 FAIL: wild-alias carve-out WITH CHECK diverges: %', COALESCE(v_observed, 'null');
   END IF;
+
+  -- V11: exercises INSERT boundary — role + self-attribution +
+  -- is_official=false, and exactly one INSERT policy (a second permissive
+  -- policy would OR the minting hole back open).
+  SELECT string_agg(policyname || ' CHECK ' || COALESCE(with_check, '~'), '; ' ORDER BY policyname)
+    INTO v_observed
+    FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercises' AND cmd = 'INSERT';
+  IF v_observed IS DISTINCT FROM
+     'Authenticated users can create own exercises CHECK ((auth.role() = ''authenticated''::text) AND (created_by = auth.uid()) AND (is_official = false))' THEN
+    RAISE EXCEPTION 'V11 FAIL: exercises INSERT policy set diverges: {%}', COALESCE(v_observed, 'none');
+  END IF;
+
+  -- V11: exercises UPDATE boundary — no WITH CHECK declared (USING doubles as
+  -- the new-row check: users cannot flip an own row official post-insert).
+  PERFORM 1 FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'exercises' AND cmd = 'UPDATE'
+     AND policyname = 'Users can update own custom exercises'
+     AND with_check IS NULL
+     AND qual LIKE '%created_by = auth.uid()%'
+     AND qual LIKE '%is_official = false%';
+  IF NOT FOUND THEN
+    SELECT string_agg(policyname || ' USING ' || COALESCE(qual, '~') || ' CHECK ' || COALESCE(with_check, '~'),
+                      '; ' ORDER BY policyname) INTO v_observed
+      FROM pg_policies WHERE schemaname = 'public' AND tablename = 'exercises' AND cmd = 'UPDATE';
+    RAISE EXCEPTION 'V11 FAIL: exercises UPDATE policy no longer pins officialness immutable: {%}',
+      COALESCE(v_observed, 'none');
+  END IF;
 END $$;
 -- V11: re-normalization behavior (fixture-based, rolled back — harness stays
 -- side-effect-free). An abbreviation INSERT renormalizes every alias; the
@@ -1954,11 +1981,33 @@ DO $$
 DECLARE
   v_eq UUID; v_sc UUID; v_alias UUID;
   n INTEGER;
+  v_caught BOOLEAN;
 BEGIN
   -- uA: owner of the fixture exercise — every junction writable, full alias
   -- lifecycle on the own row.
   SELECT id INTO v_eq FROM public.equipment LIMIT 1;
   SELECT id INTO v_sc FROM public.scoring_types LIMIT 1;
+
+  -- The minting boundary, live: an authenticated INSERT with is_official=true
+  -- must be rejected outright...
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercises (name, slug, is_official, created_by, name_is_custom)
+    VALUES ('ZZV11 Mint Attempt', 'zz-v11-mint-attempt', true,
+            'aaaaaaaa-0000-4000-8000-000000000a0a', true);
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: authenticated INSERT with is_official=true was NOT rejected (official-catalog minting hole)';
+  END IF;
+  -- ...and so must flipping an own non-official row official post-insert.
+  v_caught := false;
+  BEGIN
+    UPDATE public.exercises SET is_official = true
+     WHERE id = 'eeeeeeee-0000-4000-8000-000000000e0e';
+  EXCEPTION WHEN insufficient_privilege THEN v_caught := true; END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V11 FAIL: owner UPDATE flipping is_official=true was NOT rejected';
+  END IF;
 
   INSERT INTO public.exercise_equipment (exercise_id, equipment_id)
   VALUES ('eeeeeeee-0000-4000-8000-000000000e0e', v_eq);
