@@ -297,6 +297,10 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
     try {
       if (isEdit && editId) {
         const patch: UpdateCatalogExercisePatch = { ...sharedFields() };
+        if (formData.kind === 'core') {
+          // A core self-references by trigger; the patch must not touch it.
+          delete patch.core_movement_id;
+        }
         if (wantsCustomName) {
           patch.name = formData.name.trim();
         } else if (editWasCustomNamed) {
