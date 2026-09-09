@@ -400,17 +400,28 @@ export function CatalogItemWizard({
     }
   };
 
+  // Dismissing the sheet, the full-screen wizard modal, and pushing a route
+  // must happen in SEQUENCE on iOS — tearing down nested modals in the same
+  // tick wedges the presentation layer (blank black screen). The tap only
+  // stores the intent and closes the sheet; the sheet's onDismiss (fired by
+  // iOS once it is fully gone) closes the wizard and then navigates.
+  const pendingOpenRef = React.useRef<CatalogExerciseRow | null>(null);
+
   const openDuplicate = () => {
-    const existing = duplicate;
+    pendingOpenRef.current = duplicate;
     setDuplicate(null);
+  };
+
+  const handleDuplicateSheetDismiss = () => {
+    const existing = pendingOpenRef.current;
+    if (!existing) return;
+    pendingOpenRef.current = null;
     onClose();
-    if (existing) {
-      // Route by what the EXISTING row is, not by this wizard's preset.
-      const base = existing.is_movement
-        ? '/(tabs)/training/movement'
-        : '/(tabs)/training/exercise';
-      router.push(`${base}/${existing.id}`);
-    }
+    // Route by what the EXISTING row is, not by this wizard's preset.
+    const base = existing.is_movement
+      ? '/(tabs)/training/movement'
+      : '/(tabs)/training/exercise';
+    setTimeout(() => router.push(`${base}/${existing.id}`), 350);
   };
 
   const renderStep = () => {
@@ -553,6 +564,7 @@ export function CatalogItemWizard({
         transparent
         animationType="slide"
         onRequestClose={() => setDuplicate(null)}
+        onDismiss={handleDuplicateSheetDismiss}
       >
         <TouchableWithoutFeedback onPress={() => setDuplicate(null)}>
           <View style={styles.sheetScrim} />
