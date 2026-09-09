@@ -6,7 +6,8 @@ import type { SkillLevel } from '../../types/crossfit';
 // ============================================================================
 //
 // Every insert/update of an `exercises` row goes through createCatalogExercise
-// / updateCatalogExercise. The Postgres engine (Stages 1–4) owns naming and
+// / updateCatalogExercise — the sole writer EXCEPT capture.ts's legacy
+// createExercise path, which Task 4 retires. The Postgres engine (Stages 1–4)
 // hierarchy: this module NEVER writes `generated_name`, `identity_fingerprint`,
 // `tier`, or `parent_exercise_id` — it writes the identity inputs and reads the
 // engine's outputs back. The client is UNTYPED, so column names here are
@@ -1237,6 +1238,8 @@ export interface CatalogExerciseDetail extends CatalogExerciseRow {
   goal_type_ids: string[];
   primary_muscle_region_ids: string[];
   secondary_muscle_region_ids: string[];
+  /** Display name of the core movement (null for cores' self-ref and outliers). */
+  core_movement_name: string | null;
 }
 
 /**
@@ -1249,6 +1252,10 @@ export async function fetchCatalogExerciseDetail(id: string): Promise<CatalogExe
     .from('exercises')
     .select(
       `${ROW_COLUMNS}, ` +
+        // Column-as-relation embed: the M2O direction of a self-join must be
+        // named by the FK COLUMN (a bare table/constraint hint resolves to
+        // the reverse, one-to-many "children" side on this PostgREST).
+        'core_movement:core_movement_id(name), ' +
         'exercise_equipment(equipment_id), ' +
         'exercise_movement_styles(movement_style_id), ' +
         'exercise_scoring_types(scoring_type_id), ' +
@@ -1260,6 +1267,7 @@ export async function fetchCatalogExerciseDetail(id: string): Promise<CatalogExe
   if (error) throw new Error(error.message);
   if (!data) throw new CatalogNotFoundOrForbiddenError(id);
   const row = data as unknown as CatalogExerciseRow & {
+    core_movement: { name: string } | null;
     exercise_equipment: { equipment_id: string }[];
     exercise_movement_styles: { movement_style_id: string }[];
     exercise_scoring_types: { scoring_type_id: string }[];
@@ -1267,6 +1275,7 @@ export async function fetchCatalogExerciseDetail(id: string): Promise<CatalogExe
     exercise_muscle_regions: { muscle_region_id: string; is_primary: boolean }[];
   };
   const {
+    core_movement,
     exercise_equipment,
     exercise_movement_styles,
     exercise_scoring_types,
@@ -1276,6 +1285,9 @@ export async function fetchCatalogExerciseDetail(id: string): Promise<CatalogExe
   } = row;
   return {
     ...(columns as CatalogExerciseRow),
+    // A core self-references, so its own name comes back: report null there.
+    core_movement_name:
+      !(columns as CatalogExerciseRow).is_core && core_movement ? core_movement.name : null,
     equipment_ids: (exercise_equipment ?? []).map((r) => r.equipment_id),
     movement_style_ids: (exercise_movement_styles ?? []).map((r) => r.movement_style_id),
     scoring_type_ids: (exercise_scoring_types ?? []).map((r) => r.scoring_type_id),
@@ -1291,32 +1303,58 @@ export async function fetchCatalogExerciseDetail(id: string): Promise<CatalogExe
 
 // ── Wild aliases ────────────────────────────────────────────────────────────
 
+/** Per-alias outcome of addWildAliases — the row exists either way. */
+export interface WildAliasResult {
+  written: string[];
+  failed: string[];
+}
+
 /**
  * Attach user-typed ("wild") aliases to an exercise. Normalization goes
  * through the DB's normalize_alias so the abbreviation dictionary stays
  * single-source; a normalized collision (the alias already names something)
  * is skipped silently — first owner keeps the name.
+ *
+ * Every alias is ATTEMPTED: one failure never blocks the rest. Failures are
+ * collected (and logged) rather than thrown — the exercise was already
+ * created, so the caller's job is to tell the user which aliases missed,
+ * not to fail the save.
  */
-export async function addWildAliases(exerciseId: string, aliases: string[]): Promise<void> {
+export async function addWildAliases(
+  exerciseId: string,
+  aliases: string[],
+): Promise<WildAliasResult> {
   const cleaned = dedupe(aliases.map((a) => a.trim()).filter((a) => a.length > 0));
+  const written: string[] = [];
+  const failed: string[] = [];
   for (const alias of cleaned) {
-    const { data: normalized, error: normError } = await supabase.rpc('normalize_alias', {
-      raw: alias,
-    });
-    if (normError) throw new Error(normError.message);
-    if (!normalized) continue; // nothing left after normalization
-    const { error } = await supabase
-      .from('exercise_aliases')
-      .upsert(
-        {
-          exercise_id: exerciseId,
-          alias,
-          alias_normalized: normalized,
-          kind: 'wild',
-          source: 'curation',
-        },
-        { onConflict: 'alias_normalized', ignoreDuplicates: true },
+    try {
+      const { data: normalized, error: normError } = await supabase.rpc('normalize_alias', {
+        raw: alias,
+      });
+      if (normError) throw new Error(normError.message);
+      if (!normalized) continue; // nothing left after normalization: not a failure
+      const { error } = await supabase
+        .from('exercise_aliases')
+        .upsert(
+          {
+            exercise_id: exerciseId,
+            alias,
+            alias_normalized: normalized,
+            kind: 'wild',
+            source: 'curation',
+          },
+          { onConflict: 'alias_normalized', ignoreDuplicates: true },
+        );
+      if (error) throw new Error(error.message);
+      written.push(alias);
+    } catch (err) {
+      console.error(
+        `front door: wild alias '${alias}' failed for ${exerciseId}:`,
+        err instanceof Error ? err.message : String(err),
       );
-    if (error) throw new Error(error.message);
+      failed.push(alias);
+    }
   }
+  return { written, failed };
 }

@@ -146,8 +146,9 @@ EXPECTED_FP="$(python3 -c 'import sys; print("|".join(sorted(a.lower() for a in 
 
 echo
 echo "== 2. edit-prefill round-trip: one embedded select == the submitted form =="
-DETAIL="$(auth_get "exercises?id=eq.$ROW_ID&select=id,name,name_is_custom,core_movement_id,bench_angle_id,stance_id,movement_family_id,movement_category_id,skill_level,short_name,description,video_url,exercise_equipment(equipment_id),exercise_movement_styles(movement_style_id),exercise_scoring_types(scoring_type_id),exercise_goal_types(goal_type_id),exercise_muscle_regions(muscle_region_id,is_primary)")"
+DETAIL="$(auth_get "exercises?id=eq.$ROW_ID&select=id,name,name_is_custom,core_movement_id,bench_angle_id,stance_id,movement_family_id,movement_category_id,skill_level,short_name,description,video_url,core_movement:core_movement_id(name),exercise_equipment(equipment_id),exercise_movement_styles(movement_style_id),exercise_scoring_types(scoring_type_id),exercise_goal_types(goal_type_id),exercise_muscle_regions(muscle_region_id,is_primary)")"
 [ "$(json_get "$DETAIL" 0.core_movement_id)" = "$CORE_ID" ] || fail "prefill core mismatch"
+[ "$(json_get "$DETAIL" 0.core_movement.name)" = "Bench Press" ] || fail "core-name embed (core_movement:core_movement_id) missing: $DETAIL"
 [ "$(json_get "$DETAIL" 0.bench_angle_id)" = "$INCLINE_ID" ] || fail "prefill bench angle mismatch"
 [ "$(json_get "$DETAIL" 0.stance_id)" = "$KNEELING_ID" ] || fail "prefill stance mismatch"
 [ "$(json_get "$DETAIL" 0.movement_family_id)" = "$PUSH_ID" ] || fail "prefill family mismatch"

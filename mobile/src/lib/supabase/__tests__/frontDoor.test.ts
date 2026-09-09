@@ -15,6 +15,7 @@ import {
   CatalogTransientCollisionError,
   CatalogNotFoundOrForbiddenError,
   fetchCatalogExerciseDetail,
+  addWildAliases,
   type CreateCatalogExerciseInput,
 } from '../frontDoor';
 import { supabase } from '../../supabase';
@@ -659,7 +660,8 @@ describe('fetchCatalogExerciseDetail', () => {
       {
         table: 'exercises',
         data: {
-          ...storedRow({ id: 'x1' }),
+          ...storedRow({ id: 'x1', is_core: false }),
+          core_movement: { name: 'Bench Press' },
           exercise_equipment: [{ equipment_id: BARBELL }],
           exercise_movement_styles: [{ movement_style_id: STRICT }],
           exercise_scoring_types: [{ scoring_type_id: REPS }],
@@ -680,7 +682,28 @@ describe('fetchCatalogExerciseDetail', () => {
     expect(detail.primary_muscle_region_ids).toEqual(['m1']);
     expect(detail.secondary_muscle_region_ids).toEqual(['m2']);
     expect(detail.core_movement_id).toBe(CORE);
+    expect(detail.core_movement_name).toBe('Bench Press'); // from the embed
     expect(detail).not.toHaveProperty('exercise_equipment');
+    expect(detail).not.toHaveProperty('core_movement');
+  });
+
+  it('a core row reports no core_movement_name (the embed is its own self-ref)', async () => {
+    script([
+      {
+        table: 'exercises',
+        data: {
+          ...storedRow({ id: 'c1', is_core: true, core_movement_id: 'c1', name: 'Bench Press' }),
+          core_movement: { name: 'Bench Press' },
+          exercise_equipment: [],
+          exercise_movement_styles: [],
+          exercise_scoring_types: [],
+          exercise_goal_types: [],
+          exercise_muscle_regions: [],
+        },
+      },
+    ]);
+    const detail = await fetchCatalogExerciseDetail('c1');
+    expect(detail.core_movement_name).toBeNull();
   });
 
   it('maps a hidden row to CatalogNotFoundOrForbiddenError', async () => {
@@ -688,6 +711,68 @@ describe('fetchCatalogExerciseDetail', () => {
     await expect(fetchCatalogExerciseDetail('ghost')).rejects.toBeInstanceOf(
       CatalogNotFoundOrForbiddenError,
     );
+  });
+});
+
+describe('addWildAliases', () => {
+  const rpcMock = supabase.rpc as jest.Mock;
+
+  it('attempts EVERY alias, collecting failures instead of throwing', async () => {
+    rpcMock.mockReset();
+    rpcMock
+      .mockResolvedValueOnce({ data: 'alias a', error: null })
+      .mockResolvedValueOnce({ data: 'alias b', error: null });
+    script([
+      { table: 'exercise_aliases', error: { message: 'rls says no' } }, // A fails
+      { table: 'exercise_aliases', data: null }, // B still attempted, succeeds
+    ]);
+
+    const result = await addWildAliases('x1', ['A', 'B']);
+
+    expect(result).toEqual({ written: ['B'], failed: ['A'] });
+    expect(issued).toHaveLength(2); // the failure did not short-circuit
+    const upsert = issued[1].firstArg('upsert') as Record<string, unknown>;
+    expect(upsert).toMatchObject({
+      exercise_id: 'x1',
+      alias: 'B',
+      alias_normalized: 'alias b',
+      kind: 'wild',
+      source: 'curation',
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("wild alias 'A' failed"),
+      expect.anything(),
+    );
+  });
+
+  it('a normalize RPC failure marks that alias failed and continues', async () => {
+    rpcMock.mockReset();
+    rpcMock
+      .mockResolvedValueOnce({ data: null, error: { message: 'rpc down' } })
+      .mockResolvedValueOnce({ data: 'ok', error: null });
+    script([{ table: 'exercise_aliases', data: null }]);
+
+    const result = await addWildAliases('x1', ['bad', 'ok']);
+    expect(result).toEqual({ written: ['ok'], failed: ['bad'] });
+  });
+
+  it('blank and duplicate aliases are dropped before any write', async () => {
+    rpcMock.mockReset();
+    rpcMock.mockResolvedValueOnce({ data: 'one', error: null });
+    script([{ table: 'exercise_aliases', data: null }]);
+
+    const result = await addWildAliases('x1', [' one ', 'one', '  ']);
+    expect(result).toEqual({ written: ['one'], failed: [] });
+    expect(issued).toHaveLength(1);
+  });
+
+  it('an alias that normalizes to nothing is skipped (neither written nor failed)', async () => {
+    rpcMock.mockReset();
+    rpcMock.mockResolvedValueOnce({ data: '', error: null });
+    script([]);
+
+    const result = await addWildAliases('x1', ['%%%']);
+    expect(result).toEqual({ written: [], failed: [] });
   });
 });
 
