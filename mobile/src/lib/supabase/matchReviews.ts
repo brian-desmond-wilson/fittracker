@@ -170,9 +170,21 @@ function parseCandidates(raw: unknown): MatchReviewCandidate[] {
     .filter((c) => c.exerciseId !== '' && c.name !== '');
 }
 
+/** The draft schema this code writes and understands. Bump on shape changes. */
+const DRAFT_VERSION = 1;
+
 function parseDraft(raw: unknown): MatchReviewDraft | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const d = raw as Record<string, unknown>;
+  // A draft from a different schema era must not be half-read with silently
+  // defaulted fields — refuse it whole (the review still resolves; only the
+  // draft-carried extras are lost) and say so.
+  if (d.draftVersion !== DRAFT_VERSION) {
+    console.error(
+      `match review draft version ${String(d.draftVersion)} is not ${DRAFT_VERSION}; ignoring draft`,
+    );
+    return null;
+  }
   const items: MatchReviewDraftItem[] = Array.isArray(d.items)
     ? d.items
         .filter((it): it is Record<string, unknown> => typeof it === 'object' && it !== null)
@@ -295,9 +307,11 @@ export interface CreateMatchReviewInput {
 /**
  * Queue one unknown captured name. raw_name_normalized is deliberately NOT
  * written: the table's BEFORE trigger fills it from normalize_alias, keeping
- * the dictionary single-source. A failure here THROWS — losing a captured
- * name silently is exactly what the queue exists to prevent, and saveCapture's
- * pending-status sequencing makes the whole capture retryable instead.
+ * the dictionary single-source. The draft is stamped with draftVersion so a
+ * future shape change is detected on read instead of silently defaulting.
+ * A failure here THROWS — losing a captured name silently is exactly what
+ * the queue exists to prevent, and saveCapture's pending-status sequencing
+ * makes the whole capture retryable instead.
  */
 export async function createMatchReview(input: CreateMatchReviewInput): Promise<string> {
   const { data, error } = await supabase
@@ -308,7 +322,7 @@ export async function createMatchReview(input: CreateMatchReviewInput): Promise<
       raw_name: input.rawName,
       context: input.context,
       candidates: input.candidates,
-      draft: input.draft,
+      draft: { draftVersion: DRAFT_VERSION, ...input.draft },
     })
     .select('id')
     .single();
@@ -341,6 +355,10 @@ export interface ResolveMatchReviewResult {
   ok: boolean;
   /** The alias write missed (the resolution itself still stands). */
   aliasFailed: boolean;
+  /** The review was no longer pending when this call started — someone (or
+   *  some other device) already resolved it. Nothing was written; the caller
+   *  should treat it as done-with-notice, not as a failure. */
+  alreadyResolved: boolean;
 }
 
 /**
@@ -349,14 +367,31 @@ export interface ResolveMatchReviewResult {
  *
  * The review row is updated LAST, so any earlier failure leaves it pending
  * and the whole thing retryable. The earlier steps are idempotent for that
- * retry: the provenance link upserts, and draft items already present (same
- * workout + exercise + order) are skipped rather than duplicated.
+ * retry: the provenance link upserts, and a draft item whose order slot is
+ * already occupied in the workout is skipped — BY ORDER ALONE, deliberately
+ * not by (exercise, order): a retry that picks a DIFFERENT exercise than a
+ * half-finished earlier attempt must not stack a second movement into the
+ * same slot. The status re-read up front closes the other half of that
+ * window: a review resolved elsewhere (second device, double tap racing the
+ * list refresh) short-circuits before writing anything.
  */
 export async function resolveMatchReview(
   input: ResolveMatchReviewInput,
 ): Promise<ResolveMatchReviewResult> {
   const { review, exerciseId, minted, saveAlias } = input;
   try {
+    // 0. Still pending? A resolution that already happened must not write —
+    //    its items are in, its provenance is linked, and re-running with a
+    //    different choice would double the movement.
+    const { data: fresh, error: freshError } = await supabase
+      .from('exercise_match_reviews')
+      .select('status')
+      .eq('id', review.id)
+      .maybeSingle();
+    if (freshError) throw new Error(freshError.message);
+    if (!fresh || fresh.status !== 'pending') {
+      return { ok: true, aliasFailed: false, alreadyResolved: true };
+    }
     // 1. Provenance: the capture now explains this exercise. was_created
     //    records which act this was — a mint or a link — because catalog
     //    delete semantics read it (a minted row is the capture's to delete).
@@ -375,14 +410,17 @@ export async function resolveMatchReview(
     if (draft?.capturedWorkoutId && draft.items.length > 0) {
       const { data: existing, error: readError } = await supabase
         .from('captured_workout_exercises')
-        .select('exercise_id, exercise_order')
+        .select('exercise_order')
         .eq('captured_workout_id', draft.capturedWorkoutId);
       if (readError) throw new Error(readError.message);
-      const taken = new Set(
-        (existing ?? []).map((r: any) => `${r.exercise_id}#${r.exercise_order}`),
-      );
+      // Order alone, NOT (exercise, order): an occupied slot means an earlier
+      // attempt already materialized this draft item, even if that attempt
+      // linked a different exercise — inserting "the right one" beside it
+      // would duplicate the movement, which is worse than honoring the
+      // earlier choice.
+      const taken = new Set((existing ?? []).map((r: any) => r.exercise_order as number));
       const toInsert = draft.items
-        .filter((it) => !taken.has(`${exerciseId}#${it.exerciseOrder}`))
+        .filter((it) => !taken.has(it.exerciseOrder))
         .map((it) => ({
           captured_workout_id: draft.capturedWorkoutId,
           exercise_id: exerciseId,
@@ -424,9 +462,9 @@ export async function resolveMatchReview(
       .eq('status', 'pending');
     if (closeError) throw new Error(closeError.message);
 
-    return { ok: true, aliasFailed };
+    return { ok: true, aliasFailed, alreadyResolved: false };
   } catch (e) {
     console.error('resolveMatchReview failed:', e);
-    return { ok: false, aliasFailed: false };
+    return { ok: false, aliasFailed: false, alreadyResolved: false };
   }
 }

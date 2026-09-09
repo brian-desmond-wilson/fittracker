@@ -85,6 +85,17 @@ export function MatchReviewSheet({
       Alert.alert("Couldn't resolve it", "Nothing was changed — try again.");
       return;
     }
+    if (result.alreadyResolved) {
+      // Someone got there first (another device, or a double tap racing the
+      // refresh). That resolution stands; this one wrote nothing.
+      Alert.alert(
+        "Already resolved",
+        `“${review.rawName}” was resolved elsewhere — nothing changed here.`,
+      );
+      setReviews((prev) => prev.filter((r) => r.id !== review.id));
+      onResolved();
+      return;
+    }
     if (result.aliasFailed) {
       // The link stands; only the dictionary write missed. Say so instead of
       // letting the next capture of this wording queue up again silently.

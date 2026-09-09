@@ -150,7 +150,7 @@ R1_JSON="$(auth_post "exercise_match_reviews" "{
   \"user_id\": \"$SMOKE_UID\", \"source_id\": \"$SRC1_ID\",
   \"raw_name\": \"$UNKNOWN\", \"context\": \"probe workout\",
   \"candidates\": [{\"exerciseId\": \"$PULLUP_ID\", \"name\": \"$PULLUP_NAME\"}],
-  \"draft\": {\"exercise\": null, \"capturedWorkoutId\": null, \"items\": []}
+  \"draft\": {\"draftVersion\": 1, \"exercise\": null, \"capturedWorkoutId\": null, \"items\": []}
 }")"
 R1_ID="$(json_get "$R1_JSON" 0.id)"
 R1_STATUS="$(json_get "$R1_JSON" 0.status)"
@@ -179,7 +179,7 @@ WILD="Zzprobe Kneeling Widget Curl"
 R2_JSON="$(auth_post "exercise_match_reviews" "{
   \"user_id\": \"$SMOKE_UID\", \"source_id\": \"$SRC1_ID\",
   \"raw_name\": \"$WILD\", \"candidates\": [],
-  \"draft\": {\"exercise\": null, \"capturedWorkoutId\": null, \"items\": []}
+  \"draft\": {\"draftVersion\": 1, \"exercise\": null, \"capturedWorkoutId\": null, \"items\": []}
 }")"
 R2_ID="$(json_get "$R2_JSON" 0.id)"
 [ -n "$R2_ID" ] || fail "review 2 insert failed: $R2_JSON"
@@ -211,7 +211,7 @@ MINT_ID="$(json_get "$MINT_JSON" 0.id)"
 R3_JSON="$(auth_post "exercise_match_reviews" "{
   \"user_id\": \"$SMOKE_UID\", \"source_id\": \"$SRC1_ID\",
   \"raw_name\": \"Zzprobe Minted Widget\", \"candidates\": [],
-  \"draft\": {\"exercise\": null, \"capturedWorkoutId\": null, \"items\": []}
+  \"draft\": {\"draftVersion\": 1, \"exercise\": null, \"capturedWorkoutId\": null, \"items\": []}
 }")"
 R3_ID="$(json_get "$R3_JSON" 0.id)"
 [ -n "$R3_ID" ] || fail "review 3 insert failed: $R3_JSON"
@@ -233,7 +233,7 @@ WKT_ID="$(json_get "$WKT_JSON" 0.id)"
 R4_JSON="$(auth_post "exercise_match_reviews" "{
   \"user_id\": \"$SMOKE_UID\", \"source_id\": \"$SRC1_ID\",
   \"raw_name\": \"Zzprobe Draft Item Row\", \"candidates\": [],
-  \"draft\": {\"exercise\": null, \"capturedWorkoutId\": \"$WKT_ID\",
+  \"draft\": {\"draftVersion\": 1, \"exercise\": null, \"capturedWorkoutId\": \"$WKT_ID\",
               \"items\": [{\"exerciseOrder\": 2, \"sets\": 3, \"reps\": \"10\"}]}
 }")"
 R4_ID="$(json_get "$R4_JSON" 0.id)"

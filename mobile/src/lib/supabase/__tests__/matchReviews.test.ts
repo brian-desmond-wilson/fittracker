@@ -205,7 +205,8 @@ describe('createMatchReview', () => {
       raw_name: 'Flying Widget Press',
       context: 'Upper pump',
       candidates: [{ exerciseId: EX, name: 'Pull-Up' }],
-      draft: { exercise: null, capturedWorkoutId: WKT, items: [] },
+      // The draft is stamped with its schema version at write.
+      draft: { draftVersion: 1, exercise: null, capturedWorkoutId: WKT, items: [] },
     });
     expect(payload).not.toHaveProperty('raw_name_normalized');
   });
@@ -232,6 +233,7 @@ describe('fetchPendingReviews', () => {
             created_at: '2026-09-08',
             candidates: [{ exerciseId: EX, name: 'Pull-Up' }, { bogus: true }, 'junk'],
             draft: {
+              draftVersion: 1,
               exercise: { name: 'Pullups' },
               capturedWorkoutId: WKT,
               items: [{ exerciseOrder: 2, reps: '10', sets: 3 }],
@@ -253,6 +255,28 @@ describe('fetchPendingReviews', () => {
       },
     ]);
   });
+
+  it('rejects a draft whose version is missing or unknown (logged, treated as empty)', async () => {
+    const row = (draft: unknown) => ({
+      id: 'r1', raw_name: 'X', context: null, source_id: SRC,
+      created_at: '2026-09-08', candidates: [], draft,
+    });
+    script([
+      {
+        table: 'exercise_match_reviews',
+        data: [
+          row({ exercise: null, capturedWorkoutId: WKT, items: [] }), // no version
+          row({ draftVersion: 2, exercise: null, capturedWorkoutId: WKT, items: [] }), // future
+        ],
+      },
+    ]);
+
+    const out = await fetchPendingReviews(USER);
+
+    expect(out[0].draft).toBeNull();
+    expect(out[1].draft).toBeNull();
+    expect(consoleError).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('resolveMatchReview', () => {
@@ -273,12 +297,16 @@ describe('resolveMatchReview', () => {
     createdAt: '2026-09-08',
   };
 
+  /** The status re-read every resolution starts with. */
+  const stillPending = { table: 'exercise_match_reviews', data: { status: 'pending' } };
+
   it('link path: provenance upsert, item insert (skipping taken slots), review closed LAST', async () => {
     script([
+      stillPending,
       { table: 'source_exercises', data: null }, // upsert
       {
         table: 'captured_workout_exercises',
-        data: [{ exercise_id: EX, exercise_order: 1 }], // retry leftovers: order 1 taken
+        data: [{ exercise_order: 1 }], // retry leftovers: order 1 taken
       },
       { table: 'captured_workout_exercises', data: null }, // insert the missing one
       { table: 'exercise_match_reviews', data: null }, // close
@@ -288,14 +316,14 @@ describe('resolveMatchReview', () => {
       review, exerciseId: EX, minted: false, saveAlias: false,
     });
 
-    expect(out).toEqual({ ok: true, aliasFailed: false });
-    expect(issued[0].firstArg('upsert')).toEqual({
+    expect(out).toEqual({ ok: true, aliasFailed: false, alreadyResolved: false });
+    expect(issued[1].firstArg('upsert')).toEqual({
       source_id: SRC, exercise_id: EX, was_created: false,
     });
-    expect(issued[0].argsOf('upsert')[0][1]).toEqual({
+    expect(issued[1].argsOf('upsert')[0][1]).toEqual({
       onConflict: 'source_id,exercise_id', ignoreDuplicates: true,
     });
-    const inserted = issued[2].firstArg('insert') as any[];
+    const inserted = issued[3].firstArg('insert') as any[];
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).toEqual({
       captured_workout_id: WKT, exercise_id: EX, exercise_order: 4,
@@ -303,17 +331,58 @@ describe('resolveMatchReview', () => {
       target_duration: '30s', rest_seconds: null, notes: null,
     });
     // Close: status/resolved fields, double-tap-guarded on status='pending'.
-    const close = issued[3].firstArg('update') as Record<string, unknown>;
+    const close = issued[4].firstArg('update') as Record<string, unknown>;
     expect(close.status).toBe('linked');
     expect(close.resolved_exercise_id).toBe(EX);
     expect(typeof close.resolved_at).toBe('string');
-    expect(issued[3].argsOf('eq')).toEqual([['id', 'r1'], ['status', 'pending']]);
+    expect(issued[4].argsOf('eq')).toEqual([['id', 'r1'], ['status', 'pending']]);
+    expect(aliasMock).not.toHaveBeenCalled();
+  });
+
+  it('a retry that picks a DIFFERENT exercise inserts nothing into occupied slots', async () => {
+    // A half-finished earlier attempt (different candidate) already
+    // materialized both orders — the slot check keys on ORDER ALONE, so the
+    // new choice must not stack a second movement beside them.
+    script([
+      stillPending,
+      { table: 'source_exercises', data: null },
+      {
+        table: 'captured_workout_exercises',
+        data: [{ exercise_order: 1 }, { exercise_order: 4 }],
+      },
+      // No insert step: nothing to write.
+      { table: 'exercise_match_reviews', data: null }, // close
+    ]);
+
+    const out = await resolveMatchReview({
+      review, exerciseId: 'a-different-exercise-id', minted: false, saveAlias: false,
+    });
+
+    expect(out).toEqual({ ok: true, aliasFailed: false, alreadyResolved: false });
+    expect(issued.map((q) => q.table)).toEqual([
+      'exercise_match_reviews', 'source_exercises',
+      'captured_workout_exercises', 'exercise_match_reviews',
+    ]);
+    // The items read never became an insert.
+    expect(issued[2].argsOf('insert')).toEqual([]);
+  });
+
+  it('a review no longer pending short-circuits before writing anything', async () => {
+    script([{ table: 'exercise_match_reviews', data: { status: 'linked' } }]);
+
+    const out = await resolveMatchReview({
+      review, exerciseId: EX, minted: false, saveAlias: true,
+    });
+
+    expect(out).toEqual({ ok: true, aliasFailed: false, alreadyResolved: true });
+    expect(issued).toHaveLength(1); // the status read was the only call
     expect(aliasMock).not.toHaveBeenCalled();
   });
 
   it('minted path: was_created true and status minted; saveAlias teaches the dictionary', async () => {
     aliasMock.mockResolvedValue({ written: ['Flying Widget Press'], failed: [] });
     script([
+      stillPending,
       { table: 'source_exercises', data: null },
       { table: 'captured_workout_exercises', data: [] },
       { table: 'captured_workout_exercises', data: null },
@@ -324,14 +393,15 @@ describe('resolveMatchReview', () => {
       review, exerciseId: EX, minted: true, saveAlias: true,
     });
 
-    expect(out).toEqual({ ok: true, aliasFailed: false });
-    expect((issued[0].firstArg('upsert') as any).was_created).toBe(true);
-    expect((issued[3].firstArg('update') as any).status).toBe('minted');
+    expect(out).toEqual({ ok: true, aliasFailed: false, alreadyResolved: false });
+    expect((issued[1].firstArg('upsert') as any).was_created).toBe(true);
+    expect((issued[4].firstArg('update') as any).status).toBe('minted');
     expect(aliasMock).toHaveBeenCalledWith(EX, ['Flying Widget Press']);
   });
 
   it('a deleted workout (FK 23503) does not fail the resolution', async () => {
     script([
+      stillPending,
       { table: 'source_exercises', data: null },
       { table: 'captured_workout_exercises', data: [] },
       { table: 'captured_workout_exercises', error: { code: '23503', message: 'fk' } },
@@ -343,12 +413,13 @@ describe('resolveMatchReview', () => {
     });
 
     expect(out.ok).toBe(true);
-    expect((issued[3].firstArg('update') as any).status).toBe('linked');
+    expect((issued[4].firstArg('update') as any).status).toBe('linked');
   });
 
   it('an alias miss is reported but never fails the resolution', async () => {
     aliasMock.mockResolvedValue({ written: [], failed: ['Flying Widget Press'] });
     script([
+      stillPending,
       { table: 'source_exercises', data: null },
       { table: 'captured_workout_exercises', data: [] },
       { table: 'captured_workout_exercises', data: null },
@@ -359,23 +430,27 @@ describe('resolveMatchReview', () => {
       review, exerciseId: EX, minted: false, saveAlias: true,
     });
 
-    expect(out).toEqual({ ok: true, aliasFailed: true });
+    expect(out).toEqual({ ok: true, aliasFailed: true, alreadyResolved: false });
   });
 
   it('a failure before the close leaves the review pending (ok: false)', async () => {
-    script([{ table: 'source_exercises', error: { message: 'down' } }]);
+    script([
+      stillPending,
+      { table: 'source_exercises', error: { message: 'down' } },
+    ]);
 
     const out = await resolveMatchReview({
       review, exerciseId: EX, minted: false, saveAlias: false,
     });
 
-    expect(out).toEqual({ ok: false, aliasFailed: false });
-    expect(issued).toHaveLength(1); // never reached the review update
+    expect(out).toEqual({ ok: false, aliasFailed: false, alreadyResolved: false });
+    expect(issued).toHaveLength(2); // never reached the review update
   });
 
   it('a review without a workout draft only links provenance and closes', async () => {
     const bare: PendingMatchReview = { ...review, draft: { exercise: null, capturedWorkoutId: null, items: [] } };
     script([
+      stillPending,
       { table: 'source_exercises', data: null },
       { table: 'exercise_match_reviews', data: null },
     ]);
@@ -385,6 +460,8 @@ describe('resolveMatchReview', () => {
     });
 
     expect(out.ok).toBe(true);
-    expect(issued.map((q) => q.table)).toEqual(['source_exercises', 'exercise_match_reviews']);
+    expect(issued.map((q) => q.table)).toEqual([
+      'exercise_match_reviews', 'source_exercises', 'exercise_match_reviews',
+    ]);
   });
 });
