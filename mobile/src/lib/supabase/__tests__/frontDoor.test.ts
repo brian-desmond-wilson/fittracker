@@ -12,6 +12,8 @@ import {
   CoreValidationError,
   CatalogDeadlockError,
   CatalogInputError,
+  CatalogTransientCollisionError,
+  CatalogNotFoundOrForbiddenError,
   type CreateCatalogExerciseInput,
 } from '../frontDoor';
 import { supabase } from '../../supabase';
@@ -98,6 +100,12 @@ const storedRow = (over: Record<string, unknown> = {}) => ({
   core_movement_id: CORE,
   variant_label_id: null,
   ...over,
+});
+
+const fpError = (fingerprint: string) => ({
+  code: '23505',
+  message: 'duplicate key value violates unique constraint "exercises_fingerprint_key"',
+  details: `Key (core_movement_id, identity_fingerprint)=(${CORE}, ${fingerprint}) already exists.`,
 });
 
 describe('createCatalogExercise payload shaping', () => {
@@ -191,6 +199,13 @@ describe('createCatalogExercise payload shaping', () => {
     ).rejects.toBeInstanceOf(CatalogInputError);
   });
 
+  it('rejects a whitespace-only name', async () => {
+    script([]);
+    await expect(createCatalogExercise({ ...baseInput, name: '   ' })).rejects.toBeInstanceOf(
+      CatalogInputError,
+    );
+  });
+
   it('rejects a variant label scoped to a different core (G2)', async () => {
     script([
       { table: 'variant_labels', data: { id: 'v1', core_movement_id: 'other-core' } },
@@ -199,19 +214,33 @@ describe('createCatalogExercise payload shaping', () => {
       createCatalogExercise({ ...baseInput, variant_label_id: 'v1' }),
     ).rejects.toBeInstanceOf(CatalogInputError);
   });
+
+  it('retries a lost slug race with the next suffix (bounded)', async () => {
+    const slugError = {
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "exercises_slug_key"',
+    };
+    script([
+      { table: 'exercises', data: null }, // slug probe: 'twice' free
+      { table: 'exercises', error: slugError }, // insert loses the race
+      { table: 'exercises', data: { slug: 'twice' } }, // re-probe: base now taken
+      { table: 'exercises', data: null }, // 'twice-2' free
+      { table: 'exercises', data: { id: 'new-id' } }, // retry insert
+      { table: 'exercises', data: storedRow({ name: 'Twice', name_is_custom: true }) },
+    ]);
+
+    await createCatalogExercise({ ...baseInput, name: 'Twice' });
+
+    expect((issued[1].firstArg('insert') as Record<string, unknown>).slug).toBe('twice');
+    expect((issued[4].firstArg('insert') as Record<string, unknown>).slug).toBe('twice-2');
+  });
 });
 
 describe('error mapping', () => {
-  const fpError = {
-    code: '23505',
-    message: 'duplicate key value violates unique constraint "exercises_fingerprint_key"',
-    details: `Key (core_movement_id, identity_fingerprint)=(${CORE}, ${INCLINE}) already exists.`,
-  };
-
   it('23505 on exercises_fingerprint_key -> DuplicateExerciseError carrying the existing row', async () => {
     const existing = storedRow({ id: 'existing-id' });
     script([
-      { table: 'exercises', error: fpError }, // insert rejected
+      { table: 'exercises', error: fpError(INCLINE) }, // insert rejected (fp == final)
       { table: 'exercises', data: existing }, // lookup by parsed core+fingerprint
     ]);
 
@@ -227,11 +256,14 @@ describe('error mapping', () => {
   });
 
   it('a duplicate surfacing from a junction insert cleans up the half-created row', async () => {
+    // The junction statement recomputes with the FULL equipment set visible,
+    // so a genuine duplicate there collides on the intended FINAL fingerprint.
+    const finalFp = [INCLINE, BARBELL].sort().join('|');
     script([
       { table: 'equipment', data: [{ id: BARBELL, name: 'Barbell' }] },
       { table: 'exercises', data: null }, // slug probe
       { table: 'exercises', data: { id: 'new-id' } }, // insert ok
-      { table: 'exercise_equipment', error: fpError }, // AFTER-trigger recompute collides
+      { table: 'exercise_equipment', error: fpError(finalFp) }, // AFTER-trigger collision
       { table: 'exercises', data: storedRow({ id: 'existing-id' }) }, // duplicate lookup
       { table: 'exercises', data: null }, // cleanup delete
     ]);
@@ -243,6 +275,21 @@ describe('error mapping', () => {
     expect(cleanup.table).toBe('exercises');
     expect(cleanup.calls.map((c) => c.method)).toEqual(['delete', 'eq']);
     expect(cleanup.calls[1].args).toEqual(['id', 'new-id']);
+  });
+
+  it('a collision on a NON-final fingerprint is a transient artifact, never a duplicate', async () => {
+    // Insert-phase collision: the row's singles-only identity matched an
+    // existing row, but the final identity (with equipment) is different.
+    script([
+      { table: 'equipment', data: [{ id: BARBELL, name: 'Barbell' }] },
+      { table: 'exercises', data: null }, // slug probe
+      { table: 'exercises', data: { id: 'new-id' } }, // insert ok
+      { table: 'exercise_equipment', error: fpError(INCLINE) }, // fp != final
+      { table: 'exercises', data: null }, // cleanup delete
+    ]);
+    await expect(
+      createCatalogExercise({ ...baseInput, name: 'Transient', equipment_ids: [BARBELL] }),
+    ).rejects.toBeInstanceOf(CatalogTransientCollisionError);
   });
 
   it('40P01 is retried once, then succeeds silently', async () => {
@@ -283,38 +330,107 @@ describe('error mapping', () => {
 });
 
 describe('updateCatalogExercise', () => {
-  it('diffs the equipment junction: deletes and inserts only changed rows', async () => {
-    const current = storedRow({ id: 'x1' });
+  it('maps a missing or RLS-hidden row to CatalogNotFoundOrForbiddenError', async () => {
+    script([{ table: 'exercises', data: null }]);
+    await expect(updateCatalogExercise('ghost', { description: 'x' })).rejects.toBeInstanceOf(
+      CatalogNotFoundOrForbiddenError,
+    );
+  });
+
+  it('rejects a whitespace-only rename', async () => {
+    script([]);
+    await expect(updateCatalogExercise('x1', { name: '  ' })).rejects.toBeInstanceOf(
+      CatalogInputError,
+    );
+  });
+
+  it('diffs the equipment junction and writes compat columns AFTER the junctions', async () => {
     script([
-      { table: 'exercises', data: current }, // current row
-      { table: 'equipment', data: [{ id: 'eq-b', name: 'Dumbbell' }] }, // names for compat
-      { table: 'exercises', data: { id: 'x1' } }, // column update (equipment_types)
+      { table: 'exercises', data: storedRow({ id: 'x1' }) }, // current row
+      { table: 'exercise_movement_styles', data: [] }, // identity styles for final fp
       { table: 'exercise_equipment', data: [{ equipment_id: 'eq-a' }, { equipment_id: 'eq-b' }] },
-      { table: 'exercise_equipment', data: null }, // delete eq-a
+      { table: 'exercise_equipment', data: null }, // delete eq-a (insert-first, nothing to insert)
+      { table: 'equipment', data: [{ id: 'eq-b', name: 'Dumbbell' }] }, // compat names
+      { table: 'exercises', data: { id: 'x1' } }, // compat update
       { table: 'exercises', data: storedRow({ id: 'x1' }) }, // final readback
     ]);
 
     await updateCatalogExercise('x1', { equipment_ids: ['eq-b'] });
 
-    const del = issued[4];
+    const del = issued[3];
     expect(del.calls.map((c) => c.method)).toEqual(['delete', 'eq', 'in']);
     expect(del.calls[2].args).toEqual(['equipment_id', ['eq-a']]);
     // eq-b already present: no insert statement was issued for it.
     expect(issued.filter((q) => q.table === 'exercise_equipment')).toHaveLength(2);
-    // Legacy compat array follows the junction.
-    const cols = issued[2].firstArg('update') as Record<string, unknown>;
-    expect(cols.equipment_types).toEqual(['Dumbbell']);
-    expect(cols.requires_weight).toBe(true);
+    // Legacy compat columns land in their own UPDATE after the junction diff (I2).
+    const compat = issued[5].firstArg('update') as Record<string, unknown>;
+    expect(compat).toEqual({ equipment_types: ['Dumbbell'], requires_weight: true });
+  });
+
+  it('C1: a transient collision in insert-first order is retried delete-first and succeeds', async () => {
+    // Swap eq-a -> eq-b. Final fp = 'eq-b'; the union transient 'eq-a|eq-b'
+    // collides (an exact union-child exists), the subset order is free.
+    script([
+      { table: 'exercises', data: storedRow({ id: 'x1' }) },
+      { table: 'exercise_movement_styles', data: [] },
+      { table: 'exercise_equipment', data: [{ equipment_id: 'eq-a' }] },
+      { table: 'exercise_equipment', error: fpError('eq-a|eq-b') }, // insert-first collides
+      { table: 'exercise_equipment', data: null }, // delete-first: delete eq-a
+      { table: 'exercise_equipment', data: null }, // then insert eq-b
+      { table: 'equipment', data: [{ id: 'eq-b', name: 'Bands' }] },
+      { table: 'exercises', data: { id: 'x1' } }, // compat update
+      { table: 'exercises', data: storedRow({ id: 'x1' }) },
+    ]);
+
+    await updateCatalogExercise('x1', { equipment_ids: ['eq-b'] });
+
+    expect(issued[4].calls.map((c) => c.method)).toEqual(['delete', 'eq', 'in']);
+    expect(issued[5].firstArg('insert')).toEqual([{ exercise_id: 'x1', equipment_id: 'eq-b' }]);
+  });
+
+  it('C1: both orders colliding transiently -> CatalogTransientCollisionError', async () => {
+    script([
+      { table: 'exercises', data: storedRow({ id: 'x1' }) },
+      { table: 'exercise_movement_styles', data: [] },
+      { table: 'exercise_equipment', data: [{ equipment_id: 'eq-a' }] },
+      { table: 'exercise_equipment', error: fpError('eq-a|eq-b') }, // union child exists
+      { table: 'exercise_equipment', error: fpError('') }, // subset == the parent
+    ]);
+    await expect(updateCatalogExercise('x1', { equipment_ids: ['eq-b'] })).rejects.toBeInstanceOf(
+      CatalogTransientCollisionError,
+    );
+  });
+
+  it('C1: a collision on the FINAL fingerprint is a real duplicate (with compensation)', async () => {
+    const existing = storedRow({ id: 'winner' });
+    script([
+      { table: 'exercises', data: storedRow({ id: 'x1' }) },
+      { table: 'exercise_movement_styles', data: [] },
+      { table: 'exercise_equipment', data: [{ equipment_id: 'eq-a' }] },
+      { table: 'exercise_equipment', data: null }, // insert eq-b ok (union transient free)
+      { table: 'exercise_equipment', error: fpError('eq-b') }, // delete lands on final fp -> dup
+      { table: 'exercises', data: existing }, // duplicate lookup
+      { table: 'exercise_equipment', data: null }, // compensation: remove inserted eq-b
+    ]);
+
+    const err = await updateCatalogExercise('x1', { equipment_ids: ['eq-b'] }).catch((e) => e);
+    expect(err).toBeInstanceOf(DuplicateExerciseError);
+    expect((err as DuplicateExerciseError).existing).toEqual(existing);
+    const comp = issued[6];
+    expect(comp.calls.map((c) => c.method)).toEqual(['delete', 'eq', 'in']);
+    expect(comp.calls[2].args).toEqual(['equipment_id', ['eq-b']]);
   });
 
   it('attribute patch writes the FK column and never engine-owned columns', async () => {
     script([
       { table: 'exercises', data: storedRow({ id: 'x1' }) },
+      { table: 'exercise_equipment', data: [] }, // current equipment for final fp
+      { table: 'exercise_movement_styles', data: [] }, // identity styles for final fp
       { table: 'exercises', data: { id: 'x1' } }, // update
       { table: 'exercises', data: storedRow({ id: 'x1' }) },
     ]);
     await updateCatalogExercise('x1', { bench_angle_id: 'decline-id' });
-    const cols = issued[1].firstArg('update') as Record<string, unknown>;
+    const cols = issued[3].firstArg('update') as Record<string, unknown>;
     expect(cols).toEqual({ bench_angle_id: 'decline-id' });
   });
 

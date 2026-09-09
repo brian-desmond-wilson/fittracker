@@ -12,6 +12,14 @@ import type { SkillLevel } from '../../types/crossfit';
 // engine's outputs back. The client is UNTYPED, so column names here are
 // verified by the committed staging probe (scripts/movement-model/
 // probe_front_door.sh), not by the compiler.
+//
+// TRANSACTION BOUNDARY NOTE: REST gives no multi-statement transaction, and
+// exercises_fingerprint_key is INITIALLY IMMEDIATE, so a junction diff passes
+// through intermediate identities the constraint can see. The mitigations here
+// (insert-before-delete, opposite-order retry, transient-vs-duplicate
+// fingerprint comparison) close the practical cases; the airtight alternative
+// — a SECURITY-DEFINER transactional junction-swap RPC — is deliberately
+// deferred to the Task 5 migration if reviews demand it.
 
 // ── Typed errors ────────────────────────────────────────────────────────────
 
@@ -60,6 +68,48 @@ export class CatalogInputError extends Error {
   constructor(detail: string) {
     super(detail);
     this.name = 'CatalogInputError';
+  }
+}
+
+/**
+ * A mid-save intermediate identity collided with an existing exercise even
+ * though the FINAL identity is free (no REST transaction: each junction
+ * statement fires the recompute against the IMMEDIATE fingerprint constraint).
+ * Both statement orders were tried where an alternative existed. NOT a
+ * duplicate — the caller should apply the change in two saves.
+ */
+export class CatalogTransientCollisionError extends Error {
+  constructor() {
+    super(
+      'This change passes through an identity that already exists mid-save. ' +
+        'Apply the change in two saves (remove the old attribute or equipment ' +
+        'and save, then add the new one and save again).',
+    );
+    this.name = 'CatalogTransientCollisionError';
+  }
+}
+
+/** The target row does not exist, or RLS hides/forbids it (official/foreign row). */
+export class CatalogNotFoundOrForbiddenError extends Error {
+  constructor(id: string) {
+    super(`Exercise ${id} was not found, or you are not allowed to modify it.`);
+    this.name = 'CatalogNotFoundOrForbiddenError';
+  }
+}
+
+/** The naming engine did not run on insert — the DB triggers are missing/broken. */
+export class EngineNotRunningError extends Error {
+  constructor() {
+    super('The naming engine did not generate a name on insert; the catalog triggers appear to be missing.');
+    this.name = 'EngineNotRunningError';
+  }
+}
+
+/** Slug uniqueness kept colliding after bounded regeneration attempts. */
+export class CatalogSlugCollisionError extends Error {
+  constructor() {
+    super('Could not find a free slug after repeated attempts.');
+    this.name = 'CatalogSlugCollisionError';
   }
 }
 
@@ -162,7 +212,9 @@ const IDENTITY_COLUMNS = [
 /** Engine writes `name` over this the moment the row has a core. */
 const PLACEHOLDER_NAME = '(pending engine name)';
 
-// ── Error mapping ───────────────────────────────────────────────────────────
+const SLUG_ATTEMPTS = 3;
+
+// ── Error classification ────────────────────────────────────────────────────
 
 interface PgLikeError {
   code?: string | null;
@@ -174,6 +226,10 @@ function isFingerprintCollision(err: PgLikeError): boolean {
   return err.code === '23505' && (err.message ?? '').includes('exercises_fingerprint_key');
 }
 
+function isSlugCollision(err: PgLikeError): boolean {
+  return err.code === '23505' && (err.message ?? '').includes('exercises_slug_key');
+}
+
 function isDeadlock(err: PgLikeError): boolean {
   return err.code === '40P01';
 }
@@ -181,6 +237,11 @@ function isDeadlock(err: PgLikeError): boolean {
 function isCoreValidation(err: PgLikeError): boolean {
   // enforce_core_self_reference raises P0001 with this phrasing.
   return (err.message ?? '').includes('does not reference a core movement');
+}
+
+/** PostgREST "JSON object requested, 0 rows" — the RLS-or-missing signature. */
+function isZeroRows(err: PgLikeError): boolean {
+  return err.code === 'PGRST116';
 }
 
 /**
@@ -199,62 +260,92 @@ function parseCollisionKey(details: string | null | undefined): {
 /**
  * Client-side mirror of exercise_identity_attrs + fingerprint join: the sorted
  * attribute uuid set joined by '|'. Postgres orders uuids byte-wise, which for
- * lowercased canonical text is plain lexicographic order. (Identity movement
- * styles are not part of the front-door input, so the details-parse above is
- * the primary source; this covers only rows the front door itself can mint.)
+ * lowercased canonical text is plain lexicographic order. `extraIds` carries
+ * junction-sourced identity members (equipment, identity movement styles).
  */
 export function clientFingerprint(
   attrs: CatalogIdentityAttributes,
-  equipmentIds: string[],
+  extraIds: string[],
 ): string {
   const ids: string[] = [];
   for (const col of IDENTITY_COLUMNS) {
     const v = attrs[col];
     if (v) ids.push(v.toLowerCase());
   }
-  for (const id of equipmentIds) ids.push(id.toLowerCase());
+  for (const id of extraIds) ids.push(id.toLowerCase());
   return ids.sort().join('|');
 }
 
+// ── Error mapping ───────────────────────────────────────────────────────────
+
+interface ErrCtx {
+  coreId: string | null;
+  /**
+   * The identity the row will hold once the WHOLE save has been applied
+   * (null = unknown: outlier, or a patch that cannot change identity).
+   * A 23505 whose colliding fingerprint differs from this is a TRANSIENT
+   * ordering artifact of the non-transactional save — never a duplicate.
+   */
+  finalFingerprint: string | null;
+  /** Update statements: 0 rows means RLS-hidden/forbidden, not "no change". */
+  targetId?: string;
+}
+
 async function findExistingByIdentity(
-  err: PgLikeError,
-  coreId: string | null,
-  attrs: CatalogIdentityAttributes,
-  equipmentIds: string[],
+  key: { coreId: string; fingerprint: string } | null,
+  ctx: ErrCtx,
 ): Promise<CatalogExerciseRow | null> {
-  const key = parseCollisionKey(err.details) ?? {
-    coreId: coreId ?? '',
-    fingerprint: clientFingerprint(attrs, equipmentIds),
-  };
-  if (!key.coreId) return null;
+  // Fallback when the detail did not parse: the intended final fingerprint.
+  // If that is unknown too (outlier / identity-blind patch — the identity-
+  // movement-styles caveat lives in the callers that compute it), the error
+  // still throws, just without the existing row attached.
+  const lookup =
+    key ?? (ctx.coreId && ctx.finalFingerprint != null
+      ? { coreId: ctx.coreId, fingerprint: ctx.finalFingerprint }
+      : null);
+  if (!lookup) return null;
   const { data } = await supabase
     .from('exercises')
     .select(ROW_COLUMNS)
-    .eq('core_movement_id', key.coreId)
-    .eq('identity_fingerprint', key.fingerprint)
+    .eq('core_movement_id', lookup.coreId)
+    .eq('identity_fingerprint', lookup.fingerprint)
     .maybeSingle();
-  return (data as CatalogExerciseRow | null) ?? null;
+  let row = (data as unknown as CatalogExerciseRow | null) ?? null;
+  // Duplicate race: the winning writer may not have finished its own readback
+  // dance yet. Give the engine one beat and re-read; if the placeholder still
+  // stands, return the row as-is (the id is right; the name is cosmetic).
+  if (row && row.name === PLACEHOLDER_NAME) {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const { data: reread } = await supabase
+      .from('exercises')
+      .select(ROW_COLUMNS)
+      .eq('id', row.id)
+      .maybeSingle();
+    row = (reread as unknown as CatalogExerciseRow | null) ?? row;
+  }
+  return row;
 }
 
 /** Map a Postgres rejection to the typed front-door error and throw it. */
-async function mapAndThrow(
-  err: PgLikeError,
-  ctx: {
-    coreId: string | null;
-    attrs: CatalogIdentityAttributes;
-    equipmentIds: string[];
-  },
-): Promise<never> {
+async function mapAndThrow(err: PgLikeError, ctx: ErrCtx): Promise<never> {
   if (isFingerprintCollision(err)) {
+    const key = parseCollisionKey(err.details);
+    // Transient-vs-duplicate: a collision on a fingerprint that is NOT the
+    // save's final identity is an intermediate-state artifact, not a duplicate.
+    if (key && ctx.finalFingerprint != null && key.fingerprint !== ctx.finalFingerprint) {
+      throw new CatalogTransientCollisionError();
+    }
     // See the M5 decision note on DuplicateExerciseError: global uniqueness.
-    const existing = await findExistingByIdentity(err, ctx.coreId, ctx.attrs, ctx.equipmentIds);
-    throw new DuplicateExerciseError(existing);
+    throw new DuplicateExerciseError(await findExistingByIdentity(key, ctx));
   }
   if (isCoreValidation(err)) {
     throw new CoreValidationError(err.message ?? 'core_movement_id does not reference a core movement');
   }
   if (isDeadlock(err)) {
     throw new CatalogDeadlockError();
+  }
+  if (isZeroRows(err) && ctx.targetId) {
+    throw new CatalogNotFoundOrForbiddenError(ctx.targetId);
   }
   throw new Error(err.message ?? 'Catalog write failed');
 }
@@ -278,38 +369,26 @@ async function withDeadlockRetry<T>(
 /**
  * Generate a unique slug for an exercise name via collision probing.
  * If the base slug exists, appends a number (e.g., squat-2, squat-3).
+ * A probe error THROWS — it must never read as "slug free".
  */
 export async function generateUniqueSlug(name: string): Promise<string> {
   const baseSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-  // Check if base slug exists
-  const { data: existing } = await supabase
-    .from('exercises')
-    .select('slug')
-    .eq('slug', baseSlug)
-    .single();
-
-  // If no conflict, use base slug
-  if (!existing) {
-    return baseSlug;
-  }
-
-  // If conflict, find the next available number
-  let counter = 2;
-  while (counter < 100) { // Safety limit
-    const numberedSlug = `${baseSlug}-${counter}`;
-    const { data: existingNumbered } = await supabase
+  const taken = async (slug: string): Promise<boolean> => {
+    const { data, error } = await supabase
       .from('exercises')
       .select('slug')
-      .eq('slug', numberedSlug)
-      .single();
+      .eq('slug', slug)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data != null;
+  };
 
-    if (!existingNumbered) {
-      return numberedSlug;
-    }
-    counter++;
+  if (!(await taken(baseSlug))) return baseSlug;
+  for (let counter = 2; counter < 100; counter++) {
+    const numberedSlug = `${baseSlug}-${counter}`;
+    if (!(await taken(numberedSlug))) return numberedSlug;
   }
-
   // Fallback: append timestamp
   return `${baseSlug}-${Date.now()}`;
 }
@@ -346,6 +425,28 @@ async function fetchEquipmentNames(equipmentIds: string[]): Promise<string[]> {
   // Preserve input order so the legacy array is deterministic.
   const byId = new Map(rows.map((r) => [r.id, r.name]));
   return equipmentIds.map((id) => byId.get(id)!);
+}
+
+async function fetchEquipmentIdsOf(exerciseId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('exercise_equipment')
+    .select('equipment_id')
+    .eq('exercise_id', exerciseId);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { equipment_id: string }[]).map((r) => r.equipment_id);
+}
+
+/** Identity movement styles are junction identity members the patch never touches. */
+async function fetchIdentityStyleIds(exerciseId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('exercise_movement_styles')
+    .select('movement_style_id, movement_styles!inner(is_identity)')
+    .eq('exercise_id', exerciseId)
+    .eq('movement_styles.is_identity', true);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as { movement_style_id: string }[]).map(
+    (r) => r.movement_style_id,
+  );
 }
 
 /** Guardrail G2: a variant label must belong to the chosen core movement. */
@@ -389,6 +490,14 @@ async function fetchRow(id: string): Promise<CatalogExerciseRow> {
   return data as unknown as CatalogExerciseRow;
 }
 
+/** Best-effort compensation delete of a half-created row (house pattern: log, never mask). */
+async function compensateDelete(id: string): Promise<void> {
+  const { error } = await supabase.from('exercises').delete().eq('id', id);
+  if (error) {
+    console.error(`front door: failed to remove half-created exercise ${id}:`, error.message);
+  }
+}
+
 // ── Create ──────────────────────────────────────────────────────────────────
 
 /**
@@ -403,6 +512,9 @@ async function fetchRow(id: string): Promise<CatalogExerciseRow> {
 export async function createCatalogExercise(
   input: CreateCatalogExerciseInput,
 ): Promise<CatalogExerciseRow> {
+  if (input.name != null && input.name.trim() === '') {
+    throw new CatalogInputError('An exercise name cannot be blank (omit it to let the engine name the row).');
+  }
   const customName = input.name?.trim() || null;
   if (!input.core_movement_id && !customName) {
     throw new CatalogInputError(
@@ -413,18 +525,21 @@ export async function createCatalogExercise(
 
   const equipmentIds = dedupe(input.equipment_ids);
   const equipmentNames = await fetchEquipmentNames(equipmentIds);
-  const errCtx = { coreId: input.core_movement_id, attrs: input, equipmentIds };
+  // A brand-new row has no identity movement styles, so this final fingerprint
+  // is exact — the transient-vs-duplicate comparison in mapAndThrow is sound.
+  const errCtx: ErrCtx = {
+    coreId: input.core_movement_id,
+    finalFingerprint: input.core_movement_id ? clientFingerprint(input, equipmentIds) : null,
+  };
 
   // Legacy compat (until Stage 6): probing slug; equipment_types name array and
   // skill_level so existing readers keep working; requires_weight and the
   // single goal_type_id column derived exactly as the old writers did.
-  const slug = customName ? await generateUniqueSlug(customName) : placeholderSlug();
   const goalTypeIds = dedupe(input.goal_type_ids);
 
   const insertRow: Record<string, unknown> = {
     name: customName ?? PLACEHOLDER_NAME,
     name_is_custom: customName != null,
-    slug,
     core_movement_id: input.core_movement_id,
     ...pickIdentityColumns(input),
     movement_family_id: input.movement_family_id ?? null,
@@ -443,18 +558,36 @@ export async function createCatalogExercise(
     // tier, parent_exercise_id.
   };
 
-  const inserted = await withDeadlockRetry(() =>
-    supabase.from('exercises').insert(insertRow).select('id').single(),
-  );
-  if (inserted.error) await mapAndThrow(inserted.error, errCtx);
-  const id = (inserted.data as { id: string }).id;
+  // Insert with bounded slug regeneration: a 23505 on exercises_slug_key means
+  // a race won the slug between probe and insert — re-probe (the winner now
+  // exists, so the generator yields the next suffix) and retry.
+  let slug = customName ? await generateUniqueSlug(customName) : placeholderSlug();
+  let id: string | null = null;
+  for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
+    const inserted = await withDeadlockRetry(() =>
+      supabase.from('exercises').insert({ ...insertRow, slug }).select('id').single(),
+    );
+    if (!inserted.error) {
+      id = (inserted.data as { id: string }).id;
+      break;
+    }
+    if (isSlugCollision(inserted.error)) {
+      if (attempt === SLUG_ATTEMPTS - 1) throw new CatalogSlugCollisionError();
+      slug = customName ? await generateUniqueSlug(customName) : placeholderSlug();
+      continue;
+    }
+    await mapAndThrow(inserted.error, errCtx);
+  }
+  if (!id) throw new CatalogSlugCollisionError();
 
-  // Junction inserts. Each one re-fires the identity recompute, and a duplicate
-  // can surface HERE as a 23505 naming exercises_fingerprint_key (the AFTER
-  // trigger's UPDATE) — so every step maps errors, and a failure removes the
-  // half-created row before throwing.
+  // Junction inserts. Each statement re-fires the identity recompute, and a
+  // duplicate can surface HERE as a 23505 naming exercises_fingerprint_key
+  // (the AFTER trigger's UPDATE) — so every step maps errors, and a failure
+  // removes the half-created row before throwing.
   try {
     if (equipmentIds.length > 0) {
+      // One statement: AFTER-ROW triggers all fire after the full row set is
+      // visible, so the first recompute already sees the complete equipment.
       const { error } = await withDeadlockRetry(() =>
         supabase
           .from('exercise_equipment')
@@ -494,18 +627,42 @@ export async function createCatalogExercise(
       if (error) await mapAndThrow(error, errCtx);
     }
   } catch (err) {
-    // Best-effort rollback of the half-created exercise (no transaction over REST).
-    await supabase.from('exercises').delete().eq('id', id);
+    // No transaction over REST: compensate by removing the half-created row.
+    await compensateDelete(id);
     throw err;
   }
 
-  // Engine-named rows: swap the placeholder slug for a probing slug of the
-  // final name (slug is not an identity column, so this fires no recompute).
+  // From here the row is committed and valid. Deliberate row-survives exits:
+  // if a readback below throws, the row REMAINS — a retried create then hits
+  // DuplicateExerciseError carrying it, by design (better than a silent twin).
   if (!customName) {
     const named = await fetchRow(id);
-    const finalSlug = await generateUniqueSlug(named.name);
-    const { error } = await supabase.from('exercises').update({ slug: finalSlug }).eq('id', id);
-    if (error) await mapAndThrow(error, errCtx);
+    if (named.name === PLACEHOLDER_NAME) {
+      // Sole-writer invariant guard: the engine did not run. Do not leave a
+      // placeholder-named row in the catalog.
+      await compensateDelete(id);
+      throw new EngineNotRunningError();
+    }
+    // Swap the placeholder slug for a probing slug of the engine's name (slug
+    // is not an identity column: no recompute). The row is already valid, so
+    // slug failures are cosmetic — bounded retries, then log and keep the
+    // pending slug rather than stranding a committed row behind an error.
+    try {
+      for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
+        const finalSlug = await generateUniqueSlug(named.name);
+        const { error } = await supabase.from('exercises').update({ slug: finalSlug }).eq('id', id);
+        if (!error) break;
+        if (!isSlugCollision(error) || attempt === SLUG_ATTEMPTS - 1) {
+          console.error(`front door: slug swap failed for ${id} (keeping pending slug):`, error.message);
+          break;
+        }
+      }
+    } catch (slugErr) {
+      console.error(
+        `front door: slug swap failed for ${id} (keeping pending slug):`,
+        slugErr instanceof Error ? slugErr.message : String(slugErr),
+      );
+    }
   }
 
   return fetchRow(id);
@@ -513,18 +670,96 @@ export async function createCatalogExercise(
 
 // ── Update ──────────────────────────────────────────────────────────────────
 
-interface JunctionDiff<T> {
-  toDelete: T[];
-  toInsert: T[];
+interface JunctionDiff {
+  toDelete: string[];
+  toInsert: string[];
 }
 
-function diffIds(current: string[], next: string[]): JunctionDiff<string> {
+function diffIds(current: string[], next: string[]): JunctionDiff {
   const cur = new Set(current);
   const nxt = new Set(next);
   return {
     toDelete: current.filter((id) => !nxt.has(id)),
     toInsert: next.filter((id) => !cur.has(id)),
   };
+}
+
+/**
+ * Apply an equipment diff in one of the two possible statement orders.
+ *
+ * insert-first: the transient identity is the UNION of old+new equipment — it
+ * collides only if an exact union-child exists. delete-first: the transient is
+ * a SUBSET — which collides with the row's own PARENT whenever the parent is
+ * exactly that subset (the reviewer-confirmed C1 case). insert-first is
+ * therefore the default, delete-first the opposite-order retry.
+ *
+ * A failed statement rolls back atomically WITH its trigger recompute, so a
+ * collision on the first statement of either order leaves the row unchanged.
+ * A failure on the SECOND statement is compensated best-effort before
+ * rethrowing.
+ */
+async function applyEquipmentDiff(
+  exerciseId: string,
+  diff: JunctionDiff,
+  order: 'insert-first' | 'delete-first',
+  errCtx: ErrCtx,
+): Promise<void> {
+  const doInsert = async () => {
+    if (diff.toInsert.length === 0) return;
+    const { error } = await withDeadlockRetry(() =>
+      supabase
+        .from('exercise_equipment')
+        .insert(diff.toInsert.map((equipment_id) => ({ exercise_id: exerciseId, equipment_id }))),
+    );
+    if (error) await mapAndThrow(error, errCtx);
+  };
+  const doDelete = async () => {
+    if (diff.toDelete.length === 0) return;
+    const { error } = await withDeadlockRetry(() =>
+      supabase
+        .from('exercise_equipment')
+        .delete()
+        .eq('exercise_id', exerciseId)
+        .in('equipment_id', diff.toDelete),
+    );
+    if (error) await mapAndThrow(error, errCtx);
+  };
+  const compensate = async (undo: 'delete-inserted' | 'restore-deleted') => {
+    const { error } =
+      undo === 'delete-inserted'
+        ? await supabase
+            .from('exercise_equipment')
+            .delete()
+            .eq('exercise_id', exerciseId)
+            .in('equipment_id', diff.toInsert)
+        : await supabase
+            .from('exercise_equipment')
+            .insert(diff.toDelete.map((equipment_id) => ({ exercise_id: exerciseId, equipment_id })));
+    if (error) {
+      console.error(
+        `front door: equipment compensation failed for ${exerciseId}:`,
+        error.message,
+      );
+    }
+  };
+
+  if (order === 'insert-first') {
+    await doInsert();
+    try {
+      await doDelete();
+    } catch (err) {
+      if (diff.toInsert.length > 0) await compensate('delete-inserted');
+      throw err;
+    }
+  } else {
+    await doDelete();
+    try {
+      await doInsert();
+    } catch (err) {
+      if (diff.toDelete.length > 0) await compensate('restore-deleted');
+      throw err;
+    }
+  }
 }
 
 /**
@@ -537,7 +772,19 @@ export async function updateCatalogExercise(
   id: string,
   patch: UpdateCatalogExercisePatch,
 ): Promise<CatalogExerciseRow> {
-  const current = await fetchRow(id);
+  if (patch.name != null && patch.name.trim() === '') {
+    throw new CatalogInputError('An exercise name cannot be blank.');
+  }
+
+  // I4: a missing row and an RLS-hidden/forbidden one are the same outcome.
+  const { data: currentData, error: currentError } = await supabase
+    .from('exercises')
+    .select(ROW_COLUMNS)
+    .eq('id', id)
+    .maybeSingle();
+  if (currentError) throw new Error(currentError.message);
+  const current = currentData as unknown as CatalogExerciseRow | null;
+  if (!current) throw new CatalogNotFoundOrForbiddenError(id);
 
   const nextCore =
     patch.core_movement_id !== undefined ? patch.core_movement_id : current.core_movement_id;
@@ -549,13 +796,36 @@ export async function updateCatalogExercise(
 
   const nextEquipmentIds =
     patch.equipment_ids !== undefined ? dedupe(patch.equipment_ids) : undefined;
-  const errCtx = {
-    coreId: nextCore ?? null,
-    attrs: { ...current, ...patch },
-    equipmentIds: nextEquipmentIds ?? [],
-  };
 
-  // ── Column patch ──
+  // Merge patch onto current WITHOUT undefined-keys clobbering (M2): the
+  // identity the row will hold after the whole save.
+  const mergedAttrs: CatalogIdentityAttributes = {};
+  for (const col of IDENTITY_COLUMNS) {
+    mergedAttrs[col] = patch[col] !== undefined ? patch[col] : current[col];
+  }
+
+  let cachedEquipmentIds: string[] | null = null;
+  const getCurrentEquipmentIds = async (): Promise<string[]> =>
+    (cachedEquipmentIds ??= await fetchEquipmentIdsOf(id));
+
+  // The final fingerprint is only computable when the patch can move identity;
+  // it must include the junction members the patch never carries (current
+  // equipment when untouched, identity movement styles always).
+  const touchesIdentity =
+    nextEquipmentIds !== undefined ||
+    patch.core_movement_id !== undefined ||
+    IDENTITY_COLUMNS.some((col) => patch[col] !== undefined);
+  let finalFingerprint: string | null = null;
+  if (touchesIdentity && nextCore) {
+    const equipFinal = nextEquipmentIds ?? (await getCurrentEquipmentIds());
+    const styleIds = await fetchIdentityStyleIds(id);
+    finalFingerprint = clientFingerprint(mergedAttrs, [...equipFinal, ...styleIds]);
+  }
+  const errCtx: ErrCtx = { coreId: nextCore ?? null, finalFingerprint, targetId: id };
+
+  // ── Phase 1: column patch (identity singles + non-identity fields) ──
+  // Compat columns move to phase 3 (I2) so each phase is individually
+  // consistent: columns match the row, compat arrays match the junctions.
   const cols: Record<string, unknown> = { ...pickIdentityColumns(patch) };
   if (patch.core_movement_id !== undefined) cols.core_movement_id = patch.core_movement_id;
   if (patch.movement_family_id !== undefined) cols.movement_family_id = patch.movement_family_id;
@@ -573,56 +843,34 @@ export async function updateCatalogExercise(
       );
     }
     cols.name_is_custom = false; // recompute trigger column: engine renames
-  } else if (patch.name !== undefined && patch.name?.trim()) {
+  } else if (patch.name !== undefined && patch.name !== null) {
     cols.name = patch.name.trim();
     cols.name_is_custom = true;
-  }
-
-  if (nextEquipmentIds !== undefined) {
-    // Legacy compat array follows the junction.
-    const names = await fetchEquipmentNames(nextEquipmentIds);
-    cols.equipment_types = names.length > 0 ? names : null;
-    cols.requires_weight = deriveRequiresWeight(names);
-  }
-  if (patch.goal_type_ids !== undefined) {
-    cols.goal_type_id = dedupe(patch.goal_type_ids)[0] ?? null; // legacy single
+    // Deliberate: the slug is NOT re-probed on rename. Slugs are stable
+    // identifiers for legacy readers (Stage 6 retires them); renames only
+    // change the display name.
   }
 
   if (Object.keys(cols).length > 0) {
     const { error } = await withDeadlockRetry(() =>
       supabase.from('exercises').update(cols).eq('id', id).select('id').single(),
     );
-    if (error) await mapAndThrow(error, errCtx);
+    if (error) await mapAndThrow(error, errCtx); // PGRST116 -> not found/forbidden
   }
 
-  // ── Junction diffs ──
+  // ── Phase 2: junction diffs ──
   if (nextEquipmentIds !== undefined) {
-    const { data, error } = await supabase
-      .from('exercise_equipment')
-      .select('equipment_id')
-      .eq('exercise_id', id);
-    if (error) throw new Error(error.message);
-    const diff = diffIds(
-      ((data ?? []) as { equipment_id: string }[]).map((r) => r.equipment_id),
-      nextEquipmentIds,
-    );
-    if (diff.toDelete.length > 0) {
-      const { error: delErr } = await withDeadlockRetry(() =>
-        supabase
-          .from('exercise_equipment')
-          .delete()
-          .eq('exercise_id', id)
-          .in('equipment_id', diff.toDelete),
-      );
-      if (delErr) await mapAndThrow(delErr, errCtx);
-    }
-    if (diff.toInsert.length > 0) {
-      const { error: insErr } = await withDeadlockRetry(() =>
-        supabase
-          .from('exercise_equipment')
-          .insert(diff.toInsert.map((equipment_id) => ({ exercise_id: id, equipment_id }))),
-      );
-      if (insErr) await mapAndThrow(insErr, errCtx);
+    const diff = diffIds(await getCurrentEquipmentIds(), nextEquipmentIds);
+    if (diff.toDelete.length > 0 || diff.toInsert.length > 0) {
+      try {
+        await applyEquipmentDiff(id, diff, 'insert-first', errCtx);
+      } catch (err) {
+        if (!(err instanceof CatalogTransientCollisionError)) throw err;
+        // The union identity exists (an exact union-child): the opposite order
+        // may still pass through a free subset. Both orders colliding
+        // propagates CatalogTransientCollisionError from this second attempt.
+        await applyEquipmentDiff(id, diff, 'delete-first', errCtx);
+      }
     }
   }
 
@@ -665,30 +913,36 @@ export async function updateCatalogExercise(
     );
 
     if (toDelete.length > 0) {
-      const { error: delErr } = await supabase
-        .from('exercise_muscle_regions')
-        .delete()
-        .eq('exercise_id', id)
-        .in('muscle_region_id', toDelete);
-      if (delErr) throw new Error(delErr.message);
+      const { error: delErr } = await withDeadlockRetry(() =>
+        supabase
+          .from('exercise_muscle_regions')
+          .delete()
+          .eq('exercise_id', id)
+          .in('muscle_region_id', toDelete),
+      );
+      if (delErr) await mapAndThrow(delErr, errCtx);
     }
     if (toInsert.length > 0) {
-      const { error: insErr } = await supabase.from('exercise_muscle_regions').insert(
-        toInsert.map(([muscle_region_id, is_primary]) => ({
-          exercise_id: id,
-          muscle_region_id,
-          is_primary,
-        })),
+      const { error: insErr } = await withDeadlockRetry(() =>
+        supabase.from('exercise_muscle_regions').insert(
+          toInsert.map(([muscle_region_id, is_primary]) => ({
+            exercise_id: id,
+            muscle_region_id,
+            is_primary,
+          })),
+        ),
       );
-      if (insErr) throw new Error(insErr.message);
+      if (insErr) await mapAndThrow(insErr, errCtx);
     }
     for (const [muscle_region_id, is_primary] of toFlip) {
-      const { error: flipErr } = await supabase
-        .from('exercise_muscle_regions')
-        .update({ is_primary })
-        .eq('exercise_id', id)
-        .eq('muscle_region_id', muscle_region_id);
-      if (flipErr) throw new Error(flipErr.message);
+      const { error: flipErr } = await withDeadlockRetry(() =>
+        supabase
+          .from('exercise_muscle_regions')
+          .update({ is_primary })
+          .eq('exercise_id', id)
+          .eq('muscle_region_id', muscle_region_id),
+      );
+      if (flipErr) await mapAndThrow(flipErr, errCtx);
     }
   }
 
@@ -704,19 +958,41 @@ export async function updateCatalogExercise(
       nextGoals,
     );
     if (diff.toDelete.length > 0) {
-      const { error: delErr } = await supabase
-        .from('exercise_goal_types')
-        .delete()
-        .eq('exercise_id', id)
-        .in('goal_type_id', diff.toDelete);
-      if (delErr) throw new Error(delErr.message);
+      const { error: delErr } = await withDeadlockRetry(() =>
+        supabase
+          .from('exercise_goal_types')
+          .delete()
+          .eq('exercise_id', id)
+          .in('goal_type_id', diff.toDelete),
+      );
+      if (delErr) await mapAndThrow(delErr, errCtx);
     }
     if (diff.toInsert.length > 0) {
-      const { error: insErr } = await supabase
-        .from('exercise_goal_types')
-        .insert(diff.toInsert.map((goal_type_id) => ({ exercise_id: id, goal_type_id })));
-      if (insErr) throw new Error(insErr.message);
+      const { error: insErr } = await withDeadlockRetry(() =>
+        supabase
+          .from('exercise_goal_types')
+          .insert(diff.toInsert.map((goal_type_id) => ({ exercise_id: id, goal_type_id }))),
+      );
+      if (insErr) await mapAndThrow(insErr, errCtx);
     }
+  }
+
+  // ── Phase 3: legacy-compat columns, AFTER the junctions they mirror (I2) ──
+  // These columns fire no recompute (not in the trigger's column list).
+  const compat: Record<string, unknown> = {};
+  if (nextEquipmentIds !== undefined) {
+    const names = await fetchEquipmentNames(nextEquipmentIds);
+    compat.equipment_types = names.length > 0 ? names : null;
+    compat.requires_weight = deriveRequiresWeight(names);
+  }
+  if (patch.goal_type_ids !== undefined) {
+    compat.goal_type_id = dedupe(patch.goal_type_ids)[0] ?? null; // legacy single
+  }
+  if (Object.keys(compat).length > 0) {
+    const { error } = await withDeadlockRetry(() =>
+      supabase.from('exercises').update(compat).eq('id', id).select('id').single(),
+    );
+    if (error) await mapAndThrow(error, errCtx);
   }
 
   return fetchRow(id);

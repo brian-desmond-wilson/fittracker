@@ -14,7 +14,11 @@
 #   3. custom name                 -> survives with name_is_custom=true
 #   4. update an attribute         -> stored name + fingerprint follow
 #   5. equipment junction insert   -> recompute fires (fingerprint gains the id)
-#   6. cleanup                     -> probe rows deleted, row count restored
+#   6. C1 reproduction             -> delete-first equipment swap collides with
+#                                     the row's own parent (raw 23505);
+#                                     insert-before-delete succeeds — the order
+#                                     the front door uses
+#   7. cleanup                     -> probe rows deleted, row count restored
 #
 # Local staging only. Never points at live.
 set -euo pipefail
@@ -86,10 +90,14 @@ DECLINE_ID="$(json_get "$(auth_get 'bench_angles?name=eq.Decline&select=id')" 0.
 KNEELING_ID="$(json_get "$(auth_get 'stances?name=eq.Kneeling&select=id')" 0.id)"
 SPLIT_ID="$(json_get "$(auth_get 'stances?name=eq.Split&select=id')" 0.id)"
 BANDS_ID="$(json_get "$(auth_get 'equipment?name=eq.Bands&select=id')" 0.id)"
-for v in CORE_ID INCLINE_ID FLAT_ID DECLINE_ID KNEELING_ID SPLIT_ID BANDS_ID; do
+BAR_ID="$(json_get "$(auth_get 'equipment?name=eq.Bar&select=id')" 0.id)"
+for v in CORE_ID INCLINE_ID FLAT_ID DECLINE_ID KNEELING_ID SPLIT_ID BANDS_ID BAR_ID; do
   [ -n "${!v}" ] || fail "$v lookup came back empty"
 done
 echo "core (Bench Press): $CORE_ID"
+
+# Pre-clean any leftovers from an earlier aborted run BEFORE taking the baseline.
+auth_delete "exercises?slug=like.${SLUG_PREFIX}-*" >/dev/null || true
 
 BASELINE_COUNT="$(psql "$DB_URL" -Atc "select count(*) from exercises")"
 echo "baseline exercises count: $BASELINE_COUNT"
@@ -183,10 +191,56 @@ echo "fingerprint after junction insert: $A3_FP"
 echo "$A3_FP" | grep -qi "$BANDS_ID" || fail "fingerprint did not pick up the equipment id"
 
 echo
-echo "== 6. cleanup: delete probe rows, count restored =="
+echo "== 6. C1 reproduction: equipment swap vs the parent's identity =="
+# Child {Incline, Bands} must be created BEFORE the parent {Incline} exists —
+# the child's insert transits the singles-only identity {Incline}.
+ROW_C_JSON="$(auth_post "exercises" "{
+  \"name\": \"(pending engine name)\", \"name_is_custom\": false,
+  \"slug\": \"${SLUG_PREFIX}-c\",
+  \"core_movement_id\": \"$CORE_ID\", \"bench_angle_id\": \"$INCLINE_ID\",
+  \"is_movement\": false, \"is_official\": false, \"created_by\": \"$SMOKE_UID\"
+}")"
+ROW_C_ID="$(json_get "$ROW_C_JSON" 0.id)"
+[ -n "$ROW_C_ID" ] || fail "create C rejected: $ROW_C_JSON"
+C_EQ="$(auth_post "exercise_equipment" "{\"exercise_id\": \"$ROW_C_ID\", \"equipment_id\": \"$BANDS_ID\"}")"
+echo "$C_EQ" | grep -q '"code"' && fail "C bands junction rejected: $C_EQ"
+ROW_P_JSON="$(auth_post "exercises" "{
+  \"name\": \"(pending engine name)\", \"name_is_custom\": false,
+  \"slug\": \"${SLUG_PREFIX}-p\",
+  \"core_movement_id\": \"$CORE_ID\", \"bench_angle_id\": \"$INCLINE_ID\",
+  \"is_movement\": false, \"is_official\": false, \"created_by\": \"$SMOKE_UID\"
+}")"
+ROW_P_ID="$(json_get "$ROW_P_JSON" 0.id)"
+[ -n "$ROW_P_ID" ] || fail "create P rejected: $ROW_P_JSON"
+echo "parent {Incline} + child {Incline, Bands} in place"
+
+# Swap Bands -> Bar on the child. DELETE-FIRST must fail: the intermediate
+# subset identity {Incline} is exactly the parent (constraint is IMMEDIATE).
+DEL_FIRST="$(curl -s -X DELETE "$REST/exercise_equipment?exercise_id=eq.$ROW_C_ID&equipment_id=eq.$BANDS_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $TOKEN")"
+DF_CODE="$(json_get "$DEL_FIRST" code)"
+echo "delete-first attempt: code=$DF_CODE ($(json_get "$DEL_FIRST" message))"
+[ "$DF_CODE" = "23505" ] || fail "expected delete-first to collide with the parent, got: $DEL_FIRST"
+echo "$(json_get "$DEL_FIRST" message)" | grep -q "exercises_fingerprint_key" || fail "wrong constraint"
+
+# INSERT-BEFORE-DELETE (the front door's order): union transient {Incline,
+# Bands, Bar} is free, then the delete lands on the final identity.
+IB1="$(auth_post "exercise_equipment" "{\"exercise_id\": \"$ROW_C_ID\", \"equipment_id\": \"$BAR_ID\"}")"
+echo "$IB1" | grep -q '"code"' && fail "insert-first insert rejected: $IB1"
+IB2="$(curl -s -X DELETE "$REST/exercise_equipment?exercise_id=eq.$ROW_C_ID&equipment_id=eq.$BANDS_ID" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $TOKEN")"
+echo "$IB2" | grep -q '"code"' && fail "insert-first delete rejected: $IB2"
+READ_C="$(auth_get "exercises?id=eq.$ROW_C_ID&select=name,identity_fingerprint")"
+C_FP="$(json_get "$READ_C" 0.identity_fingerprint)"
+echo "swap succeeded insert-first: name='$(json_get "$READ_C" 0.name)' fingerprint=$C_FP"
+echo "$C_FP" | grep -qi "$BAR_ID" || fail "fingerprint missing the new equipment"
+echo "$C_FP" | grep -qi "$BANDS_ID" && fail "fingerprint still holds the removed equipment"
+
+echo
+echo "== 7. cleanup: delete probe rows, count restored =="
 DELETED="$(auth_delete "exercises?slug=like.${SLUG_PREFIX}-*" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
 echo "deleted $DELETED probe row(s)"
-[ "$DELETED" = "2" ] || fail "expected to delete 2 probe rows, deleted $DELETED"
+[ "$DELETED" = "4" ] || fail "expected to delete 4 probe rows, deleted $DELETED"
 FINAL_COUNT="$(psql "$DB_URL" -Atc "select count(*) from exercises")"
 echo "final exercises count: $FINAL_COUNT (baseline $BASELINE_COUNT)"
 [ "$FINAL_COUNT" = "$BASELINE_COUNT" ] || fail "row count not restored"
