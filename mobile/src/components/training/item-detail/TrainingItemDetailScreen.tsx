@@ -18,6 +18,7 @@ import {
   Image,
   Alert,
   Linking,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +30,7 @@ import type { CaptureSource } from '@/src/types/capture';
 import { supabase } from '@/src/lib/supabase';
 import { computeMovementTier, fetchHierarchy } from '@/src/lib/supabase/crossfit';
 import { fetchExerciseSources } from '@/src/lib/supabase/capture';
+import { CatalogItemWizard } from '@/src/components/training/crossfit/CatalogItemWizard';
 
 export interface TrainingItemDetailScreenProps {
   /** How this tab names the thing, lower case: "exercise" or "movement". */
@@ -67,6 +69,7 @@ export function TrainingItemDetailScreen({
   const [isAdmin, setIsAdmin] = useState(false);
   const [tier, setTier] = useState<number>(0);
   const [sources, setSources] = useState<CaptureSource[]>([]);
+  const [editVisible, setEditVisible] = useState(false);
   const [hierarchyData, setHierarchyData] = useState<{
     ancestors: Array<{ id: string; name: string; is_core: boolean; tier: number }>;
     siblings: ExerciseWithVariations[];
@@ -231,6 +234,10 @@ export function TrainingItemDetailScreen({
       `${capitalize(noun)} Options`,
       'Choose an action',
       [
+        {
+          text: `Edit ${capitalize(noun)}`,
+          onPress: () => setEditVisible(true),
+        },
         {
           text: 'Regenerate Image',
           onPress: handleGenerateImage,
@@ -669,6 +676,26 @@ export function TrainingItemDetailScreen({
         )}
       </ScrollView>
       </View>
+
+      {/* Edit — the one catalog wizard, pre-filled from this row */}
+      <Modal
+        visible={editVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setEditVisible(false)}
+      >
+        {editVisible && (
+          <CatalogItemWizard
+            isMovement={!!item.is_movement}
+            editId={item.id}
+            onClose={() => setEditVisible(false)}
+            onSave={() => {
+              setEditVisible(false);
+              loadItem();
+            }}
+          />
+        )}
+      </Modal>
     </>
   );
 }

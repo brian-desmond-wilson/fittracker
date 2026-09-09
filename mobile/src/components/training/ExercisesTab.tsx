@@ -6,7 +6,7 @@ import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { fetchAllExercises, searchAllExercises, fetchTierMap } from '@/src/lib/supabase/crossfit';
-import { AddExerciseWizard } from './crossfit/AddExerciseWizard';
+import { CatalogItemWizard } from './crossfit/CatalogItemWizard';
 import { SwipeableMovementCard } from './crossfit/SwipeableMovementCard';
 
 // Exercise with computed tier for display
@@ -30,6 +30,7 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
   const [searching, setSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [editItemId, setEditItemId] = useState<string | null>(null);
 
   const categories: ExerciseCategory[] = ['All', 'Lifting', 'Gymnastics', 'Cardio', 'Core'];
 
@@ -232,6 +233,7 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
                 movement={item}
                 onPress={() => router.push(`/(tabs)/training/exercise/${item.id}`)}
                 onDelete={refreshExercises}
+                onEdit={() => setEditItemId(item.id)}
                 getMovementIcon={getExerciseIcon}
                 detailRoute="exercise"
               />
@@ -259,20 +261,41 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
         <Plus size={24} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* Add Exercise Modal */}
+      {/* Add Exercise Modal — the ONE catalog wizard, exercise preset */}
       <Modal
         visible={addModalVisible}
         animationType="slide"
         presentationStyle="fullScreen"
         onRequestClose={() => setAddModalVisible(false)}
       >
-        <AddExerciseWizard
+        <CatalogItemWizard
+          isMovement={false}
           onClose={() => setAddModalVisible(false)}
           onSave={() => {
             setAddModalVisible(false);
             loadExercises();
           }}
         />
+      </Modal>
+
+      {/* Edit Exercise Modal — same wizard, pre-filled */}
+      <Modal
+        visible={editItemId !== null}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setEditItemId(null)}
+      >
+        {editItemId && (
+          <CatalogItemWizard
+            isMovement={false}
+            editId={editItemId}
+            onClose={() => setEditItemId(null)}
+            onSave={() => {
+              setEditItemId(null);
+              loadExercises();
+            }}
+          />
+        )}
       </Modal>
     </GestureHandlerRootView>
   );

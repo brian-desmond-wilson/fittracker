@@ -1,15 +1,27 @@
+// The wizard's CORE picker.
+//
+// Under the movement model a derivation hangs off exactly one CORE movement
+// (is_core rows); the engine derives the parent/tier itself. So this search
+// offers cores ONLY — the old tier chips are gone because every result is a
+// core by construction.
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { Search, X } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
-import { searchMovementsWithTier } from '@/src/lib/supabase/crossfit';
-import type { ExerciseWithTier } from '@/src/types/crossfit';
+import { searchCoreMovements } from '@/src/lib/supabase/crossfit';
+
+export interface CoreMovementOption {
+  id: string;
+  name: string;
+  short_name?: string | null;
+  image_url?: string | null;
+}
 
 interface ParentMovementSearchProps {
-  onSelect: (movement: ExerciseWithTier) => void;
-  selectedMovement: ExerciseWithTier | null;
+  onSelect: (core: CoreMovementOption) => void;
+  selectedMovement: CoreMovementOption | null;
   onClear: () => void;
-  labelText?: string; // "Core Movement" or "Core Exercise"
+  labelText?: string;
   helperText?: string;
   placeholder?: string;
   emptyText?: string;
@@ -20,12 +32,12 @@ export function ParentMovementSearch({
   selectedMovement,
   onClear,
   labelText = 'Core Movement',
-  helperText = 'Search for the parent/core movement this variation is based on',
-  placeholder = 'Search for a movement...',
-  emptyText = 'No movements found',
+  helperText = 'Search for the core movement this derivation is based on',
+  placeholder = 'Search core movements...',
+  emptyText = 'No core movements found',
 }: ParentMovementSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<ExerciseWithTier[]>([]);
+  const [searchResults, setSearchResults] = useState<CoreMovementOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -40,11 +52,11 @@ export function ParentMovementSearch({
     const timer = setTimeout(async () => {
       try {
         setLoading(true);
-        const results = await searchMovementsWithTier(searchQuery);
-        setSearchResults(results);
+        const results = await searchCoreMovements(searchQuery.trim());
+        setSearchResults(results as CoreMovementOption[]);
         setShowDropdown(true);
       } catch (error) {
-        console.error('Error searching movements:', error);
+        console.error('Error searching core movements:', error);
         setSearchResults([]);
       } finally {
         setLoading(false);
@@ -54,8 +66,8 @@ export function ParentMovementSearch({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const handleSelect = (movement: ExerciseWithTier) => {
-    onSelect(movement);
+  const handleSelect = (core: CoreMovementOption) => {
+    onSelect(core);
     setSearchQuery('');
     setShowDropdown(false);
     setSearchResults([]);
@@ -68,21 +80,11 @@ export function ParentMovementSearch({
     setShowDropdown(false);
   };
 
-  const getTierLabel = (tier: number): string => {
-    if (tier === 0) return 'Core Movement';
-    return `Tier ${tier}`;
-  };
-
-  const getTierColor = (tier: number): string => {
-    switch (tier) {
-      case 0: return colors.primary; // Core = primary color
-      case 1: return '#22C55E'; // Tier 1 = green
-      case 2: return '#F59E0B'; // Tier 2 = amber
-      case 3: return '#EF4444'; // Tier 3 = red
-      case 4: return '#DC2626'; // Tier 4 = dark red
-      default: return colors.mutedForeground;
-    }
-  };
+  const coreBadge = (
+    <View style={styles.coreBadge}>
+      <Text style={styles.coreBadgeText}>Core</Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -110,11 +112,7 @@ export function ParentMovementSearch({
             )}
             <View style={styles.selectedInfo}>
               <Text style={styles.selectedName}>{selectedMovement.name}</Text>
-              <View style={[styles.tierBadge, { backgroundColor: getTierColor(selectedMovement.tier) + '20', borderColor: getTierColor(selectedMovement.tier) + '40' }]}>
-                <Text style={[styles.tierText, { color: getTierColor(selectedMovement.tier) }]}>
-                  {getTierLabel(selectedMovement.tier)}
-                </Text>
-              </View>
+              {coreBadge}
             </View>
           </View>
           <TouchableOpacity onPress={handleClear} style={styles.clearButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -140,16 +138,16 @@ export function ParentMovementSearch({
 
           {showDropdown && searchResults.length > 0 && (
             <ScrollView style={styles.dropdown} nestedScrollEnabled={true}>
-              {searchResults.map((movement) => (
+              {searchResults.map((core) => (
                 <TouchableOpacity
-                  key={movement.id}
+                  key={core.id}
                   style={styles.resultItem}
-                  onPress={() => handleSelect(movement)}
+                  onPress={() => handleSelect(core)}
                   activeOpacity={0.7}
                 >
-                  {movement.image_url ? (
+                  {core.image_url ? (
                     <Image
-                      source={{ uri: movement.image_url }}
+                      source={{ uri: core.image_url }}
                       style={styles.resultImage}
                       resizeMode="cover"
                     />
@@ -159,12 +157,8 @@ export function ParentMovementSearch({
                     </View>
                   )}
                   <View style={styles.resultInfo}>
-                    <Text style={styles.resultName}>{movement.name}</Text>
-                    <View style={[styles.tierBadge, { backgroundColor: getTierColor(movement.tier) + '20', borderColor: getTierColor(movement.tier) + '40' }]}>
-                      <Text style={[styles.tierText, { color: getTierColor(movement.tier) }]}>
-                        {getTierLabel(movement.tier)}
-                      </Text>
-                    </View>
+                    <Text style={styles.resultName}>{core.name}</Text>
+                    {coreBadge}
                   </View>
                 </TouchableOpacity>
               ))}
@@ -260,16 +254,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.foreground,
   },
-  tierBadge: {
+  coreBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
     borderWidth: 1,
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    borderColor: 'rgba(34, 197, 94, 0.3)',
   },
-  tierText: {
+  coreBadgeText: {
     fontSize: 11,
     fontWeight: '600',
+    color: '#22C55E',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },

@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Animated } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Pencil } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
@@ -15,14 +15,20 @@ interface SwipeableMovementCardProps {
   movement: MovementWithTier;
   onPress: () => void;
   onDelete: () => void;
+  /** Present = an Edit panel appears beside Delete on swipe. */
+  onEdit?: () => void;
   getMovementIcon: (movement: ExerciseWithVariations) => string;
   detailRoute?: 'movement' | 'exercise'; // Default: 'movement'
 }
+
+/** Matches SwipeDeleteAction's geometry so the two panels read as one strip. */
+const EDIT_PANEL_WIDTH = 80;
 
 function SwipeableMovementCardBase({
   movement,
   onPress,
   onDelete,
+  onEdit,
   getMovementIcon,
   detailRoute = 'movement'
 }: SwipeableMovementCardProps) {
@@ -149,15 +155,50 @@ function SwipeableMovementCardBase({
     }
   };
 
+  const handleEdit = () => {
+    swipeableRef.current?.close();
+    onEdit?.();
+  };
+
   return (
     <Swipeable
       ref={swipeableRef}
       renderRightActions={(progress) => (
-        <SwipeDeleteAction
-          progress={progress}
-          onPress={handleDelete}
-          accessibilityLabel={`Delete ${movement.name}`}
-        />
+        <View style={styles.actionsRow}>
+          {onEdit && (
+            <Animated.View
+              style={[
+                styles.editAction,
+                {
+                  transform: [
+                    {
+                      translateX: progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [EDIT_PANEL_WIDTH, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={handleEdit}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${movement.name}`}
+              >
+                <Pencil size={20} color="#FFFFFF" />
+                <Text style={styles.editText}>Edit</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+          <SwipeDeleteAction
+            progress={progress}
+            onPress={handleDelete}
+            accessibilityLabel={`Delete ${movement.name}`}
+          />
+        </View>
       )}
       overshootRight={false}
       friction={2}
@@ -245,6 +286,35 @@ function SwipeableMovementCardBase({
 }
 
 const styles = StyleSheet.create({
+  actionsRow: {
+    flexDirection: 'row',
+  },
+  editAction: {
+    width: EDIT_PANEL_WIDTH,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    // Paint over the delete panel's card-tuck overlap so the blue/red
+    // boundary is a clean vertical line.
+    zIndex: 1,
+  },
+  editButton: {
+    // The blue of the tier badges: an informational action, not destructive.
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Same geometry trick as SwipeDeleteAction: hang 12 behind the card so
+    // its rounded corner meets solid color, not background.
+    width: EDIT_PANEL_WIDTH + 12,
+    marginLeft: -12,
+    paddingLeft: 12,
+    height: '100%',
+    gap: 4,
+  },
+  editText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   movementCard: {
     flexDirection: 'row',
     backgroundColor: '#1A1F2E',

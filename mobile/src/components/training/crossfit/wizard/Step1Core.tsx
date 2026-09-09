@@ -1,114 +1,188 @@
+// Step 1: what IS this row — a core, a derivation of a core, or an outlier.
+//
+// Derivations are engine-named by default: the name is generated from the
+// chosen core plus the Step 3 attributes, so the field only appears when
+// "use a custom name" is switched on. Cores and outliers always need a name
+// (the engine has nothing to derive one from).
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { X } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
-import type { MovementFormData } from '../AddMovementWizard';
-import type { ExerciseWithTier } from '@/src/types/crossfit';
-import { ParentMovementSearch } from '../ParentMovementSearch';
+import type { WizardFormData, CatalogItemKind } from '../CatalogItemWizard';
+import { ParentMovementSearch, type CoreMovementOption } from '../ParentMovementSearch';
 
 interface Step1CoreProps {
-  formData: MovementFormData;
-  updateFormData: (updates: Partial<MovementFormData>) => void;
+  formData: WizardFormData;
+  updateFormData: (updates: Partial<WizardFormData>) => void;
   entityType?: 'movement' | 'exercise'; // Controls all labels
+  /** Editing an existing row: the kind of a CORE row is locked (demotion is curation tooling). */
+  isEdit?: boolean;
 }
 
-export function Step1Core({ formData, updateFormData, entityType = 'movement' }: Step1CoreProps) {
+const KIND_SEGMENTS: { kind: CatalogItemKind; label: string }[] = [
+  { kind: 'core', label: 'Core' },
+  { kind: 'derivation', label: 'Derivation' },
+  { kind: 'outlier', label: 'Outlier' },
+];
+
+export function Step1Core({ formData, updateFormData, entityType = 'movement', isEdit = false }: Step1CoreProps) {
   const isExercise = entityType === 'exercise';
   const entityName = isExercise ? 'Exercise' : 'Movement';
   const entityNameLower = isExercise ? 'exercise' : 'movement';
   const [aliasInput, setAliasInput] = useState('');
-  const [selectedParent, setSelectedParent] = useState<ExerciseWithTier | null>(null);
 
-  const handleParentSelect = (movement: ExerciseWithTier) => {
-    setSelectedParent(movement);
+  // A core row stays a core; a non-core row can move between derivation and
+  // outlier but cannot be promoted here.
+  const kindLocked = isEdit && formData.kind === 'core';
+  const selectableKinds = kindLocked
+    ? KIND_SEGMENTS.filter((s) => s.kind === 'core')
+    : isEdit
+      ? KIND_SEGMENTS.filter((s) => s.kind !== 'core')
+      : KIND_SEGMENTS;
+
+  const handleKindChange = (kind: CatalogItemKind) => {
+    if (kind === formData.kind) return;
+    const updates: Partial<WizardFormData> = { kind };
+    if (kind !== 'derivation') {
+      updates.core_movement_id = null;
+      updates.core_movement_name = '';
+      updates.variant_label_id = null;
+      updates.use_custom_name = true; // cores and outliers always carry a name
+    } else {
+      updates.use_custom_name = false; // derivations default to engine naming
+    }
+    updateFormData(updates);
+  };
+
+  const handleCoreSelect = (core: CoreMovementOption) => {
     updateFormData({
-      parent_exercise_id: movement.id,
-      parent_movement_name: movement.name,
-      name: movement.name, // Auto-fill name with parent's name
+      core_movement_id: core.id,
+      core_movement_name: core.name,
+      variant_label_id: null, // the vocabulary is core-scoped: reset on change
     });
   };
 
-  const handleParentClear = () => {
-    setSelectedParent(null);
-    updateFormData({
-      parent_exercise_id: null,
-      parent_movement_name: '',
-    });
+  const handleCoreClear = () => {
+    updateFormData({ core_movement_id: null, core_movement_name: '', variant_label_id: null });
   };
+
+  const addAlias = () => {
+    const trimmed = aliasInput.trim();
+    if (trimmed && !formData.aliases.includes(trimmed)) {
+      updateFormData({ aliases: [...formData.aliases, trimmed] });
+      setAliasInput('');
+    }
+  };
+
+  const kindHelp: Record<CatalogItemKind, string> = {
+    core: `A base ${entityNameLower} other ${entityNameLower}s derive from (Squat, Bench Press…).`,
+    derivation: `A variation of a core ${entityNameLower}, defined by its attributes — the catalog names and ranks it for you.`,
+    outlier: `Stands alone: not a core and not derived from one (no generated name or tier).`,
+  };
+
+  const showNameField = formData.kind !== 'derivation' || formData.use_custom_name;
 
   return (
     <View style={styles.container}>
-      {/* Type Segmented Control (Movement Type or Exercise Type) */}
+      {/* Kind Segmented Control */}
       <View style={styles.field}>
         <Text style={styles.label}>{entityName} Type</Text>
-        <Text style={styles.helperText}>
-          Core {entityNameLower}s are base/fundamental {entityNameLower}s. Variations are derived from core {entityNameLower}s.
-        </Text>
+        <Text style={styles.helperText}>{kindHelp[formData.kind]}</Text>
         <View style={styles.segmentedControl}>
-          <TouchableOpacity
-            style={[styles.segment, formData.is_core && styles.segmentActive]}
-            onPress={() => {
-              updateFormData({ is_core: true, parent_exercise_id: null, parent_movement_name: '' });
-              setSelectedParent(null);
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.segmentText, formData.is_core && styles.segmentTextActive]}>
-              Core
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.segment, !formData.is_core && styles.segmentActive]}
-            onPress={() => updateFormData({ is_core: false })}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.segmentText, !formData.is_core && styles.segmentTextActive]}>
-              Variation
-            </Text>
-          </TouchableOpacity>
+          {selectableKinds.map(({ kind, label }) => {
+            const active = formData.kind === kind;
+            return (
+              <TouchableOpacity
+                key={kind}
+                style={[styles.segment, active && styles.segmentActive]}
+                onPress={() => handleKindChange(kind)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+        {kindLocked && (
+          <Text style={styles.lockedText}>
+            A core {entityNameLower} keeps its role — derivations depend on it.
+          </Text>
+        )}
       </View>
 
       <View style={styles.separator} />
 
-      {/* Parent Search (only for variations) */}
-      {!formData.is_core && (
+      {/* Core picker (derivations only) */}
+      {formData.kind === 'derivation' && (
         <>
           <ParentMovementSearch
-            onSelect={handleParentSelect}
-            selectedMovement={selectedParent}
-            onClear={handleParentClear}
+            onSelect={handleCoreSelect}
+            selectedMovement={
+              formData.core_movement_id
+                ? { id: formData.core_movement_id, name: formData.core_movement_name }
+                : null
+            }
+            onClear={handleCoreClear}
             labelText={`Core ${entityName}`}
-            helperText={`Search for the parent/core ${entityNameLower} this variation is based on`}
-            placeholder={`Search for ${isExercise ? 'an' : 'a'} ${entityNameLower}...`}
-            emptyText={`No ${entityNameLower}s found`}
+            helperText={`Search for the core ${entityNameLower} this derivation is based on`}
+            placeholder={`Search core ${entityNameLower}s...`}
+            emptyText={`No core ${entityNameLower}s found`}
           />
           <View style={styles.separator} />
         </>
       )}
 
-      {/* Name */}
+      {/* Name — generated for derivations unless custom naming is on */}
       <View style={styles.field}>
-        <Text style={styles.label}>
-          {entityName} Name <Text style={styles.required}>*</Text>
-        </Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g., Pike Walk, Box Jump, etc."
-          placeholderTextColor={colors.mutedForeground}
-          value={formData.name}
-          onChangeText={text => {
-            // Generate abbreviation from first letter of each word
-            const abbreviation = text
-              .split(' ')
-              .map(word => word.charAt(0))
-              .join('')
-              .toUpperCase();
-            updateFormData({ name: text, short_name: abbreviation });
-          }}
-          autoCapitalize="words"
-          autoFocus
-        />
+        {formData.kind === 'derivation' ? (
+          <>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Name</Text>
+              <View style={styles.toggleRow}>
+                <Text style={styles.toggleLabel}>Use custom name</Text>
+                <Switch
+                  value={formData.use_custom_name}
+                  onValueChange={(value) => updateFormData({ use_custom_name: value })}
+                  trackColor={{ false: colors.muted, true: colors.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            </View>
+            {!formData.use_custom_name && (
+              <View style={styles.generatedNameHint}>
+                <Text style={styles.generatedNameHintText}>
+                  {formData.core_movement_name
+                    ? `Named automatically from its attributes — e.g. “Incline ${formData.core_movement_name}”.`
+                    : 'Named automatically from the core and the attributes you pick in step 3.'}
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <Text style={styles.label}>
+            {entityName} Name <Text style={styles.required}>*</Text>
+          </Text>
+        )}
+        {showNameField && (
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., Pike Walk, Box Jump, etc."
+            placeholderTextColor={colors.mutedForeground}
+            value={formData.name}
+            onChangeText={text => {
+              // Generate abbreviation from first letter of each word
+              const abbreviation = text
+                .split(' ')
+                .map(word => word.charAt(0))
+                .join('')
+                .toUpperCase();
+              updateFormData({ name: text, short_name: abbreviation });
+            }}
+            autoCapitalize="words"
+          />
+        )}
       </View>
 
       <View style={styles.separator} />
@@ -117,7 +191,7 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement' }:
       <View style={styles.field}>
         <Text style={styles.label}>Short Name</Text>
         <Text style={styles.helperText}>
-          Abbreviated name for UI display (auto-populated from {entityName} Name)
+          Abbreviated name for UI display
         </Text>
         <TextInput
           style={styles.input}
@@ -131,59 +205,48 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement' }:
 
       <View style={styles.separator} />
 
-      {/* Aliases */}
-      <View style={styles.field}>
-        <Text style={styles.label}>Aliases</Text>
-        <Text style={styles.helperText}>
-          Alternative names for search (e.g., "C2B" for "Chest-to-Bar Pull-up")
-        </Text>
-        <View style={styles.aliasInputContainer}>
-          <TextInput
-            style={styles.aliasInput}
-            placeholder="Type an alias and press Add"
-            placeholderTextColor={colors.mutedForeground}
-            value={aliasInput}
-            onChangeText={setAliasInput}
-            onSubmitEditing={() => {
-              const trimmed = aliasInput.trim();
-              if (trimmed && !formData.aliases.includes(trimmed)) {
-                updateFormData({ aliases: [...formData.aliases, trimmed] });
-                setAliasInput('');
-              }
-            }}
-            autoCapitalize="none"
-          />
-          <TouchableOpacity
-            onPress={() => {
-              const trimmed = aliasInput.trim();
-              if (trimmed && !formData.aliases.includes(trimmed)) {
-                updateFormData({ aliases: [...formData.aliases, trimmed] });
-                setAliasInput('');
-              }
-            }}
-            style={styles.addButton}
-          >
-            <Text style={styles.addButtonText}>Add</Text>
-          </TouchableOpacity>
-        </View>
-        {formData.aliases.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {formData.aliases.map(alias => (
-              <View key={alias} style={styles.tag}>
-                <Text style={styles.tagText}>{alias}</Text>
-                <TouchableOpacity
-                  onPress={() => updateFormData({ aliases: formData.aliases.filter(a => a !== alias) })}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <X size={14} color={colors.foreground} />
-                </TouchableOpacity>
+      {/* Aliases — create only: they append to the alias table on save */}
+      {!isEdit && (
+        <>
+          <View style={styles.field}>
+            <Text style={styles.label}>Aliases</Text>
+            <Text style={styles.helperText}>
+              Alternative names for search (e.g., "C2B" for "Chest-to-Bar Pull-up")
+            </Text>
+            <View style={styles.aliasInputContainer}>
+              <TextInput
+                style={styles.aliasInput}
+                placeholder="Type an alias and press Add"
+                placeholderTextColor={colors.mutedForeground}
+                value={aliasInput}
+                onChangeText={setAliasInput}
+                onSubmitEditing={addAlias}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity onPress={addAlias} style={styles.addButton}>
+                <Text style={styles.addButtonText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+            {formData.aliases.length > 0 && (
+              <View style={styles.tagsContainer}>
+                {formData.aliases.map(alias => (
+                  <View key={alias} style={styles.tag}>
+                    <Text style={styles.tagText}>{alias}</Text>
+                    <TouchableOpacity
+                      onPress={() => updateFormData({ aliases: formData.aliases.filter(a => a !== alias) })}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <X size={14} color={colors.foreground} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
-            ))}
+            )}
           </View>
-        )}
-      </View>
 
-      <View style={styles.separator} />
+          <View style={styles.separator} />
+        </>
+      )}
 
       {/* Description */}
       <View style={styles.field}>
@@ -221,6 +284,25 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement' }:
           keyboardType="url"
         />
       </View>
+
+      <View style={styles.separator} />
+
+      {/* Image URL */}
+      <View style={styles.field}>
+        <Text style={styles.label}>Image URL</Text>
+        <Text style={styles.helperText}>
+          Link to a photo or thumbnail (or generate one later on the detail page)
+        </Text>
+        <TextInput
+          style={styles.input}
+          placeholder="https://..."
+          placeholderTextColor={colors.mutedForeground}
+          value={formData.image_url}
+          onChangeText={text => updateFormData({ image_url: text })}
+          autoCapitalize="none"
+          keyboardType="url"
+        />
+      </View>
     </View>
   );
 }
@@ -242,12 +324,43 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.foreground,
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+  },
   required: {
     color: colors.destructive,
   },
   helperText: {
     fontSize: 14,
     color: colors.mutedForeground,
+  },
+  lockedText: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    fontStyle: 'italic',
+  },
+  generatedNameHint: {
+    backgroundColor: colors.muted,
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  generatedNameHintText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.foreground,
   },
   input: {
     borderWidth: 1,

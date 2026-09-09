@@ -1,13 +1,21 @@
+// Step 2: classification — modality, family, goals, skill, muscles, scoring.
+//
+// The family list is driven by the movement_family_modalities truth table
+// (which families are legal for the chosen modality) — the old hardcoded
+// name map is gone, so merged/renamed families (Midline, Swing, Rotation…)
+// are reachable the moment the dictionary says so. Muscle-region sections
+// come from the dictionary's region_group, not display_order ranges.
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { colors } from '@/src/lib/colors';
-import type { MovementFormData } from '../AddMovementWizard';
+import type { WizardFormData } from '../CatalogItemWizard';
 import {
   fetchMuscleRegions,
   fetchScoringTypes,
   fetchMovementCategories,
   fetchMovementFamilies,
   fetchGoalTypes,
+  fetchFamilyModalities,
   fetchMovementWithAttributes,
 } from '@/src/lib/supabase/crossfit';
 import type {
@@ -17,12 +25,12 @@ import type {
   MovementCategory,
   MovementFamily,
   GoalType,
-  ExerciseWithDetails,
+  FamilyModality,
 } from '@/src/types/crossfit';
 
 interface Step2ClassificationProps {
-  formData: MovementFormData;
-  updateFormData: (updates: Partial<MovementFormData>) => void;
+  formData: WizardFormData;
+  updateFormData: (updates: Partial<WizardFormData>) => void;
 }
 
 const SKILL_LEVELS: SkillLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
@@ -30,25 +38,17 @@ const SKILL_LEVELS: SkillLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
 // Fields that can be overridden even when inherited
 type OverridableField = 'skill_level' | 'scoring_type_ids';
 
-// Modality to Movement Family filtering mapping
-const MODALITY_TO_FAMILIES: Record<string, string[]> = {
-  Gymnastics: ['Pull', 'Push/Press', 'Core', 'Inversion', 'Plyometric', 'Climb', 'Support/Hold', 'Ring/Bar', 'Mobility/Control'],
-  Weightlifting: ['Squat', 'Hinge', 'Press', 'Pull', 'Carry', 'Throw', 'Lunge', 'Olympic'],
-  Monostructural: ['Run', 'Row', 'Bike', 'Ski', 'Rope', 'Swim', 'Carry'],
-  Recovery: ['Mobility', 'Stretching', 'Foam Rolling', 'Breath Work', 'Activation', 'Balance/Stability'],
-};
-
 export function Step2Classification({ formData, updateFormData }: Step2ClassificationProps) {
   const [muscleRegions, setMuscleRegions] = useState<MuscleRegion[]>([]);
   const [scoringTypes, setScoringTypes] = useState<ScoringType[]>([]);
   const [categories, setCategories] = useState<MovementCategory[]>([]);
   const [allFamilies, setAllFamilies] = useState<MovementFamily[]>([]);
+  const [familyModalities, setFamilyModalities] = useState<FamilyModality[]>([]);
   const [goalTypes, setGoalTypes] = useState<GoalType[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllFamilies, setShowAllFamilies] = useState(false);
 
-  // Attribute inheritance state
-  const [parentMovement, setParentMovement] = useState<ExerciseWithDetails | null>(null);
+  // Attribute inheritance from the chosen CORE movement
   const [inheritedFields, setInheritedFields] = useState<Set<string>>(new Set());
   const [overriddenFields, setOverriddenFields] = useState<Set<OverridableField>>(new Set());
 
@@ -56,46 +56,40 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     loadReferenceData();
   }, []);
 
-  // Load parent movement attributes when parent_exercise_id is set
+  // Pre-fill classification from the core when one is chosen.
   useEffect(() => {
-    if (formData.parent_exercise_id && !formData.is_core) {
-      loadParentAttributes();
+    if (formData.kind === 'derivation' && formData.core_movement_id) {
+      loadCoreAttributes();
     } else {
-      setParentMovement(null);
       setInheritedFields(new Set());
     }
-  }, [formData.parent_exercise_id, formData.is_core]);
+  }, [formData.core_movement_id, formData.kind]);
 
-  const loadParentAttributes = async () => {
+  const loadCoreAttributes = async () => {
     try {
-      const parent = await fetchMovementWithAttributes(formData.parent_exercise_id!);
-      setParentMovement(parent);
+      const core = await fetchMovementWithAttributes(formData.core_movement_id!);
 
-      // Auto-inherit attributes from parent
+      // Auto-inherit attributes from the core
       const fieldsToInherit = new Set<string>();
 
       // Always inherit (locked fields)
-      if (parent.movement_family_id) {
-        updateFormData({ movement_family_id: parent.movement_family_id });
+      if (core.movement_family_id) {
+        updateFormData({ movement_family_id: core.movement_family_id });
         fieldsToInherit.add('movement_family_id');
       }
-      if (parent.movement_category_id) {
-        updateFormData({ modality_id: parent.movement_category_id });
+      if (core.movement_category_id) {
+        updateFormData({ modality_id: core.movement_category_id });
         fieldsToInherit.add('modality_id');
       }
-      if (parent.goal_type_id) {
-        updateFormData({ goal_type_ids: [parent.goal_type_id] });
+      if (core.goal_type_id) {
+        updateFormData({ goal_type_ids: [core.goal_type_id] });
         fieldsToInherit.add('goal_type_ids');
       }
-      if (parent.plane_of_motion_id) {
-        updateFormData({ plane_of_motion_ids: [parent.plane_of_motion_id] });
-        fieldsToInherit.add('plane_of_motion_ids');
-      }
 
-      // Extract muscle regions from parent's exercise_muscle_regions array
-      if (parent.muscle_regions && Array.isArray(parent.muscle_regions)) {
-        const muscleRegionIds = parent.muscle_regions.map((mr: any) => mr.muscle_region_id);
-        const primaryMuscleRegionIds = parent.muscle_regions
+      // Extract muscle regions from the core's exercise_muscle_regions array
+      if (core.muscle_regions && Array.isArray(core.muscle_regions)) {
+        const muscleRegionIds = core.muscle_regions.map((mr: any) => mr.muscle_region_id);
+        const primaryMuscleRegionIds = core.muscle_regions
           .filter((mr: any) => mr.is_primary)
           .map((mr: any) => mr.muscle_region_id);
 
@@ -107,39 +101,42 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
       }
 
       // Overridable fields (pre-fill but allow override)
-      if (parent.skill_level && !overriddenFields.has('skill_level')) {
-        updateFormData({ skill_level: parent.skill_level });
+      if (core.skill_level && !overriddenFields.has('skill_level')) {
+        updateFormData({ skill_level: core.skill_level });
         fieldsToInherit.add('skill_level');
       }
 
-      // Extract scoring types from parent's exercise_scoring_types array
-      if (parent.scoring_types && Array.isArray(parent.scoring_types) && !overriddenFields.has('scoring_type_ids')) {
-        const scoringTypeIds = parent.scoring_types.map((st: any) => st.scoring_type_id);
+      // Extract scoring types from the core's exercise_scoring_types array
+      if (core.scoring_types && Array.isArray(core.scoring_types) && !overriddenFields.has('scoring_type_ids')) {
+        const scoringTypeIds = core.scoring_types.map((st: any) => st.scoring_type_id);
         updateFormData({ scoring_type_ids: scoringTypeIds });
         fieldsToInherit.add('scoring_type_ids');
       }
 
       setInheritedFields(fieldsToInherit);
     } catch (error) {
-      console.error('Error loading parent attributes:', error);
+      console.error('Error loading core attributes:', error);
     }
   };
 
   const loadReferenceData = async () => {
     try {
       setLoading(true);
-      const [regionsData, scoringData, categoriesData, familiesData, goalTypesData] = await Promise.all([
-        fetchMuscleRegions(),
-        fetchScoringTypes(),
-        fetchMovementCategories(),
-        fetchMovementFamilies(),
-        fetchGoalTypes(),
-      ]);
+      const [regionsData, scoringData, categoriesData, familiesData, familyModalityData, goalTypesData] =
+        await Promise.all([
+          fetchMuscleRegions(),
+          fetchScoringTypes(),
+          fetchMovementCategories(),
+          fetchMovementFamilies(),
+          fetchFamilyModalities(),
+          fetchGoalTypes(),
+        ]);
 
       setMuscleRegions(regionsData);
       setScoringTypes(scoringData);
       setCategories(categoriesData);
       setAllFamilies(familiesData);
+      setFamilyModalities(familyModalityData);
       setGoalTypes(goalTypesData);
     } catch (error) {
       console.error('Error loading reference data:', error);
@@ -170,12 +167,10 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     const isPrimary = formData.primary_muscle_region_ids.includes(regionId);
 
     if (isPrimary) {
-      // Remove from primary
       updateFormData({
         primary_muscle_region_ids: formData.primary_muscle_region_ids.filter(id => id !== regionId),
       });
     } else {
-      // Add to primary
       updateFormData({
         primary_muscle_region_ids: [...formData.primary_muscle_region_ids, regionId],
       });
@@ -215,7 +210,7 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
   };
 
   const renderInheritanceBadge = (fieldName: string) => {
-    if (!formData.parent_movement_name) return null;
+    if (!formData.core_movement_name) return null;
 
     if (isFieldOverridden(fieldName as OverridableField)) {
       return (
@@ -228,7 +223,7 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     if (isFieldInherited(fieldName)) {
       return (
         <View style={styles.inheritanceBadge}>
-          <Text style={styles.inheritanceText}>Inherited from {formData.parent_movement_name}</Text>
+          <Text style={styles.inheritanceText}>Inherited from {formData.core_movement_name}</Text>
         </View>
       );
     }
@@ -250,23 +245,40 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     );
   };
 
+  /** Family ids legal for a modality, straight from the truth table. */
+  const allowedFamilyIds = (modalityId: string): Set<string> =>
+    new Set(
+      familyModalities
+        .filter((fm) => fm.movement_category_id === modalityId)
+        .map((fm) => fm.movement_family_id),
+    );
+
   // Get filtered families based on selected modality
   const getFilteredFamilies = (): MovementFamily[] => {
     if (showAllFamilies || !formData.modality_id) {
       return allFamilies;
     }
-
-    const selectedModality = categories.find(c => c.id === formData.modality_id);
-    if (!selectedModality) {
-      return allFamilies;
-    }
-
-    const allowedFamilyNames = MODALITY_TO_FAMILIES[selectedModality.name] || [];
-    return allFamilies.filter(f => allowedFamilyNames.includes(f.name));
+    const allowed = allowedFamilyIds(formData.modality_id);
+    return allFamilies.filter(f => allowed.has(f.id));
   };
 
   const filteredFamilies = getFilteredFamilies();
   const hasFilteredFamilies = formData.modality_id && !showAllFamilies;
+
+  /** Muscle regions grouped by the dictionary's region_group, in display order. */
+  const muscleSections = muscleRegions.reduce<{ group: string; regions: MuscleRegion[] }[]>(
+    (sections, region) => {
+      const group = region.region_group || 'Other';
+      const section = sections.find((s) => s.group === group);
+      if (section) {
+        section.regions.push(region);
+      } else {
+        sections.push({ group, regions: [region] });
+      }
+      return sections;
+    },
+    [],
+  );
 
   if (loading) {
     return (
@@ -315,13 +327,13 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
                 ]}
                 onPress={() => {
                   updateFormData({ modality_id: category.id });
-                  // Reset family selection when modality changes
-                  if (formData.movement_family_id) {
-                    const selectedFamily = allFamilies.find(f => f.id === formData.movement_family_id);
-                    const newAllowedFamilies = MODALITY_TO_FAMILIES[category.name] || [];
-                    if (selectedFamily && !newAllowedFamilies.includes(selectedFamily.name)) {
-                      updateFormData({ movement_family_id: null });
-                    }
+                  // Reset family selection when it is not legal under the new
+                  // modality (per the truth table, not a name list).
+                  if (
+                    formData.movement_family_id &&
+                    !allowedFamilyIds(category.id).has(formData.movement_family_id)
+                  ) {
+                    updateFormData({ movement_family_id: null });
                   }
                   setShowAllFamilies(false);
                 }}
@@ -396,7 +408,7 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
           Goal Type <Text style={styles.required}>*</Text>
         </Text>
         <Text style={styles.helperText}>
-          Primary training goal for this movement
+          Training goals for this movement (select all that apply)
         </Text>
         <View style={styles.pillsContainer}>
           {goalTypes.map(goalType => {
@@ -469,161 +481,47 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
           Tap to select as primary • Long press to toggle to secondary
         </Text>
 
-        {/* Upper Body Section - display_order 1-8 */}
-        <Text style={styles.sectionHeader}>Upper Body</Text>
-        <View style={styles.pillsContainer}>
-          {muscleRegions.filter(r => r.display_order >= 1 && r.display_order <= 8).map(region => {
-            const isSelected = formData.muscle_region_ids.includes(region.id);
-            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
+        {muscleSections.map(({ group, regions }) => (
+          <View key={group}>
+            <Text style={styles.sectionHeader}>{group}</Text>
+            <View style={styles.pillsContainer}>
+              {regions.map(region => {
+                const isSelected = formData.muscle_region_ids.includes(region.id);
+                const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
 
-            return (
-              <TouchableOpacity
-                key={region.id}
-                style={[
-                  styles.musclePill,
-                  isSelected && styles.musclePillSelected,
-                  isPrimary && styles.musclePillPrimary,
-                ]}
-                onPress={() => toggleMuscleRegion(region.id)}
-                onLongPress={() => {
-                  if (isSelected) {
-                    togglePrimaryMuscle(region.id);
-                  }
-                }}
-                activeOpacity={0.7}
-                delayLongPress={300}
-              >
-                <Text
-                  style={[
-                    styles.musclePillText,
-                    isSelected && styles.musclePillTextSelected,
-                    isPrimary && styles.musclePillTextPrimary,
-                  ]}
-                >
-                  {region.name}
-                </Text>
-                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Core / Midline Section - display_order 9-11 */}
-        <Text style={styles.sectionHeader}>Core / Midline</Text>
-        <View style={styles.pillsContainer}>
-          {muscleRegions.filter(r => r.display_order >= 9 && r.display_order <= 11).map(region => {
-            const isSelected = formData.muscle_region_ids.includes(region.id);
-            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
-
-            return (
-              <TouchableOpacity
-                key={region.id}
-                style={[
-                  styles.musclePill,
-                  isSelected && styles.musclePillSelected,
-                  isPrimary && styles.musclePillPrimary,
-                ]}
-                onPress={() => toggleMuscleRegion(region.id)}
-                onLongPress={() => {
-                  if (isSelected) {
-                    togglePrimaryMuscle(region.id);
-                  }
-                }}
-                activeOpacity={0.7}
-                delayLongPress={300}
-              >
-                <Text
-                  style={[
-                    styles.musclePillText,
-                    isSelected && styles.musclePillTextSelected,
-                    isPrimary && styles.musclePillTextPrimary,
-                  ]}
-                >
-                  {region.name}
-                </Text>
-                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Lower Body Section - display_order 12-18 */}
-        <Text style={styles.sectionHeader}>Lower Body</Text>
-        <View style={styles.pillsContainer}>
-          {muscleRegions.filter(r => r.display_order >= 12 && r.display_order <= 18).map(region => {
-            const isSelected = formData.muscle_region_ids.includes(region.id);
-            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
-
-            return (
-              <TouchableOpacity
-                key={region.id}
-                style={[
-                  styles.musclePill,
-                  isSelected && styles.musclePillSelected,
-                  isPrimary && styles.musclePillPrimary,
-                ]}
-                onPress={() => toggleMuscleRegion(region.id)}
-                onLongPress={() => {
-                  if (isSelected) {
-                    togglePrimaryMuscle(region.id);
-                  }
-                }}
-                activeOpacity={0.7}
-                delayLongPress={300}
-              >
-                <Text
-                  style={[
-                    styles.musclePillText,
-                    isSelected && styles.musclePillTextSelected,
-                    isPrimary && styles.musclePillTextPrimary,
-                  ]}
-                >
-                  {region.name}
-                </Text>
-                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Whole Body Section - display_order 19+ */}
-        <Text style={styles.sectionHeader}>Whole Body</Text>
-        <View style={styles.pillsContainer}>
-          {muscleRegions.filter(r => r.display_order >= 19).map(region => {
-            const isSelected = formData.muscle_region_ids.includes(region.id);
-            const isPrimary = formData.primary_muscle_region_ids.includes(region.id);
-
-            return (
-              <TouchableOpacity
-                key={region.id}
-                style={[
-                  styles.musclePill,
-                  isSelected && styles.musclePillSelected,
-                  isPrimary && styles.musclePillPrimary,
-                ]}
-                onPress={() => toggleMuscleRegion(region.id)}
-                onLongPress={() => {
-                  if (isSelected) {
-                    togglePrimaryMuscle(region.id);
-                  }
-                }}
-                activeOpacity={0.7}
-                delayLongPress={300}
-              >
-                <Text
-                  style={[
-                    styles.musclePillText,
-                    isSelected && styles.musclePillTextSelected,
-                    isPrimary && styles.musclePillTextPrimary,
-                  ]}
-                >
-                  {region.name}
-                </Text>
-                {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                return (
+                  <TouchableOpacity
+                    key={region.id}
+                    style={[
+                      styles.musclePill,
+                      isSelected && styles.musclePillSelected,
+                      isPrimary && styles.musclePillPrimary,
+                    ]}
+                    onPress={() => toggleMuscleRegion(region.id)}
+                    onLongPress={() => {
+                      if (isSelected) {
+                        togglePrimaryMuscle(region.id);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                    delayLongPress={300}
+                  >
+                    <Text
+                      style={[
+                        styles.musclePillText,
+                        isSelected && styles.musclePillTextSelected,
+                        isPrimary && styles.musclePillTextPrimary,
+                      ]}
+                    >
+                      {region.name}
+                    </Text>
+                    {isPrimary && <Text style={styles.primaryBadge}>●</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ))}
         {formData.muscle_region_ids.length > 0 && (
           <Text style={styles.infoText}>
             Primary: {formData.primary_muscle_region_ids.length} •
