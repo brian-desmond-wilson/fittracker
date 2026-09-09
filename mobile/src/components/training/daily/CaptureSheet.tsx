@@ -39,6 +39,13 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
   // One auto-resolve per shared URL: a re-render mid-flow must not restart it,
   // and closing the sheet must not re-fire on the same share.
   const autoResolvedRef = useRef<string | null>(null);
+  // The canonical URL of the post being captured. A REF, not state: the
+  // share-intent path starts extraction in the same tick as setUrl(), so any
+  // closure reading the `url` state races the commit and can capture '' —
+  // which is exactly how share-initiated captures used to save blank source
+  // URLs (and then all collide as "already captured"). The ref is written
+  // synchronously in handleSubmitUrl and read at payload build.
+  const canonicalUrlRef = useRef<string>("");
 
   useEffect(() => {
     if (!visible || !initialUrl) return;
@@ -53,6 +60,7 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
 
   const reset = () => {
     setUrl(""); setCaption(""); setPhase("url"); setResolved(null); setErrorText(null);
+    canonicalUrlRef.current = "";
   };
   const close = () => { reset(); onClose(); };
 
@@ -101,7 +109,7 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
       }
       const payload = {
         resolved: r,
-        sourceUrl: normalizeSourceUrl(url),
+        sourceUrl: canonicalUrlRef.current,
         post,
         rawExtraction: raw,
       };
@@ -124,6 +132,7 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
     // link — uses the canonical form, so a re-share of the same post lands on
     // the capture that already exists.
     const canonical = normalizeSourceUrl(trimmed);
+    canonicalUrlRef.current = canonical;
     setPhase("resolving");
     setErrorText(null);
 

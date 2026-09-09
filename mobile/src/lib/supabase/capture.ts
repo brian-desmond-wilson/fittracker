@@ -143,7 +143,15 @@ export async function saveCapture(input: SaveCaptureInput): Promise<SaveCaptureR
     //    permanent. So: a reviewed row means this capture already succeeded;
     //    a pending/failed row is reclaimed, its children cleared, and the
     //    retry writes a clean set.
-    const existing = await findExistingCapture(input.userId, input.sourceUrl);
+    // A blank source URL must NEVER match an earlier capture: historical
+    // share-intent captures saved '' as their URL, so blank==blank made every
+    // URL-less capture "already reviewed" and silently saved nothing. A
+    // URL-less capture is always treated as brand new.
+    const hasUrl = !!input.sourceUrl && input.sourceUrl.trim() !== "";
+    if (!hasUrl) console.warn('saveCapture: capture has no source URL; skipping duplicate check');
+    const existing = hasUrl
+      ? await findExistingCapture(input.userId, input.sourceUrl)
+      : null;
     let sourceId: string;
     if (existing) {
       if (existing.extraction_status === "reviewed") {
