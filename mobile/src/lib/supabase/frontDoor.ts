@@ -1045,9 +1045,11 @@ export async function updateCatalogExercise(
     }
   };
 
+  let equipmentSetChanged = false;
   if (nextEquipmentIds !== undefined) {
     const diff = diffIds(await getCurrentEquipmentIds(), nextEquipmentIds);
-    if (diff.toDelete.length > 0 || diff.toInsert.length > 0) {
+    equipmentSetChanged = diff.toDelete.length > 0 || diff.toInsert.length > 0;
+    if (equipmentSetChanged) {
       await applyWithOrderRetry('exercise_equipment', 'equipment_id', diff);
     }
   }
@@ -1225,8 +1227,33 @@ export async function updateCatalogExercise(
     if (error) await mapAndThrow(error, errCtx);
   }
 
-  const finalRow = await fetchRow(id);
+  let finalRow = await fetchRow(id);
   alarmOnFingerprintDrift(finalRow, finalFingerprint);
+
+  // Stale-image invalidation: the image was generated for the OLD identity.
+  // If this edit changed the stored name or the equipment set — and the
+  // caller isn't managing image_url itself — clear it, so the detail screen
+  // offers Generate again. Deliberately NOT auto-regenerating: image credits
+  // are spent on a human tap, not on every attribute tweak.
+  const identityChanged = finalRow.name !== current.name || equipmentSetChanged;
+  // The wizard round-trips the prefilled image_url on every save, so
+  // "caller is managing the image" only means: the patch DIFFERS from what
+  // the row already had. An unchanged echo doesn't protect a stale image.
+  const callerChangedImage =
+    patch.image_url !== undefined && patch.image_url !== current.image_url;
+  if (current.image_url && !callerChangedImage && identityChanged) {
+    const { error: imgErr } = await supabase
+      .from('exercises')
+      .update({ image_url: null })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (imgErr) {
+      console.error('front door: could not clear stale image for', id, imgErr);
+    } else {
+      finalRow = { ...finalRow, image_url: null };
+    }
+  }
   return finalRow;
 }
 
