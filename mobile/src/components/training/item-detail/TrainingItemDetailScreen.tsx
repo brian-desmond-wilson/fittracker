@@ -54,6 +54,47 @@ export interface TrainingItemDetailScreenProps {
 /** "movement" -> "Movement", for sentence-leading copy. */
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
+/** The detail row plus the junction embeds this screen reads (Stage 5, Task 3). */
+interface DetailRow extends ExerciseWithVariations {
+  equipment_rows?: { equipment: { id: string; name: string } | null }[];
+  alias_rows?: { alias: string; kind: string }[];
+}
+
+/**
+ * Equipment names for display and the image prompt. Derivations and outliers
+ * carry exercise_equipment junction rows; cores carry none — their default
+ * equipment is the display string in core_default_equipment ("Kettlebell",
+ * "Bodyweight, Floor"). The legacy equipment_types array is no longer read.
+ */
+function equipmentNamesOf(item: DetailRow): string[] {
+  const junction = (item.equipment_rows ?? [])
+    .map((row) => row.equipment?.name)
+    .filter((name): name is string => !!name);
+  if (junction.length > 0) return junction;
+  return item.core_default_equipment
+    ? item.core_default_equipment.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+}
+
+/**
+ * "Also known as" names from exercise_aliases (all kinds), deduplicated
+ * case-insensitively and excluding the display name itself. The legacy
+ * aliases array is no longer read.
+ */
+function aliasNamesOf(item: DetailRow): string[] {
+  const displayName = item.name.trim().toLowerCase();
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const row of item.alias_rows ?? []) {
+    const alias = row.alias.trim();
+    const key = alias.toLowerCase();
+    if (!alias || key === displayName || seen.has(key)) continue;
+    seen.add(key);
+    names.push(alias);
+  }
+  return names;
+}
+
 export function TrainingItemDetailScreen({
   noun,
   nounPlural,
@@ -63,7 +104,7 @@ export function TrainingItemDetailScreen({
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [item, setItem] = useState<ExerciseWithVariations | null>(null);
+  const [item, setItem] = useState<DetailRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -136,7 +177,11 @@ export function TrainingItemDetailScreen({
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(id, name)
-          )
+          ),
+          equipment_rows:exercise_equipment(
+            equipment:equipment(id, name)
+          ),
+          alias_rows:exercise_aliases(alias, kind)
         `)
         .eq('id', id)
         .single();
@@ -254,14 +299,17 @@ export function TrainingItemDetailScreen({
         return;
       }
 
-      // Build equipment list
-      const equipmentList = item.equipment_types && item.equipment_types.length > 0
-        ? item.equipment_types.join(', ')
+      // Build equipment list — from the exercise_equipment junction (cores:
+      // core_default_equipment), not the legacy array.
+      const promptEquipment = equipmentNamesOf(item);
+      const equipmentList = promptEquipment.length > 0
+        ? promptEquipment.join(', ')
         : 'bodyweight';
 
-      // Build aliases context
-      const aliasesContext = item.aliases && item.aliases.length > 0
-        ? ` Also known as: ${item.aliases.join(', ')}.`
+      // Build aliases context — from exercise_aliases, not the legacy array.
+      const promptAliases = aliasNamesOf(item);
+      const aliasesContext = promptAliases.length > 0
+        ? ` Also known as: ${promptAliases.join(', ')}.`
         : '';
 
       // Create prompt with equipment and aliases
@@ -322,6 +370,14 @@ export function TrainingItemDetailScreen({
       </>
     );
   }
+
+  // Junction-backed display data (legacy arrays are no longer read).
+  // Bodyweight is implied, not equipment — it never gets a chip, matching the
+  // old render which skipped it.
+  const equipmentChips = item
+    ? equipmentNamesOf(item).filter((name) => name.toLowerCase() !== 'bodyweight')
+    : [];
+  const aliasNames = item ? aliasNamesOf(item) : [];
 
   if (!item) {
     return (
@@ -451,6 +507,14 @@ export function TrainingItemDetailScreen({
           </View>
         )}
 
+        {/* Also Known As — every alias the catalog answers to (exercise_aliases) */}
+        {aliasNames.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Also Known As</Text>
+            <Text style={styles.descriptionText}>{aliasNames.join(', ')}</Text>
+          </View>
+        )}
+
         {/* Variations */}
         {item.variations && item.variations.length > 0 && (
           <View style={styles.section}>
@@ -500,13 +564,12 @@ export function TrainingItemDetailScreen({
           </View>
         )}
 
-        {/* Equipment */}
-        {item.equipment_types && item.equipment_types.length > 0 && !item.equipment_types.includes('bodyweight') && (
+        {/* Equipment — exercise_equipment junction (cores: default-equipment string) */}
+        {equipmentChips.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Equipment</Text>
             <View style={styles.equipmentContainer}>
-              {item.equipment_types.map((equipment, index) => {
-                if (equipment.toLowerCase() === 'bodyweight') return null;
+              {equipmentChips.map((equipment, index) => {
                 const EquipmentIcon = getEquipmentIcon(equipment);
                 return (
                   <View key={index} style={styles.equipmentItem}>

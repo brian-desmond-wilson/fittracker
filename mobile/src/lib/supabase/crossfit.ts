@@ -1148,58 +1148,10 @@ export async function fetchVariationOptions(): Promise<VariationOptionWithCatego
   return sorted;
 }
 
-/**
- * Create a new custom variation option
- * Returns the new variation option ID
- * If the variation already exists, returns the existing ID instead of creating a duplicate
- */
-export async function createVariationOption(
-  categoryId: string,
-  name: string,
-  description?: string
-): Promise<string> {
-  // First check if this variation already exists
-  const { data: existing } = await supabase
-    .from('variation_options')
-    .select('id')
-    .eq('category_id', categoryId)
-    .eq('name', name)
-    .single();
-
-  // If it exists, return its ID
-  if (existing) {
-    return existing.id;
-  }
-
-  // Get the max display_order for this category
-  const { data: maxOrder } = await supabase
-    .from('variation_options')
-    .select('display_order')
-    .eq('category_id', categoryId)
-    .order('display_order', { ascending: false })
-    .limit(1)
-    .single();
-
-  const nextOrder = (maxOrder?.display_order || 0) + 1;
-
-  const { data, error } = await supabase
-    .from('variation_options')
-    .insert({
-      category_id: categoryId,
-      name,
-      description,
-      display_order: nextOrder,
-    })
-    .select('id')
-    .single();
-
-  if (error) {
-    console.error('Error creating variation option:', error);
-    throw error;
-  }
-
-  return data.id;
-}
+// createVariationOption is gone (Stage 5, Task 3): the unified wizard (Task 2)
+// removed its last callers, and the app must not MINT variation options — the
+// existing rows render read-only on the detail page until Stage 6 drops them.
+// fetchMovementWithAttributes went with it (zero callers since Task 2).
 
 // Tier is a STORED column now (Stage 5, Task 3). The engine that owns every
 // exercise write (Stages 1-4) maintains `exercises.tier` — 0 for cores, 1+ for
