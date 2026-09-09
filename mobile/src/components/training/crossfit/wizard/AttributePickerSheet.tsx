@@ -31,6 +31,10 @@ interface AttributePickerSheetProps {
   /** null = cleared ("None"). The sheet closes itself after every choice. */
   onSelect: (id: string | null) => void;
   onClose: () => void;
+  /** Label for the cleared state; derivations show "Standard — as <core>". */
+  noneLabel?: string;
+  /** Shown under the cleared option — the core's description on derivations. */
+  noneDescription?: string | null;
 }
 
 export function AttributePickerSheet({
@@ -40,6 +44,8 @@ export function AttributePickerSheet({
   selectedId,
   onSelect,
   onClose,
+  noneLabel,
+  noneDescription,
 }: AttributePickerSheetProps) {
   const choose = (id: string | null) => {
     onSelect(id);
@@ -61,9 +67,16 @@ export function AttributePickerSheet({
             accessibilityRole="radio"
             accessibilityState={{ selected: selectedId === null }}
           >
-            <Text style={[styles.rowLabel, styles.noneLabel, selectedId === null && styles.rowLabelOn]}>
-              None
-            </Text>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowLabel, styles.noneLabel, selectedId === null && styles.rowLabelOn]}>
+                {noneLabel ?? 'None'}
+              </Text>
+              {noneDescription ? (
+                <Text style={styles.rowDescription} numberOfLines={3}>
+                  {noneDescription}
+                </Text>
+              ) : null}
+            </View>
             {selectedId === null && <Check size={18} color={colors.primary} />}
           </TouchableOpacity>
           {options.map((option) => {

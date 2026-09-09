@@ -436,6 +436,26 @@ export async function fetchCoreClassification(coreId: string) {
 }
 
 /**
+ * The core's own description, for the wizard's attribute step: an unset
+ * attribute on a derivation displays as "Standard — as <core>", and the
+ * picker sheet shows this text under that option so the user knows what
+ * the standard execution IS.
+ */
+export async function fetchCoreDescription(coreId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('description')
+    .eq('id', coreId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching core description:', error);
+    return null;
+  }
+  return data?.description ?? null;
+}
+
+/**
  * Search CORE movements only (is_core rows) — the wizard's core picker.
  * Matches name or an exercise_aliases row (the legacy aliases-array filter
  * is gone), alphabetical.

@@ -17,7 +17,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import type { WizardFormData, WizardDictionaries } from '../CatalogItemWizard';
-import { fetchVariantLabels } from '@/src/lib/supabase/crossfit';
+import { fetchVariantLabels, fetchCoreDescription } from '@/src/lib/supabase/crossfit';
 import type { VariantLabel } from '@/src/types/crossfit';
 import { AttributePickerSheet, type AttributeOption } from './AttributePickerSheet';
 
@@ -74,6 +74,27 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
   } = dictionaries;
   const [variantLabels, setVariantLabels] = useState<VariantLabel[]>([]);
   const [openPicker, setOpenPicker] = useState<PickerKey | null>(null);
+
+  const isDerivation = formData.kind === 'derivation' && !!formData.core_movement_id;
+  /** What an unset attribute MEANS on a derivation: inherited standard execution. */
+  const standardLabel = isDerivation && formData.core_movement_name
+    ? `Standard — as ${formData.core_movement_name}`
+    : 'None';
+
+  const [coreDescription, setCoreDescription] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isDerivation) {
+      setCoreDescription(null);
+      return;
+    }
+    fetchCoreDescription(formData.core_movement_id!).then((d) => {
+      if (!cancelled) setCoreDescription(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.core_movement_id, isDerivation]);
 
   // The variant vocabulary is scoped to the chosen core (G2/G4).
   useEffect(() => {
@@ -273,12 +294,12 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
                 onPress={() => setOpenPicker(key)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={`${label}: ${value ?? 'none'}`}
+                accessibilityLabel={`${label}: ${value ?? standardLabel}`}
               >
                 <Text style={styles.pickerLabel}>{label}</Text>
                 <View style={styles.pickerValueWrap}>
                   <Text style={[styles.pickerValue, !value && styles.pickerValueEmpty]} numberOfLines={1}>
-                    {value ?? 'None'}
+                    {value ?? standardLabel}
                   </Text>
                   <ChevronRight size={18} color={colors.mutedForeground} />
                 </View>
@@ -292,7 +313,7 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
               onPress={() => setOpenPicker('variant_label_id')}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel={`Variant Label: ${selectedName(variantOptions, formData.variant_label_id) ?? 'none'}`}
+              accessibilityLabel={`Variant Label: ${selectedName(variantOptions, formData.variant_label_id) ?? standardLabel}`}
             >
               <Text style={styles.pickerLabel}>Variant Label</Text>
               <View style={styles.pickerValueWrap}>
@@ -303,7 +324,7 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
                   ]}
                   numberOfLines={1}
                 >
-                  {selectedName(variantOptions, formData.variant_label_id) ?? 'None'}
+                  {selectedName(variantOptions, formData.variant_label_id) ?? standardLabel}
                 </Text>
                 <ChevronRight size={18} color={colors.mutedForeground} />
               </View>
@@ -361,6 +382,8 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
           if (openPicker) updateFormData({ [openPicker]: id } as Partial<WizardFormData>);
         }}
         onClose={() => setOpenPicker(null)}
+        noneLabel={standardLabel}
+        noneDescription={isDerivation ? coreDescription : null}
       />
     </View>
   );
