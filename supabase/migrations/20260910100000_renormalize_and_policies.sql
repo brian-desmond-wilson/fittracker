@@ -15,7 +15,12 @@
 --      engine-side (SECURITY DEFINER, owner bypasses RLS).
 --   3) The equipment dictionary SELECT policy joins its siblings ("viewable by
 --      everyone" — public, not authenticated-only; anon embeds returned null).
--- Schema/policy only — hand-written, idempotent (fresh / half-applied /
+--   4) DELETE-recompute engine gap closed: deleting an exercise now drains its
+--      core family (children re-parent upward, tiers re-derive) instead of
+--      leaving parent-SET-NULL orphans with stale tiers. The Stage 4 family
+--      drain is extracted into recompute_core_family and REUSED by both the
+--      orchestrator and the new statement-level AFTER DELETE trigger.
+-- Schema/engine/policy — hand-written, idempotent (fresh / half-applied /
 -- re-applied all converge), single-transaction safe.
 -- This file assumes a wrapping transaction (supabase db push / psql -1):
 -- SET LOCAL is inert without one, so never run it statement-by-statement.
@@ -182,18 +187,144 @@ CREATE TRIGGER alias_abbreviations_renormalize
   FOR EACH STATEMENT EXECUTE FUNCTION public.renormalize_exercise_aliases();
 
 -- ============================================================================
--- 2) Policy pass. Drop-and-recreate by name keeps every branch idempotent and
+-- 2) Engine: family recompute on DELETE (the drift gap).
+--
+-- THE GAP: parent_exercise_id is ON DELETE SET NULL and the RI action's
+-- UPDATE touches no identity column, so deleting a derivation left its
+-- children with parent NULL and a stale tier (observed on staging: Incline
+-- Bench Press at tier 2 / parent NULL after every probe cleanup). Cores are
+-- safe (core FK is RESTRICT), outliers are core-less — only derivation
+-- deletes need a repair pass.
+--
+-- REUSE, NOT DUPLICATION: the Stage 4 orchestrator's per-family drain (lock
+-- phase then recompute phase, both in global (cardinality ASC, id ASC) order)
+-- is extracted verbatim into recompute_core_family; recompute_exercise_identity
+-- is re-created to call it, and the new DELETE trigger calls the same
+-- function. Locking/ordering semantics are therefore identical on every path.
+--
+-- TRIGGER SHAPE (bulk-delete cost): a STATEMENT-level AFTER DELETE trigger
+-- with a transition table, NOT a row-level one. A row-level trigger would
+-- drain the whole family once PER DELETED ROW — a Stage-3-style curation
+-- merge deleting 25 rows in one statement would run 25 full family drains
+-- (each taking every family lock). The statement shape drains each affected
+-- core family exactly ONCE per statement no matter how many rows fell, and
+-- fires after the RI SET NULL updates (statement triggers run after all row
+-- triggers), so it always sees the orphaned state it must repair. The
+-- session-variable guard makes it a no-op inside an engine pass, and the
+-- worker's conditional write makes re-drains harmless — a future curation
+-- migration that deletes in bulk and then runs its own recompute converges
+-- to the same state (idempotent).
+-- ============================================================================
+
+-- The Stage 4 drain, extracted. SECURITY DEFINER matching the orchestrator:
+-- the pass must see and lock the whole family regardless of caller RLS.
+CREATE OR REPLACE FUNCTION public.recompute_core_family(p_core UUID) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE r RECORD;
+BEGIN
+  -- Lock phase: all family row locks up front, in pass order (Stage 4 I1).
+  FOR r IN
+    SELECT e.id FROM exercises e
+     WHERE e.core_movement_id = p_core AND NOT e.is_core
+     ORDER BY cardinality(exercise_identity_attrs(e.id)) ASC, e.id ASC
+  LOOP
+    PERFORM 1 FROM exercises WHERE id = r.id FOR UPDATE;
+  END LOOP;
+  -- Recompute phase: same order (topological — parents settle before children
+  -- read their tiers; see the Stage 4 worklist proof).
+  FOR r IN
+    SELECT e.id FROM exercises e
+     WHERE e.core_movement_id = p_core AND NOT e.is_core
+     ORDER BY cardinality(exercise_identity_attrs(e.id)) ASC, e.id ASC
+  LOOP
+    PERFORM recompute_exercise_identity_row(r.id);
+  END LOOP;
+END $$;
+
+-- Orchestrator re-created ONLY to delegate its inlined drain loops to
+-- recompute_core_family. Signature, guard, worklist semantics and every
+-- comment-documented behavior are unchanged from 20260909100000.
+CREATE OR REPLACE FUNCTION public.recompute_exercise_identity(p_id UUID) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_core UUID; v_changed BOOLEAN; v_family UUID;
+BEGIN
+  -- Re-entrancy guard (Stage 4 I2): transaction-local flag, 'on' only while
+  -- an engine pass is on the stack; unwinds on (sub)transaction abort.
+  IF COALESCE(current_setting('fittracker.identity_recompute_active', true), '') = 'on' THEN
+    RETURN;
+  END IF;
+  PERFORM set_config('fittracker.identity_recompute_active', 'on', true);
+
+  PERFORM 1 FROM exercises WHERE id = p_id FOR UPDATE;
+  SELECT core_movement_id INTO v_core FROM exercises WHERE id = p_id;
+  IF FOUND THEN
+    v_changed := recompute_exercise_identity_row(p_id);
+
+    -- Worklist sibling recompute (Stage 4 C1/I5): entry row's identity moved →
+    -- drain each affected family once, in core-id order.
+    IF v_changed THEN
+      FOR v_family IN
+        SELECT DISTINCT f.core_id FROM (
+          SELECT v_core AS core_id WHERE v_core IS NOT NULL
+          UNION
+          SELECT s.core_movement_id FROM exercises s        -- stragglers after a repoint/promotion
+           WHERE s.parent_exercise_id = p_id
+             AND s.core_movement_id IS NOT NULL
+             AND s.core_movement_id IS DISTINCT FROM v_core
+        ) f ORDER BY f.core_id
+      LOOP
+        PERFORM recompute_core_family(v_family);
+      END LOOP;
+    END IF;
+  END IF;
+
+  PERFORM set_config('fittracker.identity_recompute_active', '', true);
+END $$;
+
+-- The DELETE repair pass. Not SECURITY DEFINER itself (matching the other
+-- trigger shims) — the drain it calls is.
+CREATE OR REPLACE FUNCTION public.trg_exercise_delete_identity() RETURNS TRIGGER
+LANGUAGE plpgsql SET search_path = public AS $$
+DECLARE v_family UUID;
+BEGIN
+  -- Inside an engine pass the worklist owns the family — skip (I2).
+  IF COALESCE(current_setting('fittracker.identity_recompute_active', true), '') = 'on' THEN
+    RETURN NULL;
+  END IF;
+  PERFORM set_config('fittracker.identity_recompute_active', 'on', true);
+  FOR v_family IN
+    SELECT DISTINCT d.core_movement_id
+      FROM deleted_rows d
+     WHERE d.core_movement_id IS NOT NULL      -- outliers: no family, no-op
+       AND d.core_movement_id <> d.id          -- deleted cores were childless (RESTRICT)
+     ORDER BY 1                                -- core-id order, matching the orchestrator
+  LOOP
+    PERFORM recompute_core_family(v_family);
+  END LOOP;
+  PERFORM set_config('fittracker.identity_recompute_active', '', true);
+  RETURN NULL;
+END $$;
+
+DROP TRIGGER IF EXISTS exercises_identity_delete ON public.exercises;
+CREATE TRIGGER exercises_identity_delete
+  AFTER DELETE ON public.exercises
+  REFERENCING OLD TABLE AS deleted_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION public.trg_exercise_delete_identity();
+
+-- ============================================================================
+-- 3) Policy pass. Drop-and-recreate by name keeps every branch idempotent and
 --    pins the exact final shape regardless of the starting state.
 -- ============================================================================
 
--- 2a) equipment dictionary: align with the sibling dictionaries — SELECT for
+-- 3a) equipment dictionary: align with the sibling dictionaries — SELECT for
 --     everyone (the old policy was TO authenticated; anon embeds came back
 --     null, Task 3 finding).
 DROP POLICY IF EXISTS "Equipment are viewable by everyone" ON public.equipment;
 CREATE POLICY "Equipment are viewable by everyone" ON public.equipment
   FOR SELECT USING (true);
 
--- 2b) exercise_equipment: replace the all-true ALL policy with per-command
+-- 3b) exercise_equipment: replace the all-true ALL policy with per-command
 --     policies scoped to the caller's own non-official exercises.
 DROP POLICY IF EXISTS "exercise_equipment writable by authenticated" ON public.exercise_equipment;
 DROP POLICY IF EXISTS "exercise_equipment insert on own exercises" ON public.exercise_equipment;
@@ -218,7 +349,7 @@ CREATE POLICY "exercise_equipment delete on own exercises" ON public.exercise_eq
                   WHERE e.id = exercise_equipment.exercise_id
                     AND e.created_by = auth.uid() AND e.is_official = false));
 
--- 2c) exercise_scoring_types: replace the three all-true per-command policies
+-- 3c) exercise_scoring_types: replace the three all-true per-command policies
 --     (Task 2 finding) with the same own-non-official scope.
 DROP POLICY IF EXISTS "Authenticated users can insert exercise scoring types" ON public.exercise_scoring_types;
 DROP POLICY IF EXISTS "Authenticated users can update exercise scoring types" ON public.exercise_scoring_types;
@@ -245,7 +376,7 @@ CREATE POLICY "exercise_scoring_types delete on own exercises" ON public.exercis
                   WHERE e.id = exercise_scoring_types.exercise_id
                     AND e.created_by = auth.uid() AND e.is_official = false));
 
--- 2d) exercise_aliases: replace the all-true ALL policy. Non-wild INSERT and
+-- 3d) exercise_aliases: replace the all-true ALL policy. Non-wild INSERT and
 --     all UPDATE/DELETE are own-non-official only; the WILD-ALIAS CARVE-OUT
 --     lets any authenticated user teach a wild wording onto ANY exercise
 --     (official included) — the review queue's link+teach flow and re-capture
@@ -279,12 +410,13 @@ CREATE POLICY "aliases delete on own exercises" ON public.exercise_aliases
                     AND e.created_by = auth.uid() AND e.is_official = false));
 
 -- ============================================================================
--- 3) Self-verify (fail closed, observed values). Structural only: an in-file
+-- 4) Self-verify (fail closed, observed values). 4a-4c structural; 4d
+--    behavioral on fixtures created AND fully removed in-file. An in-file
 --    functional re-normalization test would mutate the live dictionary, so the
 --    behavioral proof lives in the harness (V11) fixture, which rolls back.
 -- ============================================================================
 
--- 3a) re-normalization engine wired: statement-level AFTER trigger on all
+-- 4a) re-normalization engine wired: statement-level AFTER trigger on all
 --     three commands; both functions SECURITY DEFINER with pinned search_path.
 DO $$
 DECLARE
@@ -317,7 +449,52 @@ BEGIN
   END IF;
 END $$;
 
--- 3b) policy shapes: exact per-table sets from pg_policies, plus the qual
+-- 4b) DELETE-recompute engine wired: statement-level AFTER DELETE trigger with
+--     the transition table; the extracted drain exists with definer rights;
+--     the orchestrator delegates to it (reuse, not duplication).
+DO $$
+DECLARE
+  v_tgtype INT2;
+  v_oldtable NAME;
+  v_observed TEXT;
+BEGIN
+  SELECT tgtype, tgoldtable INTO v_tgtype, v_oldtable FROM pg_trigger
+   WHERE tgrelid = 'public.exercises'::regclass
+     AND tgname = 'exercises_identity_delete' AND NOT tgisinternal;
+  IF v_tgtype IS NULL THEN
+    SELECT string_agg(tgname, ', ' ORDER BY tgname) INTO v_observed
+      FROM pg_trigger WHERE tgrelid = 'public.exercises'::regclass AND NOT tgisinternal;
+    RAISE EXCEPTION 'renormalize_and_policies: trigger exercises_identity_delete missing (triggers present: %)',
+      COALESCE(v_observed, 'none');
+  END IF;
+  -- tgtype bits: 1=ROW, 2=BEFORE, 8=DELETE
+  IF (v_tgtype & 1) <> 0 OR (v_tgtype & 2) <> 0 OR (v_tgtype & 8) <> 8
+     OR v_oldtable IS DISTINCT FROM 'deleted_rows' THEN
+    RAISE EXCEPTION 'renormalize_and_policies: exercises_identity_delete has the wrong shape (tgtype=%, tgoldtable=%; expected statement-level AFTER DELETE with OLD TABLE deleted_rows)',
+      v_tgtype, COALESCE(v_oldtable, 'null');
+  END IF;
+
+  PERFORM 1 FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'recompute_core_family'
+     AND p.prosecdef
+     AND array_to_string(COALESCE(p.proconfig, '{}'), ',') LIKE '%search_path=public%';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'renormalize_and_policies: recompute_core_family missing or lacking SECURITY DEFINER / search_path=public';
+  END IF;
+
+  SELECT string_agg(t.fn, ', ' ORDER BY t.fn) INTO v_observed
+    FROM (VALUES ('recompute_exercise_identity'), ('trg_exercise_delete_identity')) t(fn)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = t.fn
+        AND p.prosrc LIKE '%recompute_core_family%'
+        AND p.prosrc LIKE '%fittracker.identity_recompute_active%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'renormalize_and_policies: functions not delegating to recompute_core_family under the session guard: %', v_observed;
+  END IF;
+END $$;
+
+-- 4c) policy shapes: exact per-table sets from pg_policies, plus the qual
 --     essentials on every tightened write policy.
 DO $$
 DECLARE
@@ -377,5 +554,83 @@ BEGIN
      AND policyname = 'wild aliases insertable by authenticated';
   IF v_observed IS DISTINCT FROM '(kind = ''wild''::text)' THEN
     RAISE EXCEPTION 'renormalize_and_policies: wild-alias carve-out WITH CHECK diverges: %', COALESCE(v_observed, 'null');
+  END IF;
+END $$;
+
+-- 4d) behavioral: deleting a mid-tree derivation repairs its family (children
+--     re-parent upward, tiers re-derive), an outlier delete is a no-op, and a
+--     bulk delete settles in one pass. Fixture rows (RP- prefixed) are created
+--     AND fully removed in-file, so the committed state is untouched and a
+--     re-run starts clean (idempotent).
+DO $$
+DECLARE
+  st_wide UUID; sy_alt UUID; gw_wide UUID;
+  rp_core UUID; rp_a UUID; rp_b UUID; rp_c UUID; rp_out UUID;
+  v_observed TEXT;
+BEGIN
+  SELECT id INTO st_wide FROM stances WHERE name = 'Wide (Sumo)';
+  SELECT id INTO sy_alt  FROM symmetries WHERE name = 'Alternating';
+  SELECT id INTO gw_wide FROM grips WHERE name = 'Wide' AND category = 'Width';
+  IF st_wide IS NULL OR sy_alt IS NULL OR gw_wide IS NULL THEN
+    RAISE EXCEPTION 'renormalize_and_policies 4d: dictionary rows missing (Wide (Sumo)=%, Alternating=%, Wide grip=%)',
+      COALESCE(st_wide::text, 'null'), COALESCE(sy_alt::text, 'null'), COALESCE(gw_wide::text, 'null');
+  END IF;
+
+  -- Family: core; A = {Wide}; B = {Wide, Alternating} under A at tier 2.
+  INSERT INTO exercises (name, slug, is_core, is_official)
+    VALUES ('RPFIXTURECORE', 'rp-fixture-core', true, true) RETURNING id INTO rp_core;
+  INSERT INTO exercises (name, slug, is_official, core_movement_id, stance_id)
+    VALUES ('RPFIXTUREA', 'rp-fixture-a', true, rp_core, st_wide) RETURNING id INTO rp_a;
+  INSERT INTO exercises (name, slug, is_official, core_movement_id, stance_id, symmetry_id)
+    VALUES ('RPFIXTUREB', 'rp-fixture-b', true, rp_core, st_wide, sy_alt) RETURNING id INTO rp_b;
+  IF (SELECT parent_exercise_id FROM exercises WHERE id = rp_b) IS DISTINCT FROM rp_a
+     OR (SELECT tier FROM exercises WHERE id = rp_b) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'renormalize_and_policies 4d: starting shape wrong — B parent/tier = %/% (expected A/2)',
+      COALESCE((SELECT parent_exercise_id FROM exercises WHERE id = rp_b)::text, 'null'),
+      COALESCE((SELECT tier FROM exercises WHERE id = rp_b)::text, 'null');
+  END IF;
+
+  -- The gap under test: deleting A must leave B re-parented to the core at
+  -- tier 1 (before this migration: parent NULL, tier stale at 2).
+  DELETE FROM exercises WHERE id = rp_a;
+  IF (SELECT parent_exercise_id FROM exercises WHERE id = rp_b) IS DISTINCT FROM rp_core
+     OR (SELECT tier FROM exercises WHERE id = rp_b) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'renormalize_and_policies 4d: after deleting A, B parent/tier = %/% (expected core/1)',
+      COALESCE((SELECT parent_exercise_id FROM exercises WHERE id = rp_b)::text, 'null'),
+      COALESCE((SELECT tier FROM exercises WHERE id = rp_b)::text, 'null');
+  END IF;
+
+  -- Bulk delete: rebuild A and add C = {Wide, Alternating, Wide-Grip} (tier 3
+  -- under B), then drop A AND B in ONE statement — C must settle at tier 1
+  -- directly under the core in a single drain.
+  INSERT INTO exercises (name, slug, is_official, core_movement_id, stance_id)
+    VALUES ('RPFIXTUREA', 'rp-fixture-a', true, rp_core, st_wide) RETURNING id INTO rp_a;
+  INSERT INTO exercises (name, slug, is_official, core_movement_id, stance_id, symmetry_id, grip_width_id)
+    VALUES ('RPFIXTUREC', 'rp-fixture-c', true, rp_core, st_wide, sy_alt, gw_wide) RETURNING id INTO rp_c;
+  IF (SELECT tier FROM exercises WHERE id = rp_c) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'renormalize_and_policies 4d: bulk fixture shape wrong — C tier = % (expected 3)',
+      COALESCE((SELECT tier FROM exercises WHERE id = rp_c)::text, 'null');
+  END IF;
+  DELETE FROM exercises WHERE id IN (rp_a, rp_b);
+  IF (SELECT parent_exercise_id FROM exercises WHERE id = rp_c) IS DISTINCT FROM rp_core
+     OR (SELECT tier FROM exercises WHERE id = rp_c) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'renormalize_and_policies 4d: after bulk delete, C parent/tier = %/% (expected core/1)',
+      COALESCE((SELECT parent_exercise_id FROM exercises WHERE id = rp_c)::text, 'null'),
+      COALESCE((SELECT tier FROM exercises WHERE id = rp_c)::text, 'null');
+  END IF;
+
+  -- Outlier delete: coreless row — the trigger must find no family and do
+  -- nothing (no drift anywhere, no errors).
+  INSERT INTO exercises (name, slug, is_official)
+    VALUES ('RPFIXTUREOUT', 'rp-fixture-out', true) RETURNING id INTO rp_out;
+  DELETE FROM exercises WHERE id = rp_out;
+
+  -- Full cleanup: child first, then the core; nothing RP- prefixed survives.
+  DELETE FROM exercises WHERE id = rp_c;
+  DELETE FROM exercises WHERE id = rp_core;
+  IF EXISTS (SELECT 1 FROM exercises WHERE slug LIKE 'rp-fixture-%') THEN
+    SELECT string_agg(slug, ', ' ORDER BY slug) INTO v_observed
+      FROM exercises WHERE slug LIKE 'rp-fixture-%';
+    RAISE EXCEPTION 'renormalize_and_policies 4d: fixture rows not cleaned up: %', v_observed;
   END IF;
 END $$;

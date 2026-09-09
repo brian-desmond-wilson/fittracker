@@ -1517,7 +1517,122 @@ BEGIN
   IF v_observed IS NOT NULL THEN
     RAISE EXCEPTION 'V11 FAIL: functions missing SECURITY DEFINER / search_path=public: %', v_observed;
   END IF;
+
+  -- V11: DELETE-recompute engine wired — statement-level AFTER DELETE trigger
+  -- on exercises with the transition table; the extracted family drain exists
+  -- with definer rights; orchestrator AND delete shim both delegate to it
+  -- (reuse, not duplication).
+  SELECT tgtype INTO v_tgtype FROM pg_trigger
+   WHERE tgrelid = 'public.exercises'::regclass
+     AND tgname = 'exercises_identity_delete' AND NOT tgisinternal;
+  IF v_tgtype IS NULL THEN
+    SELECT string_agg(tgname, ', ' ORDER BY tgname) INTO v_observed
+      FROM pg_trigger WHERE tgrelid = 'public.exercises'::regclass AND NOT tgisinternal;
+    RAISE EXCEPTION 'V11 FAIL: trigger exercises_identity_delete missing (triggers present: %)',
+      COALESCE(v_observed, 'none');
+  END IF;
+  IF (v_tgtype & 1) <> 0 OR (v_tgtype & 2) <> 0 OR (v_tgtype & 8) <> 8
+     OR (SELECT tgoldtable FROM pg_trigger
+          WHERE tgrelid = 'public.exercises'::regclass
+            AND tgname = 'exercises_identity_delete') IS DISTINCT FROM 'deleted_rows' THEN
+    RAISE EXCEPTION 'V11 FAIL: exercises_identity_delete has the wrong shape (tgtype=%, expected statement-level AFTER DELETE with OLD TABLE deleted_rows)', v_tgtype;
+  END IF;
+  PERFORM 1 FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'recompute_core_family'
+     AND p.prosecdef
+     AND array_to_string(COALESCE(p.proconfig, '{}'), ',') LIKE '%search_path=public%';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V11 FAIL: recompute_core_family missing or lacking SECURITY DEFINER / search_path=public';
+  END IF;
+  SELECT string_agg(t.fn, ', ' ORDER BY t.fn) INTO v_observed
+    FROM (VALUES ('recompute_exercise_identity'), ('trg_exercise_delete_identity')) t(fn)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = t.fn
+        AND p.prosrc LIKE '%recompute_core_family%'
+        AND p.prosrc LIKE '%fittracker.identity_recompute_active%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: functions not delegating to recompute_core_family under the session guard: %', v_observed;
+  END IF;
 END $$;
+-- V11: DELETE-recompute behavior (fixture-based, rolled back — harness stays
+-- side-effect-free). Deleting a mid-tree derivation re-parents its children
+-- upward with correct tiers; an outlier delete triggers nothing; a bulk
+-- multi-row delete settles the family in one statement.
+BEGIN;
+DO $$
+DECLARE
+  st_wide UUID; sy_alt UUID; gw_wide UUID;
+  dl_core UUID; dl_a UUID; dl_b UUID; dl_c UUID; dl_out UUID;
+  v_count INTEGER;
+BEGIN
+  SELECT id INTO st_wide FROM public.stances WHERE name = 'Wide (Sumo)';
+  SELECT id INTO sy_alt  FROM public.symmetries WHERE name = 'Alternating';
+  SELECT id INTO gw_wide FROM public.grips WHERE name = 'Wide' AND category = 'Width';
+  IF st_wide IS NULL OR sy_alt IS NULL OR gw_wide IS NULL THEN
+    RAISE EXCEPTION 'V11 FAIL: dictionary rows missing for the delete fixture';
+  END IF;
+
+  -- Family: core; A = {Wide}; B = {Wide, Alternating} under A at tier 2.
+  INSERT INTO public.exercises (name, slug, is_core, is_official)
+    VALUES ('V11DELCORE', 'v11-del-core', true, true) RETURNING id INTO dl_core;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id)
+    VALUES ('V11DELA', 'v11-del-a', true, dl_core, st_wide) RETURNING id INTO dl_a;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id, symmetry_id)
+    VALUES ('V11DELB', 'v11-del-b', true, dl_core, st_wide, sy_alt) RETURNING id INTO dl_b;
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = dl_b) IS DISTINCT FROM dl_a
+     OR (SELECT tier FROM public.exercises WHERE id = dl_b) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'V11 FAIL: delete-fixture starting shape wrong — B parent/tier = %/% (expected A/2)',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = dl_b)::text, 'null'),
+      COALESCE((SELECT tier FROM public.exercises WHERE id = dl_b)::text, 'null');
+  END IF;
+
+  -- The gap under test: deleting A must re-parent B to the core at tier 1
+  -- (pre-migration behavior: parent NULL via the FK SET NULL, tier stale at 2
+  -- — the Incline Bench Press drift).
+  DELETE FROM public.exercises WHERE id = dl_a;
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = dl_b) IS DISTINCT FROM dl_core
+     OR (SELECT tier FROM public.exercises WHERE id = dl_b) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: after deleting A, B parent/tier = %/% (expected core/1)',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = dl_b)::text, 'null'),
+      COALESCE((SELECT tier FROM public.exercises WHERE id = dl_b)::text, 'null');
+  END IF;
+  IF public.get_movement_tier(dl_b) IS DISTINCT FROM (SELECT tier FROM public.exercises WHERE id = dl_b) THEN
+    RAISE EXCEPTION 'V11 FAIL: stored tier and legacy walk disagree on B after the delete';
+  END IF;
+
+  -- Bulk delete: rebuild A, add C = {Wide, Alternating, Wide-Grip} (tier 3),
+  -- then delete A AND B in ONE statement — one drain, C settles at core/1.
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id)
+    VALUES ('V11DELA', 'v11-del-a', true, dl_core, st_wide) RETURNING id INTO dl_a;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id, symmetry_id, grip_width_id)
+    VALUES ('V11DELC', 'v11-del-c', true, dl_core, st_wide, sy_alt, gw_wide) RETURNING id INTO dl_c;
+  IF (SELECT tier FROM public.exercises WHERE id = dl_c) IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'V11 FAIL: bulk-delete fixture shape wrong — C tier = % (expected 3)',
+      COALESCE((SELECT tier FROM public.exercises WHERE id = dl_c)::text, 'null');
+  END IF;
+  DELETE FROM public.exercises WHERE id IN (dl_a, dl_b);
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = dl_c) IS DISTINCT FROM dl_core
+     OR (SELECT tier FROM public.exercises WHERE id = dl_c) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'V11 FAIL: after the one-statement bulk delete, C parent/tier = %/% (expected core/1)',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = dl_c)::text, 'null'),
+      COALESCE((SELECT tier FROM public.exercises WHERE id = dl_c)::text, 'null');
+  END IF;
+
+  -- Outlier delete: coreless row, no family — must be a silent no-op with the
+  -- whole catalog still drift-free.
+  INSERT INTO public.exercises (name, slug, is_official)
+    VALUES ('V11DELOUT', 'v11-del-out', true) RETURNING id INTO dl_out;
+  DELETE FROM public.exercises WHERE id = dl_out;
+  SELECT count(*) INTO v_count FROM public.exercises e
+   WHERE public.get_movement_tier(e.id) IS DISTINCT FROM COALESCE(e.tier, 0);
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'V11 FAIL: % row(s) tier-drifted after the delete fixtures', v_count;
+  END IF;
+
+  RAISE NOTICE 'V11 DELETE-recompute assertions passed';
+END $$;
+ROLLBACK;
 DO $$
 DECLARE
   v_observed TEXT;
