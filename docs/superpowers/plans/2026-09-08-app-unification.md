@@ -80,7 +80,7 @@
 - Test: migration self-verify + harness + REST negative probes (anon/authenticated writes)
 
 - [ ] Trigger on `alias_abbreviations` (INSERT/UPDATE/DELETE): re-normalize every `exercise_aliases.alias_normalized`; a collision pair routes the LOSER (newer row) to `exercise_match_reviews` and removes it from aliases — never fails the dictionary write; NOTICE counts. (Task 6 review hand-off.)
-- [ ] Tighten writes: `exercise_equipment` and `exercise_aliases` authenticated INSERT/UPDATE/DELETE policies restricted to rows whose exercise is `created_by = auth.uid() AND is_official = false`; official rows writable only via SECURITY DEFINER helpers/service role. Front door (Tasks 1/4) must still work as an authenticated user against staging — prove with REST probes both directions (own row succeeds, official row rejected).
+- [ ] Tighten writes: `exercise_equipment`, `exercise_aliases`, and `exercise_scoring_types` (Task 2 finding: its policies are all-true for authenticated) INSERT/UPDATE/DELETE policies restricted to rows whose exercise is `created_by = auth.uid() AND is_official = false`; official rows writable only via SECURITY DEFINER helpers/service role. Front door (Tasks 1/4) must still work as an authenticated user against staging — prove with REST probes both directions (own row succeeds, official row rejected).
 - [ ] V11: policy shape asserted; re-normalization fixture (BEGIN/ROLLBACK: add abbreviation, observe re-normalized alias + routed collision).
 - [ ] House rules: lock_timeout header, idempotent, single-transaction, self-verify, psql -1 + idempotent re-run proofs on staging. This migration ships to live through the SAME gated procedure (fresh dump, rehearsal, user confirms push).
 
