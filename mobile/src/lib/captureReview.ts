@@ -204,7 +204,7 @@ export function draftWorkoutFromExercises(
 }
 
 /** Where a capture category lands in the EXISTING reference tables.
- *  goal_types: MetCon, Strength, Skill, Mobility, Stretching, Recovery, Cool-Down.
+ *  goal_types: MetCon, Strength, Skill, Mobility, Stretching, Recovery.
  *  movement_categories: Weightlifting, Gymnastics, Monostructural, Recovery. */
 export function mapCategory(category: CaptureCategory): {
   goalType: GoalTypeName;

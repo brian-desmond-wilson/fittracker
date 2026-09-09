@@ -87,7 +87,7 @@ const ALWAYS_MUSCLES = new Set(["Core", "Obliques", "Lower Back", "Full Body"]);
 // goal_types.name → which pool. Skill/Strength/MetCon are "work"; the rest
 // bookend the session and aren't split-gated.
 function poolFor(goalTypes: string[]): "warmup" | "main" | "cooldown" {
-  if (goalTypes.some((g) => g === "Stretching" || g === "Cool-Down")) return "cooldown";
+  if (goalTypes.some((g) => g === "Stretching")) return "cooldown";
   if (goalTypes.some((g) => g === "Mobility" || g === "Recovery")) return "warmup";
   return "main";
 }

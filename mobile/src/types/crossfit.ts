@@ -11,8 +11,7 @@ export type GoalTypeName =
   | 'Skill'
   | 'Mobility'
   | 'Stretching'
-  | 'Recovery'
-  | 'Cool-Down';
+  | 'Recovery';
 
 export type ScalingLevel = 'Rx' | 'L2' | 'L1';
 

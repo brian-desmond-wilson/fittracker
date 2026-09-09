@@ -108,7 +108,7 @@ describe("buildCandidatePools", () => {
     expect(soreDown.main[0].soreDowngrade).toBe(true);
   });
 
-  it("routes Mobility to warmup and Stretching/Cool-Down to cooldown, un-gated by split", () => {
+  it("routes Mobility to warmup and Stretching to cooldown, un-gated by split", () => {
     const pools = buildCandidatePools(
       [
         cand({ exerciseId: "w", goalTypes: ["Mobility"], muscles: [{ name: "Quads", isPrimary: true }] }),

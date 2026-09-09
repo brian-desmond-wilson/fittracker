@@ -160,12 +160,6 @@ export function getGoalTypeDisplay(goalType: GoalTypeName | string | null | unde
         color: '#6B7280', // gray
         label: 'Recovery',
       };
-    case 'Cool-Down':
-      return {
-        icon: '❄️',
-        color: '#06B6D4', // cyan
-        label: 'Cool Down',
-      };
     default:
       return {
         icon: '●',
