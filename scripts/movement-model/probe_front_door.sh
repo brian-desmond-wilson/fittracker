@@ -18,7 +18,23 @@
 #                                     the row's own parent (raw 23505);
 #                                     insert-before-delete succeeds — the order
 #                                     the front door uses
-#   7. cleanup                     -> probe rows deleted, row count restored
+#   7. resequenced create          -> Task 2 follow-up (b): creating "child of
+#                                     Incline with Bands" while the bare
+#                                     Incline row exists FAILS core-first (the
+#                                     extinct transient class) and SUCCEEDS
+#                                     core-last (insert coreless -> junctions
+#                                     -> set core), landing on the final
+#                                     identity in one recompute
+#   8. movement styles junction    -> identity style joins the fingerprint,
+#                                     modifier style does not (styles input)
+#   9. scoring types junction      -> junction writes as authenticated;
+#                                     requires_distance compat column persists
+#  10. edit-prefill round-trip     -> the fetchCatalogExerciseDetail embedded
+#                                     select returns the row + all junctions in
+#                                     one request; wild-alias write path
+#                                     (normalize_alias RPC + upsert) works as
+#                                     authenticated
+#  11. cleanup                     -> probe rows deleted, row count restored
 #
 # Local staging only. Never points at live.
 set -euo pipefail
@@ -91,7 +107,10 @@ KNEELING_ID="$(json_get "$(auth_get 'stances?name=eq.Kneeling&select=id')" 0.id)
 SPLIT_ID="$(json_get "$(auth_get 'stances?name=eq.Split&select=id')" 0.id)"
 BANDS_ID="$(json_get "$(auth_get 'equipment?name=eq.Bands&select=id')" 0.id)"
 BAR_ID="$(json_get "$(auth_get 'equipment?name=eq.Bar&select=id')" 0.id)"
-for v in CORE_ID INCLINE_ID FLAT_ID DECLINE_ID KNEELING_ID SPLIT_ID BANDS_ID BAR_ID; do
+STRICT_ID="$(json_get "$(auth_get 'movement_styles?name=eq.Strict&is_identity=eq.true&select=id')" 0.id)"
+TEMPO_ID="$(json_get "$(auth_get 'movement_styles?name=eq.Tempo&is_identity=eq.false&select=id')" 0.id)"
+DISTANCE_ID="$(json_get "$(auth_get 'scoring_types?name=eq.Distance&select=id')" 0.id)"
+for v in CORE_ID INCLINE_ID FLAT_ID DECLINE_ID KNEELING_ID SPLIT_ID BANDS_ID BAR_ID STRICT_ID TEMPO_ID DISTANCE_ID; do
   [ -n "${!v}" ] || fail "$v lookup came back empty"
 done
 echo "core (Bench Press): $CORE_ID"
@@ -237,10 +256,102 @@ echo "$C_FP" | grep -qi "$BAR_ID" || fail "fingerprint missing the new equipment
 echo "$C_FP" | grep -qi "$BANDS_ID" && fail "fingerprint still holds the removed equipment"
 
 echo
-echo "== 7. cleanup: delete probe rows, count restored =="
+echo "== 7. resequenced create: child of {Incline}+Bands while bare {Incline} exists =="
+# The bare {Incline} identity is ROW_P from section 6. Core-FIRST (the old
+# front-door order) must collide at insert: the row's singles-only identity IS
+# the parent's. This is the class the resequencing extinguishes.
+OLD_ORDER="$(auth_post "exercises" "{
+  \"name\": \"(pending engine name)\", \"name_is_custom\": false,
+  \"slug\": \"${SLUG_PREFIX}-old\",
+  \"core_movement_id\": \"$CORE_ID\", \"bench_angle_id\": \"$INCLINE_ID\",
+  \"is_movement\": false, \"is_official\": false, \"created_by\": \"$SMOKE_UID\"
+}")"
+OLD_CODE="$(json_get "$OLD_ORDER" code)"
+echo "core-first attempt: code=$OLD_CODE ($(json_get "$OLD_ORDER" message))"
+[ "$OLD_CODE" = "23505" ] || fail "expected core-first insert to collide with bare {Incline}, got: $OLD_ORDER"
+echo "$(json_get "$OLD_ORDER" message)" | grep -q "exercises_fingerprint_key" || fail "wrong constraint"
+
+# Core-LAST (the front door's order): insert coreless (fingerprint NULL, no
+# collision possible) -> equipment junction -> one final PATCH sets the core
+# and the recompute lands directly on {Incline, Bands}.
+ROW_D_JSON="$(auth_post "exercises" "{
+  \"name\": \"(pending engine name)\", \"name_is_custom\": false,
+  \"slug\": \"${SLUG_PREFIX}-d\",
+  \"core_movement_id\": null, \"bench_angle_id\": \"$INCLINE_ID\",
+  \"is_movement\": false, \"is_official\": false, \"created_by\": \"$SMOKE_UID\"
+}")"
+ROW_D_ID="$(json_get "$ROW_D_JSON" 0.id)"
+[ -n "$ROW_D_ID" ] || fail "coreless insert rejected: $ROW_D_JSON"
+D_EQ="$(auth_post "exercise_equipment" "{\"exercise_id\": \"$ROW_D_ID\", \"equipment_id\": \"$BANDS_ID\"}")"
+echo "$D_EQ" | grep -q '"code"' && fail "coreless equipment junction rejected: $D_EQ"
+CORE_SET="$(auth_patch "exercises?id=eq.$ROW_D_ID" "{\"core_movement_id\": \"$CORE_ID\"}")"
+echo "$CORE_SET" | grep -q '"code"' && fail "core-last update rejected: $CORE_SET"
+READ_D="$(auth_get "exercises?id=eq.$ROW_D_ID&select=name,generated_name,identity_fingerprint,tier")"
+D_NAME="$(json_get "$READ_D" 0.name)"
+D_FP="$(json_get "$READ_D" 0.identity_fingerprint)"
+D_TIER="$(json_get "$READ_D" 0.tier)"
+echo "core-last create landed: name='$D_NAME' tier=$D_TIER fingerprint=$D_FP"
+[ "$D_NAME" != "(pending engine name)" ] || fail "engine did not name the core-last row"
+echo "$D_FP" | grep -qi "$INCLINE_ID" || fail "fingerprint missing the bench angle"
+echo "$D_FP" | grep -qi "$BANDS_ID" || fail "fingerprint missing the equipment"
+# Client-mirror check (the drift alarm's comparison): sorted lowercase ids
+# joined by '|' must equal the stored fingerprint exactly.
+EXPECTED_FP="$(python3 -c 'import sys; print("|".join(sorted(a.lower() for a in sys.argv[1:])))' "$INCLINE_ID" "$BANDS_ID")"
+[ "$D_FP" = "$EXPECTED_FP" ] || fail "client fingerprint mirror drifted: expected $EXPECTED_FP got $D_FP"
+[ "$D_TIER" = "2" ] || fail "expected tier 2 (child of the bare {Incline} parent), got $D_TIER"
+
+echo
+echo "== 8. movement styles junction: identity joins the fingerprint, modifier does not =="
+S1="$(auth_post "exercise_movement_styles" "{\"exercise_id\": \"$ROW_D_ID\", \"movement_style_id\": \"$STRICT_ID\"}")"
+echo "$S1" | grep -q '"code"' && fail "identity style junction rejected: $S1"
+FP_AFTER_IDENTITY="$(json_get "$(auth_get "exercises?id=eq.$ROW_D_ID&select=identity_fingerprint")" 0.identity_fingerprint)"
+echo "$FP_AFTER_IDENTITY" | grep -qi "$STRICT_ID" || fail "identity style did not join the fingerprint"
+S2="$(auth_post "exercise_movement_styles" "{\"exercise_id\": \"$ROW_D_ID\", \"movement_style_id\": \"$TEMPO_ID\"}")"
+echo "$S2" | grep -q '"code"' && fail "modifier style junction rejected: $S2"
+FP_AFTER_MODIFIER="$(json_get "$(auth_get "exercises?id=eq.$ROW_D_ID&select=identity_fingerprint")" 0.identity_fingerprint)"
+[ "$FP_AFTER_MODIFIER" = "$FP_AFTER_IDENTITY" ] || fail "modifier style moved the fingerprint"
+echo "identity style in fingerprint, modifier style identity-inert: OK"
+
+echo
+echo "== 9. scoring types junction + requires_distance compat =="
+SC="$(auth_post "exercise_scoring_types" "{\"exercise_id\": \"$ROW_D_ID\", \"scoring_type_id\": \"$DISTANCE_ID\"}")"
+echo "$SC" | grep -q '"code"' && fail "scoring junction rejected: $SC"
+RD="$(auth_patch "exercises?id=eq.$ROW_D_ID" "{\"requires_distance\": true}")"
+echo "$RD" | grep -q '"code"' && fail "requires_distance compat write rejected: $RD"
+READ_RD="$(json_get "$(auth_get "exercises?id=eq.$ROW_D_ID&select=requires_distance")" 0.requires_distance)"
+[ "$READ_RD" = "True" ] || [ "$READ_RD" = "true" ] || fail "requires_distance did not persist: '$READ_RD'"
+echo "scoring junction + requires_distance=true persisted"
+
+echo
+echo "== 10. edit-prefill round-trip: one embedded select returns row + junctions =="
+DETAIL="$(auth_get "exercises?id=eq.$ROW_D_ID&select=id,name,core_movement_id,bench_angle_id,exercise_equipment(equipment_id),exercise_movement_styles(movement_style_id),exercise_scoring_types(scoring_type_id),exercise_goal_types(goal_type_id),exercise_muscle_regions(muscle_region_id,is_primary)")"
+[ "$(json_get "$DETAIL" 0.core_movement_id)" = "$CORE_ID" ] || fail "detail select missing core: $DETAIL"
+[ "$(json_get "$DETAIL" 0.exercise_equipment.0.equipment_id)" = "$BANDS_ID" ] || fail "detail select missing equipment junction: $DETAIL"
+[ -n "$(json_get "$DETAIL" 0.exercise_movement_styles.0.movement_style_id)" ] || fail "detail select missing styles junction: $DETAIL"
+[ "$(json_get "$DETAIL" 0.exercise_scoring_types.0.scoring_type_id)" = "$DISTANCE_ID" ] || fail "detail select missing scoring junction: $DETAIL"
+echo "embedded prefill select round-trips all junctions"
+
+# Wild-alias write path (the wizard's alias chips): normalize through the DB
+# dictionary, then upsert ignoring normalized collisions — as the app user.
+WILD_ALIAS="ZZ Probe Wild Alias"
+NORMALIZED="$(curl -s -X POST "$REST/rpc/normalize_alias" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"raw\": \"$WILD_ALIAS\"}" | python3 -c 'import json,sys; print(json.load(sys.stdin))')"
+[ -n "$NORMALIZED" ] || fail "normalize_alias RPC returned nothing"
+ALIAS_RESP="$(curl -s -X POST "$REST/exercise_aliases?on_conflict=alias_normalized" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Prefer: return=representation,resolution=ignore-duplicates" \
+  -d "{\"exercise_id\": \"$ROW_D_ID\", \"alias\": \"$WILD_ALIAS\", \"alias_normalized\": \"$NORMALIZED\", \"kind\": \"wild\", \"source\": \"curation\"}")"
+echo "$ALIAS_RESP" | grep -q '"code"' && fail "wild alias insert rejected as authenticated: $ALIAS_RESP"
+ALIAS_COUNT="$(auth_get "exercise_aliases?exercise_id=eq.$ROW_D_ID&kind=eq.wild&select=id" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+[ "$ALIAS_COUNT" = "1" ] || fail "expected 1 wild alias, found $ALIAS_COUNT"
+echo "wild alias written via normalize_alias('$WILD_ALIAS') -> '$NORMALIZED' (RLS allows authenticated write)"
+
+echo
+echo "== 11. cleanup: delete probe rows, count restored =="
 DELETED="$(auth_delete "exercises?slug=like.${SLUG_PREFIX}-*" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')"
 echo "deleted $DELETED probe row(s)"
-[ "$DELETED" = "4" ] || fail "expected to delete 4 probe rows, deleted $DELETED"
+[ "$DELETED" = "5" ] || fail "expected to delete 5 probe rows, deleted $DELETED"
 FINAL_COUNT="$(psql "$DB_URL" -Atc "select count(*) from exercises")"
 echo "final exercises count: $FINAL_COUNT (baseline $BASELINE_COUNT)"
 [ "$FINAL_COUNT" = "$BASELINE_COUNT" ] || fail "row count not restored"
