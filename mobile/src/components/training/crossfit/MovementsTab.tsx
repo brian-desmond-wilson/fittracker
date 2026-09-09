@@ -5,11 +5,19 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
+import {
+  fetchMovements,
+  searchMovements,
+  resolveMovementCategoryIds,
+  type CatalogListFilter,
+} from '@/src/lib/supabase/crossfit';
 import { CatalogItemWizard } from './CatalogItemWizard';
 import { SwipeableMovementCard } from './SwipeableMovementCard';
 
-type MovementCategory = 'All' | 'Lifting' | 'Gymnastics' | 'Cardio' | 'Core';
+// Classification-driven pills: the four modalities (movement_categories
+// dictionary) plus "Cores" (hierarchy roots, is_core = true). Every pill is a
+// server-side filter — the client-side name-substring buckets are gone.
+type MovementPill = 'All' | 'Weightlifting' | 'Gymnastics' | 'Monostructural' | 'Recovery' | 'Cores';
 
 interface MovementsTabProps {
   searchQuery: string;
@@ -19,7 +27,7 @@ interface MovementsTabProps {
 
 export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdate }: MovementsTabProps) {
   const router = useRouter();
-  const [selectedCategory, setSelectedCategory] = useState<MovementCategory>('All');
+  const [selectedCategory, setSelectedCategory] = useState<MovementPill>('All');
   const [movements, setMovements] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -27,14 +35,23 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editItemId, setEditItemId] = useState<string | null>(null);
 
-  const categories: MovementCategory[] = ['All', 'Lifting', 'Gymnastics', 'Cardio', 'Core'];
+  const categories: MovementPill[] = ['All', 'Weightlifting', 'Gymnastics', 'Monostructural', 'Recovery', 'Cores'];
+
+  // Pill -> server-side filter. Modality ids come from the dictionary,
+  // resolved once and cached in the data layer.
+  const buildFilter = async (): Promise<CatalogListFilter | undefined> => {
+    if (selectedCategory === 'All') return undefined;
+    if (selectedCategory === 'Cores') return { coresOnly: true };
+    const ids = await resolveMovementCategoryIds();
+    return { categoryId: ids.get(selectedCategory) };
+  };
 
   const loadMovements = async () => {
     try {
       setLoading(true);
       // Tier rides on the row itself (`exercises.tier`, engine-maintained) —
       // no second hierarchy query, nothing computed client-side.
-      const data = await fetchMovements();
+      const data = await fetchMovements(await buildFilter());
       setMovements(data);
       onCountUpdate(data.length);
     } catch (error) {
@@ -52,7 +69,7 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
 
     try {
       setSearching(true);
-      const results = await searchMovements(searchQuery.trim());
+      const results = await searchMovements(searchQuery.trim(), await buildFilter());
       setMovements(results);
       onCountUpdate(results.length);
     } catch (error) {
@@ -89,51 +106,9 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
     setRefreshing(false);
   };
 
-  // Filter movements by category
-  const getFilteredMovements = () => {
-    if (selectedCategory === 'All') {
-      return movements;
-    }
-
-    return movements.filter((movement) => {
-      const movementName = movement.name.toLowerCase();
-      const goalTypeName = movement.goal_type?.name.toLowerCase() || '';
-
-      switch (selectedCategory) {
-        case 'Lifting':
-          // Lifting movements: Olympic lifts, squats, deadlifts, presses
-          return goalTypeName === 'strength' ||
-                 movementName.includes('snatch') ||
-                 movementName.includes('clean') ||
-                 movementName.includes('jerk') ||
-                 movementName.includes('squat') ||
-                 movementName.includes('deadlift') ||
-                 movementName.includes('press');
-        case 'Gymnastics':
-          // Gymnastics: Skill-based movements
-          return goalTypeName === 'skill' ||
-                 movementName.includes('pull-up') ||
-                 movementName.includes('push-up') ||
-                 movementName.includes('muscle-up') ||
-                 movementName.includes('handstand') ||
-                 movementName.includes('dip');
-        case 'Cardio':
-          // Cardio: MetCon movements
-          return goalTypeName === 'metcon' ||
-                 movementName.includes('row') ||
-                 movementName.includes('run') ||
-                 movementName.includes('bike') ||
-                 movementName.includes('ski');
-        case 'Core':
-          // Core movements: Foundational movements with is_core = true
-          return movement.is_core === true;
-        default:
-          return true;
-      }
-    });
-  };
-
-  // Get icon for movement based on category
+  // Icon stays name-based on purpose: it is cosmetic decoration, was never
+  // tied to the (now deleted) substring filter buckets, and classification
+  // carries no emoji column.
   const getMovementIcon = (movement: ExerciseWithVariations): string => {
     const name = movement.name.toLowerCase();
 
@@ -151,8 +126,6 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       return '⚡';
     }
   };
-
-  const filteredMovements = getFilteredMovements();
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -196,7 +169,7 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
         <FlatList
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
-          data={filteredMovements}
+          data={movements}
           keyExtractor={(item) => item.id}
           refreshControl={
             <RefreshControl

@@ -44,7 +44,9 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchAllExercises();
+      // Whole-catalog picker: a program workout can hold movements too, so
+      // opt back into the rows the Exercises tab now excludes.
+      const data = await fetchAllExercises({ includeMovements: true });
       setExercises(data as unknown as Exercise[]);
     } catch (err: any) {
       console.error('Error loading exercises:', err);
@@ -63,7 +65,7 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
     try {
       setLoading(true);
       setError(null);
-      const results = await searchAllExercises(searchQuery.trim());
+      const results = await searchAllExercises(searchQuery.trim(), { includeMovements: true });
       setExercises(results as unknown as Exercise[]);
     } catch (err: any) {
       console.error('Error searching exercises:', err);

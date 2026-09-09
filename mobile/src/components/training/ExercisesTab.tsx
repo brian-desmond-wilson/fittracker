@@ -5,11 +5,19 @@ import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
-import { fetchAllExercises, searchAllExercises } from '@/src/lib/supabase/crossfit';
+import {
+  fetchAllExercises,
+  searchAllExercises,
+  resolveMovementCategoryIds,
+  type CatalogListFilter,
+} from '@/src/lib/supabase/crossfit';
 import { CatalogItemWizard } from './crossfit/CatalogItemWizard';
 import { SwipeableMovementCard } from './crossfit/SwipeableMovementCard';
 
-type ExerciseCategory = 'All' | 'Lifting' | 'Gymnastics' | 'Cardio' | 'Core';
+// Classification-driven pills: the four modalities (movement_categories
+// dictionary) plus "Cores" (hierarchy roots, is_core = true). Every pill is a
+// server-side filter — the client-side name-substring buckets are gone.
+type ExercisePill = 'All' | 'Weightlifting' | 'Gymnastics' | 'Monostructural' | 'Recovery' | 'Cores';
 
 interface ExercisesTabProps {
   searchQuery: string;
@@ -19,7 +27,7 @@ interface ExercisesTabProps {
 
 export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdate }: ExercisesTabProps) {
   const router = useRouter();
-  const [selectedCategory, setSelectedCategory] = useState<ExerciseCategory>('All');
+  const [selectedCategory, setSelectedCategory] = useState<ExercisePill>('All');
   const [exercises, setExercises] = useState<ExerciseWithVariations[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -27,14 +35,24 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editItemId, setEditItemId] = useState<string | null>(null);
 
-  const categories: ExerciseCategory[] = ['All', 'Lifting', 'Gymnastics', 'Cardio', 'Core'];
+  const categories: ExercisePill[] = ['All', 'Weightlifting', 'Gymnastics', 'Monostructural', 'Recovery', 'Cores'];
+
+  // Pill -> server-side filter. Modality ids come from the dictionary,
+  // resolved once and cached in the data layer.
+  const buildFilter = async (): Promise<CatalogListFilter | undefined> => {
+    if (selectedCategory === 'All') return undefined;
+    if (selectedCategory === 'Cores') return { coresOnly: true };
+    const ids = await resolveMovementCategoryIds();
+    return { categoryId: ids.get(selectedCategory) };
+  };
 
   const loadExercises = async () => {
     try {
       setLoading(true);
       // Tier rides on the row itself (`exercises.tier`, engine-maintained) —
-      // no second hierarchy query, nothing computed client-side.
-      const data = await fetchAllExercises();
+      // no second hierarchy query, nothing computed client-side. The fetch
+      // excludes is_movement rows: the tab split is real now.
+      const data = await fetchAllExercises(await buildFilter());
       setExercises(data);
       onCountUpdate(data.length);
     } catch (error) {
@@ -52,7 +70,7 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
 
     try {
       setSearching(true);
-      const results = await searchAllExercises(searchQuery.trim());
+      const results = await searchAllExercises(searchQuery.trim(), await buildFilter());
       setExercises(results);
       onCountUpdate(results.length);
     } catch (error) {
@@ -89,51 +107,9 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
     setRefreshing(false);
   };
 
-  // Filter exercises by category
-  const getFilteredExercises = () => {
-    if (selectedCategory === 'All') {
-      return exercises;
-    }
-
-    return exercises.filter((exercise) => {
-      const exerciseName = exercise.name.toLowerCase();
-      const goalTypeName = exercise.goal_type?.name.toLowerCase() || '';
-
-      switch (selectedCategory) {
-        case 'Lifting':
-          // Lifting exercises: Olympic lifts, squats, deadlifts, presses
-          return goalTypeName === 'strength' ||
-                 exerciseName.includes('snatch') ||
-                 exerciseName.includes('clean') ||
-                 exerciseName.includes('jerk') ||
-                 exerciseName.includes('squat') ||
-                 exerciseName.includes('deadlift') ||
-                 exerciseName.includes('press');
-        case 'Gymnastics':
-          // Gymnastics: Skill-based exercises
-          return goalTypeName === 'skill' ||
-                 exerciseName.includes('pull-up') ||
-                 exerciseName.includes('push-up') ||
-                 exerciseName.includes('muscle-up') ||
-                 exerciseName.includes('handstand') ||
-                 exerciseName.includes('dip');
-        case 'Cardio':
-          // Cardio: MetCon exercises
-          return goalTypeName === 'metcon' ||
-                 exerciseName.includes('row') ||
-                 exerciseName.includes('run') ||
-                 exerciseName.includes('bike') ||
-                 exerciseName.includes('ski');
-        case 'Core':
-          // Core exercises: Foundational exercises with is_core = true
-          return exercise.is_core === true;
-        default:
-          return true;
-      }
-    });
-  };
-
-  // Get icon for exercise based on category
+  // Icon stays name-based on purpose: it is cosmetic decoration, was never
+  // tied to the (now deleted) substring filter buckets, and classification
+  // carries no emoji column.
   const getExerciseIcon = (exercise: ExerciseWithVariations): string => {
     const name = exercise.name.toLowerCase();
 
@@ -151,8 +127,6 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
       return '⚡';
     }
   };
-
-  const filteredExercises = getFilteredExercises();
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -196,7 +170,7 @@ export default function ExercisesTab({ searchQuery, onSearchChange, onCountUpdat
         <FlatList
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
-          data={filteredExercises}
+          data={exercises}
           keyExtractor={(item) => item.id}
           refreshControl={
             <RefreshControl

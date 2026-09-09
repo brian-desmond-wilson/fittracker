@@ -439,20 +439,21 @@ export async function fetchCoreClassification(coreId: string) {
 
 /**
  * Search CORE movements only (is_core rows) — the wizard's core picker.
- * Matches name or a legacy alias-array element, cores first alphabetically.
- * PostgREST .or() grammar characters are stripped from the term so a typed
- * comma or paren cannot 400 into silent "no results".
+ * Matches name or an exercise_aliases row (the legacy aliases-array filter
+ * is gone), alphabetical.
  */
 export async function searchCoreMovements(query: string) {
-  const cleaned = query.replace(/[,()\[\]{}"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  const cleaned = cleanSearchTerm(query);
   if (!cleaned) return [];
 
-  const { data, error } = await supabase
+  let builder = supabase
     .from('exercises')
     .select('id, name, short_name, image_url, is_core')
-    .eq('is_core', true)
-    .or(`name.ilike.%${cleaned}%,aliases.cs.{${cleaned}}`)
-    .order('name');
+    .eq('is_core', true);
+
+  builder = await applyNameOrAliasMatch(builder, cleaned);
+
+  const { data, error } = await builder.order('name');
 
   if (error) {
     console.error('Error searching core movements:', error);
@@ -467,10 +468,99 @@ export async function searchCoreMovements(query: string) {
 // ============================================================================
 
 /**
- * Fetch all movements (exercises with is_movement = true)
- * Optionally filter by goal type
+ * Classification-driven list filter (Stage 5, Task 3). Both catalog tabs'
+ * pills resolve to one of these and the WHERE clause runs server-side —
+ * no more client-side name-substring buckets.
  */
-export async function fetchMovements(goalTypeId?: string): Promise<ExerciseWithVariations[]> {
+export interface CatalogListFilter {
+  /** movement_categories.id — the modality pills (Weightlifting, ...). */
+  categoryId?: string;
+  /** The "Cores" pill: hierarchy roots only (is_core = true). */
+  coresOnly?: boolean;
+  /**
+   * fetchAllExercises/searchAllExercises only: keep is_movement = true rows
+   * in the result. The Exercises tab omits this (the tab split is real);
+   * whole-catalog pickers (the workout wizard's exercise search) pass true.
+   */
+  includeMovements?: boolean;
+}
+
+let movementCategoryIdsPromise: Promise<Map<string, string>> | null = null;
+
+/**
+ * Modality dictionary as name -> id, resolved once per session. The pills are
+ * fixed copy ("Weightlifting", "Gymnastics", ...) but the ids belong to the
+ * dictionary, so they are looked up rather than hardcoded.
+ */
+export function resolveMovementCategoryIds(): Promise<Map<string, string>> {
+  if (!movementCategoryIdsPromise) {
+    movementCategoryIdsPromise = fetchMovementCategories()
+      .then((categories) => new Map(categories.map((c) => [c.name, c.id])))
+      .catch((error) => {
+        movementCategoryIdsPromise = null; // retry next call
+        throw error;
+      });
+  }
+  return movementCategoryIdsPromise;
+}
+
+// Loosely typed on purpose: the supabase client is untyped, and the builder
+// generic here would prove nothing about column names anyway.
+function applyCatalogFilter(query: any, filter?: CatalogListFilter): any {
+  if (filter?.categoryId) query = query.eq('movement_category_id', filter.categoryId);
+  if (filter?.coresOnly) query = query.eq('is_core', true);
+  return query;
+}
+
+/**
+ * PostgREST .or() grammar characters are stripped from the term so a typed
+ * comma or paren cannot 400 into silent "no results".
+ */
+function cleanSearchTerm(raw: string): string {
+  return raw.replace(/[,()\[\]{}"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Exercise ids whose alias matches the term — the first leg of alias-aware
+ * search. exercise_aliases holds every kind (generated, display, short,
+ * wild), so "Pullups" finds Pull-Up without the model's help.
+ */
+async function searchAliasExerciseIds(term: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('exercise_aliases')
+    .select('exercise_id')
+    .ilike('alias', `%${term}%`)
+    .limit(200);
+
+  if (error) {
+    // Alias matching is an enhancement on top of name matching — degrade to
+    // name-only rather than failing the whole search.
+    console.error('Error searching exercise aliases:', error);
+    return [];
+  }
+
+  return [...new Set((data ?? []).map((row) => row.exercise_id as string))];
+}
+
+/**
+ * Match name OR alias, server-side. PostgREST's or-with-embedded-filter is
+ * fiddly, so this runs two round trips: alias table first for ids, then
+ * `name ilike OR id in (...)` on exercises — fine at catalog scale (~300
+ * rows). The term must already be cleaned (cleanSearchTerm).
+ */
+async function applyNameOrAliasMatch(query: any, cleaned: string): Promise<any> {
+  const aliasIds = await searchAliasExerciseIds(cleaned);
+  if (aliasIds.length === 0) {
+    return query.ilike('name', `%${cleaned}%`);
+  }
+  return query.or(`name.ilike.%${cleaned}%,id.in.(${aliasIds.join(',')})`);
+}
+
+/**
+ * Fetch all movements (exercises with is_movement = true),
+ * optionally narrowed by a classification filter (server-side).
+ */
+export async function fetchMovements(filter?: CatalogListFilter): Promise<ExerciseWithVariations[]> {
   let query = supabase
     .from('exercises')
     .select(`
@@ -491,9 +581,7 @@ export async function fetchMovements(goalTypeId?: string): Promise<ExerciseWithV
     .eq('is_movement', true)
     .order('name');
 
-  if (goalTypeId) {
-    query = query.eq('goal_type_id', goalTypeId);
-  }
+  query = applyCatalogFilter(query, filter);
 
   const { data, error } = await query;
 
@@ -528,10 +616,17 @@ export async function fetchMovements(goalTypeId?: string): Promise<ExerciseWithV
 }
 
 /**
- * Search movements by name or variation
+ * Search movements by name OR alias (exercise_aliases), scoped to
+ * is_movement = true, optionally narrowed by a classification filter.
  */
-export async function searchMovements(query: string): Promise<ExerciseWithVariations[]> {
-  const { data, error } = await supabase
+export async function searchMovements(
+  query: string,
+  filter?: CatalogListFilter
+): Promise<ExerciseWithVariations[]> {
+  const cleaned = cleanSearchTerm(query);
+  if (!cleaned) return [];
+
+  let builder = supabase
     .from('exercises')
     .select(`
       *,
@@ -548,10 +643,12 @@ export async function searchMovements(query: string): Promise<ExerciseWithVariat
         scoring_type:scoring_types(*)
       )
     `)
-    .eq('is_movement', true)
-    .ilike('name', `%${query}%`)
-    .order('name')
-    .limit(20);
+    .eq('is_movement', true);
+
+  builder = applyCatalogFilter(builder, filter);
+  builder = await applyNameOrAliasMatch(builder, cleaned);
+
+  const { data, error } = await builder.order('name').limit(20);
 
   if (error) {
     console.error('Error searching movements:', error);
@@ -584,14 +681,15 @@ export async function searchMovements(query: string): Promise<ExerciseWithVariat
 }
 
 // ============================================================================
-// All Exercises (for Exercises Tab - includes both movements and non-movements)
+// Exercises tab reads — the NON-movement side of the catalog
 // ============================================================================
 
 /**
- * Fetch ALL exercises regardless of is_movement value
- * Used by Exercises tab to show the complete exercise library
+ * Fetch exercises for the Exercises tab: is_movement = true rows are
+ * EXCLUDED (Stage 5, Task 3 — the tab split is real now; movements live in
+ * the Movements tab only). Optionally narrowed by a classification filter.
  */
-export async function fetchAllExercises(goalTypeId?: string): Promise<ExerciseWithVariations[]> {
+export async function fetchAllExercises(filter?: CatalogListFilter): Promise<ExerciseWithVariations[]> {
   let query = supabase
     .from('exercises')
     .select(`
@@ -609,12 +707,14 @@ export async function fetchAllExercises(goalTypeId?: string): Promise<ExerciseWi
         scoring_type:scoring_types(*)
       )
     `)
-    // No is_movement filter - show ALL exercises
     .order('name');
 
-  if (goalTypeId) {
-    query = query.eq('goal_type_id', goalTypeId);
+  if (!filter?.includeMovements) {
+    // not.is.true rather than eq.false so a NULL is_movement row (the column
+    // is nullable) still lands on this side of the split.
+    query = query.not('is_movement', 'is', true);
   }
+  query = applyCatalogFilter(query, filter);
 
   const { data, error } = await query;
 
@@ -649,11 +749,18 @@ export async function fetchAllExercises(goalTypeId?: string): Promise<ExerciseWi
 }
 
 /**
- * Search ALL exercises by name (regardless of is_movement value)
- * Used by Exercises tab search functionality
+ * Search exercises by name OR alias (exercise_aliases) for the Exercises tab:
+ * is_movement = true rows are excluded unless the filter says otherwise
+ * (whole-catalog pickers pass includeMovements).
  */
-export async function searchAllExercises(query: string): Promise<ExerciseWithVariations[]> {
-  const { data, error } = await supabase
+export async function searchAllExercises(
+  query: string,
+  filter?: CatalogListFilter
+): Promise<ExerciseWithVariations[]> {
+  const cleaned = cleanSearchTerm(query);
+  if (!cleaned) return [];
+
+  let builder = supabase
     .from('exercises')
     .select(`
       *,
@@ -669,11 +776,15 @@ export async function searchAllExercises(query: string): Promise<ExerciseWithVar
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
-    `)
-    // No is_movement filter - search ALL exercises
-    .ilike('name', `%${query}%`)
-    .order('name')
-    .limit(50);
+    `);
+
+  if (!filter?.includeMovements) {
+    builder = builder.not('is_movement', 'is', true);
+  }
+  builder = applyCatalogFilter(builder, filter);
+  builder = await applyNameOrAliasMatch(builder, cleaned);
+
+  const { data, error } = await builder.order('name').limit(50);
 
   if (error) {
     console.error('Error searching all exercises:', error);
