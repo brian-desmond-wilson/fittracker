@@ -67,17 +67,17 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 
 ## Stage 5 — App unification (Phase 6)
 
-- [ ] One save path for both wizards; update path added
-- [ ] Reads move to new columns (stored tier, display name, junction truth)
-- [ ] Filter pills read classification data, not name substrings
-- [ ] Capture pipeline routed through the guarded front door + review queue UI
-- [ ] Dictionary-change re-normalization: adding an alias_abbreviations row re-normalizes all exercise_aliases and routes collisions to the review queue (Task 6 review finding — until this lands, the dictionary is append-rarely and any change requires a harness re-run)
-- [ ] Minting a user-named exercise must set name_is_custom=true or the engine clobbers the provided name on insert (Task 9 review M4; the Stage 2 migration flips drift rows true as a stopgap)
-- [ ] Wizard family filter: update for Midline rename and Mobility/Control merge (Stage 2 quality review — until then Midline is reachable only via Show All Families); clean the Cool-Down references in goal handling
-- [ ] Grip columns need a category guard (orientation column must reference an Orientation grip, width a Width grip) before Stage 3 tooling writes them — Stage 2 quality review
-- [ ] Revisit the wide-open authenticated write policies on exercise_equipment and exercise_aliases once the front door exists (Task 9 review I1)
-- [ ] When user-created rows gain core_movement_id (deriving from official cores): revisit fingerprint-uniqueness scope re created_by (two users' identical private variants would collide globally) and re-test enforce_core_self_reference under RLS (Stage 4 review I3/M5)
-- **Exit gate:** on-device verification of add / edit / capture-match flows
+- [x] One save path for both wizards; update path added
+- [x] Reads move to new columns (stored tier, display name, junction truth)
+- [x] Filter pills read classification data, not name substrings
+- [x] Capture pipeline routed through the guarded front door + review queue UI
+- [x] Dictionary-change re-normalization: adding an alias_abbreviations row re-normalizes all exercise_aliases and routes collisions to the review queue (Task 6 review finding — until this lands, the dictionary is append-rarely and any change requires a harness re-run)
+- [x] Minting a user-named exercise must set name_is_custom=true or the engine clobbers the provided name on insert (Task 9 review M4; the Stage 2 migration flips drift rows true as a stopgap)
+- [x] Wizard family filter: update for Midline rename and Mobility/Control merge (Stage 2 quality review — until then Midline is reachable only via Show All Families); clean the Cool-Down references in goal handling
+- [x] Grip columns need a category guard (orientation column must reference an Orientation grip, width a Width grip) before Stage 3 tooling writes them — Stage 2 quality review
+- [x] Revisit the wide-open authenticated write policies on exercise_equipment and exercise_aliases once the front door exists (Task 9 review I1)
+- [x] When user-created rows gain core_movement_id (deriving from official cores): revisit fingerprint-uniqueness scope re created_by (two users' identical private variants would collide globally) and re-test enforce_core_self_reference under RLS (Stage 4 review I3/M5)
+- **Exit gate:** PENDING USER — on-device verification of add / edit / capture-match flows (everything else shipped 2026-09-09: app code merged at 30df655; migration 20260910100000 LIVE, harness V0-V11 PASS on live; note: live alias count converges 299→305 as the engine self-heals six generated aliases — expected, not drift)
 
 ## Stage 6 — Retire legacy (Phase 7)
 
