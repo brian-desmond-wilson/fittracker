@@ -521,6 +521,11 @@ export function CapturedWorkoutScreen() {
   }
 
   const shownItems = draft ? draft.items : workout.items;
+  // Names still in the match-review queue. View-only: they are NOT
+  // captured_workout_exercises rows yet (the review draft holds their
+  // prescription), so the editor — which replaces the item rows wholesale —
+  // must never see them.
+  const pendingItems = editing ? [] : workout.pendingItems ?? [];
   const shownRounds = draft ? blank(draft.rounds) : workout.rounds;
   const shownDescription = draft ? draft.description : workout.description ?? "";
   const shownNotes = draft ? draft.notes : workout.notes ?? "";
@@ -551,7 +556,7 @@ export function CapturedWorkoutScreen() {
             <Text style={styles.title}>{workout.name}</Text>
           )}
           <Text style={[styles.headline, completion && styles.headlineTight]}>
-            {formatWorkoutHeadline(shownItems.length, shownRounds)}
+            {formatWorkoutHeadline(shownItems.length + pendingItems.length, shownRounds)}
           </Text>
           {/* What you have done with it, in the same words the card uses. A
               workout never trained says nothing here rather than "0 times":
@@ -874,6 +879,28 @@ export function CapturedWorkoutScreen() {
             );
           })}
 
+          {/* Movements the capture couldn't match: their names wait in the
+              review queue and their prescriptions ride in the review draft,
+              so these rows are read-only until resolved from the Catalog
+              tab's "needs review" banner. */}
+          {pendingItems.map((item, i) => {
+            const prescription = formatWorkoutItem(item);
+            return (
+              <View key={item.reviewId + String(i)} style={styles.row}>
+                <Text style={styles.index}>{shownItems.length + i + 1}</Text>
+                <View style={styles.rowBody}>
+                  <Text style={styles.movement}>{item.name}</Text>
+                  {prescription !== "" && (
+                    <Text style={styles.prescription}>{prescription}</Text>
+                  )}
+                  <Text style={styles.pendingNote}>
+                    Pending review — match it from the Catalog tab
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+
           {editing && (
             <TouchableOpacity
               style={styles.addRow}
@@ -1062,6 +1089,7 @@ const styles = StyleSheet.create({
   movement: { fontSize: 16, fontWeight: "600", color: colors.foreground, flex: 1 },
   prescription: { fontSize: 14, color: colors.mutedForeground, marginTop: 2 },
   notes: { fontSize: 13, color: colors.mutedForeground, marginTop: 4, fontStyle: "italic" },
+  pendingNote: { fontSize: 12, color: colors.destructive, marginTop: 3 },
   addRow: {
     flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16,
   },

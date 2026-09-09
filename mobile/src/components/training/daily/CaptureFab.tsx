@@ -33,10 +33,13 @@ export function CaptureFab({ onSaved, initialUrl }: CaptureFabProps) {
   const handleExtracted = async (payload: {
     resolved: ResolvedPost; sourceUrl: string; post: ExtractedPost; rawExtraction: unknown;
   }) => {
-    // Names for the "matches X" chips in review. Whole catalog on purpose:
-    // captured names match movements too ("Snatch", "Pull-Ups"), so opt back
-    // into the rows the Exercises tab now excludes. Interim until Task 4
-    // rewrites capture matching through the alias table.
+    // Names for the "matches X" chips in review. Whole catalog on purpose,
+    // permanently: captured names match movements too ("Snatch",
+    // "Pull-Ups"), so capture opts back into the rows the Exercises tab
+    // excludes — the tab split is a browsing choice, not a vocabulary limit.
+    // Matching is belt-and-braces beyond these chips: the save re-resolves
+    // every name through the alias dictionary first, and a name that matches
+    // nothing goes to the review queue instead of minting an exercise.
     const library = await fetchAllExercises({ includeMovements: true });
     setMatchNames(new Map(library.map((e) => [e.id, e.name])));
     setCaptureVisible(false);

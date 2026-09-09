@@ -64,10 +64,12 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
       if (!user) throw new Error("not signed in");
 
       // The model's whole vocabulary: library index + reference-table names.
-      // Whole catalog on purpose — captured names match movements too
-      // ("Snatch", "Pull-Ups"); without includeMovements the tab split would
-      // shrink the index and the legacy auto-create path would mint
-      // duplicates. Interim until Task 4 rewrites capture matching.
+      // Whole catalog on purpose, permanently — captured names match
+      // movements too ("Snatch", "Pull-Ups"), so the index must span the
+      // rows the Exercises tab excludes. The model's match is only rung 2 of
+      // the resolution order: the save checks the alias dictionary first,
+      // and a name neither resolves is queued in exercise_match_reviews —
+      // never auto-created — so a thin index costs a review, not a duplicate.
       const [library, muscleRows, equipmentRows] = await Promise.all([
         fetchAllExercises({ includeMovements: true }),
         supabase.from("muscle_regions").select("name"),

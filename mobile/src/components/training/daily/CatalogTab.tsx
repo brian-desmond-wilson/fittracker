@@ -5,11 +5,14 @@ import {
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, useRouter } from "expo-router";
+import { AlertCircle, ChevronRight } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCatalog } from "@/src/lib/supabase/capture";
+import { fetchPendingReviewCount } from "@/src/lib/supabase/matchReviews";
 import { filterCatalog, catalogHandles } from "@/src/lib/catalogFilter";
 import { CaptureFab } from "./CaptureFab";
+import { MatchReviewSheet } from "./MatchReviewSheet";
 import { SwipeableCatalogCard } from "./SwipeableCatalogCard";
 import type { CatalogEntry, CatalogFilters } from "@/src/types/capture";
 
@@ -35,11 +38,21 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
   const [filters, setFilters] = useState<Omit<CatalogFilters, "search">>({
     muscle: null, equipment: null, category: null, handle: null, skill: null,
   });
+  // The match-review queue's entry point: captures park unmatched names in
+  // exercise_match_reviews, and this banner is where they get resolved.
+  const [userId, setUserId] = useState<string | null>(null);
+  const [pendingReviews, setPendingReviews] = useState(0);
+  const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const list = await fetchCatalog(user.id);
+    setUserId(user.id);
+    const [list, pending] = await Promise.all([
+      fetchCatalog(user.id),
+      fetchPendingReviewCount(user.id),
+    ]);
     setEntries(list);
+    setPendingReviews(pending);
     onCountUpdate(list.length);
     setLoading(false);
   }, [onCountUpdate]);
@@ -91,6 +104,24 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
         {rail("From", "handle", axes.handles)}
       </View>
 
+      {pendingReviews > 0 && (
+        <TouchableOpacity
+          style={styles.reviewBanner}
+          onPress={() => setReviewSheetOpen(true)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`${pendingReviews} captured names need review`}
+        >
+          <AlertCircle size={16} color={colors.primary} />
+          <Text style={styles.reviewBannerText}>
+            {pendingReviews === 1
+              ? "1 captured name needs review"
+              : `${pendingReviews} captured names need review`}
+          </Text>
+          <ChevronRight size={16} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      )}
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -129,6 +160,13 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
       )}
 
       <CaptureFab onSaved={load} />
+
+      <MatchReviewSheet
+        visible={reviewSheetOpen}
+        userId={userId}
+        onClose={() => setReviewSheetOpen(false)}
+        onResolved={load}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -145,6 +183,13 @@ const styles = StyleSheet.create({
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 13, color: colors.mutedForeground },
   pillTextActive: { color: "#FFFFFF", fontWeight: "600" },
+  reviewBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginHorizontal: 16, marginTop: 10, paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: colors.muted, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  reviewBannerText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.foreground },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   // The card's own gap lives on its swipe container, so `gap` here would
   // double it.

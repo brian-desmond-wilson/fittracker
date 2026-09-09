@@ -118,8 +118,15 @@ interface CatalogItemWizardProps {
   isMovement: boolean;
   /** Pass to edit an existing row: pre-fills and saves through update. */
   editId?: string;
+  /** Seed the name field (custom naming on) — the match-review queue opens
+   *  the wizard with the captured name so "create new" starts filled in. */
+  initialName?: string;
   onClose: () => void;
   onSave: () => void;
+  /** Fired with the created row right after a successful create — what lets
+   *  a caller (the review queue) link the new exercise by id. Never fired on
+   *  edit. */
+  onCreated?: (row: CatalogExerciseRow) => void;
 }
 
 const STEPS = [
@@ -128,11 +135,17 @@ const STEPS = [
   { number: 3, title: 'Attributes', required: false },
 ];
 
-export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: CatalogItemWizardProps) {
+export function CatalogItemWizard({
+  isMovement, editId, initialName, onClose, onSave, onCreated,
+}: CatalogItemWizardProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<WizardFormData>(EMPTY_WIZARD_FORM);
+  const [formData, setFormData] = useState<WizardFormData>(() =>
+    initialName && !editId
+      ? { ...EMPTY_WIZARD_FORM, name: initialName, use_custom_name: true }
+      : EMPTY_WIZARD_FORM,
+  );
   const [dictionaries, setDictionaries] = useState<WizardDictionaries | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [saving, setSaving] = useState(false);
@@ -343,6 +356,7 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
           return;
         }
         const row = await createCatalogExercise(buildCreateInput(formData, isMovement, user.id));
+        onCreated?.(row);
         if (formData.aliases.length > 0) {
           // Aliases are a side dish: the row exists either way. Every alias
           // is attempted; the misses are reported, never fatal to the save.

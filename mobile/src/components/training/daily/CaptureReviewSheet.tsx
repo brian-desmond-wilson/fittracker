@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, ActivityIndicator,
+  ScrollView, ActivityIndicator, Alert,
 } from "react-native";
 import { X, Link2, Link2Off, Pencil, Info } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
@@ -107,7 +107,7 @@ export function CaptureReviewSheet({
       setSaving(false);
       return;
     }
-    const sourceId = await saveCapture({
+    const result = await saveCapture({
       userId: user.id,
       sourceUrl: payload.sourceUrl,
       platform: payload.resolved.platform,
@@ -118,9 +118,19 @@ export function CaptureReviewSheet({
       post,
     });
     setSaving(false);
-    if (!sourceId) {
+    if (!result) {
       setErrorText("Save failed. Nothing was added — try again.");
       return;
+    }
+    // Unmatched names were QUEUED, not silently minted (Stage 5, Task 4) —
+    // say where they went or the workout looks like it lost movements.
+    if (result.pendingReviewCount > 0) {
+      Alert.alert(
+        "Saved — some names need review",
+        result.pendingReviewCount === 1
+          ? "1 movement didn't match your catalog. Link or create it under “needs review” on the Catalog tab."
+          : `${result.pendingReviewCount} movements didn't match your catalog. Link or create them under “needs review” on the Catalog tab.`,
+      );
     }
     setSeededFor(null);
     onSaved();
@@ -201,13 +211,19 @@ export function CaptureReviewSheet({
                 >
                   <Link2 size={14} color={colors.primary} />
                   <Text style={styles.matchText}>
-                    Saves as your existing “{matchNames.get(ex.libraryMatchId) ?? "library exercise"}” — tap to create a new entry you can edit
+                    Saves as your existing “{matchNames.get(ex.libraryMatchId) ?? "library exercise"}” — tap to unlink and match it yourself later
                   </Text>
                 </TouchableOpacity>
               ) : (
+                // No silent creation anymore: the save checks the alias
+                // dictionary, and a name that still matches nothing waits in
+                // the review queue where YOU link or create it.
                 <View style={styles.newChip}>
                   <Link2Off size={14} color={colors.mutedForeground} />
-                  <Text style={styles.newText}>New library entry</Text>
+                  <Text style={styles.newText}>
+                    No match yet — checked against your catalog on save; still
+                    unknown goes to review
+                  </Text>
                 </View>
               )}
 
@@ -481,7 +497,7 @@ const styles = StyleSheet.create({
   },
   matchText: { fontSize: 13, color: colors.primary, flexShrink: 1 },
   newChip: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
-  newText: { fontSize: 13, color: colors.mutedForeground },
+  newText: { fontSize: 13, color: colors.mutedForeground, flexShrink: 1 },
   fieldLabel: { fontSize: 12, color: colors.mutedForeground, marginTop: 8, marginBottom: 6 },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
