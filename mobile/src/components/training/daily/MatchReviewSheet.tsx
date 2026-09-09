@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView,
   ActivityIndicator, Alert, Switch,
@@ -9,7 +9,7 @@ import {
   fetchPendingReviews,
   resolveMatchReview,
 } from "@/src/lib/supabase/matchReviews";
-import type { PendingMatchReview } from "@/src/lib/supabase/matchReviews";
+import type { PendingMatchReview, MatchReviewCandidate } from "@/src/lib/supabase/matchReviews";
 import { ExerciseSearchModal } from "@/src/components/training/program-detail/workout-wizard/ExerciseSearchModal";
 import { CatalogItemWizard } from "@/src/components/training/crossfit/CatalogItemWizard";
 import type { CatalogExerciseRow } from "@/src/lib/supabase/frontDoor";
@@ -44,6 +44,11 @@ export function MatchReviewSheet({
   const [aliasOff, setAliasOff] = useState<Set<string>>(new Set());
   const [searchFor, setSearchFor] = useState<PendingMatchReview | null>(null);
   const [createFor, setCreateFor] = useState<PendingMatchReview | null>(null);
+  /** Guards the chip-confirm dialog against a fast double-tap: `busyId` alone
+   *  reads a stale render-time closure once the alert is queued, so a second
+   *  tap before the first dialog resolves would open a second one whose
+   *  "Link" both pass the (stale) busy check. A ref survives that gap. */
+  const confirmOpen = useRef(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -115,17 +120,25 @@ export function MatchReviewSheet({
    */
   const confirmChipLink = (
     review: PendingMatchReview,
-    candidate: { exerciseId: string; name: string },
+    candidate: MatchReviewCandidate,
   ) => {
+    if (confirmOpen.current || busyId) return;
+    confirmOpen.current = true;
     const teaching = saveAliasFor(review)
       ? `\n\n“${review.rawName}” will also be remembered as a name for it.`
-      : '';
+      : "";
     Alert.alert(
-      'Link this movement?',
+      "Link this movement?",
       `“${review.rawName}” will be linked to “${candidate.name}”.${teaching}`,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Link', onPress: () => resolve(review, candidate.exerciseId, false) },
+        { text: "Cancel", style: "cancel", onPress: () => { confirmOpen.current = false; } },
+        {
+          text: "Link",
+          onPress: () => {
+            confirmOpen.current = false;
+            resolve(review, candidate.exerciseId, false);
+          },
+        },
       ],
     );
   };
