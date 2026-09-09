@@ -108,6 +108,28 @@ export function MatchReviewSheet({
     onResolved();
   };
 
+  /**
+   * Chips are one-tap and easy to hit by accident, and a resolution is
+   * effectively irreversible from the app (it writes the review, provenance,
+   * workout items, and optionally an alias). Confirm before committing.
+   */
+  const confirmChipLink = (
+    review: PendingMatchReview,
+    candidate: { exerciseId: string; name: string },
+  ) => {
+    const teaching = saveAliasFor(review)
+      ? `\n\n“${review.rawName}” will also be remembered as a name for it.`
+      : '';
+    Alert.alert(
+      'Link this movement?',
+      `“${review.rawName}” will be linked to “${candidate.name}”.${teaching}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Link', onPress: () => resolve(review, candidate.exerciseId, false) },
+      ],
+    );
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.container}>
@@ -155,7 +177,7 @@ export function MatchReviewSheet({
                             key={c.exerciseId}
                             style={styles.pill}
                             disabled={busy}
-                            onPress={() => resolve(review, c.exerciseId, false)}
+                            onPress={() => confirmChipLink(review, c)}
                           >
                             <Link2 size={12} color={colors.primary} />
                             <Text style={styles.pillText}>{c.name}</Text>
