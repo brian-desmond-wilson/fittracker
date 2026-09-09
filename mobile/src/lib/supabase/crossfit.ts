@@ -449,7 +449,7 @@ export async function searchCoreMovements(query: string) {
     .select('id, name, short_name, image_url, is_core')
     .eq('is_core', true);
 
-  builder = await applyNameOrAliasMatch(builder, cleaned);
+  builder = applyNameOrAliasMatch(builder, cleaned, await nameOrAliasIds(cleaned));
 
   const { data, error } = await builder.order('name');
 
@@ -545,15 +545,21 @@ async function searchAliasExerciseIds(term: string): Promise<string[]> {
  * fiddly, so this runs two round trips: alias table first for ids, then
  * `name ilike OR id in (...)` on exercises — fine at catalog scale (~300
  * rows). The term must already be cleaned (cleanSearchTerm).
+ *
+ * Split into an async id-fetch and a SYNCHRONOUS builder step on purpose:
+ * supabase builders are thenables, so an async function that returns one
+ * executes the query during the implicit await — the caller then chains
+ * .order() onto a response object, not a builder.
  */
-async function applyNameOrAliasMatch(query: any, cleaned: string): Promise<any> {
+async function nameOrAliasIds(cleaned: string): Promise<string[]> {
   // Under 2 characters the alias leg is skipped: a one-letter term matches
   // hundreds of alias rows, and the resulting id.in.(...) list risks blowing
   // the URL length for no relevance gain. Name-only until the term narrows.
-  if (cleaned.length < 2) {
-    return query.ilike('name', `%${cleaned}%`);
-  }
-  const aliasIds = await searchAliasExerciseIds(cleaned);
+  if (cleaned.length < 2) return [];
+  return searchAliasExerciseIds(cleaned);
+}
+
+function applyNameOrAliasMatch(query: any, cleaned: string, aliasIds: string[]): any {
   if (aliasIds.length === 0) {
     return query.ilike('name', `%${cleaned}%`);
   }
@@ -650,7 +656,7 @@ export async function searchMovements(
     .eq('is_movement', true);
 
   builder = applyCatalogFilter(builder, filter);
-  builder = await applyNameOrAliasMatch(builder, cleaned);
+  builder = applyNameOrAliasMatch(builder, cleaned, await nameOrAliasIds(cleaned));
 
   const { data, error } = await builder.order('name').limit(20);
 
@@ -786,7 +792,7 @@ export async function searchAllExercises(
     builder = builder.not('is_movement', 'is', true);
   }
   builder = applyCatalogFilter(builder, filter);
-  builder = await applyNameOrAliasMatch(builder, cleaned);
+  builder = applyNameOrAliasMatch(builder, cleaned, await nameOrAliasIds(cleaned));
 
   const { data, error } = await builder.order('name').limit(50);
 
