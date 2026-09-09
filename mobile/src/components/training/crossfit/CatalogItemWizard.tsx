@@ -10,6 +10,14 @@
 //
 // The same component IS the edit screen: pass `editId` and it pre-fills from
 // the row + junctions (one fetch) and saves through the update path.
+//
+// Two responsibilities deliberately live HERE, not in the steps:
+// - every static dictionary is fetched ONCE on mount (one parallel batch)
+//   and passed down — steps render, they don't fetch;
+// - core inheritance fires ONLY when Step 1 explicitly picks/changes a core.
+//   An edit's prefilled core or a back-navigation remount must never
+//   re-clobber Step 2 with the core's classification (payload/inheritance
+//   logic itself is pure and lib-tested: src/lib/catalogWizardForm.ts).
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Alert, Modal, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,95 +31,87 @@ import {
   addWildAliases,
   fetchCatalogExerciseDetail,
   DuplicateExerciseError,
-  type CreateCatalogExerciseInput,
-  type UpdateCatalogExercisePatch,
   type CatalogExerciseRow,
 } from '@/src/lib/supabase/frontDoor';
-import type { SkillLevel } from '@/src/types/crossfit';
+import {
+  EMPTY_WIZARD_FORM,
+  buildCreateInput,
+  buildUpdatePatch,
+  computeCoreInheritance,
+  type WizardFormData,
+  type CatalogItemKind,
+  type OverridableInheritField,
+} from '@/src/lib/catalogWizardForm';
+import {
+  fetchMuscleRegions,
+  fetchScoringTypes,
+  fetchMovementCategories,
+  fetchMovementFamilies,
+  fetchFamilyModalities,
+  fetchGoalTypes,
+  fetchEquipment,
+  fetchLoadPositions,
+  fetchStances,
+  fetchMovementStyles,
+  fetchSymmetries,
+  fetchRangeDepths,
+  fetchGrips,
+  fetchDirections,
+  fetchSupportPositions,
+  fetchArmPositions,
+  fetchBenchAngles,
+  fetchCoreClassification,
+} from '@/src/lib/supabase/crossfit';
+import type {
+  SkillLevel,
+  MuscleRegion,
+  ScoringType,
+  MovementCategory,
+  MovementFamily,
+  FamilyModality,
+  GoalType,
+  Equipment,
+  LoadPosition,
+  Stance,
+  MovementStyle,
+  Symmetry,
+  RangeDepth,
+  Grip,
+  Direction,
+  SupportPosition,
+  ArmPosition,
+  BenchAngle,
+} from '@/src/types/crossfit';
 
 // Step components
 import { Step1Core } from './wizard/Step1Core';
 import { Step2Classification } from './wizard/Step2Classification';
 import { Step3Attributes } from './wizard/Step3Attributes';
+import type { CoreMovementOption } from './ParentMovementSearch';
 
-export type CatalogItemKind = 'core' | 'derivation' | 'outlier';
+// The steps import the form types through this module.
+export type { WizardFormData, CatalogItemKind } from '@/src/lib/catalogWizardForm';
 
-export interface WizardFormData {
-  // Step 1: identity kind + naming
-  kind: CatalogItemKind;
-  core_movement_id: string | null;
-  core_movement_name: string; // for display in the picker
-  /** Derivations default to engine naming; this toggle reveals the field. */
-  use_custom_name: boolean;
-  name: string;
-  short_name: string;
-  aliases: string[];
-  description: string;
-  video_url: string;
-  image_url: string;
-
-  // Step 2: classification
-  modality_id: string | null;
-  movement_family_id: string | null;
-  goal_type_ids: string[];
-  skill_level: SkillLevel | null;
-  muscle_region_ids: string[];
-  primary_muscle_region_ids: string[];
-  scoring_type_ids: string[];
-
-  // Step 3: identity attributes (one FK column each — single-select)
-  load_position_id: string | null;
-  stance_id: string | null;
-  range_depth_id: string | null;
-  symmetry_id: string | null;
-  grip_orientation_id: string | null;
-  grip_width_id: string | null;
-  bench_angle_id: string | null;
-  direction_id: string | null;
-  support_position_id: string | null;
-  arm_position_id: string | null;
-  variant_label_id: string | null;
-  equipment_ids: string[];
-  /**
-   * ALL movement styles on the row. Step 3 renders only identity styles as
-   * pills; modifier styles loaded by an edit ride along untouched so the
-   * update diff never drops them.
-   */
-  movement_style_ids: string[];
+/** Every static dictionary the steps render — fetched once, up here. */
+export interface WizardDictionaries {
+  muscleRegions: MuscleRegion[];
+  scoringTypes: ScoringType[];
+  categories: MovementCategory[];
+  families: MovementFamily[];
+  familyModalities: FamilyModality[];
+  goalTypes: GoalType[];
+  equipment: Equipment[];
+  loadPositions: LoadPosition[];
+  stances: Stance[];
+  movementStyles: MovementStyle[];
+  symmetries: Symmetry[];
+  rangeDepths: RangeDepth[];
+  grips: Grip[];
+  directions: Direction[];
+  supportPositions: SupportPosition[];
+  armPositions: ArmPosition[];
+  benchAngles: BenchAngle[];
 }
-
-const EMPTY_FORM: WizardFormData = {
-  kind: 'derivation',
-  core_movement_id: null,
-  core_movement_name: '',
-  use_custom_name: false,
-  name: '',
-  short_name: '',
-  aliases: [],
-  description: '',
-  video_url: '',
-  image_url: '',
-  modality_id: null,
-  movement_family_id: null,
-  goal_type_ids: [],
-  skill_level: null,
-  muscle_region_ids: [],
-  primary_muscle_region_ids: [],
-  scoring_type_ids: [],
-  load_position_id: null,
-  stance_id: null,
-  range_depth_id: null,
-  symmetry_id: null,
-  grip_orientation_id: null,
-  grip_width_id: null,
-  bench_angle_id: null,
-  direction_id: null,
-  support_position_id: null,
-  arm_position_id: null,
-  variant_label_id: null,
-  equipment_ids: [],
-  movement_style_ids: [],
-};
 
 interface CatalogItemWizardProps {
   /** The only preset that separates the two tabs. Not editable on a row. */
@@ -132,19 +132,63 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<WizardFormData>(EMPTY_FORM);
+  const [formData, setFormData] = useState<WizardFormData>(EMPTY_WIZARD_FORM);
+  const [dictionaries, setDictionaries] = useState<WizardDictionaries | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [saving, setSaving] = useState(false);
   /** Original name_is_custom of the row being edited (drives clear_custom_name). */
   const [editWasCustomNamed, setEditWasCustomNamed] = useState(false);
+  /** Once the user hand-edits Short Name, the name field stops regenerating it. */
+  const [shortNameTouched, setShortNameTouched] = useState(false);
   const [duplicate, setDuplicate] = useState<CatalogExerciseRow | null>(null);
+  // Inheritance bookkeeping lives at wizard level: it must survive step
+  // remounts (back navigation) — per-step-mount state re-ran the clobber.
+  const [inheritedFields, setInheritedFields] = useState<Set<string>>(new Set());
+  const [overriddenFields, setOverriddenFields] = useState<Set<OverridableInheritField>>(
+    new Set(),
+  );
 
   const noun = isMovement ? 'Movement' : 'Exercise';
   const isEdit = !!editId;
 
   useEffect(() => {
+    loadDictionaries();
+  }, []);
+
+  useEffect(() => {
     if (editId) loadForEdit(editId);
   }, [editId]);
+
+  // Leaving 'derivation' drops the inheritance badges (values stay put).
+  useEffect(() => {
+    if (formData.kind !== 'derivation') setInheritedFields(new Set());
+  }, [formData.kind]);
+
+  const loadDictionaries = async () => {
+    try {
+      const [
+        muscleRegions, scoringTypes, categories, families, familyModalities, goalTypes,
+        equipment, loadPositions, stances, movementStyles, symmetries, rangeDepths,
+        grips, directions, supportPositions, armPositions, benchAngles,
+      ] = await Promise.all([
+        fetchMuscleRegions(), fetchScoringTypes(), fetchMovementCategories(),
+        fetchMovementFamilies(), fetchFamilyModalities(), fetchGoalTypes(),
+        fetchEquipment(), fetchLoadPositions(), fetchStances(), fetchMovementStyles(),
+        fetchSymmetries(), fetchRangeDepths(), fetchGrips(), fetchDirections(),
+        fetchSupportPositions(), fetchArmPositions(), fetchBenchAngles(),
+      ]);
+      setDictionaries({
+        muscleRegions, scoringTypes, categories, families, familyModalities, goalTypes,
+        equipment, loadPositions, stances, movementStyles, symmetries, rangeDepths,
+        grips, directions, supportPositions, armPositions, benchAngles,
+      });
+    } catch (error) {
+      console.error('Error loading wizard dictionaries:', error);
+      Alert.alert('Could not load the catalog dictionaries', undefined, [
+        { text: 'OK', onPress: onClose },
+      ]);
+    }
+  };
 
   const loadForEdit = async (id: string) => {
     try {
@@ -155,20 +199,12 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
         : detail.core_movement_id
           ? 'derivation'
           : 'outlier';
-      let coreName = '';
-      if (kind === 'derivation' && detail.core_movement_id) {
-        const { data } = await supabase
-          .from('exercises')
-          .select('name')
-          .eq('id', detail.core_movement_id)
-          .maybeSingle();
-        coreName = (data as { name: string } | null)?.name ?? '';
-      }
       setEditWasCustomNamed(detail.name_is_custom);
+      setShortNameTouched(true); // never regenerate a stored short name
       setFormData({
         kind,
         core_movement_id: kind === 'derivation' ? detail.core_movement_id : null,
-        core_movement_name: coreName,
+        core_movement_name: detail.core_movement_name ?? '',
         use_custom_name: kind !== 'derivation' || detail.name_is_custom,
         name: detail.name,
         short_name: detail.short_name ?? '',
@@ -200,6 +236,7 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
         equipment_ids: detail.equipment_ids,
         movement_style_ids: detail.movement_style_ids,
       });
+      // NOTE deliberately NO inheritance here: an edit shows the row as saved.
     } catch (error) {
       console.error('Error loading exercise for edit:', error);
       Alert.alert(`Could not load this ${noun.toLowerCase()}`, undefined, [
@@ -212,6 +249,41 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
 
   const updateFormData = (updates: Partial<WizardFormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
+  };
+
+  /**
+   * The ONE inheritance trigger: Step 1 explicitly picked (or changed) the
+   * core. Never fired by prefill or step remounts.
+   */
+  const handleCorePicked = async (core: CoreMovementOption) => {
+    updateFormData({
+      core_movement_id: core.id,
+      core_movement_name: core.name,
+      variant_label_id: null, // the vocabulary is core-scoped: reset on change
+    });
+    try {
+      const classification = await fetchCoreClassification(core.id);
+      if (!classification) return;
+      const { updates, inherited } = computeCoreInheritance(classification, overriddenFields);
+      updateFormData(updates);
+      setInheritedFields(new Set(inherited));
+    } catch (error) {
+      console.error('Error inheriting core classification:', error);
+    }
+  };
+
+  const handleCoreCleared = () => {
+    updateFormData({ core_movement_id: null, core_movement_name: '', variant_label_id: null });
+    setInheritedFields(new Set());
+  };
+
+  const handleOverride = (field: OverridableInheritField) => {
+    setOverriddenFields(prev => new Set(prev).add(field));
+    setInheritedFields(prev => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
   };
 
   /** Step-1 truth: a core/outlier needs a name; a derivation needs a core
@@ -257,83 +329,34 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
     if (currentStep < STEPS.length) setCurrentStep(currentStep + 1);
   };
 
-  /** Everything create and update share, straight from the form. */
-  const sharedFields = () => ({
-    core_movement_id: formData.kind === 'derivation' ? formData.core_movement_id : null,
-    load_position_id: formData.load_position_id,
-    stance_id: formData.stance_id,
-    range_depth_id: formData.range_depth_id,
-    symmetry_id: formData.symmetry_id,
-    grip_orientation_id: formData.grip_orientation_id,
-    grip_width_id: formData.grip_width_id,
-    bench_angle_id: formData.bench_angle_id,
-    direction_id: formData.direction_id,
-    support_position_id: formData.support_position_id,
-    arm_position_id: formData.arm_position_id,
-    // G4: only ever a picker choice from the core's own vocabulary.
-    variant_label_id: formData.kind === 'derivation' ? formData.variant_label_id : null,
-    equipment_ids: formData.equipment_ids,
-    movement_style_ids: formData.movement_style_ids,
-    scoring_type_ids: formData.scoring_type_ids,
-    goal_type_ids: formData.goal_type_ids,
-    primary_muscle_region_ids: formData.primary_muscle_region_ids,
-    secondary_muscle_region_ids: formData.muscle_region_ids.filter(
-      (m) => !formData.primary_muscle_region_ids.includes(m),
-    ),
-    movement_family_id: formData.movement_family_id,
-    movement_category_id: formData.modality_id,
-    skill_level: formData.skill_level,
-    short_name: formData.short_name.trim() || null,
-    description: formData.description.trim() || null,
-    video_url: formData.video_url.trim() || null,
-    image_url: formData.image_url.trim() || null,
-  });
-
-  const wantsCustomName = formData.kind !== 'derivation' || formData.use_custom_name;
-
   const handleSave = async () => {
     if (saving) return;
     setSaving(true);
     try {
+      let failedAliases: string[] = [];
       if (isEdit && editId) {
-        const patch: UpdateCatalogExercisePatch = { ...sharedFields() };
-        if (formData.kind === 'core') {
-          // A core self-references by trigger; the patch must not touch it.
-          delete patch.core_movement_id;
-        }
-        if (wantsCustomName) {
-          patch.name = formData.name.trim();
-        } else if (editWasCustomNamed) {
-          // Custom naming switched OFF: hand the name back to the engine.
-          patch.clear_custom_name = true;
-        }
-        await updateCatalogExercise(editId, patch);
+        await updateCatalogExercise(editId, buildUpdatePatch(formData, editWasCustomNamed));
       } else {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           Alert.alert('Error', `You must be logged in to create ${isMovement ? 'a movement' : 'an exercise'}`);
           return;
         }
-        const input: CreateCatalogExerciseInput = {
-          ...sharedFields(),
-          name: wantsCustomName ? formData.name.trim() : null,
-          is_core: formData.kind === 'core',
-          is_movement: isMovement,
-          created_by: user.id,
-        };
-        const row = await createCatalogExercise(input);
+        const row = await createCatalogExercise(buildCreateInput(formData, isMovement, user.id));
         if (formData.aliases.length > 0) {
-          // Aliases are a side dish: the row exists either way, so a failed
-          // alias write is logged, never fatal to the save.
-          try {
-            await addWildAliases(row.id, formData.aliases);
-          } catch (aliasError) {
-            console.error('Error writing aliases:', aliasError);
-          }
+          // Aliases are a side dish: the row exists either way. Every alias
+          // is attempted; the misses are reported, never fatal to the save.
+          const result = await addWildAliases(row.id, formData.aliases);
+          failedAliases = result.failed;
         }
       }
 
-      Alert.alert('Success', `${noun} ${isEdit ? 'updated' : 'created'} successfully!`, [
+      const baseMessage = `${noun} ${isEdit ? 'updated' : 'created'} successfully!`;
+      const message =
+        failedAliases.length > 0
+          ? `${baseMessage}\nCreated, but ${failedAliases.length} alias(es) could not be saved: ${failedAliases.join(', ')}`
+          : baseMessage;
+      Alert.alert('Success', message, [
         {
           text: 'OK',
           onPress: () => {
@@ -361,12 +384,16 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
     setDuplicate(null);
     onClose();
     if (existing) {
-      const base = isMovement ? '/(tabs)/training/movement' : '/(tabs)/training/exercise';
+      // Route by what the EXISTING row is, not by this wizard's preset.
+      const base = existing.is_movement
+        ? '/(tabs)/training/movement'
+        : '/(tabs)/training/exercise';
       router.push(`${base}/${existing.id}`);
     }
   };
 
   const renderStep = () => {
+    if (!dictionaries) return null;
     switch (currentStep) {
       case 1:
         return (
@@ -375,12 +402,31 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
             updateFormData={updateFormData}
             entityType={isMovement ? 'movement' : 'exercise'}
             isEdit={isEdit}
+            onCorePicked={handleCorePicked}
+            onCoreCleared={handleCoreCleared}
+            shortNameTouched={shortNameTouched}
+            onShortNameTouched={() => setShortNameTouched(true)}
           />
         );
       case 2:
-        return <Step2Classification formData={formData} updateFormData={updateFormData} />;
+        return (
+          <Step2Classification
+            formData={formData}
+            updateFormData={updateFormData}
+            dictionaries={dictionaries}
+            inheritedFields={inheritedFields}
+            overriddenFields={overriddenFields}
+            onOverride={handleOverride}
+          />
+        );
       case 3:
-        return <Step3Attributes formData={formData} updateFormData={updateFormData} />;
+        return (
+          <Step3Attributes
+            formData={formData}
+            updateFormData={updateFormData}
+            dictionaries={dictionaries}
+          />
+        );
       default:
         return null;
     }
@@ -389,6 +435,7 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
   const currentStepInfo = STEPS[currentStep - 1];
   const isLastStep = currentStep === STEPS.length;
   const isFirstStep = currentStep === 1;
+  const loading = loadingEdit || !dictionaries;
 
   return (
     <>
@@ -424,7 +471,7 @@ export function CatalogItemWizard({ isMovement, editId, onClose, onSave }: Catal
         </View>
 
         {/* Step Content */}
-        {loadingEdit ? (
+        {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading...</Text>

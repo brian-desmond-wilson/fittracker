@@ -5,145 +5,48 @@
 // name map is gone, so merged/renamed families (Midline, Swing, Rotation…)
 // are reachable the moment the dictionary says so. Muscle-region sections
 // come from the dictionary's region_group, not display_order ranges.
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+//
+// This step RENDERS only: dictionaries arrive from the wizard (fetched once
+// at mount up there), and core inheritance is applied by the wizard when
+// Step 1 explicitly picks a core — a remount of this step (back navigation,
+// edit prefill) must never re-clobber the form with the core's values.
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { colors } from '@/src/lib/colors';
-import type { WizardFormData } from '../CatalogItemWizard';
-import {
-  fetchMuscleRegions,
-  fetchScoringTypes,
-  fetchMovementCategories,
-  fetchMovementFamilies,
-  fetchGoalTypes,
-  fetchFamilyModalities,
-  fetchMovementWithAttributes,
-} from '@/src/lib/supabase/crossfit';
-import type {
-  MuscleRegion,
-  ScoringType,
-  SkillLevel,
-  MovementCategory,
-  MovementFamily,
-  GoalType,
-  FamilyModality,
-} from '@/src/types/crossfit';
+import { colors as themeColors } from '@/src/theme/tokens';
+import type { WizardFormData, WizardDictionaries } from '../CatalogItemWizard';
+import type { OverridableInheritField } from '@/src/lib/catalogWizardForm';
+import type { MuscleRegion, SkillLevel, MovementFamily } from '@/src/types/crossfit';
 
 interface Step2ClassificationProps {
   formData: WizardFormData;
   updateFormData: (updates: Partial<WizardFormData>) => void;
+  dictionaries: WizardDictionaries;
+  /** Wizard-owned inheritance bookkeeping (survives step remounts). */
+  inheritedFields: ReadonlySet<string>;
+  overriddenFields: ReadonlySet<OverridableInheritField>;
+  onOverride: (field: OverridableInheritField) => void;
 }
 
 const SKILL_LEVELS: SkillLevel[] = ['Beginner', 'Intermediate', 'Advanced'];
 
-// Fields that can be overridden even when inherited
-type OverridableField = 'skill_level' | 'scoring_type_ids';
-
-export function Step2Classification({ formData, updateFormData }: Step2ClassificationProps) {
-  const [muscleRegions, setMuscleRegions] = useState<MuscleRegion[]>([]);
-  const [scoringTypes, setScoringTypes] = useState<ScoringType[]>([]);
-  const [categories, setCategories] = useState<MovementCategory[]>([]);
-  const [allFamilies, setAllFamilies] = useState<MovementFamily[]>([]);
-  const [familyModalities, setFamilyModalities] = useState<FamilyModality[]>([]);
-  const [goalTypes, setGoalTypes] = useState<GoalType[]>([]);
-  const [loading, setLoading] = useState(true);
+export function Step2Classification({
+  formData,
+  updateFormData,
+  dictionaries,
+  inheritedFields,
+  overriddenFields,
+  onOverride,
+}: Step2ClassificationProps) {
+  const {
+    muscleRegions,
+    scoringTypes,
+    categories,
+    families: allFamilies,
+    familyModalities,
+    goalTypes,
+  } = dictionaries;
   const [showAllFamilies, setShowAllFamilies] = useState(false);
-
-  // Attribute inheritance from the chosen CORE movement
-  const [inheritedFields, setInheritedFields] = useState<Set<string>>(new Set());
-  const [overriddenFields, setOverriddenFields] = useState<Set<OverridableField>>(new Set());
-
-  useEffect(() => {
-    loadReferenceData();
-  }, []);
-
-  // Pre-fill classification from the core when one is chosen.
-  useEffect(() => {
-    if (formData.kind === 'derivation' && formData.core_movement_id) {
-      loadCoreAttributes();
-    } else {
-      setInheritedFields(new Set());
-    }
-  }, [formData.core_movement_id, formData.kind]);
-
-  const loadCoreAttributes = async () => {
-    try {
-      const core = await fetchMovementWithAttributes(formData.core_movement_id!);
-
-      // Auto-inherit attributes from the core
-      const fieldsToInherit = new Set<string>();
-
-      // Always inherit (locked fields)
-      if (core.movement_family_id) {
-        updateFormData({ movement_family_id: core.movement_family_id });
-        fieldsToInherit.add('movement_family_id');
-      }
-      if (core.movement_category_id) {
-        updateFormData({ modality_id: core.movement_category_id });
-        fieldsToInherit.add('modality_id');
-      }
-      if (core.goal_type_id) {
-        updateFormData({ goal_type_ids: [core.goal_type_id] });
-        fieldsToInherit.add('goal_type_ids');
-      }
-
-      // Extract muscle regions from the core's exercise_muscle_regions array
-      if (core.muscle_regions && Array.isArray(core.muscle_regions)) {
-        const muscleRegionIds = core.muscle_regions.map((mr: any) => mr.muscle_region_id);
-        const primaryMuscleRegionIds = core.muscle_regions
-          .filter((mr: any) => mr.is_primary)
-          .map((mr: any) => mr.muscle_region_id);
-
-        updateFormData({
-          muscle_region_ids: muscleRegionIds,
-          primary_muscle_region_ids: primaryMuscleRegionIds,
-        });
-        fieldsToInherit.add('muscle_region_ids');
-      }
-
-      // Overridable fields (pre-fill but allow override)
-      if (core.skill_level && !overriddenFields.has('skill_level')) {
-        updateFormData({ skill_level: core.skill_level });
-        fieldsToInherit.add('skill_level');
-      }
-
-      // Extract scoring types from the core's exercise_scoring_types array
-      if (core.scoring_types && Array.isArray(core.scoring_types) && !overriddenFields.has('scoring_type_ids')) {
-        const scoringTypeIds = core.scoring_types.map((st: any) => st.scoring_type_id);
-        updateFormData({ scoring_type_ids: scoringTypeIds });
-        fieldsToInherit.add('scoring_type_ids');
-      }
-
-      setInheritedFields(fieldsToInherit);
-    } catch (error) {
-      console.error('Error loading core attributes:', error);
-    }
-  };
-
-  const loadReferenceData = async () => {
-    try {
-      setLoading(true);
-      const [regionsData, scoringData, categoriesData, familiesData, familyModalityData, goalTypesData] =
-        await Promise.all([
-          fetchMuscleRegions(),
-          fetchScoringTypes(),
-          fetchMovementCategories(),
-          fetchMovementFamilies(),
-          fetchFamilyModalities(),
-          fetchGoalTypes(),
-        ]);
-
-      setMuscleRegions(regionsData);
-      setScoringTypes(scoringData);
-      setCategories(categoriesData);
-      setAllFamilies(familiesData);
-      setFamilyModalities(familyModalityData);
-      setGoalTypes(goalTypesData);
-    } catch (error) {
-      console.error('Error loading reference data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const toggleMuscleRegion = (regionId: string) => {
     const isCurrentlySelected = formData.muscle_region_ids.includes(regionId);
@@ -191,28 +94,22 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     }
   };
 
-  // Helper functions for inheritance
+  // Helper functions for inheritance badges (state lives in the wizard)
   const isFieldInherited = (fieldName: string): boolean => {
-    return inheritedFields.has(fieldName) && !overriddenFields.has(fieldName as OverridableField);
+    return (
+      inheritedFields.has(fieldName) &&
+      !overriddenFields.has(fieldName as OverridableInheritField)
+    );
   };
 
-  const isFieldOverridden = (fieldName: OverridableField): boolean => {
+  const isFieldOverridden = (fieldName: OverridableInheritField): boolean => {
     return overriddenFields.has(fieldName);
-  };
-
-  const handleOverride = (fieldName: OverridableField) => {
-    setOverriddenFields(prev => new Set(prev).add(fieldName));
-    setInheritedFields(prev => {
-      const next = new Set(prev);
-      next.delete(fieldName);
-      return next;
-    });
   };
 
   const renderInheritanceBadge = (fieldName: string) => {
     if (!formData.core_movement_name) return null;
 
-    if (isFieldOverridden(fieldName as OverridableField)) {
+    if (isFieldOverridden(fieldName as OverridableInheritField)) {
       return (
         <View style={styles.inheritanceBadge}>
           <Text style={styles.inheritanceText}>Overridden</Text>
@@ -231,13 +128,13 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     return null;
   };
 
-  const renderOverrideButton = (fieldName: OverridableField) => {
+  const renderOverrideButton = (fieldName: OverridableInheritField) => {
     if (!isFieldInherited(fieldName)) return null;
 
     return (
       <TouchableOpacity
         style={styles.overrideButton}
-        onPress={() => handleOverride(fieldName)}
+        onPress={() => onOverride(fieldName)}
         activeOpacity={0.7}
       >
         <Text style={styles.overrideButtonText}>Override</Text>
@@ -265,6 +162,16 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
   const filteredFamilies = getFilteredFamilies();
   const hasFilteredFamilies = formData.modality_id && !showAllFamilies;
 
+  // "Show All Families" is an escape hatch: an off-table pick is allowed
+  // (the DB does not enforce the truth table — it is a curation convention),
+  // it just gets called out.
+  const familyOffTable = !!(
+    formData.movement_family_id &&
+    formData.modality_id &&
+    familyModalities.length > 0 &&
+    !allowedFamilyIds(formData.modality_id).has(formData.movement_family_id)
+  );
+
   /** Muscle regions grouped by the dictionary's region_group, in display order. */
   const muscleSections = muscleRegions.reduce<{ group: string; regions: MuscleRegion[] }[]>(
     (sections, region) => {
@@ -279,15 +186,6 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
     },
     [],
   );
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -382,6 +280,12 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
             );
           })}
         </View>
+        {familyOffTable && (
+          <Text style={styles.offTableWarning}>
+            This family is outside the usual set for this modality — allowed,
+            just unusual.
+          </Text>
+        )}
         {hasFilteredFamilies && (
           <TouchableOpacity
             onPress={() => setShowAllFamilies(true)}
@@ -404,9 +308,12 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
 
       {/* Goal Type */}
       <View style={styles.field}>
-        <Text style={styles.label}>
-          Goal Type <Text style={styles.required}>*</Text>
-        </Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>
+            Goal Type <Text style={styles.required}>*</Text>
+          </Text>
+        </View>
+        {renderInheritanceBadge('goal_type_ids')}
         <Text style={styles.helperText}>
           Training goals for this movement (select all that apply)
         </Text>
@@ -477,6 +384,7 @@ export function Step2Classification({ formData, updateFormData }: Step2Classific
       {/* Muscle Regions */}
       <View style={styles.field}>
         <Text style={styles.label}>Muscle Regions</Text>
+        {renderInheritanceBadge('muscle_region_ids')}
         <Text style={styles.helperText}>
           Tap to select as primary • Long press to toggle to secondary
         </Text>
@@ -578,17 +486,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginVertical: 8,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: colors.mutedForeground,
-  },
   field: {
     gap: 8,
   },
@@ -603,6 +500,11 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 14,
     color: colors.mutedForeground,
+  },
+  offTableWarning: {
+    fontSize: 13,
+    color: themeColors.warning,
+    fontStyle: 'italic',
   },
   sectionHeader: {
     fontSize: 13,

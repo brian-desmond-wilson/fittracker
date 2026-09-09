@@ -298,8 +298,8 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   editButton: {
-    // The blue of the tier badges: an informational action, not destructive.
-    backgroundColor: '#3B82F6',
+    // Brand green: edit is a constructive action; delete keeps danger red.
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     // Same geometry trick as SwipeDeleteAction: hang 12 behind the card so

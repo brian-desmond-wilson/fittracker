@@ -6,44 +6,25 @@
 // styles show the IDENTITY styles (Strict, Kipping, Weighted…) — modifier
 // styles a loaded edit carries ride along untouched. The variant label is a
 // picker over the chosen core's own vocabulary only — never free text (G4).
+//
+// Static dictionaries arrive from the wizard (fetched once at mount up
+// there); only the core-scoped variant labels are fetched here, because they
+// change with the chosen core. Category groupings (equipment, styles) come
+// from the rows' own category fields — a new DB category shows up as its own
+// section instead of vanishing.
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
-import type { WizardFormData } from '../CatalogItemWizard';
-import {
-  fetchLoadPositions,
-  fetchStances,
-  fetchMovementStyles,
-  fetchSymmetries,
-  fetchRangeDepths,
-  fetchEquipment,
-  fetchGrips,
-  fetchDirections,
-  fetchSupportPositions,
-  fetchArmPositions,
-  fetchBenchAngles,
-  fetchVariantLabels,
-} from '@/src/lib/supabase/crossfit';
-import type {
-  LoadPosition,
-  Stance,
-  MovementStyle,
-  Symmetry,
-  RangeDepth,
-  Equipment,
-  Grip,
-  Direction,
-  SupportPosition,
-  ArmPosition,
-  BenchAngle,
-  VariantLabel,
-} from '@/src/types/crossfit';
+import type { WizardFormData, WizardDictionaries } from '../CatalogItemWizard';
+import { fetchVariantLabels } from '@/src/lib/supabase/crossfit';
+import type { VariantLabel } from '@/src/types/crossfit';
 import { AttributePickerSheet, type AttributeOption } from './AttributePickerSheet';
 
 interface Step3AttributesProps {
   formData: WizardFormData;
   updateFormData: (updates: Partial<WizardFormData>) => void;
+  dictionaries: WizardDictionaries;
 }
 
 /** The single-select identity columns this step edits via sheets. */
@@ -60,25 +41,39 @@ type PickerKey =
   | 'arm_position_id'
   | 'variant_label_id';
 
-export function Step3Attributes({ formData, updateFormData }: Step3AttributesProps) {
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
-  const [loadPositions, setLoadPositions] = useState<LoadPosition[]>([]);
-  const [stances, setStances] = useState<Stance[]>([]);
-  const [movementStyles, setMovementStyles] = useState<MovementStyle[]>([]);
-  const [symmetries, setSymmetries] = useState<Symmetry[]>([]);
-  const [depths, setDepths] = useState<RangeDepth[]>([]);
-  const [grips, setGrips] = useState<Grip[]>([]);
-  const [directions, setDirections] = useState<Direction[]>([]);
-  const [supportPositions, setSupportPositions] = useState<SupportPosition[]>([]);
-  const [armPositions, setArmPositions] = useState<ArmPosition[]>([]);
-  const [benchAngles, setBenchAngles] = useState<BenchAngle[]>([]);
-  const [variantLabels, setVariantLabels] = useState<VariantLabel[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [openPicker, setOpenPicker] = useState<PickerKey | null>(null);
+/** Group rows by their own category field, in first-encounter order. */
+function groupByCategory<T extends { category?: string | null }>(
+  rows: T[],
+): { category: string; items: T[] }[] {
+  const groups: { category: string; items: T[] }[] = [];
+  for (const row of rows) {
+    const category = row.category || 'Other';
+    const group = groups.find((g) => g.category === category);
+    if (group) {
+      group.items.push(row);
+    } else {
+      groups.push({ category, items: [row] });
+    }
+  }
+  return groups;
+}
 
-  useEffect(() => {
-    loadReferenceData();
-  }, []);
+export function Step3Attributes({ formData, updateFormData, dictionaries }: Step3AttributesProps) {
+  const {
+    equipment,
+    loadPositions,
+    stances,
+    movementStyles,
+    symmetries,
+    rangeDepths,
+    grips,
+    directions,
+    supportPositions,
+    armPositions,
+    benchAngles,
+  } = dictionaries;
+  const [variantLabels, setVariantLabels] = useState<VariantLabel[]>([]);
+  const [openPicker, setOpenPicker] = useState<PickerKey | null>(null);
 
   // The variant vocabulary is scoped to the chosen core (G2/G4).
   useEffect(() => {
@@ -93,53 +88,6 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       setVariantLabels([]);
     }
   }, [formData.kind, formData.core_movement_id]);
-
-  const loadReferenceData = async () => {
-    try {
-      setLoading(true);
-      const [
-        equipmentData,
-        loadPosData,
-        stancesData,
-        stylesData,
-        symmetriesData,
-        depthsData,
-        gripsData,
-        directionsData,
-        supportData,
-        armData,
-        benchData,
-      ] = await Promise.all([
-        fetchEquipment(),
-        fetchLoadPositions(),
-        fetchStances(),
-        fetchMovementStyles(),
-        fetchSymmetries(),
-        fetchRangeDepths(),
-        fetchGrips(),
-        fetchDirections(),
-        fetchSupportPositions(),
-        fetchArmPositions(),
-        fetchBenchAngles(),
-      ]);
-
-      setEquipment(equipmentData);
-      setLoadPositions(loadPosData);
-      setStances(stancesData);
-      setMovementStyles(stylesData);
-      setSymmetries(symmetriesData);
-      setDepths(depthsData);
-      setGrips(gripsData);
-      setDirections(directionsData);
-      setSupportPositions(supportData);
-      setArmPositions(armData);
-      setBenchAngles(benchData);
-    } catch (error) {
-      console.error('Error loading reference data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const toggleEquipment = (equipmentId: string) => {
     const isSelected = formData.equipment_ids.includes(equipmentId);
@@ -159,37 +107,13 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
     });
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  // Group equipment by category
-  const equipmentByCategory = equipment.reduce((acc, item) => {
-    if (!acc[item.category]) {
-      acc[item.category] = [];
-    }
-    acc[item.category].push(item);
-    return acc;
-  }, {} as Record<string, Equipment[]>);
-
-  // Define category order
-  const categoryOrder = [
-    'Free Weights',
-    'Implements',
-    'Machines',
-    'Bodyweight / Apparatus',
-    'Supports / Surfaces',
-    'Recovery Tools',
-  ];
-
+  // Groupings derive from the fetched rows (dictionary order), never from
+  // hardcoded name lists — unknown categories land in their own section.
+  const equipmentGroups = groupByCategory(equipment);
+  const identityStyles = movementStyles.filter((s) => s.is_identity);
+  const styleGroups = groupByCategory(identityStyles);
   const gripOrientations = grips.filter((g) => g.category === 'Orientation');
   const gripWidths = grips.filter((g) => g.category === 'Width');
-  const identityStyles = movementStyles.filter((s) => s.is_identity);
 
   const toOptions = (
     rows: { id: string; name: string; description?: string | null }[],
@@ -223,7 +147,7 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
       key: 'range_depth_id',
       label: 'Range Depth',
       helper: 'Depth or range of motion specification',
-      options: toOptions(depths),
+      options: toOptions(rangeDepths),
     },
     {
       key: 'symmetry_id',
@@ -306,33 +230,28 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
             : 'Select all equipment used for this movement'}
         </Text>
 
-        {categoryOrder.map(category => {
-          const items = equipmentByCategory[category] || [];
-          if (items.length === 0) return null;
-
-          return (
-            <View key={category}>
-              <Text style={styles.sectionHeader}>{category}</Text>
-              <View style={styles.pillsContainer}>
-                {items.map(item => {
-                  const isSelected = formData.equipment_ids.includes(item.id);
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[styles.pill, isSelected && styles.pillSelected]}
-                      onPress={() => toggleEquipment(item.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                        {item.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+        {equipmentGroups.map(({ category, items }) => (
+          <View key={category}>
+            <Text style={styles.sectionHeader}>{category}</Text>
+            <View style={styles.pillsContainer}>
+              {items.map(item => {
+                const isSelected = formData.equipment_ids.includes(item.id);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.pill, isSelected && styles.pillSelected]}
+                    onPress={() => toggleEquipment(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          );
-        })}
+          </View>
+        ))}
       </View>
 
       <View style={styles.separator} />
@@ -408,33 +327,28 @@ export function Step3Attributes({ formData, updateFormData }: Step3AttributesPro
           Weighted…)
         </Text>
 
-        {['Execution Control', 'Dynamic Power', 'Assistance / Load Variant'].map(category => {
-          const categoryStyles = identityStyles.filter(s => s.category === category);
-          if (categoryStyles.length === 0) return null;
-
-          return (
-            <View key={category}>
-              <Text style={styles.sectionHeader}>{category}</Text>
-              <View style={styles.pillsContainer}>
-                {categoryStyles.map(style => {
-                  const isSelected = formData.movement_style_ids.includes(style.id);
-                  return (
-                    <TouchableOpacity
-                      key={style.id}
-                      style={[styles.pill, isSelected && styles.pillSelected]}
-                      onPress={() => toggleMovementStyle(style.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
-                        {style.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+        {styleGroups.map(({ category, items }) => (
+          <View key={category}>
+            <Text style={styles.sectionHeader}>{category}</Text>
+            <View style={styles.pillsContainer}>
+              {items.map(style => {
+                const isSelected = formData.movement_style_ids.includes(style.id);
+                return (
+                  <TouchableOpacity
+                    key={style.id}
+                    style={[styles.pill, isSelected && styles.pillSelected]}
+                    onPress={() => toggleMovementStyle(style.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>
+                      {style.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          );
-        })}
+          </View>
+        ))}
       </View>
 
       {/* One sheet instance serves whichever row was tapped. */}
@@ -456,17 +370,6 @@ const styles = StyleSheet.create({
   container: {
     gap: 24,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: colors.mutedForeground,
-  },
   separator: {
     height: 1,
     backgroundColor: colors.border,
@@ -482,7 +385,7 @@ const styles = StyleSheet.create({
   },
   helperText: {
     fontSize: 14,
-    color: '#94A3B8', // Lighter gray for better visibility
+    color: colors.mutedForeground,
   },
   sectionHeader: {
     fontSize: 13,
@@ -502,9 +405,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: '#1E293B',
-    borderWidth: 1.5,
-    borderColor: '#334155', // Lighter border for visibility
+    backgroundColor: colors.muted,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   pillSelected: {
     backgroundColor: colors.primary,
@@ -513,7 +416,7 @@ const styles = StyleSheet.create({
   pillText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#F9FAFB', // Explicit white for visibility
+    color: colors.foreground,
   },
   pillTextSelected: {
     color: '#FFFFFF',
@@ -522,7 +425,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.muted,
     overflow: 'hidden',
   },
   pickerRow: {

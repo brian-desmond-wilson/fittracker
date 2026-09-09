@@ -399,15 +399,61 @@ export async function fetchFamilyModalities() {
 }
 
 /**
+ * Fetch the classification a core movement hands down to a new derivation
+ * (wizard inheritance). Goals come from the exercise_goal_types junction;
+ * the legacy single goal_type_id column is only a fallback for rows whose
+ * junction was never backfilled.
+ */
+export async function fetchCoreClassification(coreId: string) {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select(
+      'movement_family_id, movement_category_id, skill_level, goal_type_id, ' +
+        'exercise_goal_types(goal_type_id), ' +
+        'exercise_scoring_types(scoring_type_id), ' +
+        'exercise_muscle_regions(muscle_region_id, is_primary)',
+    )
+    .eq('id', coreId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching core classification:', error);
+    throw error;
+  }
+  if (!data) return null;
+
+  const row = data as any;
+  const junctionGoals = (row.exercise_goal_types ?? []).map((g: any) => g.goal_type_id);
+  const muscles = row.exercise_muscle_regions ?? [];
+  return {
+    movement_family_id: row.movement_family_id ?? null,
+    movement_category_id: row.movement_category_id ?? null,
+    skill_level: row.skill_level ?? null,
+    goal_type_ids:
+      junctionGoals.length > 0 ? junctionGoals : row.goal_type_id ? [row.goal_type_id] : [],
+    scoring_type_ids: (row.exercise_scoring_types ?? []).map((s: any) => s.scoring_type_id),
+    muscle_region_ids: muscles.map((m: any) => m.muscle_region_id),
+    primary_muscle_region_ids: muscles
+      .filter((m: any) => m.is_primary)
+      .map((m: any) => m.muscle_region_id),
+  };
+}
+
+/**
  * Search CORE movements only (is_core rows) — the wizard's core picker.
  * Matches name or a legacy alias-array element, cores first alphabetically.
+ * PostgREST .or() grammar characters are stripped from the term so a typed
+ * comma or paren cannot 400 into silent "no results".
  */
 export async function searchCoreMovements(query: string) {
+  const cleaned = query.replace(/[,()\[\]{}"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+
   const { data, error } = await supabase
     .from('exercises')
     .select('id, name, short_name, image_url, is_core')
     .eq('is_core', true)
-    .or(`name.ilike.%${query}%,aliases.cs.{${query}}`)
+    .or(`name.ilike.%${cleaned}%,aliases.cs.{${cleaned}}`)
     .order('name');
 
   if (error) {

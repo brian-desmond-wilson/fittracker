@@ -17,6 +17,15 @@ interface Step1CoreProps {
   entityType?: 'movement' | 'exercise'; // Controls all labels
   /** Editing an existing row: the kind of a CORE row is locked (demotion is curation tooling). */
   isEdit?: boolean;
+  /**
+   * The wizard's ONE inheritance trigger: fired only when the user picks or
+   * changes the core here — never by prefill or step remounts.
+   */
+  onCorePicked: (core: CoreMovementOption) => void;
+  onCoreCleared: () => void;
+  /** Once the user hand-edits Short Name, typing a name stops regenerating it. */
+  shortNameTouched: boolean;
+  onShortNameTouched: () => void;
 }
 
 const KIND_SEGMENTS: { kind: CatalogItemKind; label: string }[] = [
@@ -25,7 +34,16 @@ const KIND_SEGMENTS: { kind: CatalogItemKind; label: string }[] = [
   { kind: 'outlier', label: 'Outlier' },
 ];
 
-export function Step1Core({ formData, updateFormData, entityType = 'movement', isEdit = false }: Step1CoreProps) {
+export function Step1Core({
+  formData,
+  updateFormData,
+  entityType = 'movement',
+  isEdit = false,
+  onCorePicked,
+  onCoreCleared,
+  shortNameTouched,
+  onShortNameTouched,
+}: Step1CoreProps) {
   const isExercise = entityType === 'exercise';
   const entityName = isExercise ? 'Exercise' : 'Movement';
   const entityNameLower = isExercise ? 'exercise' : 'movement';
@@ -52,18 +70,6 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement', i
       updates.use_custom_name = false; // derivations default to engine naming
     }
     updateFormData(updates);
-  };
-
-  const handleCoreSelect = (core: CoreMovementOption) => {
-    updateFormData({
-      core_movement_id: core.id,
-      core_movement_name: core.name,
-      variant_label_id: null, // the vocabulary is core-scoped: reset on change
-    });
-  };
-
-  const handleCoreClear = () => {
-    updateFormData({ core_movement_id: null, core_movement_name: '', variant_label_id: null });
   };
 
   const addAlias = () => {
@@ -118,13 +124,13 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement', i
       {formData.kind === 'derivation' && (
         <>
           <ParentMovementSearch
-            onSelect={handleCoreSelect}
+            onSelect={onCorePicked}
             selectedMovement={
               formData.core_movement_id
                 ? { id: formData.core_movement_id, name: formData.core_movement_name }
                 : null
             }
-            onClear={handleCoreClear}
+            onClear={onCoreCleared}
             labelText={`Core ${entityName}`}
             helperText={`Search for the core ${entityNameLower} this derivation is based on`}
             placeholder={`Search core ${entityNameLower}s...`}
@@ -172,7 +178,13 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement', i
             placeholderTextColor={colors.mutedForeground}
             value={formData.name}
             onChangeText={text => {
-              // Generate abbreviation from first letter of each word
+              if (shortNameTouched) {
+                updateFormData({ name: text });
+                return;
+              }
+              // Generate abbreviation from first letter of each word — only
+              // until the user hand-edits Short Name (and never on edit,
+              // where the stored short name marks itself touched).
               const abbreviation = text
                 .split(' ')
                 .map(word => word.charAt(0))
@@ -198,7 +210,10 @@ export function Step1Core({ formData, updateFormData, entityType = 'movement', i
           placeholder="e.g., C2B, T2B, HSPU"
           placeholderTextColor={colors.mutedForeground}
           value={formData.short_name}
-          onChangeText={text => updateFormData({ short_name: text })}
+          onChangeText={text => {
+            onShortNameTouched();
+            updateFormData({ short_name: text });
+          }}
           autoCapitalize="words"
         />
       </View>
