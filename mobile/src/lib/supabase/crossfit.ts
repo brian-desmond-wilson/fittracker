@@ -272,6 +272,152 @@ export async function fetchMuscleRegions() {
   return data || [];
 }
 
+/**
+ * Fetch all directions (movement-model identity attribute dictionary)
+ */
+export async function fetchDirections() {
+  const { data, error } = await supabase
+    .from('directions')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching directions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all support positions (movement-model identity attribute dictionary)
+ */
+export async function fetchSupportPositions() {
+  const { data, error } = await supabase
+    .from('support_positions')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching support positions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all arm positions (movement-model identity attribute dictionary)
+ */
+export async function fetchArmPositions() {
+  const { data, error } = await supabase
+    .from('arm_positions')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching arm positions:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all bench angles (movement-model identity attribute dictionary)
+ */
+export async function fetchBenchAngles() {
+  const { data, error } = await supabase
+    .from('bench_angles')
+    .select('*')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching bench angles:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch all grips. Two categories in one dictionary: 'Orientation'
+ * (Pronated, Supinated, …) and 'Width' (Close, Standard, Wide) — the row
+ * columns they feed are grip_orientation_id / grip_width_id.
+ */
+export async function fetchGrips() {
+  const { data, error } = await supabase
+    .from('grips')
+    .select('*')
+    .order('category')
+    .order('display_order');
+
+  if (error) {
+    console.error('Error fetching grips:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch the variant labels scoped to one core movement (guardrail G4: the
+ * variant vocabulary is core-scoped and closed — never free text).
+ */
+export async function fetchVariantLabels(coreMovementId: string) {
+  const { data, error } = await supabase
+    .from('variant_labels')
+    .select('*')
+    .eq('core_movement_id', coreMovementId)
+    .order('name_order')
+    .order('name_fragment');
+
+  if (error) {
+    console.error('Error fetching variant labels:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Fetch the family × modality truth table (movement_family_modalities) —
+ * which movement families are legal for each modality. Replaces the old
+ * hardcoded name map in the wizard.
+ */
+export async function fetchFamilyModalities() {
+  const { data, error } = await supabase
+    .from('movement_family_modalities')
+    .select('movement_family_id, movement_category_id');
+
+  if (error) {
+    console.error('Error fetching family modalities:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+/**
+ * Search CORE movements only (is_core rows) — the wizard's core picker.
+ * Matches name or a legacy alias-array element, cores first alphabetically.
+ */
+export async function searchCoreMovements(query: string) {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id, name, short_name, image_url, is_core')
+    .eq('is_core', true)
+    .or(`name.ilike.%${query}%,aliases.cs.{${query}}`)
+    .order('name');
+
+  if (error) {
+    console.error('Error searching core movements:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
 // ============================================================================
 // MOVEMENTS (Exercises)
 // ============================================================================

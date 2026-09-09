@@ -121,7 +121,68 @@ export interface MovementStyle {
   category: string;
   description: string | null;
   display_order: number;
+  /** Stage 2 split: identity styles feed the fingerprint, modifiers do not. */
+  is_identity: boolean;
   created_at: string;
+}
+
+/** Identity attribute dictionaries added by the movement-model redesign. */
+export interface Direction {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface SupportPosition {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface ArmPosition {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface BenchAngle {
+  id: string;
+  name: string;
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+export interface Grip {
+  id: string;
+  name: string;
+  /** 'Orientation' (Pronated, Supinated, …) or 'Width' (Close, Standard, Wide). */
+  category: 'Orientation' | 'Width';
+  description: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+/** Core-scoped variant vocabulary (guardrail G4: never free text). */
+export interface VariantLabel {
+  id: string;
+  core_movement_id: string;
+  slug: string;
+  name_fragment: string;
+  name_order: number;
+  created_at: string;
+}
+
+/** One row per legal family × modality pairing (movement_family_modalities). */
+export interface FamilyModality {
+  movement_family_id: string;
+  movement_category_id: string;
 }
 
 export interface Symmetry {
@@ -137,6 +198,8 @@ export interface MuscleRegion {
   name: string;
   description: string | null;
   display_order: number;
+  /** Section header the wizard groups by: Upper Body, Core / Midline, … */
+  region_group: string;
   created_at: string;
 }
 
