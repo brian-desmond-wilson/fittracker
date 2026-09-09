@@ -1145,43 +1145,58 @@ END $$;
 ROLLBACK;
 DO $$
 DECLARE
+  v_def TEXT;
   v_observed TEXT;
 BEGIN
-  -- V10: Stage 4 fingerprint lock — the UNIQUE index is present (and unique)
-  -- and the plain exercises_fingerprint_idx is gone. Never both.
-  PERFORM 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-   WHERE c.relname = 'exercises_fingerprint_key'
-     AND c.relnamespace = 'public'::regnamespace
-     AND i.indrelid = 'public.exercises'::regclass
-     AND i.indisunique;
-  IF NOT FOUND THEN
-    SELECT string_agg(indexname, ', ' ORDER BY indexname) INTO v_observed
-      FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'exercises'
-       AND indexname LIKE '%fingerprint%';
-    RAISE EXCEPTION 'V10 FAIL: unique index exercises_fingerprint_key missing or not unique (fingerprint indexes present: %)',
+  -- V10: Stage 4 fingerprint lock — a DEFERRABLE INITIALLY IMMEDIATE unique
+  -- CONSTRAINT on exactly (core_movement_id, identity_fingerprint), and the
+  -- plain exercises_fingerprint_idx is gone. Never both.
+  SELECT pg_get_indexdef(c.conindid) INTO v_def
+    FROM pg_constraint c
+   WHERE c.conrelid = 'public.exercises'::regclass
+     AND c.conname = 'exercises_fingerprint_key'
+     AND c.contype = 'u' AND c.condeferrable AND NOT c.condeferred;
+  IF v_def IS NULL THEN
+    SELECT string_agg(conname || ' (type=' || contype || ', deferrable=' || condeferrable
+                      || ', initially_deferred=' || condeferred || ')', '; ' ORDER BY conname)
+      INTO v_observed
+      FROM pg_constraint WHERE conrelid = 'public.exercises'::regclass AND contype = 'u';
+    RAISE EXCEPTION 'V10 FAIL: exercises_fingerprint_key is not a DEFERRABLE INITIALLY IMMEDIATE unique constraint (unique constraints on exercises: %)',
       COALESCE(v_observed, 'none');
+  END IF;
+  IF v_def NOT LIKE '%UNIQUE INDEX%' OR v_def NOT LIKE '%(core_movement_id, identity_fingerprint)%' THEN
+    RAISE EXCEPTION 'V10 FAIL: exercises_fingerprint_key backing index has the wrong shape: %', v_def;
   END IF;
   PERFORM 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'exercises_fingerprint_idx';
   IF FOUND THEN
     RAISE EXCEPTION 'V10 FAIL: plain exercises_fingerprint_idx still present alongside the unique lock (never both)';
   END IF;
 
-  -- V10: the engine runs on the session-variable guard, not pg_trigger_depth()
-  -- (I2), and the core-reference validation carries its locking reads.
+  -- V10: the engine runs on the session-variable guard, not the depth guard
+  -- (I2), the worklist worker exists, and the core-reference validation
+  -- carries its locking reads under definer rights (I3).
+  PERFORM 1 FROM pg_proc
+   WHERE pronamespace = 'public'::regnamespace AND proname = 'recompute_exercise_identity_row';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V10 FAIL: worker function recompute_exercise_identity_row missing';
+  END IF;
   SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_observed
     FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace
-     AND p.proname IN ('trg_exercise_identity', 'trg_junction_identity', 'recompute_exercise_identity')
-     AND (p.prosrc LIKE '%pg_trigger_depth%' OR p.prosrc NOT LIKE '%fittracker.identity_recompute_visited%');
+     AND ((p.proname IN ('trg_exercise_identity', 'trg_junction_identity', 'recompute_exercise_identity')
+           AND (p.prosrc LIKE '%pg_trigger_depth%' OR p.prosrc NOT LIKE '%fittracker.identity_recompute_active%'))
+       OR (p.proname = 'recompute_exercise_identity_row' AND p.prosrc LIKE '%pg_trigger_depth%'));
   IF v_observed IS NOT NULL THEN
     RAISE EXCEPTION 'V10 FAIL: engine functions off the session-variable guard: %', v_observed;
   END IF;
   PERFORM 1 FROM pg_proc p
    WHERE p.pronamespace = 'public'::regnamespace
      AND p.proname = 'enforce_core_self_reference'
-     AND p.prosrc LIKE '%FOR KEY SHARE%' AND p.prosrc LIKE '%FOR UPDATE%';
+     AND p.prosrc LIKE '%FOR KEY SHARE%' AND p.prosrc LIKE '%FOR UPDATE%'
+     AND p.prosecdef
+     AND array_to_string(COALESCE(p.proconfig, '{}'), ',') LIKE '%search_path=public%';
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'V10 FAIL: enforce_core_self_reference lacks the FOR KEY SHARE / FOR UPDATE locking reads';
+    RAISE EXCEPTION 'V10 FAIL: enforce_core_self_reference lacks the locking reads or SECURITY DEFINER / search_path=public';
   END IF;
 END $$;
 DO $$
@@ -1253,13 +1268,32 @@ BEGIN
   -- as an EXISTING derivation — is rejected by exercises_fingerprint_key. The
   -- clone copies the target's scalar attributes at INSERT and then its junction
   -- rows; every write recomputes, so the violation fires no later than the
-  -- write that completes the matching attribute set (earlier if an intermediate
-  -- set matches some other existing row — either way the lock rejects).
-  SELECT e.id INTO v_target FROM public.exercises e
-   WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core
-   ORDER BY cardinality(public.exercise_identity_attrs(e.id)) ASC, e.id ASC LIMIT 1;
+  -- write that completes the matching attribute set. The target must carry at
+  -- least one SCALAR identity attribute: a scalar-free target's clone would
+  -- collide with the core's own ('') slot at INSERT — the bare-child path, not
+  -- the duplicate path this fixture claims to test. Targets whose scalar-only
+  -- subset is unclaimed are preferred so the rejection lands on the final,
+  -- complete identity (if the subset happens to be claimed, the rejection just
+  -- fires earlier — still a duplicate-of-existing rejection).
+  SELECT c.id INTO v_target FROM (
+    SELECT e.id, e.core_movement_id,
+           cardinality(public.exercise_identity_attrs(e.id)) AS card,
+           array_to_string(ARRAY(
+             SELECT v::text FROM unnest(ARRAY[e.load_position_id, e.stance_id, e.range_depth_id,
+                    e.symmetry_id, e.grip_orientation_id, e.grip_width_id, e.direction_id,
+                    e.support_position_id, e.arm_position_id, e.bench_angle_id, e.variant_label_id]) v
+              WHERE v IS NOT NULL ORDER BY v), '|') AS scalar_fp
+      FROM public.exercises e
+     WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core
+  ) c
+  WHERE c.scalar_fp <> ''
+  ORDER BY (NOT EXISTS (SELECT 1 FROM public.exercises x
+                         WHERE x.core_movement_id = c.core_movement_id
+                           AND x.identity_fingerprint = c.scalar_fp)) DESC,
+           c.card ASC, c.id ASC
+  LIMIT 1;
   IF v_target IS NULL THEN
-    RAISE EXCEPTION 'V10 FAIL: no derivation available to clone for the duplicate fixture';
+    RAISE EXCEPTION 'V10 FAIL: no scalar-attribute derivation available to clone for the duplicate fixture';
   END IF;
 
   BEGIN
@@ -1327,6 +1361,128 @@ BEGIN
     RAISE EXCEPTION 'V10 FAIL (I5): after inserting intermediate A, B parent/tier = %/% (expected A/2)',
       COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = v10_b)::TEXT, 'null'),
       COALESCE((SELECT tier FROM public.exercises WHERE id = v10_b)::TEXT, 'null');
+  END IF;
+END $$;
+ROLLBACK;
+-- V10: Stage 4 review C1 regression — the exact 4-row scenario where the old
+-- recursive cascade left a stale tier: E={W,AP}, T1={W,Alt} (lowest id),
+-- Q={W,G} (oldest created_at), R={W,Alt,G}. Dropping AP from E must leave
+-- R at tier 3 under Q (the recursion reached R via T1 first, read Q's stale
+-- tier 1, and the no-revisit ledger froze the wrong answer at tier 2; the
+-- worklist's global cardinality-ordered pass settles Q before R).
+BEGIN;
+DO $$
+DECLARE
+  st_wide UUID; sy_alt UUID; gw_wide UUID; ap_over UUID;
+  c1_core UUID := 'c0000000-0000-4000-8000-0000000000c0';
+  c1_e    UUID := 'e0000000-0000-4000-8000-0000000000e0';
+  c1_t1   UUID := '10000000-0000-4000-8000-000000000011';
+  c1_q    UUID := 'f0000000-0000-4000-8000-0000000000f0';
+  c1_r    UUID := 'a0000000-0000-4000-8000-0000000000a0';
+  v_observed TEXT;
+BEGIN
+  SELECT id INTO st_wide FROM public.stances WHERE name = 'Wide (Sumo)';
+  SELECT id INTO sy_alt  FROM public.symmetries WHERE name = 'Alternating';
+  SELECT id INTO gw_wide FROM public.grips WHERE name = 'Wide' AND category = 'Width';
+  SELECT id INTO ap_over FROM public.arm_positions WHERE name = 'Overhead';
+  IF st_wide IS NULL OR sy_alt IS NULL OR gw_wide IS NULL OR ap_over IS NULL THEN
+    RAISE EXCEPTION 'V10 FAIL (C1): dictionary rows missing (Wide (Sumo)=%, Alternating=%, Wide grip=%, Overhead arm=%)',
+      COALESCE(st_wide::TEXT, 'null'), COALESCE(sy_alt::TEXT, 'null'),
+      COALESCE(gw_wide::TEXT, 'null'), COALESCE(ap_over::TEXT, 'null');
+  END IF;
+
+  INSERT INTO public.exercises (id, name, slug, is_core, is_official)
+    VALUES (c1_core, 'V10C1CORE', 'v10-c1-core', true, true);
+  INSERT INTO public.exercises (id, name, slug, is_official, core_movement_id, stance_id, arm_position_id)
+    VALUES (c1_e, 'V10C1E', 'v10-c1-e', true, c1_core, st_wide, ap_over);
+  INSERT INTO public.exercises (id, name, slug, is_official, core_movement_id, stance_id, symmetry_id)
+    VALUES (c1_t1, 'V10C1T1', 'v10-c1-t1', true, c1_core, st_wide, sy_alt);
+  INSERT INTO public.exercises (id, name, slug, is_official, core_movement_id, stance_id, grip_width_id, created_at)
+    VALUES (c1_q, 'V10C1Q', 'v10-c1-q', true, c1_core, st_wide, gw_wide, now() - interval '1 day');
+  INSERT INTO public.exercises (id, name, slug, is_official, core_movement_id, stance_id, symmetry_id, grip_width_id)
+    VALUES (c1_r, 'V10C1R', 'v10-c1-r', true, c1_core, st_wide, sy_alt, gw_wide);
+
+  -- Sanity on the starting shape: R sits under Q (created_at tiebreak) at tier 2.
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = c1_r) IS DISTINCT FROM c1_q
+     OR (SELECT tier FROM public.exercises WHERE id = c1_r) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'V10 FAIL (C1): starting shape wrong — R parent/tier = %/% (expected Q/2)',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = c1_r)::TEXT, 'null'),
+      COALESCE((SELECT tier FROM public.exercises WHERE id = c1_r)::TEXT, 'null');
+  END IF;
+
+  -- The trigger: drop AP from E. E becomes {W}, the parent of T1 and Q; R must
+  -- land at tier 3 under Q.
+  UPDATE public.exercises SET arm_position_id = NULL WHERE id = c1_e;
+
+  SELECT string_agg(bad.v, '; ') INTO v_observed FROM (
+    SELECT 'E parent/tier=' || COALESCE(parent_exercise_id::TEXT, 'null') || '/' || COALESCE(tier::TEXT, 'null')
+      FROM public.exercises WHERE id = c1_e AND (parent_exercise_id IS DISTINCT FROM c1_core OR tier IS DISTINCT FROM 1)
+    UNION ALL
+    SELECT 'T1 parent/tier=' || COALESCE(parent_exercise_id::TEXT, 'null') || '/' || COALESCE(tier::TEXT, 'null')
+      FROM public.exercises WHERE id = c1_t1 AND (parent_exercise_id IS DISTINCT FROM c1_e OR tier IS DISTINCT FROM 2)
+    UNION ALL
+    SELECT 'Q parent/tier=' || COALESCE(parent_exercise_id::TEXT, 'null') || '/' || COALESCE(tier::TEXT, 'null')
+      FROM public.exercises WHERE id = c1_q AND (parent_exercise_id IS DISTINCT FROM c1_e OR tier IS DISTINCT FROM 2)
+    UNION ALL
+    SELECT 'R parent/tier=' || COALESCE(parent_exercise_id::TEXT, 'null') || '/' || COALESCE(tier::TEXT, 'null')
+      FROM public.exercises WHERE id = c1_r AND (parent_exercise_id IS DISTINCT FROM c1_q OR tier IS DISTINCT FROM 3)
+  ) bad(v);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V10 FAIL (C1): stale hierarchy after E''s identity change — % (expected E under core/1, T1 under E/2, Q under E/2, R under Q/3)',
+      v_observed;
+  END IF;
+END $$;
+ROLLBACK;
+-- V10: Stage 4 review I2 — the lock is deferrable: a two-sibling identity swap
+-- fails when checked immediately (default) and succeeds with the constraint
+-- deferred, validated before commit via SET CONSTRAINTS ALL IMMEDIATE.
+BEGIN;
+DO $$
+DECLARE
+  st_wide UUID; st_stag UUID;
+  sw_core UUID; sw_1 UUID; sw_2 UUID;
+  v_caught BOOLEAN := false;
+  v_observed TEXT;
+BEGIN
+  SELECT id INTO st_wide FROM public.stances WHERE name = 'Wide (Sumo)';
+  SELECT id INTO st_stag FROM public.stances WHERE name = 'Staggered';
+
+  INSERT INTO public.exercises (name, slug, is_core, is_official)
+    VALUES ('V10SWAPCORE', 'v10-swap-core', true, true) RETURNING id INTO sw_core;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id)
+    VALUES ('V10SWAP1', 'v10-swap-1', true, sw_core, st_wide) RETURNING id INTO sw_1;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id)
+    VALUES ('V10SWAP2', 'v10-swap-2', true, sw_core, st_stag) RETURNING id INTO sw_2;
+
+  -- Immediate mode (default): the first leg of the swap collides and rejects.
+  BEGIN
+    UPDATE public.exercises SET stance_id = st_stag WHERE id = sw_1;
+  EXCEPTION WHEN unique_violation THEN
+    v_caught := true;
+    IF SQLERRM NOT LIKE '%exercises_fingerprint_key%' THEN
+      RAISE EXCEPTION 'V10 FAIL (I2): immediate swap leg rejected by the wrong constraint: %', SQLERRM;
+    END IF;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V10 FAIL (I2): immediate swap leg was NOT rejected';
+  END IF;
+
+  -- Deferred: both legs run, the check passes once at SET CONSTRAINTS ALL
+  -- IMMEDIATE because the END state is unique.
+  SET CONSTRAINTS public.exercises_fingerprint_key DEFERRED;
+  UPDATE public.exercises SET stance_id = st_stag WHERE id = sw_1;
+  UPDATE public.exercises SET stance_id = st_wide WHERE id = sw_2;
+  SET CONSTRAINTS ALL IMMEDIATE;
+
+  SELECT string_agg(bad.v, '; ') INTO v_observed FROM (
+    SELECT 'swap-1 fp=' || COALESCE(identity_fingerprint, 'null') FROM public.exercises
+     WHERE id = sw_1 AND identity_fingerprint IS DISTINCT FROM st_stag::TEXT
+    UNION ALL
+    SELECT 'swap-2 fp=' || COALESCE(identity_fingerprint, 'null') FROM public.exercises
+     WHERE id = sw_2 AND identity_fingerprint IS DISTINCT FROM st_wide::TEXT
+  ) bad(v);
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V10 FAIL (I2): deferred swap did not land the exchanged fingerprints — %', v_observed;
   END IF;
 END $$;
 ROLLBACK;

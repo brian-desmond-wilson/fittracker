@@ -76,6 +76,7 @@ Engine-review hand-offs (Task 9 review, must be honored by the batch tooling):
 - [ ] Wizard family filter: update for Midline rename and Mobility/Control merge (Stage 2 quality review — until then Midline is reachable only via Show All Families); clean the Cool-Down references in goal handling
 - [ ] Grip columns need a category guard (orientation column must reference an Orientation grip, width a Width grip) before Stage 3 tooling writes them — Stage 2 quality review
 - [ ] Revisit the wide-open authenticated write policies on exercise_equipment and exercise_aliases once the front door exists (Task 9 review I1)
+- [ ] When user-created rows gain core_movement_id (deriving from official cores): revisit fingerprint-uniqueness scope re created_by (two users' identical private variants would collide globally) and re-test enforce_core_self_reference under RLS (Stage 4 review I3/M5)
 - **Exit gate:** on-device verification of add / edit / capture-match flows
 
 ## Stage 6 — Retire legacy (Phase 7)
