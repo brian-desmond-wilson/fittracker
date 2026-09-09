@@ -97,7 +97,12 @@ cleanup() {
   if [ -n "${TOKEN:-}" ]; then
     # Order matters: reviews hold resolved_exercise_id ON DELETE RESTRICT.
     auth_delete "exercise_match_reviews?raw_name=like.Zzprobe*" >/dev/null || true
-    auth_delete "exercise_aliases?alias=like.Zzprobe*" >/dev/null || true
+    # Stage 5 Task 5: wild aliases taught onto OFFICIAL rows (section 4 lands
+    # one on Pull-Up) are INSERT-only for authenticated users — UPDATE/DELETE
+    # of official-row aliases is now RLS-locked BY DESIGN (only the kind='wild'
+    # INSERT is carved out). Cleanup therefore goes through psql as the
+    # curation role, deliberately NOT over REST.
+    psql "$DB_URL" -Atc "delete from exercise_aliases where alias like 'Zzprobe%'" >/dev/null || true
     auth_delete "exercises?slug=like.${SLUG_PREFIX}-*" >/dev/null || true
     # Sources cascade their workouts, items and links.
     auth_delete "captured_sources?source_url=like.${URL_PREFIX}*" >/dev/null || true
