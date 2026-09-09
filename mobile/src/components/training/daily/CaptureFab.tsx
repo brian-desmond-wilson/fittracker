@@ -33,8 +33,11 @@ export function CaptureFab({ onSaved, initialUrl }: CaptureFabProps) {
   const handleExtracted = async (payload: {
     resolved: ResolvedPost; sourceUrl: string; post: ExtractedPost; rawExtraction: unknown;
   }) => {
-    // Names for the "matches X" chips in review.
-    const library = await fetchAllExercises();
+    // Names for the "matches X" chips in review. Whole catalog on purpose:
+    // captured names match movements too ("Snatch", "Pull-Ups"), so opt back
+    // into the rows the Exercises tab now excludes. Interim until Task 4
+    // rewrites capture matching through the alias table.
+    const library = await fetchAllExercises({ includeMovements: true });
     setMatchNames(new Map(library.map((e) => [e.id, e.name])));
     setCaptureVisible(false);
     setReviewPayload(payload);

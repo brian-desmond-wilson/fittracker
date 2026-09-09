@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
@@ -37,27 +37,41 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
 
   const categories: MovementPill[] = ['All', 'Weightlifting', 'Gymnastics', 'Monostructural', 'Recovery', 'Cores'];
 
+  // Stale-response guard: the alias-aware search is two round trips, which
+  // widens the window for an older response to land after a newer one. Every
+  // fetch takes a ticket; a response only applies if its ticket is still the
+  // latest.
+  const requestSeq = useRef(0);
+
   // Pill -> server-side filter. Modality ids come from the dictionary,
   // resolved once and cached in the data layer.
   const buildFilter = async (): Promise<CatalogListFilter | undefined> => {
     if (selectedCategory === 'All') return undefined;
     if (selectedCategory === 'Cores') return { coresOnly: true };
     const ids = await resolveMovementCategoryIds();
-    return { categoryId: ids.get(selectedCategory) };
+    const categoryId = ids.get(selectedCategory);
+    if (!categoryId && __DEV__) {
+      // A missing dictionary row would otherwise make the pill silently show
+      // everything (the filter is simply not applied).
+      console.warn(`MovementsTab: no movement_categories row named "${selectedCategory}" — pill filter not applied`);
+    }
+    return { categoryId };
   };
 
   const loadMovements = async () => {
+    const seq = ++requestSeq.current;
     try {
       setLoading(true);
       // Tier rides on the row itself (`exercises.tier`, engine-maintained) —
       // no second hierarchy query, nothing computed client-side.
       const data = await fetchMovements(await buildFilter());
+      if (seq !== requestSeq.current) return; // a newer request superseded this one
       setMovements(data);
       onCountUpdate(data.length);
     } catch (error) {
       console.error('Error loading movements:', error);
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 
@@ -67,15 +81,17 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       return;
     }
 
+    const seq = ++requestSeq.current;
     try {
       setSearching(true);
       const results = await searchMovements(searchQuery.trim(), await buildFilter());
+      if (seq !== requestSeq.current) return; // a newer request superseded this one
       setMovements(results);
       onCountUpdate(results.length);
     } catch (error) {
       console.error('Error searching movements:', error);
     } finally {
-      setSearching(false);
+      if (seq === requestSeq.current) setSearching(false);
     }
   };
 

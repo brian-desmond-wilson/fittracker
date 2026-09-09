@@ -549,6 +549,12 @@ async function searchAliasExerciseIds(term: string): Promise<string[]> {
  * rows). The term must already be cleaned (cleanSearchTerm).
  */
 async function applyNameOrAliasMatch(query: any, cleaned: string): Promise<any> {
+  // Under 2 characters the alias leg is skipped: a one-letter term matches
+  // hundreds of alias rows, and the resulting id.in.(...) list risks blowing
+  // the URL length for no relevance gain. Name-only until the term narrows.
+  if (cleaned.length < 2) {
+    return query.ilike('name', `%${cleaned}%`);
+  }
   const aliasIds = await searchAliasExerciseIds(cleaned);
   if (aliasIds.length === 0) {
     return query.ilike('name', `%${cleaned}%`);

@@ -117,6 +117,15 @@ echo "movements tab: rest=$MOV_REST sql=$MOV_SQL ; exercises tab: rest=$EXE_REST
 [ "$EXE_REST" = "$EXE_SQL" ] || fail "exercises tab count mismatch"
 [ "$((MOV_REST + EXE_REST))" = "$TOTAL" ] || fail "tab counts do not sum to the catalog"
 
+# Capture vocabulary: CaptureSheet/CaptureFab call
+# fetchAllExercises({includeMovements:true}) — no is_movement filter at all —
+# so the LLM library index and review chips must see the WHOLE catalog. The
+# tab split must never shrink this query (interim until Task 4 rewrites
+# capture matching through the alias table).
+VOCAB_REST="$(auth_count 'exercises?select=id')"
+echo "capture vocabulary (includeMovements): rest=$VOCAB_REST total=$TOTAL"
+[ "$VOCAB_REST" = "$TOTAL" ] || fail "capture vocabulary shrank: $VOCAB_REST of $TOTAL rows"
+
 echo
 echo "== 3. pill filters vs SQL ground truth =="
 for CAT in Weightlifting Gymnastics Monostructural Recovery; do

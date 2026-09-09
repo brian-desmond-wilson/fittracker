@@ -64,8 +64,12 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
       if (!user) throw new Error("not signed in");
 
       // The model's whole vocabulary: library index + reference-table names.
+      // Whole catalog on purpose — captured names match movements too
+      // ("Snatch", "Pull-Ups"); without includeMovements the tab split would
+      // shrink the index and the legacy auto-create path would mint
+      // duplicates. Interim until Task 4 rewrites capture matching.
       const [library, muscleRows, equipmentRows] = await Promise.all([
-        fetchAllExercises(),
+        fetchAllExercises({ includeMovements: true }),
         supabase.from("muscle_regions").select("name"),
         supabase.from("equipment").select("name"),
       ]);
