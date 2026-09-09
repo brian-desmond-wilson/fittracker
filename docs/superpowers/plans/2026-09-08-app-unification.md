@@ -51,12 +51,12 @@
 - Modify: `mobile/src/components/training/crossfit/MovementsTab.tsx`, `ExercisesTab.tsx`, `mobile/src/lib/supabase/crossfit.ts` (fetchMovements/fetchAllExercises/searchMovements/searchAllExercises/searchMovementsWithTier/fetchTierMap), `mobile/src/lib/movementTier.ts` (retire), `TrainingItemDetailScreen.tsx`
 - Test: REST probes comparing list payloads before/after; snapshot/unit where present
 
-- [ ] Tier badges read `exercises.tier`; delete the whole-table JS walker and the per-detail `get_movement_tier` RPC call.
-- [ ] Exercises tab query excludes `is_movement = true` rows (the split becomes real); Movements tab unchanged semantics.
-- [ ] Filter pills read classification: pills = modality-driven (Weightlifting / Gymnastics / Monostructural / Recovery) with family sub-filter or equivalent — server-side `.eq` filters, not client name-substring matching; delete the substring lists; rename the ambiguous "Core" pill to "Cores" (hierarchy meaning) with `is_core` filter.
-- [ ] Detail screen: equipment chips from `exercise_equipment` junction (names via join), aliases display from `exercise_aliases` (replaces the legacy array read at :277), hierarchy from `parent_exercise_id` as today but tier from stored column; variation-options section reads stay for now (Stage 6 drops them) but stop MINTING variation options (`createVariationOption` callers removed with the old wizards in Task 2).
-- [ ] Search: `searchMovementsWithTier` matches name OR `exercise_aliases.alias` (join), replacing the legacy aliases-array filter.
-- [ ] Commit per logical change.
+- [x] Tier badges read `exercises.tier`; delete the whole-table JS walker and the per-detail `get_movement_tier` RPC call.
+- [x] Exercises tab query excludes `is_movement = true` rows (the split becomes real); Movements tab unchanged semantics.
+- [x] Filter pills read classification: pills = modality-driven (Weightlifting / Gymnastics / Monostructural / Recovery) with family sub-filter or equivalent — server-side `.eq` filters, not client name-substring matching; delete the substring lists; rename the ambiguous "Core" pill to "Cores" (hierarchy meaning) with `is_core` filter.
+- [x] Detail screen: equipment chips from `exercise_equipment` junction (names via join), aliases display from `exercise_aliases` (replaces the legacy array read at :277), hierarchy from `parent_exercise_id` as today but tier from stored column; variation-options section reads stay for now (Stage 6 drops them) but stop MINTING variation options (`createVariationOption` callers removed with the old wizards in Task 2).
+- [x] Search: `searchMovementsWithTier` matches name OR `exercise_aliases.alias` (join), replacing the legacy aliases-array filter.
+- [x] Commit per logical change.
 
 ### Task 4: Capture through the guarded door + review queue UI
 
