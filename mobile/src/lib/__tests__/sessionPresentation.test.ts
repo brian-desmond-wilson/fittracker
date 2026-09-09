@@ -1,14 +1,15 @@
 import {
   calendarWeekSessions,
-  DEFAULT_WEEKLY_SESSIONS_GOAL,
   durationLine,
   formatSessionDate,
   mainExerciseCount,
   regionsHit,
   sessionTitle,
   weekRail,
+  weeksInARow,
 } from "../sessionPresentation";
 import type { HistoryExercise, HistorySession, HistorySet } from "../../types/gymSessions";
+import type { WeeklyGoal } from "../../types/goals";
 
 const set = (over: Partial<HistorySet> = {}): HistorySet => ({
   setNumber: 1, reps: 10, weightLbs: 100, volumeLbs: 1000, isWarmup: false,
@@ -108,12 +109,6 @@ describe("regionsHit", () => {
   });
 });
 
-describe("goal default", () => {
-  it("exists until the goals entity lands", () => {
-    expect(DEFAULT_WEEKLY_SESSIONS_GOAL).toBeGreaterThan(0);
-  });
-});
-
 describe("weekRail", () => {
   const today = "2026-08-24"; // Monday; week runs Sun 08-23 .. Sat 08-29
   it("builds Sunday-first with trained, rest, empty, and future days", () => {
@@ -149,6 +144,58 @@ describe("weekRail", () => {
     expect(rail[6].date).toBe("2026-08-29");
     expect(rail[6].state).toBe("trained");
     expect(rail.some((d) => d.state === "future")).toBe(false);
+  });
+});
+
+describe("weeksInARow", () => {
+  it("counts consecutive trained weeks ending now", () => {
+    const sessions = ["2026-08-24", "2026-08-19", "2026-08-12"].map((d) =>
+      session({ date: d, id: d }),
+    );
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(3);
+  });
+  it("does not break on the current week before it has a session", () => {
+    const sessions = ["2026-08-19", "2026-08-12"].map((d) => session({ date: d, id: d }));
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(2);
+  });
+  it("breaks on a fully skipped week", () => {
+    const sessions = ["2026-08-24", "2026-08-05"].map((d) => session({ date: d, id: d }));
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(1);
+  });
+  it("is zero with nothing recent", () => {
+    expect(weeksInARow([session({ date: "2026-07-01", id: "old" })], "2026-08-24")).toBe(0);
+  });
+  // Before any goal was ever set, a week counted if it happened at all — a
+  // 3x/week streak earned before the goals feature existed must survive it.
+  // DEFAULT_GOAL's 5-session target must not silently apply here.
+  it("judges pre-history weeks by whether they happened at all, not the default goal's target", () => {
+    const sessions = [
+      // current week (Sun 08-23 .. Sat 08-29): 3 sessions
+      session({ id: "c1", date: "2026-08-23" }),
+      session({ id: "c2", date: "2026-08-24" }),
+      session({ id: "c3", date: "2026-08-24" }),
+      // prior week (Sun 08-16 .. Sat 08-22): 3 sessions
+      session({ id: "b1", date: "2026-08-17" }),
+      session({ id: "b2", date: "2026-08-19" }),
+      session({ id: "b3", date: "2026-08-21" }),
+      // week before that (Sun 08-09 .. Sat 08-15): 3 sessions
+      session({ id: "a1", date: "2026-08-10" }),
+      session({ id: "a2", date: "2026-08-12" }),
+      session({ id: "a3", date: "2026-08-14" }),
+    ];
+    expect(weeksInARow(sessions, "2026-08-24")).toBe(3);
+  });
+  it("judges each week by the goal in force that week", () => {
+    const goals: WeeklyGoal[] = [
+      { id: "g2", effectiveFrom: "2026-08-16", sessionsTarget: 2, volumeTargetLbs: null, regionTarget: null },
+      { id: "g1", effectiveFrom: "2026-01-04", sessionsTarget: 1, volumeTargetLbs: null, regionTarget: null },
+    ];
+    const sessions = [
+      session({ id: "a", date: "2026-08-24" }), session({ id: "b", date: "2026-08-25" }),
+      session({ id: "c", date: "2026-08-19" }), session({ id: "d", date: "2026-08-20" }),
+      session({ id: "e", date: "2026-08-12" }), // week of 08-09, goal was 1
+    ];
+    expect(weeksInARow(sessions, "2026-08-24", goals)).toBe(3);
   });
 });
 

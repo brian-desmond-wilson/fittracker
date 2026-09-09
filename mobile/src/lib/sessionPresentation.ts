@@ -1,12 +1,10 @@
 // How a session presents itself: title, date, headline numbers.
 // Pure selectors over HistorySession — fetching stays in supabase/gymSessions.
 // Spec: docs/superpowers/specs/2026-08-24-gym-sessions-redesign-design.md.
-import { dayDiff, formatMinutes, sessionEmphasis, sessionMinutes } from "./gymSessions";
+import { dayDiff, formatMinutes, sessionEmphasis, sessionMinutes, toUtc } from "./gymSessions";
+import { DEFAULT_GOAL, goalForWeek, PRE_HISTORY_WEEK_TARGET } from "./goalHistory";
 import type { HistorySession, MuscleGroup } from "../types/gymSessions";
-
-/** Until the weekly-goals entity lands (Phase 3), the ring measures against
- *  this. One place to delete. */
-export const DEFAULT_WEEKLY_SESSIONS_GOAL = 5;
+import type { WeeklyGoal } from "../types/goals";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -122,4 +120,47 @@ export function calendarWeekSessions(sessions: HistorySession[], today: string):
   const start = dates[0];
   const end = dates[6];
   return sessions.filter((s) => s.date >= start && s.date <= end).length;
+}
+
+/**
+ * Consecutive calendar weeks meeting their goal, ending with the current
+ * week. Each week is judged against the goal that was in force that week —
+ * changing today's goal must not rewrite last month's streak. Before any goal
+ * existed, a week counted if it happened at all (PRE_HISTORY_WEEK_TARGET):
+ * DEFAULT_GOAL's 5-session target is right for the ring but wrong here — a
+ * user who trained 3x/week for months earned that streak before the goals
+ * feature existed, and effective_from can never reach back to repair it. The
+ * current week gets the same grace a day gets: empty-so-far doesn't break the
+ * run, it just doesn't count yet.
+ */
+export function weeksInARow(
+  sessions: HistorySession[],
+  today: string,
+  goals: WeeklyGoal[] = [],
+): number {
+  const weekStart = (date: string): string => {
+    const utc = toUtc(date);
+    return new Date(utc - new Date(utc).getUTCDay() * dayMs).toISOString().slice(0, 10);
+  };
+  const countByWeek = new Map<string, number>();
+  for (const s of sessions) {
+    const week = weekStart(s.date);
+    countByWeek.set(week, (countByWeek.get(week) ?? 0) + 1);
+  }
+  const targetFor = (week: string): number => {
+    const governing = goalForWeek(goals, week);
+    return governing.id === DEFAULT_GOAL.id ? PRE_HISTORY_WEEK_TARGET : governing.sessionsTarget;
+  };
+  const metGoal = (week: string) => (countByWeek.get(week) ?? 0) >= targetFor(week);
+  let cursor = weekStart(today);
+  let weeks = 0;
+  if (!metGoal(cursor)) {
+    // grace: current week still in progress
+    cursor = new Date(toUtc(cursor) - 7 * dayMs).toISOString().slice(0, 10);
+  }
+  while (metGoal(cursor)) {
+    weeks += 1;
+    cursor = new Date(toUtc(cursor) - 7 * dayMs).toISOString().slice(0, 10);
+  }
+  return weeks;
 }

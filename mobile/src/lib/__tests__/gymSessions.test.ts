@@ -187,10 +187,6 @@ describe("weekSummary", () => {
     expect(summary.minutes).toBe(60);
   });
 
-  it("counts the week before it for comparison", () => {
-    expect(weekSummary(sessions, "2026-08-17").sessionsLastWeek).toBe(1);
-  });
-
   it("ignores anything dated after today", () => {
     expect(weekSummary(sessions, "2026-08-15").sessions).toBe(1);
   });
@@ -220,6 +216,21 @@ describe("currentStreak", () => {
   it("counts two sessions in one day as one day", () => {
     const sessions = [session("2026-08-17", []), session("2026-08-17", [])];
     expect(currentStreak(sessions, "2026-08-17")).toBe(1);
+  });
+
+  // Spec: the streak measures plan adherence. A confirmed rest day keeps the
+  // chain alive and counts; an unplanned empty day still breaks it.
+  it("keeps counting through a confirmed rest day", () => {
+    const sessions = ["2026-08-17", "2026-08-15"].map((d) => session(d, []));
+    expect(currentStreak(sessions, "2026-08-17", new Set(["2026-08-16"]))).toBe(3);
+  });
+  it("still breaks on an unplanned empty day", () => {
+    const sessions = ["2026-08-17", "2026-08-15"].map((d) => session(d, []));
+    expect(currentStreak(sessions, "2026-08-17", new Set())).toBe(1);
+  });
+  it("anchors on a rest day when today is one", () => {
+    const sessions = [session("2026-08-16", [])];
+    expect(currentStreak(sessions, "2026-08-17", new Set(["2026-08-17"]))).toBe(2);
   });
 });
 

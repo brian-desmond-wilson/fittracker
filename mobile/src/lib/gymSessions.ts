@@ -126,7 +126,7 @@ export function sessionPace(session: HistorySession): number | null {
 }
 
 const dayMs = 86_400_000;
-const toUtc = (iso: string): number => {
+export const toUtc = (iso: string): number => {
   const [y, m, d] = iso.split("-").map(Number);
   return Date.UTC(y, m - 1, d);
 };
@@ -140,15 +140,10 @@ export function weekSummary(sessions: HistorySession[], today: string): WeekSumm
     const age = dayDiff(today, s.date);
     return age >= 0 && age < 7;
   });
-  const lastWeek = sessions.filter((s) => {
-    const age = dayDiff(today, s.date);
-    return age >= 7 && age < 14;
-  });
   return {
     sessions: thisWeek.length,
     volumeLbs: thisWeek.reduce((t, s) => t + sessionVolume(s), 0),
     minutes: thisWeek.reduce((t, s) => t + (sessionMinutes(s) ?? 0), 0),
-    sessionsLastWeek: lastWeek.length,
   };
 }
 
@@ -175,23 +170,28 @@ export function monthWeeks(year: number, month: number): (number | null)[][] {
 }
 
 /**
- * Consecutive days trained, counting back from today.
+ * Consecutive days ON PLAN, counting back from today: a day counts when it
+ * was trained or confirmed as rest. An unplanned empty day breaks it.
  *
  * A streak survives today being empty — it is only 8pm, and killing the number
- * before the day is over punishes you for not having trained yet. It ends the
- * moment a whole day passes with nothing.
+ * before the day is over punishes you for not having trained yet.
  */
-export function currentStreak(sessions: HistorySession[], today: string): number {
+export function currentStreak(
+  sessions: HistorySession[],
+  today: string,
+  restDates: Set<string> = new Set(),
+): number {
   const days = new Set(sessions.map((s) => s.date));
-  if (days.size === 0) return 0;
-  const startOffset = days.has(today) ? 0 : 1;
+  const onPlan = (d: string) => days.has(d) || restDates.has(d);
+  if (days.size === 0 && restDates.size === 0) return 0;
+  const startOffset = onPlan(today) ? 0 : 1;
   // Nothing today AND nothing yesterday means the streak is already broken.
   const anchor = new Date(toUtc(today) - startOffset * dayMs);
   const iso = (d: Date) => d.toISOString().slice(0, 10);
-  if (!days.has(iso(anchor))) return 0;
+  if (!onPlan(iso(anchor))) return 0;
   let streak = 0;
   const cursor = new Date(anchor);
-  while (days.has(iso(cursor))) {
+  while (onPlan(iso(cursor))) {
     streak += 1;
     cursor.setUTCDate(cursor.getUTCDate() - 1);
   }

@@ -9,6 +9,7 @@
 // chain, so one query covers all three.
 import { supabase } from "../supabase";
 import type { HistorySession, SessionSource } from "../../types/gymSessions";
+import type { SetFact } from "../../types/records";
 
 const SPLIT_TITLES: Record<string, string> = {
   push: "Push day",
@@ -204,6 +205,79 @@ export async function fetchGymSessions(
     })
     // A session with nothing logged in it is a false start, not history.
     .filter((s) => s.exercises.some((e) => e.sets.length > 0));
+}
+
+export interface WeightPoint {
+  date: string;
+  weightLbs: number;
+}
+
+/** Body weight for the Stats tab's own chart — last entry per day wins. */
+export async function fetchWeightSeries(
+  userId: string,
+  fromDate: string,
+): Promise<WeightPoint[]> {
+  const { data, error } = await supabase
+    .from("weight_logs")
+    .select("date, weight_lbs, logged_at")
+    .eq("user_id", userId)
+    .gte("date", fromDate)
+    .order("date", { ascending: true })
+    .order("logged_at", { ascending: true });
+  if (error) {
+    console.error("fetchWeightSeries failed:", error.message);
+    return [];
+  }
+  const byDay = new Map<string, number>();
+  for (const row of data ?? []) byDay.set(row.date, Number(row.weight_lbs));
+  return [...byDay.entries()].map(([date, weightLbs]) => ({ date, weightLbs }));
+}
+
+/**
+ * Every working set ever logged, flattened, for record computation.
+ *
+ * Deliberately separate from fetchGymSessions: that read is capped at 200
+ * sessions for the history list, and an ALL-TIME record cannot be computed
+ * from a window. This query carries only the six columns record math needs.
+ */
+export async function fetchSetFacts(userId: string): Promise<SetFact[]> {
+  const { data, error } = await supabase
+    .from("workout_sessions")
+    .select(`
+      id, session_date, session_number,
+      exercises:exercise_instances(
+        exercise_id,
+        exercise:exercises(name),
+        sets:set_instances(actual_reps, actual_weight_lbs, volume_lbs, is_warmup)
+      )
+    `)
+    .eq("user_id", userId)
+    .order("session_date", { ascending: true });
+  if (error) {
+    console.error("fetchSetFacts failed:", error.message);
+    return [];
+  }
+  const facts: SetFact[] = [];
+  for (const row of data ?? []) {
+    for (const ex of (row as any).exercises ?? []) {
+      const name = first<any>(ex.exercise)?.name;
+      if (!ex.exercise_id || !name) continue;
+      for (const s of ex.sets ?? []) {
+        if (s.is_warmup) continue;
+        facts.push({
+          exerciseId: ex.exercise_id,
+          exerciseName: name,
+          sessionId: (row as any).id,
+          sessionNumber: Number((row as any).session_number ?? 1),
+          date: (row as any).session_date,
+          weightLbs: Number(s.actual_weight_lbs ?? 0),
+          reps: Number(s.actual_reps ?? 0),
+          volumeLbs: Number(s.volume_lbs ?? 0),
+        });
+      }
+    }
+  }
+  return facts;
 }
 
 /** One session, with everything in it. */
