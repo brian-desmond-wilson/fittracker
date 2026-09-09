@@ -86,6 +86,7 @@
 
 ### Task 6: Exit gate + close-out
 
+- [ ] Live-parity check: the column-as-relation embed (`core_movement:core_movement_id(name)`) verified once against LIVE's PostgREST version (local stack accepted it; constraint-name hints did not).
 - [ ] `npx tsc --noEmit` clean in mobile/; full REST probe suite green against staging; Expo staging smoke (`--no-dev`) of: create derivation (generated name appears), create duplicate (friendly rejection), edit attribute (name/tier update), capture with alias hit, capture with unknown → review → resolve all three ways.
 - [ ] Gated live push of the Task 5 migration; harness V0–V11 on live.
 - [ ] ON-DEVICE verification by the user (roadmap exit gate): add / edit / capture-match flows on the real phone. Dev-client rebuild NOT expected (no new native modules) — confirm before claiming.
