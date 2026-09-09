@@ -1143,4 +1143,191 @@ BEGIN
   END IF;
 END $$;
 ROLLBACK;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V10: Stage 4 fingerprint lock — the UNIQUE index is present (and unique)
+  -- and the plain exercises_fingerprint_idx is gone. Never both.
+  PERFORM 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+   WHERE c.relname = 'exercises_fingerprint_key'
+     AND c.relnamespace = 'public'::regnamespace
+     AND i.indrelid = 'public.exercises'::regclass
+     AND i.indisunique;
+  IF NOT FOUND THEN
+    SELECT string_agg(indexname, ', ' ORDER BY indexname) INTO v_observed
+      FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'exercises'
+       AND indexname LIKE '%fingerprint%';
+    RAISE EXCEPTION 'V10 FAIL: unique index exercises_fingerprint_key missing or not unique (fingerprint indexes present: %)',
+      COALESCE(v_observed, 'none');
+  END IF;
+  PERFORM 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'exercises_fingerprint_idx';
+  IF FOUND THEN
+    RAISE EXCEPTION 'V10 FAIL: plain exercises_fingerprint_idx still present alongside the unique lock (never both)';
+  END IF;
+
+  -- V10: the engine runs on the session-variable guard, not pg_trigger_depth()
+  -- (I2), and the core-reference validation carries its locking reads.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_observed
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.proname IN ('trg_exercise_identity', 'trg_junction_identity', 'recompute_exercise_identity')
+     AND (p.prosrc LIKE '%pg_trigger_depth%' OR p.prosrc NOT LIKE '%fittracker.identity_recompute_visited%');
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V10 FAIL: engine functions off the session-variable guard: %', v_observed;
+  END IF;
+  PERFORM 1 FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.proname = 'enforce_core_self_reference'
+     AND p.prosrc LIKE '%FOR KEY SHARE%' AND p.prosrc LIKE '%FOR UPDATE%';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'V10 FAIL: enforce_core_self_reference lacks the FOR KEY SHARE / FOR UPDATE locking reads';
+  END IF;
+END $$;
+DO $$
+DECLARE
+  v_observed TEXT;
+BEGIN
+  -- V10: within-core generated-name duplicates limited to EXACTLY the five
+  -- declared silent-attribute collisions (Unilateral/Pronated are silent in
+  -- names, so the fingerprints differ while the names agree). Tight in both
+  -- directions, by core id + string, mirroring the Stage 3 self-verify (15e).
+  WITH dupes AS (
+    SELECT e.core_movement_id, e.generated_name, count(*) AS n
+      FROM public.exercises e
+     WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core
+     GROUP BY e.core_movement_id, e.generated_name
+    HAVING count(*) > 1
+  ), declared(core_id, generated_name, n) AS (VALUES
+    ('b6879563-ab0d-5bc6-9b44-cab09315d939', 'Kettlebell Bent-Over Row', 2),
+    ('80d46a74-c62a-4849-920f-22d326bf7cef', 'Cable Chest Fly', 2),
+    ('01f01e3a-393d-4819-8834-cf25ea1ba04a', 'Dumbbell Curl', 2),
+    ('90d63ecc-cebe-5ace-806d-45c8560f973f', 'Straight-Arm Lat Pulldown', 2),
+    ('cb22657b-7dd7-422d-bebb-4f5f7b63f6cb', 'Overhead Dumbbell Triceps Extension', 2)
+  )
+  SELECT string_agg(d.msg, '; ' ORDER BY d.msg) INTO v_observed FROM (
+    SELECT 'undeclared: ' || dp.generated_name || ' x' || dp.n AS msg
+      FROM dupes dp
+     WHERE NOT EXISTS (SELECT 1 FROM declared dc
+                        WHERE dc.core_id::uuid = dp.core_movement_id
+                          AND dc.generated_name = dp.generated_name AND dc.n = dp.n)
+    UNION ALL
+    SELECT 'missing declared: ' || dc.generated_name
+      FROM declared dc
+     WHERE NOT EXISTS (SELECT 1 FROM dupes dp
+                        WHERE dp.core_movement_id = dc.core_id::uuid
+                          AND dp.generated_name = dc.generated_name AND dp.n = dc.n)
+  ) d;
+  IF v_observed IS NOT NULL THEN
+    RAISE EXCEPTION 'V10 FAIL: within-core generated-name duplicates diverge from the declared set: %', v_observed;
+  END IF;
+
+  -- V10 (M3/I4): zero-attribute children. The unique lock makes a bare child
+  -- collide with its core's own ('') slot, so these are impossible WHILE cores
+  -- stay attribute-free — flag (never fail) if either side of that reasoning
+  -- drifts.
+  SELECT string_agg(e.name, ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e
+   WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core AND e.identity_fingerprint = '';
+  IF v_observed IS NOT NULL THEN
+    RAISE WARNING 'V10 FLAG (M3/I4): zero-attribute children present: %', v_observed;
+  END IF;
+  SELECT string_agg(e.name || ' ("' || e.identity_fingerprint || '")', ', ' ORDER BY e.name) INTO v_observed
+    FROM public.exercises e WHERE e.is_core AND e.identity_fingerprint <> '';
+  IF v_observed IS NOT NULL THEN
+    RAISE WARNING 'V10 FLAG: cores carrying identity attributes (reopens the bare-child window): %', v_observed;
+  END IF;
+END $$;
+-- V10: lock + validation behavior (fixture-based, rolled back — harness stays side-effect-free)
+BEGIN;
+DO $$
+DECLARE
+  v_target UUID; v_clone UUID; v_noncore UUID;
+  v10_core UUID; v10_a UUID; v10_b UUID;
+  st_wide UUID; sy_alt UUID;
+  v_caught BOOLEAN := false;
+  v_observed TEXT;
+  r RECORD;
+BEGIN
+  -- V10 (exit gate): a duplicate insert — same core, same identity attributes
+  -- as an EXISTING derivation — is rejected by exercises_fingerprint_key. The
+  -- clone copies the target's scalar attributes at INSERT and then its junction
+  -- rows; every write recomputes, so the violation fires no later than the
+  -- write that completes the matching attribute set (earlier if an intermediate
+  -- set matches some other existing row — either way the lock rejects).
+  SELECT e.id INTO v_target FROM public.exercises e
+   WHERE e.core_movement_id IS NOT NULL AND NOT e.is_core
+   ORDER BY cardinality(public.exercise_identity_attrs(e.id)) ASC, e.id ASC LIMIT 1;
+  IF v_target IS NULL THEN
+    RAISE EXCEPTION 'V10 FAIL: no derivation available to clone for the duplicate fixture';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.exercises (name, slug, is_official, core_movement_id,
+      load_position_id, stance_id, range_depth_id, symmetry_id,
+      grip_orientation_id, grip_width_id, direction_id, support_position_id,
+      arm_position_id, bench_angle_id, variant_label_id)
+    SELECT 'V10 DUP CLONE', 'v10-dup-clone', true, e.core_movement_id,
+      e.load_position_id, e.stance_id, e.range_depth_id, e.symmetry_id,
+      e.grip_orientation_id, e.grip_width_id, e.direction_id, e.support_position_id,
+      e.arm_position_id, e.bench_angle_id, e.variant_label_id
+      FROM public.exercises e WHERE e.id = v_target
+    RETURNING id INTO v_clone;
+
+    FOR r IN SELECT equipment_id FROM public.exercise_equipment WHERE exercise_id = v_target LOOP
+      INSERT INTO public.exercise_equipment (exercise_id, equipment_id) VALUES (v_clone, r.equipment_id);
+    END LOOP;
+    FOR r IN SELECT movement_style_id FROM public.exercise_movement_styles WHERE exercise_id = v_target LOOP
+      INSERT INTO public.exercise_movement_styles (exercise_id, movement_style_id) VALUES (v_clone, r.movement_style_id);
+    END LOOP;
+  EXCEPTION WHEN unique_violation THEN
+    v_caught := true;
+    IF SQLERRM NOT LIKE '%exercises_fingerprint_key%' THEN
+      RAISE EXCEPTION 'V10 FAIL: duplicate rejected by the wrong constraint: %', SQLERRM;
+    END IF;
+  END;
+  IF NOT v_caught THEN
+    SELECT name INTO v_observed FROM public.exercises WHERE id = v_target;
+    RAISE EXCEPTION 'V10 FAIL: duplicate of % was NOT rejected by the unique lock', v_observed;
+  END IF;
+
+  -- V10 (exit gate): the symmetric core-reference validation rejects a
+  -- non-core target (phantom-core insert).
+  SELECT id INTO v_noncore FROM public.exercises WHERE NOT is_core ORDER BY id LIMIT 1;
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.exercises (name, slug, is_official, core_movement_id)
+    VALUES ('V10 PHANTOM', 'v10-phantom', true, v_noncore);
+  EXCEPTION WHEN raise_exception THEN
+    v_caught := true;
+    IF SQLERRM NOT LIKE '%does not reference a core movement%' THEN
+      RAISE EXCEPTION 'V10 FAIL: phantom-core insert raised the wrong error: %', SQLERRM;
+    END IF;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'V10 FAIL: phantom-core insert (non-core target) was NOT rejected';
+  END IF;
+
+  -- V10 (I5): inserting an intermediate derivation re-parents the existing
+  -- superset sibling (sibling recompute on identity change).
+  SELECT id INTO st_wide FROM public.stances WHERE name = 'Wide (Sumo)';
+  SELECT id INTO sy_alt  FROM public.symmetries WHERE name = 'Alternating';
+  INSERT INTO public.exercises (name, slug, is_core, is_official)
+    VALUES ('V10FIXTURECORE', 'v10-fixture-core', true, true) RETURNING id INTO v10_core;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, stance_id, symmetry_id)
+    VALUES ('V10FIXTUREB', 'v10-fixture-b', true, v10_core, st_wide, sy_alt) RETURNING id INTO v10_b;
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = v10_b) IS DISTINCT FROM v10_core THEN
+    RAISE EXCEPTION 'V10 FAIL (I5): fixture B should start parented to the core, got %',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = v10_b)::TEXT, 'null');
+  END IF;
+  INSERT INTO public.exercises (name, slug, is_official, core_movement_id, symmetry_id)
+    VALUES ('V10FIXTUREA', 'v10-fixture-a', true, v10_core, sy_alt) RETURNING id INTO v10_a;
+  IF (SELECT parent_exercise_id FROM public.exercises WHERE id = v10_b) IS DISTINCT FROM v10_a
+     OR (SELECT tier FROM public.exercises WHERE id = v10_b) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'V10 FAIL (I5): after inserting intermediate A, B parent/tier = %/% (expected A/2)',
+      COALESCE((SELECT parent_exercise_id FROM public.exercises WHERE id = v10_b)::TEXT, 'null'),
+      COALESCE((SELECT tier FROM public.exercises WHERE id = v10_b)::TEXT, 'null');
+  END IF;
+END $$;
+ROLLBACK;
 SELECT 'FOUNDATION VERIFICATION: PASS' AS result;
