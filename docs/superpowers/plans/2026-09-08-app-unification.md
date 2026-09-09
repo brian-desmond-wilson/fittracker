@@ -80,12 +80,14 @@
 - Test: migration self-verify + harness + REST negative probes (anon/authenticated writes)
 
 - [ ] Trigger on `alias_abbreviations` (INSERT/UPDATE/DELETE): re-normalize every `exercise_aliases.alias_normalized`; a collision pair routes the LOSER (newer row) to `exercise_match_reviews` and removes it from aliases — never fails the dictionary write; NOTICE counts. (Task 6 review hand-off.)
+- [ ] Align the `equipment` dictionary SELECT policy with the other dictionaries (currently authenticated-only; Task 3 found anon embeds return null) in the same policy pass.
 - [ ] Tighten writes: `exercise_equipment`, `exercise_aliases`, and `exercise_scoring_types` (Task 2 finding: its policies are all-true for authenticated) INSERT/UPDATE/DELETE policies restricted to rows whose exercise is `created_by = auth.uid() AND is_official = false`; official rows writable only via SECURITY DEFINER helpers/service role. Front door (Tasks 1/4) must still work as an authenticated user against staging — prove with REST probes both directions (own row succeeds, official row rejected).
 - [ ] V11: policy shape asserted; re-normalization fixture (BEGIN/ROLLBACK: add abbreviation, observe re-normalized alias + routed collision).
 - [ ] House rules: lock_timeout header, idempotent, single-transaction, self-verify, psql -1 + idempotent re-run proofs on staging. This migration ships to live through the SAME gated procedure (fresh dump, rehearsal, user confirms push).
 
 ### Task 6: Exit gate + close-out
 
+- [ ] Live tier-parity sweep before/at the Task 5 push: stored tier vs get_movement_tier for all rows on LIVE; recompute any drifted row via the engine (staging had one: Incline Bench Press).
 - [ ] Live-parity check: the column-as-relation embed (`core_movement:core_movement_id(name)`) verified once against LIVE's PostgREST version (local stack accepted it; constraint-name hints did not).
 - [ ] `npx tsc --noEmit` clean in mobile/; full REST probe suite green against staging; Expo staging smoke (`--no-dev`) of: create derivation (generated name appears), create duplicate (friendly rejection), edit attribute (name/tier update), capture with alias hit, capture with unknown → review → resolve all three ways.
 - [ ] Gated live push of the Task 5 migration; harness V0–V11 on live.
