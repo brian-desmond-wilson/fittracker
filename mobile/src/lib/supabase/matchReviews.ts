@@ -16,7 +16,7 @@
 // screens render them as "pending review" from the review join.
 import { supabase } from '../supabase';
 import { addWildAliases } from './frontDoor';
-import type { ExtractedExercise } from '../../types/capture';
+import type { ExtractedExercise, PendingWorkoutItemEntry } from '../../types/capture';
 
 // ── Shapes ──────────────────────────────────────────────────────────────────
 
@@ -221,6 +221,50 @@ export async function fetchPendingReviews(userId: string): Promise<PendingMatchR
     return [];
   }
   return (data ?? []).map(toPendingReview);
+}
+
+/**
+ * The workout items still held back by pending reviews, keyed by
+ * captured_workouts.id — what lets a captured workout render its unmatched
+ * names as "pending review" rows. Reviews whose draft carries no workout
+ * items (an exercises-only capture) have nothing to show in a workout and are
+ * skipped. Best-effort: a failed read degrades to an empty map — the workout
+ * still renders, minus its pending rows.
+ */
+export async function fetchPendingItemsForSources(
+  sourceIds: string[],
+): Promise<Map<string, PendingWorkoutItemEntry[]>> {
+  const map = new Map<string, PendingWorkoutItemEntry[]>();
+  if (sourceIds.length === 0) return map;
+  const { data, error } = await supabase
+    .from('exercise_match_reviews')
+    .select('id, raw_name, draft')
+    .eq('status', 'pending')
+    .in('source_id', sourceIds);
+  if (error) {
+    console.error('pending review items read failed:', error);
+    return map;
+  }
+  for (const row of (data ?? []) as any[]) {
+    const draft = parseDraft(row.draft);
+    if (!draft?.capturedWorkoutId || draft.items.length === 0) continue;
+    const entries = draft.items.map((it) => ({
+      reviewId: row.id as string,
+      name: row.raw_name as string,
+      exerciseOrder: it.exerciseOrder,
+      sets: it.sets,
+      reps: it.reps,
+      weight: it.weight,
+      duration: it.duration,
+      restSeconds: it.restSeconds,
+      notes: it.notes,
+    }));
+    const list = map.get(draft.capturedWorkoutId) ?? [];
+    list.push(...entries);
+    map.set(draft.capturedWorkoutId, list);
+  }
+  for (const list of map.values()) list.sort((a, b) => a.exerciseOrder - b.exerciseOrder);
+  return map;
 }
 
 /** Queue size for the Catalog tab's entry point. */

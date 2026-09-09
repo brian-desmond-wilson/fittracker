@@ -5,8 +5,14 @@
 // pending source, never a half-visible catalog entry.
 import { supabase } from "../supabase";
 import { decodeCaption } from "../captionText";
-import { createExercise, fetchGoalTypes, fetchMovementCategories } from "./crossfit";
-import { mapCategory } from "../captureReview";
+import { resolveCapturedExercise } from "../captureResolution";
+import {
+  createMatchReview,
+  deletePendingReviewsForSource,
+  fetchMatchCandidates,
+  fetchPendingItemsForSources,
+  resolveNameByAlias,
+} from "./matchReviews";
 import { collapseByPost } from "../captureUrl";
 import { catalogDeleteMode, describeUsage } from "../catalogDelete";
 import type { ProvenanceLink } from "../catalogDelete";
@@ -15,6 +21,7 @@ import type {
   CaptureSource,
   CatalogEntry,
   ExtractedPost,
+  PendingWorkoutItemEntry,
   ResolvedPost,
 } from "../../types/capture";
 
@@ -120,24 +127,16 @@ export interface SaveCaptureInput {
   post: ExtractedPost;
 }
 
-/** Commit an accepted review. Returns the source id, or null on failure. */
-export async function saveCapture(input: SaveCaptureInput): Promise<string | null> {
+export interface SaveCaptureResult {
+  sourceId: string;
+  /** Names that matched nothing and were queued in exercise_match_reviews. */
+  pendingReviewCount: number;
+}
+
+/** Commit an accepted review. Returns the source id plus how many names went
+ *  to the match-review queue, or null on failure. */
+export async function saveCapture(input: SaveCaptureInput): Promise<SaveCaptureResult | null> {
   try {
-    // Name→id maps for the reference tables createExercise needs.
-    const [goalTypes, movementCategories] = await Promise.all([
-      fetchGoalTypes(),
-      fetchMovementCategories(),
-    ]);
-    const goalIdByName = new Map(goalTypes.map((g) => [g.name, g.id]));
-    const mcIdByName = new Map(movementCategories.map((m) => [m.name, m.id]));
-
-    // Muscle name→id map.
-    const { data: muscleRows, error: muscleError } = await supabase
-      .from("muscle_regions")
-      .select("id, name");
-    if (muscleError) throw muscleError;
-    const muscleIdByName = new Map((muscleRows ?? []).map((m) => [m.name, m.id]));
-
     // 1. Claim the source row. The URL is unique per user, and a failed
     //    earlier save leaves a pending row behind — a plain insert would
     //    collide with it on every retry, making the first flaky-network save
@@ -147,7 +146,13 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
     const existing = await findExistingCapture(input.userId, input.sourceUrl);
     let sourceId: string;
     if (existing) {
-      if (existing.extraction_status === "reviewed") return existing.id;
+      if (existing.extraction_status === "reviewed") {
+        return { sourceId: existing.id, pendingReviewCount: 0 };
+      }
+
+      // A partially-saved earlier attempt may have queued reviews already;
+      // this retry re-queues its names, so the stale rows go first.
+      await deletePendingReviewsForSource(existing.id);
 
       const { error: clearLinksError } = await supabase
         .from("source_exercises")
@@ -193,66 +198,34 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
       sourceId = source.id as string;
     }
 
-    // 2. Each exercise: link the matched library entry, or create a new one
-    //    through the SAME path the Add Exercise wizard uses.
-    const exerciseIds: string[] = [];
+    // 2. Resolve each captured name: alias dictionary first, then the model's
+    //    validated match, else NOTHING — the name goes to the review queue in
+    //    step 4. Capture NEVER creates an exercise row; the guarded front
+    //    door (frontDoor.ts) is the catalog's only writer, and the silent
+    //    auto-create that minted duplicates died here (Stage 5, Task 4).
+    const linkedIds: (string | null)[] = [];
     for (const ex of input.post.exercises) {
-      let exerciseId = ex.libraryMatchId;
-      let reusedOwn = false;
-      if (!exerciseId) {
-        // A failed earlier attempt may already have created this exercise
-        // (exercises outlive their source's rollback-by-status). An exact
-        // name match owned by this user is that leftover — link it instead
-        // of minting a twin.
-        const { data: dupes, error: dupeError } = await supabase
-          .from("exercises")
-          .select("id")
-          .eq("name", ex.name)
-          .eq("created_by", input.userId)
-          .limit(1);
-        if (dupeError) throw dupeError;
-        if (dupes && dupes.length > 0) {
-          exerciseId = dupes[0].id as string;
-          reusedOwn = true;
-        }
+      const res = await resolveCapturedExercise(ex.name, ex.libraryMatchId, resolveNameByAlias);
+      if (res.kind === "linked") {
+        linkedIds.push(res.exerciseId);
+        // Upsert: two captured names may resolve to the same exercise
+        // ("Pullups" + "Pull ups"), and a plain insert would 23505.
+        const { error: linkError } = await supabase.from("source_exercises").upsert(
+          { source_id: sourceId, exercise_id: res.exerciseId, was_created: false },
+          { onConflict: "source_id,exercise_id", ignoreDuplicates: true },
+        );
+        if (linkError) throw linkError;
+      } else {
+        linkedIds.push(null);
       }
-      if (!exerciseId) {
-        const { goalType, movementCategory } = mapCategory(ex.category);
-        const movementCategoryId = mcIdByName.get(movementCategory);
-        if (!movementCategoryId) throw new Error(`unknown movement category: ${movementCategory}`);
-        const goalTypeId = goalIdByName.get(goalType);
-        const muscleIds = [...ex.primaryMuscles, ...ex.secondaryMuscles]
-          .map((n) => muscleIdByName.get(n))
-          .filter((id): id is string => !!id);
-        const primaryIds = ex.primaryMuscles
-          .map((n) => muscleIdByName.get(n))
-          .filter((id): id is string => !!id);
-
-        exerciseId = await createExercise({
-          name: ex.name,
-          description: ex.description ?? undefined,
-          movement_category_id: movementCategoryId,
-          goal_type_ids: goalTypeId ? [goalTypeId] : [],
-          skill_level: ex.skillLevel,
-          equipment_types: ex.equipment,
-          muscle_region_ids: muscleIds,
-          primary_muscle_region_ids: primaryIds,
-          is_movement: false,
-          is_official: false,
-          created_by: input.userId,
-        });
-      }
-      exerciseIds.push(exerciseId);
-
-      const { error: linkError } = await supabase.from("source_exercises").insert({
-        source_id: sourceId,
-        exercise_id: exerciseId,
-        was_created: !ex.libraryMatchId && !reusedOwn,
-      });
-      if (linkError) throw linkError;
     }
 
-    // 3. Full workout: preserve the creator's programming.
+    // 3. Full workout: preserve the creator's programming. Only resolved
+    //    names become item rows — exercise_id is NOT NULL, so a pending
+    //    name's items ride in its review draft (step 4) and are inserted at
+    //    resolution. exercise_order keeps the ORIGINAL list position either
+    //    way, so a resolved item lands back in its slot.
+    let workoutId: string | null = null;
     if (input.post.workout) {
       const { data: workout, error: workoutError } = await supabase
         .from("captured_workouts")
@@ -267,32 +240,75 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
         .select("id")
         .single();
       if (workoutError) throw workoutError;
+      workoutId = workout.id as string;
 
-      const items = input.post.workout.items.map((item, i) => ({
-        captured_workout_id: workout.id,
-        exercise_id: exerciseIds[item.exerciseIndex],
-        exercise_order: i,
-        target_sets: item.sets,
-        target_reps: item.reps,
-        target_weight: item.weight,
-        target_duration: item.duration,
-        rest_seconds: item.restSeconds,
-        notes: item.notes,
-      }));
-      const { error: itemsError } = await supabase
-        .from("captured_workout_exercises")
-        .insert(items);
-      if (itemsError) throw itemsError;
+      const items = input.post.workout.items
+        .map((item, i) => ({ item, order: i }))
+        .filter(({ item }) => linkedIds[item.exerciseIndex] !== null)
+        .map(({ item, order }) => ({
+          captured_workout_id: workoutId,
+          exercise_id: linkedIds[item.exerciseIndex],
+          exercise_order: order,
+          target_sets: item.sets,
+          target_reps: item.reps,
+          target_weight: item.weight,
+          target_duration: item.duration,
+          rest_seconds: item.restSeconds,
+          notes: item.notes,
+        }));
+      if (items.length > 0) {
+        const { error: itemsError } = await supabase
+          .from("captured_workout_exercises")
+          .insert(items);
+        if (itemsError) throw itemsError;
+      }
     }
 
-    // 4. Only now is the capture real.
+    // 4. Queue every unmatched name. The draft carries the sanitized
+    //    extraction (wizard-prefill material) and the items the name was
+    //    prescribed in; candidates give the review sheet its tap-to-link
+    //    chips. A failed insert throws: the source stays pending/retryable
+    //    rather than silently dropping a captured name.
+    let pendingReviewCount = 0;
+    for (let i = 0; i < input.post.exercises.length; i++) {
+      if (linkedIds[i] !== null) continue;
+      const ex = input.post.exercises[i];
+      const { libraryMatchId: _omit, ...exerciseDraft } = ex;
+      const draftItems = (input.post.workout?.items ?? [])
+        .map((item, order) => ({ item, order }))
+        .filter(({ item }) => item.exerciseIndex === i)
+        .map(({ item, order }) => ({
+          exerciseOrder: order,
+          sets: item.sets,
+          reps: item.reps,
+          weight: item.weight,
+          duration: item.duration,
+          restSeconds: item.restSeconds,
+          notes: item.notes,
+        }));
+      await createMatchReview({
+        userId: input.userId,
+        sourceId,
+        rawName: ex.name,
+        context: input.post.workout?.name ?? input.posterHandle,
+        candidates: await fetchMatchCandidates(ex.name),
+        draft: {
+          exercise: exerciseDraft,
+          capturedWorkoutId: workoutId,
+          items: draftItems,
+        },
+      });
+      pendingReviewCount++;
+    }
+
+    // 5. Only now is the capture real.
     const { error: doneError } = await supabase
       .from("captured_sources")
       .update({ extraction_status: "reviewed" })
       .eq("id", sourceId);
     if (doneError) throw doneError;
 
-    return sourceId;
+    return { sourceId, pendingReviewCount };
   } catch (e) {
     console.error("saveCapture failed:", e);
     return null;
@@ -300,9 +316,14 @@ export async function saveCapture(input: SaveCaptureInput): Promise<string | nul
 }
 
 /** Shared by the list and the single-workout screen so both read a row the
- *  same way. */
-function toCapturedWorkoutEntry(row: any): CapturedWorkoutEntry {
+ *  same way. `pendingItems` come from the match-review join — names the
+ *  capture could not resolve, waiting in the queue. */
+function toCapturedWorkoutEntry(
+  row: any,
+  pendingItems: PendingWorkoutItemEntry[] = [],
+): CapturedWorkoutEntry {
   return {
+    pendingItems,
     workoutId: row.id,
     name: row.name,
     rounds: row.rounds ?? null,
@@ -424,11 +445,18 @@ export async function fetchCapturedWorkouts(
     return [];
   }
 
-  return (data ?? [])
+  const rows = (data ?? [])
     // A save that never finished leaves a pending source; don't show its
     // half-built workout.
-    .filter((row: any) => row.source?.extraction_status === "reviewed")
-    .map(toCapturedWorkoutEntry);
+    .filter((row: any) => row.source?.extraction_status === "reviewed");
+
+  // Names still in the match-review queue render as "pending review" rows.
+  const pendingByWorkout = await fetchPendingItemsForSources(
+    [...new Set(rows.map((row: any) => row.source.id as string))],
+  );
+  return rows.map((row: any) =>
+    toCapturedWorkoutEntry(row, pendingByWorkout.get(row.id) ?? []),
+  );
 }
 
 /** One captured workout, for its own screen. A pushed screen gets an id, not
@@ -458,7 +486,11 @@ export async function fetchCapturedWorkout(
     console.error("fetchCapturedWorkout failed:", error);
     return null;
   }
-  return data ? toCapturedWorkoutEntry(data) : null;
+  if (!data) return null;
+  const pendingByWorkout = await fetchPendingItemsForSources(
+    (data as any).source?.id ? [(data as any).source.id as string] : [],
+  );
+  return toCapturedWorkoutEntry(data, pendingByWorkout.get((data as any).id) ?? []);
 }
 
 /** Every captured exercise with taxonomy + provenance, newest capture first. */
@@ -467,6 +499,7 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
     .from("exercises")
     .select(`
       id, name, skill_level, equipment_types,
+      equipment_junction:exercise_equipment(equipment(name)),
       muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
       goal_types:exercise_goal_types(goal_type:goal_types(name)),
       sources:source_exercises!inner(
@@ -485,7 +518,17 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
     exerciseId: row.id,
     name: row.name,
     skillLevel: row.skill_level ?? null,
-    equipmentTypes: row.equipment_types ?? [],
+    // The junction is the source of truth (front-door rows keep it and the
+    // compat array in step); the legacy array fills in for pre-model rows
+    // that never got junction rows. Union so both eras pill correctly.
+    equipmentTypes: [
+      ...new Set<string>([
+        ...(row.equipment_types ?? []),
+        ...((row.equipment_junction ?? [])
+          .map((e: any) => e.equipment?.name)
+          .filter((n: any): n is string => typeof n === "string")),
+      ]),
+    ],
     muscles: (row.muscle_regions ?? []).map((m: any) => ({
       name: m.muscle_region?.name ?? "",
       isPrimary: !!m.is_primary,

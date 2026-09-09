@@ -132,6 +132,23 @@ export interface CapturedWorkoutItemEntry {
   notes: string | null;
 }
 
+/** A movement the capture could not match: its name sits in the review queue
+ *  (exercise_match_reviews) and its prescription rides in the review's draft
+ *  until a person links or creates the exercise. Rendered read-only — it is
+ *  not a captured_workout_exercises row yet, so editing flows must ignore it. */
+export interface PendingWorkoutItemEntry {
+  reviewId: string;
+  name: string;
+  /** The list position the item will take once resolved. */
+  exerciseOrder: number;
+  sets: number | null;
+  reps: string | null;
+  weight: string | null;
+  duration: string | null;
+  restSeconds: number | null;
+  notes: string | null;
+}
+
 /** A captured workout, ready to show. Phase 1 reads these; Phase 2 serves
  *  them whole. */
 export interface CapturedWorkoutEntry {
@@ -154,6 +171,9 @@ export interface CapturedWorkoutEntry {
     captionText: string | null;
   } | null;
   items: CapturedWorkoutItemEntry[];
+  /** Movements whose names are still in the match-review queue. Optional so
+   *  code that builds entries without the review join stays valid. */
+  pendingItems?: PendingWorkoutItemEntry[];
   /** Block-recommender tags. classifiedAt null = never classified. */
   tags: WorkoutTags;
 }
