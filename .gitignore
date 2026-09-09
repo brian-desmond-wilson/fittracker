@@ -74,3 +74,4 @@ temp/
 
 # Local DB data dumps (movement-model staging)
 backups/
+.superpowers/
