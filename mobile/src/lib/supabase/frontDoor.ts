@@ -821,8 +821,29 @@ export async function createCatalogExercise(
     }
   }
 
-  const finalRow = await fetchRow(id);
+  let finalRow = await fetchRow(id);
   alarmOnFingerprintDrift(finalRow, expectedFingerprint);
+
+  // A custom name that exactly equals the engine's generated name is not
+  // custom — store it engine-named so future attribute edits keep renaming
+  // the row (mirrors the update path's reconciliation).
+  if (
+    finalRow.name_is_custom &&
+    finalRow.generated_name &&
+    finalRow.name === finalRow.generated_name
+  ) {
+    const { error: flagErr } = await supabase
+      .from('exercises')
+      .update({ name_is_custom: false })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (flagErr) {
+      console.error('front door: could not reconcile name_is_custom for', id, flagErr);
+    } else {
+      finalRow = { ...finalRow, name_is_custom: false };
+    }
+  }
   return finalRow;
 }
 
