@@ -347,8 +347,10 @@ export function CatalogItemWizard({
     setSaving(true);
     try {
       let failedAliases: string[] = [];
+      let savedName: string | null = null;
       if (isEdit && editId) {
-        await updateCatalogExercise(editId, buildUpdatePatch(formData, editWasCustomNamed));
+        const updated = await updateCatalogExercise(editId, buildUpdatePatch(formData, editWasCustomNamed));
+        savedName = updated?.name ?? null;
       } else {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
@@ -356,6 +358,7 @@ export function CatalogItemWizard({
           return;
         }
         const row = await createCatalogExercise(buildCreateInput(formData, isMovement, user.id));
+        savedName = row?.name ?? null;
         onCreated?.(row);
         if (formData.aliases.length > 0) {
           // Aliases are a side dish: the row exists either way. Every alias
@@ -365,7 +368,11 @@ export function CatalogItemWizard({
         }
       }
 
-      const baseMessage = `${noun} ${isEdit ? 'updated' : 'created'} successfully!`;
+      // Lead with the engine's naming decision — it's the headline of the
+      // save, not an implementation detail (on-device exit-gate feedback).
+      const baseMessage = savedName
+        ? `${isEdit ? 'Saved as' : 'Created as'} “${savedName}”`
+        : `${noun} ${isEdit ? 'updated' : 'created'} successfully!`;
       const message =
         failedAliases.length > 0
           ? `${baseMessage}\nCreated, but ${failedAliases.length} alias(es) could not be saved: ${failedAliases.join(', ')}`
