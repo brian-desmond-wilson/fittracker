@@ -6,8 +6,10 @@ import type { SkillLevel } from '../../types/crossfit';
 // ============================================================================
 //
 // Every insert/update of an `exercises` row goes through createCatalogExercise
-// / updateCatalogExercise — the sole writer EXCEPT capture.ts's legacy
-// createExercise path, which Task 4 retires. The Postgres engine (Stages 1–4)
+// / updateCatalogExercise — the sole writer, with no exceptions: Task 4
+// retired capture's legacy createExercise path (capture links through the
+// alias dictionary and queues unknowns in exercise_match_reviews instead of
+// minting rows). The Postgres engine (Stages 1–4)
 // hierarchy: this module NEVER writes `generated_name`, `identity_fingerprint`,
 // `tier`, or `parent_exercise_id` — it writes the identity inputs and reads the
 // engine's outputs back. The client is UNTYPED, so column names here are
