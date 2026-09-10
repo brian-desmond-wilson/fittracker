@@ -1,7 +1,6 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
-  TouchableOpacity,
+  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, router } from "expo-router";
@@ -9,12 +8,18 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
-import { filterWorkouts } from "@/src/lib/workoutFilter";
-import { filterNeverDone, sortByStaleness } from "@/src/lib/workoutCompletion";
+import { applyFiltersAndSearch, activeFilterChips, countActiveFilters, removeChip, creatorCounts, mostRestrictiveAxis, clearAxis } from "@/src/lib/workoutFilters";
+import { sortWorkouts } from "@/src/lib/workoutSort";
+import { loadWorkoutPrefs, saveWorkoutPrefs } from "@/src/lib/workoutFilterStore";
+import { EMPTY_FILTERS, DEFAULT_SORT, SORT_LABELS } from "@/src/types/workoutFilters";
+import type { WorkoutFilters, WorkoutSort } from "@/src/types/workoutFilters";
 import type { CompletionMap } from "@/src/lib/workoutCompletion";
 import { getLocalDateString } from "@/src/lib/dates";
 import { CaptureFab } from "./CaptureFab";
 import { SwipeableWorkoutCard } from "./SwipeableWorkoutCard";
+import { WorkoutsRail } from "./WorkoutsRail";
+import { SortSheet } from "./SortSheet";
+import { WorkoutFiltersSheet } from "./WorkoutFiltersSheet";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface WorkoutsTabProps {
@@ -24,18 +29,26 @@ interface WorkoutsTabProps {
   shareUrl?: string | null;
 }
 
-/** How the list is ordered. "captured" is what the tab has always done and
- *  stays the default — a sort that silently reordered the list on upgrade
- *  would look like data loss. */
-type SortMode = "captured" | "stale";
-
-const workoutId = (w: CapturedWorkoutEntry) => w.workoutId;
+/** "a", "a and b", "a, b and c" — labels verbatim, because a creator handle
+ *  or a band like "≤ 15 min" reads wrong in any other case. */
+const listed = (items: string[]): string =>
+  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: WorkoutsTabProps) {
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
   const [completions, setCompletions] = useState<CompletionMap>({});
-  const [sort, setSort] = useState<SortMode>("captured");
-  const [neverDoneOnly, setNeverDoneOnly] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<WorkoutFilters>(EMPTY_FILTERS);
+  const [sort, setSort] = useState<WorkoutSort>(DEFAULT_SORT);
+  // Prefs are read before the first list paint so the list does not flash
+  // from unfiltered to filtered (spec §7). The ref remembers WHOSE prefs are
+  // loaded, so a different user signing in on a surviving tab gets their own;
+  // a state guard in `load`'s deps would give the callback a new identity
+  // mid-load and make the focus effect fire it twice.
+  const prefsFor = useRef<string | null>(null);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Fixed for the life of a render pass rather than read inside each card, so
@@ -45,6 +58,14 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
+    setUserId(user.id);
+    if (prefsFor.current !== user.id) {
+      prefsFor.current = user.id;
+      const prefs = await loadWorkoutPrefs(user.id);
+      setFilters(prefs.filters);
+      setSort(prefs.sort);
+      setPrefsReady(true);
+    }
     // Together: the history is decoration on the list, so making the list wait
     // for it in sequence would cost a visible beat for nothing.
     const [list, history] = await Promise.all([
@@ -69,38 +90,71 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
     setRefreshing(false);
   };
 
-  // Search first, then the never-done cut, then the order: filtering after
-  // sorting would do the same work and throw most of it away.
-  const filtered = useMemo(() => {
-    let list = filterWorkouts(workouts, searchQuery);
-    if (neverDoneOnly) list = filterNeverDone(list, workoutId, completions);
-    if (sort === "stale") list = sortByStaleness(list, workoutId, completions, today);
-    return list;
-  }, [workouts, searchQuery, neverDoneOnly, sort, completions, today]);
+  const applyFilters = useCallback((next: WorkoutFilters) => {
+    setFilters(next);
+    if (userId) saveWorkoutPrefs(userId, { filters: next, sort });
+  }, [userId, sort]);
 
-  const chip = (label: string, active: boolean, onPress: () => void) => (
-    <TouchableOpacity
-      style={[styles.chip, active && styles.chipActive]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-    >
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </TouchableOpacity>
+  const applySort = useCallback((next: WorkoutSort) => {
+    setSort(next);
+    if (userId) saveWorkoutPrefs(userId, { filters, sort: next });
+  }, [userId, filters]);
+
+  const filtered = useMemo(() => {
+    const list = applyFiltersAndSearch(workouts, filters, completions, searchQuery);
+    return sortWorkouts(list, sort, completions, today);
+  }, [workouts, filters, completions, searchQuery, sort, today]);
+
+  const chips = useMemo(() => activeFilterChips(filters), [filters]);
+  const activeCount = countActiveFilters(filters);
+
+  const creators = useMemo(() => creatorCounts(workouts), [workouts]);
+  // The grid is fixed and learnable (spec §5.1); what the library cannot
+  // currently produce is dimmed rather than dropped.
+  const availableEquipment = useMemo(() => {
+    const s = new Set<string>();
+    for (const w of workouts) {
+      for (const e of w.derivedEquipment) s.add(e);
+      if (w.isBodyweight) s.add("Bodyweight");
+    }
+    return s;
+  }, [workouts]);
+  // The sheet's live "Show N" count: the draft, composed with the header
+  // search exactly as the applied list is.
+  const countFor = useCallback(
+    (draft: WorkoutFilters) => applyFiltersAndSearch(workouts, draft, completions, searchQuery).length,
+    [workouts, completions, searchQuery],
+  );
+
+  // Only when the list is empty because of us, not because the library is.
+  const rescue = useMemo(
+    () => (workouts.length > 0 && filtered.length === 0 && activeCount > 0
+      ? mostRestrictiveAxis(workouts, filters, completions, searchQuery)
+      : null),
+    [workouts, filtered.length, activeCount, filters, completions, searchQuery],
   );
 
   // The loading spinner sits inside the container, not in place of it, so the
   // capture button never blinks out from under your thumb.
   return (
     <GestureHandlerRootView style={styles.container}>
-      <View style={styles.rail}>
-        {chip("Newest", sort === "captured", () => setSort("captured"))}
-        {chip("Not done in a while", sort === "stale", () => setSort("stale"))}
-        <View style={styles.railGap} />
-        {chip("Never done", neverDoneOnly, () => setNeverDoneOnly((v) => !v))}
-      </View>
+      {/* The rail waits with the list: a sort or filter tapped before the
+          remembered ones arrive would be overwritten by them. */}
+      {prefsReady && (
+      <WorkoutsRail
+        sortLabel={SORT_LABELS[sort]}
+        onOpenSort={() => setSortOpen(true)}
+        activeCount={activeCount}
+        onOpenFilters={() => setFiltersOpen(true)}
+        chips={chips}
+        onRemoveChip={(chip) => applyFilters(removeChip(filters, chip))}
+        onClearAll={() => applyFilters(EMPTY_FILTERS)}
+        shown={filtered.length}
+        total={workouts.length}
+      />
+      )}
 
-      {loading ? (
+      {loading || !prefsReady ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -126,24 +180,56 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>
-              {workouts.length === 0
-                ? "No workouts captured yet"
-                : neverDoneOnly
-                  ? "You've done them all"
-                  : "No matches"}
-            </Text>
-            <Text style={styles.emptyText}>
-              {workouts.length === 0
-                ? "When a post lays out a full session — movements with reps and rounds — it lands here, kept the way the creator wrote it."
-                : neverDoneOnly
-                  ? "Every workout that matches has been trained at least once."
-                  : "Change the search."}
-            </Text>
+            {workouts.length === 0 ? (
+              <>
+                <Text style={styles.emptyTitle}>No workouts captured yet</Text>
+                <Text style={styles.emptyText}>
+                  When a post lays out a full session — movements with reps and rounds — it lands here, kept the way the creator wrote it.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyTitle}>Nothing matches</Text>
+                <Text style={styles.emptyText}>
+                  {activeCount > 0
+                    ? `No workout matches all of ${listed([
+                        ...chips.map((c) => c.label),
+                        ...(searchQuery.trim() ? [`“${searchQuery.trim()}”`] : []),
+                      ])}.`
+                    : "Change the search."}
+                </Text>
+                {rescue && (
+                  <TouchableOpacity style={styles.rescue} onPress={() => applyFilters(clearAxis(filters, rescue.axis))}
+                    accessibilityRole="button">
+                    <Text style={styles.rescueText}>
+                      Drop “{rescue.label}” · {rescue.count} {rescue.count === 1 ? "workout" : "workouts"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {activeCount > 0 && (
+                  <TouchableOpacity style={styles.rescueGhost} onPress={() => applyFilters(EMPTY_FILTERS)}
+                    accessibilityRole="button">
+                    <Text style={styles.rescueGhostText}>Clear all filters</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
           </View>
         }
       />
       )}
+
+      <SortSheet visible={sortOpen} value={sort} onSelect={applySort} onClose={() => setSortOpen(false)} />
+
+      <WorkoutFiltersSheet
+        visible={filtersOpen}
+        applied={filters}
+        creators={creators}
+        countFor={countFor}
+        availableEquipment={availableEquipment}
+        onApply={applyFilters}
+        onClose={() => setFiltersOpen(false)}
+      />
 
       <CaptureFab onSaved={load} initialUrl={shareUrl ?? null} />
     </GestureHandlerRootView>
@@ -156,23 +242,15 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: colors.background,
     justifyContent: "center", alignItems: "center",
   },
-  rail: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  // Pushes the never-done filter away from the two sort chips: they are
-  // different questions and a single even row reads as one set of four.
-  railGap: { flex: 1 },
-  chip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
-    backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
-  },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.mutedForeground },
-  chipTextActive: { color: colors.primaryForeground, fontWeight: "600" },
   listContent: { padding: 16 },
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
+  rescue: {
+    marginTop: 16, height: 48, paddingHorizontal: 20, borderRadius: 8, alignSelf: "stretch",
+    backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
+  },
+  rescueText: { fontSize: 15, fontWeight: "600", color: colors.primaryForeground },
+  rescueGhost: { marginTop: 4, height: 36, alignItems: "center", justifyContent: "center" },
+  rescueGhostText: { fontSize: 14, color: colors.mutedForeground },
 });
