@@ -1,6 +1,5 @@
 import {
   STALE_AFTER_DAYS,
-  filterNeverDone,
   formatLastCompleted,
   isStale,
   sortByStaleness,
@@ -118,18 +117,5 @@ describe("sortByStaleness", () => {
     const original = [...rows];
     sortByStaleness(rows, idOf, completions, TODAY);
     expect(rows).toEqual(original);
-  });
-});
-
-describe("filterNeverDone", () => {
-  it("keeps only the workouts with no history at all", () => {
-    expect(filterNeverDone(rows, idOf, completions).map(idOf)).toEqual([
-      "never-a",
-      "never-b",
-    ]);
-  });
-
-  it("returns everything when nothing has been completed", () => {
-    expect(filterNeverDone(rows, idOf, {})).toHaveLength(rows.length);
   });
 });

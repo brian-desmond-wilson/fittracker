@@ -111,12 +111,3 @@ export function sortByStaleness<T>(
     return ra === rb ? 0 : rb - ra;
   });
 }
-
-/** Only the workouts you saved and never trained. */
-export function filterNeverDone<T>(
-  items: T[],
-  idOf: (item: T) => string,
-  completions: CompletionMap,
-): T[] {
-  return items.filter((item) => !completions[idOf(item)]);
-}
