@@ -173,6 +173,22 @@ export function buildUpdatePatch(
   return patch;
 }
 
+/**
+ * Required classification fields, as human-readable labels (empty = complete).
+ * Skill level and scoring are required by declared standard (2026-09-09):
+ * every catalog row carries both; "not scored" work uses the Not Scored / N/A
+ * scoring type rather than an empty junction.
+ */
+export function missingClassification(form: WizardFormData): string[] {
+  const missing: string[] = [];
+  if (!form.modality_id) missing.push('Modality');
+  if (!form.movement_family_id) missing.push('Movement family');
+  if (form.goal_type_ids.length === 0) missing.push('Goal type');
+  if (!form.skill_level) missing.push('Skill level');
+  if (form.scoring_type_ids.length === 0) missing.push('Scoring type');
+  return missing;
+}
+
 // ── Core inheritance ────────────────────────────────────────────────────────
 
 /** The classification a core movement hands down to a fresh derivation. */

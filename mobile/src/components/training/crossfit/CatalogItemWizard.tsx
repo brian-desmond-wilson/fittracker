@@ -38,6 +38,7 @@ import {
   buildCreateInput,
   buildUpdatePatch,
   computeCoreInheritance,
+  missingClassification,
   type WizardFormData,
   type CatalogItemKind,
   type OverridableInheritField,
@@ -312,22 +313,13 @@ export function CatalogItemWizard({
 
   const canProceed = () => {
     if (currentStep === 1) return step1Complete();
-    if (currentStep === 2) {
-      return (
-        formData.modality_id !== null &&
-        formData.movement_family_id !== null &&
-        formData.goal_type_ids.length > 0
-      );
-    }
+    if (currentStep === 2) return missingClassification(formData).length === 0;
     return true; // Step 3 is optional
   };
 
   const canSave = () => {
     if (!step1Complete()) return false;
-    if (formData.modality_id === null) return false;
-    if (formData.movement_family_id === null) return false;
-    if (formData.goal_type_ids.length === 0) return false;
-    return true;
+    return missingClassification(formData).length === 0;
   };
 
   const handleNext = () => {

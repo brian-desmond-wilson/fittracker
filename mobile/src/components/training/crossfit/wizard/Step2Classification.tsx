@@ -346,7 +346,9 @@ export function Step2Classification({
       {/* Skill Level */}
       <View style={styles.field}>
         <View style={styles.labelRow}>
-          <Text style={styles.label}>Skill Level</Text>
+          <Text style={styles.label}>
+            Skill Level <Text style={styles.required}>*</Text>
+          </Text>
           {renderOverrideButton('skill_level')}
         </View>
         {renderInheritanceBadge('skill_level')}
@@ -443,7 +445,9 @@ export function Step2Classification({
       {/* Scoring Types */}
       <View style={styles.field}>
         <View style={styles.labelRow}>
-          <Text style={styles.label}>Scoring Types</Text>
+          <Text style={styles.label}>
+            Scoring Types <Text style={styles.required}>*</Text>
+          </Text>
           {renderOverrideButton('scoring_type_ids')}
         </View>
         {renderInheritanceBadge('scoring_type_ids')}
@@ -472,6 +476,9 @@ export function Step2Classification({
             );
           })}
         </View>
+        <Text style={styles.helperText}>
+          Recovery and mobility work scores as “Not Scored / N/A”.
+        </Text>
       </View>
     </View>
   );

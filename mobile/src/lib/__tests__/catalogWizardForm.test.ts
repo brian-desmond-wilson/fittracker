@@ -10,6 +10,7 @@ import {
   buildCreateInput,
   buildUpdatePatch,
   computeCoreInheritance,
+  missingClassification,
   wantsCustomName,
   type WizardFormData,
   type CoreClassification,
@@ -208,5 +209,34 @@ describe('computeCoreInheritance', () => {
     );
     expect(updates).toEqual({});
     expect(inherited).toEqual([]);
+  });
+});
+
+describe('missingClassification', () => {
+  const complete = {
+    ...EMPTY_WIZARD_FORM,
+    modality_id: 'mod-1',
+    movement_family_id: 'fam-1',
+    goal_type_ids: ['goal-1'],
+    skill_level: 'Beginner' as const,
+    scoring_type_ids: ['scoring-1'],
+  };
+
+  it('returns empty for a fully classified form', () => {
+    expect(missingClassification(complete)).toEqual([]);
+  });
+
+  it('requires skill level', () => {
+    expect(missingClassification({ ...complete, skill_level: null })).toEqual(['Skill level']);
+  });
+
+  it('requires at least one scoring type', () => {
+    expect(missingClassification({ ...complete, scoring_type_ids: [] })).toEqual(['Scoring type']);
+  });
+
+  it('reports every gap on the empty form', () => {
+    expect(missingClassification(EMPTY_WIZARD_FORM)).toEqual([
+      'Modality', 'Movement family', 'Goal type', 'Skill level', 'Scoring type',
+    ]);
   });
 });
