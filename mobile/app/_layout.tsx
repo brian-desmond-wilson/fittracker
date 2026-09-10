@@ -6,6 +6,7 @@ import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { supabase } from "@/src/lib/supabase";
+import { AppVersion } from "@/src/components/ui";
 import type { Session } from "@supabase/supabase-js";
 
 const styles = StyleSheet.create({
@@ -88,9 +89,13 @@ export default function RootLayout() {
   }, [hasShareIntent, loading, session]);
 
   if (loading) {
+    // The native splash is a static image, so this first rendered frame is
+    // where "which build is this" can actually be answered (owner decision
+    // 2026-08-26).
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#22C55E" />
+        <AppVersion />
       </View>
     );
   }

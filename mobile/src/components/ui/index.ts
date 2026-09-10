@@ -15,3 +15,4 @@ export { WhenSheet } from "./WhenSheet";
 export type { UndoToastContent } from "./UndoToast";
 export { handOffToast, takeHandedOffToast } from "./pendingToast";
 export type { PendingToast } from "./pendingToast";
+export { AppVersion, APP_VERSION_LABEL } from "./AppVersion";

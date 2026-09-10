@@ -21,6 +21,7 @@ import { MealsHomeCard } from "@/src/components/MealsHomeCard";
 import { EatNextHomeCard } from "@/src/components/EatNextHomeCard";
 import { RampHomeBanner } from "@/src/components/RampHomeBanner";
 import { DailySessionHomeCard } from "@/src/components/DailySessionHomeCard";
+import { AppVersion } from "@/src/components/ui";
 
 export default function Home() {
   const router = useRouter();
@@ -157,6 +158,10 @@ export default function Home() {
         {/* Today's Workout Section */}
         <Text style={styles.sectionTitle}>Today's Workout</Text>
         <TodaysWorkoutCard key={`workout-${refreshKey}`} />
+
+        {/* End of scroll, per the standing placement rule — the version is
+            reference, not action, and it must not crowd a card. */}
+        <AppVersion />
       </ScrollView>
 
       {/* Sticky Refresh Indicator */}
