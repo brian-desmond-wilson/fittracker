@@ -5,6 +5,7 @@
 // pending source, never a half-visible catalog entry.
 import { supabase } from "../supabase";
 import { equipmentNamesOf } from "../exerciseEquipment";
+import { deriveWorkoutEquipment } from "../workoutEquipment";
 import { decodeCaption } from "../captionText";
 import { resolveCapturedExercise } from "../captureResolution";
 import {
@@ -331,6 +332,23 @@ function toCapturedWorkoutEntry(
   row: any,
   pendingItems: PendingWorkoutItemEntry[] = [],
 ): CapturedWorkoutEntry {
+  const items = (row.items ?? [])
+    .slice()
+    .sort((a: any, b: any) => a.exercise_order - b.exercise_order)
+    .map((it: any) => ({
+      exerciseId: it.exercise?.id ?? "",
+      name: it.exercise?.name ?? "Unknown movement",
+      sets: it.target_sets ?? null,
+      reps: it.target_reps ?? null,
+      weight: it.target_weight ?? null,
+      duration: it.target_duration ?? null,
+      restSeconds: it.rest_seconds ?? null,
+      notes: it.notes ?? null,
+      // Absent (not empty) when the exercise did not join, so derivation
+      // leaves the movement out rather than calling it bodyweight.
+      equipment: it.exercise ? equipmentNamesOf(it.exercise) : undefined,
+    }));
+  const derived = deriveWorkoutEquipment(items);
   return {
     pendingItems,
     workoutId: row.id,
@@ -352,19 +370,7 @@ function toCapturedWorkoutEntry(
           captionText: decodeCaption(row.source.caption_text) || null,
         }
       : null,
-    items: (row.items ?? [])
-      .slice()
-      .sort((a: any, b: any) => a.exercise_order - b.exercise_order)
-      .map((it: any) => ({
-        exerciseId: it.exercise?.id ?? "",
-        name: it.exercise?.name ?? "Unknown movement",
-        sets: it.target_sets ?? null,
-        reps: it.target_reps ?? null,
-        weight: it.target_weight ?? null,
-        duration: it.target_duration ?? null,
-        restSeconds: it.rest_seconds ?? null,
-        notes: it.notes ?? null,
-      })),
+    items,
     tags: {
       blockRoles: row.block_roles ?? [],
       muscles: (row.wmuscles ?? [])
@@ -378,6 +384,8 @@ function toCapturedWorkoutEntry(
       skillLevel: row.skill_level ?? null,
       classifiedAt: row.classified_at ?? null,
     },
+    derivedEquipment: derived.derivedEquipment,
+    isBodyweight: derived.isBodyweight,
   };
 }
 
@@ -444,7 +452,10 @@ export async function fetchCapturedWorkouts(
       items:captured_workout_exercises(
         exercise_order, target_sets, target_reps, target_weight,
         target_duration, rest_seconds, notes,
-        exercise:exercises(id, name)
+        exercise:exercises(
+          id, name, core_default_equipment,
+          equipment_rows:exercise_equipment(equipment(name))
+        )
       )
     `)
     .eq("user_id", userId)
@@ -486,7 +497,10 @@ export async function fetchCapturedWorkout(
       items:captured_workout_exercises(
         exercise_order, target_sets, target_reps, target_weight,
         target_duration, rest_seconds, notes,
-        exercise:exercises(id, name)
+        exercise:exercises(
+          id, name, core_default_equipment,
+          equipment_rows:exercise_equipment(equipment(name))
+        )
       )
     `)
     .eq("id", workoutId)
