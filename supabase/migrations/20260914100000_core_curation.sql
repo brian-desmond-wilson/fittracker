@@ -3,7 +3,13 @@
 -- (decision record). Fills blanks only -- never overwrites existing curation.
 -- skill_level is not an identity column: no recompute, no fingerprint movement.
 
--- 0) Bound Ups: orphan row (no description, zero references anywhere), approved for deletion.
+-- 0) Bound Ups: not a real exercise (user verdict 2026-09-09), approved for
+-- deletion INCLUDING its history — one logged instance and one captured-workout
+-- item from the 2026-08-19 "8-Minute Energy Flow" capture. exercise_instances
+-- RESTRICTs on exercises, so the history rows go explicitly first; the
+-- remaining references (captured/source/session items) cascade.
+DELETE FROM public.exercise_instances
+WHERE exercise_id IN (SELECT id FROM public.exercises WHERE name = 'Bound Ups' AND core_movement_id IS NULL);
 DELETE FROM public.exercises WHERE name = 'Bound Ups' AND core_movement_id IS NULL;
 
 -- 1) Authored skill levels (cores + outliers missing one). 15 rows.
