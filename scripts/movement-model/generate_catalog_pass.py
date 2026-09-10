@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# NOTE: pre-Stage-6 tool — references legacy structures that no longer exist; historical use only.
 """Generate supabase/migrations/20260908100000_catalog_pass.sql from the approved
 Stage 3 catalog-pass sheets.
 

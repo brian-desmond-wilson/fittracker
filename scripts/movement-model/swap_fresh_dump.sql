@@ -27,15 +27,9 @@ CREATE TEMP TABLE _old_categories ON COMMIT DROP AS SELECT id, name FROM public.
 DELETE FROM public.exercise_standards;
 DELETE FROM public.movement_measurement_profiles;
 DELETE FROM public.movement_scaling_links;
-DELETE FROM public.exercise_variations;
-DELETE FROM public.variation_options;
-DELETE FROM public.variation_categories;
 DELETE FROM public.exercise_goal_types;
 DELETE FROM public.exercise_scoring_types;
 DELETE FROM public.exercise_muscle_regions;
-DELETE FROM public.exercise_load_positions;
-DELETE FROM public.exercise_stances;
-DELETE FROM public.exercise_planes_of_motion;
 DELETE FROM public.exercise_movement_styles;
 DELETE FROM public.exercises;
 DELETE FROM public.goal_types;

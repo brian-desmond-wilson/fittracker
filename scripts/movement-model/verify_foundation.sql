@@ -444,81 +444,26 @@ BEGIN
   RAISE NOTICE 'V6 behavioral assertions passed';
 END $$;
 ROLLBACK;
+-- V7 (Stage 6): the legacy structures are GONE. Their presence now means a
+-- failed or skipped drop, not safety.
 DO $$
-DECLARE
-  v_observed TEXT;
+DECLARE bad TEXT := '';
 BEGIN
-  -- V7 retires at Stage 6 together with the objects it guards.
-  -- V7: nothing the app reads was dropped or renamed (drops happen in Stage 6, spec Phase 7)
-  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='goal_type_id';
-  IF NOT FOUND THEN
-    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
-      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
-    RAISE EXCEPTION 'V7 FAIL: legacy goal_type_id dropped early (existing columns: %)', v_observed;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'exercises'
+               AND column_name IN ('goal_type_id','movement_style_id','equipment_types','aliases')) THEN
+    bad := bad || ' legacy exercises columns;';
   END IF;
-
-  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='equipment_types';
-  IF NOT FOUND THEN
-    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
-      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
-    RAISE EXCEPTION 'V7 FAIL: equipment_types dropped early (existing columns: %)', v_observed;
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public'
+               AND table_name IN ('exercise_planes_of_motion','exercise_load_positions','exercise_stances',
+                                  'exercise_variations','variation_options','variation_categories')) THEN
+    bad := bad || ' legacy tables;';
   END IF;
-
-  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='aliases';
-  IF NOT FOUND THEN
-    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
-      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
-    RAISE EXCEPTION 'V7 FAIL: aliases array dropped early (existing columns: %)', v_observed;
+  IF bad <> '' THEN
+    RAISE EXCEPTION 'V7 FAIL: legacy structures still present:%', bad;
   END IF;
-
-  PERFORM 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises' AND column_name='movement_style_id';
-  IF NOT FOUND THEN
-    SELECT string_agg(column_name, ', ' ORDER BY column_name) INTO v_observed
-      FROM information_schema.columns WHERE table_schema='public' AND table_name='exercises';
-    RAISE EXCEPTION 'V7 FAIL: movement_style_id dropped early (existing columns: %)', v_observed;
-  END IF;
-
-  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='variation_options';
-  IF NOT FOUND THEN
-    SELECT string_agg(table_schema, ', ') INTO v_observed
-      FROM information_schema.tables WHERE table_name='variation_options';
-    RAISE EXCEPTION 'V7 FAIL: variation_options dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
-  END IF;
-
-  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='variation_categories';
-  IF NOT FOUND THEN
-    SELECT string_agg(table_schema, ', ') INTO v_observed
-      FROM information_schema.tables WHERE table_name='variation_categories';
-    RAISE EXCEPTION 'V7 FAIL: variation_categories dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
-  END IF;
-
-  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exercise_variations';
-  IF NOT FOUND THEN
-    SELECT string_agg(table_schema, ', ') INTO v_observed
-      FROM information_schema.tables WHERE table_name='exercise_variations';
-    RAISE EXCEPTION 'V7 FAIL: exercise_variations dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
-  END IF;
-
-  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exercise_planes_of_motion';
-  IF NOT FOUND THEN
-    SELECT string_agg(table_schema, ', ') INTO v_observed
-      FROM information_schema.tables WHERE table_name='exercise_planes_of_motion';
-    RAISE EXCEPTION 'V7 FAIL: exercise_planes_of_motion dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
-  END IF;
-
-  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exercise_load_positions';
-  IF NOT FOUND THEN
-    SELECT string_agg(table_schema, ', ') INTO v_observed
-      FROM information_schema.tables WHERE table_name='exercise_load_positions';
-    RAISE EXCEPTION 'V7 FAIL: exercise_load_positions dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
-  END IF;
-
-  PERFORM 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exercise_stances';
-  IF NOT FOUND THEN
-    SELECT string_agg(table_schema, ', ') INTO v_observed
-      FROM information_schema.tables WHERE table_name='exercise_stances';
-    RAISE EXCEPTION 'V7 FAIL: exercise_stances dropped early (found in schemas: %)', COALESCE(v_observed, 'none');
-  END IF;
+  RAISE NOTICE 'V7 PASS: all legacy structures dropped';
 END $$;
 DO $$
 DECLARE

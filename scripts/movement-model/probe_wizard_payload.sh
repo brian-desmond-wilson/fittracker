@@ -109,8 +109,7 @@ ROW_JSON="$(auth_post "exercises" "{
   \"created_by\": \"$SMOKE_UID\",
   \"description\": \"Wizard probe row\", \"video_url\": \"https://example.com/v\",
   \"skill_level\": \"Intermediate\", \"short_name\": \"WPR\",
-  \"equipment_types\": [\"Bands\"], \"requires_weight\": false,
-  \"requires_distance\": true, \"goal_type_id\": \"$STRENGTH_ID\"
+  \"requires_weight\": false, \"requires_distance\": true
 }")"
 ROW_ID="$(json_get "$ROW_JSON" 0.id)"
 [ -n "$ROW_ID" ] || fail "wizard-shaped insert rejected: $ROW_JSON"
@@ -143,6 +142,18 @@ EXPECTED_FP="$(python3 -c 'import sys; print("|".join(sorted(a.lower() for a in 
 [ "$W_FP" = "$EXPECTED_FP" ] || fail "fingerprint != client mirror: expected $EXPECTED_FP got $W_FP"
 [ "$(json_get "$READ" 0.requires_distance)" = "True" ] || fail "requires_distance lost"
 [ "$(json_get "$READ" 0.short_name)" = "WPR" ] || fail "short_name lost"
+
+# Stage 6: equipment and goal type live ONLY in their junctions (the legacy
+# exercises.equipment_types / exercises.goal_type_id mirrors are dropped).
+EQ_ROWS="$(auth_get "exercise_equipment?exercise_id=eq.$ROW_ID&select=equipment_id")"
+EQ_COUNT="$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])))' "$EQ_ROWS")"
+[ "$EQ_COUNT" = "1" ] || fail "equipment junction count $EQ_COUNT != 1: $EQ_ROWS"
+[ "$(json_get "$EQ_ROWS" 0.equipment_id)" = "$BANDS_ID" ] || fail "equipment junction is not Bands: $EQ_ROWS"
+GT_ROWS="$(auth_get "exercise_goal_types?exercise_id=eq.$ROW_ID&select=goal_type_id")"
+GT_COUNT="$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])))' "$GT_ROWS")"
+[ "$GT_COUNT" = "1" ] || fail "goal type junction count $GT_COUNT != 1: $GT_ROWS"
+[ "$(json_get "$GT_ROWS" 0.goal_type_id)" = "$STRENGTH_ID" ] || fail "goal type junction is not Strength: $GT_ROWS"
+echo "equipment + goal type read back from their junctions (no legacy mirror)"
 
 echo
 echo "== 2. edit-prefill round-trip: one embedded select == the submitted form =="

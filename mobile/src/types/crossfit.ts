@@ -237,7 +237,6 @@ export interface ExerciseEquipment {
 export interface MovementMeasurementProfile {
   id: string;
   exercise_id: string | null;
-  variation_option_id: string | null;
   measurement_type: MeasurementType;
   unit_primary: string;
   unit_secondary: string | null;
@@ -251,7 +250,6 @@ export interface MovementMeasurementProfile {
 export interface ExerciseStandard {
   id: string;
   exercise_id: string | null;
-  variation_option_id: string | null;
 
   // Range of Motion Standards
   rom_description: string | null;
@@ -282,9 +280,7 @@ export interface ExerciseStandard {
 export interface MovementScalingLink {
   id: string;
   from_exercise_id: string;
-  from_variation_option_id: string | null;
   to_exercise_id: string;
-  to_variation_option_id: string | null;
   scaling_type: ScalingType;
   difficulty_delta: number | null;
   description: string | null;

@@ -14,9 +14,7 @@ pg_dump "$LIVE_DB" --data-only --no-owner --role postgres --strict-names \
   -t exercises -t goal_types -t movement_categories -t movement_families \
   -t planes_of_motion -t load_positions -t stances -t range_depths \
   -t movement_styles -t symmetries -t muscle_regions -t equipment -t scoring_types \
-  -t variation_categories -t variation_options -t exercise_variations \
   -t exercise_goal_types -t exercise_scoring_types -t exercise_muscle_regions \
-  -t exercise_load_positions -t exercise_stances -t exercise_planes_of_motion \
   -t exercise_movement_styles -t movement_scaling_links \
   -t movement_measurement_profiles -t exercise_standards \
   > "${OUT}.tmp"

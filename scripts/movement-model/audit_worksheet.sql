@@ -1,4 +1,5 @@
 -- scripts/movement-model/audit_worksheet.sql
+-- NOTE: pre-Stage-6 tool — references legacy structures that no longer exist; historical use only.
 -- One row per attribute value with live usage counts and empty decision columns.
 -- Run: psql "$DB" -f scripts/movement-model/audit_worksheet.sql --csv --pset footer=off -o docs/superpowers/audit/attribute-audit-2026-08.csv
 --

@@ -1603,11 +1603,10 @@ export async function reorderClassParts(
 // ============================================================================
 
 /**
- * Fetch exercise standards for a specific exercise or variation
+ * Fetch exercise standards for a specific exercise
  */
 export async function fetchExerciseStandards(
-  exerciseId?: string,
-  variationOptionId?: string
+  exerciseId?: string
 ): Promise<ExerciseStandard[]> {
   let query = supabase
     .from('exercise_standards')
@@ -1616,10 +1615,6 @@ export async function fetchExerciseStandards(
 
   if (exerciseId) {
     query = query.eq('exercise_id', exerciseId);
-  }
-
-  if (variationOptionId) {
-    query = query.eq('variation_option_id', variationOptionId);
   }
 
   const { data, error } = await query;
@@ -1633,11 +1628,10 @@ export async function fetchExerciseStandards(
 }
 
 /**
- * Fetch measurement profiles for a specific exercise or variation
+ * Fetch measurement profiles for a specific exercise
  */
 export async function fetchMeasurementProfiles(
-  exerciseId?: string,
-  variationOptionId?: string
+  exerciseId?: string
 ): Promise<MovementMeasurementProfile[]> {
   let query = supabase
     .from('movement_measurement_profiles')
@@ -1646,10 +1640,6 @@ export async function fetchMeasurementProfiles(
 
   if (exerciseId) {
     query = query.eq('exercise_id', exerciseId);
-  }
-
-  if (variationOptionId) {
-    query = query.eq('variation_option_id', variationOptionId);
   }
 
   const { data, error } = await query;
@@ -1667,10 +1657,9 @@ export async function fetchMeasurementProfiles(
  * Returns movements that are harder/more advanced
  */
 export async function fetchMovementProgressions(
-  exerciseId: string,
-  variationOptionId?: string
+  exerciseId: string
 ): Promise<(MovementScalingLink & { to_exercise?: Exercise })[]> {
-  let query = supabase
+  const query = supabase
     .from('movement_scaling_links')
     .select(`
       *,
@@ -1679,10 +1668,6 @@ export async function fetchMovementProgressions(
     .eq('from_exercise_id', exerciseId)
     .eq('scaling_type', 'progression')
     .order('display_order');
-
-  if (variationOptionId) {
-    query = query.eq('from_variation_option_id', variationOptionId);
-  }
 
   const { data, error } = await query;
 
@@ -1699,10 +1684,9 @@ export async function fetchMovementProgressions(
  * Returns movements that are easier/more accessible
  */
 export async function fetchMovementRegressions(
-  exerciseId: string,
-  variationOptionId?: string
+  exerciseId: string
 ): Promise<(MovementScalingLink & { to_exercise?: Exercise })[]> {
-  let query = supabase
+  const query = supabase
     .from('movement_scaling_links')
     .select(`
       *,
@@ -1711,10 +1695,6 @@ export async function fetchMovementRegressions(
     .eq('from_exercise_id', exerciseId)
     .eq('scaling_type', 'regression')
     .order('display_order');
-
-  if (variationOptionId) {
-    query = query.eq('from_variation_option_id', variationOptionId);
-  }
 
   const { data, error } = await query;
 
@@ -1731,10 +1711,9 @@ export async function fetchMovementRegressions(
  * Returns movements at similar difficulty level
  */
 export async function fetchMovementAlternatives(
-  exerciseId: string,
-  variationOptionId?: string
+  exerciseId: string
 ): Promise<(MovementScalingLink & { to_exercise?: Exercise })[]> {
-  let query = supabase
+  const query = supabase
     .from('movement_scaling_links')
     .select(`
       *,
@@ -1743,10 +1722,6 @@ export async function fetchMovementAlternatives(
     .eq('from_exercise_id', exerciseId)
     .eq('scaling_type', 'lateral')
     .order('display_order');
-
-  if (variationOptionId) {
-    query = query.eq('from_variation_option_id', variationOptionId);
-  }
 
   const { data, error } = await query;
 
