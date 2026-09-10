@@ -21,8 +21,6 @@ export type WODCategoryName = 'All' | 'Daily WOD' | 'Heroes' | 'The Girls';
 
 export type ClassPartType = 'WOD' | 'Strength' | 'Skill' | 'Warm-up' | 'Cool-down' | 'Accessory';
 
-export type VariationCategoryName = 'Position' | 'Stance' | 'Equipment' | 'Style';
-
 export type MovementCategoryName = 'Weightlifting' | 'Gymnastics' | 'Monostructural' | 'Recovery';
 
 export type ScoringTypeName = 'Reps' | 'Rounds' | 'Weight' | 'Time' | 'Distance' | 'Calories' | 'Height' | 'None';
@@ -345,47 +343,6 @@ export interface Exercise {
   core_default_equipment: string | null;
 }
 
-export interface VariationCategory {
-  id: string;
-  name: VariationCategoryName;
-  description: string | null;
-  display_order: number;
-  created_at: string;
-}
-
-export interface VariationOption {
-  id: string;
-  category_id: string;
-  name: string;
-  description: string | null;
-  display_order: number;
-  created_at: string;
-
-  // NEW: Movement metadata overrides (from Migration 7)
-  movement_family_id: string | null;
-  plane_of_motion_id: string | null;
-  load_position_id: string | null;
-  stance_id: string | null;
-  range_depth_id: string | null;
-  movement_style_id: string | null; // Legacy single style (deprecated)
-  movement_style_ids: string[] | null; // Multiple styles
-  symmetry_id: string | null;
-  skill_level: SkillLevel | null;
-  short_name: string | null;
-  aliases: string[] | null;
-
-  // Movement Hierarchy (Migration 16)
-  is_core: boolean;
-  parent_exercise_id: string | null;
-}
-
-export interface ExerciseVariation {
-  id: string;
-  exercise_id: string;
-  variation_option_id: string;
-  created_at: string;
-}
-
 export interface WODFormat {
   id: string;
   name: WODFormatName;
@@ -543,12 +500,15 @@ export interface ClassPart {
 // EXTENDED TYPES WITH RELATIONS (for UI components)
 // ============================================================================
 
+/**
+ * A catalog list row with its display relations.
+ *
+ * The name is historical: it used to carry `variations` (the pre-movement-model
+ * exercise_variations rows), which Stage 6 retired — derivations express what
+ * variations used to. Renaming it would touch every catalog call site for zero
+ * behavior change, so the name stays. Deliberate YAGNI.
+ */
 export interface ExerciseWithVariations extends Exercise {
-  variations?: (ExerciseVariation & {
-    variation_option?: VariationOption & {
-      category?: VariationCategory;
-    };
-  })[];
   goal_types?: GoalType[]; // NEW: Multiple goal types
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
@@ -560,11 +520,6 @@ export interface ExerciseWithVariations extends Exercise {
 // Extended Exercise type with all new metadata relations
 export interface ExerciseWithDetails extends Exercise {
   // Existing relations
-  variations?: (ExerciseVariation & {
-    variation_option?: VariationOption & {
-      category?: VariationCategory;
-    };
-  })[];
   goal_types?: GoalType[]; // NEW: Multiple goal types
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
@@ -759,7 +714,6 @@ export interface CreateMovementInput {
   created_by: string;
 
   // Relations
-  variation_option_ids?: string[];
   scoring_type_ids?: string[];
   muscle_region_ids?: string[];
   primary_muscle_region_ids?: string[];
@@ -767,10 +721,6 @@ export interface CreateMovementInput {
   // Movement Hierarchy
   is_core?: boolean;
   parent_exercise_id?: string;
-}
-
-export interface VariationOptionWithCategory extends VariationOption {
-  category: VariationCategory;
 }
 
 // ============================================================================
@@ -793,9 +743,3 @@ export interface ClassListItem {
   name: string;
   wod_preview: string; // e.g., "12-min For Time → 6-min EMOM"
 }
-
-// Helper function type for building variation names
-export type BuildVariationName = (
-  coreMovement: string,
-  variations: VariationOption[]
-) => string;

@@ -174,7 +174,6 @@ export function TrainingItemDetailScreen({
           *,
           movement_category:movement_categories(id, name),
           goal_rows:exercise_goal_types(goal_type:goal_types(id, name)),
-          variations:exercise_variations(*),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(id, name)
@@ -515,23 +514,6 @@ export function TrainingItemDetailScreen({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Also Known As</Text>
             <Text style={styles.descriptionText}>{aliasNames.join(', ')}</Text>
-          </View>
-        )}
-
-        {/* Variations */}
-        {item.variations && item.variations.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Variations</Text>
-            {item.variations.map((variation) => (
-              <View key={variation.id} style={styles.variationItem}>
-                <Text style={styles.variationName}>
-                  {variation.variation_option?.name || 'Unknown Variation'}
-                </Text>
-                <Text style={styles.variationDescription}>
-                  {variation.variation_option?.description || 'No description available'}
-                </Text>
-              </View>
-            ))}
           </View>
         )}
 
@@ -1014,25 +996,6 @@ const styles = StyleSheet.create({
   },
   captureSourcePlatform: {
     fontSize: 13,
-    color: colors.mutedForeground,
-  },
-  variationItem: {
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: '#1A1F2E',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  variationName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.foreground,
-    marginBottom: 4,
-  },
-  variationDescription: {
-    fontSize: 14,
-    lineHeight: 20,
     color: colors.mutedForeground,
   },
   hierarchyContainer: {

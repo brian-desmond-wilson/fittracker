@@ -4,9 +4,6 @@ import type {
   Exercise,
   ExerciseWithVariations,
   ExerciseWithDetails,
-  VariationCategory,
-  VariationOption,
-  VariationOptionWithCategory,
   WODFormat,
   WODCategory,
   WOD,
@@ -85,26 +82,6 @@ export async function fetchWODCategories(): Promise<WODCategory[]> {
 
   if (error) {
     console.error('Error fetching WOD categories:', error);
-    throw error;
-  }
-
-  return data || [];
-}
-
-/**
- * Fetch all variation categories (Position, Stance, Equipment, Style)
- */
-export async function fetchVariationCategories(): Promise<VariationCategory[]> {
-  const { data, error } = await supabase
-    .from('variation_categories')
-    .select(`
-      *,
-      options:variation_options(*)
-    `)
-    .order('name');
-
-  if (error) {
-    console.error('Error fetching variation categories:', error);
     throw error;
   }
 
@@ -595,13 +572,6 @@ export async function fetchMovements(filter?: CatalogListFilter): Promise<Exerci
     .select(`
       *,
       movement_category:movement_categories(*),
-      variations:exercise_variations(
-        *,
-        variation_option:variation_options(
-          *,
-          category:variation_categories(*)
-        )
-      ),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -618,15 +588,10 @@ export async function fetchMovements(filter?: CatalogListFilter): Promise<Exerci
     throw error;
   }
 
-  // Build full_name for each exercise (e.g., "Front Squat + Pause + Barbell")
+  // full_name is just the row's name now: it used to append variation-option
+  // names, and derivations carry their own full name in `name` (Stage 6).
   const movements = (data || []).map((exercise) => {
-    const variationNames = exercise.variations
-      ?.map((v: any) => v.variation_option?.name)
-      .filter(Boolean) || [];
-
-    const full_name = variationNames.length > 0
-      ? `${exercise.name} + ${variationNames.join(' + ')}`
-      : exercise.name;
+    const full_name = exercise.name;
 
     // Flatten scoring_types
     const scoringTypes = exercise.scoring_types
@@ -659,13 +624,6 @@ export async function searchMovements(
     .select(`
       *,
       movement_category:movement_categories(*),
-      variations:exercise_variations(
-        *,
-        variation_option:variation_options(
-          *,
-          category:variation_categories(*)
-        )
-      ),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -682,15 +640,9 @@ export async function searchMovements(
     throw error;
   }
 
-  // Build full_name for search results
+  // full_name is just the row's name now (see fetch counterpart).
   const movements = (data || []).map((exercise) => {
-    const variationNames = exercise.variations
-      ?.map((v: any) => v.variation_option?.name)
-      .filter(Boolean) || [];
-
-    const full_name = variationNames.length > 0
-      ? `${exercise.name} + ${variationNames.join(' + ')}`
-      : exercise.name;
+    const full_name = exercise.name;
 
     // Flatten scoring_types
     const scoringTypes = exercise.scoring_types
@@ -722,13 +674,6 @@ export async function fetchAllExercises(filter?: CatalogListFilter): Promise<Exe
     .select(`
       *,
       movement_category:movement_categories(*),
-      variations:exercise_variations(
-        *,
-        variation_option:variation_options(
-          *,
-          category:variation_categories(*)
-        )
-      ),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -749,15 +694,10 @@ export async function fetchAllExercises(filter?: CatalogListFilter): Promise<Exe
     throw error;
   }
 
-  // Build full_name for each exercise (e.g., "Front Squat + Pause + Barbell")
+  // full_name is just the row's name now: it used to append variation-option
+  // names, and derivations carry their own full name in `name` (Stage 6).
   const exercises = (data || []).map((exercise) => {
-    const variationNames = exercise.variations
-      ?.map((v: any) => v.variation_option?.name)
-      .filter(Boolean) || [];
-
-    const full_name = variationNames.length > 0
-      ? `${exercise.name} + ${variationNames.join(' + ')}`
-      : exercise.name;
+    const full_name = exercise.name;
 
     // Flatten scoring_types
     const scoringTypes = exercise.scoring_types
@@ -791,13 +731,6 @@ export async function searchAllExercises(
     .select(`
       *,
       movement_category:movement_categories(*),
-      variations:exercise_variations(
-        *,
-        variation_option:variation_options(
-          *,
-          category:variation_categories(*)
-        )
-      ),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -816,15 +749,9 @@ export async function searchAllExercises(
     throw error;
   }
 
-  // Build full_name for search results
+  // full_name is just the row's name now (see fetch counterpart).
   const exercises = (data || []).map((exercise) => {
-    const variationNames = exercise.variations
-      ?.map((v: any) => v.variation_option?.name)
-      .filter(Boolean) || [];
-
-    const full_name = variationNames.length > 0
-      ? `${exercise.name} + ${variationNames.join(' + ')}`
-      : exercise.name;
+    const full_name = exercise.name;
 
     // Flatten scoring_types
     const scoringTypes = exercise.scoring_types
@@ -848,21 +775,12 @@ export async function searchAllExercises(
 // exercises catalog is frontDoor.createCatalogExercise (see frontDoor.ts).
 
 /**
- * Fetch a single movement by ID with all variations
+ * Fetch a single movement by ID
  */
 export async function fetchMovementById(movementId: string): Promise<ExerciseWithVariations | null> {
   const { data, error } = await supabase
     .from('exercises')
-    .select(`
-      *,
-      variations:exercise_variations(
-        *,
-        variation_option:variation_options(
-          *,
-          category:variation_categories(*)
-        )
-      )
-    `)
+    .select('*')
     .eq('id', movementId)
     .eq('is_movement', true)
     .single();
@@ -872,18 +790,10 @@ export async function fetchMovementById(movementId: string): Promise<ExerciseWit
     throw error;
   }
 
-  // Build full_name
-  const variationNames = data.variations
-    ?.map((v: any) => v.variation_option?.name)
-    .filter(Boolean) || [];
-
-  const full_name = variationNames.length > 0
-    ? `${data.name} + ${variationNames.join(' + ')}`
-    : data.name;
-
+  // full_name is just the row's name now (see fetchMovements).
   return {
     ...data,
-    full_name,
+    full_name: data.name,
   };
 }
 
@@ -925,37 +835,11 @@ export async function fetchScoringTypes(): Promise<ScoringType[]> {
   return data || [];
 }
 
-/**
- * Fetch all variation options grouped by category
- */
-export async function fetchVariationOptions(): Promise<VariationOptionWithCategory[]> {
-  const { data, error } = await supabase
-    .from('variation_options')
-    .select(`
-      *,
-      category:variation_categories(*)
-    `)
-    .order('display_order');
-
-  if (error) {
-    console.error('Error fetching variation options:', error);
-    throw error;
-  }
-
-  // Sort by category display_order in JavaScript since we can't do it in the query
-  const sorted = (data || []).sort((a, b) => {
-    const categoryOrder = (a.category?.display_order || 0) - (b.category?.display_order || 0);
-    if (categoryOrder !== 0) return categoryOrder;
-    return (a.display_order || 0) - (b.display_order || 0);
-  });
-
-  return sorted;
-}
-
 // createVariationOption is gone (Stage 5, Task 3): the unified wizard (Task 2)
-// removed its last callers, and the app must not MINT variation options — the
-// existing rows render read-only on the detail page until Stage 6 drops them.
-// fetchMovementWithAttributes went with it (zero callers since Task 2).
+// removed its last callers. fetchMovementWithAttributes went with it (zero
+// callers since Task 2). Stage 6, Task 8 finished the job — the variation
+// reads (fetchVariationCategories, fetchVariationOptions, the catalog embeds)
+// are gone too, because derivations express what variations used to.
 
 // Tier is a STORED column now (Stage 5, Task 3). The engine that owns every
 // exercise write (Stages 1-4) maintains `exercises.tier` — 0 for cores, 1+ for
@@ -1900,13 +1784,6 @@ export async function fetchExerciseWithDetails(exerciseId: string): Promise<Exer
         movement_category:movement_categories(*),
         movement_family:movement_families(*),
         plane_of_motion:planes_of_motion(*),
-        variations:exercise_variations(
-          *,
-          variation_option:variation_options(
-            *,
-            category:variation_categories(*)
-          )
-        ),
         scoring_types:exercise_scoring_types(
           scoring_type:scoring_types(*)
         )
