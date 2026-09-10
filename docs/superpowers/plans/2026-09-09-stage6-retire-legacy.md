@@ -62,7 +62,7 @@ Brian's directive from the exit gate: a one-tap chip resolution is too easy to f
 **Files:**
 - Modify: `mobile/src/components/training/daily/MatchReviewSheet.tsx:149-166`
 
-- [ ] **Step 1: Replace the chip onPress with a confirm wrapper**
+- [x] **Step 1: Replace the chip onPress with a confirm wrapper**
 
 Current code (lines 153-164):
 
@@ -114,12 +114,12 @@ and add this handler next to `resolve` (after line 109, same indentation level a
 
 `Alert` is already imported (line 4). Do NOT add confirms to the Find-in-catalog or Create-new paths — those are deliberate multi-step flows.
 
-- [ ] **Step 2: Typecheck**
+- [x] **Step 2: Typecheck**
 
 Run: `cd mobile && npx tsc --noEmit`
 Expected: no new errors (pre-existing error count unchanged).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add mobile/src/components/training/daily/MatchReviewSheet.tsx
@@ -141,7 +141,7 @@ Brian's directive: an unset identity attribute on a derivation isn't "None" — 
 - Modify: `mobile/src/components/training/crossfit/wizard/Step3Attributes.tsx:267-311`
 - Modify: `mobile/src/components/training/crossfit/wizard/AttributePickerSheet.tsx:58-68`
 
-- [ ] **Step 1: Add `fetchCoreDescription` to crossfit.ts**
+- [x] **Step 1: Add `fetchCoreDescription` to crossfit.ts**
 
 Insert directly after the `fetchCoreClassification` function body ends (its closing `}` is around line 437):
 
@@ -166,7 +166,7 @@ export async function fetchCoreDescription(coreId: string): Promise<string | nul
 }
 ```
 
-- [ ] **Step 2: Load the description in Step3Attributes and compute the standard label**
+- [x] **Step 2: Load the description in Step3Attributes and compute the standard label**
 
 In `Step3Attributes.tsx`, add to the imports: `fetchCoreDescription` from `@/src/lib/supabase/crossfit` (match the file's existing import path style for crossfit.ts), and `useState`/`useEffect` if not already imported. Then inside the component, near the existing state (the component already has `openPicker` state and a `fetchVariantLabels` effect keyed on `formData.core_movement_id` around line 80):
 
@@ -193,7 +193,7 @@ In `Step3Attributes.tsx`, add to the imports: `fetchCoreDescription` from `@/src
   }, [formData.core_movement_id, isDerivation]);
 ```
 
-- [ ] **Step 3: Use the label in both picker rows**
+- [x] **Step 3: Use the label in both picker rows**
 
 At line 281 (attribute pickers) change:
 
@@ -209,7 +209,7 @@ to:
 
 and the accessibility label at line 275 from `` `${label}: ${value ?? 'none'}` `` to `` `${label}: ${value ?? standardLabel}` ``. Apply the same two changes to the variant-label row (its `?? 'None'` is at line 306).
 
-- [ ] **Step 4: Pass the label and description into AttributePickerSheet**
+- [x] **Step 4: Pass the label and description into AttributePickerSheet**
 
 In `AttributePickerSheet.tsx`, add to the props interface:
 
@@ -252,12 +252,12 @@ Then in `Step3Attributes.tsx`, wherever `<AttributePickerSheet` is rendered, pas
             noneDescription={isDerivation ? coreDescription : null}
 ```
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `cd mobile && npx tsc --noEmit`
 Expected: no new errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add mobile/src/lib/supabase/crossfit.ts mobile/src/components/training/crossfit/wizard/Step3Attributes.tsx mobile/src/components/training/crossfit/wizard/AttributePickerSheet.tsx
@@ -275,7 +275,7 @@ Brian's declared standard: EVERY exercise carries a skill level and ≥1 scoring
 **Files:**
 - Create: `docs/superpowers/audit/2026-09-09-skill-scoring-curation.csv`
 
-- [ ] **Step 1: Generate the sheet skeleton from staging**
+- [x] **Step 1: Generate the sheet skeleton from staging**
 
 ```bash
 psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -c "\copy (
@@ -295,7 +295,7 @@ psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -c "\copy (
 
 (Run from repo root; if `\copy` pathing fights you, redirect `COPY ... TO STDOUT` into the file.) Rows with a `current_*` value keep it — proposals fill blanks only, never overwrite existing curation.
 
-- [ ] **Step 2: Fill `proposed_skill` and `proposed_scoring` for every blank**
+- [x] **Step 2: Fill `proposed_skill` and `proposed_scoring` for every blank**
 
 Core proposals are pre-decided (from the 2026-09-09 research pass) — enter them verbatim:
 
@@ -346,7 +346,7 @@ The 11 cores that already have scoring (Rope Climb, Deadlift, Lunge, Clean, Burp
 
 For the 52 outliers: propose from each row's name/family using the same conventions (loaded strength → `Reps|Load`; bodyweight reps → `Reps`; holds → `Duration / Hold`; monostructural → `Distance|Time` or `Calories|Distance|Time`; recovery/mobility work → `Not Scored / N/A` and skill `Beginner`). Every blank must get a proposal — no row left empty.
 
-- [ ] **Step 3: 🚧 GATE — present the sheet to Brian and STOP**
+- [x] **Step 3: 🚧 GATE — present the sheet to Brian and STOP**
 
 Post the full sheet (or the artifact route if he prefers) and wait for his approval. He may edit values. Do not start Task 4 until he approves. The approved CSV is the decision record — commit it:
 
@@ -364,7 +364,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Files:**
 - Create: `supabase/migrations/20260914100000_core_curation.sql`
 
-- [ ] **Step 1: Write the migration from the approved sheet**
+- [x] **Step 1: Write the migration from the approved sheet**
 
 Shape (VALUES lists are filled row-for-row from the approved CSV — cores AND outliers; the core values below are the pre-approved defaults and must match the final sheet):
 
@@ -461,7 +461,7 @@ END $$;
 
 NOTE the final assertion means the sheet MUST cover every blank core/outlier — the migration self-verifies completeness. Sanity-check name matches before rehearsal: every `v.name` must hit exactly one row (`tier=0 OR core_movement_id IS NULL`); a typo'd name silently no-ops the UPDATE but then trips the final assertion — that is the designed failure mode.
 
-- [ ] **Step 2: Rehearse on staging**
+- [x] **Step 2: Rehearse on staging**
 
 ```bash
 psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260914100000_core_curation.sql
@@ -477,7 +477,7 @@ psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -f scripts/movement
 
 Expected: harness V0–V11 PASS. NOTE: staging lacks the 4 exercises Brian minted on-device 2026-09-09 (they exist on live only) — those are derivations, covered by the backfill legs, so live totals will differ from staging by 4; the completeness assertion handles both.
 
-- [ ] **Step 3: 🚧 GATE — live push**
+- [x] **Step 3: 🚧 GATE — live push**
 
 Report rehearsal results to Brian and wait for "push". Then:
 
@@ -487,7 +487,7 @@ supabase db push
 
 Verify live via REST (anon key from `mobile/.env`): zero rows missing skill or scoring.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add supabase/migrations/20260914100000_core_curation.sql
@@ -508,7 +508,7 @@ Only after Task 4 (cores curated → wizard inheritance pre-fills these for deri
 - Modify: `mobile/src/components/training/crossfit/CatalogItemWizard.tsx:313-331`
 - Modify: `mobile/src/components/training/crossfit/wizard/Step2Classification.tsx` (labels at lines ~349 and ~458)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to the catalogWizardForm test file:
 
@@ -543,12 +543,12 @@ describe('missingClassification', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd mobile && npx jest catalogWizardForm`
 Expected: FAIL — `missingClassification` is not exported.
 
-- [ ] **Step 3: Implement in catalogWizardForm.ts**
+- [x] **Step 3: Implement in catalogWizardForm.ts**
 
 ```ts
 /**
@@ -568,12 +568,12 @@ export function missingClassification(form: WizardFormData): string[] {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify pass**
+- [x] **Step 4: Run tests to verify pass**
 
 Run: `cd mobile && npx jest catalogWizardForm`
 Expected: PASS, all suites.
 
-- [ ] **Step 5: Wire the wizard to it**
+- [x] **Step 5: Wire the wizard to it**
 
 In `CatalogItemWizard.tsx`, replace the body of `canSave` (lines 325-331):
 
@@ -596,12 +596,12 @@ In `Step2Classification.tsx`: append the required marker `*` to the Skill Level 
 
 (If the file's helper-text style has a different name, use that name.)
 
-- [ ] **Step 6: Typecheck + full jest**
+- [x] **Step 6: Typecheck + full jest**
 
 Run: `cd mobile && npx tsc --noEmit && npx jest`
 Expected: no new tsc errors; all suites pass.
 
-- [ ] **Step 7: 🚧 GATE — on-device check, then commit**
+- [x] **Step 7: 🚧 GATE — on-device check, then commit**
 
 Ask Brian to verify on device (Metro workflow per `feedback_simulator_isolation` memory): (a) chip confirm dialog from Task 1, (b) "Standard — as ⟨core⟩" display from Task 2, (c) wizard blocks save without skill/scoring and derivations pre-fill both from the core. Then:
 
@@ -622,7 +622,7 @@ The blocks are already comment-labeled "Legacy compat (until Stage 6)" — this 
 **Files:**
 - Modify: `mobile/src/lib/supabase/frontDoor.ts` (interface ~lines 200-212, ROW_COLUMNS ~214-222, insert row ~655-680, Phase-3 compat block ~1230-1250)
 
-- [ ] **Step 1: Remove the two fields from `ExerciseRow` and `ROW_COLUMNS`**
+- [x] **Step 1: Remove the two fields from `ExerciseRow` and `ROW_COLUMNS`**
 
 In the `ExerciseRow` interface delete these two lines:
 
@@ -633,7 +633,7 @@ In the `ExerciseRow` interface delete these two lines:
 
 In `ROW_COLUMNS` delete `equipment_types, ` and `goal_type_id, ` (the string becomes `'... skill_level, short_name, requires_weight, requires_distance, video_url, ...'`).
 
-- [ ] **Step 2: Stop writing them on create**
+- [x] **Step 2: Stop writing them on create**
 
 In `insertRow` delete these two lines (keep `requires_weight`/`requires_distance` — those columns survive):
 
@@ -646,7 +646,7 @@ In `insertRow` delete these two lines (keep `requires_weight`/`requires_distance
 
 If `goalTypeIds` (the local variable) is now unused, remove its declaration; `equipmentNames` stays (feeds `deriveRequiresWeight`).
 
-- [ ] **Step 3: Shrink the Phase-3 compat block on update**
+- [x] **Step 3: Shrink the Phase-3 compat block on update**
 
 Replace the block (currently starting `// ── Phase 3: legacy-compat columns, AFTER the junctions they mirror (I2) ──`) with:
 
@@ -672,11 +672,11 @@ Replace the block (currently starting `// ── Phase 3: legacy-compat columns,
 
 (The deleted lines are `compat.equipment_types = ...` and the whole `if (patch.goal_type_ids !== undefined)` clause.)
 
-- [ ] **Step 4: Sweep the rest of the file**
+- [x] **Step 4: Sweep the rest of the file**
 
 `grep -n "equipment_types\|goal_type_id" mobile/src/lib/supabase/frontDoor.ts` — fix any remaining reference EXCEPT junction-table column names (`exercise_goal_types` selects its own `goal_type_id` column — those survive and stay).
 
-- [ ] **Step 5: Verify — typecheck, jest, probes**
+- [x] **Step 5: Verify — typecheck, jest, probes**
 
 ```bash
 cd mobile && npx tsc --noEmit && npx jest
@@ -686,7 +686,7 @@ bash scripts/movement-model/probe_front_door.sh
 ```
 Expected: probes PASS against staging (create/update/delete round-trips through the front door contract).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add mobile/src/lib/supabase/frontDoor.ts
@@ -709,7 +709,7 @@ Eleven PostgREST embeds resolve through the `exercises.goal_type_id` FK; the col
 - Modify: `mobile/src/components/training/crossfit/WODDetailScreen.tsx:457`
 - Modify: `mobile/src/types/crossfit.ts:552, 569`
 
-- [ ] **Step 1: fetchCoreClassification — junction only**
+- [x] **Step 1: fetchCoreClassification — junction only**
 
 Remove `goal_type_id, ` from the select string and change the return mapping:
 
@@ -719,7 +719,7 @@ Remove `goal_type_id, ` from the select string and change the return mapping:
 
 (delete the `junctionGoals.length > 0 ? ... : row.goal_type_id ? ...` fallback). Update the function's doc comment: the junction is now the only source; the legacy fallback is gone with Stage 6.
 
-- [ ] **Step 2: Delete the embed line from the six list fetchers**
+- [x] **Step 2: Delete the embed line from the six list fetchers**
 
 In `fetchMovements`, `searchMovements`, `fetchAllExercises`, `searchAllExercises`, `fetchMovementById`, `fetchExerciseWithDetails` delete the line:
 
@@ -727,11 +727,11 @@ In `fetchMovements`, `searchMovements`, `fetchAllExercises`, `searchAllExercises
       goal_type:goal_types(*),
 ```
 
-- [ ] **Step 3: fetchWODById — same deletion ×4**
+- [x] **Step 3: fetchWODById — same deletion ×4**
 
 Delete `goal_type:goal_types(*),` from all four exercise embeds (`exercise:`, `rx_alternative_exercise:`, `l2_alternative_exercise:`, `l1_alternative_exercise:`).
 
-- [ ] **Step 4: TrainingItemDetailScreen — junction replacement**
+- [x] **Step 4: TrainingItemDetailScreen — junction replacement**
 
 At line 175 replace:
 
@@ -764,17 +764,17 @@ Replace the Goal Type meta item (lines 488-493):
           )}
 ```
 
-- [ ] **Step 5: Drop the display fallbacks**
+- [x] **Step 5: Drop the display fallbacks**
 
 - `MovementSearchModal.tsx:144`: `{movement.movement_category?.name || movement.goal_type?.name}` → `{movement.movement_category?.name}`
 - `SwipeableMovementCard.tsx:273`: `{movement.movement_category?.name || movement.goal_type?.name || 'General'}` → `{movement.movement_category?.name || 'General'}`
 - `WODDetailScreen.tsx:457`: delete the line `const goalTypeName = exercise?.goal_type?.name;` (verified dead — that was its only occurrence in the file)
 
-- [ ] **Step 6: Types**
+- [x] **Step 6: Types**
 
 In `types/crossfit.ts` delete the `goal_type?: GoalType; // Legacy single goal type...` members at lines 552 and 569.
 
-- [ ] **Step 7: Verify + commit**
+- [x] **Step 7: Verify + commit**
 
 ```bash
 cd mobile && npx tsc --noEmit && npx jest
@@ -799,14 +799,14 @@ The variation tables are the pre-model way of expressing what derivations now ex
 - Modify: `mobile/src/components/training/item-detail/TrainingItemDetailScreen.tsx:176, 518-534`
 - Modify: `mobile/src/types/crossfit.ts`
 
-- [ ] **Step 1: Confirm the two fetchers are dead exports**
+- [x] **Step 1: Confirm the two fetchers are dead exports**
 
 ```bash
 grep -rn "fetchVariationCategories\|fetchVariationOptions" mobile/src --include='*.ts' --include='*.tsx' | grep -v "lib/supabase/crossfit.ts"
 ```
 Expected: no output. (If a caller appears, it renders data that no longer exists — delete the calling UI too and note it in the commit.)
 
-- [ ] **Step 2: Delete both fetchers and all six embeds**
+- [x] **Step 2: Delete both fetchers and all six embeds**
 
 Delete the whole `fetchVariationCategories` and `fetchVariationOptions` functions. In the six list fetchers delete the embed block:
 
@@ -820,15 +820,15 @@ Delete the whole `fetchVariationCategories` and `fetchVariationOptions` function
       ),
 ```
 
-- [ ] **Step 3: Detail screen**
+- [x] **Step 3: Detail screen**
 
 Delete line 176 (`variations:exercise_variations(*),`) and the whole Variations JSX section (lines 518-534, the `{item.variations && ...}` block). Remove now-unused styles (`variationItem`, `variationName`, `variationDescription`) if nothing else references them.
 
-- [ ] **Step 4: Types**
+- [x] **Step 4: Types**
 
 In `types/crossfit.ts`: remove the `variations` member from `ExerciseWithVariations` and add a doc comment that the name is historical (the interface now equals a catalog list row; renaming it touches too many call sites for zero behavior — YAGNI). Delete `VariationCategory`, `VariationOption`/`VariationOptionWithCategory`, and `ExerciseVariation` types if `grep -rn` shows no remaining references after the edits above.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 ```bash
 cd mobile && npx tsc --noEmit && npx jest
@@ -854,7 +854,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `mobile/src/lib/gemini.ts:112` (verify only — field stays populated in-memory)
 - Modify: `mobile/src/types/crossfit.ts` (Exercise 300/308/313, movement iface 370/375, CreateExerciseInput 714, CreateMovementInput 729/739/747/756, ScoringTypeName 28)
 
-- [ ] **Step 1: capture.ts fetchCatalog — junction only**
+- [x] **Step 1: capture.ts fetchCatalog — junction only**
 
 Remove `equipment_types` from the select (keep `equipment_junction:exercise_equipment(equipment(name))`) and replace the union mapping with:
 
@@ -866,7 +866,7 @@ Remove `equipment_types` from the select (keep `equipment_junction:exercise_equi
 
 Delete the "legacy array fills in for pre-model rows" comment — post-Stage-3 every row's junction is authoritative.
 
-- [ ] **Step 2: daily.ts fetchCandidateData — junction swap**
+- [x] **Step 2: daily.ts fetchCandidateData — junction swap**
 
 In the exercises select replace `equipment_types,` with:
 
@@ -882,7 +882,7 @@ and the candidate mapping:
       .filter((n: any): n is string => typeof n === "string"),
 ```
 
-- [ ] **Step 3: crossfit.ts — add the equipment embed where movement rows feed WOD tooling**
+- [x] **Step 3: crossfit.ts — add the equipment embed where movement rows feed WOD tooling**
 
 Add this line to the select of `fetchMovements`, `searchMovements`, `fetchAllExercises`, `searchAllExercises`, and to all four exercise embeds in `fetchWODById` (right after the `movement_category:` line in each):
 
@@ -890,7 +890,7 @@ Add this line to the select of `fetchMovements`, `searchMovements`, `fetchAllExe
       equipment_rows:exercise_equipment(equipment(name)),
 ```
 
-- [ ] **Step 4: wodDetailHelpers.ts — read the junction rows**
+- [x] **Step 4: wodDetailHelpers.ts — read the junction rows**
 
 Replace the equipment block inside the `wod.movements?.forEach` (lines ~186-195):
 
@@ -907,7 +907,7 @@ Replace the equipment block inside the `wod.movements?.forEach` (lines ~186-195)
     }
 ```
 
-- [ ] **Step 5: In-memory copies feed from the junction**
+- [x] **Step 5: In-memory copies feed from the junction**
 
 `WODMovementsStep.tsx:78` and `MovementConfigModal.tsx:267` copy `movement.equipment_types` into `WODMovementConfig`. Change both copy expressions to:
 
@@ -919,7 +919,7 @@ Replace the equipment block inside the `wod.movements?.forEach` (lines ~186-195)
 
 The in-memory field NAME `equipment_types` on `WODMovementConfig`/`AddWODWizard.tsx:29` stays (it never touches the DB; renaming it churns the WOD wizard for zero behavior). `gemini.ts:112` (`category: m.equipment_types?.[0]`) and `extractMovementData` in `wodDetailHelpers.ts` then keep working unchanged — verify by reading them, change nothing.
 
-- [ ] **Step 6: types/crossfit.ts cleanup**
+- [x] **Step 6: types/crossfit.ts cleanup**
 
 Delete from `Exercise`: `goal_type_id` (300), `aliases` (308), `equipment_types` (313). Delete from the movement/detail interface: `movement_style_id` (370), `aliases` (375). Delete `CreateExerciseInput.goal_type_id` (714) and from `CreateMovementInput`: `goal_type_id` (729), `aliases` (739), `movement_style_id` (747), `equipment_types` (756). Fix any resulting tsc errors at call sites by deleting the dead assignments (the untyped Supabase client means these fields were silently ignored on write already).
 
@@ -939,7 +939,7 @@ export type ScoringTypeName =
   | 'Not Scored / N/A';
 ```
 
-- [ ] **Step 7: Verify + commit**
+- [x] **Step 7: Verify + commit**
 
 ```bash
 cd mobile && npx tsc --noEmit && npx jest
@@ -962,7 +962,7 @@ The only edge function touching a drop target. It 400s at its select the moment 
 **Files:**
 - Modify: `supabase/functions/generate-exercise-image/index.ts:51, 65`
 
-- [ ] **Step 1: Swap the select and prompt source**
+- [x] **Step 1: Swap the select and prompt source**
 
 Line 51:
 
@@ -979,7 +979,7 @@ Line 65 (prompt equipment):
       .join(', ') || 'bodyweight';
 ```
 
-- [ ] **Step 2: 🚧 GATE — deploy with Brian's go-ahead**
+- [x] **Step 2: 🚧 GATE — deploy with Brian's go-ahead**
 
 ```bash
 supabase functions deploy generate-exercise-image
@@ -987,7 +987,7 @@ supabase functions deploy generate-exercise-image
 
 Then verify: in the app, open any exercise without an image and tap Generate; the Metro log shows the prompt including real equipment names (the Stage 5 exit-gate log line format: `Generating item image with prompt: ... Equipment: Kettlebell, Bench. ...`).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add supabase/functions/generate-exercise-image/index.ts
@@ -1005,7 +1005,7 @@ Stage 5 quality-review hand-off: the engine's parent selection has no ownership 
 **Files:**
 - Create: `supabase/migrations/20260914110000_scope_parent_candidacy.sql`
 
-- [ ] **Step 1: Write the migration**
+- [x] **Step 1: Write the migration**
 
 `CREATE OR REPLACE` the worker with the current source from `supabase/migrations/20260909100000_turn_the_locks.sql:117-209` COPIED VERBATIM, then apply exactly two edits (everything else byte-identical — the function is engine-critical):
 
@@ -1036,7 +1036,7 @@ Edit 2 — the parent-candidate query gains one predicate (after the cardinality
 
 Keep the function's `SECURITY DEFINER SET search_path = public` header and its REVOKE state (already REVOKEd from PUBLIC/anon/authenticated in Stage 5 — CREATE OR REPLACE preserves ACLs, but assert it in Step 3's rehearsal anyway).
 
-- [ ] **Step 2: Pre-check both environments for rows the new rule would re-parent**
+- [x] **Step 2: Pre-check both environments for rows the new rule would re-parent**
 
 ```bash
 psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -c "
@@ -1047,7 +1047,7 @@ WHERE NOT p.is_official AND p.created_by IS DISTINCT FROM child.created_by;"
 
 Expected: 0 rows (also run the equivalent REST/psql check against live before the push). If rows appear, list them for Brian — they are existing infiltrations and re-parent on the family's next recompute; note them in the push report.
 
-- [ ] **Step 3: Rehearse on staging with a hostile scenario**
+- [x] **Step 3: Rehearse on staging with a hostile scenario**
 
 ```bash
 psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260914110000_scope_parent_candidacy.sql
@@ -1121,11 +1121,11 @@ psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -f scripts/movement
 
 NOTE: the fingerprint collision guard applies — the scenario's attribute sets ({Dumbbell} vs {Dumbbell,Strict}) are chosen to be distinct from each other AND from every existing Thruster-family row; if the family gains rows before execution, adjust the attribute picks to stay collision-free. Expected: both PASS notices, harness green, everything rolled back. Also run `bash scripts/movement-model/probe_front_door.sh` after (engine behavior unchanged for the app's own writes).
 
-- [ ] **Step 4: 🚧 GATE — live push**
+- [x] **Step 4: 🚧 GATE — live push**
 
 Report rehearsal results; on Brian's "push": `supabase db push`, then re-run the Step-2 check against live (expect 0 rows re-parented, or exactly the ones reported).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations/20260914110000_scope_parent_candidacy.sql
@@ -1145,7 +1145,7 @@ Only after Tasks 6–11 are committed and the Task 10 deploy is live — after t
 - Modify: `scripts/movement-model/verify_foundation.sql` (V7 block, lines ~452-519)
 - Modify: `scripts/movement-model/dump_live_data.sh:17-19`, `scripts/movement-model/swap_fresh_dump.sql:30-38`, `scripts/movement-model/probe_wizard_payload.sh:112-113`
 
-- [ ] **Step 1: FIRST — take the final pre-drop backup with the UNMODIFIED dump script**
+- [x] **Step 1: FIRST — take the final pre-drop backup with the UNMODIFIED dump script**
 
 ```bash
 bash scripts/movement-model/dump_live_data.sh
@@ -1153,7 +1153,7 @@ bash scripts/movement-model/dump_live_data.sh
 
 This is the last backup that can ever capture the legacy tables' contents. Note the produced `backups/catalog_data_*.sql` filename in the commit message. Only after this backup exists may the script be edited.
 
-- [ ] **Step 2: Write the drop migration**
+- [x] **Step 2: Write the drop migration**
 
 ```sql
 -- Stage 6 (spec Phase 7): retire legacy catalog storage. Every attribute
@@ -1190,11 +1190,11 @@ DROP TABLE IF EXISTS public.exercise_load_positions;
 DROP TABLE IF EXISTS public.exercise_stances;
 ```
 
-- [ ] **Step 2b: Clean the dead variant-filter params in app code**
+- [x] **Step 2b: Clean the dead variant-filter params in app code**
 
 Five functions in `mobile/src/lib/supabase/crossfit.ts` (exercise standards, measurement profiles, progression/regression fetchers) accept an optional `variationOptionId` and `.eq()` on the columns dropped above. No caller passes the argument (verified in Task 8 review). Delete the parameter and its filter branch from each; `npx tsc --noEmit` proves no caller breaks. These reference `variation_option_id` column names, which the exit-gate grep pattern does NOT catch — this step is the cleanup.
 
-- [ ] **Step 3: Invert the harness's V7 guard**
+- [x] **Step 3: Invert the harness's V7 guard**
 
 In `verify_foundation.sql`, replace the V7 block (which today raises `V7 FAIL: ... dropped early` if the structures are MISSING) with the absence assertion:
 
@@ -1222,7 +1222,7 @@ BEGIN
 END $$;
 ```
 
-- [ ] **Step 4: Update the tooling scripts**
+- [x] **Step 4: Update the tooling scripts**
 
 - `dump_live_data.sh:17-19`: remove the six dropped tables from the `-t` list (they no longer exist; pg_dump errors on missing tables).
 - `swap_fresh_dump.sql:30-38`: remove the `DELETE FROM exercise_planes_of_motion/exercise_load_positions/exercise_stances` lines.
@@ -1236,7 +1236,7 @@ python3 scripts/movement-model/generate_catalog_pass.py --check 2>/dev/null || \
 
 Expected: no diff.
 
-- [ ] **Step 5: Rehearse on staging**
+- [x] **Step 5: Rehearse on staging**
 
 ```bash
 psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20260915100000_retire_legacy.sql
@@ -1250,7 +1250,7 @@ cd mobile && npx jest && cd ..
 
 Expected: harness V0–V11 PASS (V7 now asserts absence), all four probe suites PASS against the dropped schema, jest green. This is the real proof the app works post-drop.
 
-- [ ] **Step 6: 🚧 GATE — live push**
+- [x] **Step 6: 🚧 GATE — live push**
 
 Report rehearsal results; on Brian's "push":
 
@@ -1260,7 +1260,7 @@ supabase db push
 
 Then run the exit-gate proof against live REST: a select naming a dropped column must 400, and the app's own reads (probe suites pointed at live are NOT run — live probes would write; instead verify via anon REST that `exercises?select=id&limit=1` succeeds while `exercises?select=equipment_types&limit=1` errors).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add supabase/migrations/20260915100000_retire_legacy.sql scripts/movement-model/
@@ -1276,7 +1276,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 13: Exit-gate proof and final verification
 
-- [ ] **Step 1: The roadmap's exit gate — grep proves no app code references a dropped structure**
+- [x] **Step 1: The roadmap's exit gate — grep proves no app code references a dropped structure**
 
 ```bash
 grep -rn "equipment_types\|goal_type_id\|movement_style_id\|exercise_planes_of_motion\|exercise_load_positions\|exercise_stances\|exercise_variations\|variation_options\|variation_categories" \
@@ -1292,18 +1292,18 @@ grep -rn "\.aliases\b" mobile/src --include='*.ts' --include='*.tsx'
 
 Expected: no `exercises.aliases` reads (form-state `formData.aliases` and `exercise_aliases` usage are fine).
 
-- [ ] **Step 2: Full suite, one last time**
+- [x] **Step 2: Full suite, one last time**
 
 ```bash
 cd mobile && npx tsc --noEmit && npx jest && cd ..
 psql postgresql://postgres:postgres@127.0.0.1:56322/postgres -f scripts/movement-model/verify_foundation.sql
 ```
 
-- [ ] **Step 3: Record the deferred hardening decisions**
+- [x] **Step 3: Record the deferred hardening decisions**
 
 In `docs/superpowers/plans/2026-08-24-movement-model-roadmap.md`, Stage 6 section: tick the parent-candidacy box (done, Task 11) and EDIT the wild-alias box (do not tick) to read that it is deferred to the multi-user milestone with rationale (solo user; carve-out is deliberate Stage 5 behavior; revisit when accounts multiply). Add one line documenting the slot-squatting playbook: "a private row squatting a (core, fingerprint) slot is resolved during official curation by promoting the row (`is_official=true`, curated fields) or renaming its identity — no constraint surgery."
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-08-24-movement-model-roadmap.md
@@ -1316,13 +1316,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 14: Close out Stage 6
 
-- [ ] **Step 1: Spec** — in `docs/superpowers/specs/2026-08-24-movement-model-redesign-design.md`, annotate the Phase 7 bullet (line 99): `**Executed 2026-09-XX** (migration 20260915100000_retire_legacy.sql; V7 guard inverted).` Match the spec's existing amendment style (prior stages appended dated execution notes rather than rewriting).
+- [x] **Step 1: Spec** — in `docs/superpowers/specs/2026-08-24-movement-model-redesign-design.md`, annotate the Phase 7 bullet (line 99): `**Executed 2026-09-XX** (migration 20260915100000_retire_legacy.sql; V7 guard inverted).` Match the spec's existing amendment style (prior stages appended dated execution notes rather than rewriting).
 
-- [ ] **Step 2: Roadmap** — tick every remaining Stage 6 box (legacy drops, final verification suite, curation pass, exit gate) with dates and migration filenames, in the same voice as the Stage 5 closure entry.
+- [x] **Step 2: Roadmap** — tick every remaining Stage 6 box (legacy drops, final verification suite, curation pass, exit gate) with dates and migration filenames, in the same voice as the Stage 5 closure entry.
 
-- [ ] **Step 3: Memory** — update `~/.claude/projects/-Users-brianwilson-code-fittracker/memory/project_movement_model_redesign.md`: description line says the redesign is COMPLETE (Stages 1–6 live); body records the three Stage 6 migrations, the final backup filename, the inverted V7, the deferred alias-scoping decision, and that `generate_catalog_pass.py`/`audit_worksheet.sql` are historical pre-drop tools. Update the matching line in `MEMORY.md`.
+- [x] **Step 3: Memory** — update `~/.claude/projects/-Users-brianwilson-code-fittracker/memory/project_movement_model_redesign.md`: description line says the redesign is COMPLETE (Stages 1–6 live); body records the three Stage 6 migrations, the final backup filename, the inverted V7, the deferred alias-scoping decision, and that `generate_catalog_pass.py`/`audit_worksheet.sql` are historical pre-drop tools. Update the matching line in `MEMORY.md`.
 
-- [ ] **Step 4: Push and final report**
+- [x] **Step 4: Push and final report**
 
 ```bash
 git push
