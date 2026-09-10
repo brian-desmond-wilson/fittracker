@@ -15,6 +15,7 @@ import { formatWorkoutHeadline } from "@/src/lib/workoutFormat";
 import { BLOCK_ORDER, BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
 import { formatLastCompleted, isStale } from "@/src/lib/workoutCompletion";
 import type { WorkoutCompletion } from "@/src/lib/workoutCompletion";
+import { primaryEquipmentLabel } from "@/src/lib/workoutEquipment";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 interface SwipeableWorkoutCardProps {
@@ -23,8 +24,8 @@ interface SwipeableWorkoutCardProps {
   /** Reload the list — the tab's count comes from it. */
   onDeleted: () => void;
   /** This workout's history, or null when it has never been completed. The
-   *  card draws nothing at all in that case — an empty state here would be a
-   *  row of dashes on every workout you have not got round to yet. */
+   *  card says "Never done" in that case: now that the list can be sorted
+   *  and filtered by history, a blank line would read as missing data. */
   completion: WorkoutCompletion | null;
   /** Today's local date, passed in rather than read here so every card in one
    *  render agrees on what "Yesterday" means. */
@@ -40,6 +41,7 @@ export function SwipeableWorkoutCard({
 }: SwipeableWorkoutCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
   const roles = BLOCK_ORDER.filter((r) => workout.tags.blockRoles.includes(r));
+  const equipmentTag = primaryEquipmentLabel(workout);
   // Stale history is drawn muted so the green means "this is current training"
   // rather than merely "this happened once". The date can still come back null
   // on an unreadable value, in which case the count stands alone.
@@ -104,12 +106,13 @@ export function SwipeableWorkoutCard({
           completion
             ? `Completed ${completion.count} ${completion.count === 1 ? "time" : "times"}` +
               (lastLabel ? `, last ${lastLabel.toLowerCase()}` : "")
-            : null,
+            : "Never done",
           workout.tags.classifiedAt === null
             ? "Not yet tagged for the recommender"
             : roles.length > 0
               ? `Serves as ${roles.map((r) => BLOCK_TITLES[r].toLowerCase()).join(", ")}`
               : null,
+          equipmentTag ? `Uses ${equipmentTag.toLowerCase()}` : null,
           "Open the workout.",
         ].filter(Boolean).join(". ")}
       >
@@ -123,9 +126,8 @@ export function SwipeableWorkoutCard({
           </Text>
           {/* What you have actually done with it. Its own line rather than an
               extra segment on the meta above: a long name and a long date
-              would otherwise compete for one row on a narrow phone, and this
-              line has to be able to vanish whole. */}
-          {completion && (
+              would otherwise compete for one row on a narrow phone. */}
+          {completion ? (
             <View style={styles.histLine}>
               <Check
                 size={13}
@@ -137,24 +139,33 @@ export function SwipeableWorkoutCard({
               </Text>
               {lastLabel && <Text style={styles.histWhen}>· {lastLabel}</Text>}
             </View>
+          ) : (
+            // Said out loud now that the list can be sorted and filtered by
+            // history: a blank line no longer reads as "nothing to say".
+            <Text style={styles.histNever}>Never done</Text>
           )}
-          {/* Which parts of a day this can serve. Ordered by BLOCK_ORDER, not
-              by however the tags came back, so the same workout always reads
-              the same way. An untagged workout says so instead — it is
-              invisible to the recommender until someone classifies it. */}
-          {workout.tags.classifiedAt === null ? (
+          {/* Which parts of a day this can serve, then what it needs. Roles are
+              ordered by BLOCK_ORDER, not by however the tags came back, so the
+              same workout always reads the same way. An untagged workout says
+              so instead — it is invisible to the recommender until someone
+              classifies it. The row shows for any of three reasons: untagged,
+              has roles, or has an equipment label. */}
+          {(workout.tags.classifiedAt === null || roles.length > 0 || equipmentTag) && (
             <View style={styles.roleRow}>
-              <Text style={[styles.rolePill, styles.rolePillUntagged]}>Untagged</Text>
+              {workout.tags.classifiedAt === null ? (
+                <Text style={[styles.rolePill, styles.rolePillUntagged]}>Untagged</Text>
+              ) : (
+                roles.map((role) => (
+                  <Text key={role} style={styles.rolePill}>
+                    {BLOCK_TITLES[role]}
+                  </Text>
+                ))
+              )}
+              {equipmentTag && (
+                <Text style={[styles.rolePill, styles.rolePillEquipment]}>{equipmentTag}</Text>
+              )}
             </View>
-          ) : roles.length > 0 ? (
-            <View style={styles.roleRow}>
-              {roles.map((role) => (
-                <Text key={role} style={styles.rolePill}>
-                  {BLOCK_TITLES[role]}
-                </Text>
-              ))}
-            </View>
-          ) : null}
+          )}
           {workout.source?.posterHandle && (
             <Text style={styles.handle}>{workout.source.posterHandle}</Text>
           )}
@@ -187,6 +198,7 @@ const styles = StyleSheet.create({
   histCount: { fontSize: 13, fontWeight: "600", color: colors.primary },
   histCountStale: { color: colors.mutedForeground, fontWeight: "400" },
   histWhen: { fontSize: 13, color: colors.mutedForeground },
+  histNever: { fontSize: 13, color: colors.mutedForeground, marginTop: 5 },
   roleRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
   rolePill: {
     fontSize: 11, color: colors.primary, borderWidth: 1,
@@ -197,4 +209,5 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   rolePillUntagged: { color: colors.mutedForeground, borderColor: colors.border },
+  rolePillEquipment: { color: colors.mutedForeground, borderColor: colors.border },
 });
