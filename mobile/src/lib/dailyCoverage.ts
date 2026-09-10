@@ -18,6 +18,16 @@ export const TRAINABLE_MUSCLES = [
   "Core", "Obliques", "Lower Back",
 ] as const;
 
+/** The muscle picker's groups, in display order (mockup A4). Names are
+ *  muscle_regions.name verbatim. "Full Body" is offered here as a pickable
+ *  tag even though it is not a trainable muscle for coverage. */
+export const MUSCLE_GROUPS: { title: string; muscles: string[] }[] = [
+  { title: "Upper body", muscles: ["Chest", "Upper Back", "Shoulders", "Lats", "Biceps", "Triceps", "Forearms / Grip", "Neck / Traps"] },
+  { title: "Core", muscles: ["Core", "Obliques", "Lower Back"] },
+  { title: "Lower body", muscles: ["Quads", "Hamstrings", "Glutes", "Calves", "Hip Flexors", "Hip Abductors", "Hip Adductors"] },
+  { title: "Whole body", muscles: ["Full Body"] },
+];
+
 export interface MuscleCoverage {
   /** name → decayed 7-day load. Absent = untouched this week. A ledger row
    *  denormalized with a non-trainable name ("Full Body", "Back") still
