@@ -83,14 +83,20 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
 
   const [coreDescription, setCoreDescription] = useState<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
     if (!isDerivation) {
       setCoreDescription(null);
       return;
     }
-    fetchCoreDescription(formData.core_movement_id!).then((d) => {
-      if (!cancelled) setCoreDescription(d);
-    });
+    let cancelled = false;
+    setCoreDescription(null);
+    fetchCoreDescription(formData.core_movement_id!)
+      .then((d) => {
+        if (!cancelled) setCoreDescription(d);
+      })
+      .catch((error) => {
+        console.error('Error fetching core description:', error);
+        if (!cancelled) setCoreDescription(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -298,7 +304,7 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
               >
                 <Text style={styles.pickerLabel}>{label}</Text>
                 <View style={styles.pickerValueWrap}>
-                  <Text style={[styles.pickerValue, !value && styles.pickerValueEmpty]} numberOfLines={1}>
+                  <Text style={[styles.pickerValue, !value && styles.pickerValueEmpty]} numberOfLines={2}>
                     {value ?? standardLabel}
                   </Text>
                   <ChevronRight size={18} color={colors.mutedForeground} />
@@ -322,7 +328,7 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
                     styles.pickerValue,
                     !formData.variant_label_id && styles.pickerValueEmpty,
                   ]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
                   {selectedName(variantOptions, formData.variant_label_id) ?? standardLabel}
                 </Text>
@@ -382,8 +388,8 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
           if (openPicker) updateFormData({ [openPicker]: id } as Partial<WizardFormData>);
         }}
         onClose={() => setOpenPicker(null)}
-        noneLabel={standardLabel}
-        noneDescription={isDerivation ? coreDescription : null}
+        clearedLabel={standardLabel}
+        clearedDescription={coreDescription}
       />
     </View>
   );

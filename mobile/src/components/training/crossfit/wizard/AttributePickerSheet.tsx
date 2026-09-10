@@ -31,10 +31,10 @@ interface AttributePickerSheetProps {
   /** null = cleared ("None"). The sheet closes itself after every choice. */
   onSelect: (id: string | null) => void;
   onClose: () => void;
-  /** Label for the cleared state; derivations show "Standard — as <core>". */
-  noneLabel?: string;
-  /** Shown under the cleared option — the core's description on derivations. */
-  noneDescription?: string | null;
+  /** Label for the cleared/none option. */
+  clearedLabel?: string;
+  /** Optional description rendered under the cleared option. */
+  clearedDescription?: string | null;
 }
 
 export function AttributePickerSheet({
@@ -44,8 +44,8 @@ export function AttributePickerSheet({
   selectedId,
   onSelect,
   onClose,
-  noneLabel,
-  noneDescription,
+  clearedLabel,
+  clearedDescription,
 }: AttributePickerSheetProps) {
   const choose = (id: string | null) => {
     onSelect(id);
@@ -69,11 +69,11 @@ export function AttributePickerSheet({
           >
             <View style={styles.rowText}>
               <Text style={[styles.rowLabel, styles.noneLabel, selectedId === null && styles.rowLabelOn]}>
-                {noneLabel ?? 'None'}
+                {clearedLabel ?? 'None'}
               </Text>
-              {noneDescription ? (
+              {clearedDescription ? (
                 <Text style={styles.rowDescription} numberOfLines={3}>
-                  {noneDescription}
+                  {clearedDescription}
                 </Text>
               ) : null}
             </View>

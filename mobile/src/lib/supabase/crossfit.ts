@@ -450,7 +450,7 @@ export async function fetchCoreDescription(coreId: string): Promise<string | nul
 
   if (error) {
     console.error('Error fetching core description:', error);
-    return null;
+    throw error;
   }
   return data?.description ?? null;
 }
