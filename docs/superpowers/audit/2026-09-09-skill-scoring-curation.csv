@@ -1,0 +1,101 @@
+name,kind,family,current_skill,current_scoring,proposed_skill,proposed_scoring
+Calf Raise,core,Activation,,,Beginner,Reps|Load
+Bike,core,Bike,Intermediate,,,Calories|Distance|Time
+Carry,core,Carry,,,Beginner,Distance|Load
+Rope Climb,core,Climb,Advanced,Reps|Time|Height / Range,,
+Deadlift,core,Hinge,Intermediate,Reps|Load,,
+Leg Curl,core,Hinge,,,Beginner,Reps|Load
+Handstand Walk,core,Inversion,Advanced,,,Distance
+Lunge,core,Lunge,Beginner,Reps|Load|Distance,,
+Crunch,core,Midline,Beginner,,,Reps
+Leg Raise,core,Midline,Beginner,,,Reps
+Mountain Climber,core,Midline,Beginner,,,Reps
+Plank,core,Midline,,,Beginner,Duration / Hold
+Reverse Crunch,core,Midline,Beginner,,,Reps
+Russian Twist,core,Midline,Beginner,,,Reps
+Sit-Up,core,Midline,Beginner,,,Reps
+Toes-to-Bar,core,Midline,Intermediate,,,Reps
+V-Up,core,Midline,Intermediate,,,Reps
+Clean,core,Olympic,Advanced,Reps|Load|Time,,
+Snatch,core,Olympic,Advanced,,,Reps|Load
+Burpee,core,Plyometric,Beginner,Reps|Time,,
+Jump,core,Plyometric,Beginner,Reps|Time|Height / Range,,
+Bent-Over Row,core,Pull,,,Beginner,Reps|Load
+Curl,core,Pull,,,Beginner,Reps|Load
+Inverted Row,core,Pull,Beginner,,,Reps
+Lat Pulldown,core,Pull,,,Beginner,Reps|Load
+Pull-Up,core,Pull,Intermediate,Reps|Rounds + Reps|Load|Time,,
+Bench Press,core,Push/Press,,,Intermediate,Reps|Load
+Chest Fly,core,Push/Press,Intermediate,,,Reps|Load
+Dip,core,Push/Press,Intermediate,,,Reps
+Handstand Push-Up,core,Push/Press,Intermediate,,,Reps
+Press,core,Push/Press,Intermediate,Reps|Load,,
+Push-Up,core,Push/Press,Beginner,,,Reps
+Raise,core,Push/Press,,,Beginner,Reps|Load
+Triceps Extension,core,Push/Press,Beginner,,,Reps|Load
+Triceps Pushdown,core,Push/Press,,,Beginner,Reps|Load
+Muscle-Up,core,Ring/Bar,Advanced,,,Reps
+Jump Rope,core,Rope,Beginner,,,Reps|Time
+Around the World,core,Rotation,Intermediate,,,Reps
+Halo,core,Rotation,Beginner,,,Reps
+Row,core,Row,Beginner,Time|Distance|Calories,,
+Run,core,Run,Beginner,Time|Distance,,
+Ski,core,Ski,Intermediate,,,Calories|Distance|Time
+Leg Press,core,Squat,,,Beginner,Reps|Load
+Squat,core,Squat,Beginner,Reps,,
+Thruster,core,Squat,Intermediate,,,Reps|Load
+Swim,core,Swim,Intermediate,,,Distance|Time
+Swing,core,Swing,Intermediate,Reps|Rounds + Reps|Time|Calories,,
+Wall Ball,core,Throw,Intermediate,,,Reps
+Band Lateral Walk,outlier,Activation,Beginner,Duration / Hold|Quality|Not Scored / N/A,,
+Tibialis Wall Raises,outlier,Activation,Beginner,Reps|Duration / Hold|Quality|Not Scored / N/A,,
+Dumbbell Hold,outlier,Carry,Beginner,,,Duration / Hold|Load
+Foam Roll,outlier,Foam Rolling,Intermediate,,,Not Scored / N/A
+Cable Zercher Pull Through,outlier,Hinge,Intermediate,,,Reps|Load
+Hyperextensions,outlier,Hinge,,,Beginner,Reps|Load
+Kettlebell Deadlift High Pull,outlier,Hinge,Intermediate,,,Reps|Load
+Plate-Loaded Standing Hip Abduction,outlier,Hinge,Intermediate,,,Reps|Load
+Pike Walk,outlier,Inversion,Intermediate,Reps|Time,,
+Wall Walk,outlier,Inversion,Intermediate,,,Reps
+Sumo RDL To Lateral Lunge Clean,outlier,Lunge,Advanced,,,Reps|Load
+Ab Rollout,outlier,Midline,Intermediate,,,Reps
+Iron Tridents,outlier,Midline,Advanced,,,Reps|Load
+Kettlebell Gravedigger,outlier,Midline,Advanced,,,Reps|Load
+Toe-Driver,outlier,Midline,Beginner,,,Reps
+90/90s,outlier,Mobility,Beginner,,,Not Scored / N/A
+Body Waves,outlier,Mobility,Beginner,,,Not Scored / N/A
+Bound Ups,outlier,Mobility,Beginner,,,DELETE (approved pending push)
+Golf Swings,outlier,Mobility,Beginner,,,Not Scored / N/A
+Horse Stance,outlier,Mobility,Beginner,,,Duration / Hold
+Lunge Rotation,outlier,Mobility,Beginner,,,Not Scored / N/A
+Lunge With Reach,outlier,Mobility,Beginner,,,Not Scored / N/A
+Mobility Work,outlier,Mobility,Intermediate,,,Not Scored / N/A
+Pike Rotation,outlier,Mobility,Intermediate,,,Not Scored / N/A
+Single-Leg Punch,outlier,Mobility,Intermediate,,,Duration / Hold
+Squat Crunch,outlier,Mobility,Beginner,,,Not Scored / N/A
+Trunk Twists,outlier,Mobility,Beginner,,,Not Scored / N/A
+Windmill,outlier,Mobility,Intermediate,,,Reps
+Windshield Wipers,outlier,Mobility,Beginner,,,Not Scored / N/A
+Yoga Squat To Reach,outlier,Mobility,Beginner,,,Not Scored / N/A
+Single-Arm Devil Press,outlier,Plyometric,Advanced,,,Reps|Load
+Barbell Shrug,outlier,Pull,,,Beginner,Reps|Load
+Face Pull,outlier,Pull,Beginner,,,Reps|Load
+Horn Curl + Press Out,outlier,Pull,Intermediate,,,Reps|Load
+Kettlebell Sprawl Row,outlier,Pull,Advanced,,,Reps|Load
+Overhand Grip Curl To Press,outlier,Pull,Intermediate,,,Reps|Load
+Pullover With Knee Tucks,outlier,Pull,Intermediate,,,Reps|Load
+Single-Arm Upright Row,outlier,Pull,Intermediate,,,Reps|Load
+Offset Reverse Lunge With Shoulder Press,outlier,Push/Press,Intermediate,,,Reps|Load
+Reverse Tabletop Single-Arm Press With Opposing Leg Extension,outlier,Push/Press,Advanced,,,Reps|Load
+Cool-Down Walk,outlier,Run,Intermediate,,,Not Scored / N/A
+"Air Squat, Reverse Lunge, And Burpee Complex",outlier,Squat,Intermediate,,,Reps
+Alternating Cossack Squat To Halo,outlier,Squat,Advanced,,,Reps|Load
+Kettlebell Swing With Squat Swing Combo,outlier,Squat,Intermediate,,,Reps|Load
+Leg Extension,outlier,Squat,,,Beginner,Reps|Load
+Sissy Squat,outlier,Squat,,,Intermediate,Reps|Load
+Child's Pose Flow,outlier,Stretching,Beginner,,,Not Scored / N/A
+Pigeon Stance Hip Stretch,outlier,Stretching,Beginner,,,Not Scored / N/A
+Single-Leg Dumbbell Stiff-Leg Hip Opener,outlier,Stretching,Intermediate,,,Not Scored / N/A
+Stretch,outlier,Stretching,Intermediate,,,Not Scored / N/A
+D Ball Over Shoulder,outlier,Throw,Intermediate,,,Reps|Load
+Russian Slams,outlier,Throw,Intermediate,,,Reps|Load
