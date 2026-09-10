@@ -185,9 +185,11 @@ export function getRequiredEquipment(wod: WODWithDetails): string[] {
 
     // Check if movement requires weight
     if (exercise.requires_weight) {
-      // Check equipment_types array
-      if (exercise.equipment_types && exercise.equipment_types.length > 0) {
-        exercise.equipment_types.forEach((eq) => equipmentSet.add(eq));
+      const names = (exercise.equipment_rows ?? [])
+        .map((r) => r.equipment?.name)
+        .filter((n): n is string => typeof n === 'string');
+      if (names.length > 0) {
+        names.forEach((eq) => equipmentSet.add(eq));
       } else {
         // Fallback: generic "weights"
         equipmentSet.add('Weights');

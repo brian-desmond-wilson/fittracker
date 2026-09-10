@@ -506,7 +506,7 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   const { data, error } = await supabase
     .from("exercises")
     .select(`
-      id, name, skill_level, equipment_types,
+      id, name, skill_level,
       equipment_junction:exercise_equipment(equipment(name)),
       muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
       goal_types:exercise_goal_types(goal_type:goal_types(name)),
@@ -526,17 +526,9 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
     exerciseId: row.id,
     name: row.name,
     skillLevel: row.skill_level ?? null,
-    // The junction is the source of truth (front-door rows keep it and the
-    // compat array in step); the legacy array fills in for pre-model rows
-    // that never got junction rows. Union so both eras pill correctly.
-    equipmentTypes: [
-      ...new Set<string>([
-        ...(row.equipment_types ?? []),
-        ...((row.equipment_junction ?? [])
-          .map((e: any) => e.equipment?.name)
-          .filter((n: any): n is string => typeof n === "string")),
-      ]),
-    ],
+    equipmentTypes: (row.equipment_junction ?? [])
+      .map((e: any) => e.equipment?.name)
+      .filter((n: any): n is string => typeof n === "string"),
     muscles: (row.muscle_regions ?? []).map((m: any) => ({
       name: m.muscle_region?.name ?? "",
       isPrimary: !!m.is_primary,

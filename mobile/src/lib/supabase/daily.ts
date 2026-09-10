@@ -323,7 +323,8 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
   const [exercisesRes, capturedRes, recencyRes, skillRes, regRes, historyRes] =
     await Promise.all([
       supabase.from("exercises").select(`
-        id, name, skill_level, equipment_types,
+        id, name, skill_level,
+        equipment_junction:exercise_equipment(equipment(name)),
         muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
         goal_types:exercise_goal_types(goal_type:goal_types(name))
       `),
@@ -378,7 +379,9 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
       name: m.muscle_region?.name ?? "",
       isPrimary: !!m.is_primary,
     })),
-    equipmentTypes: row.equipment_types ?? [],
+    equipmentTypes: (row.equipment_junction ?? [])
+      .map((e: any) => e.equipment?.name)
+      .filter((n: any): n is string => typeof n === "string"),
     isCapture: capturedIds.has(row.id),
     lastPerformedDaysAgo: lastPerformed.get(row.id) ?? null,
   }));

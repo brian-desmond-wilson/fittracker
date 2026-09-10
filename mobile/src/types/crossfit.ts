@@ -23,7 +23,17 @@ export type ClassPartType = 'WOD' | 'Strength' | 'Skill' | 'Warm-up' | 'Cool-dow
 
 export type MovementCategoryName = 'Weightlifting' | 'Gymnastics' | 'Monostructural' | 'Recovery';
 
-export type ScoringTypeName = 'Reps' | 'Rounds' | 'Weight' | 'Time' | 'Distance' | 'Calories' | 'Height' | 'None';
+export type ScoringTypeName =
+  | 'Reps'
+  | 'Rounds + Reps'
+  | 'Load'
+  | 'Time'
+  | 'Distance'
+  | 'Calories'
+  | 'Duration / Hold'
+  | 'Quality'
+  | 'Height / Range'
+  | 'Not Scored / N/A';
 
 export type RepSchemeType = 'descending' | 'fixed_rounds' | 'chipper' | 'ascending' | 'distance' | 'custom' | '1rm' | '3rm' | '5rm' | '10rm' | '5x5' | '3x3' | 'descending_volume' | 'complex';
 
@@ -291,11 +301,11 @@ export interface Exercise {
   name: string;
   slug: string;
   description: string | null;
-  // full_name removed in migration 20251028000002 - computed dynamically from name + variations
+  // full_name removed in migration 20251028000002 - it now just mirrors name
+  // (variations are gone; derivations carry their own full name in name)
 
   // CrossFit-specific
   is_movement: boolean;
-  goal_type_id: string | null;
   movement_category_id: string | null;
 
   // NEW: Movement metadata (from Migration 2)
@@ -303,17 +313,17 @@ export interface Exercise {
   plane_of_motion_id: string | null;
   skill_level: SkillLevel | null;
   short_name: string | null;
-  aliases: string[] | null;
 
-  // Equipment metadata
+  // Equipment metadata — the names themselves live in the exercise_equipment
+  // junction; list fetchers embed them as equipment_rows.
   requires_weight: boolean;
   requires_distance: boolean;
-  equipment_types: string[] | null;
+  equipment_rows?: { equipment: { name: string } | null }[];
 
   // DEPRECATED fields removed in migration 20251028000000
   // category: replaced by movement_category_id
   // muscle_groups: replaced by exercise_muscle_regions junction table
-  // equipment: replaced by equipment_types and exercise_equipment junction table
+  // equipment: replaced by the exercise_equipment junction table
 
   // Media
   video_url: string | null;
@@ -664,7 +674,6 @@ export interface CreateExerciseInput {
   name: string;
   description?: string;
   is_movement?: boolean;
-  goal_type_id?: string;
   category?: string;
   muscle_groups?: string[];
   equipment?: string[];
@@ -679,7 +688,6 @@ export interface CreateMovementInput {
   name: string;
   full_name?: string;
   description?: string;
-  goal_type_id?: string; // Legacy single goal type (optional for backward compatibility)
   goal_type_ids?: string[]; // NEW: Multiple goal types
   movement_category_id: string;
 
@@ -689,7 +697,6 @@ export interface CreateMovementInput {
   plane_of_motion_ids?: string[]; // NEW: Multiple planes of motion
   skill_level?: SkillLevel | null;
   short_name?: string;
-  aliases?: string[];
 
   // NEW: Movement attributes
   load_position_id?: string; // Legacy single load position (optional for backward compatibility)
@@ -697,16 +704,12 @@ export interface CreateMovementInput {
   stance_id?: string; // Legacy single stance (optional for backward compatibility)
   stance_ids?: string[]; // NEW: Multiple stances
   range_depth_id?: string | null;
-  movement_style_id?: string; // Legacy single style (deprecated)
   movement_style_ids?: string[]; // Multiple styles
   symmetry_id?: string | null;
 
   // Media
   video_url?: string;
   image_url?: string;
-
-  // Equipment
-  equipment_types?: string[];
 
   // Ownership
   is_movement: boolean;

@@ -572,6 +572,7 @@ export async function fetchMovements(filter?: CatalogListFilter): Promise<Exerci
     .select(`
       *,
       movement_category:movement_categories(*),
+      equipment_rows:exercise_equipment(equipment(name)),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -624,6 +625,7 @@ export async function searchMovements(
     .select(`
       *,
       movement_category:movement_categories(*),
+      equipment_rows:exercise_equipment(equipment(name)),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -674,6 +676,7 @@ export async function fetchAllExercises(filter?: CatalogListFilter): Promise<Exe
     .select(`
       *,
       movement_category:movement_categories(*),
+      equipment_rows:exercise_equipment(equipment(name)),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -731,6 +734,7 @@ export async function searchAllExercises(
     .select(`
       *,
       movement_category:movement_categories(*),
+      equipment_rows:exercise_equipment(equipment(name)),
       scoring_types:exercise_scoring_types(
         scoring_type:scoring_types(*)
       )
@@ -989,6 +993,7 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         exercise:exercises!wod_movements_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
+          equipment_rows:exercise_equipment(equipment(name)),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -997,6 +1002,7 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         rx_alternative_exercise:exercises!wod_movements_rx_alternative_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
+          equipment_rows:exercise_equipment(equipment(name)),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -1005,6 +1011,7 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         l2_alternative_exercise:exercises!wod_movements_l2_alternative_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
+          equipment_rows:exercise_equipment(equipment(name)),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -1013,6 +1020,7 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         l1_alternative_exercise:exercises!wod_movements_l1_alternative_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
+          equipment_rows:exercise_equipment(equipment(name)),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)

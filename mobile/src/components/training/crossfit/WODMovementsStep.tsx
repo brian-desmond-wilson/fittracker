@@ -58,7 +58,6 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
       updated_at: '',
       description: null,
       is_movement: true,
-      goal_type_id: null,
       movement_category_id: null,
       category: null,
       muscle_groups: null,
@@ -72,10 +71,14 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
       common_mistakes: null,
       is_official: false,
       created_by: null,
-      // Equipment metadata from saved config
+      // Equipment metadata from saved config. The config modal reads equipment
+      // off the exercise_equipment junction now, so shape the saved names back
+      // into junction rows for the round trip.
       requires_weight: movement.requires_weight ?? false,
       requires_distance: movement.requires_distance ?? false,
-      equipment_types: movement.equipment_types ?? null,
+      equipment_rows: (movement.equipment_types ?? []).map((name) => ({
+        equipment: { name },
+      })),
     } as unknown as ExerciseWithVariations;
     setSelectedMovement(mockMovement);
     setEditingIndex(index);
