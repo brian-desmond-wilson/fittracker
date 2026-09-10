@@ -126,12 +126,15 @@ DECLARE
   v_observed TEXT;
 BEGIN
   SELECT string_agg(bad.v, '; ') INTO v_observed FROM (
-    SELECT 'exercises='||count(*) FROM public.exercises HAVING count(*) <> 287
+    -- Dataset-size checks are FLOORS: live grows with on-device activity
+    -- (captures mint exercises/aliases/reviews), so exact counts rot. Cores
+    -- and dictionaries stay exact. Floors set 2026-09-09 (post-curation: 286
+    -- exercises on the 2026-09-08 dump; live carries 4 extra minted rows).
+    SELECT 'exercises='||count(*) FROM public.exercises HAVING count(*) < 286
     UNION ALL SELECT 'cores='||count(*) FROM public.exercises WHERE is_core HAVING count(*) <> 48
-    UNION ALL SELECT 'derivations='||count(*) FROM public.exercises WHERE core_movement_id IS NOT NULL AND NOT is_core HAVING count(*) <> 187
-    UNION ALL SELECT 'outliers='||count(*) FROM public.exercises WHERE core_movement_id IS NULL HAVING count(*) <> 52
-    UNION ALL SELECT 'aliases='||count(*) FROM public.exercise_aliases HAVING count(*) <> 299
-    UNION ALL SELECT 'reviews='||count(*) FROM public.exercise_match_reviews HAVING count(*) <> 0
+    UNION ALL SELECT 'derivations='||count(*) FROM public.exercises WHERE core_movement_id IS NOT NULL AND NOT is_core HAVING count(*) < 187
+    UNION ALL SELECT 'outliers='||count(*) FROM public.exercises WHERE core_movement_id IS NULL HAVING count(*) < 51
+    UNION ALL SELECT 'aliases='||count(*) FROM public.exercise_aliases HAVING count(*) < 299
     UNION ALL SELECT 'variant labels='||count(*) FROM public.variant_labels HAVING count(*) <> 17
     UNION ALL SELECT 'orphan aliases='||count(*) FROM public.exercise_aliases a
       WHERE NOT EXISTS (SELECT 1 FROM public.exercises e WHERE e.id = a.exercise_id) HAVING count(*) <> 0

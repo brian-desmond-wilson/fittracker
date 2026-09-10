@@ -6,9 +6,10 @@
 DO $$
 BEGIN
   -- V0: baseline sanity — catalog present (floor moved 300 -> 287: the Stage 3
-  -- catalog pass merged 25 duplicates away, 307 + 5 new cores - 25 = 287)
-  IF (SELECT count(*) FROM public.exercises) < 287 THEN
-    RAISE EXCEPTION 'V0 FAIL: exercises count % below 287', (SELECT count(*) FROM public.exercises);
+  -- catalog pass merged 25 duplicates away, 307 + 5 new cores - 25 = 287;
+  -- then 287 -> 286: the Stage 6 curation deleted the orphan row 'Bound Ups')
+  IF (SELECT count(*) FROM public.exercises) < 286 THEN
+    RAISE EXCEPTION 'V0 FAIL: exercises count % below 286', (SELECT count(*) FROM public.exercises);
   END IF;
 END $$;
 DO $$
@@ -596,17 +597,17 @@ DECLARE
   v_observed TEXT;
   v_count INTEGER;
 BEGIN
-  -- V8: movement_styles — exactly 12 rows (Stage 3 added Crush); identity flag
-  -- on exactly the approved eight (Stage 2 seven + Crush)
+  -- V8: movement_styles — exactly 13 rows (Stage 3 added Crush; Stage 5 exit
+  -- gate added Straight-Leg); identity flag on exactly the approved nine
   SELECT count(*) INTO v_count FROM public.movement_styles;
-  IF v_count <> 12 THEN
+  IF v_count <> 13 THEN
     SELECT string_agg(name, ', ' ORDER BY display_order) INTO v_observed FROM public.movement_styles;
-    RAISE EXCEPTION 'V8 FAIL: movement_styles count % (expected 12): %', v_count, v_observed;
+    RAISE EXCEPTION 'V8 FAIL: movement_styles count % (expected 13): %', v_count, v_observed;
   END IF;
 
   SELECT string_agg(name, ', ' ORDER BY name) INTO v_observed FROM public.movement_styles WHERE is_identity;
-  IF v_observed IS DISTINCT FROM 'Assisted, Butterfly, Crush, Deficit, Kipping, Plyometric (Explosive), Strict, Weighted' THEN
-    RAISE EXCEPTION 'V8 FAIL: identity styles are {%} (expected {Assisted, Butterfly, Crush, Deficit, Kipping, Plyometric (Explosive), Strict, Weighted})',
+  IF v_observed IS DISTINCT FROM 'Assisted, Butterfly, Crush, Deficit, Kipping, Plyometric (Explosive), Straight-Leg, Strict, Weighted' THEN
+    RAISE EXCEPTION 'V8 FAIL: identity styles are {%} (expected {Assisted, Butterfly, Crush, Deficit, Kipping, Plyometric (Explosive), Straight-Leg, Strict, Weighted})',
       COALESCE(v_observed, 'none');
   END IF;
 
