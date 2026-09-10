@@ -41,13 +41,15 @@
     "preview": {
       "ios": {
         "appleId": "bwil0007@gmail.com",
-        "appleTeamId": "NB8VX86639"
+        "appleTeamId": "NB8VX86639",
+        "ascAppId": "6810734768"
       }
     },
     "production": {
       "ios": {
         "appleId": "bwil0007@gmail.com",
-        "appleTeamId": "NB8VX86639"
+        "appleTeamId": "NB8VX86639",
+        "ascAppId": "6810734768"
       }
     }
   }
