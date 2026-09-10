@@ -549,7 +549,6 @@ export interface ExerciseWithVariations extends Exercise {
       category?: VariationCategory;
     };
   })[];
-  goal_type?: GoalType; // Legacy single goal type (kept for backward compatibility)
   goal_types?: GoalType[]; // NEW: Multiple goal types
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];
@@ -566,7 +565,6 @@ export interface ExerciseWithDetails extends Exercise {
       category?: VariationCategory;
     };
   })[];
-  goal_type?: GoalType; // Legacy single goal type (kept for backward compatibility)
   goal_types?: GoalType[]; // NEW: Multiple goal types
   movement_category?: MovementCategory;
   scoring_types?: ScoringType[];

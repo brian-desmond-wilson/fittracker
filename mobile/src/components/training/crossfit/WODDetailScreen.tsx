@@ -452,9 +452,8 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                       exercise = movement.exercise;
                   }
 
-                  // Get category and goal type
+                  // Get category
                   const categoryName = exercise?.movement_category?.name;
-                  const goalTypeName = exercise?.goal_type?.name;
 
                   // Get image or placeholder
                   const imageUrl = exercise?.image_url;

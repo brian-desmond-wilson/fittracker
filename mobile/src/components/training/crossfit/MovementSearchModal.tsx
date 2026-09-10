@@ -141,7 +141,7 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
                       {movement.name}
                     </Text>
                     <Text style={styles.movementCategory}>
-                      {movement.movement_category?.name || movement.goal_type?.name}
+                      {movement.movement_category?.name}
                     </Text>
                   </View>
                   {movement.is_official && (

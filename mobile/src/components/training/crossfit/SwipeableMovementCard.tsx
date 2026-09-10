@@ -270,7 +270,7 @@ function SwipeableMovementCardBase({
             </View>
           </View>
           <Text style={styles.movementCategory}>
-            {movement.movement_category?.name || movement.goal_type?.name || 'General'}
+            {movement.movement_category?.name || 'General'}
           </Text>
         </View>
 

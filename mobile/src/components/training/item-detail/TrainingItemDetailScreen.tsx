@@ -58,6 +58,7 @@ const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1
 interface DetailRow extends ExerciseWithVariations {
   equipment_rows?: { equipment: { id: string; name: string } | null }[];
   alias_rows?: { alias: string; kind: string }[];
+  goal_rows?: { goal_type: { id: string; name: string } | null }[];
 }
 
 /**
@@ -172,7 +173,7 @@ export function TrainingItemDetailScreen({
         .select(`
           *,
           movement_category:movement_categories(id, name),
-          goal_type:goal_types(id, name),
+          goal_rows:exercise_goal_types(goal_type:goal_types(id, name)),
           variations:exercise_variations(*),
           muscle_regions:exercise_muscle_regions(
             is_primary,
@@ -485,10 +486,12 @@ export function TrainingItemDetailScreen({
               <Text style={styles.metaValue} numberOfLines={1}>{item.movement_category.name}</Text>
             </View>
           )}
-          {item.goal_type?.name && (
+          {(item.goal_rows?.length ?? 0) > 0 && (
             <View style={styles.metaItem}>
               <Text style={styles.metaLabel}>Goal Type</Text>
-              <Text style={styles.metaValue} numberOfLines={1}>{item.goal_type.name}</Text>
+              <Text style={styles.metaValue} numberOfLines={1}>
+                {item.goal_rows!.map((g) => g.goal_type?.name).filter(Boolean).join(', ')}
+              </Text>
             </View>
           )}
           {item.skill_level && (

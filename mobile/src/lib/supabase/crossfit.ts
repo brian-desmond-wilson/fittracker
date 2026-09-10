@@ -396,15 +396,15 @@ export async function fetchFamilyModalities() {
 
 /**
  * Fetch the classification a core movement hands down to a new derivation
- * (wizard inheritance). Goals come from the exercise_goal_types junction;
- * the legacy single goal_type_id column is only a fallback for rows whose
- * junction was never backfilled.
+ * (wizard inheritance). Goals come from the exercise_goal_types junction,
+ * which is the only source since Stage 6 dropped the legacy single
+ * goal_type_id column.
  */
 export async function fetchCoreClassification(coreId: string) {
   const { data, error } = await supabase
     .from('exercises')
     .select(
-      'movement_family_id, movement_category_id, skill_level, goal_type_id, ' +
+      'movement_family_id, movement_category_id, skill_level, ' +
         'exercise_goal_types(goal_type_id), ' +
         'exercise_scoring_types(scoring_type_id), ' +
         'exercise_muscle_regions(muscle_region_id, is_primary)',
@@ -425,8 +425,7 @@ export async function fetchCoreClassification(coreId: string) {
     movement_family_id: row.movement_family_id ?? null,
     movement_category_id: row.movement_category_id ?? null,
     skill_level: row.skill_level ?? null,
-    goal_type_ids:
-      junctionGoals.length > 0 ? junctionGoals : row.goal_type_id ? [row.goal_type_id] : [],
+    goal_type_ids: junctionGoals,
     scoring_type_ids: (row.exercise_scoring_types ?? []).map((s: any) => s.scoring_type_id),
     muscle_region_ids: muscles.map((m: any) => m.muscle_region_id),
     primary_muscle_region_ids: muscles
@@ -595,7 +594,6 @@ export async function fetchMovements(filter?: CatalogListFilter): Promise<Exerci
     .from('exercises')
     .select(`
       *,
-      goal_type:goal_types(*),
       movement_category:movement_categories(*),
       variations:exercise_variations(
         *,
@@ -660,7 +658,6 @@ export async function searchMovements(
     .from('exercises')
     .select(`
       *,
-      goal_type:goal_types(*),
       movement_category:movement_categories(*),
       variations:exercise_variations(
         *,
@@ -724,7 +721,6 @@ export async function fetchAllExercises(filter?: CatalogListFilter): Promise<Exe
     .from('exercises')
     .select(`
       *,
-      goal_type:goal_types(*),
       movement_category:movement_categories(*),
       variations:exercise_variations(
         *,
@@ -794,7 +790,6 @@ export async function searchAllExercises(
     .from('exercises')
     .select(`
       *,
-      goal_type:goal_types(*),
       movement_category:movement_categories(*),
       variations:exercise_variations(
         *,
@@ -860,7 +855,6 @@ export async function fetchMovementById(movementId: string): Promise<ExerciseWit
     .from('exercises')
     .select(`
       *,
-      goal_type:goal_types(*),
       variations:exercise_variations(
         *,
         variation_option:variation_options(
@@ -1111,7 +1105,6 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         exercise:exercises!wod_movements_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
-          goal_type:goal_types(*),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -1120,7 +1113,6 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         rx_alternative_exercise:exercises!wod_movements_rx_alternative_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
-          goal_type:goal_types(*),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -1129,7 +1121,6 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         l2_alternative_exercise:exercises!wod_movements_l2_alternative_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
-          goal_type:goal_types(*),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -1138,7 +1129,6 @@ export async function fetchWODById(wodId: string): Promise<WODWithDetails | null
         l1_alternative_exercise:exercises!wod_movements_l1_alternative_exercise_id_fkey(
           *,
           movement_category:movement_categories(*),
-          goal_type:goal_types(*),
           muscle_regions:exercise_muscle_regions(
             is_primary,
             muscle_region:muscle_regions(name)
@@ -1907,7 +1897,6 @@ export async function fetchExerciseWithDetails(exerciseId: string): Promise<Exer
       .from('exercises')
       .select(`
         *,
-        goal_type:goal_types(*),
         movement_category:movement_categories(*),
         movement_family:movement_families(*),
         plane_of_motion:planes_of_motion(*),
