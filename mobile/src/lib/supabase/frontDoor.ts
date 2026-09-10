@@ -203,10 +203,8 @@ export interface CatalogExerciseRow extends CatalogIdentityAttributes {
   movement_category_id: string | null;
   skill_level: string | null;
   short_name: string | null;
-  equipment_types: string[] | null;
   requires_weight: boolean;
   requires_distance: boolean;
-  goal_type_id: string | null;
   video_url: string | null;
   image_url: string | null;
 }
@@ -215,8 +213,8 @@ const ROW_COLUMNS =
   'id, name, slug, description, generated_name, identity_fingerprint, tier, ' +
   'parent_exercise_id, name_is_custom, core_movement_id, is_core, is_movement, ' +
   'is_official, created_by, movement_family_id, movement_category_id, ' +
-  'skill_level, short_name, equipment_types, requires_weight, requires_distance, ' +
-  'goal_type_id, video_url, ' +
+  'skill_level, short_name, requires_weight, requires_distance, ' +
+  'video_url, ' +
   'image_url, load_position_id, stance_id, range_depth_id, symmetry_id, ' +
   'grip_orientation_id, grip_width_id, direction_id, support_position_id, ' +
   'arm_position_id, bench_angle_id, variant_label_id';
@@ -647,10 +645,9 @@ export async function createCatalogExercise(
     finalFingerprint: input.core_movement_id ? expectedFingerprint : null,
   };
 
-  // Legacy compat (until Stage 6): probing slug; equipment_types name array and
-  // skill_level so existing readers keep working; requires_weight,
-  // requires_distance and the single goal_type_id column derived exactly as
-  // the old writers did.
+  // requires_weight/requires_distance are derived convenience columns (app
+  // conveniences, not legacy identity storage) written from the same inputs
+  // that feed the junctions.
   const goalTypeIds = dedupe(input.goal_type_ids);
 
   const insertRow: Record<string, unknown> = {
@@ -671,10 +668,8 @@ export async function createCatalogExercise(
     image_url: input.image_url ?? null,
     skill_level: input.skill_level ?? null,
     short_name: input.short_name ?? null,
-    equipment_types: equipmentNames.length > 0 ? equipmentNames : null,
     requires_weight: deriveRequiresWeight(equipmentNames),
     requires_distance: requiresDistance,
-    goal_type_id: goalTypeIds[0] ?? null,
     // Engine-owned, never written here: generated_name, identity_fingerprint,
     // tier, parent_exercise_id.
   };
@@ -1227,16 +1222,13 @@ export async function updateCatalogExercise(
     }
   }
 
-  // ── Phase 3: legacy-compat columns, AFTER the junctions they mirror (I2) ──
-  // These columns fire no recompute (not in the trigger's column list).
+  // ── Phase 3: derived convenience columns, AFTER the junctions they mirror ──
+  // requires_weight/requires_distance survive Stage 6 (they're app conveniences,
+  // not legacy identity storage). These fire no recompute.
   const compat: Record<string, unknown> = {};
   if (nextEquipmentIds !== undefined) {
     const names = await fetchEquipmentNames(nextEquipmentIds);
-    compat.equipment_types = names.length > 0 ? names : null;
     compat.requires_weight = deriveRequiresWeight(names);
-  }
-  if (patch.goal_type_ids !== undefined) {
-    compat.goal_type_id = dedupe(patch.goal_type_ids)[0] ?? null; // legacy single
   }
   if (patch.scoring_type_ids !== undefined) {
     compat.requires_distance = await deriveRequiresDistance(dedupe(patch.scoring_type_ids));

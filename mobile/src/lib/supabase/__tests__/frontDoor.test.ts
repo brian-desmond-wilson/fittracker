@@ -260,12 +260,10 @@ describe('createCatalogExercise payload shaping', () => {
     });
 
     const payload = issued[4].firstArg('insert') as Record<string, unknown>;
-    expect(payload.equipment_types).toEqual(['Barbell']);
     expect(payload.requires_weight).toBe(true);
     expect(payload.requires_distance).toBe(true); // Distance scoring included
     expect(payload.skill_level).toBe('Intermediate');
     expect(payload.short_name).toBe('NR');
-    expect(payload.goal_type_id).toBe('g1');
     expect(payload.core_movement_id).toBeNull();
 
     expect(issued[5].firstArg('insert')).toEqual([
@@ -512,9 +510,9 @@ describe('updateCatalogExercise', () => {
     expect(del.calls[2].args).toEqual(['equipment_id', ['eq-a']]);
     // eq-b already present: no insert statement was issued for it.
     expect(issued.filter((q) => q.table === 'exercise_equipment')).toHaveLength(2);
-    // Legacy compat columns land in their own UPDATE after the junction diff (I2).
+    // Derived convenience columns land in their own UPDATE after the junction diff (I2).
     const compat = issued[5].firstArg('update') as Record<string, unknown>;
-    expect(compat).toEqual({ equipment_types: ['Dumbbell'], requires_weight: true });
+    expect(compat).toEqual({ requires_weight: true });
     expect(consoleError).not.toHaveBeenCalled(); // fingerprints agree: no drift alarm
   });
 
