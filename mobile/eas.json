@@ -6,19 +6,34 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tffxvrjvkhpyxsagrjga.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmZnh2cmp2a2hweXhzYWdyamdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjM4NjAsImV4cCI6MjA3NTU5OTg2MH0.v_VfR5BIA74SjgzFOryrvBh_jJRvGZ4PUovXbqgQjm0"
+      }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
         "simulator": false
       },
-      "node": "20.19.4"
+      "node": "20.19.4",
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tffxvrjvkhpyxsagrjga.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmZnh2cmp2a2hweXhzYWdyamdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjM4NjAsImV4cCI6MjA3NTU5OTg2MH0.v_VfR5BIA74SjgzFOryrvBh_jJRvGZ4PUovXbqgQjm0"
+      }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
         "simulator": false
+      },
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://tffxvrjvkhpyxsagrjga.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRmZnh2cmp2a2hweXhzYWdyamdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjM4NjAsImV4cCI6MjA3NTU5OTg2MH0.v_VfR5BIA74SjgzFOryrvBh_jJRvGZ4PUovXbqgQjm0"
       }
     }
   },
@@ -26,14 +41,12 @@
     "preview": {
       "ios": {
         "appleId": "bwil0007@gmail.com",
-        "ascAppId": "placeholder",
         "appleTeamId": "NB8VX86639"
       }
     },
     "production": {
       "ios": {
         "appleId": "bwil0007@gmail.com",
-        "ascAppId": "placeholder",
         "appleTeamId": "NB8VX86639"
       }
     }
