@@ -48,7 +48,7 @@ serve(async (req)=>{
       });
     }
     // Fetch exercise details
-    const { data: exercise, error: exerciseError } = await supabase.from('exercises').select('id, name, description, equipment_types').eq('id', exerciseId).single();
+    const { data: exercise, error: exerciseError } = await supabase.from('exercises').select('id, name, description, exercise_equipment(equipment(name))').eq('id', exerciseId).single();
     if (exerciseError || !exercise) {
       return new Response(JSON.stringify({
         error: 'Exercise not found'
@@ -62,7 +62,10 @@ serve(async (req)=>{
     }
     console.log(`Generating image for exercise: ${exercise.name}`);
     // Build prompt for image generation - realistic style matching WOD images
-    const equipmentList = exercise.equipment_types?.join(', ') || 'bodyweight';
+    const equipmentList = (exercise.exercise_equipment ?? [])
+      .map((ee: any) => ee.equipment?.name)
+      .filter(Boolean)
+      .join(', ') || 'bodyweight';
     const prompt = `Professional fitness photography of an athletic person demonstrating the "${exercise.name}" exercise.
 
 Requirements:
