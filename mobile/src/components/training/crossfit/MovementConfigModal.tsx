@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
+import { equipmentNamesOf } from '@/src/lib/exerciseEquipment';
 import type { ExerciseWithVariations } from '@/src/types/crossfit';
 import type { WODMovementConfig } from './AddWODWizard';
 import { MovementSearchModal } from './MovementSearchModal';
@@ -264,9 +265,7 @@ export function MovementConfigModal({
       // Equipment metadata (for edit modal)
       requires_weight: movement.requires_weight,
       requires_distance: movement.requires_distance,
-      equipment_types: (movement.equipment_rows ?? [])
-        .map((r) => r.equipment?.name)
-        .filter((n): n is string => typeof n === 'string'),
+      equipment_types: equipmentNamesOf(movement),
 
       // Rep scheme override
       follows_wod_scheme: followsWodScheme,

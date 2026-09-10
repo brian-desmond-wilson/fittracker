@@ -25,6 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ChevronLeft, Sparkles, MoreVertical, Dumbbell, Weight, Circle, ExternalLink } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
+import { equipmentNamesOf } from '@/src/lib/exerciseEquipment';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import type { CaptureSource } from '@/src/types/capture';
 import { supabase } from '@/src/lib/supabase';
@@ -54,27 +55,13 @@ export interface TrainingItemDetailScreenProps {
 /** "movement" -> "Movement", for sentence-leading copy. */
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
-/** The detail row plus the junction embeds this screen reads (Stage 5, Task 3). */
+/**
+ * The detail row plus the junction embeds this screen reads (Stage 5, Task 3).
+ * equipment_rows comes from the base Exercise type.
+ */
 interface DetailRow extends ExerciseWithVariations {
-  equipment_rows?: { equipment: { id: string; name: string } | null }[];
   alias_rows?: { alias: string; kind: string }[];
   goal_rows?: { goal_type: { id: string; name: string } | null }[];
-}
-
-/**
- * Equipment names for display and the image prompt. Derivations and outliers
- * carry exercise_equipment junction rows; cores carry none — their default
- * equipment is the display string in core_default_equipment ("Kettlebell",
- * "Bodyweight, Floor"). The legacy equipment_types array is no longer read.
- */
-function equipmentNamesOf(item: DetailRow): string[] {
-  const junction = (item.equipment_rows ?? [])
-    .map((row) => row.equipment?.name)
-    .filter((name): name is string => !!name);
-  if (junction.length > 0) return junction;
-  return item.core_default_equipment
-    ? item.core_default_equipment.split(',').map((s) => s.trim()).filter(Boolean)
-    : [];
 }
 
 /**

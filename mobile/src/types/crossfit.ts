@@ -315,10 +315,12 @@ export interface Exercise {
   short_name: string | null;
 
   // Equipment metadata — the names themselves live in the exercise_equipment
-  // junction; list fetchers embed them as equipment_rows.
+  // junction, which fetchers embed as equipment_rows. Cores carry no junction
+  // rows; their equipment is core_default_equipment below. Read both through
+  // equipmentNamesOf (lib/exerciseEquipment) rather than either one directly.
   requires_weight: boolean;
   requires_distance: boolean;
-  equipment_rows?: { equipment: { name: string } | null }[];
+  equipment_rows?: { equipment: { id?: string; name: string } | null }[];
 
   // DEPRECATED fields removed in migration 20251028000000
   // category: replaced by movement_category_id

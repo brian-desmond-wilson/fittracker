@@ -4,6 +4,7 @@
 // and 'reviewed' is stamped last — so a failure partway leaves a retryable
 // pending source, never a half-visible catalog entry.
 import { supabase } from "../supabase";
+import { equipmentNamesOf } from "../exerciseEquipment";
 import { decodeCaption } from "../captionText";
 import { resolveCapturedExercise } from "../captureResolution";
 import {
@@ -506,8 +507,8 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   const { data, error } = await supabase
     .from("exercises")
     .select(`
-      id, name, skill_level,
-      equipment_junction:exercise_equipment(equipment(name)),
+      id, name, skill_level, core_default_equipment,
+      equipment_rows:exercise_equipment(equipment(name)),
       muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
       goal_types:exercise_goal_types(goal_type:goal_types(name)),
       sources:source_exercises!inner(
@@ -526,9 +527,7 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
     exerciseId: row.id,
     name: row.name,
     skillLevel: row.skill_level ?? null,
-    equipmentTypes: (row.equipment_junction ?? [])
-      .map((e: any) => e.equipment?.name)
-      .filter((n: any): n is string => typeof n === "string"),
+    equipmentTypes: equipmentNamesOf(row),
     muscles: (row.muscle_regions ?? []).map((m: any) => ({
       name: m.muscle_region?.name ?? "",
       isPrimary: !!m.is_primary,

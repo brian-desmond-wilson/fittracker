@@ -5,6 +5,7 @@ import type {
   GoalTypeName,
   ScalingLevel
 } from '@/src/types/crossfit';
+import { equipmentNamesOf } from './exerciseEquipment';
 
 /**
  * WOD Detail Display Helpers
@@ -185,9 +186,8 @@ export function getRequiredEquipment(wod: WODWithDetails): string[] {
 
     // Check if movement requires weight
     if (exercise.requires_weight) {
-      const names = (exercise.equipment_rows ?? [])
-        .map((r) => r.equipment?.name)
-        .filter((n): n is string => typeof n === 'string');
+      // Junction rows for derivations, core_default_equipment for cores.
+      const names = equipmentNamesOf(exercise);
       if (names.length > 0) {
         names.forEach((eq) => equipmentSet.add(eq));
       } else {

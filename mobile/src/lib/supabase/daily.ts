@@ -3,6 +3,7 @@
 // session writes here are the suggestion record itself and status
 // transitions the user's taps cause.
 import { supabase } from "../supabase";
+import { equipmentNamesOf } from "../exerciseEquipment";
 import { lastStampedSplitDay, rampWeek } from "../dailySplit";
 import { applyRating } from "../dailySkill";
 import type { MovementRating } from "../dailySkill";
@@ -323,8 +324,8 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
   const [exercisesRes, capturedRes, recencyRes, skillRes, regRes, historyRes] =
     await Promise.all([
       supabase.from("exercises").select(`
-        id, name, skill_level,
-        equipment_junction:exercise_equipment(equipment(name)),
+        id, name, skill_level, core_default_equipment,
+        equipment_rows:exercise_equipment(equipment(name)),
         muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
         goal_types:exercise_goal_types(goal_type:goal_types(name))
       `),
@@ -379,9 +380,7 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
       name: m.muscle_region?.name ?? "",
       isPrimary: !!m.is_primary,
     })),
-    equipmentTypes: (row.equipment_junction ?? [])
-      .map((e: any) => e.equipment?.name)
-      .filter((n: any): n is string => typeof n === "string"),
+    equipmentTypes: equipmentNamesOf(row),
     isCapture: capturedIds.has(row.id),
     lastPerformedDaysAgo: lastPerformed.get(row.id) ?? null,
   }));
