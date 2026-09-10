@@ -1172,6 +1172,15 @@ ALTER TABLE public.exercises
   DROP COLUMN IF EXISTS equipment_types,
   DROP COLUMN IF EXISTS aliases;
 
+-- Vestigial variant-pointer columns on OTHER tables (all 100% NULL on live and
+-- staging, verified 2026-09-09; their FK constraints would otherwise block the
+-- table drops below). Found during Task 8 review.
+ALTER TABLE public.exercise_standards DROP COLUMN IF EXISTS variation_option_id;
+ALTER TABLE public.movement_measurement_profiles DROP COLUMN IF EXISTS variation_option_id;
+ALTER TABLE public.movement_scaling_links
+  DROP COLUMN IF EXISTS from_variation_option_id,
+  DROP COLUMN IF EXISTS to_variation_option_id;
+
 -- Children before parents (FKs).
 DROP TABLE IF EXISTS public.exercise_variations;
 DROP TABLE IF EXISTS public.variation_options;
@@ -1180,6 +1189,10 @@ DROP TABLE IF EXISTS public.exercise_planes_of_motion;
 DROP TABLE IF EXISTS public.exercise_load_positions;
 DROP TABLE IF EXISTS public.exercise_stances;
 ```
+
+- [ ] **Step 2b: Clean the dead variant-filter params in app code**
+
+Five functions in `mobile/src/lib/supabase/crossfit.ts` (exercise standards, measurement profiles, progression/regression fetchers) accept an optional `variationOptionId` and `.eq()` on the columns dropped above. No caller passes the argument (verified in Task 8 review). Delete the parameter and its filter branch from each; `npx tsc --noEmit` proves no caller breaks. These reference `variation_option_id` column names, which the exit-gate grep pattern does NOT catch — this step is the cleanup.
 
 - [ ] **Step 3: Invert the harness's V7 guard**
 
