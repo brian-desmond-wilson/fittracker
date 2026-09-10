@@ -31,6 +31,8 @@ const workout = (o: Partial<CapturedWorkoutEntry> = {}): CapturedWorkoutEntry =>
     blockRoles: [], muscles: [], estMinutes: null, intensity: null,
     skillLevel: null, classifiedAt: null,
   },
+  derivedEquipment: [],
+  isBodyweight: false,
   ...o,
 });
 

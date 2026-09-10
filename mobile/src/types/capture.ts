@@ -130,6 +130,10 @@ export interface CapturedWorkoutItemEntry {
   duration: string | null;
   restSeconds: number | null;
   notes: string | null;
+  /** The exercise's equipment names (junction rows, else the core default).
+   *  Absent when the item was built without the join — an edit-screen draft,
+   *  or a failed join — and such items are left out of equipment derivation. */
+  equipment?: string[];
 }
 
 /** A movement the capture could not match: its name sits in the review queue
@@ -176,6 +180,11 @@ export interface CapturedWorkoutEntry {
   pendingItems?: PendingWorkoutItemEntry[];
   /** Block-recommender tags. classifiedAt null = never classified. */
   tags: WorkoutTags;
+  /** Equipment most of the movements need, derived at read time (spec §5.1).
+   *  Empty when nothing reaches a majority. */
+  derivedEquipment: string[];
+  /** True only when every resolved movement is bodyweight. */
+  isBodyweight: boolean;
 }
 
 export interface CatalogFilters {
