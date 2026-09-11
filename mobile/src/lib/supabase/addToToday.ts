@@ -4,7 +4,7 @@
 // with no targets and the page's reason. Spec §4.9, §5.
 import { supabase } from "../supabase";
 import { rampWeek } from "../dailySplit";
-import { planAddToToday, ADD_TO_TODAY_ITEM_REASON } from "../addToTodayPlan";
+import { planAddToToday, ADD_TO_TODAY_ITEM_REASON, SERVED_WHOLE_LABEL } from "../addToTodayPlan";
 import type { AddToTodayPlan, TodayState } from "../addToTodayPlan";
 import { fetchTodaySessionStrict, fetchTodayCheckin, unrestToday } from "./daily";
 
@@ -19,15 +19,22 @@ export async function readTodayState(
   date: string,
 ): Promise<TodayState> {
   const session = await fetchTodaySessionStrict(userId, date);
-  if (!session) return { kind: "none", containsExercise: false };
+  if (!session) return { kind: "none", containsExercise: false, servedWhole: false };
   const containsExercise = session.items.some((i) => i.exerciseId === exerciseId);
-  if (session.status === "rested") return { kind: "rested", sessionId: session.id, containsExercise: false };
-  if (session.status === "completed") return { kind: "completed", sessionId: session.id, containsExercise };
+  // A served-whole day renders the captured workout's items, not
+  // generated_session_items, so an append would never show (spec §4.9).
+  const servedWhole = session.servedCapturedWorkoutId != null;
+  if (session.status === "rested") {
+    return { kind: "rested", sessionId: session.id, containsExercise: false, servedWhole: false };
+  }
+  if (session.status === "completed") {
+    return { kind: "completed", sessionId: session.id, containsExercise, servedWhole };
+  }
   if (session.status === "accepted" && session.workoutInstanceId) {
-    return { kind: "inProgress", sessionId: session.id, containsExercise };
+    return { kind: "inProgress", sessionId: session.id, containsExercise, servedWhole };
   }
   // suggested, or accepted but not yet started
-  return { kind: "pending", sessionId: session.id, containsExercise };
+  return { kind: "pending", sessionId: session.id, containsExercise, servedWhole };
 }
 
 export type AddToTodayResult =
@@ -157,7 +164,9 @@ export async function executeAddToToday(input: AddToTodayInput): Promise<AddToTo
         }
       }
       case "disabled":
-        return { ok: false, message: "Already in today's session." };
+        return { ok: false, message: plan.label === SERVED_WHOLE_LABEL
+          ? "Today is a whole workout; its list can't take extra items."
+          : "Already in today's session." };
     }
   } catch (e) {
     const err = e as { code?: string; message?: string };
