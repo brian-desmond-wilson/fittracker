@@ -130,7 +130,7 @@ END $$;
 - [ ] **Step 2: Push it**
 
 Run from the repo root: `npx supabase db push --yes`
-Expected: `Applying migration 20260918130000_exercise_enrichment.sql...` then the NOTICE line with three counts (roughly 86 descriptions, 28 videos, 93 images per the spec's §1 numbers — record the actual three numbers here: `___ / ___ / ___`), then `Finished supabase db push.` No EXCEPTION.
+Expected: `Applying migration 20260918130000_exercise_enrichment.sql...` then the NOTICE line with three counts (roughly 86 descriptions, 28 videos, 93 images per the spec's §1 numbers — record the actual three numbers here: `86 / 28 / 93`), then `Finished supabase db push.` No EXCEPTION.
 
 - [ ] **Step 3: Verify the column from a terminal**
 
