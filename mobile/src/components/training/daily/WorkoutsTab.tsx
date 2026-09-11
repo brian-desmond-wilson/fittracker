@@ -18,6 +18,7 @@ import { getLocalDateString } from "@/src/lib/dates";
 import { CaptureFab } from "./CaptureFab";
 import { SwipeableWorkoutCard } from "./SwipeableWorkoutCard";
 import { WorkoutsRail } from "./WorkoutsRail";
+import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { SortSheet } from "./SortSheet";
 import { WorkoutFiltersSheet } from "./WorkoutFiltersSheet";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
@@ -162,6 +163,11 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
+      // The wrapper is what the indicator floats against, so a pull draws it
+      // over the list and not over the rail. iOS never draws RefreshControl's
+      // own spinner, so this is the only sign a refresh is happening.
+      <View style={styles.listWrap}>
+      <RefreshIndicator visible={refreshing} />
       <FlatList
         data={filtered}
         keyExtractor={(w) => w.workoutId}
@@ -220,6 +226,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
           </View>
         }
       />
+      </View>
       )}
 
       <SortSheet visible={sortOpen} value={sort} onSelect={applySort} onClose={() => setSortOpen(false)} />
@@ -245,6 +252,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: colors.background,
     justifyContent: "center", alignItems: "center",
   },
+  listWrap: { flex: 1 },
   listContent: { padding: 16 },
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },

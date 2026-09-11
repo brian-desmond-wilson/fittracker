@@ -13,6 +13,7 @@ import { fetchPendingReviewCount } from "@/src/lib/supabase/matchReviews";
 import { filterCatalog, catalogHandles } from "@/src/lib/catalogFilter";
 import { CaptureFab } from "./CaptureFab";
 import { MatchReviewSheet } from "./MatchReviewSheet";
+import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { SwipeableCatalogCard } from "./SwipeableCatalogCard";
 import type { CatalogEntry, CatalogFilters } from "@/src/types/capture";
 
@@ -127,6 +128,10 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
+        // Floats over the list, not the rails: the wrapper is its anchor.
+        // iOS never draws RefreshControl's own spinner.
+        <View style={styles.listWrap}>
+        <RefreshIndicator visible={refreshing} />
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.exerciseId}
@@ -157,6 +162,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
             </View>
           }
         />
+        </View>
       )}
 
       <CaptureFab onSaved={load} />
@@ -193,6 +199,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   // The card's own gap lives on its swipe container, so `gap` here would
   // double it.
+  listWrap: { flex: 1 },
   listContent: { padding: 16 },
   empty: { padding: 40, alignItems: "center" },
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
