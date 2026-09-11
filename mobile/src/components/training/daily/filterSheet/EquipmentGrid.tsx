@@ -4,19 +4,23 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import {
-  Bike, Box, Cable, Circle, CircleDashed, CircleDot, Cog, Dumbbell, Minus, Move,
-  PersonStanding, RectangleHorizontal, Repeat, Waves, Weight,
+  Anchor, Bike, Box, Cable, Circle, CircleDashed, CircleDot, Cog, Disc, Dumbbell, Equal, Footprints,
+  Frame, Hexagon, Minus, Move, Package, PersonStanding, RectangleHorizontal, Repeat, Shirt, Snowflake,
+  Spline, Waves, Weight,
 } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { colors, radii, spacing, tint } from "@/src/theme/tokens";
 import { KettlebellIcon } from "@/src/components/ui/KettlebellIcon";
 
-/** A glyph per known name. The kettlebell is the app's own; the rest are the
+/** A glyph per known name, covering both the Workouts and Exercises tabs'
+ *  equipment vocabularies. The kettlebell is the app's own; the rest are the
  *  nearest lucide shapes. Anything unknown gets the box. */
 const EQUIPMENT_ICONS: Record<string, LucideIcon | "kettlebell"> = {
   Kettlebell: "kettlebell", Dumbbell, Barbell: Weight, Bodyweight: PersonStanding, Bands: CircleDashed,
   Bar: Minus, Box, "Jump Rope": Repeat, Bench: RectangleHorizontal, Sled: Move, Cable, Machine: Cog,
   Rings: Circle, "Med Ball": CircleDot, Bike, Rower: Waves,
+  "Trap Bar": Hexagon, Landmine: Anchor, Plate: Disc, Sandbag: Package, "Weight Vest": Shirt,
+  Rope: Spline, Parallettes: Equal, Ski: Snowflake, "Smith Machine": Frame, Treadmill: Footprints,
 };
 
 interface EquipmentGridProps {
