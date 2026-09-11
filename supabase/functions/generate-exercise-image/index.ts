@@ -1,187 +1,68 @@
-// deno-lint-ignore-file no-explicit-any
+// Legacy entry point, kept so nothing breaks while callers move to
+// enrich-exercise: same request ({ exerciseId, userId }) and response
+// ({ success, imageUrl, exerciseId }) as before. The prompt and the Gemini
+// call live in _shared/exerciseImage.ts now; this file only reads the
+// request, runs the shared generator and records the URL with model
+// provenance. The mobile wrapper stops calling this in Task 7 of the
+// catalog-enrichment plan; it can be deleted once nothing else does.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { generateAndStoreImage, ImageGenerationError } from '../_shared/exerciseImage.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-serve(async (req)=>{
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: corsHeaders
-    });
-  }
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    // Get API keys from environment
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
     if (!geminiApiKey) {
       console.error('GEMINI_API_KEY not configured');
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'API key not configured'
-      }), {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
+      return json({ success: false, error: 'API key not configured' });
     }
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Supabase credentials not configured');
-    }
+    if (!supabaseUrl || !supabaseServiceKey) throw new Error('Supabase credentials not configured');
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    // Parse request
+
     const { exerciseId, userId } = await req.json();
     if (!exerciseId || !userId) {
-      return new Response(JSON.stringify({
-        error: 'Missing required fields: exerciseId, userId'
-      }), {
-        status: 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
+      return json({ error: 'Missing required fields: exerciseId, userId' }, 400);
     }
-    // Fetch exercise details
-    const { data: exercise, error: exerciseError } = await supabase.from('exercises').select('id, name, description, core_default_equipment, exercise_equipment(equipment(name))').eq('id', exerciseId).single();
-    if (exerciseError || !exercise) {
-      return new Response(JSON.stringify({
-        error: 'Exercise not found'
-      }), {
-        status: 404,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    console.log(`Generating image for exercise: ${exercise.name}`);
-    // Build prompt for image generation - realistic style matching WOD images
-    const junctionNames = (exercise.exercise_equipment ?? [])
-      .map((ee: any) => ee.equipment?.name)
-      .filter(Boolean);
-    const coreNames = (exercise.core_default_equipment ?? '')
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter(Boolean);
-    const equipmentList = (junctionNames.length > 0 ? junctionNames : coreNames).join(', ') || 'bodyweight';
-    const prompt = `Professional fitness photography of an athletic person demonstrating the "${exercise.name}" exercise.
 
-Requirements:
-- Photorealistic image, high quality sports photography style
-- Fit, athletic model with proper form and technique
-- Modern gym environment with professional lighting
-- Equipment: ${equipmentList}
-- Dynamic pose showing the exercise movement
-- Dramatic lighting, cinematic quality
-- No text, watermarks, or labels
-- Focus on muscle engagement and proper form
-${exercise.description ? `- Movement: ${exercise.description}` : ''}
-
-Style: Realistic fitness photography like Nike or Under Armour advertising campaigns.`;
-    // Call Gemini 2.5 Flash Image API
-    const geminiEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
-    const geminiResponse = await fetch(geminiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': geminiApiKey
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          response_modalities: [
-            'IMAGE'
-          ],
-          image_config: {
-            aspect_ratio: '16:9'
-          }
-        }
-      })
-    });
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.error('Gemini API error:', geminiResponse.status, errorText);
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Gemini API error: ${geminiResponse.status}`
-      }), {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
-    const geminiData = await geminiResponse.json();
-    console.log('Gemini response received');
-    // Extract image data
-    if (!geminiData.candidates || geminiData.candidates.length === 0) {
-      throw new Error('No images generated by Gemini');
-    }
-    const imagePart = geminiData.candidates[0]?.content?.parts?.find((part)=>part.inlineData || part.inline_data);
-    if (!imagePart) {
-      throw new Error('No inline image data in Gemini response');
-    }
-    const inlineData = imagePart.inlineData || imagePart.inline_data;
-    const imageBase64 = inlineData.data;
-    const mimeType = inlineData.mimeType || inlineData.mime_type || 'image/png';
-    // Convert base64 to Uint8Array
-    const imageBuffer = Uint8Array.from(atob(imageBase64), (c)=>c.charCodeAt(0));
-    // Upload to Supabase Storage
-    const fileName = `exercises/${exerciseId}_${Date.now()}.png`;
-    const { data: uploadData, error: uploadError } = await supabase.storage.from('exercise-images').upload(fileName, imageBuffer, {
-      contentType: mimeType,
-      upsert: true
-    });
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      throw new Error(`Failed to upload image: ${uploadError.message}`);
-    }
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage.from('exercise-images').getPublicUrl(fileName);
-    // Update exercise record
-    const { error: updateError } = await supabase.from('exercises').update({
-      image_url: publicUrl
-    }).eq('id', exerciseId);
-    if (updateError) {
-      console.error('Database update error:', updateError);
-    }
-    console.log(`Image generated for exercise ${exercise.name}: ${publicUrl}`);
-    return new Response(JSON.stringify({
-      success: true,
-      imageUrl: publicUrl,
-      exerciseId
-    }), {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
+    let publicUrl: string;
+    try {
+      publicUrl = await generateAndStoreImage(supabase, String(exerciseId), { geminiApiKey, discipline: null });
+    } catch (e) {
+      if (e instanceof Error && e.message === 'Exercise not found') return json({ error: 'Exercise not found' }, 404);
+      if (e instanceof ImageGenerationError && e.message.startsWith('Gemini API error')) {
+        console.error(e.message);
+        return json({ success: false, error: e.message.split(' ').slice(0, 4).join(' ') });
       }
-    });
+      throw e;
+    }
+
+    // Read-modify-write of the provenance object: the column is small and a
+    // concurrent edit of the same row is a human race we accept here.
+    const { data: current } = await supabase.from('exercises').select('enrichment').eq('id', exerciseId).maybeSingle();
+    const enrichment = (current?.enrichment ?? {}) as Record<string, unknown>;
+    const { error: updateError } = await supabase.from('exercises').update({
+      image_url: publicUrl,
+      enrichment: { ...enrichment, image_url: { by: 'model', at: new Date().toISOString() } },
+    }).eq('id', exerciseId);
+    if (updateError) console.error('Database update error:', updateError);
+
+    return json({ success: true, imageUrl: publicUrl, exerciseId });
   } catch (error) {
     console.error('Error in generate-exercise-image function:', error);
-    return new Response(JSON.stringify({
-      error: error.message || 'Failed to generate image',
-      success: false
-    }), {
-      status: 500,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json'
-      }
-    });
+    return json({ error: error instanceof Error ? error.message : 'Failed to generate image', success: false }, 500);
   }
 });
