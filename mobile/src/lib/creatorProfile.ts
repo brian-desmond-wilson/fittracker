@@ -35,3 +35,23 @@ export async function refreshCreatorFromPhone(
   const candidates = platform === "instagram" ? await instagramCandidatesFromPhone(handle) : [];
   return refreshCreator(platform, handle, candidates);
 }
+
+/** A small pool: the first open after a long idle can find thirty stale
+ *  creators, and thirty Instagram page reads at once from one home address
+ *  is how a whole library gets rate-limited into "no avatar" for a day.
+ *  Results keep the input order; a null means that one could not be
+ *  refreshed. */
+export async function refreshCreatorsFromPhone(
+  targets: { platform: CreatorPlatform; handle: string }[], concurrency = 4,
+): Promise<(CreatorAvatar | null)[]> {
+  const results: (CreatorAvatar | null)[] = new Array(targets.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const i = next++;
+      results[i] = await refreshCreatorFromPhone(targets[i].platform, targets[i].handle);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, worker));
+  return results;
+}

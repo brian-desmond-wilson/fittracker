@@ -10,7 +10,7 @@ import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
 import { fetchCreators } from "@/src/lib/supabase/creators";
 import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
-import { refreshCreatorFromPhone } from "@/src/lib/creatorProfile";
+import { refreshCreatorsFromPhone } from "@/src/lib/creatorProfile";
 import { isAvatarStale, normaliseHandle } from "@/src/lib/creatorHandle";
 import { applyFiltersAndSearch, activeFilterChips, countActiveFilters, removeChip, creatorCounts, mostRestrictiveAxis, clearAxis } from "@/src/lib/workoutFilters";
 import { sortWorkouts } from "@/src/lib/workoutSort";
@@ -143,7 +143,8 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
   // whose avatar no capture has refreshed, or one Instagram walled off
   // yesterday. Fire-and-forget, once per handle per session; the function
   // itself skips anything fresh. The Instagram page reads happen on this
-  // phone (creatorProfile.ts), so they run together, not one by one.
+  // phone (creatorProfile.ts), a few at a time so a long backlog does not
+  // trip Instagram's rate limit.
   const refreshStaleCreators = useCallback(() => {
     const due = workouts
       .filter((w) => w.source?.posterHandle && (w.source.platform === "instagram" || w.source.platform === "tiktok"))
@@ -156,7 +157,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
     const unique = [...new Map(due.map((d) => [d.handle, d])).values()];
     if (unique.length === 0) return;
     unique.forEach((d) => refreshed.current.add(d.handle));
-    Promise.all(unique.map((d) => refreshCreatorFromPhone(d.platform, d.handle))).then((rows) => {
+    refreshCreatorsFromPhone(unique).then((rows) => {
       const fresh = rows.filter((r): r is NonNullable<typeof r> => r !== null);
       if (fresh.length === 0) return;
       setAvatars((prev) => {
