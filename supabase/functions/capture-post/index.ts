@@ -320,11 +320,38 @@ Rules:
   written, not of its hardest movement.
 - "skill_level": Beginner | Intermediate | Advanced — the technical demand of
   its hardest movement.
+- "format": how the workout RUNS, exactly one of: "sets_reps" | "rounds" |
+  "amrap" | "emom" | "for_time" | "intervals" | "chipper" | "ladder".
+  Per-movement set counts and no whole-list repeat -> "sets_reps". A stated
+  number of rounds through the whole list -> "rounds". "AMRAP" / "as many
+  rounds as possible" -> "amrap". "EMOM" / "every minute on the minute" ->
+  "emom". "For time" / "as fast as possible" / a time cap on a fixed list ->
+  "for_time". Work/rest blocks or "Tabata" -> "intervals". One long list done
+  once, for time -> "chipper". A rep scheme across rounds like 21-15-9 or
+  10-9-8-... -> "ladder". Tie-breaks: a rep scheme wins over a stated round
+  count (21-15-9 for 3 rounds is "ladder", not "rounds"); "chipper" only
+  when the list is long (about eight movements or more) and done once,
+  otherwise a timed fixed list is "for_time". NEVER null: when nothing is
+  stated, "sets_reps" if the movements carry sets, otherwise "rounds".
+- "score_type": what is recorded at the end, exactly one of: "reps" |
+  "rounds_reps" | "load" | "time" | "distance" | "calories" | "duration" |
+  "quality" | "height" | "none". Implied by format when it is: amrap ->
+  "rounds_reps"; for_time, chipper, ladder -> "time". Otherwise read the
+  caption ("for load" -> "load", "max calories" -> "calories", "hold as long
+  as you can" -> "duration"). Straight sets of strength work under load —
+  barbell, dumbbell, kettlebell, machine — are "load" even when the caption
+  never says so. Mobility, warm-ups and most cool-downs are "none". NEVER
+  null.
+- "format_minutes": the number the format is built on, ONLY when the caption
+  states it: the AMRAP cap, the EMOM length, a for-time or chipper time cap,
+  an interval block's total. A whole number 1..240, or null. NEVER an
+  estimate — est_minutes is the estimate; this is what the creator wrote.
 
 Respond as JSON:
 {"block_roles": string[], "primary_muscles": string[],
  "secondary_muscles": string[], "est_minutes": number,
- "intensity": string, "skill_level": string}`;
+ "intensity": string, "skill_level": string,
+ "format": string, "score_type": string, "format_minutes": number | null}`;
 
       // Labelled, because the numbers are the input to a duration estimate and
       // a bare "8" beside "sets: 4" could be reps, seconds or rounds. The
