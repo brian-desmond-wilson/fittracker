@@ -67,13 +67,15 @@ export function MatchReviewSheet({
         const raw = await fetchSourceRawExtraction(review.sourceId);
         prefill = extractionPrefillFor(raw, review.rawName);
       }
-      if (!prefill && review.draft?.exercise) prefill = prefillFromDraft(review.draft.exercise);
     } catch (e) {
       console.error("create-new prefill read failed:", e);
       prefill = null;
     } finally {
       setBusyId(null);
     }
+    // The review's own sanitized draft covers a renamed exercise (the raw
+    // extraction still carries the model's name) and a failed read alike.
+    if (!prefill && review.draft?.exercise) prefill = prefillFromDraft(review.draft.exercise);
     setCreatePrefill(prefill);
     setCreateFor(review);
   };
