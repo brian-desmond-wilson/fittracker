@@ -27,6 +27,16 @@ const strings = (v: unknown): string[] =>
 
 const SKILLS: SkillLevel[] = ["Beginner", "Intermediate", "Advanced"];
 
+/** The canonical skill level for a model-written value, case-folded; null when it is none of them. */
+const skillLevel = (v: unknown): SkillLevel | null => {
+  if (typeof v !== "string") return null;
+  const wanted = v.trim().toLowerCase();
+  return SKILLS.find((s) => s.toLowerCase() === wanted) ?? null;
+};
+
+const description = (v: unknown): string | null =>
+  typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+
 /** The prefill for `reviewedName`, or null when the extraction does not list it. */
 export function extractionPrefillFor(raw: unknown, reviewedName: string): ExtractionPrefill | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -37,17 +47,34 @@ export function extractionPrefillFor(raw: unknown, reviewedName: string): Extrac
     if (typeof e !== "object" || e === null) continue;
     const ex = e as Record<string, unknown>;
     if (typeof ex.name !== "string" || normaliseName(ex.name) !== wanted) continue;
-    const description = typeof ex.description === "string" && ex.description.trim() !== "" ? ex.description.trim() : null;
-    const skill = typeof ex.skill_level === "string" ? (SKILLS.find((s) => s === ex.skill_level) ?? null) : null;
     return {
-      description,
+      description: description(ex.description),
       primaryMuscles: strings(ex.primary_muscles),
       secondaryMuscles: strings(ex.secondary_muscles),
       equipment: strings(ex.equipment),
-      skillLevel: skill,
+      skillLevel: skillLevel(ex.skill_level),
     };
   }
   return null;
+}
+
+/**
+ * The prefill from a match review's draft exercise — the sanitized,
+ * camelCase copy the capture stored on the review row itself. The fallback
+ * for when the raw extraction no longer lists the reviewed name (the
+ * reviewer renamed it before saving, so a name match against the model's
+ * original wording fails). Keyed to the review, so no name lookup is needed.
+ */
+export function prefillFromDraft(draft: unknown): ExtractionPrefill | null {
+  if (typeof draft !== "object" || draft === null || Array.isArray(draft)) return null;
+  const ex = draft as Record<string, unknown>;
+  return {
+    description: description(ex.description),
+    primaryMuscles: strings(ex.primaryMuscles),
+    secondaryMuscles: strings(ex.secondaryMuscles),
+    equipment: strings(ex.equipment),
+    skillLevel: skillLevel(ex.skillLevel),
+  };
 }
 
 /** The two dictionaries the prefill needs, by name. */

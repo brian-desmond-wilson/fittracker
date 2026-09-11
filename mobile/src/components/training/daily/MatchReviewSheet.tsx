@@ -14,7 +14,7 @@ import { ExerciseSearchModal } from "@/src/components/training/program-detail/wo
 import { CatalogItemWizard } from "@/src/components/training/crossfit/CatalogItemWizard";
 import type { CatalogExerciseRow } from "@/src/lib/supabase/frontDoor";
 import { fetchSourceRawExtraction } from "@/src/lib/supabase/capture";
-import { extractionPrefillFor } from "@/src/lib/extractionPrefill";
+import { extractionPrefillFor, prefillFromDraft } from "@/src/lib/extractionPrefill";
 import type { ExtractionPrefill } from "@/src/lib/extractionPrefill";
 
 // The match-review queue: every captured name that resolved to nothing waits
@@ -51,11 +51,28 @@ export function MatchReviewSheet({
    *  new" is tapped. Null when the source is gone or never listed the name. */
   const [createPrefill, setCreatePrefill] = useState<ExtractionPrefill | null>(null);
 
+  /**
+   * The raw extraction is the primary source; the review's own draft is the
+   * fallback for a name the reviewer edited before saving (the model's
+   * wording then no longer matches). A failed read must not strand the
+   * wizard — it opens blank instead. Busy for the duration so a second tap
+   * (or "Find in catalog") cannot start a parallel flow.
+   */
   const openCreate = async (review: PendingMatchReview) => {
+    if (busyId) return;
+    setBusyId(review.id);
     let prefill: ExtractionPrefill | null = null;
-    if (review.sourceId) {
-      const raw = await fetchSourceRawExtraction(review.sourceId);
-      prefill = extractionPrefillFor(raw, review.rawName);
+    try {
+      if (review.sourceId) {
+        const raw = await fetchSourceRawExtraction(review.sourceId);
+        prefill = extractionPrefillFor(raw, review.rawName);
+      }
+      if (!prefill && review.draft?.exercise) prefill = prefillFromDraft(review.draft.exercise);
+    } catch (e) {
+      console.error("create-new prefill read failed:", e);
+      prefill = null;
+    } finally {
+      setBusyId(null);
     }
     setCreatePrefill(prefill);
     setCreateFor(review);

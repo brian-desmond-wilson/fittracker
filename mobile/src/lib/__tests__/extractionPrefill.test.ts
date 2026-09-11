@@ -1,4 +1,4 @@
-import { extractionPrefillFor, applyPrefillToForm, normaliseName } from "../extractionPrefill";
+import { extractionPrefillFor, prefillFromDraft, applyPrefillToForm, normaliseName } from "../extractionPrefill";
 import type { ExtractionPrefill } from "../extractionPrefill";
 import { EMPTY_WIZARD_FORM } from "../catalogWizardForm";
 
@@ -43,6 +43,11 @@ describe("extractionPrefillFor", () => {
     expect(extractionPrefillFor({ exercises: "nope" }, "Kettlebell Swing")).toBeNull();
   });
 
+  it("case-folds the skill level to the canonical value", () => {
+    expect(extractionPrefillFor(raw([{ ...swing, skill_level: "intermediate" }]), "Kettlebell Swing")?.skillLevel).toBe("Intermediate");
+    expect(extractionPrefillFor(raw([{ ...swing, skill_level: " ADVANCED " }]), "Kettlebell Swing")?.skillLevel).toBe("Advanced");
+  });
+
   it("tolerates missing or malformed fields", () => {
     expect(extractionPrefillFor(raw([{ name: "Kettlebell Swing" }]), "Kettlebell Swing")).toEqual<ExtractionPrefill>({
       description: null, primaryMuscles: [], secondaryMuscles: [], equipment: [], skillLevel: null,
@@ -52,6 +57,47 @@ describe("extractionPrefillFor", () => {
     ).toEqual<ExtractionPrefill>({
       description: null, primaryMuscles: ["Glutes"], secondaryMuscles: ["Lower Back"], equipment: ["Kettlebell"], skillLevel: null,
     });
+  });
+});
+
+describe("prefillFromDraft", () => {
+  const draft = {
+    name: "KB Swing (Russian)",
+    description: "Hinge at the hips and swing the bell to chest height.",
+    category: "strength",
+    skillLevel: "Intermediate",
+    primaryMuscles: ["Glutes", "Hamstrings"],
+    secondaryMuscles: ["Lower Back"],
+    equipment: ["Kettlebell"],
+  };
+
+  it("maps the review draft's exercise, whatever name the reviewer gave it", () => {
+    expect(prefillFromDraft(draft)).toEqual<ExtractionPrefill>({
+      description: "Hinge at the hips and swing the bell to chest height.",
+      primaryMuscles: ["Glutes", "Hamstrings"],
+      secondaryMuscles: ["Lower Back"],
+      equipment: ["Kettlebell"],
+      skillLevel: "Intermediate",
+    });
+  });
+
+  it("tolerates missing or malformed fields and case-folds the skill level", () => {
+    expect(prefillFromDraft({ name: "KB Swing" })).toEqual<ExtractionPrefill>({
+      description: null, primaryMuscles: [], secondaryMuscles: [], equipment: [], skillLevel: null,
+    });
+    expect(prefillFromDraft({ ...draft, description: "  ", skillLevel: "advanced", primaryMuscles: [1, "Glutes"], equipment: "Kettlebell" }))
+      .toEqual<ExtractionPrefill>({
+        description: null, primaryMuscles: ["Glutes"], secondaryMuscles: ["Lower Back"], equipment: [], skillLevel: "Advanced",
+      });
+    expect(prefillFromDraft({ ...draft, skillLevel: "Elite" })?.skillLevel).toBeNull();
+  });
+
+  it("is null for null or garbage", () => {
+    expect(prefillFromDraft(null)).toBeNull();
+    expect(prefillFromDraft(undefined)).toBeNull();
+    expect(prefillFromDraft("garbage")).toBeNull();
+    expect(prefillFromDraft(42)).toBeNull();
+    expect(prefillFromDraft([draft])).toBeNull();
   });
 });
 
@@ -73,6 +119,14 @@ describe("applyPrefillToForm", () => {
     expect(form.muscle_region_ids).toEqual(["m-glutes", "m-hams", "m-back"]);
     expect(form.equipment_ids).toEqual(["eq-kb"]);
     expect(form.skill_level).toBe("Intermediate");
+  });
+
+  it("de-duplicates muscles across case variants", () => {
+    const form = applyPrefillToForm(EMPTY_WIZARD_FORM, {
+      ...prefill, primaryMuscles: ["Glutes"], secondaryMuscles: ["glutes", "Lower Back"],
+    }, dict);
+    expect(form.primary_muscle_region_ids).toEqual(["m-glutes"]);
+    expect(form.muscle_region_ids).toEqual(["m-glutes", "m-back"]);
   });
 
   it("never overwrites a field the form already has", () => {
