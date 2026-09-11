@@ -52,7 +52,8 @@ for (const { platform, handle } of pairs.values()) {
   if (platform === 'instagram') {
     try {
       const page = await fetch(`https://www.instagram.com/${handle}/`, { headers: { 'User-Agent': UA } });
-      if (page.ok) candidates = instagramAvatarCandidates(await page.text());
+      const onProfile = new URL(page.url).pathname.toLowerCase().startsWith(`/${handle}`);
+      if (page.ok && onProfile) candidates = instagramAvatarCandidates(await page.text());
     } catch {
       // Stays empty: the row is stamped and retried tomorrow.
     }

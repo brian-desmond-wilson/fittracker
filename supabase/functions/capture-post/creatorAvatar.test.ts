@@ -67,3 +67,15 @@ Deno.test('isAllowedAvatarHost: platform CDNs over https only', () => {
   assertEquals(isAllowedAvatarHost('instagram', 'https://evilcdninstagram.com/a.jpg'), false);
   assertEquals(isAllowedAvatarHost('instagram', 'not a url'), false);
 });
+
+const LOGIN_WALL = `<html><head><meta property="og:image" content="https://static.cdninstagram.com/rsrc.php/v4/yD/r/R0fBIMurK8v.png" /></head></html>`;
+
+Deno.test('instagramAvatarCandidates: the login wall\'s logo is not an avatar', () => {
+  assertEquals(instagramAvatarCandidates(LOGIN_WALL), []);
+  assertEquals(instagramAvatarCandidates(`<meta property="og:image" content="https://scontent.cdninstagram.com/rsrc.php/x.png" />`), []);
+});
+
+Deno.test('isAllowedAvatarHost: Instagram\'s static host is refused', () => {
+  assertEquals(isAllowedAvatarHost('instagram', 'https://static.cdninstagram.com/rsrc.php/v4/a.png'), false);
+  assertEquals(isAllowedAvatarHost('instagram', 'https://scontent-sjc6-1.cdninstagram.com/v/a.jpg'), true);
+});

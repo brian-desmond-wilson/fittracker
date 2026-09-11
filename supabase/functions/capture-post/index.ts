@@ -211,6 +211,7 @@ async function ensureCreatorAvatar(
   const handle = normaliseHandle(rawHandle);
   if (!handle) return null;
   const service = serviceClient();
+  let row: CreatorRow | null = null;
   try {
     const { data: existing } = await service
       .from('creators')
@@ -218,7 +219,7 @@ async function ensureCreatorAvatar(
       .eq('platform', platform)
       .eq('handle', handle)
       .maybeSingle();
-    const row = (existing ?? null) as CreatorRow | null;
+    row = (existing ?? null) as CreatorRow | null;
     if (row && !isAvatarStale(row.avatar_fetched_at, row.avatar_url !== null)) return row;
 
     const found: string[] = [];
@@ -246,7 +247,8 @@ async function ensureCreatorAvatar(
     if (error) return row;
     return next;
   } catch {
-    return null;
+    // What we already had, unstamped: the next capture retries.
+    return row;
   }
 }
 
