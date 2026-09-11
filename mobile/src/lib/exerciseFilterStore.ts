@@ -6,19 +6,12 @@ import {
   EMPTY_EXERCISE_FILTERS, DEFAULT_EXERCISE_SORT, ALL_EXERCISE_SORTS, ALL_PICTURE_FILTERS,
 } from "../types/exerciseFilters";
 import { ALL_SKILLS } from "../types/skillLevel";
-import { createPrefsStore } from "./filterPrefsStore";
+import { createPrefsStore, strings, oneOf, manyOf } from "./filterPrefsStore";
 
 export interface ExercisePrefs {
   filters: ExerciseFilters;
   sort: ExerciseSort;
 }
-
-const strings = (v: unknown): string[] =>
-  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
-  typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : null;
-const manyOf = <T extends string>(v: unknown, allowed: readonly T[]): T[] =>
-  strings(v).filter((x): x is T => (allowed as readonly string[]).includes(x));
 
 /** Coerce whatever was stored into a valid preference set. Free-text axes
  *  (a creator, a muscle, an equipment or goal-type name) are kept as-is: a

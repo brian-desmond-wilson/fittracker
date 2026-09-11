@@ -30,6 +30,12 @@ describe("sortExercises", () => {
     expect(ids(sortExercises([bad, a, b], "captured_asc"))).toEqual(["b", "a", "bad"]);
   });
 
+  it("an entry with no sources sorts last both ways", () => {
+    const none: CatalogEntry = { ...e("none", "None", "2026-09-09T00:00:00Z"), sources: [] };
+    expect(ids(sortExercises([none, a, b], "captured_desc"))).toEqual(["a", "b", "none"]);
+    expect(ids(sortExercises([none, a, b], "captured_asc"))).toEqual(["b", "a", "none"]);
+  });
+
   it("sorts a copy", () => {
     const input = [b, a];
     sortExercises(input, "captured_desc");

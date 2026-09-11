@@ -27,4 +27,7 @@ describe("muscleChips", () => {
   it("is empty for no selection", () => {
     expect(muscleChips("m", [])).toEqual([]);
   });
+  it("emits one chip for a repeated selection", () => {
+    expect(muscleChips("m", ["Chest", "Chest"]).map((c) => c.label)).toEqual(["Chest"]);
+  });
 });

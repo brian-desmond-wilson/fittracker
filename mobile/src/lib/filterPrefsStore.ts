@@ -5,6 +5,15 @@
 // sanitizer; the load/save/fallback discipline is written once.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// Coercions for reading a stored preference set: anything not of the
+// expected shape is dropped.
+export const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+export const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
+  typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+export const manyOf = <T extends string>(v: unknown, allowed: readonly T[]): T[] =>
+  strings(v).filter((x): x is T => (allowed as readonly string[]).includes(x));
+
 export interface PrefsStore<T> {
   key: (userId: string) => string;
   load: (userId: string) => Promise<T>;

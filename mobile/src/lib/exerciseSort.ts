@@ -26,10 +26,10 @@ const byCaptured = (dir: 1 | -1): Cmp => (a, b) => {
 };
 const capturedDesc: Cmp = byCaptured(-1);
 const capturedAsc: Cmp = byCaptured(1);
-const name: Cmp = (a, b) =>
+const byName: Cmp = (a, b) =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || capturedDesc(a, b);
 
-const CMP: Record<ExerciseSort, Cmp> = { captured_desc: capturedDesc, captured_asc: capturedAsc, name };
+const CMP: Record<ExerciseSort, Cmp> = { captured_desc: capturedDesc, captured_asc: capturedAsc, name: byName };
 
 export function sortExercises(entries: CatalogEntry[], sort: ExerciseSort): CatalogEntry[] {
   return [...entries].sort(CMP[sort]);

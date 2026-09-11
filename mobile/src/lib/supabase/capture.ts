@@ -521,7 +521,9 @@ export async function fetchCapturedWorkout(
   return toCapturedWorkoutEntry(data, pendingByWorkout.get((data as any).id) ?? []);
 }
 
-/** Every captured exercise with taxonomy + provenance, newest capture first. */
+/** Every captured exercise with taxonomy + provenance. Roughly newest first;
+ *  the tab re-sorts, and its sort reads every source, so the order of the
+ *  nested sources here does not matter. */
 export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   const { data, error } = await supabase
     .from("exercises")

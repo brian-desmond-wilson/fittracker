@@ -41,4 +41,12 @@ describe("exerciseFilterStore", () => {
     expect(await loadExercisePrefs("u1")).toEqual({ filters: EMPTY_EXERCISE_FILTERS, sort: DEFAULT_EXERCISE_SORT });
     expect(sanitizeExercisePrefs(null)).toEqual({ filters: EMPTY_EXERCISE_FILTERS, sort: DEFAULT_EXERCISE_SORT });
   });
+
+  it("tolerates wrong-type containers", () => {
+    const d = { filters: EMPTY_EXERCISE_FILTERS, sort: DEFAULT_EXERCISE_SORT };
+    expect(sanitizeExercisePrefs("x")).toEqual(d);
+    expect(sanitizeExercisePrefs(42)).toEqual(d);
+    expect(sanitizeExercisePrefs([])).toEqual(d);
+    expect(sanitizeExercisePrefs({ filters: { creators: "not-an-array", picture: 5 }, sort: 1 })).toEqual(d);
+  });
 });

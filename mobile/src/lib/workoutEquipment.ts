@@ -8,7 +8,7 @@
 import type { CapturedWorkoutItemEntry } from "../types/capture";
 
 /** Surfaces that never count as equipment. */
-export const SUPPORT_SURFACES = new Set(["Floor", "Wall"]);
+export const SUPPORT_SURFACES: ReadonlySet<string> = new Set(["Floor", "Wall"]);
 const BODYWEIGHT = "Bodyweight";
 
 export interface DerivedEquipment {

@@ -28,6 +28,6 @@ export function muscleChips<Axis extends string>(axis: Axis, muscles: string[]):
       for (const m of g.muscles) remaining.delete(m);
     }
   }
-  for (const m of muscles) if (remaining.has(m)) chips.push({ axis, label: m, values: [m] });
+  for (const m of [...new Set(muscles)]) if (remaining.has(m)) chips.push({ axis, label: m, values: [m] });
   return chips;
 }
