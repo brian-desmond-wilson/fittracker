@@ -30,9 +30,11 @@ const byChronology = (a: WorkingSet, b: WorkingSet): number =>
     ? a.sessionNumber - b.sessionNumber
     : a.sessionDate < b.sessionDate ? -1 : 1;
 
+/** Best set over the whole history. Ties go to the earliest session to reach
+ *  the mark, whatever order the sets arrived in. */
 export function bestSet(sets: WorkingSet[]): WorkingSet | null {
   let best: WorkingSet | null = null;
-  for (const s of sets) if (best === null || compareSets(s, best) > 0) best = s;
+  for (const s of [...sets].sort(byChronology)) if (best === null || compareSets(s, best) > 0) best = s;
   return best;
 }
 
@@ -68,21 +70,34 @@ export function sessionCount(sets: WorkingSet[]): number {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const dayMs = 86_400_000;
+/** Both date helpers below take calendar days as `YYYY-MM-DD`; anything else
+ *  falls through untouched rather than rendering as "NaN Sep". */
+const isCalendarDay = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s);
 const toUtc = (iso: string): number => {
   const [y, m, d] = iso.split("-").map(Number);
   return Date.UTC(y, m - 1, d);
 };
 
 /** "8 Sep" this year, "8 Sep 2025" otherwise. Used by the history stats, the
- *  skill note and the Captured From dates so every date on the page agrees. */
+ *  skill note and the Captured From dates so every date on the page agrees.
+ *  `today` must be the LOCAL calendar day (`getLocalDateString` in
+ *  src/lib/dates.ts), never `toISOString().slice(0, 10)`, which is UTC and
+ *  flips the year on New Year's Eve evenings. A malformed `iso` comes back as
+ *  is. */
 export function formatShortDate(iso: string, today: string): string {
+  if (!isCalendarDay(iso) || !isCalendarDay(today)) return iso;
   const [y, m, d] = iso.split("-").map(Number);
   const label = `${d} ${MONTHS[m - 1]}`;
   return y === Number(today.slice(0, 4)) ? label : `${label} ${y}`;
 }
 
-/** "Today", "Yesterday", "3 days ago" up to 30, then the date. */
+/** "Today", "Yesterday", "3 days ago" up to 30, then the date.
+ *  `today` must be the LOCAL calendar day (`getLocalDateString` in
+ *  src/lib/dates.ts), never `toISOString().slice(0, 10)`: session dates are
+ *  local days, and a UTC "today" would call last night's session "Yesterday"
+ *  or tomorrow's... "Today". A malformed input returns the raw `date`. */
 export function lastDonePhrase(today: string, date: string): string {
+  if (!isCalendarDay(today) || !isCalendarDay(date)) return date;
   const days = Math.round((toUtc(today) - toUtc(date)) / dayMs);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
@@ -101,16 +116,18 @@ export interface TrendBar {
 
 export const TREND_WINDOW = 8;
 
-/** Bar height reads weight when the history has any weighted set, reps otherwise. */
-function metricFor(sets: WorkingSet[]): (s: WorkingSet) => number {
-  const weighted = sets.some((s) => s.weightLbs > 0);
+/** Bar height reads weight when any top set in the window is weighted, reps
+ *  otherwise. Judged on the window, not the whole history: one weighted set
+ *  years ago must not flatten eight recent bodyweight sessions to zero. */
+function metricFor(window: SessionTop[]): (s: WorkingSet) => number {
+  const weighted = window.some((t) => t.topSet.weightLbs > 0);
   return (s) => (weighted ? s.weightLbs : s.reps);
 }
 
 /** The last eight sessions' top sets, oldest left. */
 export function trendBars(sets: WorkingSet[]): TrendBar[] {
-  const metric = metricFor(sets);
   const window = topSetPerSession(sets).slice(-TREND_WINDOW);
+  const metric = metricFor(window);
   const tallest = Math.max(0, ...window.map((t) => metric(t.topSet)));
   const best = bestSet(sets);
   return window.map((t) => ({
@@ -132,9 +149,9 @@ export const TREND_LABELS: Record<TrendDirection, string> = {
 /** Latest top set against the median of the earlier bars in the window.
  *  Null under three sessions: two points are not a trend. */
 export function trendDirection(sets: WorkingSet[]): TrendDirection | null {
-  const metric = metricFor(sets);
   const window = topSetPerSession(sets).slice(-TREND_WINDOW);
   if (window.length < 3) return null;
+  const metric = metricFor(window);
   const latest = metric(window[window.length - 1].topSet);
   const earlier = window.slice(0, -1).map((t) => metric(t.topSet)).sort((a, b) => a - b);
   const mid = Math.floor(earlier.length / 2);
@@ -149,25 +166,51 @@ export interface SessionRow {
   sessionDate: string;
   sessionName: string;
   topSet: WorkingSet;
-  /** That session set a record at the time (personalRecords over this exercise only). */
+  /** That session's top set was a record at the time: a new heaviest weight
+   *  (personalRecords' weight kind over this exercise only), or, when nothing
+   *  in the history is weighted, a new most-reps. Volume and e1RM records do
+   *  not count — the badge sits on the top set, and those can be set without
+   *  beating it. */
   isPr: boolean;
 }
 
 /** Sessions newest first. The caller decides how many to show. */
 export function sessionRows(sets: WorkingSet[]): SessionRow[] {
+  const tops = topSetPerSession(sets);
+  const prSessions = sets.some((s) => s.weightLbs > 0)
+    ? weightRecordSessions(sets)
+    : repsRecordSessions(tops);
+  return tops
+    .reverse()
+    .map((t) => ({
+      sessionId: t.sessionId, sessionDate: t.sessionDate, sessionName: t.sessionName,
+      topSet: t.topSet, isPr: prSessions.has(t.sessionId),
+    }));
+}
+
+/** Sessions whose heaviest set beat every earlier session's heaviest. */
+function weightRecordSessions(sets: WorkingSet[]): Set<string> {
   // personalRecords keys on exercise; every set here is the same exercise.
   const facts: SetFact[] = sets.map((s) => ({
     exerciseId: "this", exerciseName: "this",
     sessionId: s.sessionId, sessionNumber: s.sessionNumber, date: s.sessionDate,
     weightLbs: s.weightLbs, reps: s.reps, volumeLbs: s.weightLbs * s.reps,
   }));
-  const prBySession = recordsBySession(computeRecords(facts));
-  return topSetPerSession(sets)
-    .reverse()
-    .map((t) => ({
-      sessionId: t.sessionId, sessionDate: t.sessionDate, sessionName: t.sessionName,
-      topSet: t.topSet, isPr: (prBySession.get(t.sessionId) ?? 0) > 0,
-    }));
+  const weightOnly = computeRecords(facts).filter((r) => r.kind === "weight");
+  return new Set(recordsBySession(weightOnly).keys());
+}
+
+/** Unweighted work has no weight to beat, so personalRecords stays silent.
+ *  Same rule, on reps: a session is a record when its top set's reps strictly
+ *  exceed every earlier session's. The first session is a baseline, not a PR. */
+function repsRecordSessions(tops: SessionTop[]): Set<string> {
+  const prs = new Set<string>();
+  let best: number | undefined;
+  for (const t of tops) {
+    if (best !== undefined && t.topSet.reps > best) prs.add(t.sessionId);
+    best = Math.max(best ?? 0, t.topSet.reps);
+  }
+  return prs;
 }
 
 /** "50 lb × 12", or "12 reps" for an unweighted set. */

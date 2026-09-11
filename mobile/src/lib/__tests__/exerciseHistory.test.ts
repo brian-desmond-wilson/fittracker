@@ -42,6 +42,13 @@ describe("bestSet", () => {
   it("is null with no sets", () => {
     expect(bestSet([])).toBeNull();
   });
+
+  it("a tie across two sessions goes to the earlier one, whatever the input order", () => {
+    const a = ws("a", "2026-09-01", 50, 10);
+    const b = ws("b", "2026-09-02", 50, 10);
+    expect(bestSet([a, b])?.sessionId).toBe("a");
+    expect(bestSet([b, a])?.sessionId).toBe("a");
+  });
 });
 
 describe("topSetPerSession and sessionCount", () => {
@@ -74,12 +81,22 @@ describe("lastDonePhrase", () => {
     expect(lastDonePhrase(today, "2026-08-11")).toBe("11 Aug");
     expect(lastDonePhrase(today, "2025-12-25")).toBe("25 Dec 2025");
   });
+
+  it("returns the raw date when either input is malformed", () => {
+    expect(lastDonePhrase(today, "bogus")).toBe("bogus");
+    expect(lastDonePhrase("bogus", "2026-09-01")).toBe("2026-09-01");
+  });
 });
 
 describe("formatShortDate", () => {
   it("drops the year inside the current year", () => {
     expect(formatShortDate("2026-09-08", "2026-09-11")).toBe("8 Sep");
     expect(formatShortDate("2025-09-08", "2026-09-11")).toBe("8 Sep 2025");
+  });
+
+  it("returns the raw string when the date is malformed", () => {
+    expect(formatShortDate("bogus", "2026-09-11")).toBe("bogus");
+    expect(formatShortDate("2026-9-8", "2026-09-11")).toBe("2026-9-8");
   });
 });
 
@@ -112,6 +129,17 @@ describe("trendBars", () => {
 
   it("one session is one bar", () => {
     expect(trendBars(series(1, () => 100))).toHaveLength(1);
+  });
+
+  it("judges weighted-vs-reps on the window, not the whole history", () => {
+    // One weighted set years ago, then eight unweighted sessions with rising reps:
+    // the bars shown are all unweighted, so they draw reps, not a row of zeros.
+    const sets = [ws("old", "2024-01-01", 50, 5), ...series(8, () => 0, 0).map((s, k) => ({ ...s, reps: 5 + k }))];
+    const heights = trendBars(sets).map((b) => b.height);
+    expect(heights).toHaveLength(8);
+    expect(heights[7]).toBe(1);
+    for (let k = 1; k < heights.length; k++) expect(heights[k]).toBeGreaterThan(heights[k - 1]);
+    expect(trendDirection(sets)).toBe("up");
   });
 });
 
@@ -151,6 +179,23 @@ describe("sessionRows", () => {
       ws("a", "2026-09-01", 100, 5), ws("b", "2026-09-02", 90, 5), ws("c", "2026-09-03", 90, 5),
     ]);
     expect(rows.map((r) => `${r.sessionId}:${r.isPr}`)).toEqual(["c:false", "b:false", "a:false"]);
+  });
+
+  it("a session volume record without a weight record is not a PR", () => {
+    // b lifts more total (90×5 twice) than a (100×5 once) but never beats a's top set.
+    const rows = sessionRows([
+      ws("a", "2026-09-01", 100, 5), ws("b", "2026-09-02", 90, 5), ws("b", "2026-09-02", 90, 5),
+    ]);
+    expect(rows.map((r) => `${r.sessionId}:${r.isPr}`)).toEqual(["b:false", "a:false"]);
+  });
+
+  it("an all-unweighted history earns a PR when the top set's reps beat every earlier session", () => {
+    const rows = sessionRows([
+      ws("s1", "2026-09-01", 0, 5), ws("s2", "2026-09-02", 0, 10),
+      ws("s3", "2026-09-03", 0, 8), ws("s4", "2026-09-04", 0, 15),
+    ]);
+    expect(rows.map((r) => r.topSet.reps)).toEqual([15, 8, 10, 5]);
+    expect(rows.map((r) => r.isPr)).toEqual([true, false, true, false]);
   });
 });
 
