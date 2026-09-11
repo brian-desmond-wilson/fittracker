@@ -4,7 +4,22 @@
 // save: every failure here is a logged null.
 // Spec: docs/superpowers/specs/2026-09-11-catalog-enrichment-pipeline-design.md §4, §6, §7
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../supabase";
+
+/** The server's {error} body on a non-2xx, which invoke() hides behind a
+ *  generic message; anything else as-is. */
+async function reasonOf(e: unknown): Promise<unknown> {
+  if (e instanceof FunctionsHttpError) {
+    try {
+      const body = await e.context.json();
+      if (body && typeof body.error === "string") return `${e.context.status}: ${body.error}`;
+    } catch {
+      /* fall through to the generic error */
+    }
+  }
+  return e;
+}
 import { SWEEP_BATCH_LIMIT, SWEEP_LAST_RUN_KEY, sweepIsDue } from "../enrichSweepGate";
 
 /** enrich-exercise { action: "enrich" } response. */
@@ -43,7 +58,7 @@ export async function enrichExercise(exerciseId: string, opts: EnrichOptions = {
       imageUrl: typeof data?.imageUrl === "string" ? data.imageUrl : null,
     };
   } catch (e) {
-    console.error("enrich failed:", e);
+    console.error("enrich failed:", await reasonOf(e));
     return null;
   }
 }
@@ -89,7 +104,7 @@ export async function runEnrichSweep(opts: SweepOptions): Promise<SweepSummary |
     if (data?.error) throw new Error(data.error);
     return data as SweepSummary;
   } catch (e) {
-    console.error("enrich sweep failed:", e);
+    console.error("enrich sweep failed:", await reasonOf(e));
     return null;
   }
 }
