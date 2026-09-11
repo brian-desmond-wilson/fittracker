@@ -6,8 +6,9 @@
 //       Fills description (capture extraction, else capture-post describe),
 //       video_url (the single-exercise capture's post) and image_url (the
 //       shared generator) — each only when null/blank and not by="user".
-//       force_image regenerates over an existing image: the ONE overwrite.
-//       Any signed-in user.
+//       force_image regenerates over an existing image: the ONE overwrite,
+//       admin profiles or the creator of a non-official exercise only.
+//       Everything else: any signed-in user.
 //
 //   sweep { images: boolean, limit: number, dryRun: boolean }
 //       → { dryRun, candidates, wouldFill | filled, skipped, processed, remaining }
@@ -370,6 +371,20 @@ async function runSweep(body: Record<string, unknown>): Promise<Response> {
   });
 }
 
+/**
+ * Whether the caller made this exercise and it is not official. A missing
+ * exercise throws the same 'exercise not found' the enrich path would.
+ */
+async function isCreatorOfCustom(userId: string, body: Record<string, unknown>): Promise<boolean> {
+  const exerciseId = String(body.exerciseId ?? '').trim();
+  if (!exerciseId) throw new Error('exerciseId is required');
+  const { data, error } = await serviceClient()
+    .from('exercises').select('is_official, created_by').eq('id', exerciseId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error('exercise not found');
+  return data.is_official === false && data.created_by === userId;
+}
+
 /** The HTTP status an error message earns; anything unlisted is a 500. */
 function statusFor(message: string): number {
   if (message === 'not authenticated' || message === 'missing Authorization header') return 401;
@@ -387,17 +402,25 @@ serve(async (req) => {
     const body = (await req.json()) as Record<string, unknown>;
     const action = String(body.action ?? '');
 
-    // The backfill script holds the service role: both actions.
+    // The backfill script holds the service role: both actions, no gates.
     const isServiceRole = token === SERVICE_ROLE_KEY;
     let isAdmin = isServiceRole;
     if (!isServiceRole) {
       const anon = createClient(SUPABASE_URL, ANON_KEY);
       const { data: userData, error: userError } = await anon.auth.getUser(token);
       if (userError || !userData?.user) throw new Error('not authenticated');
-      if (action === 'sweep') {
+      const userId = userData.user.id;
+      const forceImage = action === 'enrich' && body.force_image === true;
+      // One profile read serves both gates: sweep, and the force_image overwrite.
+      if (action === 'sweep' || forceImage) {
         const { data: profile } = await serviceClient()
-          .from('profiles').select('is_admin').eq('id', userData.user.id).maybeSingle();
+          .from('profiles').select('is_admin').eq('id', userId).maybeSingle();
         isAdmin = profile?.is_admin === true;
+      }
+      // force_image regenerates over an existing picture and spends a credit:
+      // admins, or the creator of a non-official exercise, exactly as the phone gates it.
+      if (forceImage && !isAdmin && !(await isCreatorOfCustom(userId, body))) {
+        return json({ error: 'force_image requires an admin profile or the exercise creator' }, 403);
       }
     }
 
