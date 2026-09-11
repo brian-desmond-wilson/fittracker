@@ -39,7 +39,14 @@ import type { SetFact } from "@/src/types/records";
 
 const BALANCE_DAYS = 14;
 
-export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
+interface GymSessionsScreenProps {
+  onClose: () => void;
+  /** Scope the History list to sessions with a working set of this exercise. */
+  exerciseId?: string | null;
+  exerciseName?: string | null;
+}
+
+export function GymSessionsScreen({ onClose, exerciseId = null, exerciseName = null }: GymSessionsScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [sessions, setSessions] = useState<HistorySession[]>([]);
@@ -55,6 +62,17 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [calView, setCalView] = useState<"month" | "week">("month");
+  // The scope is a chip the reader can drop; the hero, stats and calendar
+  // keep describing every session — only the list narrows.
+  const [scoped, setScoped] = useState(true);
+  const listSessions = useMemo(
+    () => (exerciseId && scoped
+      ? sessions.filter((s) => s.exercises.some(
+          (e) => e.exerciseId === exerciseId && e.sets.some((set) => !set.isWarmup),
+        ))
+      : sessions),
+    [sessions, exerciseId, scoped],
+  );
 
   // One clock sample per load, the app's no-two-clocks rule.
   const [today] = useState(() => getLocalDateString());
@@ -237,8 +255,19 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                 ))}
               </View>
 
+              {view === "history" && exerciseId && scoped && (
+                <View style={styles.scopeRow}>
+                  <Text style={styles.scopeText} numberOfLines={1}>
+                    Sessions with {exerciseName ?? "this exercise"} · {listSessions.length}
+                  </Text>
+                  <TouchableOpacity onPress={() => setScoped(false)} accessibilityRole="button"
+                    accessibilityLabel="Show all sessions" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.scopeClear}>Show all</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               {view === "history" &&
-                sessions.map((session) => (
+                listSessions.map((session) => (
                   <SessionRow
                     key={session.id}
                     session={session}
@@ -247,6 +276,9 @@ export function GymSessionsScreen({ onClose }: { onClose: () => void }) {
                     onPress={() => open(session)}
                   />
                 ))}
+              {view === "history" && exerciseId && scoped && listSessions.length === 0 && (
+                <Text style={styles.emptyText}>No session with a working set of this exercise yet.</Text>
+              )}
 
               {view === "stats" && (
                 <>
@@ -398,4 +430,11 @@ const styles = StyleSheet.create({
   toggleTextOn: { color: "#052E16" },
   calToggle: { alignSelf: "flex-start", width: 170, marginBottom: 12 },
   dayBlock: { marginTop: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
+  scopeRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8,
+    paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10,
+    backgroundColor: colors.muted, borderRadius: 9,
+  },
+  scopeText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.foreground },
+  scopeClear: { fontSize: 13, fontWeight: "600", color: colors.primary },
 });
