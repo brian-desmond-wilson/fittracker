@@ -31,7 +31,9 @@ interface MovementRatingSheetProps {
   onClose: () => void;
   onSaved: () => void;
   /** Pre-selected pills, keyed by exercise id — the exercise page's Re-rate
-   *  opens on the rating that stands. */
+   *  opens on the rating that stands. Callers must pass a referentially
+   *  stable object (memoised): the reset effect keys on it, and a fresh
+   *  object per render would wipe in-progress taps. */
   initialRatings?: Record<string, MovementRating>;
   /** Replaces the session-end save. The caller owns success and failure
    *  (the page keeps its old note and toasts); the sheet just closes after. */
@@ -60,8 +62,11 @@ export function MovementRatingSheet({
     setSaving(true);
     setErrorText(null);
     if (onSave) {
-      await onSave(Object.entries(ratings).map(([exerciseId, rating]) => ({ exerciseId, rating })));
-      setSaving(false);
+      try {
+        await onSave(Object.entries(ratings).map(([exerciseId, rating]) => ({ exerciseId, rating })));
+      } finally {
+        setSaving(false); // a throwing onSave must not leave the sheet stuck
+      }
       onSaved();
       return;
     }
