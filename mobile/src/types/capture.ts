@@ -108,6 +108,15 @@ export interface CaptureSource {
   capturedAt: string;
 }
 
+/** A source with what the exercise page needs beside it: the creator's
+ *  rehosted avatar (null when we have none) and the FitTracker workout
+ *  captured from the post (null when the post was captured as a single
+ *  exercise). Spec 2026-09-11 §5 Captured From. */
+export interface CaptureSourceV2 extends CaptureSource {
+  avatarUrl: string | null;
+  workout: { id: string; name: string } | null;
+}
+
 export interface CatalogEntry {
   exerciseId: string;
   name: string;
