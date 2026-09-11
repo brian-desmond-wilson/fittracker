@@ -677,6 +677,20 @@ export async function createCatalogExercise(
     // Engine-owned, never written here: generated_name, identity_fingerprint,
     // tier, parent_exercise_id.
   };
+  // Provenance (§5): whatever the person filled in at create time is theirs,
+  // so the pipeline never replaces it. A description prefilled from the
+  // capture extraction and accepted in the wizard counts as theirs too —
+  // they reviewed it. Empty fields get no key, so enrichment may fill them.
+  insertRow.enrichment = provenanceAfterPatch(
+    {},
+    { description: null, video_url: null, image_url: null },
+    {
+      description: insertRow.description as string | null,
+      video_url: insertRow.video_url as string | null,
+      image_url: insertRow.image_url as string | null,
+    },
+    new Date().toISOString(),
+  ) ?? {};
 
   // Insert with bounded slug regeneration: a 23505 on exercises_slug_key means
   // a race won the slug between probe and insert — re-probe (the winner now
