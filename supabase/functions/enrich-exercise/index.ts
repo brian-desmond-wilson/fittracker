@@ -13,17 +13,22 @@
 //       → { dryRun, candidates, wouldFill | filled, skipped, processed, remaining }
 //       Rows with any fillable field, newest first, up to `limit`; the enrich
 //       logic per row. Admin profiles only (or the service role: the backfill).
-//       A real run stops early when describe answers 429 or 401 — the rest of
-//       the batch would only repeat the failure — and says so in stoppedEarly.
+//       A real run stops early when describe answers 429 or 401, when Gemini
+//       answers 429 — the rest of the batch would only repeat the failure —
+//       or after 100 s of work (edge functions have a wall-clock cap), and
+//       says which in stoppedEarly.
 //
 // Every field is its own try/catch: a failure leaves the slot empty for the
 // next sweep, never fails the call. Decisions are in fill.ts (pure, tested);
-// this file only reads, calls out and writes.
+// this file only reads, calls out and writes. Every write goes through the
+// enrich_fill database function, which re-checks "blank and not by=user"
+// in the same statement as the update: a human edit made after the row was
+// read always wins, and the pipeline sees 0 rows written.
 // Spec: docs/superpowers/specs/2026-09-11-catalog-enrichment-pipeline-design.md §5–§8
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { generateAndStoreImage } from '../_shared/exerciseImage.ts';
+import { generateAndStoreImage, ImageGenerationError } from '../_shared/exerciseImage.ts';
 import {
   planFill, validateDescription, pickSingleExerciseSource, extractionDescriptionFor, hasWork,
 } from './fill.ts';
@@ -82,6 +87,19 @@ function toLoadedRow(raw: any): LoadedRow {
   };
 }
 
+/**
+ * PostgREST answers a select with no range with at most 1000 rows. The
+ * catalog is far smaller, but a silently truncated name list would let a
+ * description open with another exercise's name and a truncated sweep would
+ * skip rows for ever — so exactly 1000 is treated as "cut off", loudly.
+ */
+const POSTGREST_ROW_CAP = 1000;
+function assertUnderRowCap<T>(rows: T[] | null, table: string): T[] {
+  const list = rows ?? [];
+  if (list.length >= POSTGREST_ROW_CAP) throw new Error(`${table} exceeds 1000 rows; add paging`);
+  return list;
+}
+
 async function loadRow(service: SupabaseClient, exerciseId: string): Promise<LoadedRow> {
   const { data, error } = await service.from('exercises').select(ROW_SELECT).eq('id', exerciseId).maybeSingle();
   if (error) throw new Error(error.message);
@@ -98,8 +116,10 @@ async function otherNamesFor(service: SupabaseClient, exerciseId: string): Promi
   if (names.error) throw new Error(names.error.message);
   if (aliases.error) throw new Error(aliases.error.message);
   return [
-    ...((names.data ?? []) as { id: string; name: string }[]).filter((r) => r.id !== exerciseId).map((r) => r.name),
-    ...((aliases.data ?? []) as { exercise_id: string; alias: string }[]).filter((r) => r.exercise_id !== exerciseId).map((r) => r.alias),
+    ...assertUnderRowCap(names.data as { id: string; name: string }[] | null, 'exercises')
+      .filter((r) => r.id !== exerciseId).map((r) => r.name),
+    ...assertUnderRowCap(aliases.data as { exercise_id: string; alias: string }[] | null, 'exercise_aliases')
+      .filter((r) => r.exercise_id !== exerciseId).map((r) => r.alias),
   ];
 }
 
@@ -125,17 +145,30 @@ async function describeViaCapturePost(exerciseId: string): Promise<string> {
   return body.description;
 }
 
-/** One column plus its provenance stamp, in one statement. */
+/**
+ * One column plus its provenance stamp, through enrich_fill: the database
+ * re-checks "still blank and not by=user" in the same statement as the
+ * write, so a person who edited the row after we read it keeps both their
+ * text and their stamp. Returns false when the row was not written — the
+ * field was filled or claimed elsewhere since the plan was made. `force`
+ * is the image regenerate, the one overwrite; it still merges the stamp.
+ */
 async function writeField(
   service: SupabaseClient, row: LoadedRow, field: 'description' | 'video_url' | 'image_url',
-  value: string, by: 'extraction' | 'model' | 'capture',
-): Promise<void> {
-  const enrichment: Enrichment = { ...row.enrichment, [field]: { by, at: new Date().toISOString() } };
-  const { error } = await service.from('exercises').update({ [field]: value, enrichment }).eq('id', row.id);
+  value: string, by: 'extraction' | 'model' | 'capture', force = false,
+): Promise<boolean> {
+  const { data, error } = await service.rpc('enrich_fill', {
+    p_id: row.id, p_field: field, p_value: value, p_by: by, p_force: force,
+  });
   if (error) throw new Error(error.message);
+  if (Number(data) !== 1) return false;
+  const enrichment: Enrichment = { ...row.enrichment, [field]: { by, at: new Date().toISOString() } };
   row.enrichment = enrichment;
   row[field] = value;
+  return true;
 }
+
+const FILLED_ELSEWHERE = 'filled elsewhere';
 
 export interface EnrichResult {
   filled: string[];
@@ -143,6 +176,15 @@ export interface EnrichResult {
   imageUrl: string | null;
   /** Set when describe failed with an HTTP status; a sweep stops on 429/401. */
   describeStatus?: number;
+  /** Set when Gemini failed with an HTTP status; a sweep stops on 429. */
+  imageStatus?: number;
+}
+
+/** ImageGenerationError messages open with "Gemini API error: <status>". */
+function geminiStatusOf(e: unknown): number | undefined {
+  if (!(e instanceof ImageGenerationError)) return undefined;
+  const m = /^Gemini API error: (\d{3})\b/.exec(e.message);
+  return m ? Number(m[1]) : undefined;
 }
 
 function planFor(row: LoadedRow, flags: RunFlags, otherNames: string[]): FillPlan {
@@ -153,7 +195,9 @@ function planFor(row: LoadedRow, flags: RunFlags, otherNames: string[]): FillPla
 }
 
 /** Fill one row per its plan. Never throws for a field; the reason lands in skipped. */
-async function enrichRow(service: SupabaseClient, row: LoadedRow, plan: FillPlan, otherNames: string[]): Promise<EnrichResult> {
+async function enrichRow(
+  service: SupabaseClient, row: LoadedRow, plan: FillPlan, otherNames: string[], flags: RunFlags,
+): Promise<EnrichResult> {
   const result: EnrichResult = { filled: [], skipped: {}, imageUrl: null };
 
   if (plan.description) {
@@ -162,9 +206,10 @@ async function enrichRow(service: SupabaseClient, row: LoadedRow, plan: FillPlan
       const check = validateDescription(text, row.name, otherNames);
       if (!check.ok) {
         result.skipped.description = `rejected: ${check.reason}`;
-      } else {
-        await writeField(service, row, 'description', check.text, plan.description.by);
+      } else if (await writeField(service, row, 'description', check.text, plan.description.by)) {
         result.filled.push('description');
+      } else {
+        result.skipped.description = FILLED_ELSEWHERE;
       }
     } catch (e) {
       result.skipped.description = e instanceof Error ? e.message : 'failed';
@@ -177,8 +222,11 @@ async function enrichRow(service: SupabaseClient, row: LoadedRow, plan: FillPlan
 
   if (plan.video_url) {
     try {
-      await writeField(service, row, 'video_url', plan.video_url.url, 'capture');
-      result.filled.push('video_url');
+      if (await writeField(service, row, 'video_url', plan.video_url.url, 'capture')) {
+        result.filled.push('video_url');
+      } else {
+        result.skipped.video_url = FILLED_ELSEWHERE;
+      }
     } catch (e) {
       result.skipped.video_url = e instanceof Error ? e.message : 'failed';
       console.error('enrich video', row.id, e);
@@ -195,11 +243,17 @@ async function enrichRow(service: SupabaseClient, row: LoadedRow, plan: FillPlan
       const url = await generateAndStoreImage(service, row.id, {
         geminiApiKey: GEMINI_KEY, discipline: row.isMovement ? 'CrossFit' : null,
       });
-      await writeField(service, row, 'image_url', url, 'model');
-      result.filled.push('image_url');
-      result.imageUrl = url;
+      if (await writeField(service, row, 'image_url', url, 'model', flags.forceImage)) {
+        result.filled.push('image_url');
+        result.imageUrl = url;
+      } else {
+        // The picture is in the bucket; the row keeps whatever a person put there.
+        result.skipped.image_url = `${FILLED_ELSEWHERE} (generated image stored but not recorded: ${url})`;
+      }
     } catch (e) {
       result.skipped.image_url = e instanceof Error ? e.message : 'failed';
+      const status = geminiStatusOf(e);
+      if (status !== undefined) result.imageStatus = status;
       console.error('enrich image', row.id, e);
     }
   } else {
@@ -222,8 +276,9 @@ async function runEnrich(body: Record<string, unknown>): Promise<Response> {
   const service = serviceClient();
   const row = await loadRow(service, exerciseId);
   const otherNames = await otherNamesFor(service, exerciseId);
-  const plan = planFor(row, flagsFrom(body), otherNames);
-  const { filled, skipped, imageUrl } = await enrichRow(service, row, plan, otherNames);
+  const flags = flagsFrom(body);
+  const plan = planFor(row, flags, otherNames);
+  const { filled, skipped, imageUrl } = await enrichRow(service, row, plan, otherNames, flags);
   return json({ filled, skipped, imageUrl });
 }
 
@@ -232,8 +287,11 @@ const zero = (): FieldCounts => ({ description: 0, video_url: 0, image_url: 0 })
 
 /** Describe statuses that mean the rest of the batch would fail the same way. */
 const STOP_ON_DESCRIBE_STATUS = new Set([429, 401]);
+/** Edge functions are cut off at a wall-clock cap; stop well inside it and report what is left. */
+const SWEEP_TIME_BUDGET_MS = 100_000;
 
 async function runSweep(body: Record<string, unknown>): Promise<Response> {
+  const start = Date.now();
   const images = body.images === true;
   const dryRun = body.dryRun === true;
   const limitRaw = Number(body.limit);
@@ -243,7 +301,7 @@ async function runSweep(body: Record<string, unknown>): Promise<Response> {
 
   const { data, error } = await service.from('exercises').select(ROW_SELECT).order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
-  const rows = ((data ?? []) as unknown[]).map(toLoadedRow);
+  const rows = assertUnderRowCap(data as unknown[] | null, 'exercises').map(toLoadedRow);
 
   // Names once for the whole sweep; each row excludes its own below.
   const [namesRes, aliasRes] = await Promise.all([
@@ -252,8 +310,8 @@ async function runSweep(body: Record<string, unknown>): Promise<Response> {
   ]);
   if (namesRes.error) throw new Error(namesRes.error.message);
   if (aliasRes.error) throw new Error(aliasRes.error.message);
-  const allNames = (namesRes.data ?? []) as { id: string; name: string }[];
-  const allAliases = (aliasRes.data ?? []) as { exercise_id: string; alias: string }[];
+  const allNames = assertUnderRowCap(namesRes.data as { id: string; name: string }[] | null, 'exercises');
+  const allAliases = assertUnderRowCap(aliasRes.data as { exercise_id: string; alias: string }[] | null, 'exercise_aliases');
   const othersFor = (id: string): string[] => [
     ...allNames.filter((r) => r.id !== id).map((r) => r.name),
     ...allAliases.filter((r) => r.exercise_id !== id).map((r) => r.alias),
@@ -281,8 +339,14 @@ async function runSweep(body: Record<string, unknown>): Promise<Response> {
   const errors: { id: string; name: string; skipped: Record<string, string> }[] = [];
   let processed = 0;
   let stoppedEarly: string | null = null;
+  // The rows not yet visited wait for the next sweep.
+  const stop = (reason: string) => {
+    stoppedEarly = reason;
+    remaining += batch.length - processed;
+  };
   for (const { row, plan, otherNames } of batch) {
-    const r = await enrichRow(service, row, plan, otherNames);
+    if (Date.now() - start > SWEEP_TIME_BUDGET_MS) { stop('time budget'); break; }
+    const r = await enrichRow(service, row, plan, otherNames, flags);
     processed++;
     for (const f of r.filled) filled[f as keyof FieldCounts]++;
     const failed: Record<string, string> = {};
@@ -290,10 +354,13 @@ async function runSweep(body: Record<string, unknown>): Promise<Response> {
       if (plan[f] && !r.filled.includes(f)) { skipped[f]++; failed[f] = r.skipped[f]; }
     }
     if (Object.keys(failed).length > 0) errors.push({ id: row.id, name: row.name, skipped: failed });
+    // Rate-limited or shut out: the rest of the batch would only repeat the failure.
     if (r.describeStatus !== undefined && STOP_ON_DESCRIBE_STATUS.has(r.describeStatus)) {
-      // Rate-limited or shut out: the rows not yet visited wait for the next sweep.
-      stoppedEarly = `describe ${r.describeStatus}`;
-      remaining += batch.length - processed;
+      stop(`describe ${r.describeStatus}`);
+      break;
+    }
+    if (r.imageStatus === 429) {
+      stop('image 429');
       break;
     }
   }
@@ -301,6 +368,14 @@ async function runSweep(body: Record<string, unknown>): Promise<Response> {
     dryRun: false, candidates: candidates.length, processed, filled, skipped, remaining, errors,
     ...(stoppedEarly !== null ? { stoppedEarly } : {}),
   });
+}
+
+/** The HTTP status an error message earns; anything unlisted is a 500. */
+function statusFor(message: string): number {
+  if (message === 'not authenticated' || message === 'missing Authorization header') return 401;
+  if (message === 'exercise not found') return 404;
+  if (message === 'exerciseId is required' || message.startsWith('unknown action')) return 400;
+  return 500;
 }
 
 serve(async (req) => {
@@ -334,6 +409,7 @@ serve(async (req) => {
     throw new Error(`unknown action: ${action}`);
   } catch (e) {
     console.error('enrich-exercise:', e);
-    return json({ error: e instanceof Error ? e.message : 'Unknown error' }, 500);
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    return json({ error: message }, statusFor(message));
   }
 });

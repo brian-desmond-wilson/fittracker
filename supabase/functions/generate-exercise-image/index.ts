@@ -3,8 +3,10 @@
 // ({ success, imageUrl, exerciseId }) as before. The prompt and the Gemini
 // call live in _shared/exerciseImage.ts now; this file only reads the
 // request, runs the shared generator and records the URL with model
-// provenance. The mobile wrapper stops calling this in Task 7 of the
-// catalog-enrichment plan; it can be deleted once nothing else does.
+// provenance through enrich_fill (forced: a tap here is the one permitted
+// overwrite, and the stamp merges so no other field's provenance is lost).
+// The mobile wrapper stops calling this in Task 7 of the catalog-enrichment
+// plan; it can be deleted once nothing else does.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { generateAndStoreImage, ImageGenerationError } from '../_shared/exerciseImage.ts';
@@ -50,21 +52,11 @@ serve(async (req) => {
       throw e;
     }
 
-    // Read-modify-write of the provenance object: the column is small and a
-    // concurrent edit of the same row is a human race we accept here.
-    // A failed read must not be mistaken for an empty object: writing {} back
-    // would erase every other provenance stamp on the row, user ones included.
-    const { data: current, error: readError } = await supabase
-      .from('exercises').select('enrichment').eq('id', exerciseId).maybeSingle();
-    if (readError) {
-      console.error('Database read error:', readError);
-      return json({ success: false, error: 'Database read error', imageUrl: publicUrl, exerciseId });
-    }
-    const enrichment = (current?.enrichment ?? {}) as Record<string, unknown>;
-    const { error: updateError } = await supabase.from('exercises').update({
-      image_url: publicUrl,
-      enrichment: { ...enrichment, image_url: { by: 'model', at: new Date().toISOString() } },
-    }).eq('id', exerciseId);
+    // One conditional statement in the database, never a read-modify-write
+    // of the provenance object from here: the stamp is merged server-side.
+    const { error: updateError } = await supabase.rpc('enrich_fill', {
+      p_id: String(exerciseId), p_field: 'image_url', p_value: publicUrl, p_by: 'model', p_force: true,
+    });
     if (updateError) {
       console.error('Database update error:', updateError);
       return json({ success: false, error: 'Database update error', imageUrl: publicUrl, exerciseId });
