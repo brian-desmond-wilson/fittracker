@@ -6,11 +6,8 @@ import type { CatalogEntry } from "../types/capture";
 import type { ExerciseFilters } from "../types/exerciseFilters";
 import { EMPTY_EXERCISE_FILTERS, PICTURE_LABELS } from "../types/exerciseFilters";
 import type { FilterChip } from "./filterChips";
-import { MUSCLE_GROUPS } from "./dailyCoverage";
-import { EQUIPMENT_GRID, equipmentLabel } from "./workoutEquipment";
-
-/** Not equipment: what the movement is done on. Same list workoutEquipment keeps. */
-const SUPPORT_SURFACES = new Set(["Floor", "Wall"]);
+import { muscleChips } from "./filterChips";
+import { SUPPORT_SURFACES, byGridOrder, equipmentLabel } from "./workoutEquipment";
 
 const hasPicture = (e: CatalogEntry): boolean => !!e.imageUrl && e.imageUrl.trim() !== "";
 
@@ -70,14 +67,7 @@ export function activeExerciseFilterChips(f: ExerciseFilters): ExerciseFilterChi
   const chips: ExerciseFilterChip[] = [];
   for (const c of f.creators) chips.push({ axis: "creators", label: c, values: [c] });
 
-  const remaining = new Set(f.muscles);
-  for (const g of MUSCLE_GROUPS) {
-    if (g.muscles.length > 1 && g.muscles.every((m) => remaining.has(m))) {
-      chips.push({ axis: "muscles", label: `${g.title} group`, values: [...g.muscles] });
-      for (const m of g.muscles) remaining.delete(m);
-    }
-  }
-  for (const m of f.muscles) if (remaining.has(m)) chips.push({ axis: "muscles", label: m, values: [m] });
+  chips.push(...muscleChips("muscles", f.muscles));
 
   for (const e of f.equipment) chips.push({ axis: "equipment", label: equipmentLabel(e), values: [e] });
   for (const g of f.goalTypes) chips.push({ axis: "goalTypes", label: g, values: [g] });
@@ -88,9 +78,14 @@ export function activeExerciseFilterChips(f: ExerciseFilters): ExerciseFilterChi
 
 /** The filters with one chip's values taken away. */
 export function removeExerciseChip(f: ExerciseFilters, chip: ExerciseFilterChip): ExerciseFilters {
-  if (chip.axis === "picture") return { ...f, picture: "any" };
-  const list = f[chip.axis] as string[];
-  return { ...f, [chip.axis]: list.filter((v) => !chip.values.includes(v)) };
+  switch (chip.axis) {
+    case "picture": return { ...f, picture: "any" };
+    case "creators": return { ...f, creators: f.creators.filter((v) => !chip.values.includes(v)) };
+    case "muscles": return { ...f, muscles: f.muscles.filter((v) => !chip.values.includes(v)) };
+    case "equipment": return { ...f, equipment: f.equipment.filter((v) => !chip.values.includes(v)) };
+    case "goalTypes": return { ...f, goalTypes: f.goalTypes.filter((v) => !chip.values.includes(v)) };
+    case "skills": return { ...f, skills: f.skills.filter((v) => !chip.values.includes(v)) };
+  }
 }
 
 /** The filters with one whole axis switched off. Fresh arrays, not the
@@ -146,22 +141,13 @@ export function exerciseCreatorCounts(entries: CatalogEntry[]): { handle: string
     .sort((a, b) => b.count - a.count || a.handle.localeCompare(b.handle));
 }
 
-const GRID_INDEX = new Map(EQUIPMENT_GRID.map((e, i) => [e.name, i]));
-
 /** Tiles for the equipment grid: every name the catalog carries, the fixed
  *  grid's order first and then A–Z, surfaces never offered. */
 export function catalogEquipmentNames(entries: CatalogEntry[]): { name: string; label: string }[] {
   const names = new Set<string>();
   for (const e of entries) for (const n of e.equipmentTypes) if (!SUPPORT_SURFACES.has(n)) names.add(n);
   return [...names]
-    .sort((a, b) => {
-      const ia = GRID_INDEX.get(a);
-      const ib = GRID_INDEX.get(b);
-      if (ia !== undefined && ib !== undefined) return ia - ib;
-      if (ia !== undefined) return -1;
-      if (ib !== undefined) return 1;
-      return a.localeCompare(b);
-    })
+    .sort(byGridOrder)
     .map((name) => ({ name, label: equipmentLabel(name) }));
 }
 

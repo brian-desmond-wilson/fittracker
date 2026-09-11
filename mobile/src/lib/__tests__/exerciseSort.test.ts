@@ -35,4 +35,15 @@ describe("sortExercises", () => {
     sortExercises(input, "captured_desc");
     expect(ids(input)).toEqual(["b", "a"]);
   });
+
+  it("orders by the newest of several sources, whatever their order", () => {
+    const multi: CatalogEntry = {
+      ...e("m", "Multi", "2026-08-01T00:00:00Z"),
+      sources: [
+        { sourceId: "s-old", platform: "instagram", sourceUrl: "https://x", posterHandle: null, thumbnailUrl: null, capturedAt: "2026-08-01T00:00:00Z" },
+        { sourceId: "s-new", platform: "instagram", sourceUrl: "https://y", posterHandle: null, thumbnailUrl: null, capturedAt: "2026-09-04T00:00:00Z" },
+      ],
+    };
+    expect(ids(sortExercises([a, multi, b], "captured_desc"))).toEqual(["m", "a", "b"]);
+  });
 });

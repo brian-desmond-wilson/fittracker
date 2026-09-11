@@ -8,9 +8,9 @@ import { EMPTY_FILTERS, LENGTH_BANDS, INTENSITY_LABELS, HISTORY_LABELS } from ".
 import type { CompletionMap } from "./workoutCompletion";
 import { filterWorkouts } from "./workoutFilter";
 import { BLOCK_TITLES } from "./dailyBlockCompose";
-import { MUSCLE_GROUPS } from "./dailyCoverage";
 import { equipmentLabel } from "./workoutEquipment";
 import { FORMAT_LABELS, SCORE_LABELS } from "./workoutFormatVocab";
+import { muscleChips } from "./filterChips";
 import type { FilterChip as GenericFilterChip } from "./filterChips";
 
 const BODYWEIGHT = "Bodyweight";
@@ -104,15 +104,7 @@ export function activeFilterChips(f: WorkoutFilters): FilterChip[] {
   const chips: FilterChip[] = [];
   for (const c of f.creators) chips.push({ axis: "creators", label: c, values: [c] });
 
-  const remaining = new Set(f.muscles);
-  for (const g of MUSCLE_GROUPS) {
-    // A one-region group (Whole body) is just its region; no collapse.
-    if (g.muscles.length > 1 && g.muscles.every((m) => remaining.has(m))) {
-      chips.push({ axis: "muscles", label: `${g.title} group`, values: [...g.muscles] });
-      for (const m of g.muscles) remaining.delete(m);
-    }
-  }
-  for (const m of f.muscles) if (remaining.has(m)) chips.push({ axis: "muscles", label: m, values: [m] });
+  chips.push(...muscleChips("muscles", f.muscles));
 
   for (const e of f.equipment) chips.push({ axis: "equipment", label: equipmentLabel(e), values: [e] });
   for (const r of f.blockRoles) chips.push({ axis: "blockRoles", label: BLOCK_TITLES[r], values: [r] });

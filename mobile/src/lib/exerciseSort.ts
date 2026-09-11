@@ -4,14 +4,16 @@ import type { ExerciseSort } from "../types/exerciseFilters";
 
 type Cmp = (a: CatalogEntry, b: CatalogEntry) => number;
 
-/** fetchCatalog puts the newest source first, so sources[0] is the capture
- *  the tab orders by. Compared as instants: Postgres may write "+00:00" or
- *  "Z" for the same moment. Unparseable → null → last either way. */
+/** The exercise's newest capture, as an instant: Postgres may write "+00:00"
+ *  or "Z" for the same moment, so stamps are parsed, not compared as text.
+ *  No parseable stamp → null → last in either direction. */
 const capturedMs = (e: CatalogEntry): number | null => {
-  const stamp = e.sources[0]?.capturedAt;
-  if (!stamp) return null;
-  const ms = Date.parse(stamp);
-  return Number.isNaN(ms) ? null : ms;
+  let best: number | null = null;
+  for (const s of e.sources) {
+    const ms = Date.parse(s.capturedAt);
+    if (!Number.isNaN(ms) && (best === null || ms > best)) best = ms;
+  }
+  return best;
 };
 
 const byCaptured = (dir: 1 | -1): Cmp => (a, b) => {

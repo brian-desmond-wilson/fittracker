@@ -1,4 +1,4 @@
-import { toggleIn } from "../filterChips";
+import { toggleIn, muscleChips } from "../filterChips";
 
 describe("toggleIn", () => {
   it("adds a value that is absent, at the end", () => {
@@ -12,5 +12,19 @@ describe("toggleIn", () => {
     toggleIn(list, "b");
     toggleIn(list, "a");
     expect(list).toEqual(["a"]);
+  });
+});
+
+describe("muscleChips", () => {
+  it("collapses a full group and leaves the rest as single chips", () => {
+    const chips = muscleChips("m", ["Core", "Obliques", "Lower Back", "Chest"]);
+    expect(chips.map((c) => c.label)).toEqual(["Core group", "Chest"]);
+    expect(chips[0]).toEqual({ axis: "m", label: "Core group", values: ["Core", "Obliques", "Lower Back"] });
+  });
+  it("never collapses a one-region group", () => {
+    expect(muscleChips("m", ["Full Body"]).map((c) => c.label)).toEqual(["Full Body"]);
+  });
+  it("is empty for no selection", () => {
+    expect(muscleChips("m", [])).toEqual([]);
   });
 });

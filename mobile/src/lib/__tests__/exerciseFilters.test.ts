@@ -65,9 +65,10 @@ describe("applyExerciseFilters", () => {
   it("picture: has / missing on set, null and empty URLs", () => {
     const blank = ex({ id: "blank", imageUrl: null });
     const empty = ex({ id: "empty", imageUrl: "" });
-    const all = [ex(), blank, empty];
+    const blankish = ex({ id: "blankish", imageUrl: "   " });
+    const all = [ex(), blank, empty, blankish];
     expect(ids(applyExerciseFilters(all, f({ picture: "has" })))).toEqual(["e-1"]);
-    expect(ids(applyExerciseFilters(all, f({ picture: "missing" })))).toEqual(["blank", "empty"]);
+    expect(ids(applyExerciseFilters(all, f({ picture: "missing" })))).toEqual(["blank", "empty", "blankish"]);
   });
 
   it("OR within an axis, AND across axes", () => {
@@ -75,6 +76,13 @@ describe("applyExerciseFilters", () => {
     const b = ex({ id: "b", equipmentTypes: ["Dumbbell"], goalTypes: ["Mobility"] });
     expect(ids(applyExerciseFilters([a, b], f({ equipment: ["Kettlebell", "Dumbbell"] })))).toEqual(["a", "b"]);
     expect(ids(applyExerciseFilters([a, b], f({ equipment: ["Kettlebell", "Dumbbell"], goalTypes: ["Mobility"] })))).toEqual(["b"]);
+  });
+
+  it("creator: a null handle or no sources never matches, and never throws", () => {
+    const anon = ex({ id: "anon", sources: [{ ...source("@x"), posterHandle: null }] });
+    const none = ex({ id: "none", sources: [] });
+    expect(applyExerciseFilters([anon, none], f({ creators: ["@x"] }))).toEqual([]);
+    expect(applyExerciseFilters([anon, none], EMPTY_EXERCISE_FILTERS)).toHaveLength(2);
   });
 });
 
@@ -86,6 +94,12 @@ describe("applyExerciseFiltersAndSearch", () => {
     expect(ids(applyExerciseFiltersAndSearch([a, b], EMPTY_EXERCISE_FILTERS, "KB_GUY"))).toEqual(["a"]);
     expect(ids(applyExerciseFiltersAndSearch([a, b], f({ goalTypes: ["Mobility"] }), "swing"))).toEqual([]);
     expect(ids(applyExerciseFiltersAndSearch([a, b], EMPTY_EXERCISE_FILTERS, "  "))).toEqual(["a", "b"]);
+  });
+
+  it("search ignores null handles and still matches the name", () => {
+    const anon = ex({ id: "anon", name: "Pistol Squat", sources: [{ ...source("@x"), posterHandle: null }] });
+    expect(ids(applyExerciseFiltersAndSearch([anon], EMPTY_EXERCISE_FILTERS, "pistol"))).toEqual(["anon"]);
+    expect(ids(applyExerciseFiltersAndSearch([anon], EMPTY_EXERCISE_FILTERS, "@x"))).toEqual([]);
   });
 });
 

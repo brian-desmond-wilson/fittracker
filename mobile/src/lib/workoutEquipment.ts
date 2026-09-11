@@ -8,7 +8,7 @@
 import type { CapturedWorkoutItemEntry } from "../types/capture";
 
 /** Surfaces that never count as equipment. */
-const SUPPORT_SURFACES = new Set(["Floor", "Wall"]);
+export const SUPPORT_SURFACES = new Set(["Floor", "Wall"]);
 const BODYWEIGHT = "Bodyweight";
 
 export interface DerivedEquipment {
@@ -48,7 +48,7 @@ export function equipmentLabel(name: string): string {
 }
 
 /** Grid order first, then anything the grid does not know, alphabetically. */
-function byGridOrder(a: string, b: string): number {
+export function byGridOrder(a: string, b: string): number {
   const ia = GRID_INDEX.get(a);
   const ib = GRID_INDEX.get(b);
   if (ia !== undefined && ib !== undefined) return ia - ib;
