@@ -109,7 +109,7 @@ export async function storeImage(
 export async function generateAndStoreImage(
   supabase: SupabaseClient, exerciseId: string, opts: { geminiApiKey: string; discipline: string | null },
 ): Promise<string> {
-  const { data, error } = await supabase.from('exercises').select(IMAGE_ROW_SELECT).eq('id', exerciseId).single();
+  const { data, error } = await supabase.from('exercises').select(IMAGE_ROW_SELECT).eq('id', exerciseId).maybeSingle();
   if (error) throw new Error(`exercise read failed: ${error.message}`);
   if (!data) throw new Error('Exercise not found');
   const row = data as unknown as ImageRow;
