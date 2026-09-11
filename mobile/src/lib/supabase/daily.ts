@@ -418,14 +418,38 @@ export async function fetchCandidateData(userId: string): Promise<CandidateData>
 
 // ---------- Generated sessions ----------
 
+/** Today's session, or null when there is none. A query error is logged and
+ *  also reads as null — callers that must tell "none" from "could not read"
+ *  use fetchTodaySessionStrict. */
 export async function fetchTodaySession(
   userId: string,
   date: string,
 ): Promise<StoredSession | null> {
+  const { data: rows, error } = await queryDaySessions(userId, date);
+  if (error || !rows) {
+    if (error) console.error("fetchTodaySession failed:", error);
+    return null;
+  }
+  return mapDaySession(rows);
+}
+
+/** Same read as fetchTodaySession, but a query error throws instead of
+ *  reading as "no session". For writers whose "nothing there" branch creates
+ *  a session: a failed read must not be mistaken for an empty day. */
+export async function fetchTodaySessionStrict(
+  userId: string,
+  date: string,
+): Promise<StoredSession | null> {
+  const { data: rows, error } = await queryDaySessions(userId, date);
+  if (error) throw error;
+  return mapDaySession(rows ?? []);
+}
+
+function queryDaySessions(userId: string, date: string) {
   // A date can hold more than one session since catalog workouts became
   // startable: the replaced suggestion stays as a skipped row beside the one
   // you chose, and a second workout after a finished one is a second row.
-  const { data: rows, error } = await supabase
+  return supabase
     .from("generated_sessions")
     .select(`
       id, session_date, split_day, ramp_week, source, served_captured_workout_id,
@@ -443,10 +467,9 @@ export async function fetchTodaySession(
     `)
     .eq("user_id", userId)
     .eq("session_date", date);
-  if (error || !rows) {
-    if (error) console.error("fetchTodaySession failed:", error);
-    return null;
-  }
+}
+
+function mapDaySession(rows: any[]): StoredSession | null {
   const data = pickDaySession(
     rows.map((r: any) => ({ ...r, createdAt: r.created_at ?? "" })),
   );

@@ -6,15 +6,19 @@ import { supabase } from "../supabase";
 import { rampWeek } from "../dailySplit";
 import { planAddToToday, ADD_TO_TODAY_ITEM_REASON } from "../addToTodayPlan";
 import type { AddToTodayPlan, TodayState } from "../addToTodayPlan";
-import { fetchTodaySession, fetchTodayCheckin, unrestToday } from "./daily";
+import { fetchTodaySessionStrict, fetchTodayCheckin, unrestToday } from "./daily";
 
-/** Today's state as the plan wants it. Read immediately before writing (spec §7). */
+/** Today's state as the plan wants it. Read immediately before writing (spec §7).
+ *  The strict read throws on a query failure rather than reporting "none":
+ *  the button's initial read catches and falls open to the plain label, and
+ *  the tap-time re-read lands in executeAddToToday's catch, so a day that
+ *  could not be read is never written to. */
 export async function readTodayState(
   userId: string,
   exerciseId: string,
   date: string,
 ): Promise<TodayState> {
-  const session = await fetchTodaySession(userId, date);
+  const session = await fetchTodaySessionStrict(userId, date);
   if (!session) return { kind: "none", containsExercise: false };
   const containsExercise = session.items.some((i) => i.exerciseId === exerciseId);
   if (session.status === "rested") return { kind: "rested", sessionId: session.id, containsExercise: false };
@@ -111,8 +115,10 @@ export interface AddToTodayInput {
   plan: AddToTodayPlan;
 }
 
-/** Re-reads today, re-plans, and refuses if the branch changed under the
- *  user (except confirmUnrest → create, which is that branch's own path). */
+/** Re-reads today and re-plans; the fresh state must plan the same action
+ *  the user confirmed, or the write is refused. A confirmed un-rest still
+ *  reads as rested (nothing has been written yet), so it plans confirmUnrest
+ *  again and passes. */
 export async function executeAddToToday(input: AddToTodayInput): Promise<AddToTodayResult> {
   try {
     const fresh = await readTodayState(input.userId, input.exerciseId, input.date);
@@ -132,6 +138,9 @@ export async function executeAddToToday(input: AddToTodayInput): Promise<AddToTo
         return { ok: true, sessionId: id };
       }
       case "confirmUnrest": {
+        // unrestToday also drops tomorrow's untouched draft, which captured-
+        // workout adoption's own un-rest keeps; accepted — the morning
+        // recompose rebuilds it.
         const cleared = await unrestToday(input.userId, input.date);
         if (!cleared) throw new Error("unrest failed");
         const id = await createUserPickSession(input.userId, input.exerciseId, input.date);
