@@ -1,7 +1,7 @@
 # Exercise Detail Page v2 — Design Spec
 
 **Date:** 2026-09-11
-**Status:** Approved design, not yet planned
+**Status:** Approved design 2026-09-11; implementation plan at docs/superpowers/plans/2026-09-11-exercise-detail-page-v2.md (not yet executed)
 **Surface:** Training › Daily mode › Exercises tab › exercise page (`mobile/src/components/training/item-detail/TrainingItemDetailScreen.tsx`, route `mobile/app/(tabs)/training/exercise/[id].tsx`)
 **Visual reference:** Approved mockup (https://claude.ai/code/artifact/8571ffb9-8a99-4d35-8e77-542b6005d956), frames 1 "Page v2", 2 "History block", 3 "Captured From". The mock is the decision record; deviations are proposed in chat, never shipped.
 **Companion spec:** `docs/superpowers/specs/2026-09-11-catalog-enrichment-pipeline-design.md` fills the description, demo video and image this page renders. This spec assumes every row eventually has all three and only renders them.

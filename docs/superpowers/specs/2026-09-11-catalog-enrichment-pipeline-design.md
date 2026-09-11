@@ -1,7 +1,7 @@
 # Catalog Enrichment Pipeline — Design Spec
 
 **Date:** 2026-09-11
-**Status:** Approved design, not yet planned
+**Status:** Approved design 2026-09-11; implementation plan at docs/superpowers/plans/2026-09-11-catalog-enrichment-pipeline.md (not yet executed)
 **Surface:** Exercise creation (match review → `mobile/src/components/training/crossfit/CatalogItemWizard.tsx` → `createCatalogExercise` in `mobile/src/lib/supabase/frontDoor.ts`), a new edge function `supabase/functions/enrich-exercise`, and the exercise page's overflow menu and Demo Video section.
 **Companion spec:** `docs/superpowers/specs/2026-09-11-exercise-detail-page-v2-design.md` renders what this pipeline fills.
 
