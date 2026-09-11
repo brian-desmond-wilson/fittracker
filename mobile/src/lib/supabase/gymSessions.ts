@@ -170,29 +170,38 @@ export function toSession(row: any, sessionCount: number): HistorySession {
 }
 
 /**
- * Sessions newest first.
+ * Every session, newest first.
  *
- * `limit` bounds the window rather than paginating: the split-session count is
- * derived from what came back, so a workout whose other half falls outside the
- * window would under-report. At a few hundred sessions that never bites; if it
- * ever does, the count belongs in a view.
+ * Paginated rather than windowed: the split-session count is derived from what
+ * came back, so a partial window would under-report a workout whose other half
+ * fell outside it, and "See all N" on the exercise page would promise more rows
+ * than the list could show. Pages of PAGE_SIZE are fetched until one comes back
+ * short. `id` is the final sort key so the ordering is stable across pages and
+ * a boundary row is never dropped or repeated.
  */
+const PAGE_SIZE = 1000;
+
 export async function fetchGymSessions(
   userId: string,
-  limit = 200,
 ): Promise<HistorySession[]> {
-  const { data, error } = await supabase
-    .from("workout_sessions")
-    .select(SELECT)
-    .eq("user_id", userId)
-    .order("session_date", { ascending: false })
-    .order("session_number", { ascending: false })
-    .limit(limit);
-  if (error) {
-    console.error("fetchGymSessions failed:", error.message, error.details ?? "");
-    return [];
+  const rows: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("workout_sessions")
+      .select(SELECT)
+      .eq("user_id", userId)
+      .order("session_date", { ascending: false })
+      .order("session_number", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      console.error("fetchGymSessions failed:", error.message, error.details ?? "");
+      return [];
+    }
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
   }
-  const rows = data ?? [];
   const perInstance = new Map<string, number>();
   for (const row of rows) {
     const id = first<any>((row as any).workout_instance)?.id;
@@ -236,9 +245,9 @@ export async function fetchWeightSeries(
 /**
  * Every working set ever logged, flattened, for record computation.
  *
- * Deliberately separate from fetchGymSessions: that read is capped at 200
- * sessions for the history list, and an ALL-TIME record cannot be computed
- * from a window. This query carries only the six columns record math needs.
+ * Deliberately separate from fetchGymSessions: that read pulls the full nested
+ * session shape for the history list, while record math needs only these six
+ * columns across every set, so a leaner query keeps the all-time scan cheap.
  */
 export async function fetchSetFacts(userId: string): Promise<SetFact[]> {
   const { data, error } = await supabase
