@@ -45,7 +45,7 @@ export function MuscleGroupPicker({ selected, onChange, onBack, subline }: Muscl
           <Text style={styles.done}>Done</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.sub}>{subline ?? "Matches a workout’s primary muscles. Pick as many as you like."}</Text>
+      <Text style={styles.sub}>{subline ?? "Matches a workout's primary muscles. Pick as many as you like."}</Text>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
         {MUSCLE_GROUPS.map((g) => {
           const all = g.muscles.every(isOn);
