@@ -11,6 +11,7 @@ import { BLOCK_TITLES } from "./dailyBlockCompose";
 import { MUSCLE_GROUPS } from "./dailyCoverage";
 import { equipmentLabel } from "./workoutEquipment";
 import { FORMAT_LABELS, SCORE_LABELS } from "./workoutFormatVocab";
+import type { FilterChip as GenericFilterChip } from "./filterChips";
 
 const BODYWEIGHT = "Bodyweight";
 
@@ -93,13 +94,8 @@ export function countActiveFilters(f: WorkoutFilters): number {
 
 export type FilterAxis = keyof WorkoutFilters;
 
-/** One removable chip above the list. `values` are the raw values the chip
- *  stands for on its axis — several when a muscle group collapsed. */
-export interface FilterChip {
-  axis: FilterAxis;
-  label: string;
-  values: string[];
-}
+/** The Workouts tab's chip: the shared shape, named for its axes. */
+export type FilterChip = GenericFilterChip<FilterAxis>;
 
 /** Chips in sheet order: creator, muscle, equipment, type, format, score, intensity, length,
  *  skill, history. A fully selected muscle group becomes one "<Group> group"
