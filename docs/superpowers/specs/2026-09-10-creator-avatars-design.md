@@ -1,7 +1,7 @@
 # Creator Avatars — Design Spec
 
 **Date:** 2026-09-10
-**Status:** Approved in chat 2026-09-10; revised 2026-09-11 after Tasks 1–3 landed: Instagram walls the edge runtime, so the phone fetches Instagram profile pages (§5.4). Implementation in progress on branch `creator-avatars`.
+**Status:** Approved in chat 2026-09-10; revised 2026-09-11 after Tasks 1–3 landed: Instagram walls the edge runtime, so the phone fetches Instagram profile pages (§5.4). Implemented and walked on-simulator 2026-09-11 on branch `creator-avatars` (plan: docs/superpowers/plans/2026-09-10-creator-avatars.md); the phone-side login-wall guard (§5.4) was added after the final review.
 **Surfaces:** Creator picker inside the Workouts-tab filters sheet (`mobile/src/components/training/daily/CreatorPicker.tsx`) and the captured-workout detail screen's source line (`mobile/src/components/training/daily/CapturedWorkoutScreen.tsx`)
 **Backend:** `supabase/functions/capture-post/index.ts`, one new migration, one new storage bucket
 
