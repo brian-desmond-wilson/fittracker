@@ -20,11 +20,6 @@ export function FilterPillRow({ children }: { children: React.ReactNode }) {
   return <View style={styles.pills}>{children}</View>;
 }
 
-/** Add or remove one value in a list-valued axis. */
-export function toggleIn<T extends string>(list: T[], v: T): T[] {
-  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
-}
-
 const styles = StyleSheet.create({
   pills: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.screenGutter },
   pill: {

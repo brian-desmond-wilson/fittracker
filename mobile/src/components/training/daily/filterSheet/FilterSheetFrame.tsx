@@ -12,10 +12,10 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 interface FilterSheetFrameProps {
   visible: boolean;
   /** When set, this page renders instead of the root content. */
-  pushed: React.ReactNode | null;
+  pushed?: React.ReactElement | null;
   onClose: () => void;
-  /** Android back / swipe-down: pops the pushed page or closes the sheet. */
-  onRequestClose: () => void;
+  /** Pops the pushed page on hardware back / swipe-down. Required whenever a page can be pushed. */
+  onPop?: () => void;
   onReset: () => void;
   /** "Show 12 exercises" */
   ctaLabel: string;
@@ -24,12 +24,13 @@ interface FilterSheetFrameProps {
 }
 
 export function FilterSheetFrame({
-  visible, pushed, onClose, onRequestClose, onReset, ctaLabel, onCta, children,
+  visible, pushed, onClose, onPop, onReset, ctaLabel, onCta, children,
 }: FilterSheetFrameProps) {
   const insets = useSafeAreaInsets();
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onRequestClose}>
-      {pushed ?? (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet"
+      onRequestClose={() => (pushed ? onPop?.() : onClose())}>
+      {pushed ? pushed : (
         <View style={styles.page}>
           <View style={styles.header}>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

@@ -17,9 +17,10 @@ import { CreatorPicker } from "./CreatorPicker";
 import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
 import { FilterSheetFrame, FilterSection } from "./filterSheet/FilterSheetFrame";
 import { FilterRow } from "./filterSheet/FilterRow";
-import { FilterPill, FilterPillRow, toggleIn } from "./filterSheet/FilterPills";
+import { FilterPill, FilterPillRow } from "./filterSheet/FilterPills";
 import { FilterSegmented } from "./filterSheet/FilterSegmented";
 import { EquipmentGrid } from "./filterSheet/EquipmentGrid";
+import { toggleIn } from "@/src/lib/filterChips";
 
 interface WorkoutFiltersSheetProps {
   visible: boolean;
@@ -71,7 +72,7 @@ export function WorkoutFiltersSheet({
       visible={visible}
       pushed={pushed}
       onClose={onClose}
-      onRequestClose={() => (page === "root" ? onClose() : setPage("root"))}
+      onPop={() => setPage("root")}
       onReset={() => setDraft(EMPTY_FILTERS)}
       ctaLabel={`Show ${count} ${count === 1 ? "workout" : "workouts"}`}
       onCta={() => { onApply(draft); onClose(); }}

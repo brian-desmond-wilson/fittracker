@@ -7,3 +7,8 @@ export interface FilterChip<Axis extends string> {
    *  group collapsed into one chip. */
   values: string[];
 }
+
+/** Add or remove one value in a list-valued axis. */
+export function toggleIn<T extends string>(list: T[], v: T): T[] {
+  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
+}
