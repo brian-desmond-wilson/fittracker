@@ -140,8 +140,12 @@ export function TrainingItemDetailScreen({
   }, [userId, id]);
 
   useEffect(() => {
-    if (item && !item.is_core && item.parent_exercise_id) loadHierarchy();
-  }, [item]);
+    if (item && !item.is_core && item.parent_exercise_id) {
+      loadHierarchy();
+    } else {
+      setHierarchyData({ ancestors: [], siblings: [] });
+    }
+  }, [item?.id, item?.parent_exercise_id, item?.is_core]);
 
   const loadUser = async () => {
     try {
@@ -199,7 +203,9 @@ export function TrainingItemDetailScreen({
 
   const loadItem = async () => {
     try {
-      setLoading(true);
+      // Spinner only on the initial load; later refreshes (Enrich, wizard save)
+      // swap the data in place so the v2 blocks stay mounted and scroll holds.
+      if (item === null) setLoading(true);
       const { data, error } = await supabase
         .from('exercises')
         .select(`
@@ -234,7 +240,7 @@ export function TrainingItemDetailScreen({
       const ancestors = await fetchAncestors(item.parent_exercise_id);
       const { data: siblingsData, error: siblingsError } = await supabase
         .from('exercises')
-        .select('id, name, is_core, parent_exercise_id')
+        .select('id, name, is_core, parent_exercise_id, tier')
         .eq('parent_exercise_id', item.parent_exercise_id)
         .neq('id', id)
         .order('name');
@@ -652,7 +658,7 @@ export function TrainingItemDetailScreen({
                 {hierarchyRow('current', item.name, tierBadge(tier), null, true, false)}
                 {siblingView.shown.map((sibling) =>
                   hierarchyRow(
-                    sibling.id, sibling.name, tierBadge(tier),
+                    sibling.id, sibling.name, tierBadge(sibling.tier ?? 0),
                     () => router.push(`${routeBase}/${sibling.id}` as never), false, false,
                   ),
                 )}
@@ -689,7 +695,7 @@ export function TrainingItemDetailScreen({
           )}
         </ScrollView>
 
-        <UndoToast toast={toast} onDismissed={() => setToast(null)} icon={AlertCircle} bottom={insets.bottom + spacing.xl} />
+        <UndoToast toast={toast} onDismissed={() => setToast(null)} icon={AlertCircle} />
       </View>
 
       {/* Re-rate: the existing sheet, one movement, page-owned save (decision 4) */}
