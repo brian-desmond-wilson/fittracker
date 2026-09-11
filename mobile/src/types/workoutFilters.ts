@@ -1,11 +1,14 @@
 // mobile/src/types/workoutFilters.ts
 // The Workouts tab's filter and sort vocabulary.
 // Spec: docs/superpowers/specs/2026-09-10-workouts-tab-filters-design.md §5
-import type { BlockRole, WorkoutIntensity } from "./dailyBlocks";
+import type { BlockRole, WorkoutIntensity, WorkoutFormat, WorkoutScoreType } from "./dailyBlocks";
 
 export type LengthBand = "short" | "medium" | "long" | "xlong";
 export type SkillLevel = "Beginner" | "Intermediate" | "Advanced";
 export type HistoryFilter = "any" | "never" | "done";
+
+/** "untagged" matches workouts whose format the classifier has not set. */
+export type FormatFilter = WorkoutFormat | "untagged";
 
 /** Every axis. An empty list, null, or "any" means the axis is off. */
 export interface WorkoutFilters {
@@ -13,6 +16,8 @@ export interface WorkoutFilters {
   muscles: string[];
   equipment: string[];
   blockRoles: BlockRole[];
+  formats: FormatFilter[];
+  scores: WorkoutScoreType[];
   intensity: WorkoutIntensity | null;
   lengths: LengthBand[];
   skills: SkillLevel[];
@@ -26,6 +31,7 @@ export type WorkoutSort =
 
 export const EMPTY_FILTERS: WorkoutFilters = {
   creators: [], muscles: [], equipment: [], blockRoles: [],
+  formats: [], scores: [],
   intensity: null, lengths: [], skills: [], history: "any",
 };
 

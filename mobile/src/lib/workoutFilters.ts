@@ -10,6 +10,7 @@ import { filterWorkouts } from "./workoutFilter";
 import { BLOCK_TITLES } from "./dailyBlockCompose";
 import { MUSCLE_GROUPS } from "./dailyCoverage";
 import { equipmentLabel } from "./workoutEquipment";
+import { FORMAT_LABELS, SCORE_LABELS } from "./workoutFormatVocab";
 
 const BODYWEIGHT = "Bodyweight";
 
@@ -38,6 +39,14 @@ function passes(w: CapturedWorkoutEntry, f: WorkoutFilters, completions: Complet
   }
   if (f.blockRoles.length > 0) {
     if (!w.tags.blockRoles.some((r) => f.blockRoles.includes(r))) return false;
+  }
+  if (f.formats.length > 0) {
+    const wantsUntagged = f.formats.includes("untagged");
+    const hit = w.tags.format !== null && f.formats.includes(w.tags.format);
+    if (!hit && !(wantsUntagged && w.tags.format === null)) return false;
+  }
+  if (f.scores.length > 0) {
+    if (w.tags.scoreType === null || !f.scores.includes(w.tags.scoreType)) return false;
   }
   if (f.intensity !== null) {
     if (w.tags.intensity !== f.intensity) return false;
@@ -76,6 +85,7 @@ export function applyFiltersAndSearch(
 export function countActiveFilters(f: WorkoutFilters): number {
   return (
     f.creators.length + f.muscles.length + f.equipment.length + f.blockRoles.length +
+    f.formats.length + f.scores.length +
     f.lengths.length + f.skills.length +
     (f.intensity !== null ? 1 : 0) + (f.history !== "any" ? 1 : 0)
   );
@@ -91,7 +101,7 @@ export interface FilterChip {
   values: string[];
 }
 
-/** Chips in sheet order: creator, muscle, equipment, type, intensity, length,
+/** Chips in sheet order: creator, muscle, equipment, type, format, score, intensity, length,
  *  skill, history. A fully selected muscle group becomes one "<Group> group"
  *  chip (mockup A6). */
 export function activeFilterChips(f: WorkoutFilters): FilterChip[] {
@@ -110,6 +120,10 @@ export function activeFilterChips(f: WorkoutFilters): FilterChip[] {
 
   for (const e of f.equipment) chips.push({ axis: "equipment", label: equipmentLabel(e), values: [e] });
   for (const r of f.blockRoles) chips.push({ axis: "blockRoles", label: BLOCK_TITLES[r], values: [r] });
+  for (const v of f.formats) {
+    chips.push({ axis: "formats", label: v === "untagged" ? "Untagged" : FORMAT_LABELS[v], values: [v] });
+  }
+  for (const s of f.scores) chips.push({ axis: "scores", label: SCORE_LABELS[s], values: [s] });
   if (f.intensity !== null) chips.push({ axis: "intensity", label: INTENSITY_LABELS[f.intensity], values: [f.intensity] });
   for (const l of f.lengths) chips.push({ axis: "lengths", label: LENGTH_BANDS.find((b) => b.band === l)!.label, values: [l] });
   for (const s of f.skills) chips.push({ axis: "skills", label: s, values: [s] });
@@ -126,6 +140,8 @@ export function removeChip(f: WorkoutFilters, chip: FilterChip): WorkoutFilters 
     case "muscles": return { ...f, muscles: f.muscles.filter((v) => !chip.values.includes(v)) };
     case "equipment": return { ...f, equipment: f.equipment.filter((v) => !chip.values.includes(v)) };
     case "blockRoles": return { ...f, blockRoles: f.blockRoles.filter((v) => !chip.values.includes(v)) };
+    case "formats": return { ...f, formats: f.formats.filter((v) => !chip.values.includes(v)) };
+    case "scores": return { ...f, scores: f.scores.filter((v) => !chip.values.includes(v)) };
     case "lengths": return { ...f, lengths: f.lengths.filter((v) => !chip.values.includes(v)) };
     case "skills": return { ...f, skills: f.skills.filter((v) => !chip.values.includes(v)) };
   }
@@ -141,7 +157,7 @@ export function clearAxis(f: WorkoutFilters, axis: FilterAxis): WorkoutFilters {
 /** Sheet order, top to bottom. Ties in mostRestrictiveAxis go to the axis
  *  furthest DOWN this list. */
 const AXIS_ORDER: FilterAxis[] = [
-  "creators", "muscles", "equipment", "blockRoles", "intensity", "lengths", "skills", "history",
+  "creators", "muscles", "equipment", "blockRoles", "formats", "scores", "intensity", "lengths", "skills", "history",
 ];
 
 /** What the empty state's "Drop …" button names: every chip on the axis,

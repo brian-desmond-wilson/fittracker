@@ -19,7 +19,8 @@ const workout = ({ id, ...o }: Partial<CapturedWorkoutEntry> & { id?: string } =
   items: [],
   tags: {
     blockRoles: ["main"], muscles: [{ name: "Chest", isPrimary: true }, { name: "Triceps", isPrimary: false }],
-    estMinutes: 20, intensity: "moderate", skillLevel: "Intermediate", classifiedAt: "2026-09-01T00:00:00Z",
+    estMinutes: 20, intensity: "moderate", skillLevel: "Intermediate",
+    format: null, scoreType: null, formatMinutes: null, classifiedAt: "2026-09-01T00:00:00Z",
   },
   derivedEquipment: ["Kettlebell"],
   isBodyweight: false,
@@ -58,7 +59,7 @@ describe("applyWorkoutFilters", () => {
   });
 
   it("intensity, length, skill: unclassified never matches an active axis", () => {
-    const untagged = workout({ tags: { blockRoles: [], muscles: [], estMinutes: null, intensity: null, skillLevel: null, classifiedAt: null } });
+    const untagged = workout({ tags: { blockRoles: [], muscles: [], estMinutes: null, intensity: null, skillLevel: null, format: null, scoreType: null, formatMinutes: null, classifiedAt: null } });
     expect(applyWorkoutFilters([untagged], f({ intensity: "moderate" }), none)).toHaveLength(0);
     expect(applyWorkoutFilters([untagged], f({ lengths: ["short"] }), none)).toHaveLength(0);
     expect(applyWorkoutFilters([untagged], f({ skills: ["Beginner"] }), none)).toHaveLength(0);
@@ -89,12 +90,32 @@ describe("applyWorkoutFilters", () => {
     expect(applyWorkoutFilters(list, f({ equipment: ["Kettlebell", "Dumbbell"] }), none)).toHaveLength(2);
     expect(applyWorkoutFilters(list, f({ equipment: ["Kettlebell"], intensity: "high" }), none)).toHaveLength(0);
   });
+
+  it("format: selected formats, or Untagged for a null format", () => {
+    const amrapW = workout({ id: "a", tags: { ...workout().tags, format: "amrap" } });
+    const blankW = workout({ id: "b", tags: { ...workout().tags, format: null } });
+    expect(applyWorkoutFilters([amrapW, blankW], f({ formats: ["amrap"] }), none)).toEqual([amrapW]);
+    expect(applyWorkoutFilters([amrapW, blankW], f({ formats: ["untagged"] }), none)).toEqual([blankW]);
+    expect(applyWorkoutFilters([amrapW, blankW], f({ formats: ["amrap", "untagged"] }), none)).toHaveLength(2);
+    expect(applyWorkoutFilters([amrapW, blankW], f({ formats: ["emom"] }), none)).toHaveLength(0);
+  });
+
+  it("score: selected scores; null never matches", () => {
+    const loadW = workout({ id: "a", tags: { ...workout().tags, scoreType: "load" } });
+    const blankW = workout({ id: "b", tags: { ...workout().tags, scoreType: null } });
+    expect(applyWorkoutFilters([loadW, blankW], f({ scores: ["load"] }), none)).toEqual([loadW]);
+    expect(applyWorkoutFilters([loadW, blankW], f({ scores: ["time"] }), none)).toHaveLength(0);
+  });
 });
 
 describe("countActiveFilters", () => {
   it("counts one per selected value, one per active single-choice axis", () => {
     expect(countActiveFilters(EMPTY_FILTERS)).toBe(0);
     expect(countActiveFilters(f({ equipment: ["Kettlebell"], muscles: ["Chest", "Lats"], intensity: "low", history: "never" }))).toBe(5);
+  });
+
+  it("counts formats and scores", () => {
+    expect(countActiveFilters(f({ formats: ["amrap", "untagged"], scores: ["load"] }))).toBe(3);
   });
 });
 
@@ -117,6 +138,15 @@ describe("activeFilterChips / removeChip", () => {
     const filters = f({ intensity: "high", history: "never", creators: ["@onlinewod"], blockRoles: ["main"], lengths: ["short"], skills: ["Advanced"] });
     const chips = activeFilterChips(filters);
     expect(chips.map((c) => c.label)).toEqual(["@onlinewod", "Main workout", "High", "≤ 15 min", "Advanced", "Never done"]);
+    let out = filters;
+    for (const c of chips) out = removeChip(out, c);
+    expect(out).toEqual(EMPTY_FILTERS);
+  });
+
+  it("labels format and score chips with the vocabulary, Untagged included, and removes them", () => {
+    const filters = f({ formats: ["amrap", "untagged"], scores: ["calories"] });
+    const chips = activeFilterChips(filters);
+    expect(chips.map((c) => c.label)).toEqual(["AMRAP", "Untagged", "Calories"]);
     let out = filters;
     for (const c of chips) out = removeChip(out, c);
     expect(out).toEqual(EMPTY_FILTERS);
@@ -167,6 +197,12 @@ describe("mostRestrictiveAxis", () => {
     const list = [workout({ id: "a", name: "Zulu", tags: { ...workout().tags, blockRoles: ["cooldown"] } })];
     expect(mostRestrictiveAxis(list, f({ blockRoles: ["main"] }), none, "zzz")).toBeNull();
     expect(mostRestrictiveAxis(list, f({ blockRoles: ["main"] }), none, "zulu")?.count).toBe(1);
+  });
+
+  it("clears the format axis when that restores the most", () => {
+    const list = [workout({ id: "a", tags: { ...workout().tags, format: "emom" } })];
+    const filters = f({ formats: ["amrap"], equipment: ["Kettlebell"] });
+    expect(mostRestrictiveAxis(list, filters, none, "")).toEqual({ axis: "formats", label: "AMRAP", count: 1 });
   });
 });
 

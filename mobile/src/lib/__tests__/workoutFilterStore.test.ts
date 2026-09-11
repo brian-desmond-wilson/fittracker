@@ -52,4 +52,17 @@ describe("workoutFilterStore", () => {
     (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error("disk"));
     await expect(saveWorkoutPrefs("u1", { filters: EMPTY_FILTERS, sort: "name" })).resolves.toBeUndefined();
   });
+
+  it("loads prefs saved before formats existed, and drops unknown format/score values", async () => {
+    const stored = { ...EMPTY_FILTERS } as Record<string, unknown>;
+    delete stored.formats; delete stored.scores;
+    mockMemory.set(prefsKey("u1"), JSON.stringify({ filters: stored, sort: "name" }));
+    expect((await loadWorkoutPrefs("u1")).filters).toEqual(EMPTY_FILTERS);
+    mockMemory.set(prefsKey("u1"), JSON.stringify({
+      filters: { ...EMPTY_FILTERS, formats: ["amrap", "untagged", "tabata"], scores: ["load", "vibes"] }, sort: "name",
+    }));
+    const { filters } = await loadWorkoutPrefs("u1");
+    expect(filters.formats).toEqual(["amrap", "untagged"]);
+    expect(filters.scores).toEqual(["load"]);
+  });
 });

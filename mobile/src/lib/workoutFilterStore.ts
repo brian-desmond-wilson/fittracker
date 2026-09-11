@@ -8,6 +8,7 @@ import {
   EMPTY_FILTERS, DEFAULT_SORT, ALL_SORTS, FILTERABLE_ROLES, ALL_INTENSITIES,
   ALL_SKILLS, LENGTH_BANDS,
 } from "../types/workoutFilters";
+import { ALL_FORMATS, ALL_SCORES } from "./workoutFormatVocab";
 
 export interface WorkoutPrefs {
   filters: WorkoutFilters;
@@ -33,6 +34,8 @@ export function sanitizePrefs(raw: unknown): WorkoutPrefs {
     muscles: strings(f.muscles),
     equipment: strings(f.equipment),
     blockRoles: manyOf(f.blockRoles, FILTERABLE_ROLES),
+    formats: manyOf(f.formats, [...ALL_FORMATS, "untagged"] as const),
+    scores: manyOf(f.scores, ALL_SCORES),
     intensity: oneOf(f.intensity, ALL_INTENSITIES),
     lengths: manyOf(f.lengths, LENGTH_BANDS.map((b) => b.band)),
     skills: manyOf(f.skills, ALL_SKILLS),
