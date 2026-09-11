@@ -37,4 +37,7 @@ owns a generated picture (the hero on its detail page); the row ignored it.
 ## Testing
 
 Unit test on the "does this row want a picture" decision. Typecheck and the
-full jest suite pass. On-device check still to do.
+full jest suite pass. Device-checked 2026-09-10 on a fresh simulator: rows show
+their pictures with the empty square where none exists, and a wizard create
+fired the generator at once (Gemini returns nothing for a gibberish name; a
+real name produced a picture in about seven seconds).
