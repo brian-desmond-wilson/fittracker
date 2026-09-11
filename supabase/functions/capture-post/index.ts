@@ -159,8 +159,11 @@ async function rehostAvatar(
 ): Promise<string | null> {
   for (const imageUrl of candidates) {
     try {
-      const res = await fetch(imageUrl, { headers: { 'User-Agent': UA } });
+      const res = await fetch(imageUrl, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) });
       if (!res.ok) continue;
+      // The host check ran on the URL we were given; a redirect could have
+      // moved us. The CDNs do not open-redirect, but the re-check is free.
+      if (!isAllowedAvatarHost(platform, res.url)) continue;
       const contentType = res.headers.get('content-type') ?? 'image/jpeg';
       if (!contentType.startsWith('image/')) continue;
       const buffer = new Uint8Array(await res.arrayBuffer());
@@ -193,8 +196,10 @@ interface CreatorRow {
  *  throws, never blocks a capture on failure: a fetch that finds nothing
  *  still stamps avatar_fetched_at (so the next try waits a day) and keeps
  *  whatever avatar_url was there before (so a transient failure does not
- *  blank a working picture). A transport error returns null WITHOUT
- *  stamping, so the next capture simply retries.
+ *  blank a working picture). A transport error on the profile
+ *  read returns null WITHOUT stamping, so the next capture simply retries;
+ *  a failed candidate download is swallowed and the row is stamped, so
+ *  that case waits a day.
  *
  *  The server reads TikTok profiles itself. Instagram answers this
  *  runtime's address with a login wall, so Instagram candidates arrive in
@@ -218,7 +223,9 @@ async function ensureCreatorAvatar(
 
     const found: string[] = [];
     if (platform === 'tiktok') {
-      const res = await fetch(`https://www.tiktok.com/@${handle}`, { headers: { 'User-Agent': UA } });
+      const res = await fetch(`https://www.tiktok.com/@${handle}`, {
+        headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000),
+      });
       if (res.ok) {
         const u = parseTikTokAvatar(await res.text());
         if (u) found.push(u);
@@ -251,7 +258,7 @@ async function runRefreshCreator(body: Record<string, unknown>): Promise<Respons
   if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('platform must be instagram or tiktok');
   const rawHandle = String(body.handle ?? '');
   const supplied = (Array.isArray(body.candidates) ? body.candidates : [])
-    .filter((c): c is string => typeof c === 'string')
+    .filter((c): c is string => typeof c === 'string' && isAllowedAvatarHost(platform, c))
     .slice(0, 3);
   const row = await ensureCreatorAvatar(platform, rawHandle, supplied);
   return json({
