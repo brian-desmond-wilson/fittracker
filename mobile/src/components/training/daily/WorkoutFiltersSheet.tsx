@@ -12,14 +12,15 @@ import {
 import type { LucideIcon } from "lucide-react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { KettlebellIcon } from "@/src/components/ui/KettlebellIcon";
-import type { WorkoutFilters, LengthBand, SkillLevel, HistoryFilter } from "@/src/types/workoutFilters";
+import type { WorkoutFilters, LengthBand, SkillLevel, HistoryFilter, FormatFilter } from "@/src/types/workoutFilters";
 import {
   EMPTY_FILTERS, FILTERABLE_ROLES, ALL_INTENSITIES, ALL_SKILLS, LENGTH_BANDS,
   INTENSITY_LABELS, HISTORY_LABELS,
 } from "@/src/types/workoutFilters";
-import type { BlockRole, WorkoutIntensity } from "@/src/types/dailyBlocks";
+import type { BlockRole, WorkoutIntensity, WorkoutScoreType } from "@/src/types/dailyBlocks";
 import { BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
 import { EQUIPMENT_GRID } from "@/src/lib/workoutEquipment";
+import { ALL_FORMATS, FORMAT_LABELS, ALL_SCORES, SCORE_LABELS } from "@/src/lib/workoutFormatVocab";
 import { MuscleGroupPicker } from "./MuscleGroupPicker";
 import { CreatorPicker } from "./CreatorPicker";
 
@@ -170,6 +171,28 @@ export function WorkoutFiltersSheet({
                   () => setDraft((d) => ({ ...d, blockRoles: toggleIn(d.blockRoles, r) }))))}
             </View>
 
+            <Text style={styles.section}>Format</Text>
+            <View style={styles.pills}>
+              {ALL_FORMATS.map((fm) =>
+                pill(FORMAT_LABELS[fm], draft.formats.includes(fm),
+                  () => setDraft((d) => ({ ...d, formats: toggleIn<FormatFilter>(d.formats, fm) }))))}
+              {/* Dashed: a state, not a value. It finds what the classifier
+                  skipped so the backfill can be reviewed by filtering. */}
+              <TouchableOpacity key="untagged"
+                style={[styles.pill, styles.pillDashed, draft.formats.includes("untagged") && styles.pillOn]}
+                onPress={() => setDraft((d) => ({ ...d, formats: toggleIn<FormatFilter>(d.formats, "untagged") }))}
+                accessibilityRole="button" accessibilityState={{ selected: draft.formats.includes("untagged") }}>
+                <Text style={[styles.pillText, draft.formats.includes("untagged") && styles.pillTextOn]}>Untagged</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.section}>Score</Text>
+            <View style={styles.pills}>
+              {ALL_SCORES.map((sc: WorkoutScoreType) =>
+                pill(SCORE_LABELS[sc], draft.scores.includes(sc),
+                  () => setDraft((d) => ({ ...d, scores: toggleIn(d.scores, sc) }))))}
+            </View>
+
             <Text style={styles.section}>Intensity</Text>
             {segmented<WorkoutIntensity | "any">(
               [{ value: "any", label: "Any" }, ...ALL_INTENSITIES.map((i) => ({ value: i, label: INTENSITY_LABELS[i] }))],
@@ -253,6 +276,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border,
   },
   pillOn: { backgroundColor: tint(colors.brand), borderColor: tint(colors.brand, 0.3) },
+  pillDashed: { borderStyle: "dashed", borderColor: colors.textFaint },
   pillText: { fontSize: 13, color: colors.textMuted },
   pillTextOn: { color: colors.brand, fontWeight: "600" },
   seg: {
