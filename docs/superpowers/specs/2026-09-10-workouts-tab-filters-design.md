@@ -1,7 +1,7 @@
 # Workouts Tab Filters & Sort — Design Spec
 
 **Date:** 2026-09-10
-**Status:** Implemented on branch `workouts-tab-filters` (plan: docs/superpowers/plans/2026-09-10-workouts-tab-filters.md); device walk pending
+**Status:** Implemented and device-verified 2026-09-10 on branch `workouts-tab-filters` (plan: docs/superpowers/plans/2026-09-10-workouts-tab-filters.md)
 **Surface:** Training › Daily mode › Workouts tab (`mobile/src/components/training/daily/WorkoutsTab.tsx`)
 **Visual reference:** Approved mockup artifact, Option A frames A1–A7 — https://claude.ai/code/artifact/e7af83a5-3d87-4ef7-9fba-7c0ca4dd5ac4. Where prose and mockup disagree, this spec wins.
 
