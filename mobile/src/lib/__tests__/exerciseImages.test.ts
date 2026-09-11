@@ -1,6 +1,10 @@
 import { needsGeneratedImage } from "../supabase/exerciseImages";
 
 jest.mock("../supabase", () => ({ supabase: {} }));
+jest.mock("@react-native-async-storage/async-storage", () => ({
+  __esModule: true,
+  default: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) },
+}));
 
 describe("needsGeneratedImage", () => {
   it("wants an image for a row that has none", () => {

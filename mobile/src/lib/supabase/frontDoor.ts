@@ -1,5 +1,7 @@
 import { supabase } from '../supabase';
 import type { SkillLevel } from '../../types/crossfit';
+import { provenanceAfterPatch, withoutProvenance } from '../exerciseEnrichment';
+import type { ExerciseEnrichment } from '../exerciseEnrichment';
 
 // ============================================================================
 // FRONT DOOR — the sole write path for the exercises catalog (Stage 5, Task 1)
@@ -207,6 +209,8 @@ export interface CatalogExerciseRow extends CatalogIdentityAttributes {
   requires_distance: boolean;
   video_url: string | null;
   image_url: string | null;
+  /** Provenance for description / video_url / image_url (lib/exerciseEnrichment). */
+  enrichment: ExerciseEnrichment;
 }
 
 const ROW_COLUMNS =
@@ -215,7 +219,7 @@ const ROW_COLUMNS =
   'is_official, created_by, movement_family_id, movement_category_id, ' +
   'skill_level, short_name, requires_weight, requires_distance, ' +
   'video_url, ' +
-  'image_url, load_position_id, stance_id, range_depth_id, symmetry_id, ' +
+  'image_url, enrichment, load_position_id, stance_id, range_depth_id, symmetry_id, ' +
   'grip_orientation_id, grip_width_id, direction_id, support_position_id, ' +
   'arm_position_id, bench_angle_id, variant_label_id';
 
@@ -673,6 +677,20 @@ export async function createCatalogExercise(
     // Engine-owned, never written here: generated_name, identity_fingerprint,
     // tier, parent_exercise_id.
   };
+  // Provenance (§5): whatever the person filled in at create time is theirs,
+  // so the pipeline never replaces it. A description prefilled from the
+  // capture extraction and accepted in the wizard counts as theirs too —
+  // they reviewed it. Empty fields get no key, so enrichment may fill them.
+  insertRow.enrichment = provenanceAfterPatch(
+    {},
+    { description: null, video_url: null, image_url: null },
+    {
+      description: insertRow.description as string | null,
+      video_url: insertRow.video_url as string | null,
+      image_url: insertRow.image_url as string | null,
+    },
+    new Date().toISOString(),
+  ) ?? {};
 
   // Insert with bounded slug regeneration: a 23505 on exercises_slug_key means
   // a race won the slug between probe and insert — re-probe (the winner now
@@ -1021,6 +1039,16 @@ export async function updateCatalogExercise(
   if (patch.description !== undefined) cols.description = patch.description;
   if (patch.video_url !== undefined) cols.video_url = patch.video_url;
   if (patch.image_url !== undefined) cols.image_url = patch.image_url;
+  // Provenance (§5): a person's non-empty value is by="user" forever; a
+  // blanked field drops its key so the pipeline may fill it again; an
+  // unchanged echo (the wizard round-trips all three) changes nothing.
+  const nextProvenance = provenanceAfterPatch(
+    current.enrichment ?? {},
+    { description: current.description, video_url: current.video_url, image_url: current.image_url },
+    patch,
+    new Date().toISOString(),
+  );
+  if (nextProvenance !== null) cols.enrichment = nextProvenance;
 
   if (patch.clear_custom_name) {
     if (!nextCore) {
@@ -1255,16 +1283,17 @@ export async function updateCatalogExercise(
   const callerChangedImage =
     patch.image_url !== undefined && patch.image_url !== current.image_url;
   if (current.image_url && !callerChangedImage && identityChanged) {
+    // The key goes with the picture: blank means the pipeline may fill it.
     const { error: imgErr } = await supabase
       .from('exercises')
-      .update({ image_url: null })
+      .update({ image_url: null, enrichment: withoutProvenance(finalRow.enrichment ?? {}, 'image_url') })
       .eq('id', id)
       .select('id')
       .maybeSingle();
     if (imgErr) {
       console.error('front door: could not clear stale image for', id, imgErr);
     } else {
-      finalRow = { ...finalRow, image_url: null };
+      finalRow = { ...finalRow, image_url: null, enrichment: withoutProvenance(finalRow.enrichment ?? {}, 'image_url') };
     }
   }
   return finalRow;

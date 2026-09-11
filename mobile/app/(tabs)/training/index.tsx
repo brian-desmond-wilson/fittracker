@@ -20,6 +20,7 @@ import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
 import { fetchAllExercises, fetchMovements, fetchWODs, fetchClasses } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts, fetchCatalog } from "@/src/lib/supabase/capture";
+import { maybeRunWeeklySweep } from "@/src/lib/supabase/enrich";
 
 type WorkoutMode = "crossfit" | "strength" | "daily";
 type CrossFitTab = "classes" | "wods" | "movements";
@@ -66,6 +67,12 @@ export default function Training() {
     setDailyTab("workouts"); // the Daily tab that hosts the capture flow
     router.setParams({ shareUrl: undefined });
   }, [shareUrl, router]);
+  // The catalog's periodic self-heal: once every seven days per device, from
+  // an admin's device only, twenty rows with images on. Fire-and-forget on
+  // the tab's first mount — the gate inside decides whether anything runs.
+  useEffect(() => {
+    maybeRunWeeklySweep().catch(console.error);
+  }, []);
   const [catalogCount, setCatalogCount] = useState(0);
   const [capturedWorkoutsCount, setCapturedWorkoutsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");

@@ -6,7 +6,6 @@ export default function MovementDetailPage() {
       noun="movement"
       nounPlural="movements"
       routeBase="/(tabs)/training/movement"
-      discipline="CrossFit"
     />
   );
 }
