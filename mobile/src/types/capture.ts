@@ -111,6 +111,9 @@ export interface CaptureSource {
 export interface CatalogEntry {
   exerciseId: string;
   name: string;
+  /** The exercise's own generated picture — the row thumbnail. Null shows
+   *  an empty square; the source post's thumbnail is NOT a fallback. */
+  imageUrl: string | null;
   skillLevel: CaptureSkillLevel | null;
   equipmentTypes: string[];
   /** [{ name, isPrimary }] from exercise_muscle_regions join. */

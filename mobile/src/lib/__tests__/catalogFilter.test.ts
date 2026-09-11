@@ -4,6 +4,7 @@ import type { CatalogEntry } from "../../types/capture";
 const entry = (overrides: Partial<CatalogEntry> = {}): CatalogEntry => ({
   exerciseId: "ex-1",
   name: "Kettlebell RDL",
+  imageUrl: null,
   skillLevel: "Intermediate",
   equipmentTypes: ["Kettlebell"],
   muscles: [

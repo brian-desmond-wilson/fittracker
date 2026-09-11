@@ -526,7 +526,7 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   const { data, error } = await supabase
     .from("exercises")
     .select(`
-      id, name, skill_level, core_default_equipment,
+      id, name, image_url, skill_level, core_default_equipment,
       equipment_rows:exercise_equipment(equipment(name)),
       muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
       goal_types:exercise_goal_types(goal_type:goal_types(name)),
@@ -545,6 +545,7 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
   const entries: CatalogEntry[] = (data ?? []).map((row: any) => ({
     exerciseId: row.id,
     name: row.name,
+    imageUrl: row.image_url ?? null,
     skillLevel: row.skill_level ?? null,
     equipmentTypes: equipmentNamesOf(row),
     muscles: (row.muscle_regions ?? []).map((m: any) => ({

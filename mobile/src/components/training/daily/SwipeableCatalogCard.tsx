@@ -7,7 +7,7 @@ import React, { useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { ChevronRight } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { deleteCatalogExercise } from "@/src/lib/supabase/capture";
 import { SwipeDeleteAction } from "@/src/components/ui/SwipeDeleteAction";
@@ -81,8 +81,13 @@ export function SwipeableCatalogCard({
         accessibilityRole="button"
         accessibilityLabel={`${entry.name}. Open the exercise.`}
       >
-        {entry.sources[0]?.thumbnailUrl && (
-          <Image source={{ uri: entry.sources[0].thumbnailUrl }} style={styles.thumb} />
+        {/* The exercise's own picture, never the post it came from — that
+            belongs to the workout card. No picture yet: an empty square holds
+            the slot so every row's text lines up. */}
+        {entry.imageUrl ? (
+          <Image source={{ uri: entry.imageUrl }} style={styles.thumb} />
+        ) : (
+          <View style={[styles.thumb, styles.thumbEmpty]} />
         )}
         <View style={styles.cardBody}>
           <Text style={styles.cardName}>{entry.name}</Text>
@@ -102,7 +107,7 @@ export function SwipeableCatalogCard({
           )}
         </View>
         <View style={styles.chevron}>
-          <ChevronRight size={18} color={colors.mutedForeground} />
+          <ChevronRight size={18} color={colors.textMuted} />
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -114,14 +119,15 @@ const styles = StyleSheet.create({
   // a stripe of red showing under the next card.
   swipeContainer: { marginBottom: 12 },
   card: {
-    flexDirection: "row", backgroundColor: colors.muted,
+    flexDirection: "row", backgroundColor: colors.surface2,
     borderRadius: CARD_RADIUS, borderWidth: 1, borderColor: colors.border,
     overflow: "hidden",
   },
   thumb: { width: 72, height: 72 },
+  thumbEmpty: { backgroundColor: colors.surface },
   cardBody: { flex: 1, padding: 12 },
-  cardName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
-  cardMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
+  cardName: { fontSize: 16, fontWeight: "600", color: colors.text },
+  cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   chevron: { alignSelf: "center", paddingRight: 12 },
-  sourceText: { fontSize: 13, color: colors.mutedForeground, marginTop: 6 },
+  sourceText: { fontSize: 13, color: colors.textMuted, marginTop: 6 },
 });
