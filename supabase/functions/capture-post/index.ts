@@ -24,13 +24,17 @@
 //       the daily recommender selects on. Same vocabulary rule as extract;
 //       the client re-validates against it (workoutTagValidate.ts).
 //
-//   refresh-creator { platform, handle }
+//   refresh-creator { platform, handle, candidates? }
 //       → { platform, handle, avatarUrl, avatarFetchedAt }
-//       Fetch the creator's profile page, rehost their avatar to the
-//       creator-avatars bucket and upsert public.creators — unless a row
-//       fresher than 30 days exists. resolve does the same for the poster
-//       it finds. The one caller allowed in with the service role (the
-//       backfill script) may only call this action.
+//       Rehost the creator's avatar to the creator-avatars bucket and
+//       upsert public.creators — unless a fresh row exists (30 days with
+//       an avatar, 1 day without). TikTok: this function reads the profile
+//       page itself. Instagram: it cannot (429 + login wall for this
+//       runtime's address), so the phone or the backfill script reads the
+//       page and passes the picture links as `candidates`, which are
+//       accepted only on Instagram's own image CDN hosts. resolve does the
+//       TikTok half for the poster it finds. The one caller allowed in with
+//       the service role (the backfill script) may only call this action.
 //
 // SUGGEST ONLY: no action here writes a row the user owns. The things this
 // function does own are the rehosted thumbnail (a file), and the shared
@@ -40,7 +44,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  instagramAvatarCandidates, isAvatarStale, normaliseHandle, parseTikTokAvatar,
+  isAllowedAvatarHost, isAvatarStale, normaliseHandle, parseTikTokAvatar,
 } from './creatorAvatar.ts';
 
 const corsHeaders = {
@@ -187,11 +191,17 @@ interface CreatorRow {
 
 /** Make sure public.creators has a fresh avatar for this creator. Never
  *  throws, never blocks a capture on failure: a fetch that finds nothing
- *  still stamps avatar_fetched_at (so a dead profile is not hammered on
- *  every capture) and keeps whatever avatar_url was there before (so a
- *  transient failure does not blank a working picture). */
+ *  still stamps avatar_fetched_at (so the next try waits a day) and keeps
+ *  whatever avatar_url was there before (so a transient failure does not
+ *  blank a working picture). A transport error returns null WITHOUT
+ *  stamping, so the next capture simply retries.
+ *
+ *  The server reads TikTok profiles itself. Instagram answers this
+ *  runtime's address with a login wall, so Instagram candidates arrive in
+ *  `supplied` from the phone or the backfill script, which fetch the page
+ *  from a home network; they are host-checked before anything is fetched. */
 async function ensureCreatorAvatar(
-  platform: AvatarPlatform, rawHandle: string,
+  platform: AvatarPlatform, rawHandle: string, supplied: string[],
 ): Promise<CreatorRow | null> {
   const handle = normaliseHandle(rawHandle);
   if (!handle) return null;
@@ -204,19 +214,20 @@ async function ensureCreatorAvatar(
       .eq('handle', handle)
       .maybeSingle();
     const row = (existing ?? null) as CreatorRow | null;
-    if (row && !isAvatarStale(row.avatar_fetched_at)) return row;
+    if (row && !isAvatarStale(row.avatar_fetched_at, row.avatar_url !== null)) return row;
 
-    let candidates: string[] = [];
-    const profileUrl = platform === 'instagram'
-      ? `https://www.instagram.com/${handle}/`
-      : `https://www.tiktok.com/@${handle}`;
-    const res = await fetch(profileUrl, { headers: { 'User-Agent': UA } });
-    if (res.ok) {
-      const html = await res.text();
-      candidates = platform === 'instagram'
-        ? instagramAvatarCandidates(html)
-        : (() => { const u = parseTikTokAvatar(html); return u ? [u] : []; })();
+    const found: string[] = [];
+    if (platform === 'tiktok') {
+      const res = await fetch(`https://www.tiktok.com/@${handle}`, { headers: { 'User-Agent': UA } });
+      if (res.ok) {
+        const u = parseTikTokAvatar(await res.text());
+        if (u) found.push(u);
+      }
     }
+    const candidates = [
+      ...found,
+      ...supplied.filter((u) => isAllowedAvatarHost(platform, u)).slice(0, 3),
+    ];
     const rehosted = candidates.length > 0 ? await rehostAvatar(candidates, platform, handle) : null;
 
     const next: CreatorRow = {
@@ -230,6 +241,23 @@ async function ensureCreatorAvatar(
   } catch {
     return null;
   }
+}
+
+/** The refresh-creator action, for a signed-in user and the backfill
+ *  script alike. Candidates are capped here as well as in the helper so a
+ *  long array never costs more than three downloads. */
+async function runRefreshCreator(body: Record<string, unknown>): Promise<Response> {
+  const platform = String(body.platform ?? '');
+  if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('platform must be instagram or tiktok');
+  const rawHandle = String(body.handle ?? '');
+  const supplied = (Array.isArray(body.candidates) ? body.candidates : [])
+    .filter((c): c is string => typeof c === 'string')
+    .slice(0, 3);
+  const row = await ensureCreatorAvatar(platform, rawHandle, supplied);
+  return json({
+    platform, handle: normaliseHandle(rawHandle),
+    avatarUrl: row?.avatar_url ?? null, avatarFetchedAt: row?.avatar_fetched_at ?? null,
+  });
 }
 
 async function resolveTikTok(url: string) {
@@ -288,13 +316,7 @@ serve(async (req) => {
     // let in for the one action that touches nothing a user owns; every
     // other action still needs a real user.
     if (token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') && body.action === 'refresh-creator') {
-      const platform = String(body.platform ?? '');
-      if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('platform must be instagram or tiktok');
-      const row = await ensureCreatorAvatar(platform, String(body.handle ?? ''));
-      return json({
-        platform, handle: normaliseHandle(String(body.handle ?? '')),
-        avatarUrl: row?.avatar_url ?? null, avatarFetchedAt: row?.avatar_fetched_at ?? null,
-      });
+      return await runRefreshCreator(body);
     }
 
     // Establish WHO is calling before any storage write — the thumb path is
@@ -318,11 +340,13 @@ serve(async (req) => {
           ? await resolveInstagram(url)
           : null;
 
-      // The poster's avatar, kept fresh as a side effect of capturing. Awaited
-      // rather than detached: the edge runtime may not finish work left
-      // running after the response goes out. Costs nothing when fresh.
-      if (meta?.posterHandle && (platform === 'instagram' || platform === 'tiktok')) {
-        await ensureCreatorAvatar(platform, meta.posterHandle);
+      // A TikTok poster's avatar, kept fresh as a side effect of capturing.
+      // Awaited rather than detached: the edge runtime may not finish work
+      // left running after the response goes out. Costs one row read when
+      // fresh. Instagram is left to the phone, which follows up after this
+      // response with refresh-creator and the candidates it can see.
+      if (platform === 'tiktok' && meta?.posterHandle) {
+        await ensureCreatorAvatar('tiktok', meta.posterHandle, []);
       }
 
       if (!meta || (!meta.captionText && !meta.posterHandle)) {
@@ -343,13 +367,7 @@ serve(async (req) => {
     }
 
     if (body.action === 'refresh-creator') {
-      const platform = String(body.platform ?? '');
-      if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('platform must be instagram or tiktok');
-      const row = await ensureCreatorAvatar(platform, String(body.handle ?? ''));
-      return json({
-        platform, handle: normaliseHandle(String(body.handle ?? '')),
-        avatarUrl: row?.avatar_url ?? null, avatarFetchedAt: row?.avatar_fetched_at ?? null,
-      });
+      return await runRefreshCreator(body);
     }
 
     // Just the one-line description, for a workout captured before the
