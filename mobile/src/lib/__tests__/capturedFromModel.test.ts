@@ -4,18 +4,22 @@ import {
 import type { CaptureSourceV2 } from "../../types/capture";
 
 const today = "2026-09-11";
+// Local-constructed instants, so the calendar-day labels hold in whatever
+// timezone Jest runs (a bare "T10:00:00Z" rolls to the next day at UTC+14).
+const at = (y: number, m: number, d: number, h = 10, min = 0): string =>
+  new Date(y, m - 1, d, h, min).toISOString();
 const src = (o: Partial<CaptureSourceV2> & { sourceId: string; capturedAt: string }): CaptureSourceV2 => ({
   platform: "instagram", sourceUrl: `https://www.instagram.com/p/${o.sourceId}/`,
   posterHandle: "@coach", thumbnailUrl: null, avatarUrl: null, workout: null, ...o,
 });
 
 const six: CaptureSourceV2[] = [
-  src({ sourceId: "a", capturedAt: "2026-08-19T10:00:00Z", posterHandle: "@coach", workout: { id: "w1", name: "Leg Day Burner" } }),
-  src({ sourceId: "b", capturedAt: "2026-09-06T10:00:00Z", posterHandle: "@coach" }),
-  src({ sourceId: "c", capturedAt: "2026-07-01T10:00:00Z", posterHandle: "@kb_guy", workout: { id: "w2", name: "KB Flow" } }),
-  src({ sourceId: "d", capturedAt: "2026-09-01T10:00:00Z", posterHandle: "@kb_guy" }),
-  src({ sourceId: "e", capturedAt: "2026-08-30T10:00:00Z", posterHandle: "@Coach" }),
-  src({ sourceId: "f", capturedAt: "2025-12-25T10:00:00Z", posterHandle: null, platform: "tiktok" }),
+  src({ sourceId: "a", capturedAt: at(2026, 8, 19), posterHandle: "@coach", workout: { id: "w1", name: "Leg Day Burner" } }),
+  src({ sourceId: "b", capturedAt: at(2026, 9, 6), posterHandle: "@coach" }),
+  src({ sourceId: "c", capturedAt: at(2026, 7, 1), posterHandle: "@kb_guy", workout: { id: "w2", name: "KB Flow" } }),
+  src({ sourceId: "d", capturedAt: at(2026, 9, 1), posterHandle: "@kb_guy" }),
+  src({ sourceId: "e", capturedAt: at(2026, 8, 30), posterHandle: "@Coach" }),
+  src({ sourceId: "f", capturedAt: at(2025, 12, 25), posterHandle: null, platform: "tiktok" }),
 ];
 
 describe("postCards", () => {
@@ -33,6 +37,14 @@ describe("postCards", () => {
     expect(b.subline).toBe("Captured 6 Sep");
     expect(b.dateLabel).toBe("6 Sep");
     expect(cards.find((c) => c.sourceId === "f")!.subline).toBe("Captured 25 Dec 2025");
+  });
+
+  it("dates a late-evening capture on its local day, not the UTC one", () => {
+    const late = [src({ sourceId: "late", capturedAt: at(2026, 9, 5, 23, 30) })];
+    const card = postCards(late, today)[0];
+    expect(card.dateLabel).toBe("5 Sep");
+    expect(card.subline).toBe("Captured 5 Sep");
+    expect(card.capturedAt).toBe(at(2026, 9, 5, 23, 30));
   });
 
   it("a missing handle shows the platform", () => {

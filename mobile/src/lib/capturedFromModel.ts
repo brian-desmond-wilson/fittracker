@@ -4,6 +4,7 @@
 import type { CapturePlatform, CaptureSourceV2 } from "../types/capture";
 import { collapseByPost } from "./captureUrl";
 import { normaliseHandle } from "./creatorHandle";
+import { getLocalDateString } from "./dates";
 import { formatShortDate } from "./exerciseHistory";
 
 export const EXERCISE_DEMO_LABEL = "Exercise demo";
@@ -37,7 +38,10 @@ const newestFirst = (a: { capturedAt: string }, b: { capturedAt: string }): numb
   a.capturedAt < b.capturedAt ? 1 : a.capturedAt > b.capturedAt ? -1 : 0;
 
 function toCard(s: CaptureSourceV2, today: string): PostCard {
-  const date = formatShortDate(s.capturedAt.slice(0, 10), today);
+  // `capturedAt` is a UTC instant; the label is its LOCAL calendar day, like
+  // the history block's `today`. Slicing the string would date an evening
+  // capture tomorrow. `capturedAt` itself stays raw for ordering.
+  const date = formatShortDate(getLocalDateString(new Date(s.capturedAt)), today);
   return {
     sourceId: s.sourceId,
     sourceUrl: s.sourceUrl,
