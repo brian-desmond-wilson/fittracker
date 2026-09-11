@@ -668,7 +668,7 @@ export default function TodayTab() {
                   soreness, so neither number describes it. */}
               {served && (
                 <Text style={styles.servedMeta}>
-                  {formatWorkoutHeadline(served.items.length, served.rounds)}
+                  {formatWorkoutHeadline(served.items.length, served.rounds, served.tags)}
                 </Text>
               )}
             </View>

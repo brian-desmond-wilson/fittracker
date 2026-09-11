@@ -122,7 +122,7 @@ export function SwipeableWorkoutCard({
         <View style={styles.cardBody}>
           <Text style={styles.cardName}>{workout.name}</Text>
           <Text style={styles.cardMeta}>
-            {formatWorkoutHeadline(workout.items.length, workout.rounds)}
+            {formatWorkoutHeadline(workout.items.length, workout.rounds, workout.tags)}
           </Text>
           {/* What you have actually done with it. Its own line rather than an
               extra segment on the meta above: a long name and a long date
