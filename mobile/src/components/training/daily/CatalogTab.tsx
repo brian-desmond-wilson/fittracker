@@ -1,7 +1,7 @@
 // mobile/src/components/training/daily/CatalogTab.tsx
 // The captured Exercises tab: the Workouts rail-and-sheet over the exercise
 // catalog. Spec: docs/superpowers/specs/2026-09-10-exercises-tab-filters-design.md
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from "react-native";
@@ -21,6 +21,8 @@ import {
 } from "@/src/lib/exerciseFilters";
 import { sortExercises } from "@/src/lib/exerciseSort";
 import { loadExercisePrefs, saveExercisePrefs } from "@/src/lib/exerciseFilterStore";
+import { mergeExerciseFilters } from "@/src/lib/exerciseFilterLink";
+import type { ExerciseFilterLink } from "@/src/lib/exerciseFilterLink";
 import {
   EMPTY_EXERCISE_FILTERS, DEFAULT_EXERCISE_SORT, EXERCISE_SORT_LABELS, EXERCISE_SORT_GROUPS,
 } from "@/src/types/exerciseFilters";
@@ -38,9 +40,16 @@ import type { CatalogEntry } from "@/src/types/capture";
 interface CatalogTabProps {
   searchQuery: string;
   onCountUpdate: (count: number) => void;
+  /** One value from an exercise-page chip, applied on top of the saved
+   *  filters once they have loaded — never before, so the load is not
+   *  clobbered (spec 2026-09-11 §4.4, §7). */
+  initialFilters?: ExerciseFilterLink | null;
+  onInitialFiltersConsumed?: () => void;
 }
 
-export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabProps) {
+export default function CatalogTab({
+  searchQuery, onCountUpdate, initialFilters = null, onInitialFiltersConsumed,
+}: CatalogTabProps) {
   const router = useRouter();
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [avatars, setAvatars] = useState<CreatorAvatarMap>({});
@@ -107,6 +116,19 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
     setSort(next);
     if (userId) saveExercisePrefs(userId, { filters, sort: next });
   }, [userId, filters]);
+
+  // The chip's value lands through the same "applied change saves" path the
+  // sheet uses, after prefs resolve. `latest` sidesteps a stale closure: the
+  // effect keys on the link, not on the filters it merges into.
+  const latest = useRef({ filters, sort });
+  latest.current = { filters, sort };
+  useEffect(() => {
+    if (!prefsReady || !userId || !initialFilters) return;
+    const next = mergeExerciseFilters(latest.current.filters, initialFilters);
+    setFilters(next);
+    saveExercisePrefs(userId, { filters: next, sort: latest.current.sort });
+    onInitialFiltersConsumed?.();
+  }, [prefsReady, userId, initialFilters, onInitialFiltersConsumed]);
 
   const filtered = useMemo(
     () => sortExercises(applyExerciseFiltersAndSearch(entries, filters, searchQuery), sort),

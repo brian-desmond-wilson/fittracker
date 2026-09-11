@@ -20,6 +20,8 @@ import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
 import { fetchAllExercises, fetchMovements, fetchWODs, fetchClasses } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts, fetchCatalog } from "@/src/lib/supabase/capture";
+import { parseExerciseFilterParam } from "@/src/lib/exerciseFilterLink";
+import type { ExerciseFilterLink } from "@/src/lib/exerciseFilterLink";
 import { maybeRunWeeklySweep } from "@/src/lib/supabase/enrich";
 
 type WorkoutMode = "crossfit" | "strength" | "daily";
@@ -58,7 +60,9 @@ export default function Training() {
   // Consumed into state and cleared from the route immediately, so
   // re-focusing the tab later doesn't replay the share.
   const router = useRouter();
-  const { shareUrl } = useLocalSearchParams<{ shareUrl?: string }>();
+  const { shareUrl, exerciseFilter, openTab } = useLocalSearchParams<{
+    shareUrl?: string; exerciseFilter?: string; openTab?: string;
+  }>();
   const [pendingShareUrl, setPendingShareUrl] = useState<string | null>(null);
   useEffect(() => {
     if (typeof shareUrl !== "string" || shareUrl === "") return;
@@ -73,6 +77,28 @@ export default function Training() {
   useEffect(() => {
     maybeRunWeeklySweep().catch(console.error);
   }, []);
+  // A chip on the exercise page: open the Exercises tab with that value on
+  // top of the saved filters (spec 2026-09-11 §4.4). Same consume-and-clear
+  // discipline as shareUrl. A value the model cannot represent parses to
+  // null and the tab opens with no extra filter (§8).
+  const [pendingExerciseFilter, setPendingExerciseFilter] = useState<ExerciseFilterLink | null>(null);
+  useEffect(() => {
+    if (typeof exerciseFilter !== "string" || exerciseFilter === "") return;
+    setPendingExerciseFilter(parseExerciseFilterParam(exerciseFilter));
+    setWorkoutMode("daily");
+    setDailyTab("exercises");
+    router.setParams({ exerciseFilter: undefined });
+  }, [exerciseFilter, router]);
+  // "Add to today" lands here: show Today, and remount it so it reloads the
+  // day it was just handed (the tab loads on mount, not on focus).
+  const [todayKey, setTodayKey] = useState(0);
+  useEffect(() => {
+    if (openTab !== "today") return;
+    setWorkoutMode("daily");
+    setDailyTab("today");
+    setTodayKey((k) => k + 1);
+    router.setParams({ openTab: undefined });
+  }, [openTab, router]);
   const [catalogCount, setCatalogCount] = useState(0);
   const [capturedWorkoutsCount, setCapturedWorkoutsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
@@ -197,7 +223,7 @@ export default function Training() {
     } else {
       switch (dailyTab) {
         case "today":
-          return <TodayTab />;
+          return <TodayTab key={todayKey} />;
         case "workouts":
           return (
             <DailyWorkoutsTab
@@ -207,7 +233,14 @@ export default function Training() {
             />
           );
         case "exercises":
-          return <CatalogTab searchQuery={searchQuery} onCountUpdate={setCatalogCount} />;
+          return (
+            <CatalogTab
+              searchQuery={searchQuery}
+              onCountUpdate={setCatalogCount}
+              initialFilters={pendingExerciseFilter}
+              onInitialFiltersConsumed={() => setPendingExerciseFilter(null)}
+            />
+          );
         default:
           return null;
       }

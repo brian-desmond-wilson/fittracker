@@ -34,6 +34,9 @@ import { SessionBudgetBar } from "./SessionBudgetBar";
 import { RestSheet } from "./RestSheet";
 import { TomorrowPreview } from "./TomorrowPreview";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
+import { UndoToast } from "@/src/components/ui/UndoToast";
+import type { UndoToastContent } from "@/src/components/ui/UndoToast";
+import { takeHandedOffToast } from "@/src/components/ui/pendingToast";
 import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
 import {
   completeSession, fetchDebrief, fetchLatestCheckin, fetchSessionRatings,
@@ -75,6 +78,10 @@ function gapNudge(builtinKey: string): string {
 export default function TodayTab() {
   const router = useRouter();
   const [refreshKey, setRefreshKey] = useState(0);
+  // "Added to today" from the exercise page: the leaving screen hands the
+  // message here, and this tab shows it once on mount (the index remounts
+  // the tab when it opens Today for that reason).
+  const [handedToast, setHandedToast] = useState<UndoToastContent | null>(() => takeHandedOffToast());
   const [gymSheetVisible, setGymSheetVisible] = useState(false);
   const [setupVisible, setSetupVisible] = useState(false);
   // The adjust sheet's target: a block, "day" for the whole session, or
@@ -985,6 +992,7 @@ export default function TodayTab() {
         movements={ratableMovements}
         onClose={() => setRatingVisible(false)}
         onSaved={() => { setRatingVisible(false); setHasRatings(true); }} />
+      <UndoToast toast={handedToast} onDismissed={() => setHandedToast(null)} icon={Check} />
     </View>
   );
 }
