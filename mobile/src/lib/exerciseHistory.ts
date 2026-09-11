@@ -3,8 +3,6 @@
 // Pure on purpose (decision 7): one scoped query feeds this, nothing here
 // touches the network. Warm-ups never reach this module — the reader drops
 // them.
-import { computeRecords, recordsBySession } from "./personalRecords";
-import type { SetFact } from "../types/records";
 
 export interface WorkingSet {
   sessionId: string;
@@ -166,51 +164,32 @@ export interface SessionRow {
   sessionDate: string;
   sessionName: string;
   topSet: WorkingSet;
-  /** That session's top set was a record at the time: a new heaviest weight
-   *  (personalRecords' weight kind over this exercise only), or, when nothing
-   *  in the history is weighted, a new most-reps. Volume and e1RM records do
-   *  not count — the badge sits on the top set, and those can be set without
-   *  beating it. */
+  /** That session's top set beat every earlier session's top set under the
+   *  best-set rule (heaviest weight, ties on reps), so it was the best set
+   *  ever at the time. Same rule as `bestSet` and `trendBars`, so the row
+   *  badge and the highlighted bar always agree; unweighted histories fall
+   *  out of it as most-reps. Volume and e1RM records do not count — the
+   *  badge sits on the top set, and those can be set without beating it. */
   isPr: boolean;
 }
 
-/** Sessions newest first. The caller decides how many to show. */
+/** Sessions newest first. The caller decides how many to show. A session is
+ *  a PR when its top set beat every earlier session's top set under the
+ *  best-set rule; the first session is a baseline, not a PR. */
 export function sessionRows(sets: WorkingSet[]): SessionRow[] {
   const tops = topSetPerSession(sets);
-  const prSessions = sets.some((s) => s.weightLbs > 0)
-    ? weightRecordSessions(sets)
-    : repsRecordSessions(tops);
+  const prSessions = new Set<string>();
+  let best: WorkingSet | null = null;
+  for (const t of tops) {
+    if (best !== null && compareSets(t.topSet, best) > 0) prSessions.add(t.sessionId);
+    if (best === null || compareSets(t.topSet, best) > 0) best = t.topSet;
+  }
   return tops
     .reverse()
     .map((t) => ({
       sessionId: t.sessionId, sessionDate: t.sessionDate, sessionName: t.sessionName,
       topSet: t.topSet, isPr: prSessions.has(t.sessionId),
     }));
-}
-
-/** Sessions whose heaviest set beat every earlier session's heaviest. */
-function weightRecordSessions(sets: WorkingSet[]): Set<string> {
-  // personalRecords keys on exercise; every set here is the same exercise.
-  const facts: SetFact[] = sets.map((s) => ({
-    exerciseId: "this", exerciseName: "this",
-    sessionId: s.sessionId, sessionNumber: s.sessionNumber, date: s.sessionDate,
-    weightLbs: s.weightLbs, reps: s.reps, volumeLbs: s.weightLbs * s.reps,
-  }));
-  const weightOnly = computeRecords(facts).filter((r) => r.kind === "weight");
-  return new Set(recordsBySession(weightOnly).keys());
-}
-
-/** Unweighted work has no weight to beat, so personalRecords stays silent.
- *  Same rule, on reps: a session is a record when its top set's reps strictly
- *  exceed every earlier session's. The first session is a baseline, not a PR. */
-function repsRecordSessions(tops: SessionTop[]): Set<string> {
-  const prs = new Set<string>();
-  let best: number | undefined;
-  for (const t of tops) {
-    if (best !== undefined && t.topSet.reps > best) prs.add(t.sessionId);
-    best = Math.max(best ?? 0, t.topSet.reps);
-  }
-  return prs;
 }
 
 /** "50 lb × 12", or "12 reps" for an unweighted set. */

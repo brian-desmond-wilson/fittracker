@@ -189,6 +189,17 @@ describe("sessionRows", () => {
     expect(rows.map((r) => `${r.sessionId}:${r.isPr}`)).toEqual(["b:false", "a:false"]);
   });
 
+  it("same weight for more reps is a PR: the best-set rule, not just heaviest weight", () => {
+    // 100×5 then 100×8: the bar for b is best-ever, so its row must carry the badge too.
+    const rows = sessionRows([ws("a", "2026-09-01", 100, 5), ws("b", "2026-09-02", 100, 8)]);
+    expect(rows.map((r) => `${r.sessionId}:${r.isPr}`)).toEqual(["b:true", "a:false"]);
+  });
+
+  it("same weight for fewer reps is not a PR", () => {
+    const rows = sessionRows([ws("a", "2026-09-01", 100, 8), ws("b", "2026-09-02", 100, 5)]);
+    expect(rows.map((r) => `${r.sessionId}:${r.isPr}`)).toEqual(["b:false", "a:false"]);
+  });
+
   it("an all-unweighted history earns a PR when the top set's reps beat every earlier session", () => {
     const rows = sessionRows([
       ws("s1", "2026-09-01", 0, 5), ws("s2", "2026-09-02", 0, 10),
