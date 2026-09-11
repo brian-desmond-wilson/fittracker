@@ -16,6 +16,17 @@ export type BlockRole = "warmup" | "mobility" | "main" | "conditioning" | "bfr" 
 export type WorkoutIntensity = "low" | "moderate" | "high";
 export type BodyFocus = "upper" | "lower" | "full";
 
+/** How a captured workout runs. Decides the live layout later; filterable
+ *  now. Spec 2026-09-10-workout-format-and-score-design §4.1. */
+export type WorkoutFormat =
+  | "sets_reps" | "rounds" | "amrap" | "emom" | "for_time" | "intervals" | "chipper" | "ladder";
+
+/** What is recorded when the workout is done. Mirrors the CrossFit module's
+ *  scoring_types names. Spec §4.2. */
+export type WorkoutScoreType =
+  | "reps" | "rounds_reps" | "load" | "time" | "distance" | "calories"
+  | "duration" | "quality" | "height" | "none";
+
 export interface WorkoutMuscle {
   name: string; // muscle_regions.name, verbatim
   isPrimary: boolean;
@@ -29,6 +40,12 @@ export interface WorkoutTags {
   estMinutes: number | null;
   intensity: WorkoutIntensity | null;
   skillLevel: "Beginner" | "Intermediate" | "Advanced" | null;
+  /** Null until the classifier (or the user) sets it. */
+  format: WorkoutFormat | null;
+  scoreType: WorkoutScoreType | null;
+  /** The minutes a time-defined format is built on; null for the others or
+   *  when the creator stated none. Not the duration estimate. */
+  formatMinutes: number | null;
   classifiedAt: string | null;
 }
 

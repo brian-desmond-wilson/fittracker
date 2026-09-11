@@ -134,4 +134,44 @@ describe("validateWorkoutTags", () => {
   it("an empty vocabulary makes every answer unusable", () => {
     expect(validateWorkoutTags(good, new Set())).toBeNull();
   });
+
+  it("accepts format, score_type and format_minutes", () => {
+    const tags = validateWorkoutTags({
+      ...good, format: "amrap", score_type: "rounds_reps", format_minutes: 15,
+    }, allowed)!;
+    expect(tags.format).toBe("amrap");
+    expect(tags.scoreType).toBe("rounds_reps");
+    expect(tags.formatMinutes).toBe(15);
+  });
+
+  it("degrades an unknown format or score to null rather than rejecting", () => {
+    const tags = validateWorkoutTags({
+      ...good, format: "tabata", score_type: "vibes", format_minutes: 12,
+    }, allowed)!;
+    expect(tags.format).toBeNull();
+    expect(tags.scoreType).toBeNull();
+    // Minutes belong to a format; with the format gone they go too.
+    expect(tags.formatMinutes).toBeNull();
+  });
+
+  it("degrades minutes outside 1–240, fractions rounded, non-numbers null", () => {
+    const timed = { ...good, format: "amrap" };
+    expect(validateWorkoutTags({ ...timed, format_minutes: 0 }, allowed)!.formatMinutes).toBeNull();
+    expect(validateWorkoutTags({ ...timed, format_minutes: 241 }, allowed)!.formatMinutes).toBeNull();
+    expect(validateWorkoutTags({ ...timed, format_minutes: 12.4 }, allowed)!.formatMinutes).toBe(12);
+    expect(validateWorkoutTags({ ...timed, format_minutes: "15" }, allowed)!.formatMinutes).toBeNull();
+  });
+
+  it("drops minutes on a format that has none, so a rounds workout never carries a cap", () => {
+    expect(validateWorkoutTags({ ...good, format: "rounds", format_minutes: 20 }, allowed)!.formatMinutes).toBeNull();
+    expect(validateWorkoutTags({ ...good, format: "emom", format_minutes: 20 }, allowed)!.formatMinutes).toBe(20);
+    expect(validateWorkoutTags({ ...good, format_minutes: 20 }, allowed)!.formatMinutes).toBeNull();
+  });
+
+  it("leaves all three null when the answer omits them", () => {
+    const tags = validateWorkoutTags(good, allowed)!;
+    expect(tags.format).toBeNull();
+    expect(tags.scoreType).toBeNull();
+    expect(tags.formatMinutes).toBeNull();
+  });
 });

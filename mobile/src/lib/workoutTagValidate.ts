@@ -10,7 +10,8 @@
 // editor can repair it — where muscles reject instead, because a workout with
 // no primary muscle is not something the editor asks the user to fix, and
 // it would sit in the catalog immune to the soreness gate.
-import type { BlockRole, WorkoutIntensity, WorkoutTags } from "../types/dailyBlocks";
+import type { BlockRole, WorkoutIntensity, WorkoutTags, WorkoutFormat, WorkoutScoreType } from "../types/dailyBlocks";
+import { ALL_FORMATS, ALL_SCORES, formatHasMinutes } from "./workoutFormatVocab";
 
 const ROLES: BlockRole[] = ["warmup", "mobility", "main", "conditioning", "cooldown"];
 const INTENSITIES: WorkoutIntensity[] = ["low", "moderate", "high"];
@@ -59,6 +60,8 @@ export function validateWorkoutTags(
       ? Math.round(r.est_minutes)
       : null;
 
+  const format = ALL_FORMATS.includes(r.format as WorkoutFormat) ? (r.format as WorkoutFormat) : null;
+
   return {
     blockRoles,
     muscles: [
@@ -72,6 +75,22 @@ export function validateWorkoutTags(
     skillLevel: SKILLS.includes(r.skill_level as (typeof SKILLS)[number])
       ? (r.skill_level as (typeof SKILLS)[number])
       : null,
+    // Same stance as intensity: unknown → null, never a rejection. A workout
+    // without a format still serves its blocks; it just reads "Untagged" on
+    // the Workouts tab until someone sets it.
+    format,
+    scoreType: ALL_SCORES.includes(r.score_type as WorkoutScoreType)
+      ? (r.score_type as WorkoutScoreType)
+      : null,
+    // Same bounds as est_minutes: the column CHECK is 1..240. Kept only on
+    // a format that is built on minutes: a number on a rounds workout would
+    // otherwise make an untouched save on the edit screen look like an edit.
+    formatMinutes: formatHasMinutes(format) &&
+      typeof r.format_minutes === "number" &&
+      Number.isFinite(r.format_minutes) &&
+      r.format_minutes >= 1 && r.format_minutes <= MAX_MINUTES
+        ? Math.round(r.format_minutes)
+        : null,
     classifiedAt: null, // stamped by the saver, not the validator
   };
 }

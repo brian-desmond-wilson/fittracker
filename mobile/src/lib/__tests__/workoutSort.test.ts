@@ -8,7 +8,7 @@ const w = (id: string, o: { name?: string; capturedAt?: string; minutes?: number
   rounds: null, rawProtocol: null, description: null, notes: null,
   capturedAt: o.capturedAt ?? "2026-09-01T00:00:00Z",
   source: null, items: [],
-  tags: { blockRoles: [], muscles: [], estMinutes: o.minutes === undefined ? null : o.minutes, intensity: null, skillLevel: null, classifiedAt: null },
+  tags: { blockRoles: [], muscles: [], estMinutes: o.minutes === undefined ? null : o.minutes, intensity: null, skillLevel: null, format: null, scoreType: null, formatMinutes: null, classifiedAt: null },
   derivedEquipment: [], isBodyweight: false,
 });
 const ids = (list: CapturedWorkoutEntry[]) => list.map((x) => x.workoutId);

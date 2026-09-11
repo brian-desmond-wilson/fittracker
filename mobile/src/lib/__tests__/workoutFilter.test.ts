@@ -29,7 +29,7 @@ const workout = (o: Partial<CapturedWorkoutEntry> = {}): CapturedWorkoutEntry =>
   ],
   tags: {
     blockRoles: [], muscles: [], estMinutes: null, intensity: null,
-    skillLevel: null, classifiedAt: null,
+    skillLevel: null, format: null, scoreType: null, formatMinutes: null, classifiedAt: null,
   },
   derivedEquipment: [],
   isBodyweight: false,
