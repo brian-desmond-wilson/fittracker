@@ -6,6 +6,10 @@ import { colors, spacing } from "@/src/theme/tokens";
 export default function TabLayout() {
   return (
     <Tabs
+      // Back from a tab root returns to the tab you came from, so a cross-tab
+      // jump (the exercise page's "See all N sessions" into Track) can come
+      // back to the page instead of falling through to Home.
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
