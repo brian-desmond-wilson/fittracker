@@ -7,6 +7,7 @@ import { X, Link as LinkIcon } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { resolvePost, extractPost, findExistingCapture } from "@/src/lib/supabase/capture";
+import { refreshCreatorFromPhone } from "@/src/lib/creatorProfile";
 import { sanitizeExtraction } from "@/src/lib/captureReview";
 import { normalizeSourceUrl } from "@/src/lib/captureUrl";
 import { fetchAllExercises } from "@/src/lib/supabase/crossfit";
@@ -153,6 +154,13 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
       return;
     }
     setResolved(r);
+    // The poster's avatar, read from this phone because Instagram refuses
+    // the server. Never awaited: a capture does not wait on decoration, and
+    // a failure here is invisible — the picker shows a letter instead.
+    // TikTok is left out: the server already did it inside resolve.
+    if (r.platform === "instagram" && r.posterHandle) {
+      void refreshCreatorFromPhone("instagram", r.posterHandle);
+    }
     if (r.needsCaption || !r.captionText) {
       setPhase("caption");
     } else {
