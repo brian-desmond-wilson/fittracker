@@ -34,7 +34,7 @@ export interface RunFlags {
 }
 
 export interface FillPlan {
-  description?: { by: 'extraction' | 'model'; text?: string };
+  description?: { by: 'extraction'; text: string } | { by: 'model' };
   video_url?: { by: 'capture'; url: string };
   image_url?: { by: 'model' };
 }
@@ -80,8 +80,12 @@ function isPlainText(text: string): boolean {
  * The gate every description passes before it is written (§8): 40–600
  * characters after trimming, plain text, and not opening with the name of a
  * DIFFERENT catalog exercise — the model's favourite failure is describing
- * the wrong movement. The row's own name is allowed. A name only counts
- * when it is followed by a word boundary, so "Deadlifting…" is not "Deadlift".
+ * the wrong movement. A name only counts when it is followed by a word
+ * boundary, so "Deadlifting…" is not "Deadlift". Of every name (the row's
+ * own included) that matches at the head, the LONGEST wins: "Lunge With
+ * Reach: …" is fine for Lunge With Reach even though "Lunge" is also a
+ * catalog name, while "Box Jump Over …" is rejected for Box Jump when
+ * "Box Jump Over" is one.
  */
 export function validateDescription(text: string, name: string, otherNames: string[]): DescriptionCheck {
   const trimmed = text.trim();
@@ -90,12 +94,16 @@ export function validateDescription(text: string, name: string, otherNames: stri
   if (!isPlainText(trimmed)) return { ok: false, reason: 'not plain text' };
   const own = normaliseName(name);
   const head = normaliseName(trimmed);
+  const matchesHead = (n: string): boolean =>
+    n !== '' && (head === n || (head.startsWith(n) && !/[a-z0-9]/.test(head.charAt(n.length))));
+  let longest: { n: string; label: string } | null = matchesHead(own) ? { n: own, label: name } : null;
   for (const other of otherNames) {
     const n = normaliseName(other);
-    if (n === '' || n === own) continue;
-    if (head === n || (head.startsWith(n) && !/[a-z0-9]/.test(head.charAt(n.length)))) {
-      return { ok: false, reason: `starts with another catalog name: ${other}` };
-    }
+    if (n === own || !matchesHead(n)) continue;
+    if (longest === null || n.length > longest.n.length) longest = { n, label: other };
+  }
+  if (longest !== null && longest.n !== own) {
+    return { ok: false, reason: `starts with another catalog name: ${longest.label}` };
   }
   return { ok: true, text: trimmed };
 }

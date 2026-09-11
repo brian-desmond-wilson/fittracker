@@ -126,6 +126,28 @@ Deno.test('validateDescription: other-name match is case-insensitive', () => {
   );
 });
 
+Deno.test('validateDescription: the longest name at the head wins, so an own name that extends another catalog name is fine', () => {
+  assertEquals(
+    validateDescription(
+      'Lunge With Reach: step forward and reach both arms overhead as you sink into the lunge.', 'Lunge With Reach', ['Lunge'],
+    ).ok,
+    true,
+  );
+  assertEquals(
+    validateDescription(
+      'Box Jump Over the box and land softly on the other side with knees bent.', 'Box Jump', ['Box Jump Over'],
+    ),
+    { ok: false, reason: 'starts with another catalog name: Box Jump Over' },
+  );
+  // Punctuation directly after the match still counts as a word boundary.
+  assertEquals(
+    validateDescription(
+      'Deadlift, then swing the bell to chest height with a hard glute squeeze and neutral spine.', 'Kettlebell Swing', ['Deadlift'],
+    ),
+    { ok: false, reason: 'starts with another catalog name: Deadlift' },
+  );
+});
+
 Deno.test('isPipelineVideoUrl: https instagram.com / tiktok.com only', () => {
   assertEquals(isPipelineVideoUrl('https://www.instagram.com/reel/abc/'), true);
   assertEquals(isPipelineVideoUrl('https://vm.tiktok.com/ZM1/'), true);
