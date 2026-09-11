@@ -6,6 +6,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../supabase";
+import { SWEEP_BATCH_LIMIT, SWEEP_LAST_RUN_KEY, sweepIsDue } from "../enrichSweepGate";
 
 /** The server's {error} body on a non-2xx, which invoke() hides behind a
  *  generic message; anything else as-is. */
@@ -20,7 +21,6 @@ async function reasonOf(e: unknown): Promise<unknown> {
   }
   return e;
 }
-import { SWEEP_BATCH_LIMIT, SWEEP_LAST_RUN_KEY, sweepIsDue } from "../enrichSweepGate";
 
 /** enrich-exercise { action: "enrich" } response. */
 export interface EnrichResult {

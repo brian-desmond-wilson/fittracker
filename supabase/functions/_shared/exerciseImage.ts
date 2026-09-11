@@ -1,8 +1,8 @@
 // supabase/functions/_shared/exerciseImage.ts
 // The one exercise image generator. Prompt from the row (name, equipment,
 // description, discipline), picture from Gemini, stored in the
-// exercise-images bucket. Imported by generate-exercise-image (the legacy
-// entry point) and enrich-exercise. Nothing here writes the exercises row —
+// exercise-images bucket. Imported by enrich-exercise (the legacy
+// generate-exercise-image entry point was deleted once nothing called it). Nothing here writes the exercises row —
 // the caller decides what to record alongside the URL.
 // Spec: docs/superpowers/specs/2026-09-11-catalog-enrichment-pipeline-design.md §5
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
