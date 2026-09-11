@@ -1,7 +1,7 @@
 # Catalog Enrichment Pipeline — Design Spec
 
 **Date:** 2026-09-11
-**Status:** Approved design 2026-09-11; implementation plan at docs/superpowers/plans/2026-09-11-catalog-enrichment-pipeline.md (not yet executed)
+**Status:** Implemented and device-verified 2026-09-11 (plan: docs/superpowers/plans/2026-09-11-catalog-enrichment-pipeline.md). Device walk on FitTracker-walk3 covered §9's page checks (backfilled description + capture video shown, Enrich idempotent, a wizard-set video survives Enrich, Regenerate overwrites, a blanked description is refilled, the weekly sweep runs once and the 7-day gate holds, the movement page's Generate button still works). The capture → "Create new" prefill walk needs a fresh single-exercise post and was covered by unit tests and code review instead.
 **Surface:** Exercise creation (match review → `mobile/src/components/training/crossfit/CatalogItemWizard.tsx` → `createCatalogExercise` in `mobile/src/lib/supabase/frontDoor.ts`), a new edge function `supabase/functions/enrich-exercise`, and the exercise page's overflow menu and Demo Video section.
 **Companion spec:** `docs/superpowers/specs/2026-09-11-exercise-detail-page-v2-design.md` renders what this pipeline fills.
 
