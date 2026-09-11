@@ -12,7 +12,8 @@
 // mean two layers of chrome for one decision: there, the component renders the
 // platform's dialog directly and this sheet's frame never appears.
 import React, { useState } from "react";
-import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { BottomSheet } from "./BottomSheet";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { MEAL_TYPE_LABELS } from "@/src/types/meal-library";
@@ -70,86 +71,64 @@ export function WhenSheet({
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={s.scrim}>
-        {/* Tapping the dimmed area is the gesture people try first. */}
+    <BottomSheet visible onClose={onClose} style={s.sheet}>
+      <View style={s.head}>
+        <Text style={s.title}>
+          {mealType ? "When did you eat it?" : "What time?"}
+          {dayLabel ? ` · ${dayLabel}` : ""}
+        </Text>
         <TouchableOpacity
-          style={s.scrimFill}
-          activeOpacity={1}
-          onPress={onClose}
+          onPress={() => { onLoggedAtChange(shown); onClose(); }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
-          accessibilityLabel="Close"
-        />
-        <View style={s.sheet}>
-          <View style={s.head}>
-            <Text style={s.title}>
-              {mealType ? "When did you eat it?" : "What time?"}
-              {dayLabel ? ` · ${dayLabel}` : ""}
-            </Text>
-            <TouchableOpacity
-              onPress={() => { onLoggedAtChange(shown); onClose(); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel="Done"
-            >
-              <Text style={s.done}>Done</Text>
-            </TouchableOpacity>
-          </View>
-
-          {mealType && onMealTypeChange && (
-            <View style={s.segTrack}>
-              {MEAL_TYPES.map((t) => {
-                const active = mealType === t;
-                return (
-                  <TouchableOpacity
-                    key={t}
-                    onPress={() => onMealTypeChange(t)}
-                    style={[s.segment, active && s.segmentActive]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={MEAL_TYPE_LABELS[t]}
-                  >
-                    <Text
-                      style={[s.segmentText, active && s.segmentTextActive]}
-                      numberOfLines={1}
-                    >
-                      {MEAL_TYPE_LABELS[t]}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          <DateTimePicker
-            value={shown}
-            mode="time"
-            display="spinner"
-            onChange={(_e, picked) => {
-              const next = commit(picked);
-              if (next) setDraft(next);
-            }}
-            textColor={colors.text}
-          />
-        </View>
+          accessibilityLabel="Done"
+        >
+          <Text style={s.done}>Done</Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      {mealType && onMealTypeChange && (
+        <View style={s.segTrack}>
+          {MEAL_TYPES.map((t) => {
+            const active = mealType === t;
+            return (
+              <TouchableOpacity
+                key={t}
+                onPress={() => onMealTypeChange(t)}
+                style={[s.segment, active && s.segmentActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={MEAL_TYPE_LABELS[t]}
+              >
+                <Text
+                  style={[s.segmentText, active && s.segmentTextActive]}
+                  numberOfLines={1}
+                >
+                  {MEAL_TYPE_LABELS[t]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
+      <DateTimePicker
+        value={shown}
+        mode="time"
+        display="spinner"
+        onChange={(_e, picked) => {
+          const next = commit(picked);
+          if (next) setDraft(next);
+        }}
+        textColor={colors.text}
+      />
+    </BottomSheet>
   );
 }
 
 const s = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: "flex-end" },
-  scrimFill: { flex: 1 },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    borderTopLeftRadius: radii.panel,
-    borderTopRightRadius: radii.panel,
-    padding: spacing.screenGutter,
-    paddingBottom: spacing.xxl,
-    gap: spacing.md,
-  },
+  // Tighter than the frame's default inset: the picker wheel wants the room.
+  sheet: { paddingHorizontal: spacing.screenGutter, paddingTop: spacing.screenGutter, gap: spacing.md },
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
   title: { ...typography.titleBar, color: colors.text, flexShrink: 1 },
   done: { ...typography.buttonSm, color: colors.brand, fontWeight: "700" },

@@ -2,10 +2,8 @@
 // sheet opens. One tap plus an optional note; tomorrow's compose hears it.
 // Skippable, and dismissing saves nothing. Approved mockup F.
 import React, { useEffect, useState } from "react";
-import {
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform,
-} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { BottomSheet } from "@/src/components/ui/BottomSheet";
 import { X } from "lucide-react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
@@ -49,73 +47,53 @@ export function DebriefSheet({ visible, sessionId, onClose, onSaved }: DebriefSh
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.scrim}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <TouchableOpacity style={styles.scrimTap} onPress={onClose} accessibilityLabel="Close" />
-        <View style={styles.sheet}>
-          <View style={styles.grab} />
-          <View style={styles.header}>
-            <Text style={styles.title}>Session done — how did it land?</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={22} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.hint}>Shapes tomorrow's recommendation.</Text>
-          <View style={styles.pillRow}>
-            {VERDICTS.map((v) => (
-              <TouchableOpacity
-                key={v.key}
-                style={[styles.pill, verdict === v.key && styles.pillActive]}
-                onPress={() => setVerdict(v.key)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: verdict === v.key }}
-              >
-                <Text style={[styles.pillText, verdict === v.key && styles.pillTextActive]}>
-                  {v.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput
-            style={styles.input}
-            value={note}
-            onChangeText={setNote}
-            placeholder={'Anything to note? e.g. "shoulder felt off on OHP"'}
-            placeholderTextColor={colors.textFaint}
-            multiline
-            maxLength={500}
-          />
+    <BottomSheet visible={visible} onClose={onClose}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Session done — how did it land?</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <X size={22} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.hint}>Shapes tomorrow's recommendation.</Text>
+      <View style={styles.pillRow}>
+        {VERDICTS.map((v) => (
           <TouchableOpacity
-            style={[styles.button, (saving || !verdict) && { opacity: 0.5 }]}
-            onPress={submit}
-            disabled={saving || !verdict}
+            key={v.key}
+            style={[styles.pill, verdict === v.key && styles.pillActive]}
+            onPress={() => setVerdict(v.key)}
             accessibilityRole="button"
-            accessibilityLabel="Save the debrief"
-            accessibilityState={{ disabled: saving || !verdict, busy: saving }}
+            accessibilityState={{ selected: verdict === v.key }}
           >
-            <Text style={styles.buttonText}>Save</Text>
+            <Text style={[styles.pillText, verdict === v.key && styles.pillTextActive]}>
+              {v.label}
+            </Text>
           </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        ))}
+      </View>
+      <TextInput
+        style={styles.input}
+        value={note}
+        onChangeText={setNote}
+        placeholder={'Anything to note? e.g. "shoulder felt off on OHP"'}
+        placeholderTextColor={colors.textFaint}
+        multiline
+        maxLength={500}
+      />
+      <TouchableOpacity
+        style={[styles.button, (saving || !verdict) && { opacity: 0.5 }]}
+        onPress={submit}
+        disabled={saving || !verdict}
+        accessibilityRole="button"
+        accessibilityLabel="Save the debrief"
+        accessibilityState={{ disabled: saving || !verdict, busy: saving }}
+      >
+        <Text style={styles.buttonText}>Save</Text>
+      </TouchableOpacity>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: "flex-end" },
-  scrimTap: { flex: 1 },
-  sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    borderTopWidth: 1, borderColor: colors.border,
-    padding: spacing.xl, paddingBottom: spacing.xxxl,
-  },
-  grab: {
-    width: 38, height: 4, borderRadius: 2, backgroundColor: colors.textFaint,
-    alignSelf: "center", marginBottom: spacing.md,
-  },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     gap: spacing.sm,

@@ -4,9 +4,8 @@
 // (spec §5.5). Skippable; dismissing saves nothing. Promotions are celebrated
 // inline before the sheet closes.
 import React, { useEffect, useState } from "react";
-import {
-  Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView,
-} from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { BottomSheet } from "@/src/components/ui/BottomSheet";
 import { X, TrendingUp } from "lucide-react-native";
 import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
@@ -77,114 +76,96 @@ export function MovementRatingSheet({
     movements.find((m) => m.exerciseId === id)?.name ?? "This movement";
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.scrim}>
-        <TouchableOpacity style={styles.scrimTap} onPress={onClose} accessibilityLabel="Close" />
-        <View style={styles.sheet}>
-          <View style={styles.grab} />
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {promotions ? "Leveled up" : "How did each movement feel?"}
-            </Text>
-            <TouchableOpacity
-              onPress={onClose}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <X size={22} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          {promotions === null ? (
-            <>
-              <Text style={styles.hint}>Too easy twice in a row levels a movement up.</Text>
-              <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-                {movements.map((m) => (
-                  <View key={m.exerciseId} style={styles.row}>
-                    <Text style={styles.movement} numberOfLines={2}>{m.name}</Text>
-                    <View style={styles.pillRow}>
-                      {CHOICES.map((c) => {
-                        const active = ratings[m.exerciseId] === c.key;
-                        return (
-                          <TouchableOpacity
-                            key={c.key}
-                            style={[styles.pill, active && styles.pillActive]}
-                            onPress={() =>
-                              setRatings((r) => {
-                                const next = { ...r };
-                                if (active) delete next[m.exerciseId];
-                                else next[m.exerciseId] = c.key;
-                                return next;
-                              })
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel={`${m.name}: ${c.label}`}
-                            accessibilityState={{ selected: active }}
-                          >
-                            <Text style={[styles.pillText, active && styles.pillTextActive]}>
-                              {c.label}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-                ))}
-                {errorText && <Text style={styles.error}>{errorText}</Text>}
-                {/* Primary action at the end of the scroll — house rule. */}
-                <TouchableOpacity
-                  style={[styles.button, (saving || count === 0) && { opacity: 0.5 }]}
-                  onPress={submit}
-                  disabled={saving || count === 0}
-                  accessibilityRole="button"
-                  accessibilityLabel="Save the ratings"
-                  accessibilityState={{ disabled: saving || count === 0, busy: saving }}
-                >
-                  <Text style={styles.buttonText}>
-                    {saving ? "Saving…" : count === 0 ? "Save" : `Save ${count} rating${count === 1 ? "" : "s"}`}
-                  </Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </>
-          ) : (
-            <View>
-              {promotions.map((p) => (
-                <View key={p.exerciseId} style={styles.promoRow}>
-                  <TrendingUp size={18} color={colors.success} />
-                  <Text style={styles.promoText}>
-                    {nameOf(p.exerciseId)} leveled up
-                    {p.toName ? ` — try ${p.toName} next time` : ""}
-                  </Text>
-                </View>
-              ))}
-              <TouchableOpacity
-                style={styles.button}
-                onPress={onSaved}
-                accessibilityRole="button"
-                accessibilityLabel="Done"
-              >
-                <Text style={styles.buttonText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+    <BottomSheet visible={visible} onClose={onClose} maxHeight="82%">
+      <View style={styles.header}>
+        <Text style={styles.title}>
+          {promotions ? "Leveled up" : "How did each movement feel?"}
+        </Text>
+        <TouchableOpacity
+          onPress={onClose}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <X size={22} color={colors.textMuted} />
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      {promotions === null ? (
+        <>
+          <Text style={styles.hint}>Too easy twice in a row levels a movement up.</Text>
+          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+            {movements.map((m) => (
+              <View key={m.exerciseId} style={styles.row}>
+                <Text style={styles.movement} numberOfLines={2}>{m.name}</Text>
+                <View style={styles.pillRow}>
+                  {CHOICES.map((c) => {
+                    const active = ratings[m.exerciseId] === c.key;
+                    return (
+                      <TouchableOpacity
+                        key={c.key}
+                        style={[styles.pill, active && styles.pillActive]}
+                        onPress={() =>
+                          setRatings((r) => {
+                            const next = { ...r };
+                            if (active) delete next[m.exerciseId];
+                            else next[m.exerciseId] = c.key;
+                            return next;
+                          })
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={`${m.name}: ${c.label}`}
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                          {c.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+            {errorText && <Text style={styles.error}>{errorText}</Text>}
+            {/* Primary action at the end of the scroll — house rule. */}
+            <TouchableOpacity
+              style={[styles.button, (saving || count === 0) && { opacity: 0.5 }]}
+              onPress={submit}
+              disabled={saving || count === 0}
+              accessibilityRole="button"
+              accessibilityLabel="Save the ratings"
+              accessibilityState={{ disabled: saving || count === 0, busy: saving }}
+            >
+              <Text style={styles.buttonText}>
+                {saving ? "Saving…" : count === 0 ? "Save" : `Save ${count} rating${count === 1 ? "" : "s"}`}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </>
+      ) : (
+        <View>
+          {promotions.map((p) => (
+            <View key={p.exerciseId} style={styles.promoRow}>
+              <TrendingUp size={18} color={colors.success} />
+              <Text style={styles.promoText}>
+                {nameOf(p.exerciseId)} leveled up
+                {p.toName ? ` — try ${p.toName} next time` : ""}
+              </Text>
+            </View>
+          ))}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={onSaved}
+            accessibilityRole="button"
+            accessibilityLabel="Done"
+          >
+            <Text style={styles.buttonText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: "flex-end" },
-  scrimTap: { flex: 1 },
-  sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    borderTopWidth: 1, borderColor: colors.border,
-    padding: spacing.xl, paddingBottom: spacing.xxxl,
-    maxHeight: "82%",
-  },
-  grab: {
-    width: 38, height: 4, borderRadius: 2, backgroundColor: colors.textFaint,
-    alignSelf: "center", marginBottom: spacing.md,
-  },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     gap: spacing.sm,

@@ -3,10 +3,8 @@
 // recompose) or to the whole day. No thread to manage: type, recompose, done.
 // Recent instructions resurface as tappable shortcuts. Approved mockup B.
 import React, { useEffect, useState } from "react";
-import {
-  Modal, View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform,
-} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { BottomSheet } from "@/src/components/ui/BottomSheet";
 import { CornerUpLeft, Sparkles, X } from "lucide-react-native";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
@@ -68,79 +66,59 @@ export function AdjustSheet({ visible, scope, sessionId, onClose, onSubmitted }:
     : `Adjust the ${BLOCK_TITLES[scope].toLowerCase()}`;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.scrim}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <TouchableOpacity style={styles.scrimTap} onPress={onClose} accessibilityLabel="Close" />
-        <View style={styles.sheet}>
-          <View style={styles.grab} />
-          <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <Sparkles size={16} color={colors.brand} />
-              <Text style={styles.title}>{title}</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={22} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.hint}>
-            {scope === null
-              ? "Tell the recommender what to change about today. Locked blocks stay put."
-              : "Tell the recommender what to change here — only this block moves."}
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            placeholder={PLACEHOLDER[scope === null ? "day" : "block"]}
-            placeholderTextColor={colors.textFaint}
-            multiline
-            maxLength={500}
-            autoFocus
-          />
-          {recent.length > 0 && (
-            <>
-              <Text style={styles.recentLabel}>Recent</Text>
-              {recent.map((r) => (
-                <TouchableOpacity key={r} style={styles.recentChip} onPress={() => setText(r)}>
-                  <CornerUpLeft size={13} color={colors.textMuted} />
-                  <Text style={styles.recentText} numberOfLines={1}>{r}</Text>
-                </TouchableOpacity>
-              ))}
-            </>
-          )}
-          <TouchableOpacity
-            style={[styles.button, (saving || text.trim() === "") && { opacity: 0.5 }]}
-            onPress={submit}
-            disabled={saving || text.trim() === ""}
-            accessibilityRole="button"
-            accessibilityLabel={scope === null ? "Recompose the day" : "Recompose this block"}
-            accessibilityState={{ disabled: saving || text.trim() === "", busy: saving }}
-          >
-            <Text style={styles.buttonText}>
-              {scope === null ? "Recompose day" : "Recompose block"}
-            </Text>
-          </TouchableOpacity>
+    <BottomSheet visible={visible} onClose={onClose}>
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <Sparkles size={16} color={colors.brand} />
+          <Text style={styles.title}>{title}</Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <X size={22} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.hint}>
+        {scope === null
+          ? "Tell the recommender what to change about today. Locked blocks stay put."
+          : "Tell the recommender what to change here — only this block moves."}
+      </Text>
+      <TextInput
+        style={styles.input}
+        value={text}
+        onChangeText={setText}
+        placeholder={PLACEHOLDER[scope === null ? "day" : "block"]}
+        placeholderTextColor={colors.textFaint}
+        multiline
+        maxLength={500}
+        autoFocus
+      />
+      {recent.length > 0 && (
+        <>
+          <Text style={styles.recentLabel}>Recent</Text>
+          {recent.map((r) => (
+            <TouchableOpacity key={r} style={styles.recentChip} onPress={() => setText(r)}>
+              <CornerUpLeft size={13} color={colors.textMuted} />
+              <Text style={styles.recentText} numberOfLines={1}>{r}</Text>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
+      <TouchableOpacity
+        style={[styles.button, (saving || text.trim() === "") && { opacity: 0.5 }]}
+        onPress={submit}
+        disabled={saving || text.trim() === ""}
+        accessibilityRole="button"
+        accessibilityLabel={scope === null ? "Recompose the day" : "Recompose this block"}
+        accessibilityState={{ disabled: saving || text.trim() === "", busy: saving }}
+      >
+        <Text style={styles.buttonText}>
+          {scope === null ? "Recompose day" : "Recompose block"}
+        </Text>
+      </TouchableOpacity>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: "flex-end" },
-  scrimTap: { flex: 1 },
-  sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    borderTopWidth: 1, borderColor: colors.border,
-    padding: spacing.xl, paddingBottom: spacing.xxxl,
-  },
-  grab: {
-    width: 38, height: 4, borderRadius: 2, backgroundColor: colors.textFaint,
-    alignSelf: "center", marginBottom: spacing.md,
-  },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   title: { fontSize: 17, fontWeight: "700", color: colors.text },
