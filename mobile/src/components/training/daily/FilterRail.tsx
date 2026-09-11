@@ -1,29 +1,31 @@
-// mobile/src/components/training/daily/WorkoutsRail.tsx
+// mobile/src/components/training/daily/FilterRail.tsx
 // The strip under the tab band (mockup A1/A6): sort chip left, Filters chip
 // right, one removable chip per active filter beneath, then the count line.
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { ArrowUpDown, ChevronDown, SlidersHorizontal, X } from "lucide-react-native";
 import { colors, radii, spacing, tint } from "@/src/theme/tokens";
-import type { FilterChip } from "@/src/lib/workoutFilters";
+import type { FilterChip } from "@/src/lib/filterChips";
 
-interface WorkoutsRailProps {
+interface FilterRailProps<Axis extends string> {
   sortLabel: string;
   onOpenSort: () => void;
   activeCount: number;
   onOpenFilters: () => void;
-  chips: FilterChip[];
-  onRemoveChip: (chip: FilterChip) => void;
+  chips: FilterChip<Axis>[];
+  onRemoveChip: (chip: FilterChip<Axis>) => void;
   onClearAll: () => void;
-  /** Workouts after filters and search. */
+  /** Items after filters and search. */
   shown: number;
   /** The whole library. */
   total: number;
+  /** Count-line wording: ["workout", "workouts"] or ["exercise", "exercises"]. */
+  noun: [singular: string, plural: string];
 }
 
-export function WorkoutsRail({
-  sortLabel, onOpenSort, activeCount, onOpenFilters, chips, onRemoveChip, onClearAll, shown, total,
-}: WorkoutsRailProps) {
+export function FilterRail<Axis extends string>({
+  sortLabel, onOpenSort, activeCount, onOpenFilters, chips, onRemoveChip, onClearAll, shown, total, noun,
+}: FilterRailProps<Axis>) {
   const filtered = activeCount > 0;
   // The count line answers "how much of the library am I looking at", so it
   // narrows for the header search too, not only for filters.
@@ -67,7 +69,7 @@ export function WorkoutsRail({
       <View style={styles.count}>
         <Text style={styles.countText}>
           <Text style={styles.countStrong}>{narrowed ? `${shown} of ${total}` : total}</Text>
-          {" "}{total === 1 && !narrowed ? "workout" : "workouts"}
+          {" "}{total === 1 && !narrowed ? noun[0] : noun[1]}
         </Text>
         {filtered && (
           <TouchableOpacity onPress={onClearAll} accessibilityRole="button" accessibilityLabel="Clear all filters">

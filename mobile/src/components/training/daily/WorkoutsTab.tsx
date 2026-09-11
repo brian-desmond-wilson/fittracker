@@ -21,7 +21,7 @@ import type { CompletionMap } from "@/src/lib/workoutCompletion";
 import { getLocalDateString } from "@/src/lib/dates";
 import { CaptureFab } from "./CaptureFab";
 import { SwipeableWorkoutCard } from "./SwipeableWorkoutCard";
-import { WorkoutsRail } from "./WorkoutsRail";
+import { FilterRail } from "./FilterRail";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { SortSheet } from "./SortSheet";
 import { WorkoutFiltersSheet } from "./WorkoutFiltersSheet";
@@ -186,7 +186,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
           remembered ones arrive would be overwritten by them, and a count
           line over an empty library reads "0 of 0" until the rows land. */}
       {prefsReady && !loading && (
-      <WorkoutsRail
+      <FilterRail
         sortLabel={SORT_LABELS[sort]}
         onOpenSort={() => setSortOpen(true)}
         // Chips, not raw values: a collapsed muscle group is one thing to the
@@ -198,6 +198,7 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
         onClearAll={() => applyFilters(EMPTY_FILTERS)}
         shown={filtered.length}
         total={workouts.length}
+        noun={["workout", "workouts"]}
       />
       )}
 
