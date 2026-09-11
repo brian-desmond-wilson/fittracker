@@ -16,23 +16,29 @@ interface CreatorAvatarProps {
 }
 
 export function CreatorAvatar({ handle, url, fetchedAt = null, size }: CreatorAvatarProps) {
-  const [failed, setFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const uri = failed ? null : avatarUri(url, fetchedAt);
+  const uri = avatarUri(url, fetchedAt);
+  // Load state belongs to ONE picture. When the picture changes under a
+  // mounted instance (the detail screen moving to another workout) it is
+  // reset during render — React's sanctioned way to derive state from a
+  // prop without an extra effect pass — and a late load or error event
+  // from the previous picture is ignored by the uri check in the setters.
+  const [state, setState] = useState({ uri, loaded: false, failed: false });
+  if (state.uri !== uri) setState({ uri, loaded: false, failed: false });
+  const showImage = uri !== null && !state.failed;
   const round = { width: size, height: size, borderRadius: size / 2 };
   return (
     <View style={[styles.circle, round]} accessibilityIgnoresInvertColors>
       {/* The letter sits underneath until the image has painted, so the
           circle is never blank for a beat. */}
-      {(!uri || !loaded) && (
+      {(!showImage || !state.loaded) && (
         <Text style={[styles.letter, { fontSize: Math.round(size * 0.43) }]}>{avatarLetter(handle)}</Text>
       )}
-      {uri && (
+      {showImage && (
         <Image
           source={{ uri }}
           style={[StyleSheet.absoluteFill, round]}
-          onLoad={() => setLoaded(true)}
-          onError={() => setFailed(true)}
+          onLoad={() => setState((s) => (s.uri === uri ? { ...s, loaded: true } : s))}
+          onError={() => setState((s) => (s.uri === uri ? { ...s, failed: true } : s))}
         />
       )}
     </View>
