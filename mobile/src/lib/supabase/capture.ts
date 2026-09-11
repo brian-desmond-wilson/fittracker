@@ -117,6 +117,20 @@ export async function findExistingCapture(
   return data;
 }
 
+/** The model's stored JSON for a capture (prefill material), or null. */
+export async function fetchSourceRawExtraction(sourceId: string): Promise<unknown | null> {
+  const { data, error } = await supabase
+    .from("captured_sources")
+    .select("raw_extraction")
+    .eq("id", sourceId)
+    .maybeSingle();
+  if (error) {
+    console.error("fetchSourceRawExtraction failed:", error);
+    return null;
+  }
+  return data?.raw_extraction ?? null;
+}
+
 export interface SaveCaptureInput {
   userId: string;
   sourceUrl: string;

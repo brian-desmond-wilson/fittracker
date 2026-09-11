@@ -13,6 +13,9 @@ import type { PendingMatchReview, MatchReviewCandidate } from "@/src/lib/supabas
 import { ExerciseSearchModal } from "@/src/components/training/program-detail/workout-wizard/ExerciseSearchModal";
 import { CatalogItemWizard } from "@/src/components/training/crossfit/CatalogItemWizard";
 import type { CatalogExerciseRow } from "@/src/lib/supabase/frontDoor";
+import { fetchSourceRawExtraction } from "@/src/lib/supabase/capture";
+import { extractionPrefillFor } from "@/src/lib/extractionPrefill";
+import type { ExtractionPrefill } from "@/src/lib/extractionPrefill";
 
 // The match-review queue: every captured name that resolved to nothing waits
 // here (Stage 5, Task 4 — capture no longer mints exercises). Three ways out
@@ -44,6 +47,19 @@ export function MatchReviewSheet({
   const [aliasOff, setAliasOff] = useState<Set<string>>(new Set());
   const [searchFor, setSearchFor] = useState<PendingMatchReview | null>(null);
   const [createFor, setCreateFor] = useState<PendingMatchReview | null>(null);
+  /** The extraction's values for the name being created, read when "Create
+   *  new" is tapped. Null when the source is gone or never listed the name. */
+  const [createPrefill, setCreatePrefill] = useState<ExtractionPrefill | null>(null);
+
+  const openCreate = async (review: PendingMatchReview) => {
+    let prefill: ExtractionPrefill | null = null;
+    if (review.sourceId) {
+      const raw = await fetchSourceRawExtraction(review.sourceId);
+      prefill = extractionPrefillFor(raw, review.rawName);
+    }
+    setCreatePrefill(prefill);
+    setCreateFor(review);
+  };
   /** Guards the chip-confirm dialog against a fast double-tap: `busyId` alone
    *  reads a stale render-time closure once the alert is queued, so a second
    *  tap before the first dialog resolves would open a second one whose
@@ -226,7 +242,7 @@ export function MatchReviewSheet({
                     <TouchableOpacity
                       style={styles.actionButton}
                       disabled={busy}
-                      onPress={() => setCreateFor(review)}
+                      onPress={() => { openCreate(review); }}
                       activeOpacity={0.7}
                     >
                       <Plus size={15} color={colors.primary} />
@@ -252,8 +268,9 @@ export function MatchReviewSheet({
         />
 
         {/* Resolution (c): the ONE catalog wizard, prefilled with the captured
-            name. onCreated hands back the row so the link lands by id; onSave
-            fires after the wizard's own success alert. */}
+            name and the extraction's values for it. onCreated hands back the
+            row so the link lands by id; onSave fires after the wizard's own
+            success alert. */}
         <Modal
           visible={createFor !== null}
           animationType="slide"
@@ -264,6 +281,7 @@ export function MatchReviewSheet({
             <CatalogItemWizard
               isMovement={false}
               initialName={createFor.rawName}
+              initialPrefill={createPrefill}
               onClose={() => setCreateFor(null)}
               onSave={() => setCreateFor(null)}
               onCreated={(row: CatalogExerciseRow) => {

@@ -34,6 +34,8 @@ import {
   type CatalogExerciseRow,
 } from '@/src/lib/supabase/frontDoor';
 import { generateExerciseImageInBackground } from '@/src/lib/supabase/exerciseImages';
+import { applyPrefillToForm } from '@/src/lib/extractionPrefill';
+import type { ExtractionPrefill } from '@/src/lib/extractionPrefill';
 import {
   EMPTY_WIZARD_FORM,
   buildCreateInput,
@@ -123,6 +125,10 @@ interface CatalogItemWizardProps {
   /** Seed the name field (custom naming on) — the match-review queue opens
    *  the wizard with the captured name so "create new" starts filled in. */
   initialName?: string;
+  /** Values read from the capture extraction (description, muscles,
+   *  equipment, skill level) laid onto the form once the dictionaries have
+   *  loaded. Create only; ignored with editId. */
+  initialPrefill?: ExtractionPrefill | null;
   onClose: () => void;
   onSave: () => void;
   /** Fired with the created row right after a successful create — what lets
@@ -138,7 +144,7 @@ const STEPS = [
 ];
 
 export function CatalogItemWizard({
-  isMovement, editId, initialName, onClose, onSave, onCreated,
+  isMovement, editId, initialName, initialPrefill, onClose, onSave, onCreated,
 }: CatalogItemWizardProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -197,6 +203,14 @@ export function CatalogItemWizard({
         equipment, loadPositions, stances, movementStyles, symmetries, rangeDepths,
         grips, directions, supportPositions, armPositions, benchAngles,
       });
+      // The prefill needs ids for the extraction's names, so it waits for
+      // the dictionaries. Only empty fields are filled (applyPrefillToForm).
+      if (initialPrefill && !editId) {
+        setFormData((prev) => applyPrefillToForm(prev, initialPrefill, {
+          muscleRegions: muscleRegions.map((m) => ({ id: m.id, name: m.name })),
+          equipment: equipment.map((e) => ({ id: e.id, name: e.name })),
+        }));
+      }
     } catch (error) {
       console.error('Error loading wizard dictionaries:', error);
       Alert.alert('Could not load the catalog dictionaries', undefined, [
