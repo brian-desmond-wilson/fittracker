@@ -2,7 +2,7 @@
 // Last-used filters and sort for the Workouts tab, per user. Spec §7.
 // A preference must never stop the list rendering: every failure here is a
 // logged fallback to the defaults.
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createPrefsStore } from "./filterPrefsStore";
 import type { WorkoutFilters, WorkoutSort } from "../types/workoutFilters";
 import {
   EMPTY_FILTERS, DEFAULT_SORT, ALL_SORTS, FILTERABLE_ROLES, ALL_INTENSITIES,
@@ -14,8 +14,6 @@ export interface WorkoutPrefs {
   filters: WorkoutFilters;
   sort: WorkoutSort;
 }
-
-export const prefsKey = (userId: string) => `training.workouts.filters.v1:${userId}`;
 
 const strings = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -44,21 +42,12 @@ export function sanitizePrefs(raw: unknown): WorkoutPrefs {
   return { filters, sort: oneOf(r.sort, ALL_SORTS) ?? DEFAULT_SORT };
 }
 
-export async function loadWorkoutPrefs(userId: string): Promise<WorkoutPrefs> {
-  try {
-    const raw = await AsyncStorage.getItem(prefsKey(userId));
-    if (!raw) return { filters: EMPTY_FILTERS, sort: DEFAULT_SORT };
-    return sanitizePrefs(JSON.parse(raw));
-  } catch (e) {
-    console.warn("loadWorkoutPrefs fell back to defaults:", e);
-    return { filters: EMPTY_FILTERS, sort: DEFAULT_SORT };
-  }
-}
+const store = createPrefsStore<WorkoutPrefs>({
+  keyPrefix: "training.workouts.filters.v1",
+  defaults: { filters: EMPTY_FILTERS, sort: DEFAULT_SORT },
+  sanitize: sanitizePrefs,
+});
 
-export async function saveWorkoutPrefs(userId: string, prefs: WorkoutPrefs): Promise<void> {
-  try {
-    await AsyncStorage.setItem(prefsKey(userId), JSON.stringify(prefs));
-  } catch (e) {
-    console.warn("saveWorkoutPrefs failed:", e);
-  }
-}
+export const prefsKey = store.key;
+export const loadWorkoutPrefs = store.load;
+export const saveWorkoutPrefs = store.save;
