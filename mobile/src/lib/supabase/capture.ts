@@ -16,11 +16,14 @@ import {
   resolveNameByAlias,
 } from "./matchReviews";
 import { collapseByPost } from "../captureUrl";
+import { normaliseHandle } from "../creatorHandle";
+import { fetchCreators } from "./creators";
 import { catalogDeleteMode, describeUsage } from "../catalogDelete";
 import type { ProvenanceLink } from "../catalogDelete";
 import type {
   CapturedWorkoutEntry,
   CaptureSource,
+  CaptureSourceV2,
   CatalogEntry,
   ExtractedPost,
   PendingWorkoutItemEntry,
@@ -595,20 +598,29 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
  * detail page. Same two filters fetchCatalog applies: a shared library
  * exercise may be linked by other people's captures, and a save that never
  * finished leaves a pending source that was never really reviewed.
+ *
+ * Carries the creator's avatar (from the shared creators cache, keyed by
+ * normalised handle) and the workout captured from the post — the first by
+ * creation when a source somehow has more than one. Null workout = the post
+ * was captured as a single exercise.
  */
 export async function fetchExerciseSources(
   exerciseId: string,
   userId: string,
-): Promise<CaptureSource[]> {
-  const { data, error } = await supabase
-    .from("source_exercises")
-    .select(`
-      source:captured_sources!inner(
-        id, user_id, platform, source_url, poster_handle, thumbnail_url,
-        captured_at, extraction_status
-      )
-    `)
-    .eq("exercise_id", exerciseId);
+): Promise<CaptureSourceV2[]> {
+  const [{ data, error }, creators] = await Promise.all([
+    supabase
+      .from("source_exercises")
+      .select(`
+        source:captured_sources!inner(
+          id, user_id, platform, source_url, poster_handle, thumbnail_url,
+          captured_at, extraction_status,
+          workouts:captured_workouts(id, name, created_at)
+        )
+      `)
+      .eq("exercise_id", exerciseId),
+    fetchCreators(),
+  ]);
   if (error) {
     console.error("fetchExerciseSources failed:", error);
     return [];
@@ -621,14 +633,21 @@ export async function fetchExerciseSources(
     (data ?? [])
       .map((row: any) => row.source)
       .filter((s: any) => s && s.user_id === userId && s.extraction_status === "reviewed")
-      .map((s: any): CaptureSource => ({
-        sourceId: s.id,
-        platform: s.platform,
-        sourceUrl: s.source_url,
-        posterHandle: s.poster_handle,
-        thumbnailUrl: s.thumbnail_url,
-        capturedAt: s.captured_at,
-      })),
+      .map((s: any): CaptureSourceV2 => {
+        const workouts: { id: string; name: string; created_at: string }[] = s.workouts ?? [];
+        const first = [...workouts].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))[0] ?? null;
+        const handleKey = s.poster_handle ? normaliseHandle(s.poster_handle) : "";
+        return {
+          sourceId: s.id,
+          platform: s.platform,
+          sourceUrl: s.source_url,
+          posterHandle: s.poster_handle,
+          thumbnailUrl: s.thumbnail_url,
+          capturedAt: s.captured_at,
+          avatarUrl: handleKey ? (creators[handleKey]?.avatarUrl ?? null) : null,
+          workout: first ? { id: first.id, name: first.name } : null,
+        };
+      }),
   );
 }
 
