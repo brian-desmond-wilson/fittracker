@@ -9,6 +9,13 @@ import { supabase } from "@/src/lib/supabase";
 import { AppVersion } from "@/src/components/ui";
 import type { Session } from "@supabase/supabase-js";
 
+// Dev-only. Expo Router persists the current URL, so a full reload re-opens
+// whatever screen you were on (e.g. an exercise detail page) rather than Home.
+// This module-scope flag is reset only when the JS bundle is fully re-evaluated
+// — a real reload — and NOT by Fast Refresh of other files, so editing code
+// keeps you in place while a reload lands you back on Home.
+let didColdBootReset = false;
+
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
@@ -87,6 +94,16 @@ export default function RootLayout() {
     // hasShareIntent is the one signal that matters here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasShareIntent, loading, session]);
+
+  // On a real reload in dev, start from Home instead of the restored route.
+  // Once per bundle evaluation; a shared post still wins, and production is
+  // untouched so genuine deep links open where they should.
+  useEffect(() => {
+    if (loading || !session || hasShareIntent) return;
+    if (!__DEV__ || didColdBootReset) return;
+    didColdBootReset = true;
+    router.replace("/(tabs)/home");
+  }, [loading, session, hasShareIntent]);
 
   if (loading) {
     // The native splash is a static image, so this first rendered frame is
