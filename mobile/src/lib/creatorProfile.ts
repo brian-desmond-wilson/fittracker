@@ -10,12 +10,27 @@ import type { CreatorAvatar, CreatorPlatform } from "./supabase/creators";
 /** A profile page is decoration; nothing waits six seconds for it. */
 const PAGE_TIMEOUT_MS = 6000;
 
+/** True when a fetch ended on the creator's own page. An empty url (a
+ *  runtime that does not report the final url) is trusted; the parser's
+ *  static-asset check still stands behind it. */
+function onProfilePath(finalUrl: string, handle: string): boolean {
+  if (!finalUrl) return true;
+  try {
+    return new URL(finalUrl).pathname.toLowerCase().startsWith(`/${handle}`);
+  } catch {
+    return false;
+  }
+}
+
 async function instagramCandidatesFromPhone(handle: string): Promise<string[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);
   try {
     const res = await fetch(`https://www.instagram.com/${handle}/`, { signal: controller.signal });
     if (!res.ok) return [];
+    // A wall sends the phone to /accounts/login/ with a 200; only the
+    // profile path is worth parsing.
+    if (!onProfilePath(res.url, handle)) return [];
     return instagramAvatarCandidates(await res.text());
   } catch {
     return [];

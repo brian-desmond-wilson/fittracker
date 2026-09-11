@@ -158,7 +158,9 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
     if (unique.length === 0) return;
     unique.forEach((d) => refreshed.current.add(d.handle));
     refreshCreatorsFromPhone(unique).then((rows) => {
-      const fresh = rows.filter((r): r is NonNullable<typeof r> => r !== null);
+      // A row that could not be refreshed comes back unstamped; it must not
+      // displace what fetchCreators loaded.
+      const fresh = rows.filter((r): r is NonNullable<typeof r> => r !== null && r.fetchedAt !== null);
       if (fresh.length === 0) return;
       setAvatars((prev) => {
         const next = { ...prev };

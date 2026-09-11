@@ -60,4 +60,8 @@ describe("instagramAvatarCandidates", () => {
     expect(instagramAvatarCandidates(`<meta property="og:image" content="https://x.test/a.jpg" />`)).toEqual(["https://x.test/a.jpg"]);
     expect(instagramAvatarCandidates("<html></html>")).toEqual([]);
   });
+  it("does not mistake the login wall's logo for an avatar", () => {
+    expect(instagramAvatarCandidates(`<meta property="og:image" content="https://static.cdninstagram.com/rsrc.php/v4/yD/r/R0fBIMurK8v.png" />`)).toEqual([]);
+    expect(instagramAvatarCandidates(`<meta property="og:image" content="https://scontent.cdninstagram.com/rsrc.php/x.png" />`)).toEqual([]);
+  });
 });

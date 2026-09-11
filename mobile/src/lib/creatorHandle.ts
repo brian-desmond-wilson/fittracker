@@ -55,12 +55,23 @@ function ogImage(html: string): string | null {
   return raw ? decodeEntities(raw) : null;
 }
 
-/** Instagram's profile page carries the avatar as og:image at 100px. The
- *  150px variant first (the CDN's signed hash may reject the edit), then
- *  the URL as given. Empty when the page has no og:image. */
+/** Instagram's profile page carries the avatar as og:image at 100px. Try the
+ *  150px variant first (the CDN's signed hash may reject the edit), then the
+ *  URL as given. Empty when the page has no og:image — or when the og:image
+ *  is a static asset: the login wall Instagram serves instead of a profile
+ *  answers 200 with its own logo under /rsrc.php/, and a logo is not a face. */
 export function instagramAvatarCandidates(html: string): string[] {
   const url = ogImage(html);
-  if (!url) return [];
+  if (!url || isStaticAsset(url)) return [];
   const upgraded = url.replace(/_s100x100/, "_s150x150");
   return upgraded === url ? [url] : [upgraded, url];
+}
+
+function isStaticAsset(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase().startsWith("static.") || u.pathname.includes("/rsrc.php/");
+  } catch {
+    return true;
+  }
 }
