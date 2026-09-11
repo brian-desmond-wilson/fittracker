@@ -1,7 +1,7 @@
 # Exercises Tab Filters & Sort — Design Spec
 
 **Date:** 2026-09-10
-**Status:** Approved, not yet built
+**Status:** Implemented and device-verified 2026-09-10 on branch `exercises-tab-filters` (plan: docs/superpowers/plans/2026-09-10-exercises-tab-filters.md)
 **Surface:** Training › Daily mode › Exercises tab (`mobile/src/components/training/daily/CatalogTab.tsx`)
 **Visual reference:** The Workouts tab as shipped from the approved mockup (Option A, frames A1–A7, https://claude.ai/code/artifact/e7af83a5-3d87-4ef7-9fba-7c0ca4dd5ac4) and its spec, `docs/superpowers/specs/2026-09-10-workouts-tab-filters-design.md`. The Exercises tab adopts that design one-for-one, with a shorter axis list. Where this spec and the Workouts spec differ, this spec wins for the Exercises tab only.
 
