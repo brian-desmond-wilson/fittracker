@@ -24,12 +24,24 @@
 //       the daily recommender selects on. Same vocabulary rule as extract;
 //       the client re-validates against it (workoutTagValidate.ts).
 //
-// SUGGEST ONLY: no action here writes a row, ever. The one thing this
-// function does own is the rehosted thumbnail, which is a file, not a row.
+//   refresh-creator { platform, handle }
+//       → { platform, handle, avatarUrl, avatarFetchedAt }
+//       Fetch the creator's profile page, rehost their avatar to the
+//       creator-avatars bucket and upsert public.creators — unless a row
+//       fresher than 30 days exists. resolve does the same for the poster
+//       it finds. The one caller allowed in with the service role (the
+//       backfill script) may only call this action.
+//
+// SUGGEST ONLY: no action here writes a row the user owns. The things this
+// function does own are the rehosted thumbnail (a file), and the shared
+// creators table (a cache of public profile pictures, nobody's data).
 //
 // Model: gpt-5.6-terra — judgement/vision tier, same split as the rest of the app.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  instagramAvatarCandidates, isAvatarStale, normaliseHandle, parseTikTokAvatar,
+} from './creatorAvatar.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,6 +51,7 @@ const corsHeaders = {
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY');
 const MODEL = 'gpt-5.6-terra';
 const BUCKET = 'capture-thumbs';
+const AVATAR_BUCKET = 'creator-avatars';
 const UA = 'Mozilla/5.0 (compatible; FitTracker/1.0)';
 
 const json = (body: unknown, status = 200) =>
@@ -127,6 +140,98 @@ async function rehostThumb(imageUrl: string, userId: string): Promise<string | n
   }
 }
 
+type AvatarPlatform = 'instagram' | 'tiktok';
+
+const serviceClient = () => createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+);
+
+/** Download the first candidate that is a real image and keep our own copy
+ *  at a fixed path, overwriting on refresh so the stored URL never changes.
+ *  Same guards as rehostThumb. Null when none of them worked. */
+async function rehostAvatar(
+  candidates: string[], platform: AvatarPlatform, handle: string,
+): Promise<string | null> {
+  for (const imageUrl of candidates) {
+    try {
+      const res = await fetch(imageUrl, { headers: { 'User-Agent': UA } });
+      if (!res.ok) continue;
+      const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+      if (!contentType.startsWith('image/')) continue;
+      const buffer = new Uint8Array(await res.arrayBuffer());
+      if (buffer.byteLength === 0 || buffer.byteLength > 8 * 1024 * 1024) continue;
+      const ext = contentType.includes('png') ? 'png'
+        : contentType.includes('webp') ? 'webp'
+        : 'jpg';
+      const filePath = `${platform}/${handle}.${ext}`;
+      const service = serviceClient();
+      const { error } = await service.storage
+        .from(AVATAR_BUCKET)
+        .upload(filePath, buffer, { contentType, upsert: true });
+      if (error) continue;
+      return service.storage.from(AVATAR_BUCKET).getPublicUrl(filePath).data.publicUrl;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+interface CreatorRow {
+  platform: AvatarPlatform;
+  handle: string;
+  avatar_url: string | null;
+  avatar_fetched_at: string | null;
+}
+
+/** Make sure public.creators has a fresh avatar for this creator. Never
+ *  throws, never blocks a capture on failure: a fetch that finds nothing
+ *  still stamps avatar_fetched_at (so a dead profile is not hammered on
+ *  every capture) and keeps whatever avatar_url was there before (so a
+ *  transient failure does not blank a working picture). */
+async function ensureCreatorAvatar(
+  platform: AvatarPlatform, rawHandle: string,
+): Promise<CreatorRow | null> {
+  const handle = normaliseHandle(rawHandle);
+  if (!handle) return null;
+  const service = serviceClient();
+  try {
+    const { data: existing } = await service
+      .from('creators')
+      .select('platform, handle, avatar_url, avatar_fetched_at')
+      .eq('platform', platform)
+      .eq('handle', handle)
+      .maybeSingle();
+    const row = (existing ?? null) as CreatorRow | null;
+    if (row && !isAvatarStale(row.avatar_fetched_at)) return row;
+
+    let candidates: string[] = [];
+    const profileUrl = platform === 'instagram'
+      ? `https://www.instagram.com/${handle}/`
+      : `https://www.tiktok.com/@${handle}`;
+    const res = await fetch(profileUrl, { headers: { 'User-Agent': UA } });
+    if (res.ok) {
+      const html = await res.text();
+      candidates = platform === 'instagram'
+        ? instagramAvatarCandidates(html)
+        : (() => { const u = parseTikTokAvatar(html); return u ? [u] : []; })();
+    }
+    const rehosted = candidates.length > 0 ? await rehostAvatar(candidates, platform, handle) : null;
+
+    const next: CreatorRow = {
+      platform, handle,
+      avatar_url: rehosted ?? row?.avatar_url ?? null,
+      avatar_fetched_at: new Date().toISOString(),
+    };
+    const { error } = await service.from('creators').upsert(next, { onConflict: 'platform,handle' });
+    if (error) return row;
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 async function resolveTikTok(url: string) {
   const res = await fetch(
     `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`,
@@ -175,6 +280,22 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('missing Authorization header');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+
+    const body = await req.json();
+
+    // The backfill script holds the service role, not a user session. It is
+    // let in for the one action that touches nothing a user owns; every
+    // other action still needs a real user.
+    if (token === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') && body.action === 'refresh-creator') {
+      const platform = String(body.platform ?? '');
+      if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('platform must be instagram or tiktok');
+      const row = await ensureCreatorAvatar(platform, String(body.handle ?? ''));
+      return json({
+        platform, handle: normaliseHandle(String(body.handle ?? '')),
+        avatarUrl: row?.avatar_url ?? null, avatarFetchedAt: row?.avatar_fetched_at ?? null,
+      });
+    }
 
     // Establish WHO is calling before any storage write — the thumb path is
     // scoped by the verified user id, never by anything the client claims.
@@ -182,13 +303,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
     );
-    const { data: userData, error: userError } = await anon.auth.getUser(
-      authHeader.replace(/^Bearer\s+/i, ''),
-    );
+    const { data: userData, error: userError } = await anon.auth.getUser(token);
     if (userError || !userData?.user) throw new Error('not authenticated');
     const userId = userData.user.id;
-
-    const body = await req.json();
 
     if (body.action === 'resolve') {
       const url = String(body.url ?? '').trim();
@@ -200,6 +317,13 @@ serve(async (req) => {
         : platform === 'instagram'
           ? await resolveInstagram(url)
           : null;
+
+      // The poster's avatar, kept fresh as a side effect of capturing. Awaited
+      // rather than detached: the edge runtime may not finish work left
+      // running after the response goes out. Costs nothing when fresh.
+      if (meta?.posterHandle && (platform === 'instagram' || platform === 'tiktok')) {
+        await ensureCreatorAvatar(platform, meta.posterHandle);
+      }
 
       if (!meta || (!meta.captionText && !meta.posterHandle)) {
         return json({
@@ -215,6 +339,16 @@ serve(async (req) => {
         captionText: meta.captionText,
         thumbnailUrl: meta.thumbSource ? await rehostThumb(meta.thumbSource, userId) : null,
         needsCaption: meta.captionText === null,
+      });
+    }
+
+    if (body.action === 'refresh-creator') {
+      const platform = String(body.platform ?? '');
+      if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('platform must be instagram or tiktok');
+      const row = await ensureCreatorAvatar(platform, String(body.handle ?? ''));
+      return json({
+        platform, handle: normaliseHandle(String(body.handle ?? '')),
+        avatarUrl: row?.avatar_url ?? null, avatarFetchedAt: row?.avatar_fetched_at ?? null,
       });
     }
 
