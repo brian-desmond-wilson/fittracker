@@ -3,7 +3,7 @@
 // "Exercises" and "Movements" are two doors onto one `exercises` table — the
 // two routes ran byte-identical queries — but each kept its own 1,000-line
 // copy of this screen, so a fix to one left the other behind. What genuinely
-// differed was three things: the word on screen and which tab the hierarchy
+// differed was two things: the word on screen and which tab the hierarchy
 // links stay inside (the server decides from is_movement whether the photo
 // gets a CrossFit athlete). Those are the props; everything else is shared.
 import React, { useState, useEffect } from 'react';
@@ -264,13 +264,25 @@ export function TrainingItemDetailScreen({
     field === 'description' ? 'description' : field === 'video_url' ? 'demo video' : 'image';
 
   /**
+   * A skipped reason that means the field was never a candidate — set by a
+   * person, already full, images off, no capture, or filled by another run
+   * in the meantime. Anything else is a fill that was attempted and failed.
+   */
+  const isBenignSkip = (reason: string) =>
+    reason === 'user'
+    || reason === 'filled'
+    || reason === 'images off'
+    || reason === 'no single-exercise capture'
+    || reason.startsWith('filled elsewhere');
+
+  /**
    * Enrich fills whatever is empty (description, demo video, picture) and
    * never touches a value a person set. Regenerate image is the one
    * overwrite: a fresh picture over the existing one. The server owns the
    * prompt; the phone sends an id and a flag.
    */
   const handleEnrich = async (forceImage: boolean) => {
-    if (!item) return;
+    if (!item || generating) return;
 
     try {
       setGenerating(true);
@@ -303,14 +315,24 @@ export function TrainingItemDetailScreen({
       }
 
       if (forceImage && !result.imageUrl) {
-        Alert.alert('Error', result.skipped.image_url ?? 'Image generation failed');
+        // The same call may still have filled the description or video.
+        Alert.alert('Error', result.skipped.image_url ?? 'Image generation failed', [
+          { text: 'OK', onPress: () => loadItem() },
+        ]);
         return;
       }
 
-      const message = result.filled.length === 0
-        ? 'Nothing was empty — every field already has a value.'
-        : `Filled: ${result.filled.map(fieldLabel).join(', ')}.`;
-      Alert.alert(forceImage ? 'Image regenerated' : 'Enriched', message, [
+      const failures = Object.entries(result.skipped)
+        .filter(([, reason]) => !isBenignSkip(reason))
+        .map(([field, reason]) => `${fieldLabel(field)} (${reason})`);
+      const couldNotFill = failures.length > 0 ? `Could not fill ${failures.join('; ')}.` : '';
+      const message = result.filled.length > 0
+        ? `Filled: ${result.filled.map(fieldLabel).join(', ')}.${couldNotFill ? ` ${couldNotFill}` : ''}`
+        : couldNotFill || 'Nothing was empty — every field already has a value.';
+      const title = forceImage
+        ? (item.image_url ? 'Image regenerated' : 'Image generated')
+        : 'Enriched';
+      Alert.alert(title, message, [
         { text: 'OK', onPress: () => loadItem() },
       ]);
     } catch (error: any) {
