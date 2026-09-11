@@ -6,6 +6,7 @@
 // the caller decides what to record alongside the URL.
 // Spec: docs/superpowers/specs/2026-09-11-catalog-enrichment-pipeline-design.md §5
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
 
 export const IMAGE_BUCKET = 'exercise-images';
 const GEMINI_ENDPOINT =
@@ -82,7 +83,7 @@ export async function generateImageBytes(
   const inline = (part.inlineData ?? part.inline_data) as { data?: string; mimeType?: string; mime_type?: string };
   if (typeof inline.data !== 'string') throw new ImageGenerationError('No inline image data found');
   return {
-    bytes: Uint8Array.from(atob(inline.data), (c) => c.charCodeAt(0)),
+    bytes: decodeBase64(inline.data),
     mimeType: inline.mimeType || inline.mime_type || 'image/png',
   };
 }
@@ -109,7 +110,8 @@ export async function generateAndStoreImage(
   supabase: SupabaseClient, exerciseId: string, opts: { geminiApiKey: string; discipline: string | null },
 ): Promise<string> {
   const { data, error } = await supabase.from('exercises').select(IMAGE_ROW_SELECT).eq('id', exerciseId).single();
-  if (error || !data) throw new Error('Exercise not found');
+  if (error) throw new Error(`exercise read failed: ${error.message}`);
+  if (!data) throw new Error('Exercise not found');
   const row = data as unknown as ImageRow;
   console.log(`Generating image for exercise: ${row.name}`);
   const prompt = buildImagePrompt(row, opts.discipline);

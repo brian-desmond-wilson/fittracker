@@ -52,13 +52,23 @@ serve(async (req) => {
 
     // Read-modify-write of the provenance object: the column is small and a
     // concurrent edit of the same row is a human race we accept here.
-    const { data: current } = await supabase.from('exercises').select('enrichment').eq('id', exerciseId).maybeSingle();
+    // A failed read must not be mistaken for an empty object: writing {} back
+    // would erase every other provenance stamp on the row, user ones included.
+    const { data: current, error: readError } = await supabase
+      .from('exercises').select('enrichment').eq('id', exerciseId).maybeSingle();
+    if (readError) {
+      console.error('Database read error:', readError);
+      return json({ success: false, error: 'Database read error', imageUrl: publicUrl, exerciseId });
+    }
     const enrichment = (current?.enrichment ?? {}) as Record<string, unknown>;
     const { error: updateError } = await supabase.from('exercises').update({
       image_url: publicUrl,
       enrichment: { ...enrichment, image_url: { by: 'model', at: new Date().toISOString() } },
     }).eq('id', exerciseId);
-    if (updateError) console.error('Database update error:', updateError);
+    if (updateError) {
+      console.error('Database update error:', updateError);
+      return json({ success: false, error: 'Database update error', imageUrl: publicUrl, exerciseId });
+    }
 
     return json({ success: true, imageUrl: publicUrl, exerciseId });
   } catch (error) {
