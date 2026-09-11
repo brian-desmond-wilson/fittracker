@@ -1,59 +1,90 @@
-import React, { useCallback, useMemo, useState } from "react";
+// mobile/src/components/training/daily/CatalogTab.tsx
+// The captured Exercises tab: the Workouts rail-and-sheet over the exercise
+// catalog. Spec: docs/superpowers/specs/2026-09-10-exercises-tab-filters-design.md
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, useRouter } from "expo-router";
 import { AlertCircle, ChevronRight } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCatalog } from "@/src/lib/supabase/capture";
 import { fetchPendingReviewCount } from "@/src/lib/supabase/matchReviews";
-import { filterCatalog, catalogHandles } from "@/src/lib/catalogFilter";
+import { fetchCreators } from "@/src/lib/supabase/creators";
+import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
+import {
+  applyExerciseFiltersAndSearch, activeExerciseFilterChips, countActiveExerciseFilters,
+  removeExerciseChip, clearExerciseAxis, mostRestrictiveExerciseAxis,
+  exerciseCreatorCounts, catalogEquipmentNames, catalogGoalTypes,
+} from "@/src/lib/exerciseFilters";
+import { sortExercises } from "@/src/lib/exerciseSort";
+import { loadExercisePrefs, saveExercisePrefs } from "@/src/lib/exerciseFilterStore";
+import {
+  EMPTY_EXERCISE_FILTERS, DEFAULT_EXERCISE_SORT, EXERCISE_SORT_LABELS, EXERCISE_SORT_GROUPS,
+} from "@/src/types/exerciseFilters";
+import type { ExerciseFilters, ExerciseSort } from "@/src/types/exerciseFilters";
 import { CaptureFab } from "./CaptureFab";
 import { MatchReviewSheet } from "./MatchReviewSheet";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { SwipeableCatalogCard } from "./SwipeableCatalogCard";
-import type { CatalogEntry, CatalogFilters } from "@/src/types/capture";
-
-// One pill rail per filter axis. Muscles/equipment/categories are derived
-// from the loaded catalog so the rails only offer values that select something.
-const axisValues = (entries: CatalogEntry[]) => ({
-  muscles: [...new Set(entries.flatMap((e) => e.muscles.map((m) => m.name)))].sort(),
-  equipment: [...new Set(entries.flatMap((e) => e.equipmentTypes))].sort(),
-  categories: [...new Set(entries.flatMap((e) => e.goalTypes))].sort(),
-  handles: catalogHandles(entries),
-});
+import { FilterRail } from "./FilterRail";
+import { SortSheet } from "./SortSheet";
+import { ExerciseFiltersSheet } from "./ExerciseFiltersSheet";
+import type { CatalogEntry } from "@/src/types/capture";
 
 interface CatalogTabProps {
   searchQuery: string;
   onCountUpdate: (count: number) => void;
 }
 
+/** "a", "a and b", "a, b and c" — labels verbatim. */
+const listed = (items: string[]): string =>
+  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+
 export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabProps) {
   const router = useRouter();
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
+  const [avatars, setAvatars] = useState<CreatorAvatarMap>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filters, setFilters] = useState<Omit<CatalogFilters, "search">>({
-    muscle: null, equipment: null, category: null, handle: null, skill: null,
-  });
+  const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_EXERCISE_FILTERS);
+  const [sort, setSort] = useState<ExerciseSort>(DEFAULT_EXERCISE_SORT);
+  // Prefs are read before the first list paint so the list does not flash
+  // from unfiltered to filtered (spec §7). The ref remembers WHOSE prefs are
+  // loaded, so a different user signing in on a surviving tab gets their own.
+  const prefsFor = useRef<string | null>(null);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // The match-review queue's entry point: captures park unmatched names in
   // exercise_match_reviews, and this banner is where they get resolved.
   const [userId, setUserId] = useState<string | null>(null);
   const [pendingReviews, setPendingReviews] = useState(0);
   const [reviewSheetOpen, setReviewSheetOpen] = useState(false);
+
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setUserId(user.id);
-    const [list, pending] = await Promise.all([
+    if (prefsFor.current !== user.id) {
+      prefsFor.current = user.id;
+      const prefs = await loadExercisePrefs(user.id);
+      setFilters(prefs.filters);
+      setSort(prefs.sort);
+      setPrefsReady(true);
+    }
+    // Creators ride along: the picker is decoration on the list, and a
+    // missing map just means letters.
+    const [list, pending, faces] = await Promise.all([
       fetchCatalog(user.id),
       fetchPendingReviewCount(user.id),
+      fetchCreators(),
     ]);
     setEntries(list);
     setPendingReviews(pending);
+    setAvatars(faces);
     onCountUpdate(list.length);
     setLoading(false);
   }, [onCountUpdate]);
@@ -70,42 +101,64 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
     setRefreshing(false);
   };
 
-  const axes = useMemo(() => axisValues(entries), [entries]);
+  const applyFilters = useCallback((next: ExerciseFilters) => {
+    setFilters(next);
+    if (userId) saveExercisePrefs(userId, { filters: next, sort });
+  }, [userId, sort]);
+
+  const applySort = useCallback((next: ExerciseSort) => {
+    setSort(next);
+    if (userId) saveExercisePrefs(userId, { filters, sort: next });
+  }, [userId, filters]);
+
   const filtered = useMemo(
-    () => filterCatalog(entries, { ...filters, search: searchQuery }),
-    [entries, filters, searchQuery],
+    () => sortExercises(applyExerciseFiltersAndSearch(entries, filters, searchQuery), sort),
+    [entries, filters, searchQuery, sort],
   );
 
-  const toggle = (axis: keyof typeof filters, value: string) =>
-    setFilters((f) => ({ ...f, [axis]: f[axis] === value ? null : value }));
+  const chips = useMemo(() => activeExerciseFilterChips(filters), [filters]);
+  const activeCount = countActiveExerciseFilters(filters);
+  const creators = useMemo(() => exerciseCreatorCounts(entries), [entries]);
+  // Tiles come from the catalog itself, so every tile is one some exercise
+  // uses; the dimmed state exists for the shared grid, not for this tab.
+  const equipmentTiles = useMemo(() => catalogEquipmentNames(entries), [entries]);
+  const availableEquipment = useMemo(() => new Set(equipmentTiles.map((t) => t.name)), [equipmentTiles]);
+  const goalTypes = useMemo(() => catalogGoalTypes(entries), [entries]);
+  // The sheet's live "Show N" count: the draft, composed with the header
+  // search exactly as the applied list is.
+  const countFor = useCallback(
+    (draft: ExerciseFilters) => applyExerciseFiltersAndSearch(entries, draft, searchQuery).length,
+    [entries, searchQuery],
+  );
 
-  const rail = (label: string, axis: keyof typeof filters, values: string[]) =>
-    values.length > 0 && (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-        <Text style={styles.railLabel}>{label}</Text>
-        {values.map((v) => (
-          <TouchableOpacity
-            key={v}
-            style={[styles.pill, filters[axis] === v && styles.pillActive]}
-            onPress={() => toggle(axis, v)}
-          >
-            <Text style={[styles.pillText, filters[axis] === v && styles.pillTextActive]}>{v}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
+  // Only when the list is empty because of us, not because the catalog is.
+  const rescue = useMemo(
+    () => (entries.length > 0 && filtered.length === 0 && activeCount > 0
+      ? mostRestrictiveExerciseAxis(entries, filters, searchQuery)
+      : null),
+    [entries, filtered.length, activeCount, filters, searchQuery],
+  );
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <View style={styles.railBlock}>
-        {rail("Muscle", "muscle", axes.muscles)}
-        {rail("Equipment", "equipment", axes.equipment)}
-        {rail("Type", "category", axes.categories)}
-        {rail("Skill", "skill", ["Beginner", "Intermediate", "Advanced"])}
-        {rail("From", "handle", axes.handles)}
-      </View>
+      {/* The rail waits with the list: a sort or filter tapped before the
+          remembered ones arrive would be overwritten by them. */}
+      {prefsReady && !loading && (
+        <FilterRail
+          sortLabel={EXERCISE_SORT_LABELS[sort]}
+          onOpenSort={() => setSortOpen(true)}
+          activeCount={chips.length}
+          onOpenFilters={() => setFiltersOpen(true)}
+          chips={chips}
+          onRemoveChip={(chip) => applyFilters(removeExerciseChip(filters, chip))}
+          onClearAll={() => applyFilters(EMPTY_EXERCISE_FILTERS)}
+          shown={filtered.length}
+          total={entries.length}
+          noun={["exercise", "exercises"]}
+        />
+      )}
 
-      {pendingReviews > 0 && (
+      {pendingReviews > 0 && !loading && (
         <TouchableOpacity
           style={styles.reviewBanner}
           onPress={() => setReviewSheetOpen(true)}
@@ -113,23 +166,24 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
           accessibilityRole="button"
           accessibilityLabel={`${pendingReviews} captured names need review`}
         >
-          <AlertCircle size={16} color={colors.primary} />
+          <AlertCircle size={16} color={colors.brand} />
           <Text style={styles.reviewBannerText}>
             {pendingReviews === 1
               ? "1 captured name needs review"
               : `${pendingReviews} captured names need review`}
           </Text>
-          <ChevronRight size={16} color={colors.mutedForeground} />
+          <ChevronRight size={16} color={colors.textMuted} />
         </TouchableOpacity>
       )}
 
-      {loading ? (
+      {loading || !prefsReady ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
         </View>
       ) : (
-        // Floats over the list, not the rails: the wrapper is its anchor.
-        // iOS never draws RefreshControl's own spinner.
+        // The wrapper is what the indicator floats against, so a pull draws
+        // it over the list and not over the rail. iOS never draws
+        // RefreshControl's own spinner.
         <View style={styles.listWrap}>
         <RefreshIndicator visible={refreshing} />
         <FlatList
@@ -138,7 +192,7 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh}
-              tintColor={colors.primary} colors={[colors.primary]} />
+              tintColor={colors.brand} colors={[colors.brand]} />
           }
           renderItem={({ item }) => (
             <SwipeableCatalogCard
@@ -151,19 +205,61 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>
-                {entries.length === 0 ? "Nothing captured yet" : "No matches"}
-              </Text>
-              <Text style={styles.emptyText}>
-                {entries.length === 0
-                  ? "See an exercise on Instagram or TikTok? Paste its link here with the + button."
-                  : "Clear a filter or change the search."}
-              </Text>
+              {entries.length === 0 ? (
+                <>
+                  <Text style={styles.emptyTitle}>Nothing captured yet</Text>
+                  <Text style={styles.emptyText}>
+                    See an exercise on Instagram or TikTok? Paste its link here with the + button.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.emptyTitle}>Nothing matches</Text>
+                  <Text style={styles.emptyText}>
+                    {activeCount > 0
+                      ? `No exercise matches all of ${listed([
+                          ...chips.map((c) => c.label),
+                          ...(searchQuery.trim() ? [`“${searchQuery.trim()}”`] : []),
+                        ])}.`
+                      : "Change the search."}
+                  </Text>
+                  {rescue && (
+                    <TouchableOpacity style={styles.rescue} onPress={() => applyFilters(clearExerciseAxis(filters, rescue.axis))}
+                      accessibilityRole="button">
+                      <Text style={styles.rescueText}>
+                        Drop “{rescue.label}” · {rescue.count} {rescue.count === 1 ? "exercise" : "exercises"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {activeCount > 0 && (
+                    <TouchableOpacity style={styles.rescueGhost} onPress={() => applyFilters(EMPTY_EXERCISE_FILTERS)}
+                      accessibilityRole="button">
+                      <Text style={styles.rescueGhostText}>Clear all filters</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
             </View>
           }
         />
         </View>
       )}
+
+      <SortSheet visible={sortOpen} value={sort} groups={EXERCISE_SORT_GROUPS} labels={EXERCISE_SORT_LABELS}
+        onSelect={applySort} onClose={() => setSortOpen(false)} />
+
+      <ExerciseFiltersSheet
+        visible={filtersOpen}
+        applied={filters}
+        creators={creators}
+        avatars={avatars}
+        countFor={countFor}
+        equipmentTiles={equipmentTiles}
+        availableEquipment={availableEquipment}
+        goalTypes={goalTypes}
+        onApply={applyFilters}
+        onClose={() => setFiltersOpen(false)}
+      />
 
       <CaptureFab onSaved={load} />
 
@@ -178,30 +274,27 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  railBlock: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 6 },
-  rail: { paddingHorizontal: 16, gap: 6, alignItems: "center", paddingVertical: 4 },
-  railLabel: { fontSize: 11, color: colors.mutedForeground, marginRight: 4, textTransform: "uppercase" },
-  pill: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
-    backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
-  },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 13, color: colors.mutedForeground },
-  pillTextActive: { color: "#FFFFFF", fontWeight: "600" },
+  container: { flex: 1, backgroundColor: colors.bg },
   reviewBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     marginHorizontal: 16, marginTop: 10, paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: colors.muted, borderRadius: 10,
+    backgroundColor: colors.surface2, borderRadius: 10,
     borderWidth: 1, borderColor: colors.border,
   },
-  reviewBannerText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.foreground },
+  reviewBannerText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.text },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   // The card's own gap lives on its swipe container, so `gap` here would
   // double it.
   listWrap: { flex: 1 },
   listContent: { padding: 16 },
   empty: { padding: 40, alignItems: "center" },
-  emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.text, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: colors.textMuted, textAlign: "center", lineHeight: 20 },
+  rescue: {
+    marginTop: 16, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 8, alignSelf: "stretch",
+    backgroundColor: colors.brand, alignItems: "center", justifyContent: "center",
+  },
+  rescueText: { fontSize: 15, fontWeight: "600", color: colors.onBrand, textAlign: "center" },
+  rescueGhost: { marginTop: 4, height: 36, alignItems: "center", justifyContent: "center" },
+  rescueGhostText: { fontSize: 14, color: colors.textMuted },
 });

@@ -189,12 +189,3 @@ export interface CapturedWorkoutEntry {
   /** True only when every resolved movement is bodyweight. */
   isBodyweight: boolean;
 }
-
-export interface CatalogFilters {
-  muscle: string | null;
-  equipment: string | null;
-  category: string | null; // goal_types name
-  handle: string | null;
-  skill: string | null; // exercises.skill_level: Beginner | Intermediate | Advanced
-  search: string;
-}
