@@ -15,7 +15,7 @@ import { isAvatarStale, normaliseHandle } from "@/src/lib/creatorHandle";
 import { applyFiltersAndSearch, activeFilterChips, countActiveFilters, removeChip, creatorCounts, mostRestrictiveAxis, clearAxis } from "@/src/lib/workoutFilters";
 import { sortWorkouts } from "@/src/lib/workoutSort";
 import { loadWorkoutPrefs, saveWorkoutPrefs } from "@/src/lib/workoutFilterStore";
-import { EMPTY_FILTERS, DEFAULT_SORT, SORT_LABELS } from "@/src/types/workoutFilters";
+import { EMPTY_FILTERS, DEFAULT_SORT, SORT_LABELS, SORT_GROUPS, SORT_SUBLABELS } from "@/src/types/workoutFilters";
 import type { WorkoutFilters, WorkoutSort } from "@/src/types/workoutFilters";
 import type { CompletionMap } from "@/src/lib/workoutCompletion";
 import { getLocalDateString } from "@/src/lib/dates";
@@ -273,7 +273,8 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
       </View>
       )}
 
-      <SortSheet visible={sortOpen} value={sort} onSelect={applySort} onClose={() => setSortOpen(false)} />
+      <SortSheet visible={sortOpen} value={sort} groups={SORT_GROUPS} labels={SORT_LABELS} sublabels={SORT_SUBLABELS}
+  onSelect={applySort} onClose={() => setSortOpen(false)} />
 
       <WorkoutFiltersSheet
         visible={filtersOpen}

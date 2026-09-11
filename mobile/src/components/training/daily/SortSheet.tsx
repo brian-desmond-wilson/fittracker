@@ -1,35 +1,39 @@
 // mobile/src/components/training/daily/SortSheet.tsx
-// Mockup A2. Comes up from the bottom; a tap picks and closes.
+// Mockup A2. Comes up from the bottom; a tap picks and closes. Generic over
+// the sort union: each tab hands in its own groups and labels.
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { BottomSheet } from "@/src/components/ui/BottomSheet";
 import { colors, spacing } from "@/src/theme/tokens";
-import type { WorkoutSort } from "@/src/types/workoutFilters";
-import { SORT_GROUPS, SORT_LABELS, SORT_SUBLABELS } from "@/src/types/workoutFilters";
 
-interface SortSheetProps {
+interface SortSheetProps<S extends string> {
   visible: boolean;
-  value: WorkoutSort;
-  onSelect: (sort: WorkoutSort) => void;
+  value: S;
+  groups: { title: string; sorts: S[] }[];
+  labels: Record<S, string>;
+  sublabels?: Partial<Record<S, string>>;
+  onSelect: (sort: S) => void;
   onClose: () => void;
 }
 
-export function SortSheet({ visible, value, onSelect, onClose }: SortSheetProps) {
+export function SortSheet<S extends string>({
+  visible, value, groups, labels, sublabels, onSelect, onClose,
+}: SortSheetProps<S>) {
   return (
     <BottomSheet visible={visible} onClose={onClose} closeLabel="Close sort" padded={false}>
       <Text style={styles.title}>Sort by</Text>
-      {SORT_GROUPS.map((g) => (
+      {groups.map((g) => (
         <View key={g.title}>
           <Text style={styles.section}>{g.title}</Text>
           {g.sorts.map((s) => {
             const on = s === value;
-            const sub = SORT_SUBLABELS[s];
+            const sub = sublabels?.[s];
             return (
               <TouchableOpacity key={s} style={styles.row}
                 onPress={() => { onSelect(s); onClose(); }}
                 accessibilityRole="radio" accessibilityState={{ selected: on }}>
                 <View style={styles.rowText}>
-                  <Text style={styles.label}>{SORT_LABELS[s]}</Text>
+                  <Text style={styles.label}>{labels[s]}</Text>
                   {sub ? <Text style={styles.sub}>{sub}</Text> : null}
                 </View>
                 <View style={[styles.radio, on && styles.radioOn]}>
