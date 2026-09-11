@@ -219,17 +219,23 @@ export async function composeDay(
   if (stale()) return { sessionId: null };
 
   // ---- Lazy classification backfill (spec §3.1, §8): tag what isn't
-  // tagged, in place, before shortlisting. A failure leaves that workout
-  // out of play today; the next refresh retries it, up to its budget, and
-  // tomorrow starts over. See classifyByWorkout and the three constants
-  // above for what bounds this.
+  // tagged, and backfill the format on what is, in place, before
+  // shortlisting. A failure leaves that workout out of play today; the
+  // next refresh retries it, up to its budget, and tomorrow starts over.
+  // See classifyByWorkout and the three constants above for what bounds
+  // this.
   if (muscleNames.length > 0) {
     // The budget is about the real calendar day, not the day being composed:
     // a draft compose for tomorrow must not hand today's spent attempts a
     // fresh allowance, or a rest tap costs the whole budget twice.
     const budgetDay = getLocalDateString();
+    // Untagged, or tagged before Format existed: the classifier answers
+    // everything at once, so a re-run for the format also rewrites roles,
+    // minutes, intensity and skill — including any hand edit made since.
+    // Accepted (spec §7) as the cost of not adding a second classify action;
+    // it happens once per workout, because the run leaves format set.
     const due = captured
-      .filter((w) => w.tags.classifiedAt === null)
+      .filter((w) => w.tags.classifiedAt === null || w.tags.format === null)
       .filter((w) => {
         const s = classifyByWorkout.get(w.workoutId);
         // Fresh, still on the wire, or with budget left. A workout that
