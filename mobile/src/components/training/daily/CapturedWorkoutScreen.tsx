@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, Image,
   ActivityIndicator, StatusBar, TextInput, Alert,
@@ -38,6 +38,9 @@ import {
   formatHasMinutes, minutesLabelFor,
 } from "@/src/lib/workoutFormatVocab";
 import type { CapturedWorkoutEntry, CapturedWorkoutItemEntry } from "@/src/types/capture";
+import { CreatorAvatar } from "@/src/components/ui/CreatorAvatar";
+import { fetchCreator } from "@/src/lib/supabase/creators";
+import type { CreatorAvatar as CreatorAvatarRow } from "@/src/lib/supabase/creators";
 
 const BLOCK_ROLES: BlockRole[] = [
   "warmup", "mobility", "main", "conditioning", "cooldown",
@@ -114,6 +117,7 @@ export function CapturedWorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const [workout, setWorkout] = useState<CapturedWorkoutEntry | null>(null);
+  const [creator, setCreator] = useState<CreatorAvatarRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -159,6 +163,19 @@ export function CapturedWorkoutScreen() {
       return w;
     });
   }, [id]);
+
+  // The creator's avatar rides beside the source link. One row by key; a
+  // miss is a letter, never an error.
+  useEffect(() => {
+    const src = workout?.source;
+    if (!src?.posterHandle || (src.platform !== "instagram" && src.platform !== "tiktok")) {
+      setCreator(null);
+      return;
+    }
+    let alive = true;
+    fetchCreator(src.platform, src.posterHandle).then((c) => { if (alive) setCreator(c); });
+    return () => { alive = false; };
+  }, [workout?.source?.platform, workout?.source?.posterHandle]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1086,10 +1103,20 @@ export function CapturedWorkoutScreen() {
               onPress={() => Linking.openURL(workout.source!.sourceUrl)}
               activeOpacity={0.7}
             >
-              <ExternalLink size={15} color={colors.primary} />
+              {/* Avatar · handle · link glyph. 20pt, not the glyph's 15: a
+                  face is unreadable that small (spec §7.4). */}
+              {workout.source.posterHandle && (
+                <CreatorAvatar
+                  handle={workout.source.posterHandle}
+                  url={creator?.avatarUrl ?? null}
+                  fetchedAt={creator?.fetchedAt ?? null}
+                  size={20}
+                />
+              )}
               <Text style={styles.sourceText}>
                 {workout.source.posterHandle ?? workout.source.platform}
               </Text>
+              <ExternalLink size={15} color={colors.primary} />
             </TouchableOpacity>
           )}
 
