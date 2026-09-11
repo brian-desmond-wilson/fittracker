@@ -3,9 +3,9 @@
 // "Exercises" and "Movements" are two doors onto one `exercises` table — the
 // two routes ran byte-identical queries — but each kept its own 1,000-line
 // copy of this screen, so a fix to one left the other behind. What genuinely
-// differed was three things: the word on screen, which tab the hierarchy
-// links stay inside, and whether the AI photo prompt says "CrossFit". Those
-// are the props; everything else is shared.
+// differed was three things: the word on screen and which tab the hierarchy
+// links stay inside (the server decides from is_movement whether the photo
+// gets a CrossFit athlete). Those are the props; everything else is shared.
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -31,6 +31,7 @@ import type { CaptureSource } from '@/src/types/capture';
 import { supabase } from '@/src/lib/supabase';
 import { fetchAncestors } from '@/src/lib/supabase/crossfit';
 import { fetchExerciseSources } from '@/src/lib/supabase/capture';
+import { enrichExercise } from '@/src/lib/supabase/enrich';
 import { CatalogItemWizard } from '@/src/components/training/crossfit/CatalogItemWizard';
 
 export interface TrainingItemDetailScreenProps {
@@ -44,12 +45,6 @@ export interface TrainingItemDetailScreenProps {
    * into the other one.
    */
   routeBase: string;
-  /**
-   * Flavours the generated photo, e.g. "CrossFit" — a movement gets a
-   * CrossFit athlete in a CrossFit gym, a plain exercise just gets an
-   * athlete in a gym.
-   */
-  discipline?: string;
 }
 
 /** "movement" -> "Movement", for sentence-leading copy. */
@@ -87,7 +82,6 @@ export function TrainingItemDetailScreen({
   noun,
   nounPlural,
   routeBase,
-  discipline,
 }: TrainingItemDetailScreenProps) {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -250,8 +244,12 @@ export function TrainingItemDetailScreen({
           onPress: () => setEditVisible(true),
         },
         {
+          text: 'Enrich',
+          onPress: () => { handleEnrich(false); },
+        },
+        {
           text: 'Regenerate Image',
-          onPress: handleGenerateImage,
+          onPress: () => { handleEnrich(true); },
         },
         {
           text: 'Cancel',
@@ -261,85 +259,63 @@ export function TrainingItemDetailScreen({
     );
   };
 
-  const handleGenerateImage = async () => {
+  /** A field name as the alert says it. */
+  const fieldLabel = (field: string) =>
+    field === 'description' ? 'description' : field === 'video_url' ? 'demo video' : 'image';
+
+  /**
+   * Enrich fills whatever is empty (description, demo video, picture) and
+   * never touches a value a person set. Regenerate image is the one
+   * overwrite: a fresh picture over the existing one. The server owns the
+   * prompt; the phone sends an id and a flag.
+   */
+  const handleEnrich = async (forceImage: boolean) => {
     if (!item) return;
 
     try {
       setGenerating(true);
 
-      // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
-        Alert.alert('Error', 'You must be logged in to generate an image');
+        Alert.alert('Error', 'You must be logged in to do that');
         return;
       }
 
-      // Only allow custom items by creator or official items by admins
-      const canGenerate = isAdmin || (!item.is_official && item.created_by === user.id);
-      if (!canGenerate) {
-        Alert.alert(
-          'Permission Denied',
-          item.is_official
-            ? `Only administrators can generate images for official ${nounPlural}.`
-            : `You can only generate images for ${nounPlural} you created.`
-        );
+      // Regenerating spends an image credit on a picture that already exists:
+      // only the creator of a custom item, or an admin for official ones.
+      if (forceImage) {
+        const canGenerate = isAdmin || (!item.is_official && item.created_by === user.id);
+        if (!canGenerate) {
+          Alert.alert(
+            'Permission Denied',
+            item.is_official
+              ? `Only administrators can regenerate images for official ${nounPlural}.`
+              : `You can only regenerate images for ${nounPlural} you created.`
+          );
+          return;
+        }
+      }
+
+      const result = await enrichExercise(item.id, { images: true, forceImage });
+      if (!result) {
+        Alert.alert('Error', forceImage ? 'Image generation failed. Please try again.' : 'Enrichment failed. Please try again.');
         return;
       }
 
-      // Build equipment list — from the exercise_equipment junction (cores:
-      // core_default_equipment), not the legacy array.
-      const promptEquipment = equipmentNamesOf(item);
-      const equipmentList = promptEquipment.length > 0
-        ? promptEquipment.join(', ')
-        : 'bodyweight';
-
-      // Build aliases context — from exercise_aliases, not the legacy array.
-      const promptAliases = aliasNamesOf(item);
-      const aliasesContext = promptAliases.length > 0
-        ? ` Also known as: ${promptAliases.join(', ')}.`
-        : '';
-
-      // Create prompt with equipment and aliases
-      // Reproduces what each tab used to ask for on its own: a movement gets
-      // a CrossFit athlete in a CrossFit gym, an exercise just gets an athlete
-      // in a gym.
-      const athlete = discipline ? `a ${discipline} athlete` : 'an athlete';
-      const gym = discipline ? `a modern ${discipline} gym` : 'a modern gym';
-      const prompt = `A high-quality, professional photo of ${athlete} performing ${item.name} in ${gym}. ${item.movement_category?.name || ''} ${noun}.${aliasesContext} Equipment: ${equipmentList}. Dramatic lighting, motivational atmosphere, athletic focus. Photorealistic, high detail.`;
-
-      console.log('Generating item image with prompt:', prompt);
-
-      // Call Edge Function
-      const { data, error } = await supabase.functions.invoke('generate-movement-image', {
-        body: {
-          movementId: item.id,
-          prompt,
-          userId: user.id,
-        },
-      });
-
-      if (error) {
-        console.error('Edge function error:', error);
-        throw error;
-      }
-
-      // Check if the response indicates failure
-      if (data && !data.success) {
-        const errorMsg = data.error || data.message || 'Image generation failed';
-        Alert.alert('Error', errorMsg);
+      if (forceImage && !result.imageUrl) {
+        Alert.alert('Error', result.skipped.image_url ?? 'Image generation failed');
         return;
       }
 
-      // Show success and reload item to get new image
-      Alert.alert(
-        'Success',
-        'AI image generated successfully!',
-        [{ text: 'OK', onPress: () => loadItem() }]
-      );
-
+      const message = result.filled.length === 0
+        ? 'Nothing was empty — every field already has a value.'
+        : `Filled: ${result.filled.map(fieldLabel).join(', ')}.`;
+      Alert.alert(forceImage ? 'Image regenerated' : 'Enriched', message, [
+        { text: 'OK', onPress: () => loadItem() },
+      ]);
     } catch (error: any) {
-      console.error('Error generating image:', error);
-      const errorMessage = error?.message || 'Failed to generate image. Please try again.';
+      console.error('Error enriching item:', error);
+      const errorMessage = error?.message || 'Something went wrong. Please try again.';
       Alert.alert('Error', errorMessage);
     } finally {
       setGenerating(false);
@@ -445,7 +421,7 @@ export function TrainingItemDetailScreen({
             <View style={{ height: 20 }} />
             <TouchableOpacity
               style={styles.generateButton}
-              onPress={handleGenerateImage}
+              onPress={() => { handleEnrich(true); }}
               disabled={generating}
               activeOpacity={0.7}
             >
