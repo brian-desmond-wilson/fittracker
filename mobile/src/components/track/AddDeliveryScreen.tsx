@@ -12,14 +12,14 @@
 // the loop recognise it, and a one-item meal so eating it is a single tap.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
   StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { Calendar, Camera, ChevronLeft, Plus, Truck } from "lucide-react-native";
-import { Button, Card } from "@/src/components/ui";
+import { BottomSheet, Button, Card } from "@/src/components/ui";
 import { VendorTiles } from "@/src/components/track/edit/VendorTiles";
 import { MealEditorSheet, IDLE_SEARCH, type DishSearchState } from "@/src/components/track/delivery/MealEditorSheet";
 import { MealRowCompact } from "@/src/components/track/delivery/MealRowCompact";
@@ -693,62 +693,56 @@ export function AddDeliveryScreen({ onClose, onSaved, editing }: AddDeliveryScre
         )}
 
         {showDatePicker && Platform.OS === "ios" && (
-          <Modal transparent visible animationType="fade">
-            <TouchableOpacity
-              style={styles.pickerBackdrop}
-              activeOpacity={1}
-              onPress={() => setShowDatePicker(false)}
-            >
-              <View style={styles.pickerSheet}>
-                <View style={styles.pickerHead}>
-                  <Text style={styles.pickerTitle}>Use by</Text>
-                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                    <Text style={styles.pickerDone}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={parseLocalDate(useBy)}
-                  mode="date"
-                  display="spinner"
-                  textColor={colors.text}
-                  onChange={(_e, picked) => {
-                    if (picked) setUseBy(getLocalDateString(picked));
-                  }}
-                />
-              </View>
-            </TouchableOpacity>
-          </Modal>
+          <BottomSheet
+            visible
+            onClose={() => setShowDatePicker(false)}
+            closeLabel="Close use-by picker"
+            padded={false}
+          >
+            <View style={styles.pickerHead}>
+              <Text style={styles.pickerTitle}>Use by</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.pickerDone}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={parseLocalDate(useBy)}
+              mode="date"
+              display="spinner"
+              textColor={colors.text}
+              onChange={(_e, picked) => {
+                if (picked) setUseBy(getLocalDateString(picked));
+              }}
+            />
+          </BottomSheet>
         )}
 
         {/* iOS asks for both halves at once; Android has no such picker, so it
             asks for the day and then the time, in that order. Either way the
             answer is one instant. */}
         {showArrivalPicker && Platform.OS === "ios" && (
-          <Modal transparent animationType="fade" onRequestClose={() => setShowArrivalPicker(false)}>
-            <TouchableOpacity
-              style={styles.pickerBackdrop}
-              activeOpacity={1}
-              onPress={() => setShowArrivalPicker(false)}
-            >
-              <View style={styles.pickerSheet}>
-                <View style={styles.pickerHead}>
-                  <Text style={styles.pickerTitle}>Arrives</Text>
-                  <TouchableOpacity onPress={() => setShowArrivalPicker(false)}>
-                    <Text style={styles.pickerDone}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={arrivesAt}
-                  mode="datetime"
-                  display="spinner"
-                  textColor={colors.text}
-                  onChange={(_e, picked) => {
-                    if (picked) setArrivesAt(picked);
-                  }}
-                />
-              </View>
-            </TouchableOpacity>
-          </Modal>
+          <BottomSheet
+            visible
+            onClose={() => setShowArrivalPicker(false)}
+            closeLabel="Close arrival picker"
+            padded={false}
+          >
+            <View style={styles.pickerHead}>
+              <Text style={styles.pickerTitle}>Arrives</Text>
+              <TouchableOpacity onPress={() => setShowArrivalPicker(false)}>
+                <Text style={styles.pickerDone}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={arrivesAt}
+              mode="datetime"
+              display="spinner"
+              textColor={colors.text}
+              onChange={(_e, picked) => {
+                if (picked) setArrivesAt(picked);
+              }}
+            />
+          </BottomSheet>
         )}
 
         {androidArrivalStep === "date" && Platform.OS === "android" && (
@@ -848,14 +842,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center", justifyContent: "center",
     backgroundColor: colors.scrim,
-  },
-  pickerBackdrop: {
-    flex: 1, justifyContent: "flex-end", backgroundColor: colors.scrim,
-  },
-  pickerSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
-    paddingBottom: spacing.xl,
   },
   pickerHead: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

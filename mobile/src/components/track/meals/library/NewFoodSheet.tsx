@@ -9,9 +9,9 @@
 // logged. Everything else about a food can be filled in later from Foods; none
 // of it changes what this meal is.
 import React, { useEffect, useState } from "react";
-import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-import { Button } from "@/src/components/ui";
+import { BottomSheet, Button } from "@/src/components/ui";
 
 interface NewFoodSheetProps {
   visible: boolean;
@@ -48,84 +48,82 @@ export function NewFoodSheet({
   }, [visible, initialName]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <View style={s.scrim}>
-        <View style={s.sheet}>
-          <Text style={s.title}>New product</Text>
-          <Text style={s.sub}>It&apos;ll be saved to your products and added to this meal.</Text>
+    <BottomSheet
+      visible={visible}
+      onClose={onCancel}
+      closeLabel="Close new product"
+      padded={false}
+      style={s.sheet}
+      // The dim area stays inert: a stray tap must not throw away a typed name.
+      dismissOnScrim={false}
+    >
+      <Text style={s.title}>New product</Text>
+      <Text style={s.sub}>It&apos;ll be saved to your products and added to this meal.</Text>
 
-          <View style={s.field}>
-            <Text style={s.label}>NAME</Text>
-            <TextInput
-              style={s.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="What is it called?"
-              placeholderTextColor={colors.textFaint}
-              autoFocus
-            />
-          </View>
+      <View style={s.field}>
+        <Text style={s.label}>NAME</Text>
+        <TextInput
+          style={s.input}
+          value={name}
+          onChangeText={setName}
+          placeholder="What is it called?"
+          placeholderTextColor={colors.textFaint}
+          autoFocus
+        />
+      </View>
 
-          <View style={s.row}>
-            <View style={[s.field, s.half]}>
-              <Text style={s.label}>CALORIES</Text>
-              <TextInput
-                style={s.input}
-                value={calories}
-                onChangeText={setCalories}
-                keyboardType="number-pad"
-                placeholder="per serving"
-                placeholderTextColor={colors.textFaint}
-              />
-            </View>
-            <View style={[s.field, s.half]}>
-              <Text style={s.label}>PROTEIN</Text>
-              <TextInput
-                style={s.input}
-                value={protein}
-                onChangeText={setProtein}
-                keyboardType="decimal-pad"
-                placeholder="optional"
-                placeholderTextColor={colors.textFaint}
-              />
-            </View>
-          </View>
-
-          <View style={s.actions}>
-            <TouchableOpacity style={s.cancel} onPress={onCancel} accessibilityRole="button">
-              <Text style={s.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <View style={s.grow}>
-              <Button
-                label="Save and add"
-                onPress={() => onCreate({
-                  name: name.trim(),
-                  calories: parseNumber(calories),
-                  protein: parseNumber(protein),
-                  barcode: initialBarcode,
-                })}
-                disabled={name.trim() === "" || saving}
-                loading={saving}
-                fluid
-              />
-            </View>
-          </View>
+      <View style={s.row}>
+        <View style={[s.field, s.half]}>
+          <Text style={s.label}>CALORIES</Text>
+          <TextInput
+            style={s.input}
+            value={calories}
+            onChangeText={setCalories}
+            keyboardType="number-pad"
+            placeholder="per serving"
+            placeholderTextColor={colors.textFaint}
+          />
+        </View>
+        <View style={[s.field, s.half]}>
+          <Text style={s.label}>PROTEIN</Text>
+          <TextInput
+            style={s.input}
+            value={protein}
+            onChangeText={setProtein}
+            keyboardType="decimal-pad"
+            placeholder="optional"
+            placeholderTextColor={colors.textFaint}
+          />
         </View>
       </View>
-    </Modal>
+
+      <View style={s.actions}>
+        <TouchableOpacity style={s.cancel} onPress={onCancel} accessibilityRole="button">
+          <Text style={s.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <View style={s.grow}>
+          <Button
+            label="Save and add"
+            onPress={() => onCreate({
+              name: name.trim(),
+              calories: parseNumber(calories),
+              protein: parseNumber(protein),
+              barcode: initialBarcode,
+            })}
+            disabled={name.trim() === "" || saving}
+            loading={saving}
+            fluid
+          />
+        </View>
+      </View>
+    </BottomSheet>
   );
 }
 
 const s = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: "flex-end" },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    borderTopLeftRadius: radii.panel,
-    borderTopRightRadius: radii.panel,
-    padding: spacing.screenGutter,
-    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.screenGutter,
+    paddingTop: spacing.screenGutter,
     gap: spacing.md,
   },
   title: { ...typography.titleBar, color: colors.text },

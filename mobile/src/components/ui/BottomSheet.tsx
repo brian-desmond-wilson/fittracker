@@ -35,10 +35,15 @@ interface BottomSheetProps {
   maxHeight?: ViewStyle["maxHeight"];
   /** Last word on the panel's style — a different padding or a gap. */
   style?: StyleProp<ViewStyle>;
+  /** Whether tapping the dim area closes the sheet. Off for a form whose
+   *  typed content a stray tap would throw away; those keep an explicit
+   *  Cancel. Default on. */
+  dismissOnScrim?: boolean;
 }
 
 export function BottomSheet({
   visible, onClose, children, closeLabel = "Close", padded = true, maxHeight, style,
+  dismissOnScrim = true,
 }: BottomSheetProps) {
   const insets = useSafeAreaInsets();
   return (
@@ -48,13 +53,17 @@ export function BottomSheet({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {/* Tapping the dimmed area is the gesture people try first. */}
-        <TouchableOpacity
-          style={styles.scrimTap}
-          activeOpacity={1}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel={closeLabel}
-        />
+        {dismissOnScrim ? (
+          <TouchableOpacity
+            style={styles.scrimTap}
+            activeOpacity={1}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel={closeLabel}
+          />
+        ) : (
+          <View style={styles.scrimTap} />
+        )}
         <View
           style={[
             styles.panel,

@@ -21,7 +21,7 @@
 // only the candidate somebody chooses costs a download.
 import React, { useState } from "react";
 import {
-  ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet,
+  ActivityIndicator, Alert, Image, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -32,7 +32,8 @@ import {
   searchDishImages,
   type DishImageCandidate,
 } from "@/src/lib/supabase/dishImageSearch";
-import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { BottomSheet } from "@/src/components/ui";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
 
 interface PhotoSourceSheetProps {
   visible: boolean;
@@ -173,170 +174,160 @@ export function PhotoSourceSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => finish()}>
-      {/* The scrim closes, so the sheet never traps somebody who opened it by
-          mistake on a slot they did not mean to touch. */}
-      <TouchableOpacity style={s.scrim} activeOpacity={1} onPress={() => finish()} />
-      <View style={s.sheet}>
-        <View style={s.grabber} />
-
-        <View style={s.head}>
-          <Text style={s.title}>{title}</Text>
-          {!!subtitle && <Text style={s.subtitle} numberOfLines={1}>{subtitle}</Text>}
-          <TouchableOpacity
-            onPress={() => finish()}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-            style={s.close}
-          >
-            <X size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={s.sources}>
-          {([
-            ["Camera", Camera, () => shoot("camera"), true],
-            ["Library", ImageIcon, () => shoot("library"), true],
-            ["Search", Search, runSearch, canSearch],
-            ["Link", LinkIcon, () => setLinkOpen((v) => !v), true],
-          ] as const).map(([label, Icon, onPress, enabled]) => (
-            <TouchableOpacity
-              key={label}
-              style={[
-                s.source,
-                !enabled && s.sourceDisabled,
-                label === "Link" && linkOpen && s.sourceOpen,
-                label === "Search" && search.status !== "idle" && s.sourceOpen,
-              ]}
-              onPress={onPress}
-              disabled={!enabled || attaching}
-              accessibilityRole="button"
-              accessibilityLabel={`${label} — ${title}`}
-            >
-              <Icon size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-              <Text style={s.sourceText}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {linkOpen && (
-          <View style={s.linkRow}>
-            <TextInput
-              style={s.linkInput}
-              placeholder="https://…"
-              placeholderTextColor={colors.textFaint}
-              value={link}
-              onChangeText={setLink}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              returnKeyType="done"
-              onSubmitEditing={useLink}
-              accessibilityLabel="Image address"
-            />
-            <TouchableOpacity
-              style={[s.linkGo, !canUseLink && s.sourceDisabled]}
-              onPress={useLink}
-              disabled={!canUseLink || attaching}
-              accessibilityRole="button"
-              accessibilityLabel="Use this image address"
-            >
-              <Text style={s.linkGoText}>Use</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {!canSearch && (
-          <Text style={s.note}>Name this product first and Search can look it up.</Text>
-        )}
-
-        {search.status === "loading" && (
-          <View style={s.busy}>
-            <ActivityIndicator size="small" color={colors.textMuted} />
-            <Text style={s.note}>Searching the web…</Text>
-          </View>
-        )}
-
-        {search.status === "done" && !search.configured && (
-          <Text style={s.note}>
-            Image search isn't set up yet — it needs a Google search key on the server.
-          </Text>
-        )}
-
-        {search.status === "done" && search.configured && search.candidates.length === 0 && (
-          <Text style={s.note}>Nothing found. Try the camera or library.</Text>
-        )}
-
-        {search.candidates.length > 0 && (
-          <>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={s.candidateRow}>
-                {search.candidates.map((c) => (
-                  <TouchableOpacity
-                    key={c.imageUrl}
-                    onPress={() => chooseCandidate(c)}
-                    disabled={attaching}
-                    accessibilityRole="button"
-                    accessibilityLabel="Use this image"
-                  >
-                    <Image source={{ uri: c.thumbUrl }} style={s.candidate} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-            <Text style={s.note}>
-              Web results{searchScope ? ` for ${searchScope}` : ""} — tap one to use it
-            </Text>
-          </>
-        )}
-
-        {attaching && (
-          <View style={s.busy}>
-            <ActivityIndicator size="small" color={colors.brand} />
-            <Text style={s.note}>Fetching and saving a copy…</Text>
-          </View>
-        )}
-
-        {/* Said before the choice, not after it: on a filled slot every one of
-            these four buttons is destructive to the picture already there. */}
-        {replacing && !attaching && (
-          <Text style={s.replaceNote}>This slot already has a photo. Choosing one replaces it.</Text>
-        )}
-
-        {/* Below the note it qualifies, and only when the caller has a
-            fallback worth naming. Not styled as destructive: for a meal this
-            hands the picture back to an ingredient, it does not empty it. */}
-        {onClear && !attaching && (
-          <TouchableOpacity
-            style={s.clear}
-            onPress={() => { onClear(); finish(); }}
-            accessibilityRole="button"
-            accessibilityLabel={clearLabel}
-          >
-            <ImageOff size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
-            <Text style={s.clearText}>{clearLabel}</Text>
-          </TouchableOpacity>
-        )}
+    <BottomSheet
+      visible={visible}
+      onClose={() => finish()}
+      closeLabel={`Close ${title}`}
+      padded={false}
+      style={s.sheet}
+    >
+      <View style={s.head}>
+        <Text style={s.title}>{title}</Text>
+        {!!subtitle && <Text style={s.subtitle} numberOfLines={1}>{subtitle}</Text>}
+        <TouchableOpacity
+          onPress={() => finish()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          style={s.close}
+        >
+          <X size={icons.md} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      <View style={s.sources}>
+        {([
+          ["Camera", Camera, () => shoot("camera"), true],
+          ["Library", ImageIcon, () => shoot("library"), true],
+          ["Search", Search, runSearch, canSearch],
+          ["Link", LinkIcon, () => setLinkOpen((v) => !v), true],
+        ] as const).map(([label, Icon, onPress, enabled]) => (
+          <TouchableOpacity
+            key={label}
+            style={[
+              s.source,
+              !enabled && s.sourceDisabled,
+              label === "Link" && linkOpen && s.sourceOpen,
+              label === "Search" && search.status !== "idle" && s.sourceOpen,
+            ]}
+            onPress={onPress}
+            disabled={!enabled || attaching}
+            accessibilityRole="button"
+            accessibilityLabel={`${label} — ${title}`}
+          >
+            <Icon size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+            <Text style={s.sourceText}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {linkOpen && (
+        <View style={s.linkRow}>
+          <TextInput
+            style={s.linkInput}
+            placeholder="https://…"
+            placeholderTextColor={colors.textFaint}
+            value={link}
+            onChangeText={setLink}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            returnKeyType="done"
+            onSubmitEditing={useLink}
+            accessibilityLabel="Image address"
+          />
+          <TouchableOpacity
+            style={[s.linkGo, !canUseLink && s.sourceDisabled]}
+            onPress={useLink}
+            disabled={!canUseLink || attaching}
+            accessibilityRole="button"
+            accessibilityLabel="Use this image address"
+          >
+            <Text style={s.linkGoText}>Use</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!canSearch && (
+        <Text style={s.note}>Name this product first and Search can look it up.</Text>
+      )}
+
+      {search.status === "loading" && (
+        <View style={s.busy}>
+          <ActivityIndicator size="small" color={colors.textMuted} />
+          <Text style={s.note}>Searching the web…</Text>
+        </View>
+      )}
+
+      {search.status === "done" && !search.configured && (
+        <Text style={s.note}>
+          Image search isn't set up yet — it needs a Google search key on the server.
+        </Text>
+      )}
+
+      {search.status === "done" && search.configured && search.candidates.length === 0 && (
+        <Text style={s.note}>Nothing found. Try the camera or library.</Text>
+      )}
+
+      {search.candidates.length > 0 && (
+        <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={s.candidateRow}>
+              {search.candidates.map((c) => (
+                <TouchableOpacity
+                  key={c.imageUrl}
+                  onPress={() => chooseCandidate(c)}
+                  disabled={attaching}
+                  accessibilityRole="button"
+                  accessibilityLabel="Use this image"
+                >
+                  <Image source={{ uri: c.thumbUrl }} style={s.candidate} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+          <Text style={s.note}>
+            Web results{searchScope ? ` for ${searchScope}` : ""} — tap one to use it
+          </Text>
+        </>
+      )}
+
+      {attaching && (
+        <View style={s.busy}>
+          <ActivityIndicator size="small" color={colors.brand} />
+          <Text style={s.note}>Fetching and saving a copy…</Text>
+        </View>
+      )}
+
+      {/* Said before the choice, not after it: on a filled slot every one of
+          these four buttons is destructive to the picture already there. */}
+      {replacing && !attaching && (
+        <Text style={s.replaceNote}>This slot already has a photo. Choosing one replaces it.</Text>
+      )}
+
+      {/* Below the note it qualifies, and only when the caller has a
+          fallback worth naming. Not styled as destructive: for a meal this
+          hands the picture back to an ingredient, it does not empty it. */}
+      {onClear && !attaching && (
+        <TouchableOpacity
+          style={s.clear}
+          onPress={() => { onClear(); finish(); }}
+          accessibilityRole="button"
+          accessibilityLabel={clearLabel}
+        >
+          <ImageOff size={icons.sm} color={colors.textMuted} strokeWidth={icons.strokeWidth} />
+          <Text style={s.clearText}>{clearLabel}</Text>
+        </TouchableOpacity>
+      )}
+    </BottomSheet>
   );
 }
 
 const s = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
-    borderTopWidth: 1, borderTopColor: colors.border,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.xxxl,
     gap: spacing.md,
-  },
-  grabber: {
-    width: 38, height: 4, borderRadius: radii.pill,
-    backgroundColor: colors.border, alignSelf: "center", marginBottom: spacing.xs,
   },
   head: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm },
   title: { ...typography.titleBar, color: colors.text },

@@ -2,14 +2,12 @@
 // (critique A2): a bottom sheet listing every item the shared expiry policy
 // says needs attention, each row carrying its verbs — use it, toss it, or
 // put a replacement on the shopping list — so the alert is no longer an
-// alert without an action. Sheet mechanics mirror the Loop Hub's
-// StationDetailSheet (sibling scrim + intrinsic-height sheet inside RN's
-// flex-column Modal container).
+// alert without an action.
 import React from "react";
-import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Minus, ShoppingCart, Trash2 } from "lucide-react-native";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-import { Badge, IconButton } from "@/src/components/ui";
+import { colors, spacing, typography } from "@/src/theme/tokens";
+import { Badge, BottomSheet, IconButton } from "@/src/components/ui";
 import type { InventoryItemWithState } from "@/src/lib/supabase/inventory";
 
 interface ExpiryReviewModalProps {
@@ -37,87 +35,69 @@ export function ExpiryReviewModal({
   visible, items, onClose, onConsume, onToss, onShop, onOpenItem, mealsByItemId,
 }: ExpiryReviewModalProps) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
-        <View style={styles.scrim} />
-      </TouchableWithoutFeedback>
-      <View style={styles.sheet}>
-        <View style={styles.grabber} />
-        <Text style={[typography.rowTitle, styles.title]}>Needs attention</Text>
-        <Text style={typography.caption}>
-          Use it, toss it, or put a replacement on the list.
-        </Text>
-        <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-          {items.map((it) => {
-            const b = badgeFor(it);
-            return (
-              <View key={it.id} style={styles.row}>
-                <TouchableOpacity
-                  style={styles.rowText}
-                  onPress={() => { onClose(); onOpenItem(it); }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${it.name}`}
-                >
-                  <View style={styles.rowNameBlock}>
-                    <View style={styles.rowNameLine}>
-                      <Text style={[typography.body, styles.rowName]} numberOfLines={1}>{it.name}</Text>
-                      <Badge label={b.label} tone={b.tone} />
-                    </View>
-                    {/* E6: the obvious next move — cook the thing that uses it. */}
-                    {(mealsByItemId?.get(it.id)?.length ?? 0) > 0 && (
-                      <Text style={typography.caption} numberOfLines={1}>
-                        Use it in: {mealsByItemId!.get(it.id)!.join(", ")}
-                      </Text>
-                    )}
+    <BottomSheet visible={visible} onClose={onClose} closeLabel="Close needs attention" maxHeight="70%" style={styles.sheet} padded={false}>
+      <Text style={[typography.rowTitle, styles.title]}>Needs attention</Text>
+      <Text style={typography.caption}>
+        Use it, toss it, or put a replacement on the list.
+      </Text>
+      <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+        {items.map((it) => {
+          const b = badgeFor(it);
+          return (
+            <View key={it.id} style={styles.row}>
+              <TouchableOpacity
+                style={styles.rowText}
+                onPress={() => { onClose(); onOpenItem(it); }}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${it.name}`}
+              >
+                <View style={styles.rowNameBlock}>
+                  <View style={styles.rowNameLine}>
+                    <Text style={[typography.body, styles.rowName]} numberOfLines={1}>{it.name}</Text>
+                    <Badge label={b.label} tone={b.tone} />
                   </View>
-                </TouchableOpacity>
-                <View style={styles.rowActions}>
-                  <IconButton
-                    icon={Minus} variant="circle"
-                    onPress={() => onConsume(it)}
-                    accessibilityLabel={`Use one ${it.name}`}
-                    disabled={it.state.totalQuantity === 0}
-                  />
-                  <IconButton
-                    icon={Trash2} variant="circle" tone="danger"
-                    onPress={() => onToss(it)}
-                    accessibilityLabel={`Toss ${it.name}`}
-                    disabled={it.state.totalQuantity === 0}
-                  />
-                  <IconButton
-                    icon={ShoppingCart} variant="circle"
-                    onPress={() => onShop(it)}
-                    accessibilityLabel={`Add ${it.name} to shopping list`}
-                  />
+                  {/* E6: the obvious next move — cook the thing that uses it. */}
+                  {(mealsByItemId?.get(it.id)?.length ?? 0) > 0 && (
+                    <Text style={typography.caption} numberOfLines={1}>
+                      Use it in: {mealsByItemId!.get(it.id)!.join(", ")}
+                    </Text>
+                  )}
                 </View>
+              </TouchableOpacity>
+              <View style={styles.rowActions}>
+                <IconButton
+                  icon={Minus} variant="circle"
+                  onPress={() => onConsume(it)}
+                  accessibilityLabel={`Use one ${it.name}`}
+                  disabled={it.state.totalQuantity === 0}
+                />
+                <IconButton
+                  icon={Trash2} variant="circle" tone="danger"
+                  onPress={() => onToss(it)}
+                  accessibilityLabel={`Toss ${it.name}`}
+                  disabled={it.state.totalQuantity === 0}
+                />
+                <IconButton
+                  icon={ShoppingCart} variant="circle"
+                  onPress={() => onShop(it)}
+                  accessibilityLabel={`Add ${it.name} to shopping list`}
+                />
               </View>
-            );
-          })}
-          {items.length === 0 ? (
-            <Text style={[typography.caption, styles.empty]}>
-              Nothing needs attention. The loop is clean.
-            </Text>
-          ) : null}
-        </ScrollView>
-      </View>
-    </Modal>
+            </View>
+          );
+        })}
+        {items.length === 0 ? (
+          <Text style={[typography.caption, styles.empty]}>
+            Nothing needs attention. The loop is clean.
+          </Text>
+        ) : null}
+      </ScrollView>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
-    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
-    padding: spacing.lg, paddingBottom: spacing.xxl,
-    gap: spacing.sm,
-    maxHeight: "70%",
-  },
-  grabber: {
-    width: 36, height: 4, borderRadius: radii.pill,
-    backgroundColor: colors.surface2, alignSelf: "center",
-  },
+  sheet: { padding: spacing.lg, gap: spacing.sm },
   title: { color: colors.text },
   list: { marginTop: spacing.sm },
   row: {

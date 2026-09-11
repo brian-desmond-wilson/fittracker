@@ -9,12 +9,11 @@
 // so "Done" is only a dismissal.
 import React from "react";
 import {
-  Modal, ScrollView, StyleSheet, Text, TouchableOpacity,
-  TouchableWithoutFeedback, View,
+  ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import { Check } from "lucide-react-native";
 import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
-import { Button } from "@/src/components/ui";
+import { BottomSheet, Button } from "@/src/components/ui";
 import type { FoodSubcategory } from "@/src/types/track";
 
 interface SubcategoryFilterSheetProps {
@@ -41,73 +40,64 @@ export function SubcategoryFilterSheet({
   const selectedCount = selectedSubcategoryIds.length;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
-        <View style={styles.scrim} />
-      </TouchableWithoutFeedback>
-      <View style={styles.sheet}>
-        <View style={styles.grabber} />
-        <View style={styles.header}>
-          <Text style={[typography.rowTitle, styles.title]}>Filter</Text>
-          {selectedCount > 0 && (
-            <TouchableOpacity
-              onPress={onClearAll}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityRole="button"
-              accessibilityLabel="Clear all filters"
-            >
-              <Text style={styles.clear}>Clear</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <ScrollView style={styles.list}>
-          {subcategories.map((sub) => {
-            const on = selectedSubcategoryIds.includes(sub.id);
-            const count = countsBySubcategoryId?.get(sub.id);
-            return (
-              <TouchableOpacity
-                key={sub.id}
-                style={styles.row}
-                onPress={() => onToggle(sub.id)}
-                activeOpacity={0.7}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: on }}
-                accessibilityLabel={
-                  count === undefined ? sub.name : `${sub.name}, ${count} items`
-                }
-              >
-                <View style={[styles.checkbox, on && styles.checkboxOn]}>
-                  {on && <Check size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />}
-                </View>
-                <Text style={[typography.body, styles.rowLabel]} numberOfLines={1}>
-                  {sub.name}
-                </Text>
-                {count !== undefined && <Text style={typography.caption}>{count}</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <Button label="Done" onPress={onClose} fluid />
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Close filter"
+      maxHeight="80%"
+      style={styles.sheet}
+    >
+      <View style={styles.header}>
+        <Text style={[typography.rowTitle, styles.title]}>Filter</Text>
+        {selectedCount > 0 && (
+          <TouchableOpacity
+            onPress={onClearAll}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Clear all filters"
+          >
+            <Text style={styles.clear}>Clear</Text>
+          </TouchableOpacity>
+        )}
       </View>
-    </Modal>
+
+      <ScrollView style={styles.list}>
+        {subcategories.map((sub) => {
+          const on = selectedSubcategoryIds.includes(sub.id);
+          const count = countsBySubcategoryId?.get(sub.id);
+          return (
+            <TouchableOpacity
+              key={sub.id}
+              style={styles.row}
+              onPress={() => onToggle(sub.id)}
+              activeOpacity={0.7}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }}
+              accessibilityLabel={
+                count === undefined ? sub.name : `${sub.name}, ${count} items`
+              }
+            >
+              <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                {on && <Check size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />}
+              </View>
+              <Text style={[typography.body, styles.rowLabel]} numberOfLines={1}>
+                {sub.name}
+              </Text>
+              {count !== undefined && <Text style={typography.caption}>{count}</Text>}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <Button label="Done" onPress={onClose} fluid />
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
-    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
-    padding: spacing.lg, paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.lg,
     gap: spacing.md,
-    maxHeight: "80%",
-  },
-  grabber: {
-    width: 36, height: 4, borderRadius: radii.pill,
-    backgroundColor: colors.surface2, alignSelf: "center",
   },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

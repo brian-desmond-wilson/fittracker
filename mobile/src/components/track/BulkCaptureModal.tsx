@@ -6,13 +6,12 @@
 // mechanism the freshness-reset design called for.
 import React, { useState } from "react";
 import {
-  Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity,
-  TouchableWithoutFeedback, View,
+  Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Check, Images } from "lucide-react-native";
-import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Badge, Button, LoadingState } from "@/src/components/ui";
+import { colors, icons, radii, spacing, typography } from "@/src/theme/tokens";
+import { Badge, BottomSheet, Button, LoadingState } from "@/src/components/ui";
 import { supabase } from "@/src/lib/supabase";
 import { findOrCreateProduct } from "@/src/services/savedFoodsService";
 import { replaceItemLocations } from "@/src/lib/supabase/inventory";
@@ -221,101 +220,83 @@ export function BulkCaptureModal({ visible, onClose, onApplied, attachBarcode }:
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <TouchableWithoutFeedback onPress={close} accessibilityRole="button" accessibilityLabel="Close">
-        <View style={styles.scrim} />
-      </TouchableWithoutFeedback>
-      <View style={styles.sheet}>
-        <View style={styles.grabber} />
-        <Text style={[typography.rowTitle, styles.title]}>Capture inventory</Text>
+    <BottomSheet visible={visible} onClose={close} closeLabel="Close capture inventory" maxHeight="80%" style={styles.sheet} padded={false}>
+      <Text style={[typography.rowTitle, styles.title]}>Capture inventory</Text>
 
-        {phase === "pick" && (
-          <>
-            <Text style={typography.caption}>
-              Photograph a shelf, your fridge, or a receipt — items are read
-              automatically and you confirm before anything changes.
-            </Text>
-            <View style={styles.pickRow}>
-              <View style={styles.pickHalf}>
-                <Button label="Take photo" onPress={() => capture("camera")} icon={Camera} fluid />
-              </View>
-              <View style={styles.pickHalf}>
-                <Button label="Choose photo" onPress={() => capture("library")} variant="secondary" icon={Images} fluid />
-              </View>
+      {phase === "pick" && (
+        <>
+          <Text style={typography.caption}>
+            Photograph a shelf, your fridge, or a receipt — items are read
+            automatically and you confirm before anything changes.
+          </Text>
+          <View style={styles.pickRow}>
+            <View style={styles.pickHalf}>
+              <Button label="Take photo" onPress={() => capture("camera")} icon={Camera} fluid />
             </View>
-          </>
-        )}
-
-        {(phase === "processing" || phase === "applying") && (
-          <View style={styles.loadingBox}>
-            <LoadingState label={phase === "processing" ? "Reading the photo…" : "Applying…"} />
+            <View style={styles.pickHalf}>
+              <Button label="Choose photo" onPress={() => capture("library")} variant="secondary" icon={Images} fluid />
+            </View>
           </View>
-        )}
+        </>
+      )}
 
-        {phase === "review" && (
-          <>
-            <Text style={typography.caption}>
-              Tap to include or exclude. Updates add to existing stock; new
-              items are created and auto-linked into the loop.
-            </Text>
-            <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-              {proposals.map((p, i) => {
-                const on = included.has(i);
-                return (
-                  <TouchableOpacity
-                    key={`${p.name}:${i}`}
-                    style={styles.row}
-                    onPress={() => toggle(i)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: on }}
-                    accessibilityLabel={`${p.name}, ${p.kind === "update" ? "add to existing" : "new item"}, quantity ${p.quantity}`}
-                  >
-                    <View style={[styles.checkbox, on && styles.checkboxOn]}>
-                      {on && <Check size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />}
-                    </View>
-                    <View style={styles.rowText}>
-                      <Text style={[typography.body, styles.rowName]} numberOfLines={1}>
-                        {p.name}{p.brand ? ` · ${p.brand}` : ""}
-                      </Text>
-                      <Text style={typography.caption}>
-                        {p.kind === "update" ? `+${p.quantity} to ${p.matchName}` : `new · ${p.quantity} ${p.unit}`}
-                      </Text>
-                    </View>
-                    <Badge
-                      label={p.kind === "update" ? "Update" : "New"}
-                      tone={p.kind === "update" ? "inventory" : "success"}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            <Button
-              label={`Apply ${included.size} change${included.size === 1 ? "" : "s"}`}
-              onPress={apply}
-              disabled={included.size === 0}
-              fluid
-            />
-          </>
-        )}
-      </View>
-    </Modal>
+      {(phase === "processing" || phase === "applying") && (
+        <View style={styles.loadingBox}>
+          <LoadingState label={phase === "processing" ? "Reading the photo…" : "Applying…"} />
+        </View>
+      )}
+
+      {phase === "review" && (
+        <>
+          <Text style={typography.caption}>
+            Tap to include or exclude. Updates add to existing stock; new
+            items are created and auto-linked into the loop.
+          </Text>
+          <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+            {proposals.map((p, i) => {
+              const on = included.has(i);
+              return (
+                <TouchableOpacity
+                  key={`${p.name}:${i}`}
+                  style={styles.row}
+                  onPress={() => toggle(i)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={`${p.name}, ${p.kind === "update" ? "add to existing" : "new item"}, quantity ${p.quantity}`}
+                >
+                  <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                    {on && <Check size={icons.sm} color={colors.onBrand} strokeWidth={icons.strokeWidth} />}
+                  </View>
+                  <View style={styles.rowText}>
+                    <Text style={[typography.body, styles.rowName]} numberOfLines={1}>
+                      {p.name}{p.brand ? ` · ${p.brand}` : ""}
+                    </Text>
+                    <Text style={typography.caption}>
+                      {p.kind === "update" ? `+${p.quantity} to ${p.matchName}` : `new · ${p.quantity} ${p.unit}`}
+                    </Text>
+                  </View>
+                  <Badge
+                    label={p.kind === "update" ? "Update" : "New"}
+                    tone={p.kind === "update" ? "inventory" : "success"}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <Button
+            label={`Apply ${included.size} change${included.size === 1 ? "" : "s"}`}
+            onPress={apply}
+            disabled={included.size === 0}
+            fluid
+          />
+        </>
+      )}
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
-    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
-    padding: spacing.lg, paddingBottom: spacing.xxl,
-    gap: spacing.md,
-    maxHeight: "80%",
-  },
-  grabber: {
-    width: 36, height: 4, borderRadius: radii.pill,
-    backgroundColor: colors.surface2, alignSelf: "center",
-  },
+  sheet: { padding: spacing.lg, gap: spacing.md },
   title: { color: colors.text },
   pickRow: { flexDirection: "row", gap: spacing.md },
   pickHalf: { flex: 1 },

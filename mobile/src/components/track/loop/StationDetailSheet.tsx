@@ -5,9 +5,9 @@
 // verdict was decided by `computeLoopStatus`, which is the tested surface; a
 // special case for one station belongs there, not here.
 import React, { useRef } from "react";
-import { Modal, StyleSheet, Text, TouchableWithoutFeedback, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { colors, icons, radii, spacing, tint, typography } from "@/src/theme/tokens";
-import { Badge, Button } from "@/src/components/ui";
+import { BottomSheet, Badge, Button } from "@/src/components/ui";
 import type { StationStatus } from "@/src/lib/loopStatus";
 import { STATION_ACCENTS, STATION_ICONS } from "./stations";
 
@@ -36,17 +36,9 @@ export function StationDetailSheet({
   const a = s ? colors.accents[STATION_ACCENTS[s.key]] : null;
   const Icon = s ? STATION_ICONS[s.key] : null;
   return (
-    <Modal visible={station !== null} transparent animationType="slide" onRequestClose={onClose}>
-      {/* Sibling scrim + sheet inside RN's Modal container, which is `flex: 1`
-          with the default column direction — so the `flex: 1` scrim takes all
-          space above and the intrinsic-height sheet pins to the bottom, with
-          the whole area above it tappable to dismiss. */}
-      <TouchableWithoutFeedback onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
-        <View style={styles.scrim} />
-      </TouchableWithoutFeedback>
+    <BottomSheet visible={station !== null} onClose={onClose} closeLabel="Close station" style={styles.sheet}>
       {s ? (
-        <View style={styles.sheet}>
-          <View style={styles.grabber} />
+        <>
           <View style={styles.head}>
             {Icon && a ? (
               <View style={[styles.iconCircle, { backgroundColor: tint(a) }]}>
@@ -87,22 +79,17 @@ export function StationDetailSheet({
             <Text style={[typography.caption, styles.footnote]}>{s.detail.footnote}</Text>
           ) : null}
           <Button label={s.destinationLabel} onPress={onOpenDestination} fluid />
-        </View>
+        </>
       ) : null}
-    </Modal>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: colors.scrim },
   sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.panel, borderTopRightRadius: radii.panel,
-    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
-    padding: spacing.lg, paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.lg,
     gap: spacing.md,
   },
-  grabber: { width: 36, height: 4, borderRadius: radii.pill, backgroundColor: colors.surface2, alignSelf: "center" },
   head: { flexDirection: "row", alignItems: "center", gap: spacing.sm + 2 },
   headText: { flex: 1, minWidth: 0 },
   iconCircle: { width: 34, height: 34, borderRadius: radii.pill, alignItems: "center", justifyContent: "center" },
