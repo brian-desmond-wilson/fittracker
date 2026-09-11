@@ -209,5 +209,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   rolePillUntagged: { color: colors.mutedForeground, borderColor: colors.border },
-  rolePillEquipment: { color: colors.mutedForeground, borderColor: colors.border },
+  // A muted pill needs a border the eye can find on the card; the shared
+  // border token is the card edge and disappears against it.
+  rolePillEquipment: { color: colors.mutedForeground, borderColor: colors.mutedForeground, opacity: 0.8 },
 });

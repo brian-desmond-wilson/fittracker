@@ -139,12 +139,15 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
   return (
     <GestureHandlerRootView style={styles.container}>
       {/* The rail waits with the list: a sort or filter tapped before the
-          remembered ones arrive would be overwritten by them. */}
-      {prefsReady && (
+          remembered ones arrive would be overwritten by them, and a count
+          line over an empty library reads "0 of 0" until the rows land. */}
+      {prefsReady && !loading && (
       <WorkoutsRail
         sortLabel={SORT_LABELS[sort]}
         onOpenSort={() => setSortOpen(true)}
-        activeCount={activeCount}
+        // Chips, not raw values: a collapsed muscle group is one thing to the
+        // eye, so the badge counts what the row beneath shows.
+        activeCount={chips.length}
         onOpenFilters={() => setFiltersOpen(true)}
         chips={chips}
         onRemoveChip={(chip) => applyFilters(removeChip(filters, chip))}
@@ -247,10 +250,10 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
   rescue: {
-    marginTop: 16, height: 48, paddingHorizontal: 20, borderRadius: 8, alignSelf: "stretch",
+    marginTop: 16, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 8, alignSelf: "stretch",
     backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
   },
-  rescueText: { fontSize: 15, fontWeight: "600", color: colors.primaryForeground },
+  rescueText: { fontSize: 15, fontWeight: "600", color: colors.primaryForeground, textAlign: "center" },
   rescueGhost: { marginTop: 4, height: 36, alignItems: "center", justifyContent: "center" },
   rescueGhostText: { fontSize: 14, color: colors.mutedForeground },
 });

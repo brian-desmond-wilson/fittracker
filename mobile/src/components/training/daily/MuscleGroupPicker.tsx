@@ -102,9 +102,11 @@ const styles = StyleSheet.create({
   link: { fontSize: 12, fontWeight: "600", color: colors.brand },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.screenGutter, paddingBottom: spacing.sm },
   tile: {
-    width: "31%", flexGrow: 1, alignItems: "center", gap: spacing.xs,
+    width: "31%", alignItems: "center", gap: spacing.xs,
     paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
-    backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border, borderRadius: radii.row,
+    // The figure's silhouette is drawn in surface2, so the tile sits one
+    // step darker or the body vanishes and only the region floats.
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.row,
   },
   tileOn: { backgroundColor: tint(colors.brand), borderColor: colors.brand },
   tileLabel: { fontSize: 10.5, color: colors.textMuted, textAlign: "center", lineHeight: 12 },

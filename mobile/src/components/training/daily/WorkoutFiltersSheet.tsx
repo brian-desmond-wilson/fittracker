@@ -229,14 +229,14 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
   rowValueOn: { color: colors.brand },
   sectionRow: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "baseline",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end",
     paddingRight: spacing.screenGutter,
   },
   section: {
     fontSize: 11, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase",
     color: colors.textMuted, paddingHorizontal: spacing.screenGutter, paddingTop: spacing.lg, paddingBottom: spacing.sm,
   },
-  hint: { fontSize: 12, fontWeight: "600", color: colors.brand },
+  hint: { fontSize: 12, fontWeight: "600", color: colors.brand, paddingBottom: spacing.sm },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.screenGutter },
   tile: {
     width: "22%", flexGrow: 1, alignItems: "center", gap: spacing.xs,
