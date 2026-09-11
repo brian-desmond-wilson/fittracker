@@ -2508,14 +2508,14 @@ Expected: no errors.
 Run from the repo root: `deno run --allow-net --allow-read scripts/enrich-backfill.ts --dry-run`
 Expected: one line, e.g. `dry run: 204 rows with something to fill; would fill 203 descriptions, 9 videos, 0 images` (images must be 0). Nothing is written.
 
-**Record the dry-run line here (spec §9):** `dry run: ___ rows with something to fill; would fill ___ descriptions, ___ videos, 0 images`
+**Record the dry-run line here (spec §9):** `dry run: 167 rows with something to fill; would fill 165 descriptions, 18 videos, 0 images` (the first dry run of the day said 205 candidates / 203 descriptions; two smokes and an interrupted first attempt had already filled 38 descriptions server-side before this recorded run — every one of those carries `by: "model"` and was written through the same conditional path)
 
 - [ ] **Step 4: The real run**
 
 Run from the repo root: `deno run --allow-net --allow-read scripts/enrich-backfill.ts`
 Expected: the dry-run line again, then one line per batch of 25 (each takes a minute or two: one model call per description), then `done: processed N rows; filled D descriptions, V videos, 0 images; skipped ...`. Any `skip <name>` lines name a description the validator rejected; those rows stay empty for the weekly sweep to retry.
 
-**Record the done line here (spec §9):** `done: processed ___ rows; filled ___ descriptions, ___ videos, 0 images; skipped ___`
+**Record the done line here (spec §9):** `done: processed 167 rows; filled 165 descriptions, 18 videos, 0 images; skipped 0 descriptions, 0 videos, 0 images` — seven batches, no `skip` lines; the idempotence dry run afterwards: `dry run: 0 rows with something to fill; would fill 0 descriptions, 0 videos, 0 images`. Catalog after: 204 model descriptions, 18 capture videos, 0 empty descriptions. Spot-check (Cool-Down Walk, Overhead Squat, Chest-to-Bar): each describes its own movement.
 
 - [ ] **Step 5: Prove idempotence and spot-check three rows**
 
