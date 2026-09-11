@@ -5,15 +5,20 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, Search } from "lucide-react-native";
 import { colors, spacing, radii } from "@/src/theme/tokens";
+import { CreatorAvatar } from "@/src/components/ui/CreatorAvatar";
+import { normaliseHandle } from "@/src/lib/creatorHandle";
+import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
 
 interface CreatorPickerProps {
   creators: { handle: string; count: number }[];
+  /** Keyed by normalised handle; a missing key draws the initial letter. */
+  avatars: CreatorAvatarMap;
   selected: string[];
   onChange: (next: string[]) => void;
   onBack: () => void;
 }
 
-export function CreatorPicker({ creators, selected, onChange, onBack }: CreatorPickerProps) {
+export function CreatorPicker({ creators, avatars, selected, onChange, onBack }: CreatorPickerProps) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
   const shown = useMemo(() => {
@@ -50,9 +55,12 @@ export function CreatorPicker({ creators, selected, onChange, onBack }: CreatorP
           return (
             <TouchableOpacity key={c.handle} style={styles.row} onPress={() => toggle(c.handle)}
               accessibilityRole="checkbox" accessibilityState={{ checked: on }}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{c.handle.replace(/^@/, "").charAt(0).toUpperCase()}</Text>
-              </View>
+              <CreatorAvatar
+                handle={c.handle}
+                url={avatars[normaliseHandle(c.handle)]?.avatarUrl ?? null}
+                fetchedAt={avatars[normaliseHandle(c.handle)]?.fetchedAt ?? null}
+                size={28}
+              />
               <Text style={styles.handle}>{c.handle}</Text>
               <Text style={styles.count}>{c.count} {c.count === 1 ? "workout" : "workouts"}</Text>
               <View style={[styles.box, on && styles.boxOn]} />
@@ -84,11 +92,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.screenGutter, paddingVertical: spacing.md,
     borderTopWidth: 1, borderTopColor: colors.border,
   },
-  avatar: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center",
-  },
-  avatarText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
   handle: { flex: 1, fontSize: 15, color: colors.text },
   count: { fontSize: 12, color: colors.textFaint },
   box: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: colors.textFaint },

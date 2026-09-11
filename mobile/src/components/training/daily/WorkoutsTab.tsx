@@ -8,6 +8,10 @@ import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
+import { fetchCreators } from "@/src/lib/supabase/creators";
+import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
+import { refreshCreatorFromPhone } from "@/src/lib/creatorProfile";
+import { isAvatarStale, normaliseHandle } from "@/src/lib/creatorHandle";
 import { applyFiltersAndSearch, activeFilterChips, countActiveFilters, removeChip, creatorCounts, mostRestrictiveAxis, clearAxis } from "@/src/lib/workoutFilters";
 import { sortWorkouts } from "@/src/lib/workoutSort";
 import { loadWorkoutPrefs, saveWorkoutPrefs } from "@/src/lib/workoutFilterStore";
@@ -38,6 +42,10 @@ const listed = (items: string[]): string =>
 export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: WorkoutsTabProps) {
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
   const [completions, setCompletions] = useState<CompletionMap>({});
+  const [avatars, setAvatars] = useState<CreatorAvatarMap>({});
+  // Handles this session has already asked the function to refresh, so
+  // reopening the picker does not re-ask for one that came back empty.
+  const refreshed = useRef(new Set<string>());
   const [userId, setUserId] = useState<string | null>(null);
   const [filters, setFilters] = useState<WorkoutFilters>(EMPTY_FILTERS);
   const [sort, setSort] = useState<WorkoutSort>(DEFAULT_SORT);
@@ -69,12 +77,16 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
     }
     // Together: the history is decoration on the list, so making the list wait
     // for it in sequence would cost a visible beat for nothing.
-    const [list, history] = await Promise.all([
+    // Creators ride along: the picker is decoration on the list, and a
+    // missing map just means letters.
+    const [list, history, faces] = await Promise.all([
       fetchCapturedWorkouts(user.id),
       fetchWorkoutCompletions(user.id),
+      fetchCreators(),
     ]);
     setWorkouts(list);
     setCompletions(history);
+    setAvatars(faces);
     onCountUpdate(list.length);
     setLoading(false);
   }, [onCountUpdate]);
@@ -126,6 +138,34 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
     (draft: WorkoutFilters) => applyFiltersAndSearch(workouts, draft, completions, searchQuery).length,
     [workouts, completions, searchQuery],
   );
+
+  // Opening the Creator page is the moment to catch a long-idle creator
+  // whose avatar no capture has refreshed, or one Instagram walled off
+  // yesterday. Fire-and-forget, once per handle per session; the function
+  // itself skips anything fresh. The Instagram page reads happen on this
+  // phone (creatorProfile.ts), so they run together, not one by one.
+  const refreshStaleCreators = useCallback(() => {
+    const due = workouts
+      .filter((w) => w.source?.posterHandle && (w.source.platform === "instagram" || w.source.platform === "tiktok"))
+      .map((w) => ({ platform: w.source!.platform as "instagram" | "tiktok", handle: normaliseHandle(w.source!.posterHandle!) }))
+      .filter(({ handle }) => {
+        if (!handle || refreshed.current.has(handle)) return false;
+        const known = avatars[handle];
+        return isAvatarStale(known?.fetchedAt ?? null, (known?.avatarUrl ?? null) !== null);
+      });
+    const unique = [...new Map(due.map((d) => [d.handle, d])).values()];
+    if (unique.length === 0) return;
+    unique.forEach((d) => refreshed.current.add(d.handle));
+    Promise.all(unique.map((d) => refreshCreatorFromPhone(d.platform, d.handle))).then((rows) => {
+      const fresh = rows.filter((r): r is NonNullable<typeof r> => r !== null);
+      if (fresh.length === 0) return;
+      setAvatars((prev) => {
+        const next = { ...prev };
+        for (const r of fresh) next[r.handle] = r;
+        return next;
+      });
+    });
+  }, [workouts, avatars]);
 
   // Only when the list is empty because of us, not because the library is.
   const rescue = useMemo(
@@ -235,6 +275,8 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
         visible={filtersOpen}
         applied={filters}
         creators={creators}
+        avatars={avatars}
+        onCreatorsOpen={refreshStaleCreators}
         countFor={countFor}
         availableEquipment={availableEquipment}
         onApply={applyFilters}

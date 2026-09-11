@@ -23,6 +23,7 @@ import { EQUIPMENT_GRID } from "@/src/lib/workoutEquipment";
 import { ALL_FORMATS, FORMAT_LABELS, ALL_SCORES, SCORE_LABELS } from "@/src/lib/workoutFormatVocab";
 import { MuscleGroupPicker } from "./MuscleGroupPicker";
 import { CreatorPicker } from "./CreatorPicker";
+import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
 
 /** A glyph per grid tile. The kettlebell is the app's own; the rest are the
  *  nearest lucide shapes. */
@@ -36,6 +37,10 @@ interface WorkoutFiltersSheetProps {
   visible: boolean;
   applied: WorkoutFilters;
   creators: { handle: string; count: number }[];
+  /** Keyed by normalised handle. */
+  avatars: CreatorAvatarMap;
+  /** Fired when the Creator page opens, so the tab can refresh stale rows. */
+  onCreatorsOpen?: () => void;
   /** Live count for a draft, including the header search. */
   countFor: (draft: WorkoutFilters) => number;
   /** Equipment names at least one workout derives; other tiles draw dimmed. */
@@ -47,7 +52,7 @@ interface WorkoutFiltersSheetProps {
 type Page = "root" | "muscles" | "creators";
 
 export function WorkoutFiltersSheet({
-  visible, applied, creators, countFor, availableEquipment, onApply, onClose,
+  visible, applied, creators, avatars, onCreatorsOpen, countFor, availableEquipment, onApply, onClose,
 }: WorkoutFiltersSheetProps) {
   const [draft, setDraft] = useState<WorkoutFilters>(applied);
   const [page, setPage] = useState<Page>("root");
@@ -102,7 +107,7 @@ export function WorkoutFiltersSheet({
           onChange={(muscles) => setDraft((d) => ({ ...d, muscles }))}
           onBack={() => setPage("root")} />
       ) : page === "creators" ? (
-        <CreatorPicker creators={creators} selected={draft.creators}
+        <CreatorPicker creators={creators} avatars={avatars} selected={draft.creators}
           onChange={(c) => setDraft((d) => ({ ...d, creators: c }))}
           onBack={() => setPage("root")} />
       ) : (
@@ -118,7 +123,7 @@ export function WorkoutFiltersSheet({
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xxl }}>
-            <TouchableOpacity style={[styles.row, styles.rowFirst]} onPress={() => setPage("creators")}
+            <TouchableOpacity style={[styles.row, styles.rowFirst]} onPress={() => { setPage("creators"); onCreatorsOpen?.(); }}
               accessibilityRole="button" accessibilityLabel="Creator">
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>Creator</Text>
