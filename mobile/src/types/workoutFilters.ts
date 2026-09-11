@@ -2,9 +2,10 @@
 // The Workouts tab's filter and sort vocabulary.
 // Spec: docs/superpowers/specs/2026-09-10-workouts-tab-filters-design.md §5
 import type { BlockRole, WorkoutIntensity, WorkoutFormat, WorkoutScoreType } from "./dailyBlocks";
+import type { SkillLevel } from "./skillLevel";
 
 export type LengthBand = "short" | "medium" | "long" | "xlong";
-export type SkillLevel = "Beginner" | "Intermediate" | "Advanced";
+export type { SkillLevel } from "./skillLevel";
 export type HistoryFilter = "any" | "never" | "done";
 
 /** "untagged" matches workouts whose format the classifier has not set. */
@@ -81,4 +82,4 @@ export const FILTERABLE_ROLES: BlockRole[] = ["warmup", "mobility", "main", "con
 export const ALL_INTENSITIES: WorkoutIntensity[] = ["low", "moderate", "high"];
 export const INTENSITY_LABELS: Record<WorkoutIntensity, string> = { low: "Low", moderate: "Moderate", high: "High" };
 export const HISTORY_LABELS: Record<Exclude<HistoryFilter, "any">, string> = { never: "Never done", done: "Done before" };
-export const ALL_SKILLS: SkillLevel[] = ["Beginner", "Intermediate", "Advanced"];
+export { ALL_SKILLS } from "./skillLevel";
