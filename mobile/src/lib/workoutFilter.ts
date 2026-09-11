@@ -5,16 +5,17 @@
 // Movement names are searchable because that is how you actually look for a
 // captured workout: you remember the halo, not the caption's title.
 import type { CapturedWorkoutEntry } from "../types/capture";
+import { normaliseForSearch } from "./searchNormalize";
 
 export function filterWorkouts(
   entries: CapturedWorkoutEntry[],
   search: string,
 ): CapturedWorkoutEntry[] {
-  const q = search.trim().toLowerCase();
+  const q = normaliseForSearch(search);
   if (!q) return entries;
   return entries.filter((w) => {
-    if (w.name.toLowerCase().includes(q)) return true;
-    if (w.source?.posterHandle?.toLowerCase().includes(q)) return true;
-    return w.items.some((i) => i.name.toLowerCase().includes(q));
+    if (normaliseForSearch(w.name).includes(q)) return true;
+    if (w.source?.posterHandle && normaliseForSearch(w.source.posterHandle).includes(q)) return true;
+    return w.items.some((i) => normaliseForSearch(i.name).includes(q));
   });
 }

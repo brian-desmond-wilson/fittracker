@@ -8,6 +8,7 @@ import { EMPTY_EXERCISE_FILTERS, PICTURE_LABELS } from "../types/exerciseFilters
 import type { FilterChip } from "./filterChips";
 import { muscleChips } from "./filterChips";
 import { SUPPORT_SURFACES, byGridOrder, equipmentLabel } from "./workoutEquipment";
+import { normaliseForSearch } from "./searchNormalize";
 
 const hasPicture = (e: CatalogEntry): boolean => !!e.imageUrl && e.imageUrl.trim() !== "";
 
@@ -37,16 +38,17 @@ export function applyExerciseFilters(entries: CatalogEntry[], f: ExerciseFilters
 }
 
 /** Filters, then the header search — the order the tab uses. Search is a
- *  case-insensitive substring on the name or any source handle. */
+ *  substring match on the name or any source handle, with separators folded
+ *  away so "push up" finds "Push-Up" and "fit dad" finds "@fit___dad". */
 export function applyExerciseFiltersAndSearch(
   entries: CatalogEntry[], f: ExerciseFilters, search: string,
 ): CatalogEntry[] {
-  const q = search.trim().toLowerCase();
+  const q = normaliseForSearch(search);
   const filtered = applyExerciseFilters(entries, f);
   if (!q) return filtered;
   return filtered.filter((e) =>
-    e.name.toLowerCase().includes(q) ||
-    e.sources.some((s) => s.posterHandle?.toLowerCase().includes(q)),
+    normaliseForSearch(e.name).includes(q) ||
+    e.sources.some((s) => s.posterHandle != null && normaliseForSearch(s.posterHandle).includes(q)),
   );
 }
 
