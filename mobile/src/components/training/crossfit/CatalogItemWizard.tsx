@@ -33,7 +33,7 @@ import {
   DuplicateExerciseError,
   type CatalogExerciseRow,
 } from '@/src/lib/supabase/frontDoor';
-import { generateExerciseImageInBackground } from '@/src/lib/supabase/exerciseImages';
+import { enrichExerciseInBackground } from '@/src/lib/supabase/enrich';
 import { applyPrefillToForm } from '@/src/lib/extractionPrefill';
 import type { ExtractionPrefill } from '@/src/lib/extractionPrefill';
 import {
@@ -367,10 +367,10 @@ export function CatalogItemWizard({
         const row = await createCatalogExercise(buildCreateInput(formData, isMovement, user.id));
         savedName = row?.name ?? null;
         onCreated?.(row);
-        // A new exercise should arrive with a picture. Fire-and-forget: the
-        // row exists either way, and the list picks the URL up on its next
-        // load.
-        generateExerciseImageInBackground(row, user.id);
+        // A new exercise should arrive with a description, a demo video and
+        // a picture. Fire-and-forget: the row exists either way, and the
+        // page picks the fills up on its next open.
+        enrichExerciseInBackground(row.id);
         if (formData.aliases.length > 0) {
           // Aliases are a side dish: the row exists either way. Every alias
           // is attempted; the misses are reported, never fatal to the save.
