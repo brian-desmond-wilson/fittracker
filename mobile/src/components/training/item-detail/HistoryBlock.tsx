@@ -98,7 +98,7 @@ export function HistoryBlock({
                 <Text style={styles.statValue} numberOfLines={1}>{count}</Text>
               </View>
             </View>
-            <View style={styles.bars} accessibilityLabel={`Top set over the last ${bars.length} sessions`}>
+            <View style={styles.bars} accessible={true} accessibilityLabel={`Top set over the last ${bars.length} sessions`}>
               {bars.map((b) => (
                 <View key={b.sessionId} style={styles.barSlot}>
                   <View style={[
@@ -110,7 +110,7 @@ export function HistoryBlock({
               ))}
             </View>
             <View style={styles.captionRow}>
-              <Text style={styles.caption}>Top set, last {Math.min(bars.length, 8)} sessions</Text>
+              <Text style={styles.caption}>Top set, last {bars.length} sessions</Text>
               {direction !== null && (
                 <View style={styles.direction}>
                   <DirectionIcon size={13} color={direction === "down" ? colors.warning : colors.brand} />

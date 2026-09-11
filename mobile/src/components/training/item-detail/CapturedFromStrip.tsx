@@ -4,12 +4,13 @@
 // green (or "Exercise demo"), capture date. The strip fades at the right
 // edge to say there is more.
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Linking } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { ExternalLink } from "lucide-react-native";
 import { colors, radii, spacing, tint } from "@/src/theme/tokens";
 import { CreatorAvatar } from "@/src/components/ui/CreatorAvatar";
 import { creatorProfileUrl, postCards, sourceCounts } from "@/src/lib/capturedFromModel";
+import { openExternalUrl } from "@/src/lib/openUrl";
 import type { PostCard } from "@/src/lib/capturedFromModel";
 import type { CaptureSourceV2 } from "@/src/types/capture";
 
@@ -30,7 +31,7 @@ const THUMB_HEIGHT = 110;
 /** One post card. Shared with the full screen's rows via PostThumb. */
 export function PostThumb({ card, height }: { card: PostCard; height: number }) {
   return (
-    <TouchableOpacity style={[styles.thumbWrap, { height }]} onPress={() => Linking.openURL(card.sourceUrl)}
+    <TouchableOpacity style={[styles.thumbWrap, { height }]} onPress={() => openExternalUrl(card.sourceUrl)}
       activeOpacity={0.8} accessibilityRole="link" accessibilityLabel={`Open the ${card.platform} post by ${card.handle}`}>
       {card.thumbnailUrl ? (
         <Image source={{ uri: card.thumbnailUrl }} style={styles.thumb} resizeMode="cover" />
@@ -83,7 +84,7 @@ export function CapturedFromStrip({
                   </TouchableOpacity>
                   {/* Decision 6: the profile lives behind a small icon, the handle behind the filter. */}
                   {creatorProfileUrl(card.platform, card.posterHandle!) && (
-                    <TouchableOpacity onPress={() => Linking.openURL(creatorProfileUrl(card.platform, card.posterHandle!)!)}
+                    <TouchableOpacity onPress={() => openExternalUrl(creatorProfileUrl(card.platform, card.posterHandle!)!)}
                       accessibilityRole="link" accessibilityLabel={`Open ${card.handle} on ${card.platform}`}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <ExternalLink size={12} color={colors.textMuted} />

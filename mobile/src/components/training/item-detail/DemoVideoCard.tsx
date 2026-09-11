@@ -4,10 +4,11 @@
 // exercise name that renders whether or not a video is set, so a poor
 // default can always be replaced through the edit wizard (decision 8).
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { ChevronRight, Play } from "lucide-react-native";
 import { colors, radii, spacing } from "@/src/theme/tokens";
 import { demoSearchUrl, videoSourceLabel } from "@/src/lib/demoVideo";
+import { openExternalUrl } from "@/src/lib/openUrl";
 
 interface DemoVideoCardProps {
   videoUrl: string | null;
@@ -19,7 +20,7 @@ export function DemoVideoCard({ videoUrl, exerciseName }: DemoVideoCardProps) {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Demo Video</Text>
       {videoUrl && (
-        <TouchableOpacity style={styles.card} onPress={() => Linking.openURL(videoUrl)} activeOpacity={0.8}
+        <TouchableOpacity style={styles.card} onPress={() => openExternalUrl(videoUrl)} activeOpacity={0.8}
           accessibilityRole="link" accessibilityLabel={`Watch the demo on ${videoSourceLabel(videoUrl)}`}>
           <View style={styles.play}>
             <Play size={22} color={colors.onBrand} fill={colors.onBrand} />
@@ -29,7 +30,7 @@ export function DemoVideoCard({ videoUrl, exerciseName }: DemoVideoCardProps) {
           </View>
         </TouchableOpacity>
       )}
-      <TouchableOpacity style={styles.find} onPress={() => Linking.openURL(demoSearchUrl(exerciseName))}
+      <TouchableOpacity style={styles.find} onPress={() => openExternalUrl(demoSearchUrl(exerciseName))}
         accessibilityRole="link" accessibilityLabel="Find a demo on YouTube">
         <Text style={styles.findText}>Find a demo</Text>
         <ChevronRight size={16} color={colors.brand} />

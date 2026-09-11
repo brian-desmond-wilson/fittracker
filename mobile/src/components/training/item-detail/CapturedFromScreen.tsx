@@ -5,7 +5,7 @@
 // filtered to that creator, and the external-link icon → their profile.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, StatusBar, Linking,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, StatusBar,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -17,6 +17,7 @@ import { getLocalDateString } from "@/src/lib/dates";
 import { creatorGroups, creatorProfileUrl, postCards } from "@/src/lib/capturedFromModel";
 import type { PostCard } from "@/src/lib/capturedFromModel";
 import { exerciseFilterParam } from "@/src/lib/exerciseFilterLink";
+import { openExternalUrl } from "@/src/lib/openUrl";
 import { CreatorAvatar } from "@/src/components/ui/CreatorAvatar";
 import type { CaptureSourceV2 } from "@/src/types/capture";
 import { PostThumb } from "./CapturedFromStrip";
@@ -64,7 +65,7 @@ export function CapturedFromScreen({ exerciseId, initialTab, onClose }: Captured
       params: { exerciseFilter: exerciseFilterParam({ creators: [handle] }) },
     } as never), [router]);
 
-  const handleLine = (card: { platform: PostCard["platform"]; handle: string; posterHandle: string | null; handleIsPlaceholder?: boolean }) => {
+  const handleLine = (card: { platform: PostCard["platform"]; handle: string; posterHandle: string | null }) => {
     const profile = card.posterHandle ? creatorProfileUrl(card.platform, card.posterHandle) : null;
     return (
       <View style={styles.handleRow}>
@@ -77,7 +78,7 @@ export function CapturedFromScreen({ exerciseId, initialTab, onClose }: Captured
           <Text style={styles.handle}>{card.handle}</Text>
         )}
         {profile && (
-          <TouchableOpacity onPress={() => Linking.openURL(profile)} accessibilityRole="link"
+          <TouchableOpacity onPress={() => openExternalUrl(profile)} accessibilityRole="link"
             accessibilityLabel={`Open ${card.handle} on ${card.platform}`} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <ExternalLink size={13} color={colors.textMuted} />
           </TouchableOpacity>
