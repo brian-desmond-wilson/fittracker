@@ -392,6 +392,15 @@ export function TrainingItemDetailScreen({
     router.push({ pathname: `/(tabs)/training/exercise-sources/${id}`, params: { tab } } as never);
   }, [router, id]);
 
+  /** Back to wherever we came from — but when there's nothing to pop (a hot
+   *  reload, deep link, or state restore that lands on this page as the stack's
+   *  only screen), a raw back() dispatches an unhandled GO_BACK: the button
+   *  does nothing and warns. Fall back to the Training index instead. */
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/training' as never);
+  }, [router]);
+
   /** Re-rate: overwrite the latest row, replay the state; on failure keep the
    *  old note and toast (spec §8). The sheet closes either way. */
   const onRerateSave = async (ratings: { exerciseId: string; rating: LatestRating['rating'] }[]) => {
@@ -436,7 +445,7 @@ export function TrainingItemDetailScreen({
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
           <Text style={styles.errorText}>{capitalize(noun)} not found</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={goBack} style={styles.backButton}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
@@ -486,7 +495,7 @@ export function TrainingItemDetailScreen({
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={goBack} style={styles.backButton}>
             <ChevronLeft size={24} color={colors.text} />
             <Text style={styles.backText}>{capitalize(nounPlural)}</Text>
           </TouchableOpacity>
