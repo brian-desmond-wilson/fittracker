@@ -4,7 +4,8 @@
 // shows failure inline under the button and leaves today untouched (spec
 // §8). On success it hands a toast to the Today tab and tells the page to
 // navigate there.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { BottomSheet } from "@/src/components/ui/BottomSheet";
 import { handOffToast } from "@/src/components/ui/pendingToast";
@@ -37,15 +38,19 @@ export function AddToTodayButton({ userId, exerciseId, exerciseName, onAdded }: 
     return next;
   }, [userId, exerciseId]);
 
-  useEffect(() => {
-    let alive = true;
-    readPlan().catch((e) => {
-      console.error("AddToTodayButton read failed:", e);
-      // Fail open to the plain label: the tap re-reads before writing.
-      if (alive) setPlan({ action: "create", label: ADD_TO_TODAY_LABEL });
-    });
-    return () => { alive = false; };
-  }, [readPlan]);
+  // Re-read whenever the screen gains focus (which includes mount), so a
+  // page instance reused after a trip to Today shows the right label.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      readPlan().catch((e) => {
+        console.error("AddToTodayButton read failed:", e);
+        // Fail open to the plain label: the tap re-reads before writing.
+        if (alive) setPlan({ action: "create", label: ADD_TO_TODAY_LABEL });
+      });
+      return () => { alive = false; };
+    }, [readPlan]),
+  );
 
   const run = async (chosen: AddToTodayPlan) => {
     setBusy(true);
