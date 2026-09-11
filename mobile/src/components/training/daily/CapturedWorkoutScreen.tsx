@@ -32,7 +32,11 @@ import {
   fetchMuscleRegionNames,
   saveWorkoutTags,
 } from "@/src/lib/supabase/workoutTags";
-import type { BlockRole, WorkoutIntensity } from "@/src/types/dailyBlocks";
+import type { BlockRole, WorkoutIntensity, WorkoutFormat, WorkoutScoreType } from "@/src/types/dailyBlocks";
+import {
+  ALL_FORMATS, FORMAT_LABELS, ALL_SCORES, SCORE_LABELS, IMPLIED_SCORE,
+  formatHasMinutes, minutesLabelFor,
+} from "@/src/lib/workoutFormatVocab";
 import type { CapturedWorkoutEntry, CapturedWorkoutItemEntry } from "@/src/types/capture";
 
 const BLOCK_ROLES: BlockRole[] = [
@@ -59,6 +63,10 @@ interface Draft {
   /** Text, because it is a TextInput. Parsed and range-checked in `save`. */
   estMinutes: string;
   intensity: WorkoutIntensity | null;
+  format: WorkoutFormat | null;
+  scoreType: WorkoutScoreType | null;
+  /** Text, like estMinutes; parsed and range-checked in `save`. */
+  formatMinutes: string;
 }
 
 const draftFrom = (w: CapturedWorkoutEntry): Draft => ({
@@ -70,6 +78,9 @@ const draftFrom = (w: CapturedWorkoutEntry): Draft => ({
   blockRoles: [...w.tags.blockRoles],
   estMinutes: w.tags.estMinutes === null ? "" : String(w.tags.estMinutes),
   intensity: w.tags.intensity,
+  format: w.tags.format,
+  scoreType: w.tags.scoreType,
+  formatMinutes: w.tags.formatMinutes === null ? "" : String(w.tags.formatMinutes),
 });
 
 /** What still keeps a classified workout out of every session. The classifier
@@ -279,13 +290,21 @@ export function CapturedWorkoutScreen() {
     const est = typedEst === "" ? null : Number(typedEst);
     const estOk =
       est === null || (Number.isInteger(est) && est >= 1 && est <= MAX_EST_MINUTES);
+    const typedFm = draft.formatMinutes.trim();
+    // Minutes only mean something on a time-defined format; a stray number
+    // left behind after switching to Rounds must not be saved.
+    const fm = typedFm === "" || !formatHasMinutes(draft.format) ? null : Number(typedFm);
+    const fmOk = fm === null || (Number.isInteger(fm) && fm >= 1 && fm <= MAX_EST_MINUTES);
     const rolesChanged =
       draft.blockRoles.length !== workout.tags.blockRoles.length ||
       draft.blockRoles.some((r) => !workout.tags.blockRoles.includes(r));
     const tagsChanged =
       rolesChanged ||
       est !== workout.tags.estMinutes ||
-      draft.intensity !== workout.tags.intensity;
+      draft.intensity !== workout.tags.intensity ||
+      draft.format !== workout.tags.format ||
+      draft.scoreType !== workout.tags.scoreType ||
+      fm !== workout.tags.formatMinutes;
 
     if (tagsChanged) {
       // Refused, never coerced. parseInt would read "35kg" as 35 and "abc" as
@@ -295,6 +314,13 @@ export function CapturedWorkoutScreen() {
       if (!estOk) {
         Alert.alert(
           "Check the minutes",
+          `Give a whole number of minutes between 1 and ${MAX_EST_MINUTES}, or leave it empty.`,
+        );
+        return;
+      }
+      if (!fmOk) {
+        Alert.alert(
+          "Check the format minutes",
           `Give a whole number of minutes between 1 and ${MAX_EST_MINUTES}, or leave it empty.`,
         );
         return;
@@ -373,6 +399,9 @@ export function CapturedWorkoutScreen() {
         skillLevel: workout.tags.skillLevel,
         estMinutes: est,
         intensity: draft.intensity,
+        format: draft.format,
+        scoreType: draft.scoreType,
+        formatMinutes: fm,
       }));
     setSaving(false);
 
@@ -537,6 +566,17 @@ export function CapturedWorkoutScreen() {
   const primaryMuscles = workout.tags.muscles.filter((m) => m.isPrimary).map((m) => m.name);
   const secondaryMuscles = workout.tags.muscles.filter((m) => !m.isPrimary).map((m) => m.name);
   const gaps = tagGaps(workout);
+  // Only what the headline above hides: the score a format implies, or that
+  // nothing is scored. The format phrase itself is already in the headline.
+  const formatLine = workout.tags.format === null || workout.tags.scoreType === null
+    ? ""
+    : IMPLIED_SCORE[workout.tags.format] === workout.tags.scoreType
+      ? `Scored by ${SCORE_LABELS[workout.tags.scoreType].toLowerCase()}`
+      : workout.tags.scoreType === "none" ? "Not scored" : "";
+  // A missing format keeps nothing out of a session — the recommender does
+  // not read it — so it is a note, not a gap: it only means the Workouts
+  // tab lists this under Untagged until someone sets it.
+  const formatMissing = classified && workout.tags.format === null;
 
   return (
     <>
@@ -556,7 +596,7 @@ export function CapturedWorkoutScreen() {
             <Text style={styles.title}>{workout.name}</Text>
           )}
           <Text style={[styles.headline, completion && styles.headlineTight]}>
-            {formatWorkoutHeadline(shownItems.length + pendingItems.length, shownRounds)}
+            {formatWorkoutHeadline(shownItems.length + pendingItems.length, shownRounds, workout.tags)}
           </Text>
           {/* What you have done with it, in the same words the card uses. A
               workout never trained says nothing here rather than "0 times":
@@ -633,6 +673,12 @@ export function CapturedWorkoutScreen() {
                   .filter(Boolean)
                   .join("   ·   ")}
               </Text>
+              {formatLine !== "" && (
+                <Text style={styles.tagSummary}>{formatLine}</Text>
+              )}
+              {formatMissing && (
+                <Text style={styles.tagMuscles}>No format yet — edit to set how it runs.</Text>
+              )}
               {primaryMuscles.length > 0 && (
                 <Text style={styles.tagMuscles}>
                   Hits {primaryMuscles.join(", ")}
@@ -753,6 +799,78 @@ export function CapturedWorkoutScreen() {
                   );
                 })}
               </View>
+
+              <Text style={styles.fieldLabel}>Format</Text>
+              <View style={styles.pillRow}>
+                {ALL_FORMATS.map((fmt) => {
+                  const on = draft!.format === fmt;
+                  return (
+                    <TouchableOpacity
+                      key={fmt}
+                      style={[styles.pill, on && styles.pillActive]}
+                      // Picking a format pre-selects the score it implies. A
+                      // score the OLD format implied goes with it — it was
+                      // never the user's choice — while a hand-picked one
+                      // survives unless the new format implies a score of
+                      // its own. Tapping the chosen format clears both.
+                      // Minutes are left as typed: AMRAP → EMOM keeps the number.
+                      onPress={() => {
+                        if (on) { patch({ format: null, scoreType: null }); return; }
+                        const outgoingImplied = draft!.format === null ? null : IMPLIED_SCORE[draft!.format];
+                        const handPicked = draft!.scoreType !== null && draft!.scoreType !== outgoingImplied;
+                        patch({ format: fmt, scoreType: IMPLIED_SCORE[fmt] ?? (handPicked ? draft!.scoreType : null) });
+                      }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Format ${FORMAT_LABELS[fmt]}`}
+                    >
+                      <Text style={[styles.pillText, on && styles.pillTextActive]}>
+                        {FORMAT_LABELS[fmt]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {formatHasMinutes(draft!.format) && (
+                <>
+                  <Text style={styles.fieldLabel}>{minutesLabelFor(draft!.format)}</Text>
+                  <TextInput
+                    style={[styles.input, styles.estInput]}
+                    keyboardType="number-pad"
+                    maxLength={3}
+                    value={draft!.formatMinutes}
+                    onChangeText={(v) => patch({ formatMinutes: sanitizeInteger(v) })}
+                    placeholder="e.g. 15"
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                  <Text style={styles.fieldHint}>The number the creator stated. Leave it empty if none was given.</Text>
+                </>
+              )}
+
+              <Text style={styles.fieldLabel}>Score</Text>
+              <View style={styles.pillRow}>
+                {ALL_SCORES.map((sc) => {
+                  const on = draft!.scoreType === sc;
+                  return (
+                    <TouchableOpacity
+                      key={sc}
+                      style={[styles.pill, on && styles.pillActive]}
+                      onPress={() => patch({ scoreType: on ? null : sc })}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`Scored by ${SCORE_LABELS[sc]}`}
+                    >
+                      <Text style={[styles.pillText, on && styles.pillTextActive]}>
+                        {SCORE_LABELS[sc]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {draft!.format !== null && IMPLIED_SCORE[draft!.format] !== null && (
+                <Text style={styles.fieldHint}>Set from the format. Change it if the creator scores it differently.</Text>
+              )}
 
               {primaryMuscles.length > 0 && (
                 <Text style={styles.tagMuscles}>
@@ -1063,6 +1181,7 @@ const styles = StyleSheet.create({
     fontSize: 12, color: colors.mutedForeground, marginTop: 16, marginBottom: 6,
     textTransform: "uppercase", letterSpacing: 1,
   },
+  fieldHint: { fontSize: 12, color: colors.mutedForeground, marginTop: 4 },
   labelRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
