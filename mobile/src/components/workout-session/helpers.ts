@@ -1,10 +1,7 @@
 import { Dimensions } from "react-native";
-import { supabase } from "@/src/lib/supabase";
 import { Exercise, ProgramWorkoutExercise } from "./types";
 
 export const SCREEN_WIDTH = Dimensions.get("window").width;
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 
 // Local date string (YYYY-MM-DD) — avoids UTC timezone issues.
 /** Re-exported from the date lib, which is where this lives now. */
@@ -35,38 +32,5 @@ export function getExercise(pwe: ProgramWorkoutExercise): Exercise {
   return pwe.exercises;
 }
 
-// Generate an exercise image via the generate-exercise-image Edge Function.
-export async function generateExerciseImage(
-  exerciseId: string,
-  userId: string
-): Promise<string | null> {
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const response = await fetch(
-      `${SUPABASE_URL}/functions/v1/generate-exercise-image`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-        body: JSON.stringify({ exerciseId, userId }),
-      }
-    );
-
-    const data = await response.json();
-    console.log("Image generation response:", data);
-
-    if (data.success && data.imageUrl) {
-      return data.imageUrl;
-    }
-    console.error("Image generation failed:", data.error || data);
-    return null;
-  } catch (err) {
-    console.error("Image generation error:", err);
-    return null;
-  }
-}
+// Generate an exercise image — lives with the other catalog image code now.
+export { generateExerciseImage } from "@/src/lib/supabase/exerciseImages";
