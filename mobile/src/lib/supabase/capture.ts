@@ -382,6 +382,9 @@ function toCapturedWorkoutEntry(
       estMinutes: row.est_minutes ?? null,
       intensity: row.intensity ?? null,
       skillLevel: row.skill_level ?? null,
+      format: row.format ?? null,
+      scoreType: row.score_type ?? null,
+      formatMinutes: row.format_minutes ?? null,
       classifiedAt: row.classified_at ?? null,
     },
     derivedEquipment: derived.derivedEquipment,
@@ -444,6 +447,7 @@ export async function fetchCapturedWorkouts(
     .select(`
       id, name, rounds, raw_protocol, description, notes, created_at,
       block_roles, est_minutes, intensity, skill_level, classified_at,
+      format, score_type, format_minutes,
       wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
       source:captured_sources!inner(
         id, platform, source_url, poster_handle, thumbnail_url, caption_text,
@@ -489,6 +493,7 @@ export async function fetchCapturedWorkout(
     .select(`
       id, name, rounds, raw_protocol, description, notes, created_at,
       block_roles, est_minutes, intensity, skill_level, classified_at,
+      format, score_type, format_minutes,
       wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
       source:captured_sources!inner(
         id, platform, source_url, poster_handle, thumbnail_url, caption_text,

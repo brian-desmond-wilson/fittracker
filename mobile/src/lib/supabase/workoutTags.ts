@@ -54,7 +54,7 @@ export async function fetchTaggedWorkouts(
       .from("captured_workouts")
       .select(`
         id, name, rounds, block_roles, est_minutes, intensity, skill_level,
-        classified_at,
+        classified_at, format, score_type, format_minutes,
         source:captured_sources!inner(extraction_status),
         wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name))
       `)
@@ -114,6 +114,9 @@ export async function fetchTaggedWorkouts(
         estMinutes: row.est_minutes ?? null,
         intensity: row.intensity ?? null,
         skillLevel: row.skill_level ?? null,
+        format: row.format ?? null,
+        scoreType: row.score_type ?? null,
+        formatMinutes: row.format_minutes ?? null,
         classifiedAt: row.classified_at ?? null,
       },
     }));
@@ -223,6 +226,9 @@ export async function saveWorkoutTags(
         est_minutes: tags.estMinutes,
         intensity: tags.intensity,
         skill_level: tags.skillLevel,
+        format: tags.format,
+        score_type: tags.scoreType,
+        format_minutes: tags.formatMinutes,
         classified_at: new Date().toISOString(),
       })
       .eq("id", workoutId);
