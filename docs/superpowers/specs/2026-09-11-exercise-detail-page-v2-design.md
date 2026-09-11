@@ -108,7 +108,7 @@ The last thing in the scroll, per the end-of-scroll rule: a full-width primary b
 
 **History source.** Working sets for this exercise and this user: `set_instances` joined through `exercise_instances` to `workout_instances` and `workout_sessions`, excluding `is_warmup`. Fields per set: session id, session date, session display name, weight, reps. Session display name reuses the presentation rule in `mobile/src/lib/sessionPresentation.ts`.
 
-**Session count** = distinct sessions with at least one working set. **Top set per session** and **best set ever** use the best-set rule in §4.2. **PR badge** on a Sessions row means that session's top set was a record at the time, computed by the existing `recordsBySession` logic in `mobile/src/lib/personalRecords.ts` over this exercise's sets only.
+**Session count** = distinct sessions with at least one working set. **Top set per session** and **best set ever** use the best-set rule in §4.2. **PR badge** on a Sessions row means that session's top set beat every earlier session's top set under the best-set rule (§4.2), over this exercise's sets only.
 
 **Skill note.** The most recent `movement_ratings` row for this user and exercise gives the rating and, through its `generated_sessions` row, the date. Re-rate overwrites that row (unique on session + exercise) and then recomputes `exercise_skill_state` by replaying all of this exercise's rating rows in date order through the pure machine in `mobile/src/lib/dailySkill.ts`, so counters cannot drift. The note is hidden when no rating row exists.
 

@@ -35,6 +35,8 @@ export type AddToTodayResult =
   | { ok: false; message: string };
 
 const FAILED = "Couldn't add it. Today is unchanged — try again.";
+const UNRESTED_BUT_NOT_CREATED =
+  "The rest day was cleared but the session couldn't be created. Set it up from Today.";
 
 async function appendItem(sessionId: string, exerciseId: string): Promise<void> {
   const { data: last, error: orderError } = await supabase
@@ -143,8 +145,16 @@ export async function executeAddToToday(input: AddToTodayInput): Promise<AddToTo
         // recompose rebuilds it.
         const cleared = await unrestToday(input.userId, input.date);
         if (!cleared) throw new Error("unrest failed");
-        const id = await createUserPickSession(input.userId, input.exerciseId, input.date);
-        return { ok: true, sessionId: id };
+        // Past this point Today HAS changed (the rest is gone), so the generic
+        // "Today is unchanged" message would be a lie if the create fails.
+        try {
+          const id = await createUserPickSession(input.userId, input.exerciseId, input.date);
+          return { ok: true, sessionId: id };
+        } catch (e) {
+          const err = e as { code?: string; message?: string };
+          console.error("executeAddToToday create after un-rest failed:", err?.code ?? "", err?.message ?? String(e));
+          return { ok: false, message: UNRESTED_BUT_NOT_CREATED };
+        }
       }
       case "disabled":
         return { ok: false, message: "Already in today's session." };
