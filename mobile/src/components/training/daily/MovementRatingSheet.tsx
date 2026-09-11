@@ -30,10 +30,18 @@ interface MovementRatingSheetProps {
   movements: RatableMovement[];
   onClose: () => void;
   onSaved: () => void;
+  /** Pre-selected pills, keyed by exercise id — the exercise page's Re-rate
+   *  opens on the rating that stands. Callers must pass a referentially
+   *  stable object (memoised): the reset effect keys on it, and a fresh
+   *  object per render would wipe in-progress taps. */
+  initialRatings?: Record<string, MovementRating>;
+  /** Replaces the session-end save. The caller owns success and failure
+   *  (the page keeps its old note and toasts); the sheet just closes after. */
+  onSave?: (ratings: { exerciseId: string; rating: MovementRating }[]) => Promise<void>;
 }
 
 export function MovementRatingSheet({
-  visible, sessionId, movements, onClose, onSaved,
+  visible, sessionId, movements, onClose, onSaved, initialRatings, onSave,
 }: MovementRatingSheetProps) {
   const [ratings, setRatings] = useState<Record<string, MovementRating>>({});
   const [promotions, setPromotions] = useState<PromotionResult[] | null>(null);
@@ -42,10 +50,10 @@ export function MovementRatingSheet({
 
   useEffect(() => {
     if (!visible) return;
-    setRatings({});
+    setRatings(initialRatings ?? {});
     setPromotions(null);
     setErrorText(null);
-  }, [visible]);
+  }, [visible, initialRatings]);
 
   const count = Object.keys(ratings).length;
 
@@ -53,6 +61,15 @@ export function MovementRatingSheet({
     if (!sessionId || saving || count === 0) return;
     setSaving(true);
     setErrorText(null);
+    if (onSave) {
+      try {
+        await onSave(Object.entries(ratings).map(([exerciseId, rating]) => ({ exerciseId, rating })));
+      } finally {
+        setSaving(false); // a throwing onSave must not leave the sheet stuck
+      }
+      onSaved();
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setSaving(false); return; }
     const result = await saveMovementRatings({

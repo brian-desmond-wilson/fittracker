@@ -1,7 +1,7 @@
 # Exercise Detail Page v2 — Design Spec
 
 **Date:** 2026-09-11
-**Status:** Approved design 2026-09-11; implementation plan at docs/superpowers/plans/2026-09-11-exercise-detail-page-v2.md (not yet executed)
+**Status:** Implemented and device-verified 2026-09-11 (plan: docs/superpowers/plans/2026-09-11-exercise-detail-page-v2.md). Walked on FitTracker-walk3: meta row with Scored by; history block Trend and Sessions views with the saved preference; skill footer and Re-rate (row overwritten, state replayed); See all → Track list scoped with Show all; never-logged row hides history; muscle chip → Exercises tab with the removable chip; sibling collapse; Demo Video card and Find a demo; Captured From strip and the Posts | Creators screen; Add to today across none, pending (disabled), completed (second session) and rested (confirm sheet, Cancel and Add). Not walked: the in-progress-session append and the offline failure path (covered by unit tests and review).
 **Surface:** Training › Daily mode › Exercises tab › exercise page (`mobile/src/components/training/item-detail/TrainingItemDetailScreen.tsx`, route `mobile/app/(tabs)/training/exercise/[id].tsx`)
 **Visual reference:** Approved mockup (https://claude.ai/code/artifact/8571ffb9-8a99-4d35-8e77-542b6005d956), frames 1 "Page v2", 2 "History block", 3 "Captured From". The mock is the decision record; deviations are proposed in chat, never shipped.
 **Companion spec:** `docs/superpowers/specs/2026-09-11-catalog-enrichment-pipeline-design.md` fills the description, demo video and image this page renders. This spec assumes every row eventually has all three and only renders them.
@@ -108,7 +108,7 @@ The last thing in the scroll, per the end-of-scroll rule: a full-width primary b
 
 **History source.** Working sets for this exercise and this user: `set_instances` joined through `exercise_instances` to `workout_instances` and `workout_sessions`, excluding `is_warmup`. Fields per set: session id, session date, session display name, weight, reps. Session display name reuses the presentation rule in `mobile/src/lib/sessionPresentation.ts`.
 
-**Session count** = distinct sessions with at least one working set. **Top set per session** and **best set ever** use the best-set rule in §4.2. **PR badge** on a Sessions row means that session's top set was a record at the time, computed by the existing `recordsBySession` logic in `mobile/src/lib/personalRecords.ts` over this exercise's sets only.
+**Session count** = distinct sessions with at least one working set. **Top set per session** and **best set ever** use the best-set rule in §4.2. **PR badge** on a Sessions row means that session's top set beat every earlier session's top set under the best-set rule (§4.2), over this exercise's sets only.
 
 **Skill note.** The most recent `movement_ratings` row for this user and exercise gives the rating and, through its `generated_sessions` row, the date. Re-rate overwrites that row (unique on session + exercise) and then recomputes `exercise_skill_state` by replaying all of this exercise's rating rows in date order through the pure machine in `mobile/src/lib/dailySkill.ts`, so counters cannot drift. The note is hidden when no rating row exists.
 
