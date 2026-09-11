@@ -29,6 +29,7 @@ import { CaptureFab } from "./CaptureFab";
 import { MatchReviewSheet } from "./MatchReviewSheet";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { SwipeableCatalogCard } from "./SwipeableCatalogCard";
+import { EmptyLibrary, NothingMatches } from "./ListEmptyState";
 import { FilterRail } from "./FilterRail";
 import { SortSheet } from "./SortSheet";
 import { ExerciseFiltersSheet } from "./ExerciseFiltersSheet";
@@ -38,10 +39,6 @@ interface CatalogTabProps {
   searchQuery: string;
   onCountUpdate: (count: number) => void;
 }
-
-/** "a", "a and b", "a, b and c" — labels verbatim. */
-const listed = (items: string[]): string =>
-  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabProps) {
   const router = useRouter();
@@ -204,42 +201,14 @@ export default function CatalogTab({ searchQuery, onCountUpdate }: CatalogTabPro
             />
           )}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              {entries.length === 0 ? (
-                <>
-                  <Text style={styles.emptyTitle}>Nothing captured yet</Text>
-                  <Text style={styles.emptyText}>
-                    See an exercise on Instagram or TikTok? Paste its link here with the + button.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.emptyTitle}>Nothing matches</Text>
-                  <Text style={styles.emptyText}>
-                    {activeCount > 0
-                      ? `No exercise matches all of ${listed([
-                          ...chips.map((c) => c.label),
-                          ...(searchQuery.trim() ? [`“${searchQuery.trim()}”`] : []),
-                        ])}.`
-                      : "Change the search."}
-                  </Text>
-                  {rescue && (
-                    <TouchableOpacity style={styles.rescue} onPress={() => applyFilters(clearExerciseAxis(filters, rescue.axis))}
-                      accessibilityRole="button">
-                      <Text style={styles.rescueText}>
-                        Drop “{rescue.label}” · {rescue.count} {rescue.count === 1 ? "exercise" : "exercises"}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  {activeCount > 0 && (
-                    <TouchableOpacity style={styles.rescueGhost} onPress={() => applyFilters(EMPTY_EXERCISE_FILTERS)}
-                      accessibilityRole="button">
-                      <Text style={styles.rescueGhostText}>Clear all filters</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-            </View>
+            entries.length === 0 ? (
+              <EmptyLibrary title="Nothing captured yet"
+                body="See an exercise on Instagram or TikTok? Paste its link here with the + button." />
+            ) : (
+              <NothingMatches noun={["exercise", "exercises"]} chips={chips} search={searchQuery} rescue={rescue}
+                onDropRescue={() => rescue && applyFilters(clearExerciseAxis(filters, rescue.axis))}
+                onClearAll={() => applyFilters(EMPTY_EXERCISE_FILTERS)} />
+            )
           }
         />
         </View>
@@ -287,14 +256,4 @@ const styles = StyleSheet.create({
   // double it.
   listWrap: { flex: 1 },
   listContent: { padding: 16 },
-  empty: { padding: 40, alignItems: "center" },
-  emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.text, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.textMuted, textAlign: "center", lineHeight: 20 },
-  rescue: {
-    marginTop: 16, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 8, alignSelf: "stretch",
-    backgroundColor: colors.brand, alignItems: "center", justifyContent: "center",
-  },
-  rescueText: { fontSize: 15, fontWeight: "600", color: colors.onBrand, textAlign: "center" },
-  rescueGhost: { marginTop: 4, height: 36, alignItems: "center", justifyContent: "center" },
-  rescueGhostText: { fontSize: 14, color: colors.textMuted },
 });

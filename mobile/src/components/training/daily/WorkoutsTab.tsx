@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity,
+  View, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, router } from "expo-router";
@@ -21,6 +21,7 @@ import type { CompletionMap } from "@/src/lib/workoutCompletion";
 import { getLocalDateString } from "@/src/lib/dates";
 import { CaptureFab } from "./CaptureFab";
 import { SwipeableWorkoutCard } from "./SwipeableWorkoutCard";
+import { EmptyLibrary, NothingMatches } from "./ListEmptyState";
 import { FilterRail } from "./FilterRail";
 import { RefreshIndicator } from "@/src/components/ui/RefreshIndicator";
 import { SortSheet } from "./SortSheet";
@@ -33,11 +34,6 @@ interface WorkoutsTabProps {
   /** A URL from the iOS share sheet, passed through to the capture flow. */
   shareUrl?: string | null;
 }
-
-/** "a", "a and b", "a, b and c" — labels verbatim, because a creator handle
- *  or a band like "≤ 15 min" reads wrong in any other case. */
-const listed = (items: string[]): string =>
-  items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: WorkoutsTabProps) {
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
@@ -232,42 +228,14 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
           />
         )}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            {workouts.length === 0 ? (
-              <>
-                <Text style={styles.emptyTitle}>No workouts captured yet</Text>
-                <Text style={styles.emptyText}>
-                  When a post lays out a full session — movements with reps and rounds — it lands here, kept the way the creator wrote it.
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.emptyTitle}>Nothing matches</Text>
-                <Text style={styles.emptyText}>
-                  {activeCount > 0
-                    ? `No workout matches all of ${listed([
-                        ...chips.map((c) => c.label),
-                        ...(searchQuery.trim() ? [`“${searchQuery.trim()}”`] : []),
-                      ])}.`
-                    : "Change the search."}
-                </Text>
-                {rescue && (
-                  <TouchableOpacity style={styles.rescue} onPress={() => applyFilters(clearAxis(filters, rescue.axis))}
-                    accessibilityRole="button">
-                    <Text style={styles.rescueText}>
-                      Drop “{rescue.label}” · {rescue.count} {rescue.count === 1 ? "workout" : "workouts"}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {activeCount > 0 && (
-                  <TouchableOpacity style={styles.rescueGhost} onPress={() => applyFilters(EMPTY_FILTERS)}
-                    accessibilityRole="button">
-                    <Text style={styles.rescueGhostText}>Clear all filters</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-          </View>
+          workouts.length === 0 ? (
+            <EmptyLibrary title="No workouts captured yet"
+              body="When a post lays out a full session — movements with reps and rounds — it lands here, kept the way the creator wrote it." />
+          ) : (
+            <NothingMatches noun={["workout", "workouts"]} chips={chips} search={searchQuery} rescue={rescue}
+              onDropRescue={() => rescue && applyFilters(clearAxis(filters, rescue.axis))}
+              onClearAll={() => applyFilters(EMPTY_FILTERS)} />
+          )
         }
       />
       </View>
@@ -301,14 +269,4 @@ const styles = StyleSheet.create({
   },
   listWrap: { flex: 1 },
   listContent: { padding: 16 },
-  empty: { padding: 40, alignItems: "center" },
-  emptyTitle: { fontSize: 18, fontWeight: "bold", color: colors.foreground, marginBottom: 8 },
-  emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20 },
-  rescue: {
-    marginTop: 16, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 8, alignSelf: "stretch",
-    backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
-  },
-  rescueText: { fontSize: 15, fontWeight: "600", color: colors.primaryForeground, textAlign: "center" },
-  rescueGhost: { marginTop: 4, height: 36, alignItems: "center", justifyContent: "center" },
-  rescueGhostText: { fontSize: 14, color: colors.mutedForeground },
 });

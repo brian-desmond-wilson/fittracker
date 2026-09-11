@@ -1,6 +1,6 @@
 // How often, and how recently, a captured workout has actually been trained.
 //
-// Pure, in the same doctrine as workoutFilter and catalogFilter: the whole
+// Pure, in the same doctrine as workoutFilters and exerciseFilters: the whole
 // history is one query's result, so the date ladder, the staleness order and
 // the never-done filter run here — instantly, offline, and testable without a
 // database or a renderer. `supabase/workoutCompletions.ts` owns the read and
