@@ -17,7 +17,7 @@ import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
 import {
   applyExerciseFiltersAndSearch, activeExerciseFilterChips, countActiveExerciseFilters,
   removeExerciseChip, clearExerciseAxis, mostRestrictiveExerciseAxis,
-  exerciseCreatorCounts, catalogEquipmentNames, catalogGoalTypes,
+  exerciseCreatorCounts, catalogEquipmentNames, catalogGoalTypes, catalogCategories, catalogScoringTypes,
 } from "@/src/lib/exerciseFilters";
 import { sortExercises } from "@/src/lib/exerciseSort";
 import { loadExercisePrefs, saveExercisePrefs } from "@/src/lib/exerciseFilterStore";
@@ -143,6 +143,8 @@ export default function CatalogTab({
   const equipmentTiles = useMemo(() => catalogEquipmentNames(entries), [entries]);
   const availableEquipment = useMemo(() => new Set(equipmentTiles.map((t) => t.name)), [equipmentTiles]);
   const goalTypes = useMemo(() => catalogGoalTypes(entries), [entries]);
+  const categories = useMemo(() => catalogCategories(entries), [entries]);
+  const scoringTypes = useMemo(() => catalogScoringTypes(entries), [entries]);
   // The sheet's live "Show N" count: the draft, composed with the header
   // search exactly as the applied list is.
   const countFor = useCallback(
@@ -248,6 +250,8 @@ export default function CatalogTab({
         equipmentTiles={equipmentTiles}
         availableEquipment={availableEquipment}
         goalTypes={goalTypes}
+        categories={categories}
+        scoringTypes={scoringTypes}
         onApply={applyFilters}
         onClose={() => setFiltersOpen(false)}
       />

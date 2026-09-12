@@ -9,6 +9,7 @@ import type { SkillLevel } from "@/src/types/skillLevel";
 import { ALL_SKILLS } from "@/src/types/skillLevel";
 import type { CreatorAvatarMap } from "@/src/lib/supabase/creators";
 import { toggleIn } from "@/src/lib/filterChips";
+import { RANK_OPTIONS, rankLabel } from "@/src/lib/exerciseFilters";
 import { MuscleGroupPicker } from "./MuscleGroupPicker";
 import { CreatorPicker } from "./CreatorPicker";
 import { FilterSheetFrame, FilterSection } from "./filterSheet/FilterSheetFrame";
@@ -31,6 +32,10 @@ interface ExerciseFiltersSheetProps {
   availableEquipment: Set<string>;
   /** Goal-type names present in the catalog, A–Z. */
   goalTypes: string[];
+  /** Movement-category names present in the catalog, A–Z. */
+  categories: string[];
+  /** Scoring-type names present in the catalog, A–Z. */
+  scoringTypes: string[];
   onApply: (next: ExerciseFilters) => void;
   onClose: () => void;
 }
@@ -38,7 +43,7 @@ interface ExerciseFiltersSheetProps {
 type Page = "root" | "muscles" | "creators";
 
 export function ExerciseFiltersSheet({
-  visible, applied, creators, avatars, countFor, equipmentTiles, availableEquipment, goalTypes, onApply, onClose,
+  visible, applied, creators, avatars, countFor, equipmentTiles, availableEquipment, goalTypes, categories, scoringTypes, onApply, onClose,
 }: ExerciseFiltersSheetProps) {
   const [draft, setDraft] = useState<ExerciseFilters>(applied);
   const [page, setPage] = useState<Page>("root");
@@ -85,6 +90,14 @@ export function ExerciseFiltersSheet({
         dimHint="No captured exercise uses this yet"
         onToggle={(name) => setDraft((d) => ({ ...d, equipment: toggleIn(d.equipment, name) }))} />
 
+      <FilterSection title="Category" />
+      <FilterPillRow>
+        {categories.map((c) => (
+          <FilterPill key={c} label={c} on={draft.categories.includes(c)}
+            onPress={() => setDraft((d) => ({ ...d, categories: toggleIn(d.categories, c) }))} />
+        ))}
+      </FilterPillRow>
+
       <FilterSection title="Type" />
       <FilterPillRow>
         {goalTypes.map((g) => (
@@ -98,6 +111,22 @@ export function ExerciseFiltersSheet({
         {ALL_SKILLS.map((s: SkillLevel) => (
           <FilterPill key={s} label={s} on={draft.skills.includes(s)}
             onPress={() => setDraft((d) => ({ ...d, skills: toggleIn(d.skills, s) }))} />
+        ))}
+      </FilterPillRow>
+
+      <FilterSection title="Rank" />
+      <FilterPillRow>
+        {RANK_OPTIONS.map((t) => (
+          <FilterPill key={t} label={rankLabel(t)} on={draft.tiers.includes(t)}
+            onPress={() => setDraft((d) => ({ ...d, tiers: toggleIn(d.tiers, t) }))} />
+        ))}
+      </FilterPillRow>
+
+      <FilterSection title="Scored by" hint="Scored by all selected" />
+      <FilterPillRow>
+        {scoringTypes.map((s) => (
+          <FilterPill key={s} label={s} on={draft.scoringTypes.includes(s)}
+            onPress={() => setDraft((d) => ({ ...d, scoringTypes: toggleIn(d.scoringTypes, s) }))} />
         ))}
       </FilterPillRow>
 
