@@ -3,6 +3,7 @@ import type { CatalogEntry } from "../../types/capture";
 
 const e = (id: string, name: string, capturedAt: string): CatalogEntry => ({
   exerciseId: id, name, imageUrl: null, skillLevel: null, equipmentTypes: [], muscles: [], goalTypes: [],
+  category: null, tier: null, scoringTypes: [],
   sources: [{ sourceId: `s-${id}`, platform: "instagram", sourceUrl: "https://x", posterHandle: null, thumbnailUrl: null, capturedAt }],
 });
 const ids = (list: CatalogEntry[]) => list.map((x) => x.exerciseId);
