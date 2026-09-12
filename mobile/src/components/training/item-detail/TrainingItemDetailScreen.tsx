@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing, tint } from '@/src/theme/tokens';
 import { equipmentNamesOf } from '@/src/lib/exerciseEquipment';
+import { SUPPORT_SURFACES } from '@/src/lib/workoutEquipment';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import type { CaptureSourceV2 } from '@/src/types/capture';
 import { supabase } from '@/src/lib/supabase';
@@ -416,9 +417,11 @@ export function TrainingItemDetailScreen({
 
   // ---------- derived ----------
 
-  const equipmentChips = item
-    ? equipmentNamesOf(item).filter((name) => name.toLowerCase() !== 'bodyweight')
-    : [];
+  const equipmentNames = item ? equipmentNamesOf(item) : [];
+  const realEquipment = equipmentNames.filter(
+    (name) => !SUPPORT_SURFACES.has(name) && name.toLowerCase() !== 'bodyweight',
+  );
+  const surfaces = equipmentNames.filter((name) => SUPPORT_SURFACES.has(name));
   const aliasNames = item ? aliasNamesOf(item) : [];
   const scoredBy = useMemo(() => (item ? scoredByLabel(scoringRowsOf(item.scoring_rows)) : ''), [item]);
   const siblingView = collapseSiblings(hierarchyData.siblings, siblingsExpanded);
@@ -652,12 +655,12 @@ export function TrainingItemDetailScreen({
             </View>
           )}
 
-          {/* 7. Equipment — tiles are buttons too */}
-          {equipmentChips.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Equipment</Text>
+          {/* 7. Equipment — real gear only; tiles are buttons. Surfaces live in their own section below. */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Equipment</Text>
+            {realEquipment.length > 0 ? (
               <View style={styles.equipmentContainer}>
-                {equipmentChips.map((equipment, index) => {
+                {realEquipment.map((equipment, index) => {
                   const EquipmentIcon = getEquipmentIcon(equipment);
                   return (
                     <TouchableOpacity key={index} style={styles.equipmentItem}
@@ -668,6 +671,28 @@ export function TrainingItemDetailScreen({
                       </View>
                       <Text style={styles.equipmentLabel}>{equipment}</Text>
                     </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.equipmentEmptyText}>No equipment needed</Text>
+            )}
+          </View>
+
+          {/* 7b. Surface — Floor / Wall, non-tappable tiles, only when present */}
+          {surfaces.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Surface</Text>
+              <View style={styles.equipmentContainer}>
+                {surfaces.map((surface, index) => {
+                  const SurfaceIcon = getEquipmentIcon(surface);
+                  return (
+                    <View key={index} style={styles.equipmentItem}>
+                      <View style={styles.equipmentIconContainer}>
+                        <SurfaceIcon size={32} color={colors.brand} strokeWidth={1.5} />
+                      </View>
+                      <Text style={styles.equipmentLabel}>{surface}</Text>
+                    </View>
                   );
                 })}
               </View>
@@ -811,6 +836,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: 8, borderWidth: 1, borderColor: tint(colors.brand, 0.19),
   },
   equipmentLabel: { fontSize: 12, fontWeight: '500', color: colors.text, textAlign: 'center' },
+  equipmentEmptyText: { fontSize: 15, color: colors.textMuted },
   muscleContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   musclePrimaryChip: {
     paddingHorizontal: 12, paddingVertical: 8, backgroundColor: tint(colors.brand, 0.125),
