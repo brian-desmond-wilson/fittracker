@@ -407,6 +407,68 @@ git add mobile/src/lib/exerciseFilters.ts mobile/src/lib/__tests__/exerciseFilte
 git commit -m "feat(filters): catalog option lists for category and scoring"
 ```
 
+> **Execution note:** Tasks 2, 4 and 5 were implemented as one commit (`0f1bc32`, "feat(filters): match, chip and list category, rank and scoring axes"). They had to land together: widening `ExerciseFilters` in Task 1 makes `removeExerciseChip`'s switch non-exhaustive, so the module (and the test file) will not compile until the chip cases exist. The `ex()` fixture defaults from Task 2 Step 1 also moved into that commit for the same reason.
+
+---
+
+### Task 5b: Persist the three new axes in the filter store
+
+Widening `ExerciseFilters` broke `sanitizeExercisePrefs`, which builds the filters object field-by-field and now omits three required fields — a compile error, and without it the new axes would never save or rehydrate.
+
+**Files:**
+- Modify: `mobile/src/lib/exerciseFilterStore.ts` (`sanitizeExercisePrefs`, around lines 23-30)
+- Test: `mobile/src/lib/__tests__/exerciseFilterStore.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `mobile/src/lib/__tests__/exerciseFilterStore.test.ts`:
+
+```ts
+describe("sanitize keeps the category, rank and scoring axes", () => {
+  it("keeps category and scoring names and valid tiers, drops junk tiers", () => {
+    const out = sanitizeExercisePrefs({ filters: { categories: ["Gymnastics"], tiers: [0, 2, 9, "x"], scoringTypes: ["Reps", "Load"] } });
+    expect(out.filters.categories).toEqual(["Gymnastics"]);
+    expect(out.filters.tiers).toEqual([0, 2]);
+    expect(out.filters.scoringTypes).toEqual(["Reps", "Load"]);
+  });
+  it("defaults them to empty when absent", () => {
+    const out = sanitizeExercisePrefs({});
+    expect(out.filters.categories).toEqual([]);
+    expect(out.filters.tiers).toEqual([]);
+    expect(out.filters.scoringTypes).toEqual([]);
+  });
+});
+```
+
+Ensure `sanitizeExercisePrefs` is imported in that test file.
+
+- [ ] **Step 2: Run it, expect FAIL**
+
+Run: `npx jest src/lib/__tests__/exerciseFilterStore.test.ts -t "category, rank and scoring"`
+Expected: FAIL — the three fields are missing from the sanitized object.
+
+- [ ] **Step 3: Add the three fields to `sanitizeExercisePrefs`**
+
+In `mobile/src/lib/exerciseFilterStore.ts`, add to the `filters` object literal (after `skills:` and before `picture:`):
+
+```ts
+    categories: strings(f.categories),
+    tiers: Array.isArray(f.tiers) ? f.tiers.filter((n): n is number => typeof n === "number" && n >= 0 && n <= 3) : [],
+    scoringTypes: strings(f.scoringTypes),
+```
+
+- [ ] **Step 4: Run the test, expect PASS**
+
+Run: `npx jest src/lib/__tests__/exerciseFilterStore.test.ts`
+Expected: PASS (whole file).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add mobile/src/lib/exerciseFilterStore.ts mobile/src/lib/__tests__/exerciseFilterStore.test.ts
+git commit -m "feat(filters): persist category, rank and scoring in the exercise prefs store"
+```
+
 ---
 
 ### Task 6: Widen the page→tab link seam
