@@ -35,3 +35,24 @@ describe("mergeExerciseFilters", () => {
     expect(merged).not.toBe(saved);
   });
 });
+
+describe("new axes on the link", () => {
+  it("parses category, rank, scoring, goal and skill", () => {
+    const raw = exerciseFilterParam({ categories: ["Gymnastics"], tiers: [0, 2], scoringTypes: ["Reps", "Load"], goalTypes: ["Strength"], skills: ["Beginner"] });
+    expect(parseExerciseFilterParam(raw)).toEqual({
+      categories: ["Gymnastics"], tiers: [0, 2], scoringTypes: ["Reps", "Load"], goalTypes: ["Strength"], skills: ["Beginner"],
+    });
+  });
+
+  it("drops out-of-range tiers and non-skill strings, returns null when nothing survives", () => {
+    expect(parseExerciseFilterParam(JSON.stringify({ tiers: [9], skills: ["Wizard"] }))).toBeNull();
+  });
+
+  it("merges each new axis onto the base as a union", () => {
+    const base = { ...EMPTY_EXERCISE_FILTERS, tiers: [1], categories: ["Weightlifting"] };
+    const merged = mergeExerciseFilters(base, { tiers: [2], categories: ["Weightlifting", "Gymnastics"], scoringTypes: ["Reps"] });
+    expect(merged.tiers).toEqual([1, 2]);
+    expect(merged.categories).toEqual(["Weightlifting", "Gymnastics"]);
+    expect(merged.scoringTypes).toEqual(["Reps"]);
+  });
+});
