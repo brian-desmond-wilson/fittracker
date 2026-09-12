@@ -26,6 +26,9 @@ export function sanitizeExercisePrefs(raw: unknown): ExercisePrefs {
     equipment: strings(f.equipment),
     goalTypes: strings(f.goalTypes),
     skills: manyOf(f.skills, ALL_SKILLS),
+    categories: strings(f.categories),
+    tiers: Array.isArray(f.tiers) ? f.tiers.filter((n): n is number => typeof n === "number" && n >= 0 && n <= 3) : [],
+    scoringTypes: strings(f.scoringTypes),
     picture: oneOf(f.picture, ALL_PICTURE_FILTERS) ?? "any",
   };
   return { filters, sort: oneOf(r.sort, ALL_EXERCISE_SORTS) ?? DEFAULT_EXERCISE_SORT };

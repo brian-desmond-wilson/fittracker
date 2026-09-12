@@ -31,7 +31,7 @@ describe("exerciseFilterStore", () => {
       filters: { creators: ["@gone"], muscles: ["Chest", 7], equipment: ["Laser"], goalTypes: ["Strength"], skills: ["Advanced", "God"], picture: "blurry" },
       sort: "random",
     })).toEqual({
-      filters: { creators: ["@gone"], muscles: ["Chest"], equipment: ["Laser"], goalTypes: ["Strength"], skills: ["Advanced"], picture: "any" },
+      filters: { creators: ["@gone"], muscles: ["Chest"], equipment: ["Laser"], goalTypes: ["Strength"], skills: ["Advanced"], categories: [], tiers: [], scoringTypes: [], picture: "any" },
       sort: DEFAULT_EXERCISE_SORT,
     });
   });
@@ -48,5 +48,20 @@ describe("exerciseFilterStore", () => {
     expect(sanitizeExercisePrefs(42)).toEqual(d);
     expect(sanitizeExercisePrefs([])).toEqual(d);
     expect(sanitizeExercisePrefs({ filters: { creators: "not-an-array", picture: 5 }, sort: 1 })).toEqual(d);
+  });
+});
+
+describe("sanitize keeps the category, rank and scoring axes", () => {
+  it("keeps category and scoring names and valid tiers, drops junk tiers", () => {
+    const out = sanitizeExercisePrefs({ filters: { categories: ["Gymnastics"], tiers: [0, 2, 9, "x"], scoringTypes: ["Reps", "Load"] } });
+    expect(out.filters.categories).toEqual(["Gymnastics"]);
+    expect(out.filters.tiers).toEqual([0, 2]);
+    expect(out.filters.scoringTypes).toEqual(["Reps", "Load"]);
+  });
+  it("defaults them to empty when absent", () => {
+    const out = sanitizeExercisePrefs({});
+    expect(out.filters.categories).toEqual([]);
+    expect(out.filters.tiers).toEqual([]);
+    expect(out.filters.scoringTypes).toEqual([]);
   });
 });
