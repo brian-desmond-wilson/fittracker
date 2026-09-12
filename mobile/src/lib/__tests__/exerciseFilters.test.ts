@@ -112,6 +112,14 @@ describe("applyExerciseFilters", () => {
     const repsOnly = ex({ scoringTypes: ["Reps"] });
     expect(applyExerciseFilters([repsOnly], f({ scoringTypes: ["Reps", "Load"] }))).toHaveLength(0);
   });
+
+  it("AND across a mix of new and existing axes", () => {
+    const match = ex({ id: "match", category: "Gymnastics", tier: 2, scoringTypes: ["Reps", "Load"], skillLevel: "Beginner" });
+    const wrongTier = ex({ id: "wrongTier", category: "Gymnastics", tier: 1, scoringTypes: ["Reps", "Load"], skillLevel: "Beginner" });
+    const missingScore = ex({ id: "missingScore", category: "Gymnastics", tier: 2, scoringTypes: ["Reps"], skillLevel: "Beginner" });
+    const filters = f({ categories: ["Gymnastics"], tiers: [2], scoringTypes: ["Reps", "Load"], skills: ["Beginner"] });
+    expect(ids(applyExerciseFilters([match, wrongTier, missingScore], filters))).toEqual(["match"]);
+  });
 });
 
 describe("applyExerciseFiltersAndSearch", () => {
@@ -254,6 +262,16 @@ describe("chips for the new axes", () => {
     expect(removeExerciseChip(filters, load).scoringTypes).toEqual(["Reps"]);
     const cat = chips.find((c) => c.axis === "categories")!;
     expect(removeExerciseChip(filters, cat).categories).toEqual([]);
+  });
+
+  it("places the new axes in sheet order among the existing ones", () => {
+    const chips = activeExerciseFilterChips(f({
+      creators: ["@a"], equipment: ["Bar"], categories: ["Gymnastics"], goalTypes: ["Strength"],
+      skills: ["Beginner"], tiers: [0], scoringTypes: ["Reps"], picture: "missing",
+    }));
+    expect(chips.map((c) => c.axis)).toEqual([
+      "creators", "equipment", "categories", "goalTypes", "skills", "tiers", "scoringTypes", "picture",
+    ]);
   });
 });
 

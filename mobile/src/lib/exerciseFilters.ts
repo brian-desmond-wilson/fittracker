@@ -18,6 +18,11 @@ export function rankLabel(tier: number): string {
   return tier === 0 ? "Core" : `Tier ${tier}`;
 }
 
+/** A rank chip's string value. Tiers are the one numeric axis, so a chip
+ *  carries the tier as a string; this ties the create and remove sites to
+ *  one stringification. */
+const tierChipValue = (tier: number): string => String(tier);
+
 const hasPicture = (e: CatalogEntry): boolean => !!e.imageUrl && e.imageUrl.trim() !== "";
 
 function passes(e: CatalogEntry, f: ExerciseFilters): boolean {
@@ -81,8 +86,9 @@ export function countActiveExerciseFilters(f: ExerciseFilters): number {
 export type ExerciseFilterAxis = keyof ExerciseFilters;
 export type ExerciseFilterChip = FilterChip<ExerciseFilterAxis>;
 
-/** Chips in sheet order: creator, muscle, equipment, type, skill, picture.
- *  A fully selected muscle group becomes one "<Group> group" chip. */
+/** Chips in sheet order: creator, muscle, equipment, category, type, skill,
+ *  rank, scored-by, picture. A fully selected muscle group becomes one
+ *  "<Group> group" chip. */
 export function activeExerciseFilterChips(f: ExerciseFilters): ExerciseFilterChip[] {
   const chips: ExerciseFilterChip[] = [];
   for (const c of f.creators) chips.push({ axis: "creators", label: c, values: [c] });
@@ -93,7 +99,7 @@ export function activeExerciseFilterChips(f: ExerciseFilters): ExerciseFilterChi
   for (const c of f.categories) chips.push({ axis: "categories", label: c, values: [c] });
   for (const g of f.goalTypes) chips.push({ axis: "goalTypes", label: g, values: [g] });
   for (const s of f.skills) chips.push({ axis: "skills", label: s, values: [s] });
-  for (const t of f.tiers) chips.push({ axis: "tiers", label: rankLabel(t), values: [String(t)] });
+  for (const t of f.tiers) chips.push({ axis: "tiers", label: rankLabel(t), values: [tierChipValue(t)] });
   for (const s of f.scoringTypes) chips.push({ axis: "scoringTypes", label: s, values: [s] });
   if (f.picture !== "any") chips.push({ axis: "picture", label: PICTURE_LABELS[f.picture], values: [f.picture] });
   return chips;
@@ -109,7 +115,7 @@ export function removeExerciseChip(f: ExerciseFilters, chip: ExerciseFilterChip)
     case "goalTypes": return { ...f, goalTypes: f.goalTypes.filter((v) => !chip.values.includes(v)) };
     case "skills": return { ...f, skills: f.skills.filter((v) => !chip.values.includes(v)) };
     case "categories": return { ...f, categories: f.categories.filter((v) => !chip.values.includes(v)) };
-    case "tiers": return { ...f, tiers: f.tiers.filter((v) => !chip.values.includes(String(v))) };
+    case "tiers": return { ...f, tiers: f.tiers.filter((v) => !chip.values.includes(tierChipValue(v))) };
     case "scoringTypes": return { ...f, scoringTypes: f.scoringTypes.filter((v) => !chip.values.includes(v)) };
   }
 }
