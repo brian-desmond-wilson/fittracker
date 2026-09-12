@@ -7,7 +7,7 @@ import React from "react";
 import {
   Anchor, Bike, Box, BrickWall, Cable, Circle, CircleDashed, CircleDot, Cog, Disc, Disc3, Dumbbell,
   Equal, Footprints, Frame, Hexagon, Minus, Move, Package, PanelBottom, PersonStanding,
-  RectangleHorizontal, Repeat, Shirt, Snowflake, Spline, Waves, Weight,
+  RectangleHorizontal, Repeat, Rows2, Shirt, Snowflake, Spline, Waves, Weight,
 } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { KettlebellIcon } from "./KettlebellIcon";
@@ -20,7 +20,7 @@ export const EQUIPMENT_ICONS: Record<string, LucideIcon | "kettlebell"> = {
   Rings: Circle, "Med Ball": CircleDot, Bike, Rower: Waves,
   "Trap Bar": Hexagon, Landmine: Anchor, Plate: Disc, Sandbag: Package, "Weight Vest": Shirt,
   Rope: Spline, Parallettes: Equal, Ski: Snowflake, "Smith Machine": Frame, Treadmill: Footprints,
-  "Ab Roller": Disc3,
+  "Ab Roller": Disc3, "Dip Bars": Rows2,
   Wall: BrickWall, Floor: PanelBottom,
 };
 
