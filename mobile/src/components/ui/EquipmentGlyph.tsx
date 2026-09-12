@@ -5,8 +5,8 @@
 // Anything unknown falls back to a box.
 import React from "react";
 import {
-  Anchor, Bike, Box, BrickWall, Cable, Circle, CircleDashed, CircleDot, Cog, Disc, Disc3, Dumbbell,
-  Equal, Footprints, Frame, Hexagon, Minus, Move, Package, PanelBottom, PersonStanding,
+  Anchor, AudioWaveform, Bike, Box, BrickWall, Cable, Circle, CircleDashed, CircleDot, Cog, Disc, Disc3,
+  Dumbbell, Equal, Footprints, Frame, Hexagon, Minus, Move, Package, PanelBottom, PersonStanding,
   RectangleHorizontal, Repeat, Rows2, Shirt, Snowflake, Spline, Waves, Weight,
 } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
@@ -15,7 +15,8 @@ import { KettlebellIcon } from "./KettlebellIcon";
 /** A glyph per known name, covering both the equipment vocabularies and the
  *  Wall/Floor surfaces. "kettlebell" is a sentinel for the app's own icon. */
 export const EQUIPMENT_ICONS: Record<string, LucideIcon | "kettlebell"> = {
-  Kettlebell: "kettlebell", Dumbbell, Barbell: Weight, Bodyweight: PersonStanding, Bands: CircleDashed,
+  Kettlebell: "kettlebell", Dumbbell, Barbell: Weight, "Fixed Barbell": Weight, "EZ Bar": AudioWaveform,
+  Bodyweight: PersonStanding, Bands: CircleDashed,
   Bar: Minus, Box, "Jump Rope": Repeat, Bench: RectangleHorizontal, Sled: Move, Cable, Machine: Cog,
   Rings: Circle, "Med Ball": CircleDot, Bike, Rower: Waves,
   "Trap Bar": Hexagon, Landmine: Anchor, Plate: Disc, Sandbag: Package, "Weight Vest": Shirt,
