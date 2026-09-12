@@ -15,6 +15,13 @@ describe("toggleIn", () => {
   });
 });
 
+describe("toggleIn with numbers", () => {
+  it("adds and removes a numeric value", () => {
+    expect(toggleIn<number>([], 2)).toEqual([2]);
+    expect(toggleIn<number>([0, 2], 2)).toEqual([0]);
+  });
+});
+
 describe("muscleChips", () => {
   it("collapses a full group and leaves the rest as single chips", () => {
     const chips = muscleChips("m", ["Core", "Obliques", "Lower Back", "Chest"]);
