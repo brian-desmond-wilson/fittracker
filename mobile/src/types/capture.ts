@@ -129,6 +129,12 @@ export interface CatalogEntry {
   muscles: { name: string; isPrimary: boolean }[];
   /** goal_types names from exercise_goal_types join. */
   goalTypes: string[];
+  /** Movement category name (Weightlifting/Gymnastics/Recovery/Monostructural), or null. */
+  category: string | null;
+  /** Hierarchy rank: 0 = core movement, 1–3 = tier, null = unranked. */
+  tier: number | null;
+  /** Scoring type names this exercise carries, e.g. ["Reps", "Load"]. */
+  scoringTypes: string[];
   sources: CaptureSource[];
 }
 

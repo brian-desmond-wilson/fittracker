@@ -10,6 +10,14 @@ import { muscleChips } from "./filterChips";
 import { SUPPORT_SURFACES, byGridOrder, equipmentLabel } from "./workoutEquipment";
 import { normaliseForSearch } from "./searchNormalize";
 
+/** The rank axis's fixed values: Core (tier 0) then Tier 1–3. */
+export const RANK_OPTIONS: number[] = [0, 1, 2, 3];
+
+/** A rank's chip/pill label. */
+export function rankLabel(tier: number): string {
+  return tier === 0 ? "Core" : `Tier ${tier}`;
+}
+
 const hasPicture = (e: CatalogEntry): boolean => !!e.imageUrl && e.imageUrl.trim() !== "";
 
 function passes(e: CatalogEntry, f: ExerciseFilters): boolean {

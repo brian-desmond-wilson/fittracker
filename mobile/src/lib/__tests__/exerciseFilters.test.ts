@@ -2,6 +2,7 @@ import {
   applyExerciseFilters, applyExerciseFiltersAndSearch, countActiveExerciseFilters,
   activeExerciseFilterChips, removeExerciseChip, clearExerciseAxis,
   mostRestrictiveExerciseAxis, exerciseCreatorCounts, catalogEquipmentNames, catalogGoalTypes,
+  rankLabel,
 } from "../exerciseFilters";
 import { EMPTY_EXERCISE_FILTERS } from "../../types/exerciseFilters";
 import type { ExerciseFilters } from "../../types/exerciseFilters";
@@ -195,5 +196,13 @@ describe("catalog vocab", () => {
   it("catalogGoalTypes: distinct, A–Z", () => {
     const list = [ex({ id: "1", goalTypes: ["Strength", "MetCon"] }), ex({ id: "2", goalTypes: ["MetCon"] })];
     expect(catalogGoalTypes(list)).toEqual(["MetCon", "Strength"]);
+  });
+});
+
+describe("rankLabel", () => {
+  it("names tier 0 Core and the rest Tier n", () => {
+    expect(rankLabel(0)).toBe("Core");
+    expect(rankLabel(1)).toBe("Tier 1");
+    expect(rankLabel(3)).toBe("Tier 3");
   });
 });

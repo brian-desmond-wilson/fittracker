@@ -14,13 +14,20 @@ export interface ExerciseFilters {
   equipment: string[];
   goalTypes: string[];
   skills: SkillLevel[];
+  /** Movement category name, any-of. */
+  categories: string[];
+  /** Hierarchy rank: 0 = Core, 1–3 = Tier n. Any-of. */
+  tiers: number[];
+  /** Scoring type names. ALL-of: an exercise must carry every listed type. */
+  scoringTypes: string[];
   picture: PictureFilter;
 }
 
 export type ExerciseSort = "captured_desc" | "captured_asc" | "name";
 
 export const EMPTY_EXERCISE_FILTERS: ExerciseFilters = {
-  creators: [], muscles: [], equipment: [], goalTypes: [], skills: [], picture: "any",
+  creators: [], muscles: [], equipment: [], goalTypes: [], skills: [],
+  categories: [], tiers: [], scoringTypes: [], picture: "any",
 };
 
 export const DEFAULT_EXERCISE_SORT: ExerciseSort = "captured_desc";
