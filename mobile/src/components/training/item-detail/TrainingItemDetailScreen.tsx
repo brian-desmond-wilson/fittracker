@@ -16,8 +16,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ChevronLeft, ChevronRight, Sparkles, MoreVertical, Dumbbell, Weight, Circle, AlertCircle,
-  BrickWall, PanelBottom,
+  ChevronLeft, ChevronRight, Sparkles, MoreVertical, AlertCircle,
 } from 'lucide-react-native';
 import { colors, spacing, tint } from '@/src/theme/tokens';
 import { equipmentNamesOf } from '@/src/lib/exerciseEquipment';
@@ -39,6 +38,7 @@ import type { ExerciseFilterLink } from '@/src/lib/exerciseFilterLink';
 import { getLocalDateString } from '@/src/lib/dates';
 import { CatalogItemWizard } from '@/src/components/training/crossfit/CatalogItemWizard';
 import { MovementRatingSheet } from '@/src/components/training/daily/MovementRatingSheet';
+import { EquipmentGlyph } from '@/src/components/ui/EquipmentGlyph';
 import { UndoToast } from '@/src/components/ui/UndoToast';
 import type { UndoToastContent } from '@/src/components/ui/UndoToast';
 import { HistoryBlock } from './HistoryBlock';
@@ -86,16 +86,6 @@ function aliasNamesOf(item: DetailRow): string[] {
   return names;
 }
 
-/** A glyph per equipment name; the nearest lucide shapes. */
-const getEquipmentIcon = (equipmentName: string) => {
-  const name = equipmentName.toLowerCase();
-  if (name.includes('barbell') || name.includes('bar')) return Weight;
-  if (name.includes('dumbbell') || name.includes('db')) return Dumbbell;
-  if (name.includes('kettlebell') || name.includes('kb')) return Weight;
-  if (name.includes('wall')) return BrickWall;
-  if (name.includes('floor')) return PanelBottom;
-  return Circle;
-};
 
 const scaleLinksOf = (rows: { to_exercise?: { id: string; name: string } }[]): ScaleLink[] =>
   rows.flatMap((r) => (r.to_exercise ? [{ id: r.to_exercise.id, name: r.to_exercise.name }] : []));
@@ -663,19 +653,16 @@ export function TrainingItemDetailScreen({
             <Text style={styles.sectionTitle}>Equipment</Text>
             {realEquipment.length > 0 ? (
               <View style={styles.equipmentContainer}>
-                {realEquipment.map((equipment, index) => {
-                  const EquipmentIcon = getEquipmentIcon(equipment);
-                  return (
-                    <TouchableOpacity key={index} style={styles.equipmentItem}
-                      onPress={() => openFiltered({ equipment: [equipment] })}
-                      accessibilityRole="button" accessibilityLabel={`Exercises using ${equipment}`}>
-                      <View style={styles.equipmentIconContainer}>
-                        <EquipmentIcon size={32} color={colors.brand} strokeWidth={1.5} />
-                      </View>
-                      <Text style={styles.equipmentLabel}>{equipment}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {realEquipment.map((equipment, index) => (
+                  <TouchableOpacity key={index} style={styles.equipmentItem}
+                    onPress={() => openFiltered({ equipment: [equipment] })}
+                    accessibilityRole="button" accessibilityLabel={`Exercises using ${equipment}`}>
+                    <View style={styles.equipmentIconContainer}>
+                      <EquipmentGlyph name={equipment} size={32} color={colors.brand} strokeWidth={1.5} />
+                    </View>
+                    <Text style={styles.equipmentLabel}>{equipment}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             ) : (
               <Text style={styles.equipmentEmptyText}>No equipment needed</Text>
@@ -687,17 +674,14 @@ export function TrainingItemDetailScreen({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Surface</Text>
               <View style={styles.equipmentContainer}>
-                {surfaces.map((surface, index) => {
-                  const SurfaceIcon = getEquipmentIcon(surface);
-                  return (
-                    <View key={index} style={styles.equipmentItem}>
-                      <View style={styles.equipmentIconContainer}>
-                        <SurfaceIcon size={32} color={colors.brand} strokeWidth={1.5} />
-                      </View>
-                      <Text style={styles.equipmentLabel}>{surface}</Text>
+                {surfaces.map((surface, index) => (
+                  <View key={index} style={styles.equipmentItem}>
+                    <View style={styles.equipmentIconContainer}>
+                      <EquipmentGlyph name={surface} size={32} color={colors.brand} strokeWidth={1.5} />
                     </View>
-                  );
-                })}
+                    <Text style={styles.equipmentLabel}>{surface}</Text>
+                  </View>
+                ))}
               </View>
             </View>
           )}
