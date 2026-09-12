@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ChevronLeft, ChevronRight, Sparkles, MoreVertical, Dumbbell, Weight, Circle, AlertCircle,
+  BrickWall, PanelBottom,
 } from 'lucide-react-native';
 import { colors, spacing, tint } from '@/src/theme/tokens';
 import { equipmentNamesOf } from '@/src/lib/exerciseEquipment';
@@ -91,6 +92,8 @@ const getEquipmentIcon = (equipmentName: string) => {
   if (name.includes('barbell') || name.includes('bar')) return Weight;
   if (name.includes('dumbbell') || name.includes('db')) return Dumbbell;
   if (name.includes('kettlebell') || name.includes('kb')) return Weight;
+  if (name.includes('wall')) return BrickWall;
+  if (name.includes('floor')) return PanelBottom;
   return Circle;
 };
 
