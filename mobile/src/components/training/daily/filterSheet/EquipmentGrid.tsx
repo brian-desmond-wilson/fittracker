@@ -39,10 +39,10 @@ export function EquipmentGrid({ tiles, selected, available, dimHint, onToggle }:
 
 const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingHorizontal: spacing.screenGutter },
-  // Grow to fill a full row's slack, but never past a quarter: an odd last
-  // tile must not stretch across the whole row.
+  // Fixed four-up width so a short last row keeps the same tile size as full
+  // rows (no flexGrow, which would stretch an odd last row wider).
   tile: {
-    width: "22%", flexGrow: 1, maxWidth: "25%", alignItems: "center", gap: spacing.xs,
+    width: "23%", alignItems: "center", gap: spacing.xs,
     paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
     backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border, borderRadius: radii.row,
   },
