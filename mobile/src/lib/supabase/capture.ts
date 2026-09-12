@@ -546,6 +546,9 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
     .from("exercises")
     .select(`
       id, name, image_url, skill_level, core_default_equipment,
+      tier,
+      movement_category:movement_categories(name),
+      scoring_rows:exercise_scoring_types(scoring_type:scoring_types(name)),
       equipment_rows:exercise_equipment(equipment(name)),
       muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name)),
       goal_types:exercise_goal_types(goal_type:goal_types(name)),
@@ -572,6 +575,9 @@ export async function fetchCatalog(userId: string): Promise<CatalogEntry[]> {
       isPrimary: !!m.is_primary,
     })),
     goalTypes: (row.goal_types ?? []).map((g: any) => g.goal_type?.name ?? ""),
+    category: row.movement_category?.name ?? null,
+    tier: row.tier ?? null,
+    scoringTypes: (row.scoring_rows ?? []).map((r: any) => r.scoring_type?.name).filter(Boolean),
     sources: (row.sources ?? [])
       .map((s: any) => s.source)
       // RLS already scopes captured_sources to the caller; the filters here
