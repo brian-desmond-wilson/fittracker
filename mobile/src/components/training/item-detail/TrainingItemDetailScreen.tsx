@@ -10,7 +10,7 @@
 // new block fails closed: a failed fetch hides that block and logs.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar, Image, Alert, Modal,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar, Image, Alert, Modal, Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -454,9 +454,13 @@ export function TrainingItemDetailScreen({
   }
 
   const badge = item.is_core === true ? (
-    <View style={styles.heroCoreBadge}><Text style={styles.heroBadgeText}>CORE</Text></View>
+    <Pressable onPress={() => openFiltered({ tiers: [0] })} hitSlop={8}>
+      <View style={styles.heroCoreBadge}><Text style={styles.heroBadgeText}>CORE</Text></View>
+    </Pressable>
   ) : tier > 0 ? (
-    <View style={styles.heroTierBadge}><Text style={styles.heroBadgeText}>TIER {tier}</Text></View>
+    <Pressable onPress={() => openFiltered({ tiers: [tier] })} hitSlop={8}>
+      <View style={styles.heroTierBadge}><Text style={styles.heroBadgeText}>TIER {tier}</Text></View>
+    </Pressable>
   ) : null;
 
   const hierarchyRow = (
@@ -544,30 +548,48 @@ export function TrainingItemDetailScreen({
           {/* 2. Meta row: Category, Goal, Skill, Scored by (§4.1) */}
           <View style={styles.metaSection}>
             {item.movement_category?.name && (
-              <View style={styles.metaItem}>
+              <Pressable
+                style={styles.metaItem}
+                hitSlop={4}
+                onPress={() => openFiltered({ categories: [item.movement_category!.name] })}
+              >
                 <Text style={styles.metaLabel}>Category</Text>
                 <Text style={styles.metaValue} numberOfLines={1}>{item.movement_category.name}</Text>
-              </View>
+              </Pressable>
             )}
             {(item.goal_rows?.length ?? 0) > 0 && (
-              <View style={styles.metaItem}>
+              <Pressable
+                style={styles.metaItem}
+                hitSlop={4}
+                onPress={() => openFiltered({
+                  goalTypes: item.goal_rows!.map((g) => g.goal_type?.name).filter((n): n is string => !!n),
+                })}
+              >
                 <Text style={styles.metaLabel}>Goal</Text>
                 <Text style={styles.metaValue} numberOfLines={1}>
                   {item.goal_rows!.map((g) => g.goal_type?.name).filter(Boolean).join(', ')}
                 </Text>
-              </View>
+              </Pressable>
             )}
             {item.skill_level && (
-              <View style={styles.metaItem}>
+              <Pressable
+                style={styles.metaItem}
+                hitSlop={4}
+                onPress={() => openFiltered({ skills: [item.skill_level!] })}
+              >
                 <Text style={styles.metaLabel}>Skill</Text>
                 <Text style={styles.metaValue} numberOfLines={1}>{item.skill_level}</Text>
-              </View>
+              </Pressable>
             )}
             {scoredBy !== '' && (
-              <View style={styles.metaItem}>
+              <Pressable
+                style={styles.metaItem}
+                hitSlop={4}
+                onPress={() => openFiltered({ scoringTypes: scoringRowsOf(item.scoring_rows).map((r) => r.name) })}
+              >
                 <Text style={styles.metaLabel}>Scored by</Text>
                 <Text style={styles.metaValue} numberOfLines={1}>{scoredBy}</Text>
-              </View>
+              </Pressable>
             )}
           </View>
 
