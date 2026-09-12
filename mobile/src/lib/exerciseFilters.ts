@@ -36,6 +36,15 @@ function passes(e: CatalogEntry, f: ExerciseFilters): boolean {
   if (f.skills.length > 0) {
     if (e.skillLevel === null || !f.skills.includes(e.skillLevel)) return false;
   }
+  if (f.categories.length > 0) {
+    if (e.category === null || !f.categories.includes(e.category)) return false;
+  }
+  if (f.tiers.length > 0) {
+    if (e.tier === null || !f.tiers.includes(e.tier)) return false;
+  }
+  if (f.scoringTypes.length > 0) {
+    if (!f.scoringTypes.every((t) => e.scoringTypes.includes(t))) return false;
+  }
   if (f.picture === "has" && !hasPicture(e)) return false;
   if (f.picture === "missing" && hasPicture(e)) return false;
   return true;
@@ -64,6 +73,7 @@ export function applyExerciseFiltersAndSearch(
 export function countActiveExerciseFilters(f: ExerciseFilters): number {
   return (
     f.creators.length + f.muscles.length + f.equipment.length + f.goalTypes.length + f.skills.length +
+    f.categories.length + f.tiers.length + f.scoringTypes.length +
     (f.picture !== "any" ? 1 : 0)
   );
 }
@@ -80,8 +90,11 @@ export function activeExerciseFilterChips(f: ExerciseFilters): ExerciseFilterChi
   chips.push(...muscleChips("muscles", f.muscles));
 
   for (const e of f.equipment) chips.push({ axis: "equipment", label: equipmentLabel(e), values: [e] });
+  for (const c of f.categories) chips.push({ axis: "categories", label: c, values: [c] });
   for (const g of f.goalTypes) chips.push({ axis: "goalTypes", label: g, values: [g] });
   for (const s of f.skills) chips.push({ axis: "skills", label: s, values: [s] });
+  for (const t of f.tiers) chips.push({ axis: "tiers", label: rankLabel(t), values: [String(t)] });
+  for (const s of f.scoringTypes) chips.push({ axis: "scoringTypes", label: s, values: [s] });
   if (f.picture !== "any") chips.push({ axis: "picture", label: PICTURE_LABELS[f.picture], values: [f.picture] });
   return chips;
 }
@@ -95,6 +108,9 @@ export function removeExerciseChip(f: ExerciseFilters, chip: ExerciseFilterChip)
     case "equipment": return { ...f, equipment: f.equipment.filter((v) => !chip.values.includes(v)) };
     case "goalTypes": return { ...f, goalTypes: f.goalTypes.filter((v) => !chip.values.includes(v)) };
     case "skills": return { ...f, skills: f.skills.filter((v) => !chip.values.includes(v)) };
+    case "categories": return { ...f, categories: f.categories.filter((v) => !chip.values.includes(v)) };
+    case "tiers": return { ...f, tiers: f.tiers.filter((v) => !chip.values.includes(String(v))) };
+    case "scoringTypes": return { ...f, scoringTypes: f.scoringTypes.filter((v) => !chip.values.includes(v)) };
   }
 }
 
@@ -107,7 +123,7 @@ export function clearExerciseAxis(f: ExerciseFilters, axis: ExerciseFilterAxis):
 
 /** Sheet order, top to bottom. Ties in mostRestrictiveExerciseAxis go to the
  *  axis furthest DOWN this list. */
-const AXIS_ORDER: ExerciseFilterAxis[] = ["creators", "muscles", "equipment", "goalTypes", "skills", "picture"];
+const AXIS_ORDER: ExerciseFilterAxis[] = ["creators", "muscles", "equipment", "categories", "goalTypes", "skills", "tiers", "scoringTypes", "picture"];
 
 function axisLabel(f: ExerciseFilters, axis: ExerciseFilterAxis): string {
   const labels = activeExerciseFilterChips(f).filter((c) => c.axis === axis).map((c) => c.label);
@@ -164,4 +180,14 @@ export function catalogEquipmentNames(entries: CatalogEntry[]): { name: string; 
 /** Distinct goal-type names in the catalog, A–Z. */
 export function catalogGoalTypes(entries: CatalogEntry[]): string[] {
   return [...new Set(entries.flatMap((e) => e.goalTypes))].filter(Boolean).sort((a, b) => a.localeCompare(b));
+}
+
+/** Distinct movement-category names in the catalog, A–Z. */
+export function catalogCategories(entries: CatalogEntry[]): string[] {
+  return [...new Set(entries.map((e) => e.category).filter((c): c is string => !!c))].sort((a, b) => a.localeCompare(b));
+}
+
+/** Distinct scoring-type names in the catalog, A–Z. */
+export function catalogScoringTypes(entries: CatalogEntry[]): string[] {
+  return [...new Set(entries.flatMap((e) => e.scoringTypes))].filter(Boolean).sort((a, b) => a.localeCompare(b));
 }

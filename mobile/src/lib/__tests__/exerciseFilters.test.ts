@@ -2,7 +2,7 @@ import {
   applyExerciseFilters, applyExerciseFiltersAndSearch, countActiveExerciseFilters,
   activeExerciseFilterChips, removeExerciseChip, clearExerciseAxis,
   mostRestrictiveExerciseAxis, exerciseCreatorCounts, catalogEquipmentNames, catalogGoalTypes,
-  rankLabel,
+  rankLabel, catalogCategories, catalogScoringTypes,
 } from "../exerciseFilters";
 import { EMPTY_EXERCISE_FILTERS } from "../../types/exerciseFilters";
 import type { ExerciseFilters } from "../../types/exerciseFilters";
@@ -23,6 +23,9 @@ const ex = (o: Partial<CatalogEntry> & { id?: string } = {}): CatalogEntry => {
     equipmentTypes: ["Kettlebell", "Floor"],
     muscles: [{ name: "Glutes", isPrimary: true }, { name: "Hamstrings", isPrimary: false }],
     goalTypes: ["Strength"],
+    category: "Weightlifting",
+    tier: 1,
+    scoringTypes: ["Reps"],
     sources: [source("@a")],
     ...rest,
   };
@@ -84,6 +87,30 @@ describe("applyExerciseFilters", () => {
     const none = ex({ id: "none", sources: [] });
     expect(applyExerciseFilters([anon, none], f({ creators: ["@x"] }))).toEqual([]);
     expect(applyExerciseFilters([anon, none], EMPTY_EXERCISE_FILTERS)).toHaveLength(2);
+  });
+
+  it("category: any-of, null never matches when on", () => {
+    expect(applyExerciseFilters([ex()], f({ categories: ["Weightlifting"] }))).toHaveLength(1);
+    expect(applyExerciseFilters([ex()], f({ categories: ["Gymnastics"] }))).toHaveLength(0);
+    expect(applyExerciseFilters([ex({ category: null })], f({ categories: ["Weightlifting"] }))).toHaveLength(0);
+    const two = [ex({ id: "a", category: "Weightlifting" }), ex({ id: "b", category: "Gymnastics" })];
+    expect(ids(applyExerciseFilters(two, f({ categories: ["Weightlifting", "Gymnastics"] })))).toEqual(["a", "b"]);
+  });
+
+  it("rank: any-of on tier, null never matches when on", () => {
+    expect(applyExerciseFilters([ex({ tier: 0 })], f({ tiers: [0] }))).toHaveLength(1);
+    expect(applyExerciseFilters([ex({ tier: 2 })], f({ tiers: [0] }))).toHaveLength(0);
+    expect(applyExerciseFilters([ex({ tier: null })], f({ tiers: [1] }))).toHaveLength(0);
+    const mix = [ex({ id: "core", tier: 0 }), ex({ id: "t2", tier: 2 })];
+    expect(ids(applyExerciseFilters(mix, f({ tiers: [0, 2] })))).toEqual(["core", "t2"]);
+  });
+
+  it("scoring: ALL-of — the exercise must carry every selected type", () => {
+    const both = ex({ scoringTypes: ["Reps", "Load"] });
+    expect(applyExerciseFilters([both], f({ scoringTypes: ["Reps"] }))).toHaveLength(1);
+    expect(applyExerciseFilters([both], f({ scoringTypes: ["Reps", "Load"] }))).toHaveLength(1);
+    const repsOnly = ex({ scoringTypes: ["Reps"] });
+    expect(applyExerciseFilters([repsOnly], f({ scoringTypes: ["Reps", "Load"] }))).toHaveLength(0);
   });
 });
 
@@ -204,5 +231,39 @@ describe("rankLabel", () => {
     expect(rankLabel(0)).toBe("Core");
     expect(rankLabel(1)).toBe("Tier 1");
     expect(rankLabel(3)).toBe("Tier 3");
+  });
+});
+describe("chips for the new axes", () => {
+  it("counts category, rank and scoring", () => {
+    expect(countActiveExerciseFilters(f({ categories: ["Gymnastics"], tiers: [0, 2], scoringTypes: ["Reps"] }))).toBe(4);
+  });
+
+  it("labels a rank chip Core / Tier n and round-trips removal", () => {
+    const filters = f({ tiers: [0, 2] });
+    const chips = activeExerciseFilterChips(filters);
+    const rank = chips.filter((c) => c.axis === "tiers");
+    expect(rank.map((c) => c.label)).toEqual(["Core", "Tier 2"]);
+    const afterCore = removeExerciseChip(filters, rank[0]);
+    expect(afterCore.tiers).toEqual([2]);
+  });
+
+  it("category and scoring chips remove by value", () => {
+    const filters = f({ categories: ["Gymnastics"], scoringTypes: ["Reps", "Load"] });
+    const chips = activeExerciseFilterChips(filters);
+    const load = chips.find((c) => c.axis === "scoringTypes" && c.label === "Load")!;
+    expect(removeExerciseChip(filters, load).scoringTypes).toEqual(["Reps"]);
+    const cat = chips.find((c) => c.axis === "categories")!;
+    expect(removeExerciseChip(filters, cat).categories).toEqual([]);
+  });
+});
+
+describe("catalog option helpers", () => {
+  it("distinct categories A–Z, skipping null", () => {
+    const list = [ex({ id: "1", category: "Weightlifting" }), ex({ id: "2", category: "Gymnastics" }), ex({ id: "3", category: null })];
+    expect(catalogCategories(list)).toEqual(["Gymnastics", "Weightlifting"]);
+  });
+  it("distinct scoring types A–Z", () => {
+    const list = [ex({ id: "1", scoringTypes: ["Reps", "Load"] }), ex({ id: "2", scoringTypes: ["Reps", "Time"] })];
+    expect(catalogScoringTypes(list)).toEqual(["Load", "Reps", "Time"]);
   });
 });
