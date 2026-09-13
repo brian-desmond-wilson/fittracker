@@ -134,38 +134,38 @@ export function SwipeableCatalogCard({
             {entry.name}
           </Text>
 
-          {/* Row 2: skill │ equipment │ muscles — each part and its divider
-              vanish together when there is nothing to show. */}
-          {(facts.skillLevel || facts.equipment.length > 0 || facts.primaryMuscle) && (
+          {/* Row 2: skill on the left, equipment badges to its right. Their
+              own row so equipment never wraps under the skill label. */}
+          {(facts.skillLevel || facts.equipment.length > 0) && (
             <View style={styles.rail}>
               {facts.skillLevel && <SkillPill level={facts.skillLevel} showLabel />}
-              {facts.skillLevel && facts.equipment.length > 0 && <View style={styles.divider} />}
               {facts.equipment.length > 0 && (
                 <View style={styles.equipment}>
                   {facts.equipment.map((e) => (
                     <View key={e} style={styles.equipBadge}>
-                      <EquipmentGlyph name={e} size={18} color={colors.brand} />
+                      <EquipmentGlyph name={e} size={16} color={colors.brand} />
                     </View>
                   ))}
                 </View>
               )}
-              {(facts.skillLevel || facts.equipment.length > 0) && facts.primaryMuscle && <View style={styles.divider} />}
-              {facts.primaryMuscle && (
-                <View style={styles.muscles}>
-                  <MuscleIcon muscle={facts.primaryMuscle} size={PRIMARY_ICON} />
-                  {facts.secondaryMuscles.slice(0, MAX_SECONDARY_ICONS).map((m) => (
-                    <MuscleIcon key={m} muscle={m} size={SECONDARY_ICON} dim />
-                  ))}
-                  <View style={styles.muscleNames}>
-                    <Text style={styles.musclePrimary} numberOfLines={1}>{facts.primaryMuscle}</Text>
-                    {facts.secondaryMuscles.length > 0 && (
-                      <Text style={styles.muscleSecondary} numberOfLines={1}>
-                        {facts.secondaryMuscles.join(", ")}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              )}
+            </View>
+          )}
+
+          {/* Row 3: muscles — primary large, up to two dimmed secondaries, all named. */}
+          {facts.primaryMuscle && (
+            <View style={styles.muscles}>
+              <MuscleIcon muscle={facts.primaryMuscle} size={PRIMARY_ICON} />
+              {facts.secondaryMuscles.slice(0, MAX_SECONDARY_ICONS).map((m) => (
+                <MuscleIcon key={m} muscle={m} size={SECONDARY_ICON} dim />
+              ))}
+              <View style={styles.muscleNames}>
+                <Text style={styles.musclePrimary} numberOfLines={1}>{facts.primaryMuscle}</Text>
+                {facts.secondaryMuscles.length > 0 && (
+                  <Text style={styles.muscleSecondary} numberOfLines={1}>
+                    {facts.secondaryMuscles.join(", ")}
+                  </Text>
+                )}
+              </View>
             </View>
           )}
 
@@ -230,14 +230,13 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.6, textTransform: "uppercase" },
   badgeTextTier: { color: colors.tier },
   badgeTextCore: { color: colors.brand },
-  rail: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.md },
-  divider: { width: 1, height: 18, backgroundColor: colors.border },
+  rail: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.sm },
   // Shrinkable so a long gear list wraps onto a second line instead of being clipped.
   equipment: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0, flexWrap: "wrap" },
   // Each glyph sits in its own rounded-square badge, styled like a selected
   // equipment tile on the Filters page: brand icon + border on a brand tint.
   equipBadge: {
-    width: 28, height: 28, borderRadius: 6, alignItems: "center", justifyContent: "center",
+    width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center",
     backgroundColor: tint(colors.brand), borderWidth: 1, borderColor: colors.brand,
   },
   muscles: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0 },
