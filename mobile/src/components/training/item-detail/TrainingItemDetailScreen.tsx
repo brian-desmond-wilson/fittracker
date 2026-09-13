@@ -829,14 +829,14 @@ const styles = StyleSheet.create({
   equipmentEmptyText: { fontSize: 15, color: colors.textMuted },
   muscleContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   musclePrimaryChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingLeft: 8, paddingRight: 12, paddingVertical: 6, backgroundColor: tint(colors.brand, 0.125),
+    flexDirection: 'column', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 10, backgroundColor: tint(colors.brand, 0.125),
     borderRadius: 8, borderWidth: 1, borderColor: colors.brand,
   },
   musclePrimaryText: { fontSize: 14, fontWeight: '600', color: colors.brand },
   muscleSecondaryChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingLeft: 8, paddingRight: 12, paddingVertical: 6, backgroundColor: colors.surface,
+    flexDirection: 'column', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.surface,
     borderRadius: 8, borderWidth: 1, borderColor: colors.border,
   },
   muscleSecondaryText: { fontSize: 14, fontWeight: '500', color: colors.textMuted },
