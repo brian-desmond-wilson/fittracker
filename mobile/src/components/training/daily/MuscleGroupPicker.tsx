@@ -1,7 +1,9 @@
 // mobile/src/components/training/daily/MuscleGroupPicker.tsx
-// Mockup A4: one tile per region over the app's own body figure, grouped,
-// with Select all per group. Multi-select. Primary muscles only — said in
-// the sub-line so nobody wonders why a triceps-secondary workout is missing.
+// One tile per region, grouped, with Select all per group. Multi-select.
+// Tiles show the shared muscle picture (MuscleIcon); "Full Body" is a tag,
+// not a muscle, and keeps the body figure with every region lit. Primary
+// muscles only — said in the sub-line so nobody wonders why a
+// triceps-secondary workout is missing.
 import React from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
@@ -9,9 +11,7 @@ import { ChevronLeft } from "lucide-react-native";
 import { colors, radii, spacing, tint } from "@/src/theme/tokens";
 import { MUSCLE_GROUPS } from "@/src/lib/dailyCoverage";
 import { BodyFigure } from "./BodyFigure";
-
-/** Regions the front view cannot show. Everything else is drawn from the front. */
-const BACK_ONLY = new Set(["Upper Back", "Lats", "Triceps", "Lower Back", "Glutes", "Hamstrings"]);
+import { MuscleIcon } from "@/src/components/ui/MuscleIcon";
 
 interface MuscleGroupPickerProps {
   selected: string[];
@@ -68,12 +68,15 @@ export function MuscleGroupPicker({ selected, onChange, onBack, subline }: Muscl
                       onPress={() => toggle(m)}
                       accessibilityRole="checkbox" accessibilityState={{ checked: on }}
                       accessibilityLabel={m}>
-                      <BodyFigure
-                        view={BACK_ONLY.has(m) ? "back" : "front"}
-                        width={46}
-                        fillFor={(region) =>
-                          (full || region === m) ? (on ? colors.brand : colors.textMuted) : colors.surface2}
-                      />
+                      {full ? (
+                        <BodyFigure
+                          view="front"
+                          width={34}
+                          fillFor={() => (on ? colors.brand : colors.textMuted)}
+                        />
+                      ) : (
+                        <MuscleIcon muscle={m} size={56} />
+                      )}
                       <Text style={[styles.tileLabel, on && styles.tileLabelOn]} numberOfLines={2}>{m}</Text>
                     </TouchableOpacity>
                   );
@@ -106,8 +109,8 @@ const styles = StyleSheet.create({
   tile: {
     width: "31%", alignItems: "center", gap: spacing.xs,
     paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
-    // The figure's silhouette is drawn in surface2, so the tile sits one
-    // step darker or the body vanishes and only the region floats.
+    // One step darker than the pictures' own surface so the Full Body figure
+    // (drawn in surface2) still reads; the icon tiles match it for consistency.
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.row,
   },
   tileOn: { backgroundColor: tint(colors.brand), borderColor: colors.brand },
