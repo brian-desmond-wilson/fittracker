@@ -803,7 +803,7 @@ const styles = StyleSheet.create({
   },
   heroExerciseNameNoImage: { fontSize: 28, fontWeight: 'bold', color: colors.text, marginBottom: 8, textAlign: 'center' },
   heroCoreBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.success, borderRadius: 6 },
-  heroTierBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.accents.water, borderRadius: 6 },
+  heroTierBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: colors.tier, borderRadius: 6 },
   heroBadgeText: { fontSize: 11, fontWeight: '600', color: colors.onBrand, letterSpacing: 0.5 },
   metaSection: {
     flexDirection: 'row', padding: 16, gap: 12, backgroundColor: colors.surface,
@@ -859,9 +859,9 @@ const styles = StyleSheet.create({
   coreHierarchyBadgeText: { fontSize: 10, fontWeight: '700', color: colors.brand, letterSpacing: 0.5 },
   tierHierarchyBadge: {
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4,
-    backgroundColor: tint(colors.accents.water), borderWidth: 1, borderColor: tint(colors.accents.water, 0.3),
+    backgroundColor: tint(colors.tier), borderWidth: 1, borderColor: tint(colors.tier, 0.3),
   },
-  tierHierarchyBadgeText: { fontSize: 10, fontWeight: '700', color: colors.accents.water, letterSpacing: 0.5 },
+  tierHierarchyBadgeText: { fontSize: 10, fontWeight: '700', color: colors.tier, letterSpacing: 0.5 },
   seeAllRow: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 48, paddingVertical: 10 },
   seeAllText: { fontSize: 14, fontWeight: '600', color: colors.brand },
 });

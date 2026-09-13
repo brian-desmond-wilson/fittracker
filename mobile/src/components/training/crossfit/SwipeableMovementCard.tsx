@@ -4,6 +4,8 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { ChevronRight, Pencil } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
 import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
+import { SkillPill } from '@/src/components/ui/SkillPill';
+import { colors as tokens, tint } from '@/src/theme/tokens';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
 
@@ -237,36 +239,7 @@ function SwipeableMovementCardBase({
                   <Text style={styles.tierBadgeText}>Tier {movement.tier}</Text>
                 </View>
               ) : null}
-              {/* Skill Level Pill */}
-              <View style={styles.skillPill}>
-                <View style={[
-                  styles.skillSegment,
-                  styles.skillSegmentLeft,
-                  movement.skill_level === 'Beginner'
-                    ? styles.skillSegmentFilledBeginner
-                    : movement.skill_level === 'Intermediate'
-                    ? styles.skillSegmentFilledIntermediate
-                    : movement.skill_level === 'Advanced'
-                    ? styles.skillSegmentFilledAdvanced
-                    : styles.skillSegmentEmpty
-                ]} />
-                <View style={[
-                  styles.skillSegment,
-                  styles.skillSegmentMiddle,
-                  movement.skill_level === 'Intermediate'
-                    ? styles.skillSegmentFilledIntermediate
-                    : movement.skill_level === 'Advanced'
-                    ? styles.skillSegmentFilledAdvanced
-                    : styles.skillSegmentEmpty
-                ]} />
-                <View style={[
-                  styles.skillSegment,
-                  styles.skillSegmentRight,
-                  movement.skill_level === 'Advanced'
-                    ? styles.skillSegmentFilledAdvanced
-                    : styles.skillSegmentEmpty
-                ]} />
-              </View>
+              <SkillPill level={movement.skill_level} />
             </View>
           </View>
           <Text style={styles.movementCategory}>
@@ -384,49 +357,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    backgroundColor: tint(tokens.tier),
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: tint(tokens.tier, 0.3),
   },
   tierBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: tokens.tier,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-  skillPill: {
-    flexDirection: 'row',
-    height: 8,
-    width: 40,
-    gap: 2,
-  },
-  skillSegment: {
-    flex: 1,
-    height: '100%',
-  },
-  skillSegmentLeft: {
-    borderTopLeftRadius: 4,
-    borderBottomLeftRadius: 4,
-  },
-  skillSegmentMiddle: {
-    // No border radius for middle segment
-  },
-  skillSegmentRight: {
-    borderTopRightRadius: 4,
-    borderBottomRightRadius: 4,
-  },
-  skillSegmentEmpty: {
-    backgroundColor: '#374151',
-  },
-  skillSegmentFilledBeginner: {
-    backgroundColor: '#22C55E',
-  },
-  skillSegmentFilledIntermediate: {
-    backgroundColor: '#F59E0B',
-  },
-  skillSegmentFilledAdvanced: {
-    backgroundColor: '#EF4444',
   },
 });
 
