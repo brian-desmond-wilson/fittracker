@@ -16,6 +16,10 @@ export const colors = {
   success: "#22C55E",
   warning: "#F59E0B",
   danger: "#EF4444",
+  // Hierarchy-rank badge on exercise cards ("Tier 1–3"). Identity, not a
+  // verdict: the same blue as `accents.water`, but a rank must not repaint if
+  // the water tile's colour ever moves.
+  tier: "#3B82F6",
   imageWell: "#FFFFFF", // product photos are shot on white; wells stay white on dark cards
   shadow: "#000000",    // only for `elevation` below — never a fill or a stroke
   // The Nutrition Facts panel is a regulated artifact, not a component: its
