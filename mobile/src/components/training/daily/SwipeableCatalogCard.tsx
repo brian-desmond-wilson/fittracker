@@ -114,7 +114,9 @@ export function SwipeableCatalogCard({
         {entry.imageUrl ? (
           <Image source={{ uri: entry.imageUrl }} style={styles.thumb} />
         ) : (
-          <View style={[styles.thumb, styles.thumbEmpty]} />
+          <View style={[styles.thumb, styles.thumbEmpty]}>
+            {facts.primaryMuscle && <MuscleIcon muscle={facts.primaryMuscle} size={52} dim />}
+          </View>
         )}
         <View style={styles.body}>
           {/* Row 1: name + rank */}
@@ -203,7 +205,8 @@ const styles = StyleSheet.create({
   // Fixed width, stretched to the card's full height; no own radius — the card
   // clip supplies the rounded left corners.
   thumb: { width: THUMB, alignSelf: "stretch" },
-  thumbEmpty: { backgroundColor: colors.surface },
+  // No photo yet: the primary-muscle silhouette stands in, centered and dimmed.
+  thumbEmpty: { backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
   // The text side carries the padding the card no longer has.
   body: { flex: 1, minWidth: 0, gap: spacing.sm, padding: spacing.md },
   nameRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
