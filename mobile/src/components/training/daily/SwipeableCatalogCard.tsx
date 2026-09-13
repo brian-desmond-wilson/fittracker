@@ -19,7 +19,7 @@ import { SkillPill } from "@/src/components/ui/SkillPill";
 import type { CatalogEntry } from "@/src/types/capture";
 
 const CARD_RADIUS = 12;
-const THUMB = 76;
+const THUMB = 96;
 const PRIMARY_ICON = 36;
 const SECONDARY_ICON = 26;
 // Past two, extra secondary icons stop informing and start crowding; the names line still lists them all.
@@ -191,18 +191,21 @@ const styles = StyleSheet.create({
   // The gap between cards lives out here: inside the Swipeable it would leave
   // a stripe of red showing under the next card.
   swipeContainer: { marginBottom: spacing.md },
-  // Top-aligned so a bare entry (name only) sits where a full one does; the chevron alone centres itself.
+  // No padding on the card: the thumbnail sits flush to the left/top/bottom
+  // edges and the card's own rounded corners (overflow: hidden) clip it — the
+  // same full-bleed treatment as the curated Exercises/Movements cards.
   card: {
-    flexDirection: "row", alignItems: "flex-start", gap: spacing.md, padding: spacing.md,
+    flexDirection: "row", alignItems: "stretch",
     backgroundColor: colors.surface2,
     borderRadius: CARD_RADIUS, borderWidth: 1, borderColor: colors.border,
     overflow: "hidden",
   },
-  // Inset and rounded on its own — the same treatment as the curated
-  // Exercises page, so the two lists read as one family.
-  thumb: { width: THUMB, height: THUMB, borderRadius: radii.row },
+  // Fixed width, stretched to the card's full height; no own radius — the card
+  // clip supplies the rounded left corners.
+  thumb: { width: THUMB, alignSelf: "stretch" },
   thumbEmpty: { backgroundColor: colors.surface },
-  body: { flex: 1, minWidth: 0, gap: spacing.sm },
+  // The text side carries the padding the card no longer has.
+  body: { flex: 1, minWidth: 0, gap: spacing.sm, padding: spacing.md },
   nameRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   name: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.text, letterSpacing: -0.2 },
   badge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1 },
@@ -226,5 +229,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   scoreText: { fontSize: 11.5, color: colors.textMuted },
-  chevron: { alignSelf: "center" },
+  chevron: { justifyContent: "center", paddingRight: spacing.md },
 });
