@@ -628,7 +628,7 @@ export function TrainingItemDetailScreen({
                   <TouchableOpacity key={index} style={styles.musclePrimaryChip}
                     onPress={() => openFiltered({ muscles: [mr.muscle_region?.name] })}
                     accessibilityRole="button" accessibilityLabel={`Exercises for ${mr.muscle_region?.name}`}>
-                    <MuscleIcon muscle={mr.muscle_region?.name} size={24} />
+                    <MuscleIcon muscle={mr.muscle_region?.name} size={44} />
                     <Text style={styles.musclePrimaryText}>{mr.muscle_region?.name}</Text>
                   </TouchableOpacity>
                 ))}
@@ -641,7 +641,7 @@ export function TrainingItemDetailScreen({
                       <TouchableOpacity key={index} style={styles.muscleSecondaryChip}
                         onPress={() => openFiltered({ muscles: [mr.muscle_region?.name] })}
                         accessibilityRole="button" accessibilityLabel={`Exercises for ${mr.muscle_region?.name}`}>
-                        <MuscleIcon muscle={mr.muscle_region?.name} size={22} dim />
+                        <MuscleIcon muscle={mr.muscle_region?.name} size={44} dim />
                         <Text style={styles.muscleSecondaryText}>{mr.muscle_region?.name}</Text>
                       </TouchableOpacity>
                     ))}
@@ -833,13 +833,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10, backgroundColor: tint(colors.brand, 0.125),
     borderRadius: 8, borderWidth: 1, borderColor: colors.brand,
   },
-  musclePrimaryText: { fontSize: 14, fontWeight: '600', color: colors.brand },
+  musclePrimaryText: { fontSize: 12, fontWeight: '600', color: colors.brand },
   muscleSecondaryChip: {
     flexDirection: 'column', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.surface,
     borderRadius: 8, borderWidth: 1, borderColor: colors.border,
   },
-  muscleSecondaryText: { fontSize: 14, fontWeight: '500', color: colors.textMuted },
+  muscleSecondaryText: { fontSize: 12, fontWeight: '500', color: colors.textMuted },
   hierarchyParent: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingLeft: 0 },
   hierarchyWrapper: { position: 'relative' },
   hierarchyConnectorLine: { position: 'absolute', left: 23, top: 0, bottom: 0, width: 2, backgroundColor: colors.border },
