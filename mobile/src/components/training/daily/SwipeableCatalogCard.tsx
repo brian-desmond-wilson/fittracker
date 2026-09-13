@@ -109,27 +109,30 @@ export function SwipeableCatalogCard({
         accessibilityLabel={a11y}
       >
         {/* The exercise's own picture, never the post it came from — that
-            belongs to the workout card. No picture yet: an empty square holds
-            the slot so every row's text lines up. */}
-        {entry.imageUrl ? (
-          <Image source={{ uri: entry.imageUrl }} style={styles.thumb} />
-        ) : (
-          <View style={[styles.thumb, styles.thumbEmpty]}>
-            {facts.primaryMuscle && <MuscleIcon muscle={facts.primaryMuscle} size={52} dim />}
-          </View>
-        )}
+            belongs to the workout card. No picture yet: the primary-muscle
+            silhouette stands in so the slot reads as intentional. The rank
+            badge sits in the picture's bottom-right corner, off the title row. */}
+        <View style={styles.thumbWrap}>
+          {entry.imageUrl ? (
+            <Image source={{ uri: entry.imageUrl }} style={styles.thumb} />
+          ) : (
+            <View style={[styles.thumb, styles.thumbEmpty]}>
+              {facts.primaryMuscle && <MuscleIcon muscle={facts.primaryMuscle} size={52} dim />}
+            </View>
+          )}
+          {facts.badge && (
+            <View style={[styles.badgeOverlay, facts.badge.kind === "core" ? styles.badgeOverlayCore : styles.badgeOverlayTier]}>
+              <Text style={[styles.badgeText, facts.badge.kind === "core" ? styles.badgeTextCore : styles.badgeTextTier]}>
+                {facts.badge.label}
+              </Text>
+            </View>
+          )}
+        </View>
         <View style={styles.body}>
-          {/* Row 1: name + rank */}
-          <View style={styles.nameRow}>
-            <Text style={styles.name}>{entry.name}</Text>
-            {facts.badge && (
-              <View style={[styles.badge, facts.badge.kind === "core" ? styles.badgeCore : styles.badgeTier]}>
-                <Text style={[styles.badgeText, facts.badge.kind === "core" ? styles.badgeTextCore : styles.badgeTextTier]}>
-                  {facts.badge.label}
-                </Text>
-              </View>
-            )}
-          </View>
+          {/* Row 1: name. One line — shrinks to a floor rather than wrapping. */}
+          <Text style={styles.name} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>
+            {entry.name}
+          </Text>
 
           {/* Row 2: skill │ equipment │ muscles — each part and its divider
               vanish together when there is nothing to show. */}
@@ -202,18 +205,26 @@ const styles = StyleSheet.create({
     borderRadius: CARD_RADIUS, borderWidth: 1, borderColor: colors.border,
     overflow: "hidden",
   },
-  // Fixed width, stretched to the card's full height; no own radius — the card
-  // clip supplies the rounded left corners.
-  thumb: { width: THUMB, alignSelf: "stretch" },
+  // Fixed width, stretched to the card's full height; the card clip supplies
+  // the rounded left corners, and it anchors the absolute badge overlay.
+  thumbWrap: { width: THUMB, alignSelf: "stretch" },
+  // flex-fill (not height:"100%") so the image takes the card's resolved height
+  // instead of falling back to its huge intrinsic size.
+  thumb: { width: "100%", flex: 1 },
   // No photo yet: the primary-muscle silhouette stands in, centered and dimmed.
   thumbEmpty: { backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
   // The text side carries the padding the card no longer has.
   body: { flex: 1, minWidth: 0, gap: spacing.sm, padding: spacing.md },
-  nameRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
-  name: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.text, letterSpacing: -0.2 },
-  badge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1 },
-  badgeTier: { backgroundColor: tint(colors.tier), borderColor: tint(colors.tier, 0.3) },
-  badgeCore: { backgroundColor: tint(colors.brand), borderColor: tint(colors.brand, 0.3) },
+  name: { fontSize: 16, fontWeight: "700", color: colors.text, letterSpacing: -0.2 },
+  // Rank badge over the picture: a dark scrim chip so the coloured text reads
+  // on any photo, tucked into the bottom-right corner.
+  badgeOverlay: {
+    position: "absolute", bottom: spacing.sm, right: spacing.sm,
+    borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1,
+    backgroundColor: tint(colors.bg, 0.82),
+  },
+  badgeOverlayTier: { borderColor: colors.tier },
+  badgeOverlayCore: { borderColor: colors.brand },
   badgeText: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.6, textTransform: "uppercase" },
   badgeTextTier: { color: colors.tier },
   badgeTextCore: { color: colors.brand },
