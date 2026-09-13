@@ -39,6 +39,7 @@ import { getLocalDateString } from '@/src/lib/dates';
 import { CatalogItemWizard } from '@/src/components/training/crossfit/CatalogItemWizard';
 import { MovementRatingSheet } from '@/src/components/training/daily/MovementRatingSheet';
 import { EquipmentGlyph } from '@/src/components/ui/EquipmentGlyph';
+import { MuscleIcon } from '@/src/components/ui/MuscleIcon';
 import { UndoToast } from '@/src/components/ui/UndoToast';
 import type { UndoToastContent } from '@/src/components/ui/UndoToast';
 import { HistoryBlock } from './HistoryBlock';
@@ -627,6 +628,7 @@ export function TrainingItemDetailScreen({
                   <TouchableOpacity key={index} style={styles.musclePrimaryChip}
                     onPress={() => openFiltered({ muscles: [mr.muscle_region?.name] })}
                     accessibilityRole="button" accessibilityLabel={`Exercises for ${mr.muscle_region?.name}`}>
+                    <MuscleIcon muscle={mr.muscle_region?.name} size={24} />
                     <Text style={styles.musclePrimaryText}>{mr.muscle_region?.name}</Text>
                   </TouchableOpacity>
                 ))}
@@ -639,6 +641,7 @@ export function TrainingItemDetailScreen({
                       <TouchableOpacity key={index} style={styles.muscleSecondaryChip}
                         onPress={() => openFiltered({ muscles: [mr.muscle_region?.name] })}
                         accessibilityRole="button" accessibilityLabel={`Exercises for ${mr.muscle_region?.name}`}>
+                        <MuscleIcon muscle={mr.muscle_region?.name} size={22} dim />
                         <Text style={styles.muscleSecondaryText}>{mr.muscle_region?.name}</Text>
                       </TouchableOpacity>
                     ))}
@@ -826,12 +829,14 @@ const styles = StyleSheet.create({
   equipmentEmptyText: { fontSize: 15, color: colors.textMuted },
   muscleContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   musclePrimaryChip: {
-    paddingHorizontal: 12, paddingVertical: 8, backgroundColor: tint(colors.brand, 0.125),
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingLeft: 8, paddingRight: 12, paddingVertical: 6, backgroundColor: tint(colors.brand, 0.125),
     borderRadius: 8, borderWidth: 1, borderColor: colors.brand,
   },
   musclePrimaryText: { fontSize: 14, fontWeight: '600', color: colors.brand },
   muscleSecondaryChip: {
-    paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.surface,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingLeft: 8, paddingRight: 12, paddingVertical: 6, backgroundColor: colors.surface,
     borderRadius: 8, borderWidth: 1, borderColor: colors.border,
   },
   muscleSecondaryText: { fontSize: 14, fontWeight: '500', color: colors.textMuted },
