@@ -144,7 +144,7 @@ export function SwipeableCatalogCard({
                 <View style={styles.equipment}>
                   {facts.equipment.map((e) => (
                     <View key={e} style={styles.equipBadge}>
-                      <EquipmentGlyph name={e} size={18} color={colors.text} />
+                      <EquipmentGlyph name={e} size={18} color={colors.brand} />
                     </View>
                   ))}
                 </View>
@@ -234,10 +234,11 @@ const styles = StyleSheet.create({
   divider: { width: 1, height: 18, backgroundColor: colors.border },
   // Shrinkable so a long gear list wraps onto a second line instead of being clipped.
   equipment: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0, flexWrap: "wrap" },
-  // Each glyph sits in its own rounded-square badge, like a chip.
+  // Each glyph sits in its own rounded-square badge, styled like a selected
+  // equipment tile on the Filters page: brand icon + border on a brand tint.
   equipBadge: {
     width: 28, height: 28, borderRadius: 6, alignItems: "center", justifyContent: "center",
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: tint(colors.brand), borderWidth: 1, borderColor: colors.brand,
   },
   muscles: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0 },
   muscleNames: { flexShrink: 1, minWidth: 0 },
