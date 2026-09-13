@@ -6,14 +6,31 @@
 import React, { useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { ChevronRight } from "lucide-react-native";
-import { colors } from "@/src/theme/tokens";
+import { ChevronRight, Hash, Weight, Timer, Target } from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
+import { colors, spacing, radii, tint } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { deleteCatalogExercise } from "@/src/lib/supabase/capture";
+import { catalogCardFacts } from "@/src/lib/catalogCardFacts";
 import { SwipeDeleteAction } from "@/src/components/ui/SwipeDeleteAction";
+import { EquipmentGlyph } from "@/src/components/ui/EquipmentGlyph";
+import { MuscleIcon } from "@/src/components/ui/MuscleIcon";
+import { SkillPill } from "@/src/components/ui/SkillPill";
 import type { CatalogEntry } from "@/src/types/capture";
 
 const CARD_RADIUS = 12;
+const THUMB = 76;
+const PRIMARY_ICON = 36;
+const SECONDARY_ICON = 26;
+// Past two, extra secondary icons stop informing and start crowding; the names line still lists them all.
+const MAX_SECONDARY_ICONS = 2;
+
+/** One glyph per scoring type; anything unfamiliar gets a target. */
+const SCORE_ICON: Record<string, LucideIcon> = { Reps: Hash, Load: Weight, Time: Timer };
+// Own keys only: a scoring type named like an Object.prototype member must not
+// come back as a function and get rendered.
+const scoreIcon = (name: string): LucideIcon =>
+  Object.prototype.hasOwnProperty.call(SCORE_ICON, name) ? SCORE_ICON[name] : Target;
 
 interface SwipeableCatalogCardProps {
   entry: CatalogEntry;
@@ -29,6 +46,16 @@ export function SwipeableCatalogCard({
 }: SwipeableCatalogCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
   const close = () => swipeableRef.current?.close();
+  const facts = catalogCardFacts(entry);
+  const a11y = [
+    entry.name,
+    facts.badge?.label,
+    facts.skillLevel,
+    facts.equipment.length ? facts.equipment.join(", ") : null,
+    facts.primaryMuscle ? `Primary ${facts.primaryMuscle}` : null,
+    facts.secondaryMuscles.length ? `also ${facts.secondaryMuscles.join(", ")}` : null,
+    facts.scoringTypes.length ? `scored by ${facts.scoringTypes.join(" and ")}` : null,
+  ].filter(Boolean).join(". ") + ". Open the exercise.";
 
   const handleDelete = () => {
     Alert.alert(
@@ -79,7 +106,7 @@ export function SwipeableCatalogCard({
         activeOpacity={0.7}
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`${entry.name}. Open the exercise.`}
+        accessibilityLabel={a11y}
       >
         {/* The exercise's own picture, never the post it came from — that
             belongs to the workout card. No picture yet: an empty square holds
@@ -89,23 +116,69 @@ export function SwipeableCatalogCard({
         ) : (
           <View style={[styles.thumb, styles.thumbEmpty]} />
         )}
-        <View style={styles.cardBody}>
-          <Text style={styles.cardName}>{entry.name}</Text>
-          <Text style={styles.cardMeta}>
-            {[
-              entry.skillLevel,
-              entry.muscles.filter((m) => m.isPrimary).map((m) => m.name).join(", ") || null,
-              entry.equipmentTypes.join(", ") || "no equipment",
-            ].filter(Boolean).join(" · ")}
-          </Text>
-          {/* Credit where it's due, but not a second tap target: the whole
-              card belongs to the exercise page. */}
-          {entry.sources[0] && (
-            <Text style={styles.sourceText}>
-              {entry.sources[0].posterHandle ?? entry.sources[0].platform}
-            </Text>
+        <View style={styles.body}>
+          {/* Row 1: name + rank */}
+          <View style={styles.nameRow}>
+            <Text style={styles.name}>{entry.name}</Text>
+            {facts.badge && (
+              <View style={[styles.badge, facts.badge.kind === "core" ? styles.badgeCore : styles.badgeTier]}>
+                <Text style={[styles.badgeText, facts.badge.kind === "core" ? styles.badgeTextCore : styles.badgeTextTier]}>
+                  {facts.badge.label}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Row 2: skill │ equipment │ muscles — each part and its divider
+              vanish together when there is nothing to show. */}
+          {(facts.skillLevel || facts.equipment.length > 0 || facts.primaryMuscle) && (
+            <View style={styles.rail}>
+              {facts.skillLevel && <SkillPill level={facts.skillLevel} showLabel />}
+              {facts.skillLevel && facts.equipment.length > 0 && <View style={styles.divider} />}
+              {facts.equipment.length > 0 && (
+                <View style={styles.equipment}>
+                  {facts.equipment.map((e) => (
+                    <EquipmentGlyph key={e} name={e} size={18} color={colors.text} />
+                  ))}
+                </View>
+              )}
+              {(facts.skillLevel || facts.equipment.length > 0) && facts.primaryMuscle && <View style={styles.divider} />}
+              {facts.primaryMuscle && (
+                <View style={styles.muscles}>
+                  <MuscleIcon muscle={facts.primaryMuscle} size={PRIMARY_ICON} />
+                  {facts.secondaryMuscles.slice(0, MAX_SECONDARY_ICONS).map((m) => (
+                    <MuscleIcon key={m} muscle={m} size={SECONDARY_ICON} dim />
+                  ))}
+                  <View style={styles.muscleNames}>
+                    <Text style={styles.musclePrimary} numberOfLines={1}>{facts.primaryMuscle}</Text>
+                    {facts.secondaryMuscles.length > 0 && (
+                      <Text style={styles.muscleSecondary} numberOfLines={1}>
+                        {facts.secondaryMuscles.join(", ")}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Row 3: how it's scored. The creator stays off the card by design —
+              attribution lives on the exercise page. */}
+          {facts.scoringTypes.length > 0 && (
+            <View style={styles.footer}>
+              {facts.scoringTypes.map((s) => {
+                const Icon = scoreIcon(s);
+                return (
+                  <View key={s} style={styles.score}>
+                    <Icon size={13} color={colors.textMuted} strokeWidth={1.8} />
+                    <Text style={styles.scoreText}>{s}</Text>
+                  </View>
+                );
+              })}
+            </View>
           )}
         </View>
+
         <View style={styles.chevron}>
           <ChevronRight size={18} color={colors.textMuted} />
         </View>
@@ -117,17 +190,41 @@ export function SwipeableCatalogCard({
 const styles = StyleSheet.create({
   // The gap between cards lives out here: inside the Swipeable it would leave
   // a stripe of red showing under the next card.
-  swipeContainer: { marginBottom: 12 },
+  swipeContainer: { marginBottom: spacing.md },
+  // Top-aligned so a bare entry (name only) sits where a full one does; the chevron alone centres itself.
   card: {
-    flexDirection: "row", backgroundColor: colors.surface2,
+    flexDirection: "row", alignItems: "flex-start", gap: spacing.md, padding: spacing.md,
+    backgroundColor: colors.surface2,
     borderRadius: CARD_RADIUS, borderWidth: 1, borderColor: colors.border,
     overflow: "hidden",
   },
-  thumb: { width: 72, height: 72 },
+  // Inset and rounded on its own — the same treatment as the curated
+  // Exercises page, so the two lists read as one family.
+  thumb: { width: THUMB, height: THUMB, borderRadius: radii.row },
   thumbEmpty: { backgroundColor: colors.surface },
-  cardBody: { flex: 1, padding: 12 },
-  cardName: { fontSize: 16, fontWeight: "600", color: colors.text },
-  cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  chevron: { alignSelf: "center", paddingRight: 12 },
-  sourceText: { fontSize: 13, color: colors.textMuted, marginTop: 6 },
+  body: { flex: 1, minWidth: 0, gap: spacing.sm },
+  nameRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
+  name: { flex: 1, fontSize: 16, fontWeight: "700", color: colors.text, letterSpacing: -0.2 },
+  badge: { borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1 },
+  badgeTier: { backgroundColor: tint(colors.tier), borderColor: tint(colors.tier, 0.3) },
+  badgeCore: { backgroundColor: tint(colors.brand), borderColor: tint(colors.brand, 0.3) },
+  badgeText: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.6, textTransform: "uppercase" },
+  badgeTextTier: { color: colors.tier },
+  badgeTextCore: { color: colors.brand },
+  rail: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.md },
+  divider: { width: 1, height: 18, backgroundColor: colors.border },
+  // Shrinkable so a long gear list wraps onto a second line instead of being clipped.
+  equipment: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1, minWidth: 0, flexWrap: "wrap" },
+  muscles: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0 },
+  muscleNames: { flexShrink: 1, minWidth: 0 },
+  musclePrimary: { fontSize: 11.5, fontWeight: "600", color: colors.text, lineHeight: 14 },
+  muscleSecondary: { fontSize: 11.5, color: colors.textMuted, lineHeight: 14 },
+  footer: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.sm },
+  score: {
+    flexDirection: "row", alignItems: "center", gap: 5, flexShrink: 0,
+    paddingHorizontal: 9, paddingVertical: 3, borderRadius: radii.pill,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
+  scoreText: { fontSize: 11.5, color: colors.textMuted },
+  chevron: { alignSelf: "center" },
 });
