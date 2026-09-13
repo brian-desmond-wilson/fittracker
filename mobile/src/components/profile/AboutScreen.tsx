@@ -39,6 +39,9 @@ export function AboutScreen({ onClose }: AboutScreenProps) {
         <Text style={styles.copyright}>
           © 2025 FitTracker. All rights reserved.
         </Text>
+        <Text style={styles.credit}>
+          Muscle icons by cube29 – Flaticon
+        </Text>
       </View>
       </View>
     </>
@@ -136,5 +139,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     marginTop: 16,
+  },
+  credit: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 4,
   },
 });
