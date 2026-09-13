@@ -143,7 +143,9 @@ export function SwipeableCatalogCard({
               {facts.equipment.length > 0 && (
                 <View style={styles.equipment}>
                   {facts.equipment.map((e) => (
-                    <EquipmentGlyph key={e} name={e} size={18} color={colors.text} />
+                    <View key={e} style={styles.equipBadge}>
+                      <EquipmentGlyph name={e} size={18} color={colors.text} />
+                    </View>
                   ))}
                 </View>
               )}
@@ -231,7 +233,12 @@ const styles = StyleSheet.create({
   rail: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.md },
   divider: { width: 1, height: 18, backgroundColor: colors.border },
   // Shrinkable so a long gear list wraps onto a second line instead of being clipped.
-  equipment: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1, minWidth: 0, flexWrap: "wrap" },
+  equipment: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0, flexWrap: "wrap" },
+  // Each glyph sits in its own rounded-square badge, like a chip.
+  equipBadge: {
+    width: 28, height: 28, borderRadius: 6, alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  },
   muscles: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0 },
   muscleNames: { flexShrink: 1, minWidth: 0 },
   musclePrimary: { fontSize: 11.5, fontWeight: "600", color: colors.text, lineHeight: 14 },
