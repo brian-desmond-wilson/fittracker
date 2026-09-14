@@ -152,6 +152,13 @@ export interface CapturedWorkoutItemEntry {
    *  Absent when the item was built without the join — an edit-screen draft,
    *  or a failed join — and such items are left out of equipment derivation. */
   equipment?: string[];
+  /** The exercise's own picture, for the movement row thumbnail. Null when it
+   *  has none; absent — like `equipment` — when the item was built without
+   *  the join (an edit-screen draft). */
+  imageUrl?: string | null;
+  /** Primaries first, then secondaries, each in name order. Absent when built
+   *  without the join. */
+  muscles?: { name: string; isPrimary: boolean }[];
 }
 
 /** A movement the capture could not match: its name sits in the review queue

@@ -5,6 +5,7 @@
 // pending source, never a half-visible catalog entry.
 import { supabase } from "../supabase";
 import { equipmentNamesOf } from "../exerciseEquipment";
+import { musclesOf } from "../exerciseMuscles";
 import { deriveWorkoutEquipment } from "../workoutEquipment";
 import { decodeCaption } from "../captionText";
 import { resolveCapturedExercise } from "../captureResolution";
@@ -364,6 +365,8 @@ function toCapturedWorkoutEntry(
       // Absent (not empty) when the exercise did not join, so derivation
       // leaves the movement out rather than calling it bodyweight.
       equipment: it.exercise ? equipmentNamesOf(it.exercise) : undefined,
+      imageUrl: it.exercise ? (it.exercise.image_url ?? null) : undefined,
+      muscles: it.exercise ? musclesOf(it.exercise.muscle_rows) : undefined,
     }));
   const derived = deriveWorkoutEquipment(items);
   return {
@@ -453,6 +456,29 @@ export async function markCaptureRejected(input: RejectCaptureInput): Promise<vo
   }
 }
 
+/** The one select both workout reads use, so the list and the screen can
+ *  never disagree about what an item carries. Per-item `image_url` and
+ *  muscle regions feed the movement rows on the workout page. */
+const CAPTURED_WORKOUT_SELECT = `
+  id, name, rounds, raw_protocol, description, notes, created_at,
+  block_roles, est_minutes, intensity, skill_level, classified_at,
+  format, score_type, format_minutes,
+  wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
+  source:captured_sources!inner(
+    id, platform, source_url, poster_handle, thumbnail_url, caption_text,
+    extraction_status
+  ),
+  items:captured_workout_exercises(
+    exercise_order, target_sets, target_reps, target_weight,
+    target_duration, rest_seconds, notes,
+    exercise:exercises(
+      id, name, image_url, core_default_equipment,
+      equipment_rows:exercise_equipment(equipment(name)),
+      muscle_rows:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name))
+    )
+  )
+`;
+
 /** Captured workouts with their movements and provenance, newest first.
  *  Without this read the workouts are write-only: the rows exist and nothing
  *  in the app can show them. */
@@ -461,24 +487,7 @@ export async function fetchCapturedWorkouts(
 ): Promise<CapturedWorkoutEntry[]> {
   const { data, error } = await supabase
     .from("captured_workouts")
-    .select(`
-      id, name, rounds, raw_protocol, description, notes, created_at,
-      block_roles, est_minutes, intensity, skill_level, classified_at,
-      format, score_type, format_minutes,
-      wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
-      source:captured_sources!inner(
-        id, platform, source_url, poster_handle, thumbnail_url, caption_text,
-        extraction_status
-      ),
-      items:captured_workout_exercises(
-        exercise_order, target_sets, target_reps, target_weight,
-        target_duration, rest_seconds, notes,
-        exercise:exercises(
-          id, name, core_default_equipment,
-          equipment_rows:exercise_equipment(equipment(name))
-        )
-      )
-    `)
+    .select(CAPTURED_WORKOUT_SELECT)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error) {
@@ -507,24 +516,7 @@ export async function fetchCapturedWorkout(
 ): Promise<CapturedWorkoutEntry | null> {
   const { data, error } = await supabase
     .from("captured_workouts")
-    .select(`
-      id, name, rounds, raw_protocol, description, notes, created_at,
-      block_roles, est_minutes, intensity, skill_level, classified_at,
-      format, score_type, format_minutes,
-      wmuscles:captured_workout_muscles(is_primary, muscle_region:muscle_regions(name)),
-      source:captured_sources!inner(
-        id, platform, source_url, poster_handle, thumbnail_url, caption_text,
-        extraction_status
-      ),
-      items:captured_workout_exercises(
-        exercise_order, target_sets, target_reps, target_weight,
-        target_duration, rest_seconds, notes,
-        exercise:exercises(
-          id, name, core_default_equipment,
-          equipment_rows:exercise_equipment(equipment(name))
-        )
-      )
-    `)
+    .select(CAPTURED_WORKOUT_SELECT)
     .eq("id", workoutId)
     .maybeSingle();
   if (error) {
