@@ -9,7 +9,12 @@
 // workout_instance the generated session does, and joining through it
 // with a filter on the far side is the kind of PostgREST shape that works
 // until it doesn't. Empty on error — the block fails closed to "not yet".
+//
+// Scores are one more read, joined by the generated session id; a failed
+// scores read leaves every row unscored, which the block draws as days
+// without bars.
 import { supabase } from "../supabase";
+import { fetchWorkoutScores } from "./sessionScores";
 import type { WorkoutSessionRow } from "../workoutHistory";
 
 export async function fetchWorkoutHistory(userId: string, workoutId: string): Promise<WorkoutSessionRow[]> {
@@ -25,6 +30,7 @@ export async function fetchWorkoutHistory(userId: string, workoutId: string): Pr
   }
   const rows = (gens ?? []) as { id: string; session_date: string; workout_instance_id: string | null }[];
   const instanceIds = rows.map((g) => g.workout_instance_id).filter((v): v is string => !!v);
+  const scores = await fetchWorkoutScores(userId, workoutId);
 
   const byInstance = new Map<string, { id: string; durationSeconds: number | null }>();
   if (instanceIds.length > 0) {
@@ -74,9 +80,11 @@ export async function fetchWorkoutHistory(userId: string, workoutId: string): Pr
     .map((g) => {
       const track = g.workout_instance_id ? byInstance.get(g.workout_instance_id) : undefined;
       return {
+        generatedSessionId: g.id,
         sessionId: track?.id ?? null,
         sessionDate: g.session_date,
         durationSeconds: track?.durationSeconds ?? null,
+        score: scores.get(g.id) ?? null,
       };
     });
 }

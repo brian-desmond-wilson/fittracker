@@ -2,7 +2,7 @@ import { summarizeWorkoutHistory, durationText, SESSION_ROWS } from "../workoutH
 import type { WorkoutSessionRow } from "../workoutHistory";
 
 const row = (date: string, o: Partial<WorkoutSessionRow> = {}): WorkoutSessionRow =>
-  ({ sessionId: `s-${date}`, sessionDate: date, durationSeconds: null, ...o });
+  ({ generatedSessionId: `g-${date}`, sessionId: `s-${date}`, sessionDate: date, durationSeconds: null, score: null, ...o });
 
 describe("summarizeWorkoutHistory (spec §4.4, §5.5)", () => {
   it("null when never done", () => {
@@ -44,7 +44,9 @@ describe("summarizeWorkoutHistory (spec §4.4, §5.5)", () => {
 
   it("a row with sessionId null passes through unchanged in rows", () => {
     const s = summarizeWorkoutHistory([row("2026-09-01", { sessionId: null })]);
-    expect(s?.rows).toEqual([{ sessionId: null, sessionDate: "2026-09-01", durationSeconds: null }]);
+    expect(s?.rows).toEqual([
+      { generatedSessionId: "g-2026-09-01", sessionId: null, sessionDate: "2026-09-01", durationSeconds: null, score: null },
+    ]);
   });
 });
 

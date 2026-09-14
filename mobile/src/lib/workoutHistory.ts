@@ -1,15 +1,19 @@
 // "Your history" on the workout page, shaped from the reader's completed
 // sessions of this one workout. Pure: supabase/workoutHistory.ts owns the
-// read, WorkoutHistoryBlock owns the pixels. No score yet — that lands with
-// session-end score capture (spec 2026-09-13 §10) and lights up Best + trend.
+// read, WorkoutHistoryBlock owns the pixels. Scores ride on the row
+// (workoutScore.ts owns their rules).
+import type { Score } from "./workoutScore";
 
 export interface WorkoutSessionRow {
+  /** generated_sessions.id — the day; what a score hangs off. */
+  generatedSessionId: string;
   /** The Track session (workout_sessions.id) to open; null when the completed
    *  day has no Track row to show, so the row draws but does not open. */
   sessionId: string | null;
   /** YYYY-MM-DD, local. */
   sessionDate: string;
   durationSeconds: number | null;
+  score: Score | null;
 }
 
 export interface WorkoutHistorySummary {
