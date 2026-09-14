@@ -62,7 +62,16 @@ export function WorkoutStatRow({ tags, onFilter }: WorkoutStatRowProps) {
           accessibilityLabel={c.link ? `${c.label} ${c.value}. ${c.a11y}` : `${c.label} not set`}
         >
           <Text style={styles.label}>{c.label}</Text>
-          <Text style={[styles.value, !c.value && styles.valueEmpty]} numberOfLines={1}>{c.value ?? EMPTY}</Text>
+          {/* Shrink rather than ellipsise: long values ("Rounds + reps",
+              "Duration / hold") must still read whole across four columns. */}
+          <Text
+            style={[styles.value, !c.value && styles.valueEmpty]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+          >
+            {c.value ?? EMPTY}
+          </Text>
         </Pressable>
       ))}
     </View>

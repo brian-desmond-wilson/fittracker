@@ -6,6 +6,9 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { colors, spacing, radii, tint } from "@/src/theme/tokens";
 import { MuscleIcon } from "@/src/components/ui/MuscleIcon";
 import { EquipmentGlyph } from "@/src/components/ui/EquipmentGlyph";
+import { muscleIconSlug } from "@/src/lib/muscleIconCatalog";
+import { BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
+import { FILTERABLE_ROLES } from "@/src/types/workoutFilters";
 import type { BlockRole, WorkoutMuscle } from "@/src/types/dailyBlocks";
 import type { WorkoutFilterLink } from "@/src/lib/workoutFilterLink";
 
@@ -19,22 +22,30 @@ interface RolePillsProps {
   onFilter: (link: WorkoutFilterLink) => void;
 }
 
-/** MAIN · CONDITIONING … — quiet outlined pills; recommender tags, not headlines. */
+/**
+ * MAIN · CONDITIONING … — quiet outlined pills; recommender tags, not headlines.
+ * Carries no section padding of its own — the caller's section supplies it.
+ */
 export function RolePills({ roles, onFilter }: RolePillsProps) {
-  if (roles.length === 0) return null;
+  // bfr has no Workouts-tab filter, so a pill for it would link to nothing.
+  const filterableRoles = roles.filter((role) => FILTERABLE_ROLES.includes(role));
+  if (filterableRoles.length === 0) return null;
   return (
     <View style={styles.pillRow}>
-      {roles.map((role) => (
-        <TouchableOpacity
-          key={role}
-          style={styles.pill}
-          onPress={() => onFilter({ blockRoles: [role] })}
-          accessibilityRole="button"
-          accessibilityLabel={`Workouts that serve as ${role}`}
-        >
-          <Text style={styles.pillText}>{role}</Text>
-        </TouchableOpacity>
-      ))}
+      {filterableRoles.map((role) => {
+        const title = BLOCK_TITLES[role];
+        return (
+          <TouchableOpacity
+            key={role}
+            style={styles.pill}
+            onPress={() => onFilter({ blockRoles: [role] })}
+            accessibilityRole="button"
+            accessibilityLabel={`Workouts that serve as ${title}`}
+          >
+            <Text style={styles.pillText}>{title}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -50,6 +61,10 @@ interface HitsSectionProps {
 export function HitsSection({ muscles, onFilter }: HitsSectionProps) {
   const primaries = muscles.filter((m) => m.isPrimary);
   const secondaries = muscles.filter((m) => !m.isPrimary);
+  // The icon row only shows secondaries with a picture — an iconless name
+  // (e.g. Full Body) would render an invisible tap target. The text list
+  // below still names every secondary, icon or not.
+  const iconableSecondaries = secondaries.filter((m) => muscleIconSlug(m.name) !== null);
   if (primaries.length === 0 && secondaries.length === 0) return null;
   return (
     <View style={styles.section}>
@@ -72,7 +87,7 @@ export function HitsSection({ muscles, onFilter }: HitsSectionProps) {
       )}
       {secondaries.length > 0 && (
         <View style={[styles.chipRow, styles.secondaryRow]}>
-          {secondaries.map((m) => (
+          {iconableSecondaries.map((m) => (
             <TouchableOpacity
               key={m.name}
               onPress={() => onFilter({ muscles: [m.name] })}
@@ -84,7 +99,8 @@ export function HitsSection({ muscles, onFilter }: HitsSectionProps) {
             </TouchableOpacity>
           ))}
           <Text style={styles.secondaryNames} numberOfLines={2}>
-            also {secondaries.map((m) => m.name).join(", ")}
+            {primaries.length === 0 ? "" : "also "}
+            {secondaries.map((m) => m.name).join(", ")}
           </Text>
         </View>
       )}
@@ -143,11 +159,8 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
-  muscleChip: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: radii.control,
-    backgroundColor: tint(colors.brand, 0.08), borderWidth: 1, borderColor: tint(colors.brand, 0.35),
-  },
+  // Mock: bare icon + name, no box — a chip, not a filled pill.
+  muscleChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
   muscleName: { fontSize: 13, fontWeight: "600", color: colors.text },
   secondaryRow: { marginTop: spacing.sm, gap: 6 },
   secondaryNames: { flexShrink: 1, fontSize: 11, color: colors.textMuted, marginLeft: 2 },
@@ -156,7 +169,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: radii.control,
     borderWidth: 1, borderColor: colors.border,
   },
-  // The Exercises card's badge: brand glyph on a brand tint, brand border.
+  // The Exercises card's badge treatment, sized for a tile.
   equipBadge: {
     width: 22, height: 22, borderRadius: 6, alignItems: "center", justifyContent: "center",
     backgroundColor: tint(colors.brand), borderWidth: 1, borderColor: colors.brand,
