@@ -1,4 +1,4 @@
-import { formatBanner } from "../workoutFormat";
+import { formatBanner, describeFormat } from "../workoutFormat";
 import type { HeadlineShape } from "../workoutFormat";
 
 const shape = (o: Partial<HeadlineShape>): HeadlineShape => ({ format: null, formatMinutes: null, scoreType: null, ...o });
@@ -63,5 +63,30 @@ describe("formatBanner (spec §5.2: the hero badge and the list band say the sam
   it("zero minutes reads as unstated", () => {
     expect(formatBanner(null, shape({ format: "amrap", formatMinutes: 0 })))
       .toEqual({ badge: "AMRAP", gloss: "As many rounds as possible" });
+  });
+
+  it("for time with rounds and a cap keeps both", () => {
+    expect(formatBanner("3", shape({ format: "for_time", formatMinutes: 20 })))
+      .toEqual({ badge: "3 ROUNDS · FOR TIME", gloss: "Repeat the whole list 3 times, as fast as you can, 20 minute cap" });
+  });
+
+  it("chipper keeps its cap", () => {
+    expect(formatBanner(null, shape({ format: "chipper", formatMinutes: 20 })))
+      .toEqual({ badge: "CHIPPER · 20 MIN CAP", gloss: "Work through the list once, top to bottom, 20 minute cap" });
+  });
+
+  it("one minute is singular in the gloss", () => {
+    expect(formatBanner(null, shape({ format: "amrap", formatMinutes: 1 })))
+      .toEqual({ badge: "AMRAP · 1 MIN", gloss: "As many rounds as possible in 1 minute" });
+  });
+
+  it("sets & reps ignores minutes", () => {
+    expect(formatBanner(null, shape({ format: "sets_reps", formatMinutes: 20 })))
+      .toEqual({ badge: "SETS & REPS", gloss: "Sets and reps, rest as needed" });
+  });
+
+  it("the badge agrees with the card on pluralisation", () => {
+    const s = shape({ format: "rounds" });
+    expect(formatBanner("1", s)!.badge).toBe(describeFormat("1", s)!.toUpperCase());
   });
 });
