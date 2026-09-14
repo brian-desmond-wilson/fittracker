@@ -44,9 +44,14 @@ interface GymSessionsScreenProps {
   /** Scope the History list to sessions with a working set of this exercise. */
   exerciseId?: string | null;
   exerciseName?: string | null;
+  /** Scope the History list to sessions that were this captured workout served whole. */
+  workoutId?: string | null;
+  workoutName?: string | null;
 }
 
-export function GymSessionsScreen({ onClose, exerciseId = null, exerciseName = null }: GymSessionsScreenProps) {
+export function GymSessionsScreen({
+  onClose, exerciseId = null, exerciseName = null, workoutId = null, workoutName = null,
+}: GymSessionsScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [sessions, setSessions] = useState<HistorySession[]>([]);
@@ -65,14 +70,17 @@ export function GymSessionsScreen({ onClose, exerciseId = null, exerciseName = n
   // The scope is a chip the reader can drop; the hero, stats and calendar
   // keep describing every session — only the list narrows.
   const [scoped, setScoped] = useState(true);
-  const listSessions = useMemo(
-    () => (exerciseId && scoped
-      ? sessions.filter((s) => s.exercises.some(
-          (e) => e.exerciseId === exerciseId && e.sets.some((set) => !set.isWarmup),
-        ))
-      : sessions),
-    [sessions, exerciseId, scoped],
-  );
+  const scopeActive = scoped && (!!exerciseId || !!workoutId);
+  const listSessions = useMemo(() => {
+    if (!scoped) return sessions;
+    if (exerciseId) {
+      return sessions.filter((s) => s.exercises.some(
+        (e) => e.exerciseId === exerciseId && e.sets.some((set) => !set.isWarmup),
+      ));
+    }
+    if (workoutId) return sessions.filter((s) => s.capturedWorkoutId === workoutId);
+    return sessions;
+  }, [sessions, exerciseId, workoutId, scoped]);
 
   // One clock sample per load, the app's no-two-clocks rule.
   const [today] = useState(() => getLocalDateString());
@@ -255,10 +263,12 @@ export function GymSessionsScreen({ onClose, exerciseId = null, exerciseName = n
                 ))}
               </View>
 
-              {view === "history" && exerciseId && scoped && (
+              {view === "history" && scopeActive && (
                 <View style={styles.scopeRow}>
                   <Text style={styles.scopeText} numberOfLines={1}>
-                    Sessions with {exerciseName ?? "this exercise"} · {listSessions.length}
+                    {workoutId
+                      ? `Sessions of ${workoutName ?? "this workout"} · ${listSessions.length}`
+                      : `Sessions with ${exerciseName ?? "this exercise"} · ${listSessions.length}`}
                   </Text>
                   <TouchableOpacity onPress={() => setScoped(false)} accessibilityRole="button"
                     accessibilityLabel="Show all sessions" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -276,8 +286,10 @@ export function GymSessionsScreen({ onClose, exerciseId = null, exerciseName = n
                     onPress={() => open(session)}
                   />
                 ))}
-              {view === "history" && exerciseId && scoped && listSessions.length === 0 && (
-                <Text style={styles.emptyText}>No session with a working set of this exercise yet.</Text>
+              {view === "history" && scopeActive && listSessions.length === 0 && (
+                <Text style={styles.emptyText}>
+                  {workoutId ? "No completed session of this workout yet." : "No session with a working set of this exercise yet."}
+                </Text>
               )}
 
               {view === "stats" && (
