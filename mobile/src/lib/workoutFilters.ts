@@ -18,7 +18,7 @@ const BODYWEIGHT = "Bodyweight";
 /** First band whose ceiling holds the value. Upper bounds only, so a
  *  fractional estimate (15.5) lands in the next band up instead of in the
  *  gap between two integer boundaries. */
-function bandOf(minutes: number): LengthBand | null {
+export function lengthBandOf(minutes: number): LengthBand | null {
   const hit = LENGTH_BANDS.find((b) => minutes <= b.max);
   return hit ? hit.band : null;
 }
@@ -53,7 +53,7 @@ function passes(w: CapturedWorkoutEntry, f: WorkoutFilters, completions: Complet
     if (w.tags.intensity !== f.intensity) return false;
   }
   if (f.lengths.length > 0) {
-    const band = w.tags.estMinutes === null ? null : bandOf(w.tags.estMinutes);
+    const band = w.tags.estMinutes === null ? null : lengthBandOf(w.tags.estMinutes);
     if (band === null || !f.lengths.includes(band)) return false;
   }
   if (f.skills.length > 0) {

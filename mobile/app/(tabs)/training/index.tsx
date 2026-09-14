@@ -22,6 +22,8 @@ import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts, fetchCatalog } from "@/src/lib/supabase/capture";
 import { parseExerciseFilterParam } from "@/src/lib/exerciseFilterLink";
 import type { ExerciseFilterLink } from "@/src/lib/exerciseFilterLink";
+import { parseWorkoutFilterParam } from "@/src/lib/workoutFilterLink";
+import type { WorkoutFilterLink } from "@/src/lib/workoutFilterLink";
 import { maybeRunWeeklySweep } from "@/src/lib/supabase/enrich";
 
 type WorkoutMode = "crossfit" | "strength" | "daily";
@@ -60,8 +62,8 @@ export default function Training() {
   // Consumed into state and cleared from the route immediately, so
   // re-focusing the tab later doesn't replay the share.
   const router = useRouter();
-  const { shareUrl, exerciseFilter, openTab } = useLocalSearchParams<{
-    shareUrl?: string; exerciseFilter?: string; openTab?: string;
+  const { shareUrl, exerciseFilter, workoutFilter, openTab } = useLocalSearchParams<{
+    shareUrl?: string; exerciseFilter?: string; workoutFilter?: string; openTab?: string;
   }>();
   const [pendingShareUrl, setPendingShareUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -89,6 +91,17 @@ export default function Training() {
     setDailyTab("exercises");
     router.setParams({ exerciseFilter: undefined });
   }, [exerciseFilter, router]);
+  // A chip or stat cell on the workout page: open the Workouts tab with that
+  // value on top of the saved filters (spec 2026-09-13 §4.3). Same
+  // consume-and-clear discipline as exerciseFilter.
+  const [pendingWorkoutFilter, setPendingWorkoutFilter] = useState<WorkoutFilterLink | null>(null);
+  useEffect(() => {
+    if (typeof workoutFilter !== "string" || workoutFilter === "") return;
+    setPendingWorkoutFilter(parseWorkoutFilterParam(workoutFilter));
+    setWorkoutMode("daily");
+    setDailyTab("workouts");
+    router.setParams({ workoutFilter: undefined });
+  }, [workoutFilter, router]);
   // "Add to today" lands here: show Today, and remount it so it reloads the
   // day it was just handed (the tab loads on mount, not on focus).
   const [todayKey, setTodayKey] = useState(0);
@@ -230,6 +243,8 @@ export default function Training() {
               searchQuery={searchQuery}
               onCountUpdate={setCapturedWorkoutsCount}
               shareUrl={pendingShareUrl}
+              initialFilters={pendingWorkoutFilter}
+              onInitialFiltersConsumed={() => setPendingWorkoutFilter(null)}
             />
           );
         case "exercises":

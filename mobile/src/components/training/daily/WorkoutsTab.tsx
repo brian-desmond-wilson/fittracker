@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
 } from "react-native";
@@ -15,6 +15,8 @@ import { isAvatarStale, normaliseHandle } from "@/src/lib/creatorHandle";
 import { applyFiltersAndSearch, activeFilterChips, countActiveFilters, removeChip, creatorCounts, mostRestrictiveAxis, clearAxis } from "@/src/lib/workoutFilters";
 import { sortWorkouts } from "@/src/lib/workoutSort";
 import { loadWorkoutPrefs, saveWorkoutPrefs } from "@/src/lib/workoutFilterStore";
+import { mergeWorkoutFilters } from "@/src/lib/workoutFilterLink";
+import type { WorkoutFilterLink } from "@/src/lib/workoutFilterLink";
 import { EMPTY_FILTERS, DEFAULT_SORT, SORT_LABELS, SORT_GROUPS, SORT_SUBLABELS } from "@/src/types/workoutFilters";
 import type { WorkoutFilters, WorkoutSort } from "@/src/types/workoutFilters";
 import type { CompletionMap } from "@/src/lib/workoutCompletion";
@@ -33,9 +35,14 @@ interface WorkoutsTabProps {
   onCountUpdate: (count: number) => void;
   /** A URL from the iOS share sheet, passed through to the capture flow. */
   shareUrl?: string | null;
+  /** A chip's value from the workout page, merged over the saved filters once prefs resolve. */
+  initialFilters?: WorkoutFilterLink | null;
+  onInitialFiltersConsumed?: () => void;
 }
 
-export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: WorkoutsTabProps) {
+export default function WorkoutsTab({
+  searchQuery, onCountUpdate, shareUrl, initialFilters = null, onInitialFiltersConsumed,
+}: WorkoutsTabProps) {
   const [workouts, setWorkouts] = useState<CapturedWorkoutEntry[]>([]);
   const [completions, setCompletions] = useState<CompletionMap>({});
   const [avatars, setAvatars] = useState<CreatorAvatarMap>({});
@@ -108,6 +115,19 @@ export default function WorkoutsTab({ searchQuery, onCountUpdate, shareUrl }: Wo
     setSort(next);
     if (userId) saveWorkoutPrefs(userId, { filters, sort: next });
   }, [userId, filters]);
+
+  // The chip's value lands through the same "applied change saves" path the
+  // sheet uses, after prefs resolve. `latest` sidesteps a stale closure: the
+  // effect keys on the link, not on the filters it merges into.
+  const latest = useRef({ filters, sort });
+  latest.current = { filters, sort };
+  useEffect(() => {
+    if (!prefsReady || !userId || !initialFilters) return;
+    const next = mergeWorkoutFilters(latest.current.filters, initialFilters);
+    setFilters(next);
+    saveWorkoutPrefs(userId, { filters: next, sort: latest.current.sort });
+    onInitialFiltersConsumed?.();
+  }, [prefsReady, userId, initialFilters, onInitialFiltersConsumed]);
 
   const filtered = useMemo(() => {
     const list = applyFiltersAndSearch(workouts, filters, completions, searchQuery);
