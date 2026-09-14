@@ -57,11 +57,17 @@ export function byGridOrder(a: string, b: string): number {
   return a.localeCompare(b);
 }
 
+/** What a movement row shows as gear: surfaces and Bodyweight are how it's
+ *  done, not what you bring. */
+export function movementGear(item: CapturedWorkoutItemEntry): string[] {
+  return [...new Set(
+    (item.equipment ?? []).filter((n) => !SUPPORT_SURFACES.has(n) && n !== BODYWEIGHT),
+  )].sort(byGridOrder);
+}
+
 /** A movement's countable equipment: surfaces dropped, Bodyweight dropped. */
 function needsOf(item: CapturedWorkoutItemEntry): Set<string> {
-  return new Set(
-    (item.equipment ?? []).filter((n) => !SUPPORT_SURFACES.has(n) && n !== BODYWEIGHT),
-  );
+  return new Set(movementGear(item));
 }
 
 export function deriveWorkoutEquipment(items: CapturedWorkoutItemEntry[]): DerivedEquipment {

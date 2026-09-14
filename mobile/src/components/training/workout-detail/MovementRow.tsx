@@ -11,6 +11,7 @@ import { colors, spacing, radii, tint } from "@/src/theme/tokens";
 import { MuscleIcon } from "@/src/components/ui/MuscleIcon";
 import { EquipmentGlyph } from "@/src/components/ui/EquipmentGlyph";
 import { formatWorkoutItem } from "@/src/lib/workoutFormat";
+import { movementGear } from "@/src/lib/workoutEquipment";
 import { muscleIconSlug } from "@/src/lib/muscleIconCatalog";
 import type { CapturedWorkoutItemEntry } from "@/src/types/capture";
 
@@ -43,7 +44,10 @@ export function MovementRow({ index, item, onPress, last = false }: MovementRowP
     .filter((m) => !m.isPrimary && muscleIconSlug(m.name) !== null)
     .slice(0, MAX_SECONDARY_ICONS)
     .map((m) => m.name);
-  const equipment = item.equipment ?? [];
+  // Surfaces ("Floor"/"Wall") and Bodyweight are how the movement is done,
+  // not what it needs — the Exercises card and the workout-level "You'll
+  // need" both leave them out, so this badge row does too.
+  const equipment = movementGear(item);
   const hasFacts = primary !== null || secondaries.length > 0 || equipment.length > 0;
 
   // The a11y label reads the real muscles regardless of picture — a "Full

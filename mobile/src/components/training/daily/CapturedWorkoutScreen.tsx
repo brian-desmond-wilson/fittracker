@@ -136,6 +136,10 @@ export function CapturedWorkoutScreen() {
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [history, setHistory] = useState<WorkoutSessionRow[]>([]);
+  // Auth resolves before the history read does; without this, the block would
+  // mount on userId alone and flash "haven't done this one yet" for a workout
+  // that has history.
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const today = useMemo(() => getLocalDateString(), []);
 
   const editing = draft !== null;
@@ -153,9 +157,11 @@ export function CapturedWorkoutScreen() {
         if (!user || !alive) return;
         setUserId(user.id);
         fetchWorkoutHistory(user.id, id).then((rows) => {
-          if (alive) setHistory(rows);
-        });
-      });
+          if (!alive) return;
+          setHistory(rows);
+          setHistoryLoaded(true);
+        }).catch(console.error);
+      }).catch(console.error);
       return () => {
         alive = false;
       };
@@ -909,7 +915,7 @@ export function CapturedWorkoutScreen() {
             </View>
           )}
 
-          {!editing && userId && (
+          {!editing && userId && historyLoaded && (
             <WorkoutHistoryBlock
               userId={userId}
               rows={history}
@@ -1205,7 +1211,7 @@ const styles = StyleSheet.create({
   listSection: { paddingHorizontal: spacing.lg },
   listTop: { paddingTop: spacing.lg },
   description: {
-    fontSize: 15, color: colors.foreground, lineHeight: 22, marginBottom: 0,
+    fontSize: 15, color: colors.foreground, lineHeight: 22,
   },
   fieldLabel: {
     fontSize: 12, color: colors.mutedForeground, marginTop: 16, marginBottom: 6,
