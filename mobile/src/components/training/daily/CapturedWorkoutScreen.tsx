@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, Image,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking,
   ActivityIndicator, StatusBar, TextInput, Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
-import {
-  Check, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ExternalLink, Play,
-  Plus, Trash2,
-} from "lucide-react-native";
+import { ChevronLeft, ChevronUp, ChevronDown, MoreVertical, Play, Plus, Trash2 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
 import { supabase } from "@/src/lib/supabase";
 import { adoptCapturedWorkout, fetchDayStatus } from "@/src/lib/supabase/daily";
@@ -21,10 +18,7 @@ import {
   summarizeCaption,
   updateCapturedWorkout,
 } from "@/src/lib/supabase/capture";
-import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
-import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
-import { formatLastCompleted, isStale } from "@/src/lib/workoutCompletion";
-import type { WorkoutCompletion } from "@/src/lib/workoutCompletion";
+import { formatWorkoutItem, formatBanner } from "@/src/lib/workoutFormat";
 import { sanitizeInteger } from "@/src/lib/numericInput";
 import { ExerciseSearchModal } from "@/src/components/training/program-detail/workout-wizard/ExerciseSearchModal";
 import {
@@ -38,9 +32,22 @@ import {
   formatHasMinutes, minutesLabelFor,
 } from "@/src/lib/workoutFormatVocab";
 import type { CapturedWorkoutEntry, CapturedWorkoutItemEntry } from "@/src/types/capture";
-import { CreatorAvatar } from "@/src/components/ui/CreatorAvatar";
 import { fetchCreator } from "@/src/lib/supabase/creators";
 import type { CreatorAvatar as CreatorAvatarRow } from "@/src/lib/supabase/creators";
+import { profileUrl } from "@/src/lib/creatorHandle";
+import { fetchWorkoutHistory } from "@/src/lib/supabase/workoutHistory";
+import type { WorkoutSessionRow } from "@/src/lib/workoutHistory";
+import { workoutFilterParam } from "@/src/lib/workoutFilterLink";
+import type { WorkoutFilterLink } from "@/src/lib/workoutFilterLink";
+import { spacing } from "@/src/theme/tokens";
+import { WorkoutHero } from "@/src/components/training/workout-detail/WorkoutHero";
+import { WorkoutStatRow } from "@/src/components/training/workout-detail/WorkoutStatRow";
+import { WorkoutHistoryBlock } from "@/src/components/training/workout-detail/WorkoutHistoryBlock";
+import { RolePills, HitsSection, NeedsSection } from "@/src/components/training/workout-detail/WorkoutChips";
+import { FormatBand } from "@/src/components/training/workout-detail/FormatBand";
+import { MovementRow } from "@/src/components/training/workout-detail/MovementRow";
+import { CreatorProtocolRow } from "@/src/components/training/workout-detail/CreatorProtocolRow";
+import { AddToDayButton } from "@/src/components/training/workout-detail/AddToDayButton";
 
 const BLOCK_ROLES: BlockRole[] = [
   "warmup", "mobility", "main", "conditioning", "cooldown",
@@ -126,13 +133,11 @@ export function CapturedWorkoutScreen() {
   const [starting, setStarting] = useState(false);
   const [tagging, setTagging] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
-  const [completion, setCompletion] = useState<WorkoutCompletion | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [history, setHistory] = useState<WorkoutSessionRow[]>([]);
   const today = useMemo(() => getLocalDateString(), []);
 
   const editing = draft !== null;
-
-  const completionStale = completion ? isStale(completion, today) : false;
-  const lastCompletedLabel = completion ? formatLastCompleted(completion, today) : null;
 
   // Its own effect rather than a limb of the one below: that read is held back
   // while you are editing or a classification is in flight, and neither has
@@ -145,8 +150,9 @@ export function CapturedWorkoutScreen() {
       let alive = true;
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (!user || !alive) return;
-        fetchWorkoutCompletions(user.id).then((history) => {
-          if (alive) setCompletion(history[id] ?? null);
+        setUserId(user.id);
+        fetchWorkoutHistory(user.id, id).then((rows) => {
+          if (alive) setHistory(rows);
         });
       });
       return () => {
@@ -444,6 +450,42 @@ export function CapturedWorkoutScreen() {
       ]);
     });
 
+  /** A chip, pill or stat cell: the Workouts tab with that value on top of the saved filters. */
+  const openFiltered = (link: WorkoutFilterLink) => {
+    router.navigate({
+      pathname: "/(tabs)/training",
+      params: { workoutFilter: workoutFilterParam(link) },
+    } as never);
+  };
+  const openUrl = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      Alert.alert("Couldn't open it", "Try again, or open it from the app itself.");
+    });
+  };
+  const openSession = (sessionId: string) =>
+    router.push(`/(tabs)/track/gym-sessions/${sessionId}` as never);
+  const openAllSessions = () => {
+    if (!workout) return;
+    router.push({
+      pathname: "/(tabs)/track/gym-sessions",
+      params: { workoutId: workout.workoutId, workoutName: workout.name },
+    } as never);
+  };
+  const openToday = () =>
+    router.navigate({ pathname: "/(tabs)/training", params: { openTab: "today" } } as never);
+
+  /** Edit lives here now, with a second route to the post (spec §4.1). */
+  const openMenu = () => {
+    if (!workout) return;
+    const post = workout.source?.sourceUrl ?? null;
+    const platform = workout.source?.platform === "tiktok" ? "TikTok" : "Instagram";
+    Alert.alert("Workout options", undefined, [
+      { text: "Edit", onPress: startEditing },
+      ...(post ? [{ text: `Open post on ${platform}`, onPress: () => openUrl(post) }] : []),
+      { text: "Cancel", style: "cancel" as const },
+    ]);
+  };
+
   // Adopts this workout as today's session and hands off to the logging screen
   // the Today tab uses — from there it IS a daily session, so acceptance,
   // completion and the performed backfill all work unchanged.
@@ -519,22 +561,31 @@ export function CapturedWorkoutScreen() {
           <ChevronLeft size={24} color={colors.foreground} />
         )}
       </TouchableOpacity>
-      {workout && (
+      {workout && (editing ? (
         <TouchableOpacity
-          onPress={editing ? save : startEditing}
-          // Shut while a classification is in flight: a draft seeded from the
-          // pre-classify row would be saved back over the tags it just wrote.
-          disabled={saving || tagging}
+          onPress={save}
+          disabled={saving}
           activeOpacity={0.7}
           style={styles.headerRight}
         >
-          <Text
-            style={[styles.headerAction, (saving || tagging) && styles.headerActionMuted]}
-          >
-            {editing ? (saving ? "Saving…" : "Save") : "Edit"}
+          <Text style={[styles.headerAction, saving && styles.headerActionMuted]}>
+            {saving ? "Saving…" : "Save"}
           </Text>
         </TouchableOpacity>
-      )}
+      ) : (
+        <TouchableOpacity
+          onPress={openMenu}
+          // Shut while a classification is in flight: a draft seeded from the
+          // pre-classify row would be saved back over the tags it just wrote.
+          disabled={tagging}
+          activeOpacity={0.7}
+          style={styles.headerRight}
+          accessibilityRole="button"
+          accessibilityLabel="Workout options"
+        >
+          <MoreVertical size={24} color={tagging ? colors.mutedForeground : colors.foreground} />
+        </TouchableOpacity>
+      ))}
     </View>
   );
 
@@ -572,7 +623,6 @@ export function CapturedWorkoutScreen() {
   // prescription), so the editor — which replaces the item rows wholesale —
   // must never see them.
   const pendingItems = editing ? [] : workout.pendingItems ?? [];
-  const shownRounds = draft ? blank(draft.rounds) : workout.rounds;
   const shownDescription = draft ? draft.description : workout.description ?? "";
   const shownNotes = draft ? draft.notes : workout.notes ?? "";
 
@@ -583,68 +633,37 @@ export function CapturedWorkoutScreen() {
   const primaryMuscles = workout.tags.muscles.filter((m) => m.isPrimary).map((m) => m.name);
   const secondaryMuscles = workout.tags.muscles.filter((m) => !m.isPrimary).map((m) => m.name);
   const gaps = tagGaps(workout);
-  // Only what the headline above hides: the score a format implies, or that
-  // nothing is scored. The format phrase itself is already in the headline.
-  const formatLine = workout.tags.format === null || workout.tags.scoreType === null
-    ? ""
-    : IMPLIED_SCORE[workout.tags.format] === workout.tags.scoreType
-      ? `Scored by ${SCORE_LABELS[workout.tags.scoreType].toLowerCase()}`
-      : workout.tags.scoreType === "none" ? "Not scored" : "";
   // A missing format keeps nothing out of a session — the recommender does
   // not read it — so it is a note, not a gap: it only means the Workouts
   // tab lists this under Untagged until someone sets it.
   const formatMissing = classified && workout.tags.format === null;
+  const banner = formatBanner(workout.rounds, workout.tags);
+  const source = workout.source;
+  const creatorUrl = source ? profileUrl(source.platform, source.posterHandle) : null;
 
   return (
     <>
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {header}
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {editing ? (
-            <TextInput
-              style={[styles.title, styles.titleInput]}
-              value={draft!.name}
-              onChangeText={(name) => patch({ name })}
-              placeholder="Workout name"
-              placeholderTextColor={colors.mutedForeground}
-            />
-          ) : (
-            <Text style={styles.title}>{workout.name}</Text>
-          )}
-          <Text style={[styles.headline, completion && styles.headlineTight]}>
-            {formatWorkoutHeadline(shownItems.length + pendingItems.length, shownRounds, workout.tags)}
-          </Text>
-          {/* What you have done with it, in the same words the card uses. A
-              workout never trained says nothing here rather than "0 times":
-              the screen's job is to get you to do it, not to score you. */}
-          {completion && (
-            <View style={styles.histLine}>
-              <Check
-                size={14}
-                strokeWidth={2.4}
-                color={completionStale ? colors.mutedForeground : colors.primary}
-              />
-              <Text style={[styles.histCount, completionStale && styles.histCountStale]}>
-                Completed {completion.count}×
-              </Text>
-              {lastCompletedLabel && (
-                <Text style={styles.histWhen}>· {lastCompletedLabel}</Text>
-              )}
-            </View>
-          )}
-
-          {workout.source?.thumbnailUrl && (
-            <Image source={{ uri: workout.source.thumbnailUrl }} style={styles.hero} />
-          )}
-
-          {/* What this workout IS, in a sentence — written at capture from
-              the post, not lifted out of it. The caption itself is one tap
-              away on the source link, and its prescription lines are already
-              below as the protocol; repeating either here would just be the
-              same words twice. */}
+        <ScrollView
+          contentContainerStyle={editing ? styles.scroll : styles.scrollRead}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Name and description are one editing pair, so they are one
+              branch: editing gets the two fields back to back, reading gets
+              the hero that carries the name over the post's own frame, and
+              the stat row under it. The description itself reads lower down,
+              with the role pills it belongs beside. */}
           {editing ? (
             <>
+              <TextInput
+                style={[styles.title, styles.titleInput]}
+                value={draft!.name}
+                onChangeText={(name) => patch({ name })}
+                placeholder="Workout name"
+                placeholderTextColor={colors.mutedForeground}
+              />
               <View style={styles.labelRow}>
                 <Text style={styles.fieldLabel}>Description</Text>
                 {!!workout.source?.captionText && (
@@ -665,9 +684,20 @@ export function CapturedWorkoutScreen() {
               />
             </>
           ) : (
-            shownDescription !== "" && (
-              <Text style={styles.description}>{shownDescription}</Text>
-            )
+            <>
+              <WorkoutHero
+                name={workout.name}
+                thumbnailUrl={source?.thumbnailUrl ?? null}
+                badge={banner?.badge ?? null}
+                platform={source?.platform ?? null}
+                handle={source?.posterHandle ?? null}
+                avatarUrl={creator?.avatarUrl ?? null}
+                avatarFetchedAt={creator?.fetchedAt ?? null}
+                onOpenPost={source?.thumbnailUrl && source.sourceUrl ? () => openUrl(source.sourceUrl) : null}
+                onOpenProfile={creatorUrl ? () => openUrl(creatorUrl) : null}
+              />
+              <WorkoutStatRow tags={workout.tags} onFilter={openFiltered} />
+            </>
           )}
 
           {/* What the recommender knows about this workout. Four states: the
@@ -676,31 +706,10 @@ export function CapturedWorkoutScreen() {
               action while editing an untagged one — you cannot hand-tag a
               workout the classifier has never seen, because the muscles the
               soreness gate reads only ever come from it. */}
-          {!editing && classified && (
-            <View style={styles.tagBlock}>
-              <Text style={styles.tagSummary}>
-                {[
-                  workout.tags.blockRoles.join(" · "),
-                  workout.tags.estMinutes === null
-                    ? null
-                    : `~${workout.tags.estMinutes} min`,
-                  workout.tags.intensity,
-                  workout.tags.skillLevel,
-                ]
-                  .filter(Boolean)
-                  .join("   ·   ")}
-              </Text>
-              {formatLine !== "" && (
-                <Text style={styles.tagSummary}>{formatLine}</Text>
-              )}
+          {!editing && classified && (formatMissing || gaps.length > 0) && (
+            <View style={styles.tagNotes}>
               {formatMissing && (
                 <Text style={styles.tagMuscles}>No format yet — edit to set how it runs.</Text>
-              )}
-              {primaryMuscles.length > 0 && (
-                <Text style={styles.tagMuscles}>
-                  Hits {primaryMuscles.join(", ")}
-                  {secondaryMuscles.length > 0 && ` (also ${secondaryMuscles.join(", ")})`}
-                </Text>
               )}
               {gaps.length > 0 && (
                 <Text style={styles.tagGap}>
@@ -712,7 +721,7 @@ export function CapturedWorkoutScreen() {
 
           {!editing && !classified && (
             <TouchableOpacity
-              style={styles.tagButton}
+              style={[styles.tagButton, styles.tagButtonRead]}
               onPress={tagForRecommender}
               disabled={tagging}
               activeOpacity={0.7}
@@ -899,8 +908,45 @@ export function CapturedWorkoutScreen() {
             </View>
           )}
 
+          {!editing && userId && (
+            <WorkoutHistoryBlock
+              userId={userId}
+              rows={history}
+              today={today}
+              onOpenSession={openSession}
+              onSeeAll={openAllSessions}
+            />
+          )}
+
+          {!editing && (workout.tags.blockRoles.length > 0 || shownDescription !== "" || shownNotes !== "") && (
+            <View style={styles.readSection}>
+              <RolePills roles={workout.tags.blockRoles} onFilter={openFiltered} />
+              {shownDescription !== "" && <Text style={styles.description}>{shownDescription}</Text>}
+              {shownNotes !== "" && (
+                <>
+                  <Text style={styles.sectionLabel}>Your notes</Text>
+                  <Text style={styles.protocol}>{shownNotes}</Text>
+                </>
+              )}
+            </View>
+          )}
+
+          {!editing && <HitsSection muscles={workout.tags.muscles} onFilter={openFiltered} />}
+          {!editing && (
+            <NeedsSection
+              equipment={workout.derivedEquipment}
+              isBodyweight={workout.isBodyweight}
+              onFilter={openFiltered}
+            />
+          )}
+
+          {!editing && (
+            <View style={[styles.listSection, styles.listTop]}>
+              <FormatBand banner={banner} movementCount={shownItems.length + pendingItems.length} />
+            </View>
+          )}
+
           {shownItems.map((item, i) => {
-            const prescription = formatWorkoutItem(item);
             if (editing) {
               return (
                 <View key={`${item.exerciseId}-${i}`} style={styles.editRow}>
@@ -986,31 +1032,16 @@ export function CapturedWorkoutScreen() {
               );
             }
             return (
-              <TouchableOpacity
-                key={`${item.exerciseId}-${i}`}
-                style={styles.row}
-                activeOpacity={0.7}
-                disabled={!item.exerciseId}
-                onPress={() =>
-                  router.push(`/(tabs)/training/exercise/${item.exerciseId}` as never)
-                }
-                accessibilityRole="button"
-                accessibilityLabel={`${item.name}. Open the exercise.`}
-              >
-                <Text style={styles.index}>{i + 1}</Text>
-                <View style={styles.rowBody}>
-                  <Text style={styles.movement}>{item.name}</Text>
-                  {/* Silence beats invention: when the creator prescribed
-                      nothing, the movement stands on its own. */}
-                  {prescription !== "" && (
-                    <Text style={styles.prescription}>{prescription}</Text>
-                  )}
-                  {item.notes && <Text style={styles.notes}>{item.notes}</Text>}
-                </View>
-                {!!item.exerciseId && (
-                  <ChevronRight size={18} color={colors.mutedForeground} />
-                )}
-              </TouchableOpacity>
+              <View key={`${item.exerciseId}-${i}`} style={styles.listSection}>
+                <MovementRow
+                  index={i + 1}
+                  item={item}
+                  last={i === shownItems.length - 1 && pendingItems.length === 0}
+                  onPress={() =>
+                    router.push(`/(tabs)/training/exercise/${item.exerciseId}` as never)
+                  }
+                />
+              </View>
             );
           })}
 
@@ -1021,7 +1052,7 @@ export function CapturedWorkoutScreen() {
           {pendingItems.map((item, i) => {
             const prescription = formatWorkoutItem(item);
             return (
-              <View key={item.reviewId + String(i)} style={styles.row}>
+              <View key={item.reviewId + String(i)} style={[styles.row, styles.rowGutter]}>
                 <Text style={styles.index}>{shownItems.length + i + 1}</Text>
                 <View style={styles.rowBody}>
                   <Text style={styles.movement}>{item.name}</Text>
@@ -1058,15 +1089,9 @@ export function CapturedWorkoutScreen() {
                 placeholderTextColor={colors.mutedForeground}
               />
             </>
-          ) : (
-            shownRounds && (
-              <Text style={styles.repeat}>
-                Repeat the whole list {shownRounds} times.
-              </Text>
-            )
-          )}
+          ) : null}
 
-          {editing ? (
+          {editing && (
             <>
               <Text style={styles.fieldLabel}>Your notes</Text>
               <TextInput
@@ -1078,70 +1103,49 @@ export function CapturedWorkoutScreen() {
                 placeholderTextColor={colors.mutedForeground}
               />
             </>
-          ) : (
-            shownNotes !== "" && (
-              <>
-                <Text style={styles.sectionLabel}>Your notes</Text>
-                <Text style={styles.protocol}>{shownNotes}</Text>
-              </>
-            )
           )}
 
           {/* The creator's own prescription lines, verbatim. The description
               above says what the workout is; this says what they wrote, and
               seeing it is how you tell a bad parse from a bad post. */}
           {!editing && workout.rawProtocol && (
-            <>
-              <Text style={styles.sectionLabel}>As the creator wrote it</Text>
-              <Text style={styles.protocol}>{workout.rawProtocol}</Text>
-            </>
+            <View style={styles.listSection}>
+              <CreatorProtocolRow text={workout.rawProtocol} />
+            </View>
           )}
 
-          {!editing && workout.source && (
-            <TouchableOpacity
-              style={styles.sourceRow}
-              onPress={() => Linking.openURL(workout.source!.sourceUrl)}
-              activeOpacity={0.7}
-            >
-              {/* Avatar · handle · link glyph. 20pt, not the glyph's 15: a
-                  face is unreadable that small (spec §7.4). */}
-              {workout.source.posterHandle && (
-                <CreatorAvatar
-                  handle={workout.source.posterHandle}
-                  url={creator?.avatarUrl ?? null}
-                  fetchedAt={creator?.fetchedAt ?? null}
-                  size={20}
+          {/* The last things on the page, scrolling with it: you read the
+              workout, and starting it — or placing it on a day — is what you
+              do at the end. Not while editing — you're changing the workout,
+              not starting it. A workout with no movements has nothing to log. */}
+          {!editing && shownItems.length > 0 && (
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={styles.startButton}
+                onPress={() => setModeSheetOpen(true)}
+                disabled={starting}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Start ${workout.name} as today's session`}
+              >
+                {starting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Play size={18} color="#FFFFFF" />
+                )}
+                <Text style={styles.startText}>
+                  {starting ? "Starting…" : "Start Workout"}
+                </Text>
+              </TouchableOpacity>
+              {userId && (
+                <AddToDayButton
+                  userId={userId}
+                  workoutId={workout.workoutId}
+                  workoutName={workout.name}
+                  onAddedToday={openToday}
                 />
               )}
-              <Text style={styles.sourceText}>
-                {workout.source.posterHandle ?? workout.source.platform}
-              </Text>
-              <ExternalLink size={15} color={colors.primary} />
-            </TouchableOpacity>
-          )}
-
-          {/* The last thing on the page, scrolling with it: you read the
-              workout, and starting it is what you do at the end. Not while
-              editing — you're changing the workout, not starting it. A workout
-              with no movements has nothing to log. */}
-          {!editing && shownItems.length > 0 && (
-            <TouchableOpacity
-              style={styles.startButton}
-              onPress={() => setModeSheetOpen(true)}
-              disabled={starting}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={`Start ${workout.name} as today's session`}
-            >
-              {starting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Play size={18} color="#FFFFFF" />
-              )}
-              <Text style={styles.startText}>
-                {starting ? "Starting…" : "Start Workout"}
-              </Text>
-            </TouchableOpacity>
+            </View>
           )}
         </ScrollView>
 
@@ -1181,6 +1185,9 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   missing: { fontSize: 15, color: colors.mutedForeground, textAlign: "center" },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
+  // The read view is full-bleed (hero, stat row); sections carry their own gutters.
+  scrollRead: { paddingBottom: 40 },
+  actions: { paddingHorizontal: spacing.lg },
   startButton: {
     flexDirection: "row", gap: 8, marginTop: 28,
     backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14,
@@ -1192,17 +1199,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.input, borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 8,
   },
-  headline: { fontSize: 14, color: colors.primary, marginTop: 4, marginBottom: 16 },
-  // The history line belongs to the headline, so the headline gives up its
-  // gap when one is present and the pair breathes as a unit.
-  headlineTight: { marginBottom: 6 },
-  histLine: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 16 },
-  histCount: { fontSize: 14, fontWeight: "600", color: colors.primary },
-  histCountStale: { color: colors.mutedForeground, fontWeight: "400" },
-  histWhen: { fontSize: 14, color: colors.mutedForeground },
-  hero: { width: "100%", height: 180, borderRadius: 12, marginBottom: 16 },
+  readSection: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  // The list and everything under it share one gutter; only the band carries the top gap.
+  listSection: { paddingHorizontal: spacing.lg },
+  listTop: { paddingTop: spacing.lg },
   description: {
-    fontSize: 15, color: colors.foreground, lineHeight: 22, marginBottom: 16,
+    fontSize: 15, color: colors.foreground, lineHeight: 22, marginBottom: 0,
   },
   fieldLabel: {
     fontSize: 12, color: colors.mutedForeground, marginTop: 16, marginBottom: 6,
@@ -1222,6 +1224,7 @@ const styles = StyleSheet.create({
   small: { width: 68 },
   grow: { flex: 1, marginTop: 8 },
   row: { flexDirection: "row", gap: 12, paddingVertical: 10, alignItems: "center" },
+  rowGutter: { paddingHorizontal: spacing.lg },
   editRow: {
     borderWidth: 1, borderColor: colors.border, borderRadius: 10,
     padding: 12, marginTop: 12,
@@ -1234,16 +1237,11 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1 },
   movement: { fontSize: 16, fontWeight: "600", color: colors.foreground, flex: 1 },
   prescription: { fontSize: 14, color: colors.mutedForeground, marginTop: 2 },
-  notes: { fontSize: 13, color: colors.mutedForeground, marginTop: 4, fontStyle: "italic" },
   pendingNote: { fontSize: 12, color: colors.destructive, marginTop: 3 },
   addRow: {
     flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16,
   },
   addText: { fontSize: 15, color: colors.primary, fontWeight: "600" },
-  repeat: {
-    fontSize: 14, color: colors.foreground, marginTop: 12, marginBottom: 4,
-    fontWeight: "600",
-  },
   sectionLabel: {
     fontSize: 12, color: colors.mutedForeground, marginTop: 20, marginBottom: 6,
     textTransform: "uppercase",
@@ -1252,12 +1250,12 @@ const styles = StyleSheet.create({
     fontSize: 13, color: colors.mutedForeground, lineHeight: 19,
     backgroundColor: colors.input, borderRadius: 8, padding: 12,
   },
-  sourceRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 24 },
-  sourceText: { fontSize: 14, color: colors.primary },
   // Recommender tags. The pill family matches CaptureReviewSheet's, the other
   // place in this folder where the same kind of choice is made.
   tagBlock: { marginBottom: 16 },
-  tagSummary: { fontSize: 13, color: colors.mutedForeground },
+  // The read view's leftover tag prose: it sits outside every section, so it
+  // brings its own gutter rather than borrowing the editor's.
+  tagNotes: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   tagMuscles: { fontSize: 13, color: colors.mutedForeground, marginTop: 4 },
   tagGap: { fontSize: 13, color: colors.destructive, marginTop: 6, lineHeight: 18 },
   tagHint: {
@@ -1267,6 +1265,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start", borderWidth: 1, borderColor: colors.primary,
     borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16,
   },
+  tagButtonRead: { marginLeft: spacing.lg, marginTop: spacing.md },
   tagButtonText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
