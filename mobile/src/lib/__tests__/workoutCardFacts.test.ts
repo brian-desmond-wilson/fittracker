@@ -73,8 +73,8 @@ describe("workoutCardFacts — muscles, format, roles", () => {
     expect(workoutCardFacts({ ...base, tags: tags({ format: "for_time", formatMinutes: null }) }).formatTag).toBe("For time");
   });
 
-  it("no format tag for plain sets-and-reps or an unclassified format", () => {
-    expect(workoutCardFacts({ ...base, tags: tags({ format: "sets_reps" }) }).formatTag).toBeNull();
+  it("sets-and-reps gets a tag; an unclassified workout does not", () => {
+    expect(workoutCardFacts({ ...base, tags: tags({ format: "sets_reps" }) }).formatTag).toBe("Sets & reps");
     expect(workoutCardFacts({ ...base, tags: tags({ format: null }) }).formatTag).toBeNull();
   });
 

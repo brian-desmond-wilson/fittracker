@@ -29,8 +29,8 @@ export interface WorkoutCardFacts {
   secondaryMuscles: string[];
   skillLevel: string | null;
   /** Short overlay for the thumbnail, with minutes when the format has them:
-   *  "AMRAP 15", "EMOM", "For time". Null for plain sets-and-reps and for an
-   *  unclassified format — nothing to say. */
+   *  "AMRAP 15", "EMOM", "Sets & reps". Every classified format gets one;
+   *  null only for an unclassified workout — nothing to say. */
   formatTag: string | null;
   /** How many movements the workout has — the one number worth keeping from the
    *  old headline once that line is gone. */
@@ -58,10 +58,7 @@ export function workoutCardFacts(entry: CapturedWorkoutEntry): WorkoutCardFacts 
 
   const fmt = entry.tags.format;
   const min = entry.tags.formatMinutes;
-  const formatTag =
-    fmt && fmt !== "sets_reps"
-      ? FORMAT_LABELS[fmt] + (min ? ` ${min}` : "")
-      : null;
+  const formatTag = fmt ? FORMAT_LABELS[fmt] + (min ? ` ${min}` : "") : null;
 
   return {
     equipment,
