@@ -3,6 +3,7 @@ import {
   scoreSessionRows, parseClock, scoreFromRow, rowFromScore, isChartable,
 } from "../workoutScore";
 import type { Score, ScoredSession } from "../workoutScore";
+import { splitDuration } from "../setTiming";
 
 const rr = (rounds: number, reps: number): Score => ({ type: "rounds_reps", rounds, reps });
 const t = (seconds: number, capped = false): Score => ({ type: "time", seconds, capped });
@@ -141,6 +142,13 @@ describe("parseClock", () => {
     expect(parseClock("0", "0")).toBeNull();
     expect(parseClock("ab", "cd")).toBeNull();
     expect(parseClock("1", "75")).toBe(135);
+  });
+
+  it("round-trips with splitDuration — the prefill/save inverse the score sheet relies on", () => {
+    for (const seconds of [45, 60, 135, 754, 3661]) {
+      const { mins, secs } = splitDuration(seconds);
+      expect(parseClock(String(mins), String(secs))).toBe(seconds);
+    }
   });
 });
 
