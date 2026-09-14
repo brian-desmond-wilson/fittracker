@@ -27,6 +27,7 @@ import { computeRecords, recordsBySession } from "@/src/lib/personalRecords";
 import { periodRange } from "@/src/lib/statsPeriod";
 import { GROUP_COLORS } from "./groupColors";
 import { SessionRow } from "./SessionRow";
+import { SwipeableSessionRow } from "./SwipeableSessionRow";
 import { HistoryCalendar } from "./HistoryCalendar";
 import { WeekStrip } from "./WeekStrip";
 import { HeroHeader } from "./HeroHeader";
@@ -278,12 +279,13 @@ export function GymSessionsScreen({
               )}
               {view === "history" &&
                 listSessions.map((session) => (
-                  <SessionRow
+                  <SwipeableSessionRow
                     key={session.id}
                     session={session}
                     today={today}
                     prCount={prCounts.get(session.id) ?? 0}
                     onPress={() => open(session)}
+                    onDeleted={load}
                   />
                 ))}
               {view === "history" && scopeActive && listSessions.length === 0 && (
