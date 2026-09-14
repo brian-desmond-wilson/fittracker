@@ -6,7 +6,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react-native";
-import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
+import { colors, radii, spacing, tint } from "@/src/theme/tokens";
+import { historyStyles as h } from "./historyStyles";
 import {
   bestSet, formatSet, formatShortDate, lastDonePhrase, sessionCount, sessionRows,
   trendBars, trendDirection, TREND_LABELS,
@@ -65,37 +66,37 @@ export function HistoryBlock({
   const DirectionIcon = direction === "up" ? TrendingUp : direction === "down" ? TrendingDown : Minus;
 
   return (
-    <View style={styles.section}>
-      <View style={styles.headerRow}>
-        <Text style={styles.sectionTitle}>Your history</Text>
-        <View style={styles.seg} accessibilityRole="tablist">
+    <View style={h.section}>
+      <View style={h.headerRow}>
+        <Text style={h.sectionTitle}>Your history</Text>
+        <View style={h.seg} accessibilityRole="tablist">
           {(["trend", "sessions"] as HistoryView[]).map((v) => {
             const on = v === view;
             return (
-              <TouchableOpacity key={v} style={[styles.segItem, on && styles.segItemOn]} onPress={() => pick(v)}
+              <TouchableOpacity key={v} style={[h.segItem, on && h.segItemOn]} onPress={() => pick(v)}
                 accessibilityRole="tab" accessibilityState={{ selected: on }}>
-                <Text style={[styles.segText, on && styles.segTextOn]}>{v === "trend" ? "Trend" : "Sessions"}</Text>
+                <Text style={[h.segText, on && h.segTextOn]}>{v === "trend" ? "Trend" : "Sessions"}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
       </View>
 
-      <View style={styles.card}>
+      <View style={h.card}>
         {view === "trend" ? (
           <>
-            <View style={styles.stats}>
-              <View style={styles.stat}>
-                <Text style={styles.statLabel}>Last done</Text>
-                <Text style={styles.statValue} numberOfLines={1}>{lastDonePhrase(today, lastDate)}</Text>
+            <View style={h.stats}>
+              <View style={h.stat}>
+                <Text style={h.statLabel}>Last done</Text>
+                <Text style={h.statValue} numberOfLines={1}>{lastDonePhrase(today, lastDate)}</Text>
               </View>
-              <View style={styles.stat}>
-                <Text style={styles.statLabel}>Best set</Text>
-                <Text style={styles.statValue} numberOfLines={1}>{formatSet(best)}</Text>
+              <View style={h.stat}>
+                <Text style={h.statLabel}>Best set</Text>
+                <Text style={h.statValue} numberOfLines={1}>{formatSet(best)}</Text>
               </View>
-              <View style={styles.stat}>
-                <Text style={styles.statLabel}>Sessions</Text>
-                <Text style={styles.statValue} numberOfLines={1}>{count}</Text>
+              <View style={h.stat}>
+                <Text style={h.statLabel}>Sessions</Text>
+                <Text style={h.statValue} numberOfLines={1}>{count}</Text>
               </View>
             </View>
             <View style={styles.bars} accessible={true} accessibilityLabel={`Top set over the last ${bars.length} sessions`}>
@@ -109,8 +110,8 @@ export function HistoryBlock({
                 </View>
               ))}
             </View>
-            <View style={styles.captionRow}>
-              <Text style={styles.caption}>Top set, last {bars.length} sessions</Text>
+            <View style={h.captionRow}>
+              <Text style={h.caption}>Top set, last {bars.length} sessions</Text>
               {direction !== null && (
                 <View style={styles.direction}>
                   <DirectionIcon size={13} color={direction === "down" ? colors.warning : colors.brand} />
@@ -124,12 +125,12 @@ export function HistoryBlock({
         ) : (
           <View>
             {rows.slice(0, SESSION_ROWS).map((r, i) => (
-              <TouchableOpacity key={r.sessionId} style={[styles.row, i > 0 && styles.rowBorder]}
+              <TouchableOpacity key={r.sessionId} style={[h.row, i > 0 && h.rowBorder]}
                 onPress={() => onOpenSession(r.sessionId)} accessibilityRole="button"
                 accessibilityLabel={`${formatShortDate(r.sessionDate, today)}, ${r.sessionName}, ${formatSet(r.topSet)}${r.isPr ? ", personal record" : ""}`}>
-                <Text style={styles.rowDate}>{formatShortDate(r.sessionDate, today)}</Text>
-                <Text style={styles.rowName} numberOfLines={1}>· {r.sessionName}</Text>
-                <Text style={styles.rowSet}>{formatSet(r.topSet)}</Text>
+                <Text style={h.rowDate}>{formatShortDate(r.sessionDate, today)}</Text>
+                <Text style={h.rowName} numberOfLines={1}>· {r.sessionName}</Text>
+                <Text style={h.rowSet}>{formatSet(r.topSet)}</Text>
                 {r.isPr && (
                   <View style={styles.pr}><Text style={styles.prText}>PR</Text></View>
                 )}
@@ -145,14 +146,14 @@ export function HistoryBlock({
             </Text>
             <TouchableOpacity onPress={onRerate} accessibilityRole="button" accessibilityLabel="Re-rate this exercise"
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.link}>Re-rate</Text>
+              <Text style={h.link}>Re-rate</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
-      <TouchableOpacity style={styles.seeAll} onPress={onSeeAll} accessibilityRole="button">
-        <Text style={styles.link}>See all {count} {count === 1 ? "session" : "sessions"}</Text>
+      <TouchableOpacity style={h.seeAll} onPress={onSeeAll} accessibilityRole="button">
+        <Text style={h.link}>See all {count} {count === 1 ? "session" : "sessions"}</Text>
         <ChevronRight size={16} color={colors.brand} />
       </TouchableOpacity>
     </View>
@@ -160,33 +161,13 @@ export function HistoryBlock({
 }
 
 const styles = StyleSheet.create({
-  section: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
-  sectionTitle: { fontSize: 18, fontWeight: "600", color: colors.text },
-  seg: { flexDirection: "row", backgroundColor: colors.surface2, borderRadius: radii.control, padding: 2 },
-  segItem: { paddingHorizontal: spacing.md, paddingVertical: 5, borderRadius: radii.control - 2 },
-  segItemOn: { backgroundColor: colors.brand },
-  segText: { fontSize: 12, fontWeight: "600", color: colors.textMuted },
-  segTextOn: { color: colors.onBrand },
-  card: { backgroundColor: colors.surface, borderRadius: radii.row, borderWidth: 1, borderColor: colors.border, padding: spacing.lg },
-  stats: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.lg },
-  stat: { flex: 1 },
-  statLabel: { ...typography.caption, textTransform: "uppercase", letterSpacing: 0.5, fontSize: 11, marginBottom: 2 },
-  statValue: { fontSize: 16, fontWeight: "700", color: colors.text },
   bars: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, height: BAR_MAX_HEIGHT },
   barSlot: { flex: 1, justifyContent: "flex-end" },
   bar: { backgroundColor: tint(colors.brand, 0.35), borderRadius: 3 },
   barBest: { backgroundColor: colors.brand },
-  captionRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
-  caption: { ...typography.caption },
   direction: { flexDirection: "row", alignItems: "center", gap: 4 },
   directionText: { fontSize: 12, fontWeight: "600", color: colors.brand },
   directionDown: { color: colors.warning },
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm },
-  rowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
-  rowDate: { fontSize: 14, fontWeight: "600", color: colors.text },
-  rowName: { flex: 1, fontSize: 14, color: colors.textMuted },
-  rowSet: { fontSize: 14, fontWeight: "600", color: colors.text },
   pr: { backgroundColor: tint(colors.success), borderRadius: radii.control, paddingHorizontal: 6, paddingVertical: 2 },
   prText: { fontSize: 10, fontWeight: "700", color: colors.success, letterSpacing: 0.5 },
   footer: {
@@ -195,6 +176,4 @@ const styles = StyleSheet.create({
   },
   footerText: { flex: 1, fontSize: 13, color: colors.textMuted },
   footerStrong: { fontWeight: "700", color: colors.text },
-  link: { fontSize: 14, fontWeight: "600", color: colors.brand },
-  seeAll: { flexDirection: "row", alignItems: "center", gap: 2, paddingTop: spacing.md, alignSelf: "flex-start" },
 });
