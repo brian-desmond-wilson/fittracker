@@ -1,13 +1,13 @@
 // One session, in full: what you lifted, for how long, and where it came from.
 import React, { useCallback, useState } from "react";
 import {
-  ActivityIndicator, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
-import { fetchWorkoutSession } from "@/src/lib/supabase/gymSessions";
+import { fetchWorkoutSession, deleteGymSession } from "@/src/lib/supabase/gymSessions";
 import { formatSetDuration } from "@/src/lib/setTiming";
 import {
   formatMinutes, formatVolume, GROUP_LABELS, sessionEmphasis, sessionMinutes,
@@ -28,6 +28,33 @@ export function SessionDetailScreen({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [session, setSession] = useState<HistorySession | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = () => {
+    if (!session || deleting) return;
+    const title = sessionTitle(session);
+    Alert.alert(
+      "Delete this session?",
+      `This removes ${title} from your history for good — its score, notes, and sets. This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            const result = await deleteGymSession(session);
+            setDeleting(false);
+            if (result.ok) {
+              onClose();
+            } else {
+              Alert.alert("Couldn't delete it", "Something went wrong. Try again.");
+            }
+          },
+        },
+      ],
+    );
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -50,6 +77,18 @@ export function SessionDetailScreen({ onClose }: { onClose: () => void }) {
         <ChevronLeft size={24} color={colors.foreground} />
         <Text style={styles.backText}>Gym Sessions</Text>
       </TouchableOpacity>
+      {session && (
+        <TouchableOpacity
+          onPress={confirmDelete}
+          style={styles.delete}
+          disabled={deleting}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Delete this session"
+        >
+          <Trash2 size={22} color={deleting ? colors.mutedForeground : colors.destructive} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -182,8 +221,9 @@ export function SessionDetailScreen({ onClose }: { onClose: () => void }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 8 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 8, paddingVertical: 8 },
   back: { flexDirection: "row", alignItems: "center", height: 40, paddingHorizontal: 8 },
+  delete: { height: 40, justifyContent: "center", paddingHorizontal: 12 },
   backText: { fontSize: 16, color: colors.foreground },
   content: { paddingHorizontal: 20, paddingBottom: 40 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
