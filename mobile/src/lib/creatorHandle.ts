@@ -44,6 +44,17 @@ export function avatarUri(url: string | null, fetchedAt: string | null): string 
   return Number.isFinite(t) ? `${url}?v=${t}` : url;
 }
 
+/** Where the creator lives on their platform. Built from the handle — the
+ *  creators table stores an avatar, not a profile link. Null for a platform
+ *  we cannot address or a handle that is not one (spec 2026-09-13 §5.4). */
+export function profileUrl(platform: string, handle: string | null): string | null {
+  const h = normaliseHandle(handle ?? "");
+  if (!h) return null;
+  if (platform === "instagram") return `https://www.instagram.com/${h}/`;
+  if (platform === "tiktok") return `https://www.tiktok.com/@${h}`;
+  return null;
+}
+
 const decodeEntities = (s: string): string =>
   s.replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">");
