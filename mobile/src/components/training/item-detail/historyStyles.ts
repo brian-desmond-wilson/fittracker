@@ -5,7 +5,9 @@
 // What is specific to one block (bars, direction, PR badge, skill footer)
 // stays in that block.
 import { StyleSheet } from "react-native";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
+
+export const BAR_MAX_HEIGHT = 56;
 
 export const historyStyles = StyleSheet.create({
   section: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -31,4 +33,13 @@ export const historyStyles = StyleSheet.create({
   rowSet: { fontSize: 14, fontWeight: "600", color: colors.text },
   link: { fontSize: 14, fontWeight: "600", color: colors.brand },
   seeAll: { flexDirection: "row", alignItems: "center", gap: 2, paddingTop: spacing.md, alignSelf: "flex-start" },
+  bars: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, height: BAR_MAX_HEIGHT },
+  barSlot: { flex: 1, justifyContent: "flex-end" },
+  bar: { backgroundColor: tint(colors.brand, 0.35), borderRadius: 3 },
+  barBest: { backgroundColor: colors.brand },
+  direction: { flexDirection: "row", alignItems: "center", gap: 4 },
+  directionText: { fontSize: 12, fontWeight: "600", color: colors.brand },
+  directionDown: { color: colors.warning },
+  pr: { backgroundColor: tint(colors.success), borderRadius: radii.control, paddingHorizontal: 6, paddingVertical: 2 },
+  prText: { fontSize: 10, fontWeight: "700", color: colors.success, letterSpacing: 0.5 },
 });

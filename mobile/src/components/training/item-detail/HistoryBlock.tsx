@@ -6,8 +6,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react-native";
-import { colors, radii, spacing, tint } from "@/src/theme/tokens";
-import { historyStyles as h } from "./historyStyles";
+import { colors, spacing } from "@/src/theme/tokens";
+import { historyStyles as h, BAR_MAX_HEIGHT } from "./historyStyles";
 import {
   bestSet, formatSet, formatShortDate, lastDonePhrase, sessionCount, sessionRows,
   trendBars, trendDirection, TREND_LABELS,
@@ -26,7 +26,6 @@ const RATING_WORDS: Record<MovementRating, string> = {
 
 /** At most this many rows in the Sessions view (spec §4.2). */
 const SESSION_ROWS = 4;
-const BAR_MAX_HEIGHT = 56;
 
 interface HistoryBlockProps {
   userId: string;
@@ -99,13 +98,13 @@ export function HistoryBlock({
                 <Text style={h.statValue} numberOfLines={1}>{count}</Text>
               </View>
             </View>
-            <View style={styles.bars} accessible={true} accessibilityLabel={`Top set over the last ${bars.length} sessions`}>
+            <View style={h.bars} accessible={true} accessibilityLabel={`Top set over the last ${bars.length} sessions`}>
               {bars.map((b) => (
-                <View key={b.sessionId} style={styles.barSlot}>
+                <View key={b.sessionId} style={h.barSlot}>
                   <View style={[
-                    styles.bar,
+                    h.bar,
                     { height: Math.max(4, Math.round(b.height * BAR_MAX_HEIGHT)) },
-                    b.best && styles.barBest,
+                    b.best && h.barBest,
                   ]} />
                 </View>
               ))}
@@ -113,9 +112,9 @@ export function HistoryBlock({
             <View style={h.captionRow}>
               <Text style={h.caption}>Top set, last {bars.length} sessions</Text>
               {direction !== null && (
-                <View style={styles.direction}>
+                <View style={h.direction}>
                   <DirectionIcon size={13} color={direction === "down" ? colors.warning : colors.brand} />
-                  <Text style={[styles.directionText, direction === "down" && styles.directionDown]}>
+                  <Text style={[h.directionText, direction === "down" && h.directionDown]}>
                     {TREND_LABELS[direction]}
                   </Text>
                 </View>
@@ -132,7 +131,7 @@ export function HistoryBlock({
                 <Text style={h.rowName} numberOfLines={1}>· {r.sessionName}</Text>
                 <Text style={h.rowSet}>{formatSet(r.topSet)}</Text>
                 {r.isPr && (
-                  <View style={styles.pr}><Text style={styles.prText}>PR</Text></View>
+                  <View style={h.pr}><Text style={h.prText}>PR</Text></View>
                 )}
               </TouchableOpacity>
             ))}
@@ -161,15 +160,6 @@ export function HistoryBlock({
 }
 
 const styles = StyleSheet.create({
-  bars: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, height: BAR_MAX_HEIGHT },
-  barSlot: { flex: 1, justifyContent: "flex-end" },
-  bar: { backgroundColor: tint(colors.brand, 0.35), borderRadius: 3 },
-  barBest: { backgroundColor: colors.brand },
-  direction: { flexDirection: "row", alignItems: "center", gap: 4 },
-  directionText: { fontSize: 12, fontWeight: "600", color: colors.brand },
-  directionDown: { color: colors.warning },
-  pr: { backgroundColor: tint(colors.success), borderRadius: radii.control, paddingHorizontal: 6, paddingVertical: 2 },
-  prText: { fontSize: 10, fontWeight: "700", color: colors.success, letterSpacing: 0.5 },
   footer: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm,
     marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border,
