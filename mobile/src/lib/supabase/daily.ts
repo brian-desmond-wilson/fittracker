@@ -1010,11 +1010,13 @@ export async function acceptSession(sessionId: string, workoutInstanceId: string
   if (error) console.error("acceptSession failed:", error);
 }
 
-/** Called on finish: stamp the outcome and backfill suggested-vs-performed. */
+/** Called on finish: stamp the outcome and backfill suggested-vs-performed.
+ *  Returns true when the session was stamped completed; false when it
+ *  declined (false start) or the stamp failed. */
 export async function completeSession(
   sessionId: string,
   performedExerciseIds: string[],
-): Promise<void> {
+): Promise<boolean> {
   const performed = new Set(performedExerciseIds);
   // The session row comes first now: the false-start check below needs the
   // workout instance before anything is allowed to write.
@@ -1028,7 +1030,7 @@ export async function completeSession(
     .maybeSingle();
   if (readError || !sess) {
     console.error("completeSession session read failed:", readError ?? "no row");
-    return;
+    return false;
   }
   const { data: items, error } = await supabase
     .from("generated_session_items")
@@ -1036,7 +1038,7 @@ export async function completeSession(
     .eq("session_id", sessionId);
   if (error) {
     console.error("completeSession read failed:", error);
-    return;
+    return false;
   }
 
   // A finish with nothing logged is a false start, not history — the same
@@ -1054,7 +1056,7 @@ export async function completeSession(
       .eq("workout_instance_id", sess.workout_instance_id);
     if (setsError) {
       console.error("completeSession sets read failed:", setsError);
-      return;
+      return false;
     }
     const setCount = (logged ?? []).reduce(
       (sum, ei: any) => sum + ((ei.sets ?? []) as any[]).length, 0,
@@ -1064,7 +1066,7 @@ export async function completeSession(
         "completeSession: nothing logged — session stays open, no ledger write",
         sessionId,
       );
-      return;
+      return false;
     }
   }
 
@@ -1084,7 +1086,7 @@ export async function completeSession(
     // ledger either — coverage would then steer tomorrow away from muscles a
     // retried completion has yet to claim.
     console.error("completeSession status failed:", sessError);
-    return;
+    return false;
   }
 
   // The ledger records what actually ran — composed blocks and workouts served
@@ -1101,7 +1103,7 @@ export async function completeSession(
   if (entries.length === 0 && sess.served_captured_workout_id) {
     entries.push({ capturedWorkoutId: sess.served_captured_workout_id, block: "main" });
   }
-  if (entries.length === 0) return;
+  if (entries.length === 0) return false;
   const ids = [...new Set(entries.map((e) => e.capturedWorkoutId))];
   const { data: muscleRows, error: muscleError } = await supabase
     .from("captured_workout_muscles")
@@ -1116,7 +1118,7 @@ export async function completeSession(
     // while hitting nothing. A missing row is the same day read as untrained,
     // which at least errs toward more recovery rather than less.
     console.error("completeSession: ledger skipped, muscle read failed:", muscleError);
-    return;
+    return false;
   }
   const musclesByWorkout = new Map<string, { name: string; isPrimary: boolean }[]>();
   for (const m of (muscleRows ?? []) as any[]) {
@@ -1142,6 +1144,7 @@ export async function completeSession(
   if (!ledgerWritten) {
     console.error("completeSession: ledger write failed for session", sessionId);
   }
+  return true;
 }
 
 /**
