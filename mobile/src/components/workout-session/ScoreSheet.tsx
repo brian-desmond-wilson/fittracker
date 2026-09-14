@@ -95,8 +95,18 @@ export function ScoreSheet({
     if (on && capMinutes !== null) {
       setClock({ mins: String(capMinutes), secs: "0" });
     } else if (!on) {
-      const d = splitDuration(elapsedSeconds ?? 0);
-      setClock(elapsedSeconds ? { mins: String(d.mins), secs: String(d.secs) } : { mins: "", secs: "" });
+      // Restore what the sheet would show uncapped: the score being edited
+      // (workout-page edit has no live clock), else the live elapsed time,
+      // else blank.
+      const restoreSeconds = existing && existing.type === "time" && !existing.capped
+        ? existing.seconds
+        : elapsedSeconds ?? null;
+      if (restoreSeconds && restoreSeconds > 0) {
+        const d = splitDuration(restoreSeconds);
+        setClock({ mins: String(d.mins), secs: String(d.secs) });
+      } else {
+        setClock({ mins: "", secs: "" });
+      }
     }
   };
 
