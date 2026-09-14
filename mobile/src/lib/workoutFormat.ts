@@ -96,3 +96,55 @@ export function formatWorkoutHeadline(
   const rest = describeFormat(rounds, shape);
   return rest === null ? movements : `${movements} · ${rest}`;
 }
+
+/** The workout page's format, in two registers: the badge on the hero and
+ *  the band over the list (uppercase, the component letter-spaces it), and a
+ *  plain-English gloss under the band so AMRAP / EMOM / chipper explain
+ *  themselves. One function, two callers, so they can never disagree.
+ *  Spec 2026-09-13 §5.2. */
+export interface FormatBanner {
+  badge: string;
+  gloss: string;
+}
+
+const ROUNDS_UPPER = (rounds: string): string => `${rounds} ROUND${rounds === "1" ? "" : "S"}`;
+const TIMES = (rounds: string): string => `${rounds} time${rounds === "1" ? "" : "s"}`;
+
+export function formatBanner(rounds: string | null, s: HeadlineShape): FormatBanner | null {
+  // Zero reads as unstated: no format is built on zero minutes.
+  const min = s.formatMinutes || null;
+  switch (s.format) {
+    case null:
+      return rounds
+        ? { badge: ROUNDS_UPPER(rounds), gloss: `Repeat the whole list ${TIMES(rounds)}` }
+        : null;
+    case "amrap":
+      return {
+        badge: min ? `AMRAP · ${min} MIN` : "AMRAP",
+        gloss: `As many rounds as possible${min ? ` in ${min} minutes` : ""}`,
+      };
+    case "emom":
+      return {
+        badge: min ? `EMOM · ${min} MIN` : "EMOM",
+        gloss: `Every minute on the minute${min ? ` for ${min} minutes` : ""}`,
+      };
+    case "for_time":
+      return rounds
+        ? { badge: `${ROUNDS_UPPER(rounds)} · FOR TIME`, gloss: `Repeat the whole list ${TIMES(rounds)}, as fast as you can` }
+        : { badge: "FOR TIME", gloss: `As fast as you can${min ? `, ${min} minute cap` : ""}` };
+    case "rounds":
+      return rounds
+        ? { badge: ROUNDS_UPPER(rounds), gloss: `Repeat the whole list ${TIMES(rounds)}` }
+        : { badge: "ROUNDS", gloss: "Repeat the whole list" };
+    case "intervals":
+      return { badge: min ? `INTERVALS · ${min} MIN` : "INTERVALS", gloss: "Work and rest on the clock" };
+    case "chipper":
+      return { badge: "CHIPPER", gloss: "Work through the list once, top to bottom" };
+    case "ladder":
+      return { badge: "LADDER", gloss: "Reps climb (or fall) each round" };
+    case "sets_reps":
+      return rounds
+        ? { badge: `SETS & REPS · ${ROUNDS_UPPER(rounds)}`, gloss: `Sets and reps, rest as needed; repeat the list ${TIMES(rounds)}` }
+        : { badge: "SETS & REPS", gloss: "Sets and reps, rest as needed" };
+  }
+}
