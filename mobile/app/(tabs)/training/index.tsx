@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -102,6 +102,21 @@ export default function Training() {
     setDailyTab("workouts");
     router.setParams({ workoutFilter: undefined });
   }, [workoutFilter, router]);
+  // A pending link is normally cleared by the tab that consumes it
+  // (onInitialFiltersConsumed below). But the params effects above set the
+  // tab AND the pending link in the same render, and if the reader switches
+  // tabs before that tab's own load finishes, its consumed-callback never
+  // fires — the link would sit there and apply itself on a later visit. So:
+  // clear it here too, the moment dailyTab moves away from its target tab.
+  // Tracked via a ref (not a dependency) so this never fires on the render
+  // that just navigated TO the target tab — only on navigating away from it.
+  const prevDailyTab = useRef(dailyTab);
+  useEffect(() => {
+    const prev = prevDailyTab.current;
+    if (prev === "exercises" && dailyTab !== "exercises") setPendingExerciseFilter(null);
+    if (prev === "workouts" && dailyTab !== "workouts") setPendingWorkoutFilter(null);
+    prevDailyTab.current = dailyTab;
+  }, [dailyTab]);
   // "Add to today" lands here: show Today, and remount it so it reloads the
   // day it was just handed (the tab loads on mount, not on focus).
   const [todayKey, setTodayKey] = useState(0);

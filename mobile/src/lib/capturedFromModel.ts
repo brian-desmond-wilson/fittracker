@@ -3,7 +3,7 @@
 // counts. Spec §4.8. Pure; the reader hands in CaptureSourceV2 rows.
 import type { CapturePlatform, CaptureSourceV2 } from "../types/capture";
 import { collapseByPost } from "./captureUrl";
-import { normaliseHandle } from "./creatorHandle";
+import { normaliseHandle, profileUrl } from "./creatorHandle";
 import { getLocalDateString } from "./dates";
 import { formatShortDate } from "./exerciseHistory";
 
@@ -117,11 +117,7 @@ export function countLine(c: SourceCounts): string {
 }
 
 /** The creator's public profile, for the external-link icon beside a handle
- *  (decision 6). Null when the platform has no profile page we know. */
-export function creatorProfileUrl(platform: CapturePlatform, rawHandle: string): string | null {
-  const handle = normaliseHandle(rawHandle);
-  if (!handle) return null;
-  if (platform === "instagram") return `https://www.instagram.com/${handle}/`;
-  if (platform === "tiktok") return `https://www.tiktok.com/@${handle}`;
-  return null;
-}
+ *  (decision 6). Delegates to creatorHandle.ts's profileUrl — same rule,
+ *  one implementation. Null when the platform has no profile page we know. */
+export const creatorProfileUrl = (platform: CapturePlatform, rawHandle: string): string | null =>
+  profileUrl(platform, rawHandle);

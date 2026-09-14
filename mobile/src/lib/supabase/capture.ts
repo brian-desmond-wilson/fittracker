@@ -366,7 +366,7 @@ function toCapturedWorkoutEntry(
       // leaves the movement out rather than calling it bodyweight.
       equipment: it.exercise ? equipmentNamesOf(it.exercise) : undefined,
       imageUrl: it.exercise ? (it.exercise.image_url ?? null) : undefined,
-      muscles: it.exercise ? musclesOf(it.exercise.muscle_rows) : undefined,
+      muscles: it.exercise ? musclesOf(it.exercise.muscle_regions) : undefined,
     }));
   const derived = deriveWorkoutEquipment(items);
   return {
@@ -474,7 +474,7 @@ const CAPTURED_WORKOUT_SELECT = `
     exercise:exercises(
       id, name, image_url, core_default_equipment,
       equipment_rows:exercise_equipment(equipment(name)),
-      muscle_rows:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name))
+      muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name))
     )
   )
 `;

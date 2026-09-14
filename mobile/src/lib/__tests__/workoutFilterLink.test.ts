@@ -1,14 +1,24 @@
-import { workoutFilterParam, parseWorkoutFilterParam, mergeWorkoutFilters } from "../workoutFilterLink";
+import { workoutFilterParam, parseWorkoutFilterParam, mergeWorkoutFilters, WORKOUT_FILTER_PARAM } from "../workoutFilterLink";
 import { EMPTY_FILTERS } from "../../types/workoutFilters";
 
 describe("workoutFilter param (spec §4.3, §6)", () => {
   it("round-trips every axis a chip can name", () => {
+    expect(WORKOUT_FILTER_PARAM).toBe("workoutFilter");
     const link = {
       muscles: ["Core"], equipment: ["Kettlebell"], blockRoles: ["main" as const],
       formats: ["amrap" as const], scores: ["rounds_reps" as const],
       intensity: "high" as const, lengths: ["short" as const], skills: ["Intermediate" as const],
     };
     expect(parseWorkoutFilterParam(workoutFilterParam(link))).toEqual(link);
+  });
+
+  it("round-trips the untagged format", () => {
+    expect(parseWorkoutFilterParam(JSON.stringify({ formats: ["untagged"] })))
+      .toEqual({ formats: ["untagged"] });
+  });
+
+  it("ignores creators and history — the page never links those axes", () => {
+    expect(parseWorkoutFilterParam(JSON.stringify({ creators: ["x"], history: "done" }))).toBeNull();
   });
 
   it("drops values the model cannot represent and returns null when nothing survives", () => {

@@ -22,7 +22,7 @@ describe("formatBanner (spec §5.2: the hero badge and the list band say the sam
     expect(formatBanner("3", shape({ format: "for_time" })))
       .toEqual({ badge: "3 ROUNDS · FOR TIME", gloss: "Repeat the whole list 3 times, as fast as you can" });
     expect(formatBanner(null, shape({ format: "for_time", formatMinutes: 20 })))
-      .toEqual({ badge: "FOR TIME", gloss: "As fast as you can, 20 minute cap" });
+      .toEqual({ badge: "FOR TIME · 20 MIN CAP", gloss: "As fast as you can, 20 minute cap" });
     expect(formatBanner(null, shape({ format: "for_time" })))
       .toEqual({ badge: "FOR TIME", gloss: "As fast as you can" });
   });

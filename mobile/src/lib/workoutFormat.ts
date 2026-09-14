@@ -140,7 +140,10 @@ export function formatBanner(rounds: string | null, s: HeadlineShape): FormatBan
             badge: `${roundsUpper(rounds)} · FOR TIME`,
             gloss: `Repeat the whole list ${timesText(rounds)}, as fast as you can${min ? `, ${min} minute cap` : ""}`,
           }
-        : { badge: "FOR TIME", gloss: `As fast as you can${min ? `, ${min} minute cap` : ""}` };
+        : {
+            badge: min ? `FOR TIME · ${min} MIN CAP` : "FOR TIME",
+            gloss: `As fast as you can${min ? `, ${min} minute cap` : ""}`,
+          };
     case "rounds":
       return rounds
         ? { badge: roundsUpper(rounds), gloss: `Repeat the whole list ${timesText(rounds)}` }

@@ -40,21 +40,31 @@ export function WorkoutHero({
 }: WorkoutHeroProps) {
   const platformName = platform ? PLATFORM_NAME[platform] : null;
 
+  // No profile to open: render a plain View, not a disabled touchable — a
+  // disabled TouchableOpacity still announces to VoiceOver as a dimmed
+  // control, which is misleading when there is nothing behind it to tap.
   const byline = handle ? (
-    <TouchableOpacity
-      style={styles.byline}
-      onPress={onOpenProfile ?? undefined}
-      disabled={!onOpenProfile}
-      activeOpacity={0.7}
-      accessibilityRole={onOpenProfile ? "link" : "text"}
-      accessibilityLabel={onOpenProfile ? `Open ${handle} on ${platformName ?? "their platform"}` : handle}
-      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-    >
-      <CreatorAvatar handle={handle} url={avatarUrl} fetchedAt={avatarFetchedAt} size={24} />
-      <Text style={styles.handle} numberOfLines={1}>{handle.startsWith("@") ? handle : `@${handle}`}</Text>
-      {platformName && <Text style={styles.platform}>· {platformName}</Text>}
-      {onOpenProfile && <ExternalLink size={12} color={colors.textMuted} />}
-    </TouchableOpacity>
+    onOpenProfile ? (
+      <TouchableOpacity
+        style={styles.byline}
+        onPress={onOpenProfile}
+        activeOpacity={0.7}
+        accessibilityRole="link"
+        accessibilityLabel={`Open ${handle} on ${platformName ?? "their platform"}`}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+      >
+        <CreatorAvatar handle={handle} url={avatarUrl} fetchedAt={avatarFetchedAt} size={24} />
+        <Text style={styles.handle} numberOfLines={1}>{handle.startsWith("@") ? handle : `@${handle}`}</Text>
+        {platformName && <Text style={styles.platform}>· {platformName}</Text>}
+        <ExternalLink size={12} color={colors.textMuted} />
+      </TouchableOpacity>
+    ) : (
+      <View style={styles.byline}>
+        <CreatorAvatar handle={handle} url={avatarUrl} fetchedAt={avatarFetchedAt} size={24} />
+        <Text style={styles.handle} numberOfLines={1}>{handle.startsWith("@") ? handle : `@${handle}`}</Text>
+        {platformName && <Text style={styles.platform}>· {platformName}</Text>}
+      </View>
+    )
   ) : null;
 
   const text = (
@@ -75,14 +85,12 @@ export function WorkoutHero({
   }
 
   return (
-    <TouchableOpacity
-      style={styles.hero}
-      onPress={onOpenPost ?? undefined}
-      disabled={!onOpenPost}
-      activeOpacity={0.9}
-      accessibilityRole="button"
-      accessibilityLabel="Open the original post"
-    >
+    // accessible={false}: an accessible container collapses its subtree on
+    // iOS, so with it set here the byline underneath was never separately
+    // reachable by VoiceOver. The play glyph becomes the one accessible
+    // element instead — it still just labels the tap the parent handles
+    // (pointerEvents="none" keeps the touch passing through to it).
+    <TouchableOpacity style={styles.hero} onPress={onOpenPost ?? undefined} disabled={!onOpenPost} activeOpacity={0.9} accessible={false}>
       <Image source={{ uri: thumbnailUrl }} style={styles.image} resizeMode="cover" />
       <LinearGradient
         colors={[tint(colors.shadow, 0.25), tint(colors.shadow, 0), colors.bg]}
@@ -91,7 +99,13 @@ export function WorkoutHero({
       />
       {badge && <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View>}
       {onOpenPost && (
-        <View style={styles.play} pointerEvents="none">
+        <View
+          style={styles.play}
+          pointerEvents="none"
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel="Open the original post"
+        >
           <Play size={20} color={colors.bg} fill={colors.bg} />
         </View>
       )}
@@ -105,7 +119,7 @@ const styles = StyleSheet.create({
   flat: { borderBottomWidth: 1, borderBottomColor: colors.border },
   image: { position: "absolute", top: 0, left: 0, width: "100%", height: HERO_HEIGHT },
   badge: {
-    position: "absolute", top: spacing.md, left: spacing.md,
+    position: "absolute", top: spacing.lg, left: spacing.lg,
     backgroundColor: colors.brand, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 5,
   },
   badgeText: { fontSize: 11, fontWeight: "800", letterSpacing: 1, color: colors.bg },
