@@ -24,3 +24,15 @@ const store = createPrefsStore<HistoryViewPrefs>({
 export const historyViewKey = store.key;
 export const loadHistoryView = store.load;
 export const saveHistoryView = store.save;
+
+/** The workout page's own copy of the choice (spec 2026-09-13 §7): a reader
+ *  who likes Sessions on exercises need not like it on workouts. */
+const workoutStore = createPrefsStore<HistoryViewPrefs>({
+  keyPrefix: "training.workout.historyView.v1",
+  defaults: { view: "trend" },
+  sanitize: sanitizeHistoryView,
+});
+
+export const workoutHistoryViewKey = workoutStore.key;
+export const loadWorkoutHistoryView = workoutStore.load;
+export const saveWorkoutHistoryView = workoutStore.save;
