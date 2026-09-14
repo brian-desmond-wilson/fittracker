@@ -62,6 +62,9 @@ import { assignInstancesToOccurrences } from '@/src/lib/workoutResume';
 import { formatSetTimeChip, resolveSession, setKey } from '@/src/lib/setTiming';
 import type { SetTimeInput } from '@/src/lib/setTiming';
 import { SetTimeSheet } from '@/src/components/workout-session/SetTimeSheet';
+import { ScoreSheet } from '@/src/components/workout-session/ScoreSheet';
+import { upsertSessionScore } from '@/src/lib/supabase/sessionScores';
+import type { Score, ScorableType } from '@/src/lib/workoutScore';
 import type { CapturedWorkoutEntry } from '@/src/types/capture';
 
 import {
@@ -110,6 +113,10 @@ export default function WorkoutSessionPage() {
   // is SHOWN, never parsed into the logger's numbers: "21-15-9" and "AMRAP"
   // are real answers that a rep field would silently turn into something else.
   const [servedWorkout, setServedWorkout] = useState<CapturedWorkoutEntry | null>(null);
+  // Opened by finishWorkout when the served workout is scorable and the
+  // session was stamped completed; null otherwise. Holds what the sheet
+  // needs so a re-render cannot change what it asks for.
+  const [scorePrompt, setScorePrompt] = useState<{ scoreType: ScorableType; elapsedSeconds: number | null; capMinutes: number | null } | null>(null);
   const [workoutInstanceId, setWorkoutInstanceId] = useState<string | null>(instanceId || null);
   const workoutInstanceIdRef = React.useRef<string | null>(instanceId || null);
   const creatingWorkoutInstance = React.useRef(false);
@@ -1702,6 +1709,7 @@ export default function WorkoutSessionPage() {
   const finishWorkout = async () => {
     setIsSaving(true);
     try {
+      let completed = false;
       // Save any unsaved exercises
       for (let i = 0; i < exerciseStates.length; i++) {
         const state = exerciseStates[i];
@@ -1753,8 +1761,23 @@ export default function WorkoutSessionPage() {
           const performedIds = exerciseStates
             .filter((e) => e.sets.some((s) => s.completed))
             .map((e) => e.exercise.exercise_id);
-          await completeSession(String(id), performedIds);
+          completed = await completeSession(String(id), performedIds);
         }
+      }
+
+      // A served-whole workout with a score type gets asked for its score
+      // instead of the alert — but only once the day is on record as
+      // completed, so a refused completion (false start) never leaves a
+      // score with no session behind it. Spec 2026-09-13 §4.3.
+      const scoreType = servedWorkout?.tags.scoreType ?? null;
+      if (completed && scoreType !== null && scoreType !== 'none') {
+        const span = recordedSpan();
+        setScorePrompt({
+          scoreType,
+          elapsedSeconds: recordMode === 'backfill' ? null : span.durationSeconds,
+          capMinutes: servedWorkout?.tags.formatMinutes ?? null,
+        });
+        return;
       }
 
       Alert.alert(
@@ -2755,6 +2778,29 @@ export default function WorkoutSessionPage() {
             );
           }}
           onClose={() => setTimingSetIndex(null)}
+        />
+      )}
+
+      {scorePrompt && servedWorkout && userId && (
+        <ScoreSheet
+          visible
+          workoutName={servedWorkout.name}
+          scoreType={scorePrompt.scoreType}
+          elapsedSeconds={scorePrompt.elapsedSeconds}
+          capMinutes={scorePrompt.capMinutes}
+          existing={null}
+          onSave={async (score: Score) => {
+            const result = await upsertSessionScore({
+              userId, sessionId: String(id), workoutId: servedWorkout.workoutId, score,
+            });
+            if (result.ok) {
+              setScorePrompt(null);
+              router.back();
+            }
+            return result;
+          }}
+          onSkip={() => { setScorePrompt(null); router.back(); }}
+          onClose={() => { setScorePrompt(null); router.back(); }}
         />
       )}
     </View>
