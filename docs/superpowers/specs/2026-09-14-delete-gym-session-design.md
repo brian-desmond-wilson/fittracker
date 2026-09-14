@@ -65,13 +65,14 @@ Both already ride the `fetchGymSessions` / `fetchWorkoutSession` join (`workout_
 
 ### 5.2 The delete, in order (`deleteGymSession`)
 
-FK rules that shape the order (from the live baseline): `workout_sessions`, `exercise_instances`, `set_instances` all CASCADE off `workout_instances`; `generated_session_blocks/items`, `session_debriefs`, `movement_ratings`, `session_scores` all CASCADE off `generated_sessions`; but `generated_sessions.workout_instance_id` is SET NULL (so deleting the instance orphans the generated session rather than removing it), and `captured_workout_usage.session_id` is SET NULL (so the ledger row survives a generated-session delete). Therefore:
+FK rules that shape the order (from the live baseline): `workout_sessions`, `exercise_instances`, `set_instances` all CASCADE off `workout_instances`; `generated_session_blocks/items`, `session_debriefs`, `movement_ratings`, `session_scores` all CASCADE off `generated_sessions`; but `generated_sessions.workout_instance_id` is SET NULL (so deleting the instance orphans the generated session rather than removing it), and both `captured_workout_usage.session_id` and `session_adjustments.session_id` are SET NULL (so those rows survive a generated-session delete rather than cascading). Therefore:
 
 1. **If `generatedSessionId`:** `delete from captured_workout_usage where session_id = generatedSessionId` — first, while the link still exists (a generated-session delete would null it). This is the "forget it fully" step; it is a no-op for program/manual sessions.
-2. **If `generatedSessionId`:** `delete from generated_sessions where id = generatedSessionId` — cascades blocks, items, debriefs, ratings, and the score.
-3. **If `workoutInstanceId`:** `delete from workout_instances where id = workoutInstanceId` — cascades the workout_session(s), exercise_instances, and set_instances.
+2. **If `generatedSessionId`:** `delete from session_adjustments where session_id = generatedSessionId` — the other SET-NULL table; also removed while the link exists, so no adjustment row is left orphaned. A no-op for program/manual sessions.
+3. **If `generatedSessionId`:** `delete from generated_sessions where id = generatedSessionId` — cascades blocks, items, debriefs, ratings, and the score.
+4. **If `workoutInstanceId`:** `delete from workout_instances where id = workoutInstanceId` — cascades the workout_session(s), exercise_instances, and set_instances.
 
-A session always has an instance; the generated-session steps are skipped when it is null. RLS scopes every delete to the signed-in user, so a stray id cannot touch another user's rows. Order 1→2 matters (the usage link); 3 is independent of order.
+A session always has an instance; the generated-session steps are skipped when it is null. RLS scopes every delete to the signed-in user, so a stray id cannot touch another user's rows. The SET-NULL tables (1, 2) must precede the generated-session delete (3); the instance delete (4) is independent of order.
 
 ### 5.3 What recomputes (nothing to fix)
 
