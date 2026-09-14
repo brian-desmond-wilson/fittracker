@@ -6,14 +6,13 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { colors, spacing, radii, tint } from "@/src/theme/tokens";
 import { MuscleIcon } from "@/src/components/ui/MuscleIcon";
 import { EquipmentGlyph } from "@/src/components/ui/EquipmentGlyph";
-import { muscleIconSlug } from "@/src/lib/muscleIconCatalog";
 import { BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
 import { FILTERABLE_ROLES } from "@/src/types/workoutFilters";
 import type { BlockRole, WorkoutMuscle } from "@/src/types/dailyBlocks";
 import type { WorkoutFilterLink } from "@/src/lib/workoutFilterLink";
 
-const PRIMARY_ICON = 26;
-const SECONDARY_ICON = 20;
+// Matches the exercise page's muscle tiles so the two read the same.
+const TILE_ICON = 44;
 
 // ---------- §4.5 role pills ----------
 
@@ -57,52 +56,52 @@ interface HitsSectionProps {
   onFilter: (link: WorkoutFilterLink) => void;
 }
 
-/** Primaries as named chips; secondaries as a dimmed icon row with the names in grey. */
+/** Primary and secondary muscles as icon-over-name tiles — the same
+ *  treatment as the exercise page (§4.6). Green-bordered fill for the
+ *  primaries, muted surface for the secondaries; every tile filters the
+ *  Workouts tab. A muscle with no picture (e.g. Full Body) becomes a
+ *  text-only tile, matching the exercise page. */
 export function HitsSection({ muscles, onFilter }: HitsSectionProps) {
   const primaries = muscles.filter((m) => m.isPrimary);
   const secondaries = muscles.filter((m) => !m.isPrimary);
-  // The icon row only shows secondaries with a picture — an iconless name
-  // (e.g. Full Body) would render an invisible tap target. The text list
-  // below still names every secondary, icon or not.
-  const iconableSecondaries = secondaries.filter((m) => muscleIconSlug(m.name) !== null);
-  const names = secondaries.map((m) => m.name).join(", ");
   if (primaries.length === 0 && secondaries.length === 0) return null;
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Hits</Text>
       {primaries.length > 0 && (
-        <View style={styles.chipRow}>
+        <View style={styles.muscleGrid}>
           {primaries.map((m) => (
             <TouchableOpacity
               key={m.name}
-              style={styles.muscleChip}
+              style={styles.musclePrimaryTile}
               onPress={() => onFilter({ muscles: [m.name] })}
               accessibilityRole="button"
               accessibilityLabel={`Workouts for ${m.name}`}
             >
-              <MuscleIcon muscle={m.name} size={PRIMARY_ICON} />
-              <Text style={styles.muscleName}>{m.name}</Text>
+              <MuscleIcon muscle={m.name} size={TILE_ICON} />
+              <Text style={styles.musclePrimaryText}>{m.name}</Text>
             </TouchableOpacity>
           ))}
         </View>
       )}
       {secondaries.length > 0 && (
-        <View style={[styles.chipRow, styles.secondaryRow]}>
-          {iconableSecondaries.map((m) => (
-            <TouchableOpacity
-              key={m.name}
-              onPress={() => onFilter({ muscles: [m.name] })}
-              accessibilityRole="button"
-              accessibilityLabel={`Workouts for ${m.name}`}
-              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            >
-              <MuscleIcon muscle={m.name} size={SECONDARY_ICON} dim />
-            </TouchableOpacity>
-          ))}
-          <Text style={styles.secondaryNames} numberOfLines={2}>
-            {primaries.length === 0 ? names : `also ${names}`}
-          </Text>
-        </View>
+        <>
+          <Text style={styles.subsectionTitle}>Secondary Muscles</Text>
+          <View style={styles.muscleGrid}>
+            {secondaries.map((m) => (
+              <TouchableOpacity
+                key={m.name}
+                style={styles.muscleSecondaryTile}
+                onPress={() => onFilter({ muscles: [m.name] })}
+                accessibilityRole="button"
+                accessibilityLabel={`Workouts for ${m.name}`}
+              >
+                <MuscleIcon muscle={m.name} size={TILE_ICON} dim />
+                <Text style={styles.muscleSecondaryText}>{m.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
       )}
     </View>
   );
@@ -159,11 +158,21 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm },
-  // Mock: bare icon + name, no box — a chip, not a filled pill.
-  muscleChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
-  muscleName: { fontSize: 13, fontWeight: "600", color: colors.text },
-  secondaryRow: { marginTop: spacing.sm, gap: 6 },
-  secondaryNames: { flexShrink: 1, fontSize: 11, color: colors.textMuted, marginLeft: 2 },
+  // Icon-over-name tiles, shared look with the exercise page.
+  muscleGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  subsectionTitle: { fontSize: 16, fontWeight: "600", color: colors.text, marginTop: 16, marginBottom: 8 },
+  musclePrimaryTile: {
+    flexDirection: "column", alignItems: "center", gap: 6,
+    paddingHorizontal: 16, paddingVertical: 10, backgroundColor: tint(colors.brand, 0.125),
+    borderRadius: 8, borderWidth: 1, borderColor: colors.brand,
+  },
+  musclePrimaryText: { fontSize: 12, fontWeight: "600", color: colors.brand },
+  muscleSecondaryTile: {
+    flexDirection: "column", alignItems: "center", gap: 6,
+    paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.surface,
+    borderRadius: 8, borderWidth: 1, borderColor: colors.border,
+  },
+  muscleSecondaryText: { fontSize: 12, fontWeight: "500", color: colors.textMuted },
   equipTile: {
     flexDirection: "row", alignItems: "center", gap: 6,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: radii.control,
