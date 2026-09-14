@@ -12,6 +12,9 @@ import { adoptCapturedWorkout, fetchDayStatus } from "@/src/lib/supabase/daily";
 import { getLocalDateString } from "@/src/components/workout-session/helpers";
 import { StartModeSheet } from "@/src/components/workout-session/StartModeSheet";
 import type { SessionMode } from "@/src/components/workout-session/StartModeSheet";
+import { ScoreSheet } from "@/src/components/workout-session/ScoreSheet";
+import { upsertSessionScore, deleteSessionScore } from "@/src/lib/supabase/sessionScores";
+import type { Score } from "@/src/lib/workoutScore";
 import {
   fetchCapturedWorkout,
   replaceCapturedWorkoutItems,
@@ -140,9 +143,17 @@ export function CapturedWorkoutScreen() {
   // mount on userId alone and flash "haven't done this one yet" for a workout
   // that has history.
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  // The history row whose score is being added or edited; null when closed.
+  const [scoreRow, setScoreRow] = useState<WorkoutSessionRow | null>(null);
   const today = useMemo(() => getLocalDateString(), []);
 
   const editing = draft !== null;
+
+  const reloadHistory = useCallback(async (uid: string) => {
+    const rows = await fetchWorkoutHistory(uid, id);
+    setHistory(rows);
+    setHistoryLoaded(true);
+  }, [id]);
 
   // Its own effect rather than a limb of the one below: that read is held back
   // while you are editing or a classification is in flight, and neither has
@@ -156,16 +167,12 @@ export function CapturedWorkoutScreen() {
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (!user || !alive) return;
         setUserId(user.id);
-        fetchWorkoutHistory(user.id, id).then((rows) => {
-          if (!alive) return;
-          setHistory(rows);
-          setHistoryLoaded(true);
-        }).catch(console.error);
+        reloadHistory(user.id).catch(console.error);
       }).catch(console.error);
       return () => {
         alive = false;
       };
-    }, [id]),
+    }, [id, reloadHistory]),
   );
 
   const load = useCallback(() => {
@@ -921,6 +928,7 @@ export function CapturedWorkoutScreen() {
               rows={history}
               today={today}
               onOpenSession={openSession}
+              onScoreRow={(row) => { if (workout.tags.scoreType && workout.tags.scoreType !== "none") setScoreRow(row); }}
               onSeeAll={openAllSessions}
             />
           )}
@@ -1173,6 +1181,37 @@ export function CapturedWorkoutScreen() {
             start(recordMode, startedAtMs);
           }}
           onClose={() => setModeSheetOpen(false)}
+        />
+      )}
+
+      {workout && userId && scoreRow && workout.tags.scoreType && workout.tags.scoreType !== "none" && (
+        <ScoreSheet
+          visible
+          workoutName={workout.name}
+          scoreType={workout.tags.scoreType}
+          elapsedSeconds={null}
+          capMinutes={workout.tags.formatMinutes}
+          existing={scoreRow.score}
+          onSave={async (score: Score) => {
+            const result = await upsertSessionScore({
+              userId, sessionId: scoreRow.generatedSessionId, workoutId: workout.workoutId, score,
+            });
+            if (result.ok) {
+              setScoreRow(null);
+              await reloadHistory(userId);
+            }
+            return result;
+          }}
+          onRemove={async () => {
+            const result = await deleteSessionScore(scoreRow.generatedSessionId);
+            if (result.ok) {
+              setScoreRow(null);
+              await reloadHistory(userId);
+            }
+            return result;
+          }}
+          onSkip={() => setScoreRow(null)}
+          onClose={() => setScoreRow(null)}
         />
       )}
     </>
