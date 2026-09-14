@@ -4,7 +4,7 @@
 // muscle, up to two dimmed secondaries, a hairline, one badge per
 // equipment name. The row opens the exercise. Items built without the join
 // (no `muscles`/`equipment`) draw without a facts line.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { ChevronRight, Dumbbell } from "lucide-react-native";
 import { colors, spacing, radii, tint } from "@/src/theme/tokens";
@@ -28,6 +28,11 @@ interface MovementRowProps {
 
 export function MovementRow({ index, item, onPress, last = false }: MovementRowProps) {
   const [imageFailed, setImageFailed] = useState(false);
+  // A rehost sweep can repair a URL that previously 404'd; without this, a
+  // row that once failed stays stuck on the fallback even after the fix.
+  useEffect(() => {
+    setImageFailed(false);
+  }, [item.imageUrl]);
   const prescription = formatWorkoutItem(item);
 
   // MuscleIcon draws nothing for a name without a picture ("Full Body" on a

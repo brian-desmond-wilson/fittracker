@@ -107,7 +107,7 @@ export function WorkoutHistoryBlock({ userId, rows, today, onOpenSession, onSeeA
                   ) : (
                     // No duration to show, but the row's flex: 1 spacer is
                     // still needed to keep the chevron pinned to the right.
-                    <View style={h.rowName} />
+                    <View style={h.rowSpacer} />
                   )}
                   {r.sessionId && <ChevronRight size={16} color={colors.textMuted} />}
                 </TouchableOpacity>

@@ -27,6 +27,7 @@ export const historyStyles = StyleSheet.create({
   rowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
   rowDate: { fontSize: 14, fontWeight: "600", color: colors.text },
   rowName: { flex: 1, fontSize: 14, color: colors.textMuted },
+  rowSpacer: { flex: 1 },
   rowSet: { fontSize: 14, fontWeight: "600", color: colors.text },
   link: { fontSize: 14, fontWeight: "600", color: colors.brand },
   seeAll: { flexDirection: "row", alignItems: "center", gap: 2, paddingTop: spacing.md, alignSelf: "flex-start" },

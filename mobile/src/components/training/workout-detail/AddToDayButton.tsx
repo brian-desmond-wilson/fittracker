@@ -60,6 +60,7 @@ export function AddToDayButton({ userId, workoutId, workoutName, onAddedToday }:
   const close = () => setSheet({ kind: "closed" });
 
   const run = async (date: string, label: string, plan: AddToDayPlan) => {
+    if (busy) return;
     setBusy(true);
     const result = await executeAddToDay({
       userId, workoutId, date, today: todayRef.current, dayLabel: label, plan,
@@ -183,7 +184,7 @@ export function AddToDayButton({ userId, workoutId, workoutName, onAddedToday }:
           <View style={styles.pickerHead}>
             <Text style={styles.sheetTitle}>Which day?</Text>
             <TouchableOpacity
-              onPress={() => { close(); choose(getLocalDateString(pickerDraft)); }}
+              onPress={() => choose(getLocalDateString(pickerDraft))}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
               accessibilityLabel="Done"
@@ -218,6 +219,7 @@ export function AddToDayButton({ userId, workoutId, workoutName, onAddedToday }:
             <TouchableOpacity
               style={styles.sheetGo}
               accessibilityRole="button"
+              disabled={busy}
               onPress={() => { close(); run(date, label, plan); }}
             >
               <Text style={styles.sheetGoText}>{c.go}</Text>

@@ -39,6 +39,7 @@ import { fetchWorkoutHistory } from "@/src/lib/supabase/workoutHistory";
 import type { WorkoutSessionRow } from "@/src/lib/workoutHistory";
 import { workoutFilterParam } from "@/src/lib/workoutFilterLink";
 import type { WorkoutFilterLink } from "@/src/lib/workoutFilterLink";
+import { FILTERABLE_ROLES } from "@/src/types/workoutFilters";
 import { spacing } from "@/src/theme/tokens";
 import { WorkoutHero } from "@/src/components/training/workout-detail/WorkoutHero";
 import { WorkoutStatRow } from "@/src/components/training/workout-detail/WorkoutStatRow";
@@ -918,7 +919,7 @@ export function CapturedWorkoutScreen() {
             />
           )}
 
-          {!editing && (workout.tags.blockRoles.length > 0 || shownDescription !== "" || shownNotes !== "") && (
+          {!editing && (workout.tags.blockRoles.some((r) => FILTERABLE_ROLES.includes(r)) || shownDescription !== "" || shownNotes !== "") && (
             <View style={styles.readSection}>
               <RolePills roles={workout.tags.blockRoles} onFilter={openFiltered} />
               {shownDescription !== "" && <Text style={styles.description}>{shownDescription}</Text>}

@@ -65,6 +65,7 @@ export function HitsSection({ muscles, onFilter }: HitsSectionProps) {
   // (e.g. Full Body) would render an invisible tap target. The text list
   // below still names every secondary, icon or not.
   const iconableSecondaries = secondaries.filter((m) => muscleIconSlug(m.name) !== null);
+  const names = secondaries.map((m) => m.name).join(", ");
   if (primaries.length === 0 && secondaries.length === 0) return null;
   return (
     <View style={styles.section}>
@@ -99,8 +100,7 @@ export function HitsSection({ muscles, onFilter }: HitsSectionProps) {
             </TouchableOpacity>
           ))}
           <Text style={styles.secondaryNames} numberOfLines={2}>
-            {primaries.length === 0 ? "" : "also "}
-            {secondaries.map((m) => m.name).join(", ")}
+            {primaries.length === 0 ? names : `also ${names}`}
           </Text>
         </View>
       )}

@@ -63,12 +63,14 @@ export function WorkoutStatRow({ tags, onFilter }: WorkoutStatRowProps) {
         >
           <Text style={styles.label}>{c.label}</Text>
           {/* Shrink rather than ellipsise: long values ("Rounds + reps",
-              "Duration / hold") must still read whole across four columns. */}
+              "Duration / hold") must still read whole across four columns.
+              0.82 only buys ~2 characters and still ellipsises "Duration /
+              hold" at 375pt; 0.7 gives it enough room. */}
           <Text
             style={[styles.value, !c.value && styles.valueEmpty]}
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.82}
+            minimumFontScale={0.7}
           >
             {c.value ?? EMPTY}
           </Text>
