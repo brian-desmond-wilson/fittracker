@@ -8,13 +8,22 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-import { historyViewKey, loadHistoryView, saveHistoryView, sanitizeHistoryView } from "../historyViewStore";
+import {
+  historyViewKey,
+  loadHistoryView,
+  saveHistoryView,
+  sanitizeHistoryView,
+  workoutHistoryViewKey,
+} from "../historyViewStore";
 
 beforeEach(() => mockMemory.clear());
 
 describe("historyViewStore", () => {
   it("keys per user under the spec's prefix (spec §7)", () => {
     expect(historyViewKey("u1")).toBe("training.exercise.historyView.v1:u1");
+  });
+  it("workout view keys per user under its own prefix", () => {
+    expect(workoutHistoryViewKey("u1")).toBe("training.workout.historyView.v1:u1");
   });
   it("defaults to Trend and round-trips Sessions", async () => {
     expect(await loadHistoryView("u1")).toEqual({ view: "trend" });

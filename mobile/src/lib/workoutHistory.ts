@@ -37,7 +37,7 @@ export function summarizeWorkoutHistory(rows: WorkoutSessionRow[]): WorkoutHisto
 }
 
 /** "18 min"; null when there is nothing honest to say. */
-export function formatDuration(seconds: number | null): string | null {
+export function durationText(seconds: number | null): string | null {
   if (seconds === null || seconds <= 0) return null;
   return `${Math.max(1, Math.round(seconds / 60))} min`;
 }

@@ -30,23 +30,46 @@ export async function fetchWorkoutHistory(userId: string, workoutId: string): Pr
   if (instanceIds.length > 0) {
     const { data: sessions, error: sError } = await supabase
       .from("workout_sessions")
-      .select("id, workout_instance_id, duration_seconds")
+      .select("id, workout_instance_id, duration_seconds, started_at, ended_at")
       .eq("user_id", userId)
-      .in("workout_instance_id", instanceIds);
+      .in("workout_instance_id", instanceIds)
+      .order("session_number", { ascending: true });
     if (sError) {
       // The days still count; only the tap-through and the minutes are lost.
       console.error("fetchWorkoutHistory sessions failed:", sError.message, sError.details ?? "");
     }
-    for (const s of (sessions ?? []) as { id: string; workout_instance_id: string; duration_seconds: number | null }[]) {
-      // Keep the first row per instance; a second session on one instance is
-      // a re-run and the earliest is the one the day was completed on.
+    for (const s of (sessions ?? []) as {
+      id: string;
+      workout_instance_id: string;
+      duration_seconds: number | null;
+      started_at: string | null;
+      ended_at: string | null;
+    }[]) {
+      // Keep the first row per instance: session_number ascending means
+      // session 1 is the row the history opens; a split workout's later
+      // parts (done across days on the same instance) are not shown
+      // separately.
       if (!byInstance.has(s.workout_instance_id)) {
-        byInstance.set(s.workout_instance_id, { id: s.id, durationSeconds: s.duration_seconds ?? null });
+        // duration_seconds defaults to 0; fall back to the wall-clock span
+        // the same way Track's sessionMinutes does (gymSessions.ts).
+        let durationSeconds = s.duration_seconds && s.duration_seconds > 0 ? s.duration_seconds : null;
+        if (durationSeconds === null && s.started_at && s.ended_at) {
+          const started = Date.parse(s.started_at);
+          const ended = Date.parse(s.ended_at);
+          if (!Number.isNaN(started) && !Number.isNaN(ended)) {
+            const computed = Math.round((ended - started) / 1000);
+            if (computed > 0) durationSeconds = computed;
+          }
+        }
+        byInstance.set(s.workout_instance_id, { id: s.id, durationSeconds });
       }
     }
   }
 
   return rows
+    // session_date is NOT NULL; the guard stays because the client is
+    // untyped (see workoutCompletions.ts) and a bad read would otherwise
+    // hand a row with no day to draw.
     .filter((g) => !!g.session_date)
     .map((g) => {
       const track = g.workout_instance_id ? byInstance.get(g.workout_instance_id) : undefined;
