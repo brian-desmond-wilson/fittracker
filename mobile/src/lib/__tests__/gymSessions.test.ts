@@ -59,6 +59,8 @@ const session = (
   source: "unknown",
   capturedWorkoutId: null,
   capturedWorkoutHandle: null,
+  workoutInstanceId: null,
+  generatedSessionId: null,
   estimatedMinutes: null,
   mainBlockWorkoutName: null,
   exercises,

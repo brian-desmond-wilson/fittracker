@@ -15,6 +15,7 @@ const session = (date: string, exercises: HistoryExercise[]): HistorySession => 
   id: `s-${date}-${exercises.length}`, date, sessionNumber: 1, sessionCount: 1,
   startedAt: null, endedAt: null, durationSeconds: 3600, name: null,
   source: "unknown", capturedWorkoutId: null, capturedWorkoutHandle: null,
+  workoutInstanceId: null, generatedSessionId: null,
   estimatedMinutes: null, mainBlockWorkoutName: null, exercises,
 });
 const goal = (over: Partial<WeeklyGoal> = {}): WeeklyGoal => ({

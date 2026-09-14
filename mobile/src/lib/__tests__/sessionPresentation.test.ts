@@ -26,6 +26,7 @@ const session = (over: Partial<HistorySession> = {}): HistorySession => ({
   id: "s1", date: "2026-08-24", sessionNumber: 1, sessionCount: 1,
   startedAt: null, endedAt: null, durationSeconds: null, name: null,
   source: "unknown", capturedWorkoutId: null, capturedWorkoutHandle: null,
+  workoutInstanceId: null, generatedSessionId: null,
   estimatedMinutes: null, mainBlockWorkoutName: null, exercises: [], ...over,
 });
 

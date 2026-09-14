@@ -8,6 +8,7 @@
 // captured workout started from the catalog — goes through the same instance
 // chain, so one query covers all three.
 import { supabase } from "../supabase";
+import { gymSessionDeletePlan } from "../gymSessionDelete";
 import type { HistorySession, SessionSource } from "../../types/gymSessions";
 import type { SetFact } from "../../types/records";
 
@@ -98,7 +99,7 @@ const SELECT = `
     id,
     program_workout:program_workouts(name, estimated_duration_minutes),
     generated_session:generated_sessions(
-      split_day, source, served_captured_workout_id,
+      id, split_day, source, served_captured_workout_id,
       captured:captured_workouts(
         id, name, est_minutes,
         source:captured_sources(poster_handle)
@@ -124,6 +125,7 @@ const SELECT = `
 
 export function toSession(row: any, sessionCount: number): HistorySession {
   const instance = first<any>(row.workout_instance);
+  const generated = first<any>(instance?.generated_session);
   const described = describe(instance);
   return {
     id: row.id,
@@ -133,6 +135,8 @@ export function toSession(row: any, sessionCount: number): HistorySession {
     startedAt: row.started_at,
     endedAt: row.ended_at,
     durationSeconds: row.duration_seconds ?? null,
+    workoutInstanceId: instance?.id ?? null,
+    generatedSessionId: generated?.id ?? null,
     ...described,
     exercises: (row.exercises ?? [])
       .slice()
@@ -303,4 +307,28 @@ export async function fetchWorkoutSession(
     return null;
   }
   return toSession(data, 1);
+}
+
+export type DeleteSessionResult = { ok: true } | { ok: false; message: string };
+
+/** Delete one gym session and everything that hangs off it — the score,
+ *  debrief, ratings, exercises and sets — and, for a captured-workout
+ *  session, its usage-ledger rows so the recommender forgets it (spec §5.2).
+ *  Runs the plan's deletes in order and stops at the first failure; every
+ *  delete is idempotent by id, so a retry converges. RLS scopes each delete
+ *  to the signed-in user. */
+export async function deleteGymSession(session: {
+  workoutInstanceId: string | null;
+  generatedSessionId: string | null;
+}): Promise<DeleteSessionResult> {
+  const ops = gymSessionDeletePlan(session);
+  if (ops.length === 0) return { ok: false, message: "Nothing to delete." };
+  for (const op of ops) {
+    const { error } = await supabase.from(op.table).delete().eq(op.column, op.id);
+    if (error) {
+      console.error("deleteGymSession failed:", op.table, error.code ?? "", error.message, error.details ?? "");
+      return { ok: false, message: "Couldn't delete it. Try again." };
+    }
+  }
+  return { ok: true };
 }

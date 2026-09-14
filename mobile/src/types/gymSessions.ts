@@ -57,6 +57,13 @@ export interface HistorySession {
   /** Set when the session came from a captured workout — links back to it. */
   capturedWorkoutId: string | null;
   capturedWorkoutHandle: string | null;
+  /** The instance this session hangs off — deleting it cascades the session,
+   *  its exercises and sets. Always present in practice. */
+  workoutInstanceId: string | null;
+  /** The generated (daily) session pointing at the instance, when the session
+   *  came from the daily loop; null for program and manual logs. Deleting it
+   *  clears the score, debrief, ratings and block rows. */
+  generatedSessionId: string | null;
   /** Planned length in minutes from whatever template served the session. */
   estimatedMinutes: number | null;
   /** For block-composed daily sessions: the captured workout serving the
