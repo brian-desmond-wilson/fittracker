@@ -608,7 +608,10 @@ export default function TodayTab() {
               {/* A block day is named after the workout it is built around,
                   because it is not a push, pull or legs day — it stamps no
                   split at all, and calling it one made every block day read
-                  as a leg day. */}
+                  as a leg day. A hand-built user_pick day (no workout, no
+                  split) is neither, so it gets a neutral title rather than
+                  falling through to "Leg day"; only a real legs split is
+                  named one. */}
               <Text style={styles.sessionTitle}>
                 {served
                   ? served.name
@@ -622,7 +625,9 @@ export default function TodayTab() {
                           ? "Push day"
                           : session.splitDay === "pull"
                             ? "Pull day"
-                            : "Leg day"}
+                            : session.splitDay === "legs"
+                              ? "Leg day"
+                              : "Your session"}
               </Text>
               <View style={styles.badges}>
                 {session.rampWeek <= 2 && (
