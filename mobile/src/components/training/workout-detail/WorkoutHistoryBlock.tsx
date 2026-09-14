@@ -102,7 +102,13 @@ export function WorkoutHistoryBlock({ userId, rows, today, onOpenSession, onSeeA
                   accessibilityLabel={`${date}${duration ? `, ${duration}` : ""}`}
                 >
                   <Text style={h.rowDate}>{date}</Text>
-                  <Text style={h.rowName} numberOfLines={1}>{duration ? `· ${duration}` : ""}</Text>
+                  {duration ? (
+                    <Text style={h.rowName} numberOfLines={1}>· {duration}</Text>
+                  ) : (
+                    // No duration to show, but the row's flex: 1 spacer is
+                    // still needed to keep the chevron pinned to the right.
+                    <View style={h.rowName} />
+                  )}
                   {r.sessionId && <ChevronRight size={16} color={colors.textMuted} />}
                 </TouchableOpacity>
               );

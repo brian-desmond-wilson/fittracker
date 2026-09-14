@@ -4,13 +4,14 @@
 // muscle, up to two dimmed secondaries, a hairline, one badge per
 // equipment name. The row opens the exercise. Items built without the join
 // (no `muscles`/`equipment`) draw without a facts line.
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { ChevronRight, Dumbbell } from "lucide-react-native";
 import { colors, spacing, radii, tint } from "@/src/theme/tokens";
 import { MuscleIcon } from "@/src/components/ui/MuscleIcon";
 import { EquipmentGlyph } from "@/src/components/ui/EquipmentGlyph";
 import { formatWorkoutItem } from "@/src/lib/workoutFormat";
+import { muscleIconSlug } from "@/src/lib/muscleIconCatalog";
 import type { CapturedWorkoutItemEntry } from "@/src/types/capture";
 
 const THUMB = 64;
@@ -26,32 +27,57 @@ interface MovementRowProps {
 }
 
 export function MovementRow({ index, item, onPress, last = false }: MovementRowProps) {
+  const [imageFailed, setImageFailed] = useState(false);
   const prescription = formatWorkoutItem(item);
-  const primary = item.muscles?.find((m) => m.isPrimary)?.name ?? null;
-  const secondaries = (item.muscles ?? []).filter((m) => !m.isPrimary).slice(0, MAX_SECONDARY_ICONS).map((m) => m.name);
+
+  // MuscleIcon draws nothing for a name without a picture ("Full Body" on a
+  // run), and an invisible icon must not claim a slot, a hairline, or the
+  // thumbnail fallback — so layout is driven only by picturable muscles.
+  const primary = item.muscles?.find((m) => m.isPrimary && muscleIconSlug(m.name) !== null)?.name ?? null;
+  const secondaries = (item.muscles ?? [])
+    .filter((m) => !m.isPrimary && muscleIconSlug(m.name) !== null)
+    .slice(0, MAX_SECONDARY_ICONS)
+    .map((m) => m.name);
   const equipment = item.equipment ?? [];
   const hasFacts = primary !== null || secondaries.length > 0 || equipment.length > 0;
 
-  const a11y = [
+  // The a11y label reads the real muscles regardless of picture — a "Full
+  // Body" run still announces "Primary Full Body" even though the row draws
+  // the dumbbell glyph in its place.
+  const primaryLabel = item.muscles?.find((m) => m.isPrimary)?.name ?? null;
+  const secondaryLabels = (item.muscles ?? []).filter((m) => !m.isPrimary).slice(0, MAX_SECONDARY_ICONS).map((m) => m.name);
+
+  const a11yFacts = [
     `${index}. ${item.name}`,
     prescription || null,
-    primary ? `Primary ${primary}` : null,
-    secondaries.length ? `also ${secondaries.join(", ")}` : null,
+    primaryLabel ? `Primary ${primaryLabel}` : null,
+    secondaryLabels.length ? `also ${secondaryLabels.join(", ")}` : null,
     equipment.length ? equipment.join(", ") : null,
-  ].filter(Boolean).join(". ") + ". Open the exercise.";
+  ].filter(Boolean).join(". ");
+  // The mapper writes "" for exerciseId when the exercise did not join, so
+  // there is nothing to open — don't promise it in the label.
+  const a11y = item.exerciseId ? `${a11yFacts}. Open the exercise.` : a11yFacts;
 
   return (
     <TouchableOpacity
       style={[styles.row, !last && styles.rowBorder]}
       onPress={onPress}
+      // The mapper writes "" for exerciseId when the exercise did not join;
+      // this guard is reachable for those unmatched rows.
       disabled={!item.exerciseId}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={a11y}
     >
       <Text style={styles.index}>{index}</Text>
-      {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={styles.thumb} />
+      {item.imageUrl && !imageFailed ? (
+        <Image
+          source={{ uri: item.imageUrl }}
+          style={styles.thumb}
+          // A rehosted picture can 404 after a sweep; a blank grey square
+          // would read as a missing exercise, so fall back like no-image.
+          onError={() => setImageFailed(true)}
+        />
       ) : (
         <View style={[styles.thumb, styles.thumbEmpty]}>
           {primary
