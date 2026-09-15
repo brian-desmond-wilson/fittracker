@@ -458,7 +458,13 @@ function queryDaySessions(userId: string, date: string) {
       assumed:inputs_snapshot->assumed,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
-        rest_seconds, reason, was_performed, exercise:exercises(name)
+        rest_seconds, reason, was_performed,
+        exercise:exercises(
+          name, image_url, skill_level, core_default_equipment, tier,
+          scoring_rows:exercise_scoring_types(scoring_type:scoring_types(name)),
+          equipment_rows:exercise_equipment(equipment(name)),
+          muscle_regions:exercise_muscle_regions(is_primary, muscle_region:muscle_regions(name))
+        )
       ),
       blocks:generated_session_blocks(
         id, block, name, captured_workout_id, builtin_key, minutes,
@@ -500,6 +506,17 @@ function mapDaySession(rows: any[]): StoredSession | null {
         restSeconds: i.rest_seconds,
         reason: i.reason,
         wasPerformed: i.was_performed,
+        imageUrl: i.exercise?.image_url ?? null,
+        skillLevel: i.exercise?.skill_level ?? null,
+        tier: i.exercise?.tier ?? null,
+        muscles: (i.exercise?.muscle_regions ?? []).map((m: any) => ({
+          name: m.muscle_region?.name ?? "",
+          isPrimary: !!m.is_primary,
+        })),
+        equipmentTypes: i.exercise ? equipmentNamesOf(i.exercise) : [],
+        scoringTypes: (i.exercise?.scoring_rows ?? [])
+          .map((r: any) => r.scoring_type?.name)
+          .filter(Boolean),
       })),
     // Empty is the truthful answer for a session composed before blocks and
     // for a workout served whole. The name comes off the row rather than a
@@ -998,6 +1015,43 @@ async function renumberSessionItems(sessionId: string): Promise<void> {
   );
   for (const r of results) {
     if (r.error) console.error("renumberSessionItems update failed:", r.error);
+  }
+}
+
+/** Persist a within-block reorder: write each item's new `item_order`.
+ *
+ *  The order is computed by lib/sessionReorder.reorderBlock, which keeps the
+ *  sequence contiguous and section-ordered — so this only has to land the
+ *  numbers. Updates run in parallel, like renumberSessionItems, since a reorder
+ *  can touch most of the session. Throws on the first failed write so the hook
+ *  can roll back with a refetch. */
+export async function persistSessionItemOrder(
+  ordered: { id: string; itemOrder: number }[],
+): Promise<void> {
+  const results = await Promise.all(
+    ordered.map((o) =>
+      supabase.from("generated_session_items").update({ item_order: o.itemOrder }).eq("id", o.id),
+    ),
+  );
+  for (const r of results) {
+    if (r.error) {
+      console.error("persistSessionItemOrder failed:", r.error);
+      throw r.error;
+    }
+  }
+}
+
+/** Remove one session item. The logging screen reads items sorted by
+ *  item_order, so a gap left behind is harmless — we don't renumber on remove,
+ *  keeping this a single write. Throws so the hook can roll back on failure. */
+export async function removeSessionItem(itemId: string): Promise<void> {
+  const { error } = await supabase
+    .from("generated_session_items")
+    .delete()
+    .eq("id", itemId);
+  if (error) {
+    console.error("removeSessionItem failed:", error);
+    throw error;
   }
 }
 

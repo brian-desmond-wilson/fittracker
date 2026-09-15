@@ -1,6 +1,7 @@
 // Types for Daily Training Phase 2 — the daily loop.
 // Spec: docs/superpowers/specs/2026-08-16-daily-training-design.md §3, §5.
 import type { BlockRole, StoredBlock } from "./dailyBlocks";
+import type { CaptureSkillLevel } from "./capture";
 
 export type SplitDay = "push" | "pull" | "legs";
 /** `mobility` is the block recommender's dynamic warm-up phase, sitting
@@ -131,6 +132,26 @@ export interface ComposedSession {
   dayReason: string | null;
 }
 
+/** A stored session item as the Today tab reads it: the prescription plus the
+ *  exercise's display facts, so a session row can render as the rich
+ *  captured-exercise card (via sessionItemToCatalogEntry + catalogCardFacts). */
+export interface StoredSessionItem extends SessionItem {
+  id: string;
+  name: string;
+  wasPerformed: boolean | null;
+  /** The exercise's own generated picture — the row thumbnail. Null shows an
+   *  empty square. */
+  imageUrl: string | null;
+  skillLevel: CaptureSkillLevel | null;
+  /** Hierarchy rank: 0 = core movement, 1–3 = tier, null = unranked. */
+  tier: number | null;
+  /** [{ name, isPrimary }] from the exercise_muscle_regions join. */
+  muscles: { name: string; isPrimary: boolean }[];
+  equipmentTypes: string[];
+  /** Scoring type names this exercise carries, e.g. ["Reps", "Load"]. */
+  scoringTypes: string[];
+}
+
 /** A stored generated_sessions row with items joined for display. */
 export interface StoredSession extends ComposedSession {
   id: string;
@@ -138,7 +159,7 @@ export interface StoredSession extends ComposedSession {
   status: "suggested" | "accepted" | "completed" | "skipped" | "rested";
   workoutInstanceId: string | null;
   gymProfileId: string | null;
-  items: (SessionItem & { id: string; name: string; wasPerformed: boolean | null })[];
+  items: StoredSessionItem[];
   /** Empty for pre-block sessions and workouts served whole. */
   blocks: StoredBlock[];
   /**
