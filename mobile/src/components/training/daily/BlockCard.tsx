@@ -10,21 +10,14 @@ import {
 } from "lucide-react-native";
 import { colors, tint, radii, spacing } from "@/src/theme/tokens";
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
-import { BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
+import { BLOCK_TITLES, SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
+import { SessionItemList } from "./SessionItemList";
 import type { StoredBlock } from "@/src/types/dailyBlocks";
-
-export interface BlockCardItem {
-  id: string;
-  exerciseId: string;
-  name: string;
-  targetSets: number | null;
-  targetReps: string | null;
-  restSeconds: number | null;
-}
+import type { SessionSection, StoredSessionItem } from "@/src/types/daily";
 
 interface BlockCardProps {
   block: StoredBlock;
-  items: BlockCardItem[];
+  items: StoredSessionItem[];
   hero: boolean;
   /** Still a suggestion — locks, adjusts, swaps and dismissals are live. */
   canEdit: boolean;
@@ -45,12 +38,16 @@ interface BlockCardProps {
   onToggleDismissed: () => void;
   /** What to capture to replace a built-in (gap nudge), when it is one. */
   nudge: string | null;
+  /** Persist a within-block drag — `orderedIds` is this section's new order. */
+  onReorder: (section: SessionSection, orderedIds: string[]) => void;
+  /** Swipe-to-remove one item from today. */
+  onRemove: (item: StoredSessionItem) => void;
 }
 
 export function BlockCard({
   block, items, hero, canEdit, busy, rerolling, rerollNote, expanded,
   onToggleExpand, onOpenWorkout, onOpenExercise, onToggleLock, onAdjust,
-  onReroll, onToggleDismissed, nudge,
+  onReroll, onToggleDismissed, nudge, onReorder, onRemove,
 }: BlockCardProps) {
   const builtin = block.builtinKey ? builtinByKey(block.builtinKey) : null;
   const orphaned = !block.builtinKey && !block.workoutId;
@@ -161,34 +158,30 @@ export function BlockCard({
     </TouchableOpacity>
   );
 
-  const itemRows = builtin
-    ? builtin.movements.map((m) => (
-        <View key={m.name} style={styles.itemRow}>
-          <Text style={styles.itemName}>{m.name}</Text>
-          <Text style={styles.itemMeta}>{m.prescription}</Text>
-        </View>
-      ))
-    : items.map((item) => (
-        <TouchableOpacity
-          key={item.id}
-          style={styles.itemRow}
-          activeOpacity={0.7}
-          onPress={() => onOpenExercise(item.exerciseId)}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name}. Open the exercise.`}
-        >
-          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.itemMeta}>
-            {[
-              item.targetSets
-                ? `${item.targetSets} × ${item.targetReps ?? "?"}`
-                : item.targetReps,
-              item.restSeconds ? `${item.restSeconds}s` : null,
-            ].filter(Boolean).join(" · ")}
-          </Text>
-          <ChevronRight size={14} color={colors.textFaint} />
-        </TouchableOpacity>
-      ));
+  // The section this block explodes into — items are stored under the section,
+  // never the block name, so a drag reports its position with this.
+  const section = SECTION_FOR_BLOCK[block.block];
+
+  // Built-in movements are app data, not exercise rows: they stay a plain list
+  // (no id, nothing to reorder or remove). Everything else renders as the rich
+  // draggable, swipe-to-remove card, hosted by a DraggableFlatList. The list is
+  // nested inside the tab's ScrollView, so it never scrolls itself.
+  const itemRows = builtin ? (
+    builtin.movements.map((m) => (
+      <View key={m.name} style={styles.itemRow}>
+        <Text style={styles.itemName}>{m.name}</Text>
+        <Text style={styles.itemMeta}>{m.prescription}</Text>
+      </View>
+    ))
+  ) : (
+    <SessionItemList
+      items={items}
+      section={section}
+      onOpen={onOpenExercise}
+      onRemove={onRemove}
+      onReorder={onReorder}
+    />
+  );
 
   const emptyLine = !builtin && items.length === 0 && (
     <Text style={styles.emptyLine}>

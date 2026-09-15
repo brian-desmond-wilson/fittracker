@@ -3,7 +3,7 @@
 // budget bar, and five interactive block cards (hero main). Talk-back lives
 // here too — block/day adjust instructions, the recovery override, and the
 // post-session debrief.
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   Alert, RefreshControl,
@@ -30,6 +30,7 @@ import { AdjustSheet } from "./AdjustSheet";
 import { DebriefSheet } from "./DebriefSheet";
 import { MovementRatingSheet } from "./MovementRatingSheet";
 import { BlockCard } from "./BlockCard";
+import { SessionItemList } from "./SessionItemList";
 import { SessionBudgetBar } from "./SessionBudgetBar";
 import { RestSheet } from "./RestSheet";
 import { TomorrowPreview } from "./TomorrowPreview";
@@ -44,7 +45,7 @@ import {
   setBlockLocked, setRecoveryOverride, unrestToday,
 } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
-import type { DailyCheckin, SessionSection, StoredSession } from "@/src/types/daily";
+import type { DailyCheckin, SessionSection, StoredSession, StoredSessionItem } from "@/src/types/daily";
 import type { BlockRole } from "@/src/types/dailyBlocks";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
@@ -96,8 +97,10 @@ export default function TodayTab() {
   // Whether the draft fetch has answered. Without it, "no preview" and "not
   // asked yet" look identical, and the rest card would flash an empty state.
   const [tomorrowDraftLoaded, setTomorrowDraftLoaded] = useState(false);
-  const { session, checkin, activeGym, gyms, loading, error, refetch, composeAnother, recomposeBlock } =
-    useDailySession(refreshKey);
+  const {
+    session, checkin, activeGym, gyms, loading, error, refetch, composeAnother,
+    recomposeBlock, reorderWithinBlock, removeItem,
+  } = useDailySession(refreshKey);
   const [refreshing, setRefreshing] = useState(false);
   // Set when today's session is a workout served whole — either one you
   // started from the catalog, or one the composer chose to serve.
@@ -433,8 +436,16 @@ export default function TodayTab() {
 
   const openWorkout = (workoutId: string) =>
     router.push(`/(tabs)/training/captured-workout/${workoutId}` as never);
-  const openExercise = (exerciseId: string) =>
-    router.push(`/(tabs)/training/exercise/${exerciseId}` as never);
+  // Stable so the memoized session cards below aren't re-rendered every pass.
+  const openExercise = useCallback(
+    (exerciseId: string) =>
+      router.push(`/(tabs)/training/exercise/${exerciseId}` as never),
+    [router],
+  );
+  const handleRemoveItem = useCallback(
+    (item: StoredSessionItem) => removeItem(item.id),
+    [removeItem],
+  );
   const openBody = () => {
     setSetupVisible(false);
     router.push("/(tabs)/training/body" as never);
@@ -759,6 +770,8 @@ export default function TodayTab() {
                       onReroll={() => reroll(block.block)}
                       onToggleDismissed={() => toggleDismissed(block.id, block.dismissed)}
                       nudge={block.builtinKey !== null ? gapNudge(block.builtinKey) : null}
+                      onReorder={reorderWithinBlock}
+                      onRemove={handleRemoveItem}
                     />
                   ))
                 : SECTION_ORDER.map((section) => {
@@ -774,28 +787,13 @@ export default function TodayTab() {
                       </Text>
                     )}
                   </View>
-                  {items.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.itemCard}
-                      activeOpacity={0.7}
-                      onPress={() => openExercise(item.exerciseId)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${item.name}. Open the exercise.`}
-                    >
-                      <View style={styles.itemBody}>
-                        <Text style={styles.itemName}>{item.name}</Text>
-                        <Text style={styles.itemMeta}>
-                          {[
-                            item.targetSets ? `${item.targetSets} × ${item.targetReps ?? "?"}` : item.targetReps,
-                            item.restSeconds ? `rest ${item.restSeconds}s` : null,
-                          ].filter(Boolean).join(" · ")}
-                        </Text>
-                        {item.reason && <Text style={styles.itemReason}>{item.reason}</Text>}
-                      </View>
-                      <ChevronRight size={18} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  ))}
+                  <SessionItemList
+                    items={items}
+                    section={section}
+                    onOpen={openExercise}
+                    onRemove={handleRemoveItem}
+                    onReorder={reorderWithinBlock}
+                  />
                 </View>
               );
             })}

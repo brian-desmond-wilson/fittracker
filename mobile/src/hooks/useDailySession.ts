@@ -14,11 +14,15 @@ import {
   fetchGyms,
   fetchTodayCheckin,
   fetchTodaySession,
+  persistSessionItemOrder,
+  removeSessionItem,
 } from "../lib/supabase/daily";
+import { reorderBlock } from "../lib/sessionReorder";
 import type { BlockRole } from "../types/dailyBlocks";
 import type {
   DailyCheckin,
   GymProfile,
+  SessionSection,
   StoredSession,
 } from "../types/daily";
 
@@ -42,6 +46,11 @@ export interface UseDailySessionValue {
    *  instructions just use refetch — the new instruction already changes the
    *  signature. */
   recomposeBlock: (block: BlockRole) => void;
+  /** Persist a within-block drag: `orderedIdsInBlock` is that section's new id
+   *  order. Optimistic, then written, then reconciled by refetch. */
+  reorderWithinBlock: (section: SessionSection, orderedIdsInBlock: string[]) => void;
+  /** Swipe-to-remove a session item. Optimistic, then deleted, then refetch. */
+  removeItem: (itemId: string) => void;
 }
 
 export function useDailySession(refreshKey = 0): UseDailySessionValue {
@@ -159,6 +168,36 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
     load();
   }, [load]);
 
+  const reorderWithinBlock = useCallback(
+    (section: SessionSection, orderedIdsInBlock: string[]) => {
+      let ordered: { id: string; itemOrder: number }[] = [];
+      setSession((prev) => {
+        if (!prev) return prev;
+        ordered = reorderBlock(prev.items, section, orderedIdsInBlock);
+        const orderById = new Map(ordered.map((o) => [o.id, o.itemOrder]));
+        const items = prev.items
+          .map((i) => ({ ...i, itemOrder: orderById.get(i.id) ?? i.itemOrder }))
+          .sort((a, b) => a.itemOrder - b.itemOrder);
+        return { ...prev, items };
+      });
+      if (ordered.length === 0) return;
+      // Persist, then reconcile with the truth. A failed write rolls back by
+      // replacing the optimistic order with whatever the server still holds.
+      persistSessionItemOrder(ordered).then(load).catch(load);
+    },
+    [load],
+  );
+
+  const removeItem = useCallback(
+    (itemId: string) => {
+      setSession((prev) =>
+        prev ? { ...prev, items: prev.items.filter((i) => i.id !== itemId) } : prev,
+      );
+      removeSessionItem(itemId).then(load).catch(load);
+    },
+    [load],
+  );
+
   return {
     session,
     checkin,
@@ -169,5 +208,7 @@ export function useDailySession(refreshKey = 0): UseDailySessionValue {
     refetch: load,
     composeAnother,
     recomposeBlock,
+    reorderWithinBlock,
+    removeItem,
   };
 }
