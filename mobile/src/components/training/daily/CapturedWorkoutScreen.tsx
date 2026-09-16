@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { ChevronLeft, ChevronUp, ChevronDown, MoreVertical, Play, Plus, Trash2 } from "lucide-react-native";
 import { colors } from "@/src/lib/colors";
+import { goBackOr } from "@/src/lib/navBack";
 import { supabase } from "@/src/lib/supabase";
 import { adoptCapturedWorkout, fetchDayStatus } from "@/src/lib/supabase/daily";
 import { getLocalDateString } from "@/src/components/workout-session/helpers";
@@ -565,7 +566,7 @@ export function CapturedWorkoutScreen() {
   const header = (
     <View style={styles.header}>
       <TouchableOpacity
-        onPress={() => (editing ? cancelEditing() : router.back())}
+        onPress={() => (editing ? cancelEditing() : goBackOr(router, "/(tabs)/training"))}
         style={styles.backButton}
         activeOpacity={0.7}
       >

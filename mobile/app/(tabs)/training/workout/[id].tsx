@@ -26,6 +26,7 @@ import {
   Layers,
 } from 'lucide-react-native';
 import { colors } from '@/src/lib/colors';
+import { goBackOr } from '@/src/lib/navBack';
 import { supabase } from '@/src/lib/supabase';
 import { deleteProgramWorkout } from '@/src/lib/supabase/training';
 import { AddWorkoutWizard } from '@/src/components/training/program-detail/workout-wizard/AddWorkoutWizard';
@@ -308,7 +309,7 @@ export default function WorkoutDetailPage() {
             const success = await deleteProgramWorkout(workout.id);
             setDeleting(false);
             if (success) {
-              router.back();
+              goBackOr(router, '/(tabs)/training');
             } else {
               Alert.alert('Error', 'Failed to delete workout. Please try again.');
             }
@@ -334,7 +335,7 @@ export default function WorkoutDetailPage() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" />
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => goBackOr(router, '/(tabs)/training')} style={styles.backButton}>
             <ChevronLeft size={24} color={colors.foreground} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
@@ -356,7 +357,7 @@ export default function WorkoutDetailPage() {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => goBackOr(router, '/(tabs)/training')} style={styles.backButton}>
           <ChevronLeft size={24} color={colors.foreground} />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>

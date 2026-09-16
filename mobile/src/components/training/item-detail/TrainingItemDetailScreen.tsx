@@ -36,6 +36,7 @@ import { collapseSiblings } from '@/src/lib/hierarchyCollapse';
 import { exerciseFilterParam } from '@/src/lib/exerciseFilterLink';
 import type { ExerciseFilterLink } from '@/src/lib/exerciseFilterLink';
 import { getLocalDateString } from '@/src/lib/dates';
+import { goBackOr } from '@/src/lib/navBack';
 import { CatalogItemWizard } from '@/src/components/training/crossfit/CatalogItemWizard';
 import { MovementRatingSheet } from '@/src/components/training/daily/MovementRatingSheet';
 import { EquipmentGlyph } from '@/src/components/ui/EquipmentGlyph';
@@ -387,14 +388,7 @@ export function TrainingItemDetailScreen({
     router.push({ pathname: `/(tabs)/training/exercise-sources/${id}`, params: { tab } } as never);
   }, [router, id]);
 
-  /** Back to wherever we came from — but when there's nothing to pop (a hot
-   *  reload, deep link, or state restore that lands on this page as the stack's
-   *  only screen), a raw back() dispatches an unhandled GO_BACK: the button
-   *  does nothing and warns. Fall back to the Training index instead. */
-  const goBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/training' as never);
-  }, [router]);
+  const goBack = useCallback(() => goBackOr(router, '/(tabs)/training'), [router]);
 
   /** Re-rate: overwrite the latest row, replay the state; on failure keep the
    *  old note and toast (spec §8). The sheet closes either way. */

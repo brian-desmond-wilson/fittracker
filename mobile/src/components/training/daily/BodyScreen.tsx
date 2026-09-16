@@ -13,6 +13,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft, RefreshCw } from "lucide-react-native";
 import { colors, radii, spacing, tint } from "@/src/theme/tokens";
+import { goBackOr } from "@/src/lib/navBack";
 import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/lib/dates";
 import { daysBetween, muscleCoverage, TRAINABLE_MUSCLES } from "@/src/lib/dailyCoverage";
@@ -148,7 +149,7 @@ export function BodyScreen() {
       <StatusBar barStyle="light-content" />
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}
+          <TouchableOpacity onPress={() => goBackOr(router, "/(tabs)/training")} style={styles.backButton}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button" accessibilityLabel="Back">
             <ChevronLeft size={24} color={colors.text} />
