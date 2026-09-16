@@ -14,7 +14,7 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { TrendingUp, BarChart3, Clock, User, Plus } from "lucide-react-native";
 import { AddProgramModal } from "./AddProgramModal";
-import { colors } from "@/src/lib/colors";
+import { colors, tint } from "@/src/theme/tokens";
 import { useRouter } from "expo-router";
 import {
   fetchPublishedPrograms,
@@ -54,13 +54,13 @@ function ProgramCard({ program, onPress, onLongPress }: ProgramCardProps) {
   const getDifficultyColor = (level: string) => {
     switch (level) {
       case "Beginner":
-        return "#22C55E";
+        return colors.success;
       case "Intermediate":
-        return "#F59E0B";
+        return colors.warning;
       case "Advanced":
-        return "#EF4444";
+        return colors.danger;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -86,18 +86,18 @@ function ProgramCard({ program, onPress, onLongPress }: ProgramCardProps) {
       <View style={styles.cardContent}>
         <Text style={styles.programTitle}>{program.title}</Text>
         <View style={styles.creatorRow}>
-          <User size={14} color={colors.mutedForeground} />
+          <User size={14} color={colors.textMuted} />
           <Text style={styles.creatorText}>by {program.creator}</Text>
         </View>
 
         {/* Stats Row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Clock size={14} color={colors.mutedForeground} />
+            <Clock size={14} color={colors.textMuted} />
             <Text style={styles.statText}>{program.durationWeeks} weeks</Text>
           </View>
           <View style={styles.statItem}>
-            <BarChart3 size={14} color={colors.mutedForeground} />
+            <BarChart3 size={14} color={colors.textMuted} />
             <Text style={styles.statText}>{program.daysPerWeek} days/week</Text>
           </View>
           <View style={styles.statItem}>
@@ -281,7 +281,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.brand} />
         <Text style={styles.loadingText}>Loading programs...</Text>
       </View>
     );
@@ -311,8 +311,8 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
           />
         }
       >
@@ -362,7 +362,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
       {/* Sticky Refresh Indicator */}
       {refreshing && (
         <View style={styles.refreshingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
           <Text style={styles.refreshingText}>Refreshing...</Text>
         </View>
       )}
@@ -373,7 +373,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
         onPress={() => setAddModalVisible(true)}
         activeOpacity={0.8}
       >
-        <Plus size={24} color="#FFFFFF" />
+        <Plus size={24} color={colors.onBrand} />
       </TouchableOpacity>
 
       {/* Add Program Modal */}
@@ -399,7 +399,7 @@ export default function ProgramsTab({ searchQuery, onSearchChange, onCountUpdate
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   centerContent: {
     justifyContent: "center",
@@ -409,7 +409,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   refreshingContainer: {
     position: "absolute",
@@ -418,28 +418,28 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
     paddingVertical: 20,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     zIndex: 10,
   },
   refreshingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   errorTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   errorText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: "center",
     marginBottom: 20,
   },
   retryButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
   retryButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   scrollView: {
     flex: 1,
@@ -462,12 +462,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     letterSpacing: 1,
     marginBottom: 16,
   },
   programCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 16,
     marginBottom: 16,
     overflow: "hidden",
@@ -482,13 +482,13 @@ const styles = StyleSheet.create({
   coverImage: {
     width: "100%",
     height: "100%",
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
   },
   activeBadge: {
     position: "absolute",
     top: 12,
     right: 12,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   activeBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
     letterSpacing: 0.5,
   },
   cardContent: {
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
   programTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   creatorRow: {
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
   },
   creatorText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   statsRow: {
     flexDirection: "row",
@@ -530,24 +530,24 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   goalRow: {
     flexDirection: "row",
     gap: 8,
   },
   goalBadge: {
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    backgroundColor: tint(colors.brand),
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(34, 197, 94, 0.3)",
+    borderColor: tint(colors.brand, 0.3),
   },
   goalText: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.primary,
+    color: colors.brand,
   },
   emptyState: {
     paddingVertical: 60,
@@ -556,12 +556,12 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: "center",
     paddingHorizontal: 40,
   },
@@ -572,10 +572,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

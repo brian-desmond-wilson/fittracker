@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Camera, X, ChevronDown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { supabase } from '@/src/lib/supabase';
 import { createProgramTemplate, uploadProgramCoverImage } from '@/src/lib/supabase/training';
 import type { CreateProgramTemplateInput, DifficultyLevel, PrimaryGoal } from '@/src/types/training';
@@ -353,7 +353,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
                 </View>
               ) : (
                 <View style={styles.imagePlaceholder}>
-                  <Camera size={40} color={colors.mutedForeground} />
+                  <Camera size={40} color={colors.textMuted} />
                   <Text style={styles.imagePlaceholderText}>
                     Tap to add cover image
                   </Text>
@@ -368,7 +368,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
             <TextInput
               style={styles.input}
               placeholder="e.g., 12-Week Strength Builder"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={formData.title}
               onChangeText={(v) => updateField('title', v)}
               autoCapitalize="words"
@@ -382,7 +382,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
             <TextInput
               style={styles.input}
               placeholder="e.g., Build strength with progressive overload"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={formData.subtitle}
               onChangeText={(v) => updateField('subtitle', v)}
               autoCapitalize="sentences"
@@ -396,7 +396,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
             <TextInput
               style={[styles.input, styles.textArea]}
               placeholder="Describe your program..."
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={formData.description}
               onChangeText={(v) => updateField('description', v)}
               multiline
@@ -412,7 +412,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
             <TextInput
               style={styles.input}
               placeholder="Your name"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={formData.author}
               onChangeText={(v) => updateField('author', v)}
               autoCapitalize="words"
@@ -430,7 +430,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
                 activeOpacity={0.7}
               >
                 <Text style={styles.dropdownText}>{formData.difficultyLevel}</Text>
-                <ChevronDown size={20} color={colors.mutedForeground} />
+                <ChevronDown size={20} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
             <View style={[styles.field, styles.fieldHalf]}>
@@ -441,7 +441,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
                 activeOpacity={0.7}
               >
                 <Text style={styles.dropdownText}>{formData.primaryGoal}</Text>
-                <ChevronDown size={20} color={colors.mutedForeground} />
+                <ChevronDown size={20} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
           </View>
@@ -453,7 +453,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
               <TextInput
                 style={styles.input}
                 placeholder="8"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={formData.durationWeeks}
                 onChangeText={(v) => updateField('durationWeeks', v.replace(/[^0-9]/g, ''))}
                 keyboardType="number-pad"
@@ -465,7 +465,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
               <TextInput
                 style={styles.input}
                 placeholder="4"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={formData.daysPerWeek}
                 onChangeText={(v) => updateField('daysPerWeek', v.replace(/[^0-9]/g, ''))}
                 keyboardType="number-pad"
@@ -477,7 +477,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
               <TextInput
                 style={styles.input}
                 placeholder="60"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={formData.minutesPerSession}
                 onChangeText={(v) => updateField('minutesPerSession', v.replace(/[^0-9]/g, ''))}
                 keyboardType="number-pad"
@@ -504,7 +504,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
           >
             {saving ? (
               <View style={styles.savingContainer}>
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={colors.onBrand} size="small" />
                 <Text style={styles.savingText}>Creating Program...</Text>
               </View>
             ) : (
@@ -520,7 +520,7 @@ export function AddProgramModal({ onClose, onSave }: AddProgramModalProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   dropdownButton: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
@@ -581,30 +581,30 @@ const styles = StyleSheet.create({
   },
   dropdownText: {
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   textArea: {
     height: 100,
     paddingTop: 12,
   },
   imagePicker: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: 12,
@@ -638,17 +638,17 @@ const styles = StyleSheet.create({
   imagePlaceholderText: {
     marginTop: 12,
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   infoNote: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 8,
     padding: 12,
     marginTop: 8,
   },
   infoNoteText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 18,
     textAlign: 'center',
   },
@@ -657,10 +657,10 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   savingContainer: {
     flexDirection: 'row',
@@ -681,6 +681,6 @@ const styles = StyleSheet.create({
   savingText: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });
