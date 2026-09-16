@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, RefreshControl } from 'react-native';
 import { Calendar, Clock } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { ClassWithDetails } from '@/src/types/crossfit';
 import { fetchClasses, searchClasses } from '@/src/lib/supabase/crossfit';
 import { ClassDetailScreen } from './ClassDetailScreen';
@@ -121,14 +121,14 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
           />
         }
       >
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.brand} />
             <Text style={styles.loadingText}>Loading classes...</Text>
           </View>
         ) : classes.length === 0 ? (
@@ -150,11 +150,11 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
             >
               <View style={styles.classHeader}>
                 <View style={styles.dateContainer}>
-                  <Calendar size={16} color={colors.primary} />
+                  <Calendar size={16} color={colors.brand} />
                   <Text style={styles.dateText}>{formatDate(classData.date)}</Text>
                 </View>
                 <View style={styles.durationBadge}>
-                  <Clock size={14} color={colors.mutedForeground} />
+                  <Clock size={14} color={colors.textMuted} />
                   <Text style={styles.durationText}>{classData.duration_minutes} min</Text>
                 </View>
               </View>
@@ -190,7 +190,7 @@ export default function ClassesTab({ searchQuery, onSearchChange, onCountUpdate 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   content: {
     flex: 1,
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   emptyState: {
     padding: 40,
@@ -217,12 +217,12 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 20,
@@ -233,17 +233,17 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     borderRadius: 8,
   },
   createButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   classCard: {
     padding: 16,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   durationBadge: {
     flexDirection: 'row',
@@ -270,22 +270,22 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderRadius: 8,
   },
   durationText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   className: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   wodPreview: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
 });

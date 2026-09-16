@@ -15,7 +15,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import type { WizardFormData, WizardDictionaries } from '../CatalogItemWizard';
 import { fetchVariantLabels, fetchCoreDescription } from '@/src/lib/supabase/crossfit';
 import type { VariantLabel } from '@/src/types/crossfit';
@@ -307,7 +307,7 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
                   <Text style={[styles.pickerValue, !value && styles.pickerValueEmpty]} numberOfLines={2}>
                     {value ?? standardLabel}
                   </Text>
-                  <ChevronRight size={18} color={colors.mutedForeground} />
+                  <ChevronRight size={18} color={colors.textMuted} />
                 </View>
               </TouchableOpacity>
             );
@@ -332,7 +332,7 @@ export function Step3Attributes({ formData, updateFormData, dictionaries }: Step
                 >
                   {selectedName(variantOptions, formData.variant_label_id) ?? standardLabel}
                 </Text>
-                <ChevronRight size={18} color={colors.mutedForeground} />
+                <ChevronRight size={18} color={colors.textMuted} />
               </View>
             </TouchableOpacity>
           )}
@@ -410,16 +410,16 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   helperText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   sectionHeader: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 16,
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -434,27 +434,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   pillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   pickerList: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     overflow: 'hidden',
   },
   pickerRow: {
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
   pickerLabel: {
     fontSize: 15,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   pickerValueWrap: {
     flexDirection: 'row',
@@ -480,17 +480,17 @@ const styles = StyleSheet.create({
   },
   pickerValue: {
     fontSize: 15,
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: '500',
     flexShrink: 1,
   },
   pickerValueEmpty: {
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontWeight: '400',
   },
   infoText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
 });

@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Check } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 
 export interface AttributeOption {
   id: string;
@@ -77,7 +77,7 @@ export function AttributePickerSheet({
                 </Text>
               ) : null}
             </View>
-            {selectedId === null && <Check size={18} color={colors.primary} />}
+            {selectedId === null && <Check size={18} color={colors.brand} />}
           </TouchableOpacity>
           {options.map((option) => {
             const selected = option.id === selectedId;
@@ -99,7 +99,7 @@ export function AttributePickerSheet({
                     </Text>
                   ) : null}
                 </View>
-                {selected && <Check size={18} color={colors.primary} />}
+                {selected && <Check size={18} color={colors.brand} />}
               </TouchableOpacity>
             );
           })}
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   sheet: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderWidth: 1,
@@ -130,13 +130,13 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     alignSelf: 'center',
   },
   title: {
     fontSize: 17,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   list: {
     flexGrow: 0,
@@ -156,18 +156,18 @@ const styles = StyleSheet.create({
   },
   rowLabel: {
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   noneLabel: {
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   rowLabelOn: {
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   rowDescription: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
 });

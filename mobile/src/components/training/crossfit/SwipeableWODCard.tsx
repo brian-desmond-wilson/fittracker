@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Zap, History, Timer } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
 import { WODWithDetails } from '@/src/types/crossfit';
 import { deleteWOD } from '@/src/lib/supabase/crossfit';
@@ -162,11 +162,11 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
         {/* Line 2: Format + Time Domain */}
         <View style={styles.formatRow}>
           {(wod.rep_scheme_type === 'fixed_rounds' || wod.format?.name === 'Rounds For Time') ? (
-            <History size={16} color={colors.primary} />
+            <History size={16} color={colors.brand} />
           ) : (wod.rep_scheme_type === 'descending' || wod.rep_scheme_type === 'ascending') ? (
-            <Timer size={16} color={colors.primary} />
+            <Timer size={16} color={colors.brand} />
           ) : (
-            <Zap size={16} color={colors.primary} />
+            <Zap size={16} color={colors.brand} />
           )}
           <Text style={styles.formatText}>{formatLine}</Text>
         </View>
@@ -193,7 +193,7 @@ export function SwipeableWODCard({ wod, onPress, onDelete, getCategoryColor }: S
 
 const styles = StyleSheet.create({
   wodCard: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   wodName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
     marginRight: 8,
   },
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   categoryBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   formatRow: {
     flexDirection: 'row',
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   formatText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   structureRow: {
     paddingLeft: 22, // Align with text after icon in formatRow
@@ -258,14 +258,14 @@ const styles = StyleSheet.create({
   structureText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.primary,
+    color: colors.brand,
   },
   movementsRow: {
     paddingLeft: 22, // Align with text after icon in formatRow
   },
   movementsText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 16,
   },
 });

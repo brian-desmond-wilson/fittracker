@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { X, Search } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors, tint } from '@/src/theme/tokens';
 import { fetchMovements, searchMovements } from '@/src/lib/supabase/crossfit';
 import type { ExerciseWithVariations } from '@/src/types/crossfit';
 
@@ -92,17 +92,17 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
           <View style={styles.header}>
             <Text style={styles.title}>Select Movement</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={colors.foreground} />
+              <X size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
           {/* Search Input */}
           <View style={styles.searchContainer}>
-            <Search size={20} color={colors.mutedForeground} />
+            <Search size={20} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search movements..."
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoFocus
@@ -114,7 +114,7 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
             {loading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
+                <ActivityIndicator size="large" color={colors.brand} />
               </View>
             ) : error ? (
               <View style={styles.emptyState}>
@@ -162,13 +162,13 @@ export function MovementSearchModal({ visible, onClose, onSelectMovement }: Move
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.scrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderRadius: 16,
     width: '100%',
     height: 500,
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
   },
   closeButton: {
     padding: 4,
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   list: {
     flex: 1,
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
   },
   movementItem: {
@@ -240,25 +240,25 @@ const styles = StyleSheet.create({
   movementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   movementCategory: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   officialBadge: {
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    backgroundColor: tint(colors.brand),
     borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.3)',
+    borderColor: tint(colors.brand, 0.3),
   },
   officialBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#22C55E',
+    color: colors.brand,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },

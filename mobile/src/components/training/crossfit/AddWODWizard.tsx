@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { WODBasicsStep } from './WODBasicsStep';
 import { WODMovementsStep } from './WODMovementsStep';
 import { WODPreviewStep } from './WODPreviewStep';
@@ -262,7 +262,7 @@ export function AddWODWizard({ onClose, onSave }: AddWODWizardProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   },
   stepIndicator: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   content: {
     flex: 1,

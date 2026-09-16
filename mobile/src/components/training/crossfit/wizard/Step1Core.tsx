@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { X } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import type { WizardFormData, CatalogItemKind } from '../CatalogItemWizard';
 import { ParentMovementSearch, type CoreMovementOption } from '../ParentMovementSearch';
 
@@ -151,7 +151,7 @@ export function Step1Core({
                 <Switch
                   value={formData.use_custom_name}
                   onValueChange={(value) => updateFormData({ use_custom_name: value })}
-                  trackColor={{ false: colors.muted, true: colors.primary }}
+                  trackColor={{ false: colors.surface2, true: colors.brand }}
                   thumbColor="#FFFFFF"
                 />
               </View>
@@ -175,7 +175,7 @@ export function Step1Core({
           <TextInput
             style={styles.input}
             placeholder="e.g., Pike Walk, Box Jump, etc."
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.name}
             onChangeText={text => {
               if (shortNameTouched) {
@@ -208,7 +208,7 @@ export function Step1Core({
         <TextInput
           style={styles.input}
           placeholder="e.g., C2B, T2B, HSPU"
-          placeholderTextColor={colors.mutedForeground}
+          placeholderTextColor={colors.textMuted}
           value={formData.short_name}
           onChangeText={text => {
             onShortNameTouched();
@@ -232,7 +232,7 @@ export function Step1Core({
               <TextInput
                 style={styles.aliasInput}
                 placeholder="Type an alias and press Add"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={aliasInput}
                 onChangeText={setAliasInput}
                 onSubmitEditing={addAlias}
@@ -251,7 +251,7 @@ export function Step1Core({
                       onPress={() => updateFormData({ aliases: formData.aliases.filter(a => a !== alias) })}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <X size={14} color={colors.foreground} />
+                      <X size={14} color={colors.text} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -272,7 +272,7 @@ export function Step1Core({
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder={`Add notes, coaching cues, or ${entityNameLower} standards...`}
-          placeholderTextColor={colors.mutedForeground}
+          placeholderTextColor={colors.textMuted}
           value={formData.description}
           onChangeText={text => updateFormData({ description: text })}
           multiline
@@ -292,7 +292,7 @@ export function Step1Core({
         <TextInput
           style={styles.input}
           placeholder="https://youtube.com/..."
-          placeholderTextColor={colors.mutedForeground}
+          placeholderTextColor={colors.textMuted}
           value={formData.video_url}
           onChangeText={text => updateFormData({ video_url: text })}
           autoCapitalize="none"
@@ -311,7 +311,7 @@ export function Step1Core({
         <TextInput
           style={styles.input}
           placeholder="https://..."
-          placeholderTextColor={colors.mutedForeground}
+          placeholderTextColor={colors.textMuted}
           value={formData.image_url}
           onChangeText={text => updateFormData({ image_url: text })}
           autoCapitalize="none"
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   labelRow: {
     flexDirection: 'row',
@@ -351,31 +351,31 @@ const styles = StyleSheet.create({
   },
   toggleLabel: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   required: {
-    color: colors.destructive,
+    color: colors.danger,
   },
   helperText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   lockedText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   generatedNameHint: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     padding: 12,
     borderRadius: 8,
     borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
+    borderLeftColor: colors.brand,
   },
   generatedNameHintText: {
     fontSize: 14,
     lineHeight: 20,
-    color: colors.foreground,
+    color: colors.text,
   },
   input: {
     borderWidth: 1,
@@ -384,8 +384,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.foreground,
-    backgroundColor: colors.input,
+    color: colors.text,
+    backgroundColor: colors.surface2,
   },
   textArea: {
     minHeight: 100,
@@ -402,18 +402,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.foreground,
-    backgroundColor: colors.input,
+    color: colors.text,
+    backgroundColor: colors.surface2,
   },
   addButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
     justifyContent: 'center',
   },
   addButtonText: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -435,11 +435,11 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 14,
-    color: colors.foreground,
+    color: colors.text,
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderRadius: 8,
     padding: 2,
   },
@@ -451,14 +451,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   segmentActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   segmentText: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   segmentTextActive: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

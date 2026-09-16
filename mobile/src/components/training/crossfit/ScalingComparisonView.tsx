@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import type { WODWithDetails, WODMovementWithDetails, ScalingLevel } from '@/src/types/crossfit';
 import { formatWeight } from '@/src/lib/wodDetailHelpers';
 
@@ -76,8 +76,8 @@ export function ScalingComparisonView({ wod }: ScalingComparisonViewProps) {
     isLast: boolean
   ) => {
     const levelColors: Record<ScalingLevel, string> = {
-      Rx: colors.primary,
-      L2: '#F59E0B',
+      Rx: colors.brand,
+      L2: colors.warning,
       L1: '#10B981',
     };
 
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   movementNumber: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: colors.brand,
   },
   movementName: {
     fontSize: 18,
@@ -281,11 +281,11 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   variationText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   emptyState: {
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
   },
 });

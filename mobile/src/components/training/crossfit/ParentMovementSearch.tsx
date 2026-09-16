@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { Search, X } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors, tint } from '@/src/theme/tokens';
 import { searchCoreMovements } from '@/src/lib/supabase/crossfit';
 
 export interface CoreMovementOption {
@@ -116,24 +116,24 @@ export function ParentMovementSearch({
             </View>
           </View>
           <TouchableOpacity onPress={handleClear} style={styles.clearButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X size={20} color={colors.foreground} />
+            <X size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
       ) : (
         // Search state
         <>
           <View style={styles.searchContainer}>
-            <Search size={20} color={colors.mutedForeground} style={styles.searchIcon} />
+            <Search size={20} color={colors.textMuted} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder={placeholder}
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
               autoCorrect={false}
             />
-            {loading && <ActivityIndicator size="small" color={colors.primary} style={styles.loadingIndicator} />}
+            {loading && <ActivityIndicator size="small" color={colors.brand} style={styles.loadingIndicator} />}
           </View>
 
           {showDropdown && searchResults.length > 0 && (
@@ -183,14 +183,14 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   required: {
-    color: colors.destructive,
+    color: colors.danger,
   },
   helperTextStyle: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    backgroundColor: colors.input,
+    backgroundColor: colors.surface2,
     paddingHorizontal: 12,
   },
   searchIcon: {
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   loadingIndicator: {
     marginLeft: 8,
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
   },
   resultItem: {
     flexDirection: 'row',
@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 8,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   resultName: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   coreBadge: {
     alignSelf: 'flex-start',
@@ -260,13 +260,13 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 12,
     borderWidth: 1,
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderColor: 'rgba(34, 197, 94, 0.3)',
+    backgroundColor: tint(colors.brand),
+    borderColor: tint(colors.brand, 0.3),
   },
   coreBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#22C55E',
+    color: colors.brand,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -276,11 +276,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
   },
   emptyTextStyle: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   selectedContainer: {
     flexDirection: 'row',
@@ -288,9 +288,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 12,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.brand,
     borderRadius: 8,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
   },
   selectedContent: {
     flexDirection: 'row',
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 8,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   selectedName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   clearButton: {
     padding: 8,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Plus, GripVertical, Edit2, Trash2 } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { WODFormData, WODMovementConfig } from './AddWODWizard';
 import { MovementSearchModal } from './MovementSearchModal';
 import { MovementConfigModal } from './MovementConfigModal';
@@ -245,7 +245,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
                     <TouchableOpacity onPress={() => handleMoveUp(index)} disabled={index === 0}>
                       <Text style={[styles.arrowButton, index === 0 && styles.arrowButtonDisabled]}>↑</Text>
                     </TouchableOpacity>
-                    <GripVertical size={20} color={colors.mutedForeground} />
+                    <GripVertical size={20} color={colors.textMuted} />
                     <TouchableOpacity
                       onPress={() => handleMoveDown(index)}
                       disabled={index === formData.movements.length - 1}
@@ -261,10 +261,10 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
                       </View>
                       <View style={styles.actions}>
                         <TouchableOpacity onPress={() => handleEditMovement(index)} style={styles.actionButton}>
-                          <Edit2 size={18} color={colors.primary} />
+                          <Edit2 size={18} color={colors.brand} />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => handleDeleteMovement(index)} style={styles.actionButton}>
-                          <Trash2 size={18} color="#EF4444" />
+                          <Trash2 size={18} color={colors.danger} />
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -336,7 +336,7 @@ export function WODMovementsStep({ formData, onUpdate, onNext, wodFormatName }: 
           onPress={() => setSearchModalVisible(true)}
           activeOpacity={0.7}
         >
-          <Plus size={20} color={colors.primary} />
+          <Plus size={20} color={colors.brand} />
           <Text style={styles.addButtonText}>Add Movement</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -395,17 +395,17 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
   },
   movementCard: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
@@ -423,11 +423,11 @@ const styles = StyleSheet.create({
   },
   arrowButton: {
     fontSize: 20,
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: 'bold',
   },
   arrowButtonDisabled: {
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     opacity: 0.3,
   },
   movementInfo: {
@@ -449,12 +449,12 @@ const styles = StyleSheet.create({
   movementNumber: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   movementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   scalingSection: {
@@ -468,12 +468,12 @@ const styles = StyleSheet.create({
   scalingLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand,
     minWidth: 28,
   },
   scalingText: {
     fontSize: 13,
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
     lineHeight: 18,
   },
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   },
   variationText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
     flex: 1,
     lineHeight: 18,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   },
   notesText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 18,
     fontStyle: 'italic',
   },
@@ -516,33 +516,33 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: colors.brand,
     borderStyle: 'dashed',
     marginTop: 8,
   },
   addButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   footer: {
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   nextButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
   },
   nextButtonDisabled: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
   },
   nextButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

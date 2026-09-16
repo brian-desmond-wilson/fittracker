@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { WODFormData, RepSchemeType } from './AddWODWizard';
 import { fetchWODFormats, fetchWODCategories } from '@/src/lib/supabase/crossfit';
 import type { WODFormat, WODCategory } from '@/src/types/crossfit';
@@ -71,7 +71,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.brand} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -112,7 +112,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
           <TextInput
             style={styles.input}
             placeholder="e.g., Fran, Murph, My Custom WOD"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.name}
             onChangeText={(text) => onUpdate({ name: text })}
             autoCapitalize="words"
@@ -241,7 +241,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
                     formData.rep_scheme_type === 'chipper' ? 'Single pass through movements' :
                     'Custom scheme'
                   }
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   value={formData.rep_scheme || ''}
                   onChangeText={(text) => onUpdate({ rep_scheme: text })}
                   keyboardType={formData.rep_scheme_type === 'fixed_rounds' || formData.rep_scheme_type === 'distance' ? 'number-pad' : 'default'}
@@ -359,7 +359,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
                     formData.rep_scheme_type === 'complex' ? '1 Clean + 2 Front Squats + 1 Jerk' :
                     'Custom scheme'
                   }
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   value={formData.rep_scheme || ''}
                   onChangeText={(text) => onUpdate({ rep_scheme: text })}
                 />
@@ -387,7 +387,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
             <TextInput
               style={[styles.input, styles.numberInput]}
               placeholder="e.g., 20"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={formData.time_cap_minutes?.toString() || ''}
               onChangeText={(text) => {
                 const num = parseInt(text) || undefined;
@@ -405,7 +405,7 @@ export function WODBasicsStep({ formData, onUpdate, onNext }: WODBasicsStepProps
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Coaching notes, movement standards, etc..."
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.notes}
             onChangeText={(text) => onUpdate({ notes: text })}
             multiline
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   scrollView: {
     flex: 1,
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   input: {
@@ -463,8 +463,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.foreground,
-    backgroundColor: colors.input,
+    color: colors.text,
+    backgroundColor: colors.surface2,
   },
   textArea: {
     minHeight: 80,
@@ -478,21 +478,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   pillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   row: {
     flexDirection: 'row',
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   quickSelectContainer: {
     marginBottom: 12,
@@ -512,32 +512,32 @@ const styles = StyleSheet.create({
   quickSelectLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 6,
   },
   quickPill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   quickPillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   quickPillText: {
     fontSize: 12,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   quickPillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   helperText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 6,
     fontStyle: 'italic',
   },
@@ -545,10 +545,10 @@ const styles = StyleSheet.create({
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   nextButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -556,6 +556,6 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

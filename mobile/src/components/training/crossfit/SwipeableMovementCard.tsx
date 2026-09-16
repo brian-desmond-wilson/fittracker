@@ -2,10 +2,9 @@ import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Animated } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { ChevronRight, Pencil } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
 import { SwipeDeleteAction } from '@/src/components/ui/SwipeDeleteAction';
 import { SkillPill } from '@/src/components/ui/SkillPill';
-import { colors as tokens, tint } from '@/src/theme/tokens';
+import { colors, tint } from '@/src/theme/tokens';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import { supabase } from '@/src/lib/supabase';
 
@@ -186,7 +185,7 @@ function SwipeableMovementCardBase({
                 accessibilityRole="button"
                 accessibilityLabel={`Edit ${movement.name}`}
               >
-                <Pencil size={20} color="#FFFFFF" />
+                <Pencil size={20} color={colors.onBrand} />
                 <Text style={styles.editText}>Edit</Text>
               </TouchableOpacity>
             </Animated.View>
@@ -249,7 +248,7 @@ function SwipeableMovementCardBase({
 
         {/* The card has always opened the detail page; the chevron says so. */}
         <View style={styles.chevron}>
-          <ChevronRight size={18} color={colors.mutedForeground} />
+          <ChevronRight size={18} color={colors.textMuted} />
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -270,7 +269,7 @@ const styles = StyleSheet.create({
   },
   editButton: {
     // Brand green: edit is a constructive action; delete keeps danger red.
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     justifyContent: 'center',
     alignItems: 'center',
     // Same geometry trick as SwipeDeleteAction: hang 12 behind the card so
@@ -282,7 +281,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   editText: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -322,12 +321,12 @@ const styles = StyleSheet.create({
   movementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   movementCategory: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   chevron: {
     alignSelf: 'center',
@@ -342,14 +341,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    backgroundColor: tint(colors.brand),
     borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.3)',
+    borderColor: tint(colors.brand, 0.3),
   },
   coreBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#22C55E',
+    color: colors.brand,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -357,14 +356,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: tint(tokens.tier),
+    backgroundColor: tint(colors.tier),
     borderWidth: 1,
-    borderColor: tint(tokens.tier, 0.3),
+    borderColor: tint(colors.tier, 0.3),
   },
   tierBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    color: tokens.tier,
+    color: colors.tier,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },

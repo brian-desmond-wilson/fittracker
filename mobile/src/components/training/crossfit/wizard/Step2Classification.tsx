@@ -12,8 +12,7 @@
 // edit prefill) must never re-clobber the form with the core's values.
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { colors } from '@/src/lib/colors';
-import { colors as themeColors } from '@/src/theme/tokens';
+import { colors } from '@/src/theme/tokens';
 import type { WizardFormData, WizardDictionaries } from '../CatalogItemWizard';
 import type { OverridableInheritField } from '@/src/lib/catalogWizardForm';
 import type { MuscleRegion, SkillLevel, MovementFamily } from '@/src/types/crossfit';
@@ -499,24 +498,24 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   required: {
-    color: colors.destructive,
+    color: colors.danger,
   },
   helperText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   offTableWarning: {
     fontSize: 13,
-    color: themeColors.warning,
+    color: colors.warning,
     fontStyle: 'italic',
   },
   sectionHeader: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 16,
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -524,7 +523,7 @@ const styles = StyleSheet.create({
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderRadius: 10,
     padding: 2,
     borderWidth: 1,
@@ -546,16 +545,16 @@ const styles = StyleSheet.create({
     // Optional: specific styling for last segment
   },
   segmentSelected: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   segmentText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
   },
   segmentTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   pillsContainer: {
     flexDirection: 'row',
@@ -566,21 +565,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   pillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   labelRow: {
     flexDirection: 'row',
@@ -591,26 +590,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     alignSelf: 'flex-start',
   },
   inheritanceText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   overrideButton: {
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 4,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   overrideButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   musclePill: {
     flexDirection: 'row',
@@ -618,40 +617,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     gap: 6,
   },
   musclePillSelected: {
-    backgroundColor: colors.primary + '40', // 40% opacity
-    borderColor: colors.primary,
+    backgroundColor: colors.brand + '40', // 40% opacity
+    borderColor: colors.brand,
   },
   musclePillPrimary: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
     borderWidth: 2,
   },
   musclePillText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   musclePillTextSelected: {
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: '600',
   },
   musclePillTextPrimary: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontWeight: '700',
   },
   primaryBadge: {
     fontSize: 8,
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   infoText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
   },
   showAllButton: {
@@ -661,7 +660,7 @@ const styles = StyleSheet.create({
   showAllText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.primary,
+    color: colors.brand,
     textDecorationLine: 'underline',
   },
 });

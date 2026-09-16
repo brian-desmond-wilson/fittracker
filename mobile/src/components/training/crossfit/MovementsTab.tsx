@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, Activit
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { Plus } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { ExerciseWithVariations } from '@/src/types/crossfit';
 import {
   fetchMovements,
@@ -178,7 +178,7 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
       {/* Movements List */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
           <Text style={styles.loadingText}>Loading movements...</Text>
         </View>
       ) : (
@@ -191,8 +191,8 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
+              tintColor={colors.brand}
+              colors={[colors.brand]}
             />
           }
           renderItem={({ item }) => (
@@ -225,7 +225,7 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
         onPress={() => setAddModalVisible(true)}
         activeOpacity={0.8}
       >
-        <Plus size={24} color="#FFFFFF" />
+        <Plus size={24} color={colors.onBrand} />
       </TouchableOpacity>
 
       {/* Add Movement Modal — the ONE catalog wizard, movement preset */}
@@ -271,10 +271,10 @@ export default function MovementsTab({ searchQuery, onSearchChange, onCountUpdat
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   categoryWrapper: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     paddingVertical: 12,
@@ -287,21 +287,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   categoryPillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   categoryText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   categoryTextActive: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   content: {
     flex: 1,
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   emptyState: {
     padding: 40,
@@ -328,12 +328,12 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -347,10 +347,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,

@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { X } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors, tint } from '@/src/theme/tokens';
 import { equipmentNamesOf } from '@/src/lib/exerciseEquipment';
 import type { ExerciseWithVariations } from '@/src/types/crossfit';
 import type { WODMovementConfig } from './AddWODWizard';
@@ -392,7 +392,7 @@ export function MovementConfigModal({
               <TextInput
                 style={[styles.input, styles.distanceInput]}
                 placeholder="e.g., 400"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={distanceValue}
                 onChangeText={setDistanceValue}
                 keyboardType="decimal-pad"
@@ -488,7 +488,7 @@ export function MovementConfigModal({
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., 10"
-                    placeholderTextColor={colors.mutedForeground}
+                    placeholderTextColor={colors.textMuted}
                     value={reps}
                     onChangeText={setReps}
                     keyboardType="number-pad"
@@ -503,7 +503,7 @@ export function MovementConfigModal({
                   <TextInput
                     style={styles.input}
                     placeholder="e.g., 30"
-                    placeholderTextColor={colors.mutedForeground}
+                    placeholderTextColor={colors.textMuted}
                     value={time}
                     onChangeText={setTime}
                     keyboardType="number-pad"
@@ -539,7 +539,7 @@ export function MovementConfigModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., 10-10-10 or 15"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={customRepScheme}
                 onChangeText={setCustomRepScheme}
               />
@@ -577,7 +577,7 @@ export function MovementConfigModal({
           <TextInput
             style={styles.input}
             placeholder="e.g., 21"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={reps}
             onChangeText={setReps}
             keyboardType="number-pad"
@@ -593,7 +593,7 @@ export function MovementConfigModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., 95"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={weightMen}
                 onChangeText={setWeightMen}
                 keyboardType="decimal-pad"
@@ -604,7 +604,7 @@ export function MovementConfigModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., 65"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={weightWomen}
                 onChangeText={setWeightWomen}
                 keyboardType="decimal-pad"
@@ -619,7 +619,7 @@ export function MovementConfigModal({
           <TextInput
             style={styles.input}
             placeholder="e.g., 400"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={distanceValue}
             onChangeText={setDistanceValue}
             keyboardType="decimal-pad"
@@ -636,7 +636,7 @@ export function MovementConfigModal({
           <TextInput
             style={styles.input}
             placeholder="e.g., 60"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={time}
             onChangeText={setTime}
             keyboardType="number-pad"
@@ -662,7 +662,7 @@ export function MovementConfigModal({
               <Text style={styles.movementName}>{movement.name}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={colors.foreground} />
+              <X size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -692,7 +692,7 @@ export function MovementConfigModal({
                 <TextInput
                   style={[styles.input, styles.textArea]}
                   placeholder="Movement standards, coaching notes..."
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   value={notes}
                   onChangeText={setNotes}
                   multiline
@@ -734,13 +734,13 @@ export function MovementConfigModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.scrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderRadius: 16,
     width: '100%',
     height: 600,
@@ -758,12 +758,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   movementName: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   closeButton: {
     padding: 4,
@@ -781,15 +781,15 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: colors.primary,
+    borderBottomColor: colors.brand,
   },
   tabText: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   tabTextActive: {
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: '600',
   },
   formScroll: {
@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 6,
   },
   input: {
@@ -817,8 +817,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    color: colors.foreground,
-    backgroundColor: colors.input,
+    color: colors.text,
+    backgroundColor: colors.surface2,
   },
   textArea: {
     minHeight: 80,
@@ -833,7 +833,7 @@ const styles = StyleSheet.create({
   weightLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 6,
   },
   bodyweightMessage: {
@@ -845,10 +845,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     padding: 16,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: tint(colors.tier, 0.1),
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: tint(colors.tier, 0.3),
   },
   infoIcon: {
     fontSize: 20,
@@ -859,12 +859,12 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   infoText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   schemeInfo: {
@@ -875,12 +875,12 @@ const styles = StyleSheet.create({
   schemeLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   schemeValue: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand,
   },
   checkboxContainer: {
     marginTop: 8,
@@ -900,17 +900,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxBoxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   checkboxCheck: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontSize: 14,
     fontWeight: 'bold',
   },
   checkboxLabel: {
     fontSize: 14,
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   footer: {
@@ -927,24 +927,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   helperText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 4,
     lineHeight: 16,
   },
@@ -960,7 +960,7 @@ const styles = StyleSheet.create({
     width: 70,
   },
   unitButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
@@ -970,7 +970,7 @@ const styles = StyleSheet.create({
   unitButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   alternativeSection: {
     marginBottom: 16,
@@ -981,10 +981,10 @@ const styles = StyleSheet.create({
   alternativeInfo: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: tint(colors.tier, 0.1),
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: tint(colors.tier, 0.3),
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -992,24 +992,24 @@ const styles = StyleSheet.create({
   alternativeLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   alternativeName: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
     flex: 1,
   },
   changeButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     borderRadius: 6,
   },
   changeButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -1020,22 +1020,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
   },
   toggleButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   toggleButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   toggleButtonTextActive: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontWeight: '600',
   },
 });

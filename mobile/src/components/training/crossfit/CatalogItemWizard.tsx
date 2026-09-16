@@ -23,7 +23,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, Alert,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { supabase } from '@/src/lib/supabase';
 import {
   createCatalogExercise,
@@ -516,7 +516,7 @@ export function CatalogItemWizard({
         {/* Step Content */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.brand} />
             <Text style={styles.loadingText}>Loading...</Text>
           </View>
         ) : (
@@ -534,7 +534,7 @@ export function CatalogItemWizard({
           <View style={styles.footerButtons}>
             {!isFirstStep && (
               <TouchableOpacity onPress={handleBack} style={styles.secondaryButton}>
-                <ChevronLeft size={20} color={colors.primary} />
+                <ChevronLeft size={20} color={colors.brand} />
                 <Text style={styles.secondaryButtonText}>Back</Text>
               </TouchableOpacity>
             )}
@@ -562,7 +562,7 @@ export function CatalogItemWizard({
                 disabled={!canProceed()}
               >
                 <Text style={styles.primaryButtonText}>Next</Text>
-                <ChevronRight size={20} color="#FFFFFF" />
+                <ChevronRight size={20} color={colors.onBrand} />
               </TouchableOpacity>
             )}
           </View>
@@ -609,7 +609,7 @@ export function CatalogItemWizard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: 'row',
@@ -650,21 +650,21 @@ const styles = StyleSheet.create({
   progressDot: {
     flex: 1,
     height: 4,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     marginHorizontal: 2,
     borderRadius: 2,
   },
   progressDotActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   progressDotCurrent: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     opacity: 1,
   },
   stepTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   content: {
     flex: 1,
@@ -681,14 +681,14 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   footer: {
     paddingHorizontal: 20,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   footerButtons: {
     flexDirection: 'row',
@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 8,
@@ -713,7 +713,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   secondaryButton: {
     flexDirection: 'row',
@@ -726,14 +726,14 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.primary,
+    color: colors.brand,
   },
   sheetScrim: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
   sheet: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderWidth: 1,
@@ -746,21 +746,21 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     alignSelf: 'center',
   },
   sheetTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   sheetBody: {
     fontSize: 15,
     lineHeight: 21,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   sheetPrimaryButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
   sheetPrimaryButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   sheetSecondaryButton: {
     paddingVertical: 12,
@@ -778,6 +778,6 @@ const styles = StyleSheet.create({
   sheetSecondaryButtonText: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.primary,
+    color: colors.brand,
   },
 });

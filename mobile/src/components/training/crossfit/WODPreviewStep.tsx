@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { WODFormData } from './AddWODWizard';
 import { createWOD } from '@/src/lib/supabase/crossfit';
 import type { CreateWODInput } from '@/src/types/crossfit';
@@ -380,7 +380,7 @@ export function WODPreviewStep({ formData, formatName, categoryName, onSave, onC
         >
           {saving ? (
             <View style={styles.savingContainer}>
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <ActivityIndicator color={colors.onBrand} size="small" />
               <Text style={styles.savingText}>{savingMessage}</Text>
             </View>
           ) : (
@@ -408,12 +408,12 @@ const styles = StyleSheet.create({
   wodName: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 12,
   },
   infoRow: {
@@ -424,21 +424,21 @@ const styles = StyleSheet.create({
   infoLabel: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     width: 100,
   },
   infoValue: {
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   description: {
     fontSize: 15,
-    color: colors.foreground,
+    color: colors.text,
     lineHeight: 22,
   },
   movementCard: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
@@ -454,12 +454,12 @@ const styles = StyleSheet.create({
   movementNumber: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   movementName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   levelSection: {
@@ -474,12 +474,12 @@ const styles = StyleSheet.create({
   scalingLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand,
     minWidth: 28,
   },
   scalingValue: {
     fontSize: 13,
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
     lineHeight: 18,
   },
@@ -489,7 +489,7 @@ const styles = StyleSheet.create({
   },
   variationText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
     flex: 1,
     lineHeight: 18,
@@ -503,22 +503,22 @@ const styles = StyleSheet.create({
   notesLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 4,
   },
   notesText: {
     fontSize: 13,
-    color: colors.foreground,
+    color: colors.text,
     lineHeight: 18,
   },
   footer: {
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   savingContainer: {
     flexDirection: 'row',
@@ -539,6 +539,6 @@ const styles = StyleSheet.create({
   savingText: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });
