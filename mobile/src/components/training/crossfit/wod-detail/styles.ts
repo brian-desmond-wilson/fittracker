@@ -1,11 +1,11 @@
 import { StyleSheet } from "react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, tint } from "@/src/theme/tokens";
 
 // Styles for WODDetailScreen (extracted from the screen component).
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   centerContent: {
     justifyContent: "center",
@@ -15,7 +15,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
+    borderBottomColor: colors.border,
   },
   backButton: {
     flexDirection: "row",
@@ -28,7 +28,7 @@ export const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 16,
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: "600",
   },
   content: {
@@ -37,11 +37,11 @@ export const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   errorText: {
     fontSize: 18,
-    color: "#EF4444",
+    color: colors.danger,
     marginBottom: 20,
   },
 
@@ -90,13 +90,13 @@ export const styles = StyleSheet.create({
   heroCategoryBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     borderRadius: 12,
   },
   heroCategoryText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   heroFormatRow: {
     flexDirection: 'row',
@@ -120,11 +120,11 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 12,
-    shadowColor: colors.primary,
+    shadowColor: colors.brand,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -133,7 +133,7 @@ export const styles = StyleSheet.create({
   generateImageText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.background,
+    color: colors.bg,
   },
 
   // Title Section (only for WODs without images)
@@ -170,14 +170,14 @@ export const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 11,
-    color: colors.foreground,
+    color: colors.text,
     fontWeight: '600',
     textAlign: 'center',
   },
   kettlebellIcon: {
     width: 18,
     height: 18,
-    tintColor: colors.primary,
+    tintColor: colors.brand,
   },
   statDivider: {
     width: 1,
@@ -193,7 +193,7 @@ export const styles = StyleSheet.create({
   },
   description: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 24,
   },
 
@@ -206,7 +206,7 @@ export const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#2D3748',
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -230,15 +230,15 @@ export const styles = StyleSheet.create({
   metaBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: colors.primary + '40',
+    backgroundColor: colors.brand + '40',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.primary + '60',
+    borderColor: colors.brand + '60',
   },
   metaBadgeText: {
     fontSize: 13,
     fontWeight: "600",
-    color: colors.primary,
+    color: colors.brand,
   },
   metaInfo: {
     flexDirection: "row",
@@ -249,7 +249,7 @@ export const styles = StyleSheet.create({
   metaInfoText: {
     fontSize: 14,
     fontWeight: "500",
-    color: colors.foreground,
+    color: colors.text,
   },
   quickStatsGrid: {
     flexDirection: "row",
@@ -266,14 +266,14 @@ export const styles = StyleSheet.create({
   },
   quickStatLabel: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
 
   // Sections
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 16,
   },
 
@@ -283,7 +283,7 @@ export const styles = StyleSheet.create({
   },
   scalingTabs: {
     flexDirection: "row",
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     marginBottom: 16,
@@ -300,10 +300,10 @@ export const styles = StyleSheet.create({
   scalingTabText: {
     fontSize: 14,
     fontWeight: "500",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   scalingTabTextActive: {
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: "600",
   },
   scalingTabIndicator: {
@@ -312,7 +312,7 @@ export const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   scalingDescription: {
     marginHorizontal: 16,
@@ -325,7 +325,7 @@ export const styles = StyleSheet.create({
   },
   scalingDescText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
 
@@ -336,12 +336,12 @@ export const styles = StyleSheet.create({
   },
   movementCard: {
     marginBottom: 16,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -362,14 +362,14 @@ export const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 24,
-    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+    backgroundColor: tint(colors.brand, 0.9),
     justifyContent: 'center',
     alignItems: 'center',
   },
   verticalCategoryText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.onBrand,
     letterSpacing: 1,
     transform: [{ rotate: '-90deg' }],
     width: 120,
@@ -404,24 +404,24 @@ export const styles = StyleSheet.create({
   movementNumber: {
     fontSize: 18,
     fontWeight: "bold",
-    color: colors.primary,
+    color: colors.brand,
   },
   movementName: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   movementCategoryBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: colors.primary + '30',
+    backgroundColor: colors.brand + '30',
     borderRadius: 8,
   },
   movementCategoryText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   movementRepScheme: {
     flexDirection: 'row',
@@ -432,11 +432,11 @@ export const styles = StyleSheet.create({
   movementRepText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   movementDescription: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 18,
     marginBottom: 8,
   },
@@ -452,7 +452,7 @@ export const styles = StyleSheet.create({
   },
   movementMetaText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   movementBadges: {
     flexDirection: "row",
@@ -504,12 +504,12 @@ export const styles = StyleSheet.create({
   },
   distanceSecondary: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginLeft: 38,
   },
   distanceContext: {
     fontSize: 13,
-    color: '#F59E0B',
+    color: colors.warning,
     marginLeft: 38,
     fontStyle: "italic",
   },
@@ -518,12 +518,12 @@ export const styles = StyleSheet.create({
   },
   variationText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   movementNotes: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 12,
     lineHeight: 20,
   },
@@ -534,14 +534,14 @@ export const styles = StyleSheet.create({
   notesExpandedContainer: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: tint(colors.tier, 0.1),
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderColor: tint(colors.tier, 0.3),
   },
   notesExpandedText: {
     fontSize: 13,
-    color: colors.foreground,
+    color: colors.text,
     lineHeight: 20,
   },
   standardsContainer: {
@@ -550,7 +550,7 @@ export const styles = StyleSheet.create({
   standardsLabel: {
     fontSize: 14,
     fontWeight: "600",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 6,
   },
   standardsList: {
@@ -564,11 +564,11 @@ export const styles = StyleSheet.create({
     backgroundColor: "#2D3748",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.primary + '40',
+    borderColor: colors.brand + '40',
   },
   standardText: {
     fontSize: 12,
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: "500",
   },
 
@@ -577,7 +577,7 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.scrim,
     borderRadius: 20,
     width: 36,
     height: 36,
@@ -586,17 +586,17 @@ export const styles = StyleSheet.create({
   },
   menuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.scrim,
   },
   menuContainer: {
     position: 'absolute',
     top: 60,
     right: 16,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 4,
     minWidth: 180,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -612,7 +612,7 @@ export const styles = StyleSheet.create({
   },
   menuItemText: {
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
     fontWeight: '500',
   },
 });

@@ -21,7 +21,7 @@ import {
   X,
   GripVertical,
 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { ClassWithDetails, ClassPart } from "@/src/types/crossfit";
 import { formatDayLabel } from "@/src/lib/dates";
 import {
@@ -175,7 +175,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
       <>
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
           <Text style={styles.loadingText}>Loading class...</Text>
         </View>
       </>
@@ -208,7 +208,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
           </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleDelete} style={styles.deleteButton}>
-              <Trash2 size={20} color="#EF4444" />
+              <Trash2 size={20} color={colors.danger} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSave}
@@ -216,10 +216,10 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.onBrand} />
               ) : (
                 <>
-                  <Save size={20} color="#FFFFFF" />
+                  <Save size={20} color={colors.onBrand} />
                   <Text style={styles.saveButtonText}>Save</Text>
                 </>
               )}
@@ -237,7 +237,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
               value={name}
               onChangeText={setName}
               placeholder="Enter class name"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
             />
           </View>
 
@@ -245,7 +245,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
           <View style={styles.formSection}>
             <Text style={styles.formLabel}>Date</Text>
             <View style={styles.dateContainer}>
-              <Calendar size={20} color={colors.primary} />
+              <Calendar size={20} color={colors.brand} />
               <Text style={styles.dateText}>{formatDate(date)}</Text>
             </View>
             <Text style={styles.helperText}>
@@ -261,7 +261,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
               value={durationMinutes}
               onChangeText={setDurationMinutes}
               placeholder="60"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
             />
           </View>
@@ -279,7 +279,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
                   <View key={part.id} style={styles.partCard}>
                     <View style={styles.partHeader}>
                       <View style={styles.partHeaderLeft}>
-                        <GripVertical size={20} color={colors.mutedForeground} />
+                        <GripVertical size={20} color={colors.textMuted} />
                         <View style={styles.partTypeBadge}>
                           <Text style={styles.partTypeText}>{part.part_type}</Text>
                         </View>
@@ -288,7 +288,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
                         onPress={() => handleDeletePart(part.id)}
                         style={styles.deletePartButton}
                       >
-                        <Trash2 size={18} color="#EF4444" />
+                        <Trash2 size={18} color={colors.danger} />
                       </TouchableOpacity>
                     </View>
 
@@ -334,7 +334,7 @@ export function ClassDetailScreen({ classId, onClose, onSave }: ClassDetailScree
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0A0F1E",
+    backgroundColor: colors.bg,
   },
   centerContent: {
     justifyContent: "center",
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
+    borderBottomColor: colors.border,
   },
   headerButton: {
     flexDirection: "row",
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -378,14 +378,14 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   backButton: {
     marginTop: 16,
   },
   backButtonText: {
     fontSize: 16,
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: "600",
   },
   content: {
@@ -395,11 +395,11 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   errorText: {
     fontSize: 18,
-    color: "#EF4444",
+    color: colors.danger,
   },
   formSection: {
     marginBottom: 24,
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
   },
   helperText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 6,
     fontStyle: "italic",
   },
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -468,10 +468,10 @@ const styles = StyleSheet.create({
   addPartButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: colors.onBrand,
   },
   partCard: {
-    backgroundColor: "#1F2937",
+    backgroundColor: colors.border,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   partTypeText: {
     fontSize: 14,
     fontWeight: "600",
-    color: colors.primary,
+    color: colors.brand,
   },
   deletePartButton: {
     padding: 4,
@@ -517,20 +517,20 @@ const styles = StyleSheet.create({
   },
   wodPreviewText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   wodPreviewDivider: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   customContent: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   emptyPartText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: "italic",
   },
   emptyState: {
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: "center",
     lineHeight: 24,
   },

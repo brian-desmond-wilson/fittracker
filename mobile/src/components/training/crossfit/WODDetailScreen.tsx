@@ -31,7 +31,7 @@ import {
   Repeat2,
   MessageSquare,
 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { WODWithDetails, ScalingLevel } from "@/src/types/crossfit";
 import { fetchWODById } from "@/src/lib/supabase/crossfit";
 import { supabase } from "@/src/lib/supabase";
@@ -142,13 +142,13 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
   const getCategoryColor = (categoryName: string) => {
     switch (categoryName) {
       case "The Girls":
-        return colors.primary;
+        return colors.brand;
       case "Heroes":
-        return "#EF4444";
+        return colors.danger;
       case "Daily WOD":
         return "#10B981";
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -159,22 +159,22 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
     const types: Array<{ icon: any; label: string; color: string }> = [];
 
     if (wod.score_type_time) {
-      types.push({ icon: Clock, label: "Time", color: colors.primary });
+      types.push({ icon: Clock, label: "Time", color: colors.brand });
     }
     if (wod.score_type_rounds) {
       types.push({ icon: Target, label: "Rounds", color: "#10B981" });
     }
     if (wod.score_type_reps) {
-      types.push({ icon: TrendingUp, label: "Reps", color: "#F59E0B" });
+      types.push({ icon: TrendingUp, label: "Reps", color: colors.warning });
     }
     if (wod.score_type_load) {
-      types.push({ icon: Ruler, label: "Load", color: "#8B5CF6" });
+      types.push({ icon: Ruler, label: "Load", color: colors.blocks.mobility });
     }
     if (wod.score_type_distance) {
-      types.push({ icon: MapPin, label: "Distance", color: "#3B82F6" });
+      types.push({ icon: MapPin, label: "Distance", color: colors.tier });
     }
     if (wod.score_type_calories) {
-      types.push({ icon: Flame, label: "Calories", color: "#EF4444" });
+      types.push({ icon: Flame, label: "Calories", color: colors.danger });
     }
 
     return types;
@@ -200,7 +200,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
       <>
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
           <Text style={styles.loadingText}>Loading WOD...</Text>
         </View>
       </>
@@ -293,12 +293,12 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
               >
                 {generatingImage ? (
                   <>
-                    <ActivityIndicator size="small" color={colors.background} />
+                    <ActivityIndicator size="small" color={colors.bg} />
                     <Text style={styles.generateImageText}>Generating AI Image...</Text>
                   </>
                 ) : (
                   <>
-                    <Sparkles size={20} color={colors.background} />
+                    <Sparkles size={20} color={colors.bg} />
                     <Text style={styles.generateImageText}>Generate AI Image</Text>
                   </>
                 )}
@@ -340,7 +340,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
               const categoryArray = Array.from(categories).slice(0, 2);
               return categoryArray.length > 0 && (
                 <View style={styles.statColumn}>
-                  <Group size={18} color={colors.primary} strokeWidth={2} />
+                  <Group size={18} color={colors.brand} strokeWidth={2} />
                   <View style={styles.statTextContainer}>
                     {categoryArray.map((cat, index) => (
                       <Text key={index} style={styles.statText} numberOfLines={1}>
@@ -355,7 +355,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
             {/* Rep Scheme */}
             {wod.rep_scheme && (
               <View style={styles.statColumn}>
-                <Repeat2 size={18} color={colors.primary} strokeWidth={2} />
+                <Repeat2 size={18} color={colors.brand} strokeWidth={2} />
                 <View style={styles.statTextContainer}>
                   <Text style={styles.statText} numberOfLines={1}>
                     {wod.rep_scheme}
@@ -372,7 +372,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
             {/* Time Cap */}
             {wod.time_cap_minutes && (
               <View style={styles.statColumn}>
-                <Clock size={18} color={colors.primary} strokeWidth={2} />
+                <Clock size={18} color={colors.brand} strokeWidth={2} />
                 <View style={styles.statTextContainer}>
                   <Text style={styles.statText} numberOfLines={1}>
                     {formatTimeCap(wod.time_cap_minutes, wod.format?.name || 'For Time', wod.rep_scheme)}
@@ -477,7 +477,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                   }
 
                   // Colors for alternative movements
-                  const alternativeColor = '#F59E0B';
+                  const alternativeColor = colors.warning;
 
                   return (
                     <View key={movement.id} style={styles.movementCard}>
@@ -526,8 +526,8 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                               >
                                 <MessageSquare
                                   size={18}
-                                  color={expandedNotes.has(movement.id) ? colors.primary : colors.mutedForeground}
-                                  fill={expandedNotes.has(movement.id) ? colors.primary : 'transparent'}
+                                  color={expandedNotes.has(movement.id) ? colors.brand : colors.textMuted}
+                                  fill={expandedNotes.has(movement.id) ? colors.brand : 'transparent'}
                                 />
                               </TouchableOpacity>
                             )}
@@ -536,7 +536,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                           {/* Rep Scheme with Weight (if present) */}
                           {movement.repsDisplay && (
                             <View style={styles.movementRepScheme}>
-                              <TrendingUp size={14} color={isAlternative ? alternativeColor : colors.primary} />
+                              <TrendingUp size={14} color={isAlternative ? alternativeColor : colors.brand} />
                               <Text style={[
                                 styles.movementRepText,
                                 isAlternative && { color: alternativeColor }
@@ -552,7 +552,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                             {/* Muscle Groups */}
                             {muscleGroups && (
                               <View style={styles.movementMetaItem}>
-                                <Flame size={14} color="#F59E0B" />
+                                <Flame size={14} color={colors.warning} />
                                 <Text style={styles.movementMetaText}>{muscleGroups}</Text>
                               </View>
                             )}
@@ -560,7 +560,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                             {/* Skill Level */}
                             {exercise?.skill_level && (
                               <View style={styles.movementMetaItem}>
-                                <Target size={14} color="#8B5CF6" />
+                                <Target size={14} color={colors.blocks.mobility} />
                                 <Text style={styles.movementMetaText}>{exercise.skill_level}</Text>
                               </View>
                             )}
@@ -570,7 +570,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
                           {distanceDisplay && (
                             <View style={styles.movementDetailsRow}>
                               <View style={styles.detailChip}>
-                                <MapPin size={14} color="#3B82F6" />
+                                <MapPin size={14} color={colors.tier} />
                                 <Text style={styles.movementDetailText}>{distanceDisplay.primary}</Text>
                               </View>
                             </View>
@@ -633,7 +633,7 @@ export function WODDetailScreen({ wodId, onClose }: WODDetailScreenProps) {
               }}
               disabled={generatingImage}
             >
-              <Sparkles size={20} color={colors.primary} />
+              <Sparkles size={20} color={colors.brand} />
               <Text style={styles.menuItemText}>Regenerate Image</Text>
             </TouchableOpacity>
           </View>
