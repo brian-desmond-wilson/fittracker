@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Dumbbell, Calendar, Plus, Clock } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { fetchWorkoutsForWeek } from "@/src/lib/supabase/training";
 import { AddWorkoutWizard } from "./workout-wizard/AddWorkoutWizard";
 import type { ProgramWorkoutWithRelations } from "@/src/types/training";
@@ -62,19 +62,19 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
   const getWorkoutTypeColor = (type: string) => {
     switch (type) {
       case "Strength":
-        return "#EF4444";
+        return colors.danger;
       case "Hypertrophy":
-        return "#8B5CF6";
+        return colors.blocks.mobility;
       case "Power":
-        return "#F59E0B";
+        return colors.warning;
       case "Endurance":
-        return "#22C55E";
+        return colors.brand;
       case "Rest":
-        return "#6B7280";
+        return colors.textFaint;
       case "Deload":
-        return "#3B82F6";
+        return colors.tier;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -114,13 +114,13 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.weekHeader}>
-          <Calendar size={18} color={colors.primary} />
+          <Calendar size={18} color={colors.brand} />
           <Text style={styles.weekTitle}>Week {selectedWeek} Schedule</Text>
         </View>
 
         {loading ? (
           <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.brand} />
           </View>
         ) : workouts.length === 0 ? (
           <View style={styles.emptyState}>
@@ -133,7 +133,7 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
               activeOpacity={0.8}
               onPress={handleAddWorkout}
             >
-              <Plus size={20} color={colors.primaryForeground} />
+              <Plus size={20} color={colors.onBrand} />
               <Text style={styles.addButtonText}>Add Workout</Text>
             </TouchableOpacity>
           </View>
@@ -167,12 +167,12 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
                       </Text>
                     </View>
                     <View style={styles.metaItem}>
-                      <Dumbbell size={14} color={colors.mutedForeground} />
+                      <Dumbbell size={14} color={colors.textMuted} />
                       <Text style={styles.metaText}>{getExerciseCount(workout)} exercises</Text>
                     </View>
                     {workout.estimated_duration_minutes && (
                       <View style={styles.metaItem}>
-                        <Clock size={14} color={colors.mutedForeground} />
+                        <Clock size={14} color={colors.textMuted} />
                         <Text style={styles.metaText}>{workout.estimated_duration_minutes} min</Text>
                       </View>
                     )}
@@ -187,7 +187,7 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
               activeOpacity={0.7}
               onPress={handleAddWorkout}
             >
-              <Plus size={18} color={colors.primary} />
+              <Plus size={18} color={colors.brand} />
               <Text style={styles.addMoreText}>Add Another Workout</Text>
             </TouchableOpacity>
           </>
@@ -218,10 +218,10 @@ export default function ScheduleTab({ programId, durationWeeks, daysPerWeek }: S
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   weekSelectorContainer: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -234,21 +234,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderWidth: 1,
     borderColor: colors.border,
   },
   weekButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   weekButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   weekButtonTextActive: {
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   scrollView: {
     flex: 1,
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   weekTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
   },
   loadingState: {
     paddingVertical: 60,
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   },
   workoutCard: {
     flexDirection: "row",
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -286,14 +286,14 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     justifyContent: "center",
     alignItems: "center",
   },
   dayText: {
     fontSize: 12,
     fontWeight: "700",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   workoutInfo: {
     flex: 1,
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
   workoutName: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
   },
   workoutMeta: {
     flexDirection: "row",
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   emptyState: {
     alignItems: "center",
@@ -341,12 +341,12 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: "center",
     marginBottom: 24,
   },
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   addMoreButton: {
     flexDirection: "row",
@@ -372,13 +372,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.brand,
     borderStyle: "dashed",
     marginTop: 4,
   },
   addMoreText: {
     fontSize: 15,
     fontWeight: "600",
-    color: colors.primary,
+    color: colors.brand,
   },
 });

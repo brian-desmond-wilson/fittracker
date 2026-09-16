@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Dumbbell, Clock, Calendar, Layers } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { createProgramWorkout, updateProgramWorkout } from '@/src/lib/supabase/training';
 import type { WorkoutFormData, WorkoutExerciseConfig, WorkoutSection, CreateProgramWorkoutInput, ExerciseGroup } from '@/src/types/training';
 import { WORKOUT_SECTIONS, SECTION_DISPLAY_NAMES } from '@/src/types/training';
@@ -100,19 +100,19 @@ export function WorkoutPreviewStep({
   const getWorkoutTypeColor = (type: string) => {
     switch (type) {
       case 'Strength':
-        return '#EF4444';
+        return colors.danger;
       case 'Hypertrophy':
-        return '#8B5CF6';
+        return colors.blocks.mobility;
       case 'Power':
-        return '#F59E0B';
+        return colors.warning;
       case 'Endurance':
-        return '#22C55E';
+        return colors.brand;
       case 'Rest':
-        return '#6B7280';
+        return colors.textFaint;
       case 'Deload':
-        return '#3B82F6';
+        return colors.tier;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -244,17 +244,17 @@ export function WorkoutPreviewStep({
 
           <View style={styles.headerMeta}>
             <View style={styles.metaItem}>
-              <Calendar size={16} color={colors.mutedForeground} />
+              <Calendar size={16} color={colors.textMuted} />
               <Text style={styles.metaText}>Week {weekNumber}</Text>
             </View>
             {formData.estimated_duration_minutes && (
               <View style={styles.metaItem}>
-                <Clock size={16} color={colors.mutedForeground} />
+                <Clock size={16} color={colors.textMuted} />
                 <Text style={styles.metaText}>{formData.estimated_duration_minutes} min</Text>
               </View>
             )}
             <View style={styles.metaItem}>
-              <Dumbbell size={16} color={colors.mutedForeground} />
+              <Dumbbell size={16} color={colors.textMuted} />
               <Text style={styles.metaText}>{formData.exercises.length} exercises</Text>
             </View>
           </View>
@@ -286,7 +286,7 @@ export function WorkoutPreviewStep({
                           <Text style={styles.exerciseOrderText}>{currentIndex}</Text>
                         </View>
                         <View style={styles.groupBadge}>
-                          <Layers size={12} color={colors.primary} />
+                          <Layers size={12} color={colors.brand} />
                           <Text style={styles.groupBadgeText}>PICK ONE</Text>
                         </View>
                       </View>
@@ -392,7 +392,7 @@ export function WorkoutPreviewStep({
           activeOpacity={0.8}
         >
           {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.onBrand} />
           ) : (
             <Text style={styles.saveButtonText}>
               {isEditMode ? 'Save Changes' : 'Save Workout'}
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   headerCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   dayBadge: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
   dayBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   typeBadge: {
     paddingHorizontal: 12,
@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
   workoutName: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 12,
   },
   headerMeta: {
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   sectionContainer: {
     marginBottom: 20,
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 12,
     paddingBottom: 8,
     borderBottomWidth: 1,
@@ -491,7 +491,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
@@ -499,7 +499,7 @@ const styles = StyleSheet.create({
   exerciseOrderText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   exerciseDetails: {
     flex: 1,
@@ -507,33 +507,33 @@ const styles = StyleSheet.create({
   exerciseName: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   exercisePrescription: {
     fontSize: 14,
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: '500',
   },
   exerciseTempo: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 2,
   },
   exerciseRest: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 2,
   },
   exerciseNotes: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
     marginTop: 4,
   },
   // Group styles
   groupCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 10,
     padding: 12,
     marginBottom: 12,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: `${colors.primary}20`,
+    backgroundColor: `${colors.brand}20`,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -558,7 +558,7 @@ const styles = StyleSheet.create({
   groupBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand,
   },
   groupExercises: {
     paddingLeft: 34,
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
   groupExerciseName: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   orDivider: {
     flexDirection: 'row',
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
   orText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textTransform: 'lowercase',
   },
   groupPrescription: {
@@ -594,7 +594,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   noteBlock: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
@@ -602,22 +602,22 @@ const styles = StyleSheet.create({
   noteTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 6,
   },
   noteText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   footer: {
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -628,6 +628,6 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Plus, Trash2, Edit2, X, Layers } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { ExerciseSearchModal } from './ExerciseSearchModal';
 import { ExerciseConfigModal } from './ExerciseConfigModal';
 import type {
@@ -350,7 +350,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
             handleConvertToGroup(globalIndex);
           }}
         >
-          <Layers size={18} color="#FFFFFF" />
+          <Layers size={18} color={colors.onBrand} />
           <Text style={styles.swipeActionText}>+ Alt</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -360,7 +360,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
             handleEditExercise(globalIndex);
           }}
         >
-          <Edit2 size={18} color="#FFFFFF" />
+          <Edit2 size={18} color={colors.onBrand} />
           <Text style={styles.swipeActionText}>Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -370,7 +370,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
             handleDeleteExercise(globalIndex);
           }}
         >
-          <Trash2 size={18} color="#FFFFFF" />
+          <Trash2 size={18} color={colors.onBrand} />
           <Text style={styles.swipeActionText}>Delete</Text>
         </TouchableOpacity>
       </Animated.View>
@@ -468,7 +468,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
               <Text style={styles.groupOrderText}>{firstEx.exercise_order}</Text>
             </View>
             <View style={styles.groupBadge}>
-              <Layers size={12} color={colors.primary} />
+              <Layers size={12} color={colors.brand} />
               <Text style={styles.groupBadgeText}>PICK ONE</Text>
             </View>
           </View>
@@ -498,7 +498,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
                     onPress={() => handleDeleteExercise(globalIdx)}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <X size={16} color={colors.mutedForeground} />
+                    <X size={16} color={colors.textMuted} />
                   </TouchableOpacity>
                 </View>
                 {idx < group.exercises.length - 1 && (
@@ -519,21 +519,21 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
             style={styles.groupActionButton}
             onPress={() => handleAddAlternative(group.group_id, group.section)}
           >
-            <Plus size={14} color={colors.primary} />
+            <Plus size={14} color={colors.brand} />
             <Text style={styles.groupActionText}>Add Alternative</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.groupActionButton}
             onPress={() => handleEditExercise(exerciseIndices[0])}
           >
-            <Edit2 size={14} color={colors.primary} />
+            <Edit2 size={14} color={colors.brand} />
             <Text style={styles.groupActionText}>Edit</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.groupActionButton, styles.groupDeleteButton]}
             onPress={() => handleDeleteGroup(group.group_id)}
           >
-            <Trash2 size={14} color="#EF4444" />
+            <Trash2 size={14} color={colors.danger} />
             <Text style={[styles.groupActionText, styles.groupDeleteText]}>Delete</Text>
           </TouchableOpacity>
         </View>
@@ -579,7 +579,7 @@ export function WorkoutExercisesStep({ formData, onUpdate, onNext }: WorkoutExer
                 onPress={() => handleAddExercise(section)}
                 activeOpacity={0.7}
               >
-                <Plus size={18} color={colors.primary} />
+                <Plus size={18} color={colors.brand} />
                 <Text style={styles.addExerciseText}>Add Exercise</Text>
               </TouchableOpacity>
             </View>
@@ -659,10 +659,10 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.foreground,
+    color: colors.text,
   },
   sectionBadge: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -670,18 +670,18 @@ const styles = StyleSheet.create({
   sectionBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   sectionDescription: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 4,
   },
   // Single Exercise Card
   exerciseCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
@@ -698,14 +698,14 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
   exerciseOrderText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   exerciseInfo: {
     flex: 1,
@@ -713,7 +713,7 @@ const styles = StyleSheet.create({
   exerciseName: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   exerciseMeta: {
@@ -724,16 +724,16 @@ const styles = StyleSheet.create({
   exerciseReps: {
     fontSize: 13,
     fontWeight: '500',
-    color: colors.primary,
+    color: colors.brand,
   },
   exerciseLoad: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   exerciseDuration: {
     fontSize: 13,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginLeft: 8,
   },
   // Swipe Actions
@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   swipeActionAlt: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: colors.blocks.mobility,
     justifyContent: 'center',
     alignItems: 'center',
     width: 55,
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   swipeActionEdit: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     justifyContent: 'center',
     alignItems: 'center',
     width: 55,
@@ -759,7 +759,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   swipeActionDelete: {
-    backgroundColor: '#EF4444',
+    backgroundColor: colors.danger,
     justifyContent: 'center',
     alignItems: 'center',
     width: 55,
@@ -769,16 +769,16 @@ const styles = StyleSheet.create({
   swipeActionText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
     marginTop: 4,
   },
   // Group Card
   groupCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 10,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.brand,
     overflow: 'hidden',
   },
   groupHeader: {
@@ -786,7 +786,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: `${colors.primary}15`,
+    backgroundColor: `${colors.brand}15`,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -799,20 +799,20 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
   groupOrderText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   groupBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: `${colors.primary}20`,
+    backgroundColor: `${colors.brand}20`,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
@@ -820,7 +820,7 @@ const styles = StyleSheet.create({
   groupBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand,
     letterSpacing: 0.5,
   },
   groupHeaderRight: {
@@ -831,16 +831,16 @@ const styles = StyleSheet.create({
   groupPrescription: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   groupLoad: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   groupDuration: {
     fontSize: 13,
     fontWeight: '500',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   // Group Exercises List
   groupExercises: {
@@ -855,7 +855,7 @@ const styles = StyleSheet.create({
   groupExerciseName: {
     fontSize: 15,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
     flex: 1,
   },
   groupExerciseRemove: {
@@ -873,7 +873,7 @@ const styles = StyleSheet.create({
   },
   orText: {
     fontSize: 11,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     paddingHorizontal: 12,
     fontStyle: 'italic',
   },
@@ -899,10 +899,10 @@ const styles = StyleSheet.create({
   groupActionText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   groupDeleteText: {
-    color: '#EF4444',
+    color: colors.danger,
   },
   // Add Exercise Button
   addExerciseButton: {
@@ -913,23 +913,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.brand,
     borderStyle: 'dashed',
   },
   addExerciseText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   // Footer
   footer: {
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   nextButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -937,6 +937,6 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

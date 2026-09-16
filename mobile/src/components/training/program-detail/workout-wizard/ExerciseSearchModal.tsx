@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { X, Search } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { fetchAllExercises, searchAllExercises } from '@/src/lib/supabase/crossfit';
 import type { Exercise } from '@/src/types/training';
 
@@ -85,15 +85,15 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
   const getCategoryColor = (category: string) => {
     switch (category) {
       case 'Compound':
-        return '#EF4444';
+        return colors.danger;
       case 'Isolation':
-        return '#8B5CF6';
+        return colors.blocks.mobility;
       case 'Accessory':
-        return '#F59E0B';
+        return colors.warning;
       case 'Cardio':
-        return '#22C55E';
+        return colors.brand;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -110,17 +110,17 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
           <View style={styles.header}>
             <Text style={styles.title}>Select Exercise</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={colors.foreground} />
+              <X size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
           {/* Search Input */}
           <View style={styles.searchContainer}>
-            <Search size={20} color={colors.mutedForeground} />
+            <Search size={20} color={colors.textMuted} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search exercises..."
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoFocus
@@ -132,7 +132,7 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
             {loading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
+                <ActivityIndicator size="large" color={colors.brand} />
               </View>
             ) : error ? (
               <View style={styles.emptyState}>
@@ -182,13 +182,13 @@ export function ExerciseSearchModal({ visible, onClose, onSelectExercise }: Exer
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.scrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderRadius: 16,
     width: '100%',
     height: 500,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
   },
   closeButton: {
     padding: 4,
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   list: {
     flex: 1,
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: 'center',
   },
   exerciseItem: {
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   exerciseName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   categoryBadge: {
     paddingHorizontal: 8,
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   },
   muscleGroups: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 2,
   },
 });

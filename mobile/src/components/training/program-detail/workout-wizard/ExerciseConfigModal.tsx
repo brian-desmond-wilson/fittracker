@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { X } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import type { Exercise, WorkoutExerciseConfig, WorkoutSection, LoadType } from '@/src/types/training';
 import { WORKOUT_SECTIONS, SECTION_DISPLAY_NAMES } from '@/src/types/training';
 
@@ -166,7 +166,7 @@ export function ExerciseConfigModal({
               <Text style={styles.exerciseName}>{exercise.name}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={colors.foreground} />
+              <X size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -242,7 +242,7 @@ export function ExerciseConfigModal({
                         <TextInput
                           style={styles.input}
                           placeholder="e.g., 3"
-                          placeholderTextColor={colors.mutedForeground}
+                          placeholderTextColor={colors.textMuted}
                           value={targetSets}
                           onChangeText={setTargetSets}
                           keyboardType="number-pad"
@@ -253,7 +253,7 @@ export function ExerciseConfigModal({
                         <TextInput
                           style={styles.input}
                           placeholder="e.g., 10"
-                          placeholderTextColor={colors.mutedForeground}
+                          placeholderTextColor={colors.textMuted}
                           value={targetReps}
                           onChangeText={setTargetReps}
                           keyboardType="number-pad"
@@ -267,7 +267,7 @@ export function ExerciseConfigModal({
                         <TextInput
                           style={styles.input}
                           placeholder="e.g., 3"
-                          placeholderTextColor={colors.mutedForeground}
+                          placeholderTextColor={colors.textMuted}
                           value={targetSets}
                           onChangeText={setTargetSets}
                           keyboardType="number-pad"
@@ -278,7 +278,7 @@ export function ExerciseConfigModal({
                         <TextInput
                           style={styles.input}
                           placeholder="e.g., 30"
-                          placeholderTextColor={colors.mutedForeground}
+                          placeholderTextColor={colors.textMuted}
                           value={targetTime}
                           onChangeText={setTargetTime}
                           keyboardType="number-pad"
@@ -328,7 +328,7 @@ export function ExerciseConfigModal({
                       <TextInput
                         style={styles.input}
                         placeholder="e.g., 7"
-                        placeholderTextColor={colors.mutedForeground}
+                        placeholderTextColor={colors.textMuted}
                         value={loadRpe}
                         onChangeText={setLoadRpe}
                         keyboardType="decimal-pad"
@@ -343,7 +343,7 @@ export function ExerciseConfigModal({
                         <TextInput
                           style={[styles.input, styles.flex1]}
                           placeholder="e.g., 75"
-                          placeholderTextColor={colors.mutedForeground}
+                          placeholderTextColor={colors.textMuted}
                           value={loadPercentage}
                           onChangeText={setLoadPercentage}
                           keyboardType="number-pad"
@@ -359,7 +359,7 @@ export function ExerciseConfigModal({
                       <TextInput
                         style={styles.input}
                         placeholder="e.g., 135"
-                        placeholderTextColor={colors.mutedForeground}
+                        placeholderTextColor={colors.textMuted}
                         value={loadWeight}
                         onChangeText={setLoadWeight}
                         keyboardType="number-pad"
@@ -373,7 +373,7 @@ export function ExerciseConfigModal({
                       <TextInput
                         style={styles.input}
                         placeholder="e.g., Light band, bodyweight, moderate"
-                        placeholderTextColor={colors.mutedForeground}
+                        placeholderTextColor={colors.textMuted}
                         value={loadNotes}
                         onChangeText={setLoadNotes}
                       />
@@ -387,7 +387,7 @@ export function ExerciseConfigModal({
                       <TextInput
                         style={[styles.input, styles.flex1]}
                         placeholder="e.g., 90"
-                        placeholderTextColor={colors.mutedForeground}
+                        placeholderTextColor={colors.textMuted}
                         value={restSeconds}
                         onChangeText={setRestSeconds}
                         keyboardType="number-pad"
@@ -403,7 +403,7 @@ export function ExerciseConfigModal({
                       <TextInput
                         style={[styles.input, styles.flex1]}
                         placeholder="e.g., 10"
-                        placeholderTextColor={colors.mutedForeground}
+                        placeholderTextColor={colors.textMuted}
                         value={estimatedDuration}
                         onChangeText={setEstimatedDuration}
                         keyboardType="number-pad"
@@ -418,7 +418,7 @@ export function ExerciseConfigModal({
                     <TextInput
                       style={styles.input}
                       placeholder="e.g., 3-1-2-0"
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                       value={tempo}
                       onChangeText={setTempo}
                     />
@@ -431,7 +431,7 @@ export function ExerciseConfigModal({
                     <TextInput
                       style={[styles.input, styles.textArea]}
                       placeholder="Coaching cues, form notes..."
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                       value={exerciseNotes}
                       onChangeText={setExerciseNotes}
                       multiline
@@ -470,13 +470,13 @@ export function ExerciseConfigModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.scrim,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderRadius: 16,
     width: '100%',
     maxHeight: '90%',
@@ -494,12 +494,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   exerciseName: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   closeButton: {
     padding: 4,
@@ -511,16 +511,16 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   infoBanner: {
-    backgroundColor: `${colors.primary}15`,
+    backgroundColor: `${colors.brand}15`,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: colors.brand,
     borderRadius: 8,
     padding: 12,
     marginBottom: 20,
   },
   infoBannerText: {
     fontSize: 13,
-    color: colors.primary,
+    color: colors.brand,
     lineHeight: 18,
   },
   field: {
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   input: {
@@ -539,8 +539,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
-    color: colors.foreground,
-    backgroundColor: colors.input,
+    color: colors.text,
+    backgroundColor: colors.surface2,
   },
   textArea: {
     minHeight: 80,
@@ -554,21 +554,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 13,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   pillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   toggleContainer: {
     flexDirection: 'row',
@@ -579,22 +579,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
   },
   toggleButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   toggleButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   toggleButtonTextActive: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontWeight: '600',
   },
   rowFields: {
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     minWidth: 60,
   },
   checkboxRow: {
@@ -634,21 +634,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   checkmark: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
     fontSize: 14,
     fontWeight: 'bold',
   },
   checkboxLabel: {
     fontSize: 14,
-    color: colors.foreground,
+    color: colors.text,
   },
   helperText: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 4,
   },
   footer: {
@@ -665,19 +665,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   saveButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

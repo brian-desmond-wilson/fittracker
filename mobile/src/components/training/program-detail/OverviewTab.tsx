@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { ChevronDown, ChevronUp, ChevronRight } from "lucide-react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { colors } from "@/src/lib/colors";
+import { colors, tint } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCurrentRunForProgram } from "@/src/lib/supabase/training";
 import type { ProgramInstance, ProgramTemplateWithRelations } from "@/src/types/training";
@@ -121,9 +121,9 @@ export default function OverviewTab({ program }: OverviewTabProps) {
                   <Text style={styles.cycleWeeks}>{cycle.duration_weeks} weeks</Text>
                 </View>
                 {expandedCycle === cycle.id ? (
-                  <ChevronUp size={20} color={colors.mutedForeground} />
+                  <ChevronUp size={20} color={colors.textMuted} />
                 ) : (
-                  <ChevronDown size={20} color={colors.mutedForeground} />
+                  <ChevronDown size={20} color={colors.textMuted} />
                 )}
               </TouchableOpacity>
 
@@ -160,7 +160,7 @@ export default function OverviewTab({ program }: OverviewTabProps) {
                 Open to pause or end the program
               </Text>
             </View>
-            <ChevronRight size={20} color={colors.mutedForeground} />
+            <ChevronRight size={20} color={colors.textMuted} />
           </TouchableOpacity>
         ) : run === null ? (
           <TouchableOpacity
@@ -192,7 +192,7 @@ export default function OverviewTab({ program }: OverviewTabProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     padding: 20,
   },
   section: {
@@ -201,13 +201,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 16,
   },
   description: {
     fontSize: 15,
     lineHeight: 22,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   goalsContainer: {
     flexDirection: "row",
@@ -215,46 +215,46 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   goalPill: {
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    backgroundColor: tint(colors.brand),
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(34, 197, 94, 0.3)",
+    borderColor: tint(colors.brand, 0.3),
   },
   goalText: {
     fontSize: 14,
     fontWeight: "600",
-    color: colors.primary,
+    color: colors.brand,
   },
   equipmentPill: {
-    backgroundColor: "rgba(59, 130, 246, 0.15)",
+    backgroundColor: tint(colors.tier),
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(59, 130, 246, 0.3)",
+    borderColor: tint(colors.tier, 0.3),
   },
   equipmentText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#3B82F6",
+    color: colors.tier,
   },
   prereqPill: {
-    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    backgroundColor: tint(colors.warning),
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.3)",
+    borderColor: tint(colors.warning, 0.3),
   },
   prereqText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#F59E0B",
+    color: colors.warning,
   },
   cycleCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
@@ -273,12 +273,12 @@ const styles = StyleSheet.create({
   cycleName: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   cycleWeeks: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   cycleContent: {
     padding: 16,
@@ -289,13 +289,13 @@ const styles = StyleSheet.create({
   cycleDescription: {
     fontSize: 14,
     lineHeight: 20,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   buttonContainer: {
     marginTop: 8,
   },
   startButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   startButtonText: {
     fontSize: 16,
     fontWeight: "700",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   // A row, not a filled button: this is where you already are, not the
   // page's call to action, and painting it brand-green would read as
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
@@ -325,16 +325,16 @@ const styles = StyleSheet.create({
   runCardTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
   },
   runCardSubtitle: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 2,
   },
   runCardHint: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 6,
   },
 });

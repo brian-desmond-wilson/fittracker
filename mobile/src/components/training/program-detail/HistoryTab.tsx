@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Calendar, CheckCircle2, TrendingUp } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import type { ProgramInstanceWithRelations } from "@/src/types/training";
 import { formatDayLabel } from "@/src/lib/dates";
@@ -72,13 +72,13 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "#22C55E";
+        return colors.success;
       case "active":
-        return "#3B82F6";
+        return colors.tier;
       case "incomplete":
-        return "#F59E0B";
+        return colors.warning;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -100,7 +100,7 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.brand} />
         <Text style={styles.loadingText}>Loading history...</Text>
       </View>
     );
@@ -114,7 +114,7 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
     >
       {instances.length === 0 ? (
         <View style={styles.emptyState}>
-          <Calendar size={48} color={colors.mutedForeground} />
+          <Calendar size={48} color={colors.textMuted} />
           <Text style={styles.emptyStateTitle}>No Program History</Text>
           <Text style={styles.emptyStateText}>
             You haven't started this program yet. Tap "Start Program" in the Overview tab to begin
@@ -154,7 +154,7 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
 
               {/* Date Range */}
               <View style={styles.dateRow}>
-                <Calendar size={14} color={colors.mutedForeground} />
+                <Calendar size={14} color={colors.textMuted} />
                 <Text style={styles.dateText}>
                   {formatDayLabel(instance.startDate)} - {formatDayLabel(instance.endDate)}
                 </Text>
@@ -182,13 +182,13 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
               {/* Stats Row */}
               <View style={styles.statsRow}>
                 <View style={styles.statItem}>
-                  <CheckCircle2 size={16} color={colors.primary} />
+                  <CheckCircle2 size={16} color={colors.brand} />
                   <Text style={styles.statText}>
                     {instance.workoutsCompleted}/{instance.totalWorkouts} workouts
                   </Text>
                 </View>
                 <View style={styles.statItem}>
-                  <TrendingUp size={16} color={colors.primary} />
+                  <TrendingUp size={16} color={colors.brand} />
                   <Text style={styles.statText}>
                     {Math.round((instance.workoutsCompleted / instance.totalWorkouts) * 14)} weeks
                   </Text>
@@ -207,7 +207,7 @@ export default function HistoryTab({ programId }: HistoryTabProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   centerContent: {
     justifyContent: "center",
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   content: {
     padding: 20,
@@ -228,15 +228,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   instanceCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 17,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginRight: 12,
   },
   statusBadge: {
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   progressSection: {
     marginBottom: 16,
@@ -287,16 +287,16 @@ const styles = StyleSheet.create({
   progressLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
   },
   progressPercentage: {
     fontSize: 13,
     fontWeight: "700",
-    color: colors.primary,
+    color: colors.brand,
   },
   progressBarBackground: {
     height: 8,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderRadius: 4,
     overflow: "hidden",
   },
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   emptyState: {
     paddingVertical: 80,
@@ -324,13 +324,13 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: "center",
     paddingHorizontal: 40,
     lineHeight: 20,

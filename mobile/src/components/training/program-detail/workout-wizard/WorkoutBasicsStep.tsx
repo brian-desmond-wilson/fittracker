@@ -7,7 +7,7 @@ import {
   TextInput,
   TouchableOpacity,
 } from 'react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import type { WorkoutFormData, WorkoutType } from '@/src/types/training';
 
 interface WorkoutBasicsStepProps {
@@ -42,7 +42,7 @@ export function WorkoutBasicsStep({ formData, daysPerWeek, onUpdate, onNext }: W
           <TextInput
             style={styles.input}
             placeholder="e.g., Lower Strength + Knee Prehab"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.name}
             onChangeText={(text) => onUpdate({ name: text })}
             autoCapitalize="words"
@@ -100,7 +100,7 @@ export function WorkoutBasicsStep({ formData, daysPerWeek, onUpdate, onNext }: W
             <TextInput
               style={[styles.input, styles.numberInput]}
               placeholder="e.g., 60"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={formData.estimated_duration_minutes?.toString() || ''}
               onChangeText={(text) => {
                 const num = parseInt(text) || undefined;
@@ -118,7 +118,7 @@ export function WorkoutBasicsStep({ formData, daysPerWeek, onUpdate, onNext }: W
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Describe the warmup routine..."
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.warmup_instructions}
             onChangeText={(text) => onUpdate({ warmup_instructions: text })}
             multiline
@@ -133,7 +133,7 @@ export function WorkoutBasicsStep({ formData, daysPerWeek, onUpdate, onNext }: W
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Describe the cooldown routine..."
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.cooldown_instructions}
             onChangeText={(text) => onUpdate({ cooldown_instructions: text })}
             multiline
@@ -148,7 +148,7 @@ export function WorkoutBasicsStep({ formData, daysPerWeek, onUpdate, onNext }: W
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Any additional notes for this workout..."
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={formData.notes}
             onChangeText={(text) => onUpdate({ notes: text })}
             multiline
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   input: {
@@ -196,8 +196,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.foreground,
-    backgroundColor: colors.input,
+    color: colors.text,
+    backgroundColor: colors.surface2,
   },
   textArea: {
     minHeight: 80,
@@ -211,43 +211,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
   },
   pillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.foreground,
+    color: colors.text,
   },
   pillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   dayPill: {
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     minWidth: 60,
     alignItems: 'center',
   },
   dayPillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   dayPillText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   dayPillTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   row: {
     flexDirection: 'row',
@@ -259,16 +259,16 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   footer: {
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   nextButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
@@ -276,6 +276,6 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

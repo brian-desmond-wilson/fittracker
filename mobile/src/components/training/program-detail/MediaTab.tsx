@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { Play, FileText, Download } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors, tint } from "@/src/theme/tokens";
 
 interface MediaTabProps {
   programId: string;
@@ -49,13 +49,13 @@ export default function MediaTab({ programId }: MediaTabProps) {
         {MOCK_RESOURCES.map((resource) => (
           <TouchableOpacity key={resource.id} style={styles.resourceCard} activeOpacity={0.7}>
             <View style={styles.resourceIcon}>
-              <FileText size={24} color={colors.primary} />
+              <FileText size={24} color={colors.brand} />
             </View>
             <View style={styles.resourceInfo}>
               <Text style={styles.resourceTitle}>{resource.title}</Text>
               <Text style={styles.resourceSize}>{resource.size}</Text>
             </View>
-            <Download size={20} color={colors.mutedForeground} />
+            <Download size={20} color={colors.textMuted} />
           </TouchableOpacity>
         ))}
       </View>
@@ -68,7 +68,7 @@ export default function MediaTab({ programId }: MediaTabProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   content: {
     padding: 20,
@@ -79,12 +79,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 16,
   },
   videoCard: {
     flexDirection: "row",
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     overflow: "hidden",
     marginBottom: 12,
@@ -106,17 +106,17 @@ const styles = StyleSheet.create({
   videoTitle: {
     fontSize: 15,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 6,
   },
   videoDuration: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   resourceCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    backgroundColor: tint(colors.brand),
     justifyContent: "center",
     alignItems: "center",
   },
@@ -138,11 +138,11 @@ const styles = StyleSheet.create({
   resourceTitle: {
     fontSize: 15,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   resourceSize: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
 });

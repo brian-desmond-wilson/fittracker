@@ -14,7 +14,7 @@ import {
 import { X, Calendar, Clock, CheckCircle } from "lucide-react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
-import { colors } from "@/src/lib/colors";
+import { colors, tint } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import {
   createProgramInstance,
@@ -173,7 +173,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Start Program</Text>
           <TouchableOpacity onPress={handleClose} style={styles.closeButton} disabled={isLoading}>
-            <X size={24} color={isLoading ? colors.mutedForeground : colors.foreground} />
+            <X size={24} color={isLoading ? colors.textMuted : colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -187,7 +187,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
             <Text style={styles.programTitle}>{program.title}</Text>
             <View style={styles.programStats}>
               <View style={styles.programStat}>
-                <Clock size={16} color={colors.mutedForeground} />
+                <Clock size={16} color={colors.textMuted} />
                 <Text style={styles.programStatText}>
                   {program.durationWeeks} weeks • {program.daysPerWeek} days/week
                 </Text>
@@ -200,7 +200,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{error}</Text>
               <TouchableOpacity onPress={() => setError(null)}>
-                <X size={16} color="#EF4444" />
+                <X size={16} color={colors.danger} />
               </TouchableOpacity>
             </View>
           )}
@@ -214,7 +214,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
             <TextInput
               style={styles.input}
               placeholder="e.g., Summer Build 2024"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={instanceName}
               onChangeText={setInstanceName}
               autoCapitalize="words"
@@ -232,7 +232,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
               activeOpacity={0.7}
               disabled={isLoading}
             >
-              <Calendar size={18} color={colors.primary} />
+              <Calendar size={18} color={colors.brand} />
               <Text style={styles.dateInputText}>{formatDayLabel(startDate, { month: "long", day: "numeric", year: "numeric" })}</Text>
             </TouchableOpacity>
           </View>
@@ -264,7 +264,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
 
           {/* Info Callout */}
           <View style={styles.infoCallout}>
-            <CheckCircle size={20} color={colors.primary} />
+            <CheckCircle size={20} color={colors.brand} />
             <View style={styles.infoCalloutContent}>
               <Text style={styles.infoCalloutTitle}>What happens next?</Text>
               <Text style={styles.infoCalloutText}>
@@ -286,7 +286,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
           >
             {isLoading ? (
               <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color={colors.primaryForeground} />
+                <ActivityIndicator size="small" color={colors.onBrand} />
                 <Text style={styles.startButtonText}>Creating Program...</Text>
               </View>
             ) : (
@@ -341,7 +341,7 @@ export default function StartProgramModal({ visible, onClose, program }: StartPr
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
   },
   closeButton: {
     padding: 4,
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   programInfo: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     marginBottom: 32,
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
   programTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 12,
   },
   programStats: {
@@ -391,23 +391,23 @@ const styles = StyleSheet.create({
   },
   programStatText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    backgroundColor: tint(colors.danger, 0.1),
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.2)",
+    borderColor: tint(colors.danger, 0.2),
   },
   errorText: {
     flex: 1,
     fontSize: 14,
-    color: "#EF4444",
+    color: colors.danger,
     lineHeight: 20,
     marginRight: 12,
   },
@@ -417,29 +417,29 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   helperText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 12,
     lineHeight: 20,
   },
   input: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
     borderWidth: 1,
     borderColor: colors.border,
   },
   dateInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
   dateInputText: {
     flex: 1,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   datePickerOverlay: {
     flex: 1,
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   datePickerContent: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingBottom: 34,
@@ -475,18 +475,18 @@ const styles = StyleSheet.create({
   datePickerTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
   },
   datePickerDone: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.primary,
+    color: colors.brand,
   },
   timelineSection: {
     marginBottom: 28,
   },
   timelineCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 20,
     borderWidth: 1,
@@ -501,29 +501,29 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     marginTop: 4,
   },
   timelineDotSecondary: {
-    backgroundColor: colors.mutedForeground,
+    backgroundColor: colors.textMuted,
   },
   timelineContent: {
     flex: 1,
   },
   timelineLabel: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginBottom: 4,
   },
   timelineDate: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   timelineNote: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   timelineLine: {
     width: 2,
@@ -534,13 +534,13 @@ const styles = StyleSheet.create({
   },
   infoCallout: {
     flexDirection: "row",
-    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    backgroundColor: tint(colors.brand, 0.1),
     borderRadius: 12,
     padding: 16,
     gap: 12,
     marginBottom: 32,
     borderWidth: 1,
-    borderColor: "rgba(34, 197, 94, 0.2)",
+    borderColor: tint(colors.brand, 0.2),
   },
   infoCalloutContent: {
     flex: 1,
@@ -548,16 +548,16 @@ const styles = StyleSheet.create({
   infoCalloutTitle: {
     fontSize: 15,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 6,
   },
   infoCalloutText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   startButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
   startButtonText: {
     fontSize: 17,
     fontWeight: "700",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   loadingRow: {
     flexDirection: "row",
