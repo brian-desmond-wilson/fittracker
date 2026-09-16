@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { Dumbbell, Flame, Search, X } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { KettlebellIcon } from "@/src/components/ui/KettlebellIcon";
 import ProgramsTab from "@/src/components/training/ProgramsTab";
 import WorkoutsTab from "@/src/components/training/WorkoutsTab";
@@ -317,17 +317,17 @@ export default function Training() {
       {/* Header with Search */}
       <View style={styles.header}>
         <View style={styles.searchContainer}>
-          <Search size={20} color={colors.mutedForeground} />
+          <Search size={20} color={colors.textMuted} />
           <TextInput
             style={styles.searchInput}
             placeholder={getSearchPlaceholder()}
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")} activeOpacity={0.7}>
-              <X size={20} color={colors.mutedForeground} />
+              <X size={20} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -350,8 +350,8 @@ export default function Training() {
                 <Icon
                   size={24}
                   strokeWidth={2}
-                  color={active ? colors.primary : colors.mutedForeground}
-                  fill={active ? colors.primary : "none"}
+                  color={active ? colors.brand : colors.textMuted}
+                  fill={active ? colors.brand : "none"}
                 />
               </TouchableOpacity>
             );
@@ -448,7 +448,7 @@ export default function Training() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.input,
+    backgroundColor: colors.surface2,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: colors.foreground,
+    color: colors.text,
   },
   headerButtons: {
     flexDirection: "row",
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -511,14 +511,14 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 16,
     fontWeight: "500",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   tabTextActive: {
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: "600",
   },
   countChip: {
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 10,
@@ -527,15 +527,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   countChipActive: {
-    backgroundColor: `${colors.primary}20`,
+    backgroundColor: `${colors.brand}20`,
   },
   countText: {
     fontSize: 12,
     fontWeight: "600",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   countTextActive: {
-    color: colors.primary,
+    color: colors.brand,
   },
   tabIndicator: {
     position: "absolute",
@@ -543,6 +543,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
 });
