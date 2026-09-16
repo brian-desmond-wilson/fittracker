@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Alert, Switch,
 } from "react-native";
 import { X, Link2, Search, Plus } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import {
   fetchPendingReviews,
   resolveMatchReview,
@@ -189,13 +189,13 @@ export function MatchReviewSheet({
             </Text>
           </View>
           <TouchableOpacity onPress={onClose} disabled={busyId !== null}>
-            <X size={24} color={colors.mutedForeground} />
+            <X size={24} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
         {loading ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.brand} />
           </View>
         ) : reviews.length === 0 ? (
           <View style={styles.center}>
@@ -227,7 +227,7 @@ export function MatchReviewSheet({
                             disabled={busy}
                             onPress={() => confirmChipLink(review, c)}
                           >
-                            <Link2 size={12} color={colors.primary} />
+                            <Link2 size={12} color={colors.brand} />
                             <Text style={styles.pillText}>{c.name}</Text>
                           </TouchableOpacity>
                         ))}
@@ -243,7 +243,7 @@ export function MatchReviewSheet({
                       value={saveAliasFor(review)}
                       onValueChange={() => toggleAlias(review.id)}
                       disabled={busy}
-                      trackColor={{ true: colors.primary, false: colors.border }}
+                      trackColor={{ true: colors.brand, false: colors.border }}
                     />
                   </View>
 
@@ -255,7 +255,7 @@ export function MatchReviewSheet({
                       onPress={() => setSearchFor(review)}
                       activeOpacity={0.7}
                     >
-                      <Search size={15} color={colors.primary} />
+                      <Search size={15} color={colors.brand} />
                       <Text style={styles.actionText}>Find in catalog</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -264,10 +264,10 @@ export function MatchReviewSheet({
                       onPress={() => { openCreate(review); }}
                       activeOpacity={0.7}
                     >
-                      <Plus size={15} color={colors.primary} />
+                      <Plus size={15} color={colors.brand} />
                       <Text style={styles.actionText}>Create new</Text>
                     </TouchableOpacity>
-                    {busy && <ActivityIndicator size="small" color={colors.primary} />}
+                    {busy && <ActivityIndicator size="small" color={colors.brand} />}
                   </View>
                 </View>
               );
@@ -316,45 +316,45 @@ export function MatchReviewSheet({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 20 },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 20 },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
     marginBottom: 16,
   },
-  title: { fontSize: 20, fontWeight: "700", color: colors.foreground },
-  subtitle: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
+  title: { fontSize: 20, fontWeight: "700", color: colors.text },
+  subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
-  emptyTitle: { fontSize: 17, fontWeight: "600", color: colors.foreground, marginBottom: 8 },
+  emptyTitle: { fontSize: 17, fontWeight: "600", color: colors.text, marginBottom: 8 },
   emptyText: {
-    fontSize: 14, color: colors.mutedForeground, textAlign: "center", lineHeight: 20,
+    fontSize: 14, color: colors.textMuted, textAlign: "center", lineHeight: 20,
   },
   scroll: { flex: 1 },
   card: {
-    backgroundColor: colors.muted, borderRadius: 12, padding: 16, marginBottom: 12,
+    backgroundColor: colors.surface2, borderRadius: 12, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: colors.border,
   },
-  rawName: { fontSize: 17, fontWeight: "600", color: colors.foreground },
-  context: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
-  fieldLabel: { fontSize: 12, color: colors.mutedForeground, marginTop: 12, marginBottom: 6 },
+  rawName: { fontSize: 17, fontWeight: "600", color: colors.text },
+  context: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  fieldLabel: { fontSize: 12, color: colors.textMuted, marginTop: 12, marginBottom: 6 },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14,
-    backgroundColor: colors.input, borderWidth: 1, borderColor: colors.primary,
+    backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.brand,
   },
-  pillText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+  pillText: { fontSize: 13, color: colors.brand, fontWeight: "600" },
   aliasRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     marginTop: 14, gap: 10,
   },
-  aliasText: { fontSize: 13, color: colors.mutedForeground, flexShrink: 1 },
+  aliasText: { fontSize: 13, color: colors.textMuted, flexShrink: 1 },
   actionRow: {
     flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12,
   },
   actionButton: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    borderWidth: 1, borderColor: colors.primary, borderRadius: 8,
+    borderWidth: 1, borderColor: colors.brand, borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 9,
   },
-  actionText: { fontSize: 14, fontWeight: "600", color: colors.primary },
+  actionText: { fontSize: 14, fontWeight: "600", color: colors.brand },
 });

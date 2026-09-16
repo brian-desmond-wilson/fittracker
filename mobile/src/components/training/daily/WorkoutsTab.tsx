@@ -4,7 +4,7 @@ import {
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFocusEffect, router } from "expo-router";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { fetchCapturedWorkouts } from "@/src/lib/supabase/capture";
 import { fetchWorkoutCompletions } from "@/src/lib/supabase/workoutCompletions";
@@ -220,7 +220,7 @@ export default function WorkoutsTab({
 
       {loading || !prefsReady ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
         </View>
       ) : (
       // The wrapper is what the indicator floats against, so a pull draws it
@@ -234,7 +234,7 @@ export default function WorkoutsTab({
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh}
-            tintColor={colors.primary} colors={[colors.primary]} />
+            tintColor={colors.brand} colors={[colors.brand]} />
         }
         renderItem={({ item }) => (
           <SwipeableWorkoutCard
@@ -282,9 +282,9 @@ export default function WorkoutsTab({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.bg },
   center: {
-    flex: 1, backgroundColor: colors.background,
+    flex: 1, backgroundColor: colors.bg,
     justifyContent: "center", alignItems: "center",
   },
   listWrap: { flex: 1 },

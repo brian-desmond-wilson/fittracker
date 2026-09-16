@@ -4,7 +4,7 @@ import {
   ScrollView, ActivityIndicator, Alert,
 } from "react-native";
 import { X, Link2, Link2Off, Pencil, Info } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { markCaptureRejected, saveCapture } from "@/src/lib/supabase/capture";
 import { draftWorkoutFromExercises, draftWorkoutName } from "@/src/lib/captureReview";
@@ -177,7 +177,7 @@ export function CaptureReviewSheet({
             )}
           </View>
           <TouchableOpacity onPress={close} disabled={saving}>
-            <X size={24} color={colors.mutedForeground} />
+            <X size={24} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -193,10 +193,10 @@ export function CaptureReviewSheet({
                   value={ex.name}
                   onChangeText={(t) => patchExercise(i, { name: t })}
                   placeholder="Name this exercise"
-                  placeholderTextColor={colors.mutedForeground}
+                  placeholderTextColor={colors.textMuted}
                   editable={!ex.libraryMatchId}
                 />
-                {!ex.libraryMatchId && <Pencil size={15} color={colors.mutedForeground} />}
+                {!ex.libraryMatchId && <Pencil size={15} color={colors.textMuted} />}
               </View>
 
               {ex.libraryMatchId ? (
@@ -209,7 +209,7 @@ export function CaptureReviewSheet({
                   onPress={() => patchExercise(i, { libraryMatchId: null })}
                   activeOpacity={0.7}
                 >
-                  <Link2 size={14} color={colors.primary} />
+                  <Link2 size={14} color={colors.brand} />
                   <Text style={styles.matchText}>
                     Saves as your existing “{matchNames.get(ex.libraryMatchId) ?? "library exercise"}” — tap to unlink and match it yourself later
                   </Text>
@@ -219,7 +219,7 @@ export function CaptureReviewSheet({
                 // dictionary, and a name that still matches nothing waits in
                 // the review queue where YOU link or create it.
                 <View style={styles.newChip}>
-                  <Link2Off size={14} color={colors.mutedForeground} />
+                  <Link2Off size={14} color={colors.textMuted} />
                   <Text style={styles.newText}>
                     No match yet — checked against your catalog on save; still
                     unknown goes to review
@@ -312,7 +312,7 @@ export function CaptureReviewSheet({
           {post.workoutGap && (
             <View style={styles.noticeCard}>
               <View style={styles.noticeHead}>
-                <Info size={16} color={colors.mutedForeground} />
+                <Info size={16} color={colors.textMuted} />
                 <Text style={styles.noticeTitle}>
                   {post.workout ? "You're building this workout" : "No workout — exercises only"}
                 </Text>
@@ -346,7 +346,7 @@ export function CaptureReviewSheet({
                   value={post.workout.name}
                   onChangeText={(t) => patchWorkout({ name: t })}
                 />
-                <Pencil size={15} color={colors.mutedForeground} />
+                <Pencil size={15} color={colors.textMuted} />
               </View>
 
               <Text style={styles.headline}>
@@ -361,7 +361,7 @@ export function CaptureReviewSheet({
                 value={post.workout.rounds ?? ""}
                 onChangeText={(t) => patchWorkout({ rounds: asText(t) })}
                 placeholder="e.g. 3-4"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
               />
 
               {post.workout.items.map((item, i) => (
@@ -390,7 +390,7 @@ export function CaptureReviewSheet({
                             value={value}
                             onChangeText={onChange}
                             placeholder={hint}
-                            placeholderTextColor={colors.mutedForeground}
+                            placeholderTextColor={colors.textMuted}
                           />
                         </View>
                       ),
@@ -418,7 +418,7 @@ export function CaptureReviewSheet({
           activeOpacity={0.8}
         >
           {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.onBrand} />
           ) : (
             <Text style={styles.buttonText}>
               Add to catalog
@@ -433,84 +433,84 @@ export function CaptureReviewSheet({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 20 },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 20 },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
     marginBottom: 16,
   },
-  title: { fontSize: 20, fontWeight: "700", color: colors.foreground },
-  subtitle: { fontSize: 14, color: colors.mutedForeground, marginTop: 2 },
+  title: { fontSize: 20, fontWeight: "700", color: colors.text },
+  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
   scroll: { flex: 1 },
   card: {
-    backgroundColor: colors.muted, borderRadius: 12, padding: 16, marginBottom: 12,
+    backgroundColor: colors.surface2, borderRadius: 12, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: colors.border,
   },
   nameRow: {
     flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10,
-    backgroundColor: colors.input, borderRadius: 8, borderWidth: 1,
+    backgroundColor: colors.surface2, borderRadius: 8, borderWidth: 1,
     borderColor: colors.border, paddingHorizontal: 10,
   },
   nameInput: {
-    flex: 1, fontSize: 17, fontWeight: "600", color: colors.foreground,
+    flex: 1, fontSize: 17, fontWeight: "600", color: colors.text,
     paddingVertical: 9,
   },
-  headline: { fontSize: 13, color: colors.primary, marginBottom: 4 },
+  headline: { fontSize: 13, color: colors.brand, marginBottom: 4 },
   roundsInput: {
-    backgroundColor: colors.input, borderRadius: 8, borderWidth: 1,
+    backgroundColor: colors.surface2, borderRadius: 8, borderWidth: 1,
     borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 8,
-    fontSize: 15, color: colors.foreground, marginBottom: 4,
+    fontSize: 15, color: colors.text, marginBottom: 4,
   },
   itemBlock: {
     marginTop: 14, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: colors.border,
   },
-  itemName: { fontSize: 15, fontWeight: "600", color: colors.foreground, marginBottom: 8 },
+  itemName: { fontSize: 15, fontWeight: "600", color: colors.text, marginBottom: 8 },
   itemGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   field: { width: 88 },
-  microLabel: { fontSize: 11, color: colors.mutedForeground, marginBottom: 4 },
+  microLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 4 },
   microInput: {
-    backgroundColor: colors.input, borderRadius: 6, borderWidth: 1,
+    backgroundColor: colors.surface2, borderRadius: 6, borderWidth: 1,
     borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 7,
-    fontSize: 14, color: colors.foreground,
+    fontSize: 14, color: colors.text,
   },
   protocol: {
-    fontSize: 13, color: colors.mutedForeground, lineHeight: 19,
-    backgroundColor: colors.input, borderRadius: 8, padding: 10,
+    fontSize: 13, color: colors.textMuted, lineHeight: 19,
+    backgroundColor: colors.surface2, borderRadius: 8, padding: 10,
   },
   noticeCard: {
-    backgroundColor: colors.muted, borderRadius: 12, padding: 16, marginBottom: 12,
+    backgroundColor: colors.surface2, borderRadius: 12, padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3,
-    borderLeftColor: colors.mutedForeground,
+    borderLeftColor: colors.textMuted,
   },
   noticeHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
-  noticeTitle: { fontSize: 15, fontWeight: "600", color: colors.foreground },
-  noticeBody: { fontSize: 13, color: colors.mutedForeground, lineHeight: 19 },
+  noticeTitle: { fontSize: 15, fontWeight: "600", color: colors.text },
+  noticeBody: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
   overrideButton: {
     marginTop: 12, borderRadius: 8, paddingVertical: 11, alignItems: "center",
-    borderWidth: 1, borderColor: colors.primary,
+    borderWidth: 1, borderColor: colors.brand,
   },
   overrideButtonOn: { borderColor: colors.border },
-  overrideText: { fontSize: 15, fontWeight: "600", color: colors.primary },
-  overrideTextOn: { color: colors.mutedForeground },
+  overrideText: { fontSize: 15, fontWeight: "600", color: colors.brand },
+  overrideTextOn: { color: colors.textMuted },
   matchChip: {
     flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10,
   },
-  matchText: { fontSize: 13, color: colors.primary, flexShrink: 1 },
+  matchText: { fontSize: 13, color: colors.brand, flexShrink: 1 },
   newChip: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
-  newText: { fontSize: 13, color: colors.mutedForeground, flexShrink: 1 },
-  fieldLabel: { fontSize: 12, color: colors.mutedForeground, marginTop: 8, marginBottom: 6 },
+  newText: { fontSize: 13, color: colors.textMuted, flexShrink: 1 },
+  fieldLabel: { fontSize: 12, color: colors.textMuted, marginTop: 8, marginBottom: 6 },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
-    backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border,
   },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 12, color: colors.mutedForeground },
-  pillTextActive: { fontSize: 12, color: "#FFFFFF", fontWeight: "600" },
+  pillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  pillText: { fontSize: 12, color: colors.textMuted },
+  pillTextActive: { fontSize: 12, color: colors.onBrand, fontWeight: "600" },
   error: { color: "#F87171", fontSize: 14, marginBottom: 8 },
   button: {
-    backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 14,
+    backgroundColor: colors.brand, borderRadius: 8, paddingVertical: 14,
     alignItems: "center",
   },
-  buttonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+  buttonText: { color: colors.onBrand, fontSize: 16, fontWeight: "600" },
 });

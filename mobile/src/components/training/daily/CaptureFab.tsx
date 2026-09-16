@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { TouchableOpacity, StyleSheet } from "react-native";
 import { Plus } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { fetchAllExercises } from "@/src/lib/supabase/crossfit";
 import { CaptureSheet } from "./CaptureSheet";
 import { CaptureReviewSheet } from "./CaptureReviewSheet";
@@ -53,7 +53,7 @@ export function CaptureFab({ onSaved, initialUrl }: CaptureFabProps) {
         onPress={() => setCaptureVisible(true)}
         activeOpacity={0.8}
       >
-        <Plus size={24} color="#FFFFFF" />
+        <Plus size={24} color={colors.onBrand} />
       </TouchableOpacity>
 
       <CaptureSheet
@@ -76,9 +76,9 @@ export function CaptureFab({ onSaved, initialUrl }: CaptureFabProps) {
 const styles = StyleSheet.create({
   fab: {
     position: "absolute", right: 20, bottom: 20, width: 56, height: 56,
-    borderRadius: 28, backgroundColor: colors.primary,
+    borderRadius: 28, backgroundColor: colors.brand,
     alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowColor: colors.shadow, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
   },
 });

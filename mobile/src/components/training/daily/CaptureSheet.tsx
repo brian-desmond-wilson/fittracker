@@ -4,7 +4,7 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { X, Link as LinkIcon } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { resolvePost, extractPost, findExistingCapture } from "@/src/lib/supabase/capture";
 import { refreshCreatorFromPhone } from "@/src/lib/creatorProfile";
@@ -188,7 +188,7 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
         <View style={styles.header}>
           <Text style={styles.title}>Capture from social</Text>
           <TouchableOpacity onPress={close} disabled={busy}>
-            <X size={24} color={colors.mutedForeground} />
+            <X size={24} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -196,11 +196,11 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
           <>
             <Text style={styles.label}>Post link</Text>
             <View style={styles.inputRow}>
-              <LinkIcon size={18} color={colors.mutedForeground} />
+              <LinkIcon size={18} color={colors.textMuted} />
               <TextInput
                 style={styles.input}
                 placeholder="https://www.tiktok.com/@…"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
                 value={url}
                 onChangeText={setUrl}
                 autoCapitalize="none"
@@ -220,7 +220,7 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
             <TextInput
               style={[styles.input, styles.captionInput]}
               placeholder="Paste the caption, or describe the exercise(s)…"
-              placeholderTextColor={colors.mutedForeground}
+              placeholderTextColor={colors.textMuted}
               value={caption}
               onChangeText={setCaption}
               multiline
@@ -238,7 +238,7 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
           activeOpacity={0.8}
         >
           {busy ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.onBrand} />
           ) : (
             <Text style={styles.buttonText}>
               {phase === "caption" ? "Extract exercises" : "Fetch post"}
@@ -254,28 +254,28 @@ export function CaptureSheet({ visible, initialUrl, onClose, onExtracted }: Capt
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 20 },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 20 },
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     marginBottom: 24,
   },
-  title: { fontSize: 20, fontWeight: "700", color: colors.foreground },
-  label: { fontSize: 14, color: colors.mutedForeground, marginBottom: 8 },
+  title: { fontSize: 20, fontWeight: "700", color: colors.text },
+  label: { fontSize: 14, color: colors.textMuted, marginBottom: 8 },
   inputRow: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12,
+    backgroundColor: colors.surface2, borderRadius: 8, paddingHorizontal: 12,
   },
-  input: { flex: 1, fontSize: 16, color: colors.foreground, paddingVertical: 12 },
+  input: { flex: 1, fontSize: 16, color: colors.text, paddingVertical: 12 },
   captionInput: {
-    backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12,
+    backgroundColor: colors.surface2, borderRadius: 8, paddingHorizontal: 12,
     minHeight: 120, textAlignVertical: "top",
   },
   error: { color: "#F87171", fontSize: 14, marginTop: 12 },
   button: {
-    backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 14,
+    backgroundColor: colors.brand, borderRadius: 8, paddingVertical: 14,
     alignItems: "center", marginTop: 20,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-  hint: { color: colors.mutedForeground, fontSize: 13, textAlign: "center", marginTop: 12 },
+  buttonText: { color: colors.onBrand, fontSize: 16, fontWeight: "600" },
+  hint: { color: colors.textMuted, fontSize: 13, textAlign: "center", marginTop: 12 },
 });

@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useFocusEffect, router } from "expo-router";
 import { ChevronLeft, ChevronUp, ChevronDown, MoreVertical, Play, Plus, Trash2 } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { goBackOr } from "@/src/lib/navBack";
 import { supabase } from "@/src/lib/supabase";
 import { adoptCapturedWorkout, fetchDayStatus } from "@/src/lib/supabase/daily";
@@ -573,7 +573,7 @@ export function CapturedWorkoutScreen() {
         {editing ? (
           <Text style={styles.headerAction}>Cancel</Text>
         ) : (
-          <ChevronLeft size={24} color={colors.foreground} />
+          <ChevronLeft size={24} color={colors.text} />
         )}
       </TouchableOpacity>
       {workout && (editing ? (
@@ -598,7 +598,7 @@ export function CapturedWorkoutScreen() {
           accessibilityRole="button"
           accessibilityLabel="Workout options"
         >
-          <MoreVertical size={24} color={tagging ? colors.mutedForeground : colors.foreground} />
+          <MoreVertical size={24} color={tagging ? colors.textMuted : colors.text} />
         </TouchableOpacity>
       ))}
     </View>
@@ -611,7 +611,7 @@ export function CapturedWorkoutScreen() {
         <View style={[styles.container, { paddingTop: insets.top }]}>
           {header}
           <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color={colors.brand} />
           </View>
         </View>
       </>
@@ -677,7 +677,7 @@ export function CapturedWorkoutScreen() {
                 value={draft!.name}
                 onChangeText={(name) => patch({ name })}
                 placeholder="Workout name"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
               />
               <View style={styles.labelRow}>
                 <Text style={styles.fieldLabel}>Description</Text>
@@ -695,7 +695,7 @@ export function CapturedWorkoutScreen() {
                 onChangeText={(description) => patch({ description })}
                 multiline
                 placeholder="What this workout is, in a sentence"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
               />
             </>
           ) : (
@@ -815,7 +815,7 @@ export function CapturedWorkoutScreen() {
                 // front of you rather than being argued with at save time.
                 onChangeText={(v) => patch({ estMinutes: sanitizeInteger(v) })}
                 placeholder="e.g. 35"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
               />
 
               <Text style={styles.fieldLabel}>Intensity</Text>
@@ -883,7 +883,7 @@ export function CapturedWorkoutScreen() {
                     value={draft!.formatMinutes}
                     onChangeText={(v) => patch({ formatMinutes: sanitizeInteger(v) })}
                     placeholder="e.g. 15"
-                    placeholderTextColor={colors.mutedForeground}
+                    placeholderTextColor={colors.textMuted}
                   />
                   <Text style={styles.fieldHint}>The number the creator stated. Leave it empty if none was given.</Text>
                 </>
@@ -972,7 +972,7 @@ export function CapturedWorkoutScreen() {
                     <TouchableOpacity onPress={() => moveItem(i, -1)} disabled={i === 0}>
                       <ChevronUp
                         size={20}
-                        color={i === 0 ? colors.border : colors.mutedForeground}
+                        color={i === 0 ? colors.border : colors.textMuted}
                       />
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -982,7 +982,7 @@ export function CapturedWorkoutScreen() {
                       <ChevronDown
                         size={20}
                         color={
-                          i === shownItems.length - 1 ? colors.border : colors.mutedForeground
+                          i === shownItems.length - 1 ? colors.border : colors.textMuted
                         }
                       />
                     </TouchableOpacity>
@@ -999,14 +999,14 @@ export function CapturedWorkoutScreen() {
                       }
                       keyboardType="number-pad"
                       placeholder="sets"
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                     />
                     <TextInput
                       style={[styles.input, styles.grow]}
                       value={item.reps ?? ""}
                       onChangeText={(v) => patchItem(i, { reps: blank(v) })}
                       placeholder="reps (8, 8R/8L, 21-15-9)"
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                     />
                   </View>
                   <View style={styles.fieldRow}>
@@ -1015,14 +1015,14 @@ export function CapturedWorkoutScreen() {
                       value={item.weight ?? ""}
                       onChangeText={(v) => patchItem(i, { weight: blank(v) })}
                       placeholder="weight"
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                     />
                     <TextInput
                       style={[styles.input, styles.grow]}
                       value={item.duration ?? ""}
                       onChangeText={(v) => patchItem(i, { duration: blank(v) })}
                       placeholder="duration"
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                     />
                     <TextInput
                       style={[styles.input, styles.small]}
@@ -1034,7 +1034,7 @@ export function CapturedWorkoutScreen() {
                       }
                       keyboardType="number-pad"
                       placeholder="rest"
-                      placeholderTextColor={colors.mutedForeground}
+                      placeholderTextColor={colors.textMuted}
                     />
                   </View>
                   <TextInput
@@ -1042,7 +1042,7 @@ export function CapturedWorkoutScreen() {
                     value={item.notes ?? ""}
                     onChangeText={(v) => patchItem(i, { notes: blank(v) })}
                     placeholder="note on this movement"
-                    placeholderTextColor={colors.mutedForeground}
+                    placeholderTextColor={colors.textMuted}
                   />
                 </View>
               );
@@ -1089,7 +1089,7 @@ export function CapturedWorkoutScreen() {
               onPress={() => setPickerOpen(true)}
               activeOpacity={0.7}
             >
-              <Plus size={18} color={colors.primary} />
+              <Plus size={18} color={colors.brand} />
               <Text style={styles.addText}>Add a movement</Text>
             </TouchableOpacity>
           )}
@@ -1102,7 +1102,7 @@ export function CapturedWorkoutScreen() {
                 value={draft!.rounds}
                 onChangeText={(rounds) => patch({ rounds })}
                 placeholder="e.g. 4, or 3-4"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
               />
             </>
           ) : null}
@@ -1116,7 +1116,7 @@ export function CapturedWorkoutScreen() {
                 onChangeText={(notes) => patch({ notes })}
                 multiline
                 placeholder="Anything you want to remember about this one"
-                placeholderTextColor={colors.mutedForeground}
+                placeholderTextColor={colors.textMuted}
               />
             </>
           )}
@@ -1145,9 +1145,9 @@ export function CapturedWorkoutScreen() {
                 accessibilityLabel={`Start ${workout.name} as today's session`}
               >
                 {starting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={colors.onBrand} />
                 ) : (
-                  <Play size={18} color="#FFFFFF" />
+                  <Play size={18} color={colors.onBrand} />
                 )}
                 <Text style={styles.startText}>
                   {starting ? "Starting…" : "Start Workout"}
@@ -1220,30 +1220,30 @@ export function CapturedWorkoutScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: 8, paddingVertical: 8,
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
   backButton: { minWidth: 40, height: 40, alignItems: "flex-start", justifyContent: "center", paddingHorizontal: 8 },
   headerRight: { height: 40, justifyContent: "center", paddingHorizontal: 12 },
-  headerAction: { fontSize: 16, color: colors.primary, fontWeight: "600" },
+  headerAction: { fontSize: 16, color: colors.brand, fontWeight: "600" },
   headerActionMuted: { opacity: 0.5 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
-  missing: { fontSize: 15, color: colors.mutedForeground, textAlign: "center" },
+  missing: { fontSize: 15, color: colors.textMuted, textAlign: "center" },
   scroll: { paddingHorizontal: 20, paddingBottom: 40 },
   // The read view is full-bleed (hero, stat row); sections carry their own gutters.
   scrollRead: { paddingBottom: 40 },
   actions: { paddingHorizontal: spacing.lg },
   startButton: {
     flexDirection: "row", gap: 8, marginTop: 28,
-    backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14,
+    backgroundColor: colors.brand, borderRadius: 10, paddingVertical: 14,
     alignItems: "center", justifyContent: "center",
   },
-  startText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
-  title: { fontSize: 24, fontWeight: "700", color: colors.foreground },
+  startText: { color: colors.onBrand, fontSize: 15, fontWeight: "600" },
+  title: { fontSize: 24, fontWeight: "700", color: colors.text },
   titleInput: {
-    backgroundColor: colors.input, borderRadius: 8,
+    backgroundColor: colors.surface2, borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 8,
   },
   readSection: { padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -1251,20 +1251,20 @@ const styles = StyleSheet.create({
   listSection: { paddingHorizontal: spacing.lg },
   listTop: { paddingTop: spacing.lg },
   description: {
-    fontSize: 15, color: colors.foreground, lineHeight: 22,
+    fontSize: 15, color: colors.text, lineHeight: 22,
   },
   fieldLabel: {
-    fontSize: 12, color: colors.mutedForeground, marginTop: 16, marginBottom: 6,
+    fontSize: 12, color: colors.textMuted, marginTop: 16, marginBottom: 6,
     textTransform: "uppercase", letterSpacing: 1,
   },
-  fieldHint: { fontSize: 12, color: colors.mutedForeground, marginTop: 4 },
+  fieldHint: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
   labelRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
-  suggest: { fontSize: 13, color: colors.primary, marginTop: 16, marginBottom: 6 },
+  suggest: { fontSize: 13, color: colors.brand, marginTop: 16, marginBottom: 6 },
   input: {
-    backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12,
-    paddingVertical: 10, fontSize: 15, color: colors.foreground,
+    backgroundColor: colors.surface2, borderRadius: 8, paddingHorizontal: 12,
+    paddingVertical: 10, fontSize: 15, color: colors.text,
   },
   multiline: { minHeight: 90, textAlignVertical: "top" },
   fieldRow: { flexDirection: "row", gap: 8, marginTop: 8 },
@@ -1278,24 +1278,24 @@ const styles = StyleSheet.create({
   },
   editRowHead: { flexDirection: "row", alignItems: "center", gap: 12 },
   index: {
-    fontSize: 13, fontWeight: "700", color: colors.mutedForeground,
+    fontSize: 13, fontWeight: "700", color: colors.textMuted,
     width: 20, paddingTop: 2,
   },
   rowBody: { flex: 1 },
-  movement: { fontSize: 16, fontWeight: "600", color: colors.foreground, flex: 1 },
-  prescription: { fontSize: 14, color: colors.mutedForeground, marginTop: 2 },
-  pendingNote: { fontSize: 12, color: colors.destructive, marginTop: 3 },
+  movement: { fontSize: 16, fontWeight: "600", color: colors.text, flex: 1 },
+  prescription: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  pendingNote: { fontSize: 12, color: colors.danger, marginTop: 3 },
   addRow: {
     flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16,
   },
-  addText: { fontSize: 15, color: colors.primary, fontWeight: "600" },
+  addText: { fontSize: 15, color: colors.brand, fontWeight: "600" },
   sectionLabel: {
-    fontSize: 12, color: colors.mutedForeground, marginTop: 20, marginBottom: 6,
+    fontSize: 12, color: colors.textMuted, marginTop: 20, marginBottom: 6,
     textTransform: "uppercase",
   },
   protocol: {
-    fontSize: 13, color: colors.mutedForeground, lineHeight: 19,
-    backgroundColor: colors.input, borderRadius: 8, padding: 12,
+    fontSize: 13, color: colors.textMuted, lineHeight: 19,
+    backgroundColor: colors.surface2, borderRadius: 8, padding: 12,
   },
   // Recommender tags. The pill family matches CaptureReviewSheet's, the other
   // place in this folder where the same kind of choice is made.
@@ -1303,24 +1303,24 @@ const styles = StyleSheet.create({
   // The read view's leftover tag prose: it sits outside every section, so it
   // brings its own gutter rather than borrowing the editor's.
   tagNotes: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  tagMuscles: { fontSize: 13, color: colors.mutedForeground, marginTop: 4 },
-  tagGap: { fontSize: 13, color: colors.destructive, marginTop: 6, lineHeight: 18 },
+  tagMuscles: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
+  tagGap: { fontSize: 13, color: colors.danger, marginTop: 6, lineHeight: 18 },
   tagHint: {
-    fontSize: 13, color: colors.mutedForeground, lineHeight: 19, marginTop: 16,
+    fontSize: 13, color: colors.textMuted, lineHeight: 19, marginTop: 16,
   },
   tagButton: {
-    alignSelf: "flex-start", borderWidth: 1, borderColor: colors.primary,
+    alignSelf: "flex-start", borderWidth: 1, borderColor: colors.brand,
     borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 16,
   },
   tagButtonRead: { marginLeft: spacing.lg, marginTop: spacing.md },
-  tagButtonText: { color: colors.primary, fontSize: 13, fontWeight: "600" },
+  tagButtonText: { color: colors.brand, fontSize: 13, fontWeight: "600" },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
-    backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border,
   },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 12, color: colors.mutedForeground },
-  pillTextActive: { fontSize: 12, color: colors.primaryForeground, fontWeight: "600" },
+  pillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  pillText: { fontSize: 12, color: colors.textMuted },
+  pillTextActive: { fontSize: 12, color: colors.onBrand, fontWeight: "600" },
   estInput: { alignSelf: "flex-start", minWidth: 100 },
 });

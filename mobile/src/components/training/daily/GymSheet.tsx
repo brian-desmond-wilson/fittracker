@@ -4,7 +4,7 @@ import {
   ScrollView, Switch,
 } from "react-native";
 import { X, Check, Plus, MapPin } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import {
   fetchBfrFlag, presetEquipmentNames, saveGym, setActiveGym, setBfrFlag,
@@ -108,7 +108,7 @@ export function GymSheet({ visible, gyms, onClose, onChanged }: GymSheetProps) {
         <View style={styles.header}>
           <Text style={styles.title}>{editing ? (editing === "new" ? "New gym" : "Edit gym") : "Gyms"}</Text>
           <TouchableOpacity onPress={editing ? () => setEditing(null) : onClose}>
-            <X size={24} color={colors.mutedForeground} />
+            <X size={24} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -117,7 +117,7 @@ export function GymSheet({ visible, gyms, onClose, onChanged }: GymSheetProps) {
             {gyms.map((gym) => (
               <TouchableOpacity key={gym.id} style={styles.gymRow} onPress={() => handleActivate(gym.id)}>
                 <View style={[styles.radio, gym.isActive && styles.radioActive]}>
-                  {gym.isActive && <Check size={14} color="#FFFFFF" />}
+                  {gym.isActive && <Check size={14} color={colors.onBrand} />}
                 </View>
                 <View style={styles.gymBody}>
                   <Text style={styles.gymName}>{gym.name}</Text>
@@ -132,7 +132,7 @@ export function GymSheet({ visible, gyms, onClose, onChanged }: GymSheetProps) {
             ))}
 
             <TouchableOpacity style={styles.addRow} onPress={() => startEdit("new")}>
-              <Plus size={18} color={colors.primary} />
+              <Plus size={18} color={colors.brand} />
               <Text style={styles.addText}>Add a gym</Text>
             </TouchableOpacity>
 
@@ -141,20 +141,20 @@ export function GymSheet({ visible, gyms, onClose, onChanged }: GymSheetProps) {
                 <Text style={styles.gymName}>BFR bands travel with me</Text>
                 <Text style={styles.gymMeta}>Counts as available equipment at every gym</Text>
               </View>
-              <Switch value={bfr} onValueChange={handleBfrToggle} trackColor={{ true: colors.primary }} />
+              <Switch value={bfr} onValueChange={handleBfrToggle} trackColor={{ true: colors.brand }} />
             </View>
           </ScrollView>
         ) : (
           <ScrollView>
             <Text style={styles.label}>Name</Text>
             <TextInput style={styles.input} value={name} onChangeText={setName}
-              placeholder="Waikiki Hotel Gym" placeholderTextColor={colors.mutedForeground} />
+              placeholder="Waikiki Hotel Gym" placeholderTextColor={colors.textMuted} />
             <Text style={styles.label}>Location</Text>
             <View style={styles.inputRow}>
-              <MapPin size={16} color={colors.mutedForeground} />
+              <MapPin size={16} color={colors.textMuted} />
               <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={location}
                 onChangeText={setLocation} placeholder="Honolulu, HI"
-                placeholderTextColor={colors.mutedForeground} />
+                placeholderTextColor={colors.textMuted} />
             </View>
             <Text style={styles.label}>Preset</Text>
             <View style={styles.pillRow}>
@@ -188,9 +188,9 @@ export function GymSheet({ visible, gyms, onClose, onChanged }: GymSheetProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: 20 },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 20 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  title: { fontSize: 20, fontWeight: "700", color: colors.foreground },
+  title: { fontSize: 20, fontWeight: "700", color: colors.text },
   gymRow: {
     flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: colors.border,
@@ -199,37 +199,37 @@ const styles = StyleSheet.create({
     width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.border,
     alignItems: "center", justifyContent: "center",
   },
-  radioActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  radioActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   gymBody: { flex: 1 },
-  gymName: { fontSize: 16, fontWeight: "600", color: colors.foreground },
-  gymMeta: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
-  editLink: { fontSize: 14, color: colors.primary },
+  gymName: { fontSize: 16, fontWeight: "600", color: colors.text },
+  gymMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  editLink: { fontSize: 14, color: colors.brand },
   addRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16 },
-  addText: { fontSize: 15, color: colors.primary, fontWeight: "600" },
+  addText: { fontSize: 15, color: colors.brand, fontWeight: "600" },
   bfrRow: {
     flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 16,
     borderTopWidth: 1, borderTopColor: colors.border, marginTop: 8,
   },
-  label: { fontSize: 13, color: colors.mutedForeground, marginBottom: 6, marginTop: 14 },
+  label: { fontSize: 13, color: colors.textMuted, marginBottom: 6, marginTop: 14 },
   input: {
-    backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12,
-    paddingVertical: 10, fontSize: 16, color: colors.foreground, marginBottom: 4,
+    backgroundColor: colors.surface2, borderRadius: 8, paddingHorizontal: 12,
+    paddingVertical: 10, fontSize: 16, color: colors.text, marginBottom: 4,
   },
   inputRow: {
-    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.input,
+    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface2,
     borderRadius: 8, paddingHorizontal: 12,
   },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
-    backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.border,
   },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 13, color: colors.mutedForeground },
-  pillTextActive: { color: "#FFFFFF", fontWeight: "600" },
+  pillActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  pillText: { fontSize: 13, color: colors.textMuted },
+  pillTextActive: { color: colors.onBrand, fontWeight: "600" },
   button: {
-    backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 14,
+    backgroundColor: colors.brand, borderRadius: 8, paddingVertical: 14,
     alignItems: "center", marginTop: 24,
   },
-  buttonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+  buttonText: { color: colors.onBrand, fontSize: 16, fontWeight: "600" },
 });
