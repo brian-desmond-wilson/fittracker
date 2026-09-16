@@ -25,7 +25,7 @@ import {
   Trash2,
   Layers,
 } from 'lucide-react-native';
-import { colors } from '@/src/lib/colors';
+import { colors } from '@/src/theme/tokens';
 import { goBackOr } from '@/src/lib/navBack';
 import { supabase } from '@/src/lib/supabase';
 import { deleteProgramWorkout } from '@/src/lib/supabase/training';
@@ -104,38 +104,38 @@ export default function WorkoutDetailPage() {
   const getWorkoutTypeColor = (type: string) => {
     switch (type) {
       case 'Strength':
-        return '#EF4444';
+        return colors.danger;
       case 'Hypertrophy':
-        return '#8B5CF6';
+        return colors.blocks.mobility;
       case 'Power':
-        return '#F59E0B';
+        return colors.warning;
       case 'Endurance':
-        return '#22C55E';
+        return colors.brand;
       case 'Rest':
-        return '#6B7280';
+        return colors.textFaint;
       case 'Deload':
-        return '#3B82F6';
+        return colors.tier;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
   const getSectionColor = (section: WorkoutSection) => {
     switch (section) {
       case 'Warmup':
-        return '#F59E0B';
+        return colors.warning;
       case 'Prehab':
-        return '#8B5CF6';
+        return colors.blocks.mobility;
       case 'Strength':
-        return '#EF4444';
+        return colors.danger;
       case 'Accessory':
-        return '#3B82F6';
+        return colors.tier;
       case 'Isometric':
         return '#06B6D4';
       case 'Cooldown':
-        return '#22C55E';
+        return colors.brand;
       default:
-        return colors.mutedForeground;
+        return colors.textMuted;
     }
   };
 
@@ -324,7 +324,7 @@ export default function WorkoutDetailPage() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
         </View>
       </View>
     );
@@ -336,7 +336,7 @@ export default function WorkoutDetailPage() {
         <StatusBar barStyle="light-content" />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => goBackOr(router, '/(tabs)/training')} style={styles.backButton}>
-            <ChevronLeft size={24} color={colors.foreground} />
+            <ChevronLeft size={24} color={colors.text} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
         </View>
@@ -358,7 +358,7 @@ export default function WorkoutDetailPage() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => goBackOr(router, '/(tabs)/training')} style={styles.backButton}>
-          <ChevronLeft size={24} color={colors.foreground} />
+          <ChevronLeft size={24} color={colors.text} />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <View style={styles.headerActions}>
@@ -366,14 +366,14 @@ export default function WorkoutDetailPage() {
             onPress={() => setShowEditWizard(true)}
             style={styles.headerButton}
           >
-            <Pencil size={20} color={colors.foreground} />
+            <Pencil size={20} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleDelete}
             style={styles.headerButton}
             disabled={deleting}
           >
-            <Trash2 size={20} color="#EF4444" />
+            <Trash2 size={20} color={colors.danger} />
           </TouchableOpacity>
         </View>
       </View>
@@ -398,19 +398,19 @@ export default function WorkoutDetailPage() {
         {/* Quick Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Clock size={18} color={colors.primary} />
+            <Clock size={18} color={colors.brand} />
             <Text style={styles.statValue}>
               {workout.estimated_duration_minutes || '—'} min
             </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Dumbbell size={18} color={colors.primary} />
+            <Dumbbell size={18} color={colors.brand} />
             <Text style={styles.statValue}>{stats.exercises} exercises</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Timer size={18} color={colors.primary} />
+            <Timer size={18} color={colors.brand} />
             <Text style={styles.statValue}>{stats.sets} sets</Text>
           </View>
         </View>
@@ -424,13 +424,13 @@ export default function WorkoutDetailPage() {
           >
             <View style={styles.instructionsHeader}>
               <View style={styles.instructionsHeaderLeft}>
-                <FileText size={18} color={colors.primary} />
+                <FileText size={18} color={colors.brand} />
                 <Text style={styles.instructionsTitle}>Instructions & Notes</Text>
               </View>
               {showInstructions ? (
-                <ChevronUp size={20} color={colors.mutedForeground} />
+                <ChevronUp size={20} color={colors.textMuted} />
               ) : (
-                <ChevronDown size={20} color={colors.mutedForeground} />
+                <ChevronDown size={20} color={colors.textMuted} />
               )}
             </View>
             {showInstructions && (
@@ -485,9 +485,9 @@ export default function WorkoutDetailPage() {
                   </View>
                 </View>
                 {isExpanded ? (
-                  <ChevronUp size={20} color={colors.mutedForeground} />
+                  <ChevronUp size={20} color={colors.textMuted} />
                 ) : (
-                  <ChevronDown size={20} color={colors.mutedForeground} />
+                  <ChevronDown size={20} color={colors.textMuted} />
                 )}
               </TouchableOpacity>
 
@@ -513,7 +513,7 @@ export default function WorkoutDetailPage() {
                               <Text style={styles.exerciseOrderText}>{index + 1}</Text>
                             </View>
                             <View style={styles.groupBadge}>
-                              <Layers size={12} color={colors.primary} />
+                              <Layers size={12} color={colors.brand} />
                               <Text style={styles.groupBadgeText}>PICK ONE</Text>
                             </View>
                           </View>
@@ -619,7 +619,7 @@ export default function WorkoutDetailPage() {
 
                         <ChevronLeft
                           size={18}
-                          color={colors.mutedForeground}
+                          color={colors.textMuted}
                           style={{ transform: [{ rotate: '180deg' }] }}
                         />
                       </TouchableOpacity>
@@ -637,7 +637,7 @@ export default function WorkoutDetailPage() {
       {/* Start Workout Button */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <TouchableOpacity style={styles.startButton} activeOpacity={0.8}>
-          <Play size={20} color="#FFFFFF" fill="#FFFFFF" />
+          <Play size={20} color={colors.onBrand} fill={colors.onBrand} />
           <Text style={styles.startButtonText}>Start Workout</Text>
         </TouchableOpacity>
       </View>
@@ -665,7 +665,7 @@ export default function WorkoutDetailPage() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   loadingContainer: {
     flex: 1,
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   header: {
     flexDirection: 'row',
@@ -697,7 +697,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 17,
-    color: colors.foreground,
+    color: colors.text,
   },
   headerActions: {
     flexDirection: 'row',
@@ -733,18 +733,18 @@ const styles = StyleSheet.create({
   workoutTitle: {
     fontSize: 26,
     fontWeight: 'bold',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   dayWeekText: {
     fontSize: 15,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
@@ -761,7 +761,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   statDivider: {
     width: 1,
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   instructionsCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     marginBottom: 20,
     borderWidth: 1,
@@ -790,7 +790,7 @@ const styles = StyleSheet.create({
   instructionsTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   instructionsContent: {
     paddingHorizontal: 16,
@@ -803,11 +803,11 @@ const styles = StyleSheet.create({
   instructionLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   instructionText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     lineHeight: 20,
   },
   sectionContainer: {
@@ -817,7 +817,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
@@ -838,11 +838,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.foreground,
+    color: colors.text,
   },
   sectionDescription: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 2,
   },
   exercisesList: {
@@ -855,7 +855,7 @@ const styles = StyleSheet.create({
   exerciseCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
@@ -876,7 +876,7 @@ const styles = StyleSheet.create({
   exerciseOrderText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
   exerciseContent: {
     flex: 1,
@@ -884,7 +884,7 @@ const styles = StyleSheet.create({
   exerciseName: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 4,
   },
   exerciseDetails: {
@@ -896,30 +896,30 @@ const styles = StyleSheet.create({
   exerciseReps: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.brand,
   },
   exerciseLoad: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   exerciseRest: {
     fontSize: 13,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   exerciseTempo: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     marginTop: 4,
   },
   exerciseNotes: {
     fontSize: 12,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     fontStyle: 'italic',
     marginTop: 4,
   },
   // Group styles
   groupCard: {
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
@@ -936,7 +936,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: `${colors.primary}20`,
+    backgroundColor: `${colors.brand}20`,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -944,7 +944,7 @@ const styles = StyleSheet.create({
   groupBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.brand,
   },
   groupExercisesList: {
     marginLeft: 38,
@@ -956,7 +956,7 @@ const styles = StyleSheet.create({
   groupExerciseName: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.foreground,
+    color: colors.text,
   },
   orDivider: {
     flexDirection: 'row',
@@ -973,7 +973,7 @@ const styles = StyleSheet.create({
   orText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textTransform: 'lowercase',
   },
   groupPrescription: {
@@ -985,7 +985,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 16,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
@@ -994,13 +994,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingVertical: 16,
     borderRadius: 12,
   },
   startButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: colors.onBrand,
   },
 });

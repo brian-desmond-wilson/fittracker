@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronLeft, Calendar, Clock, BarChart3, TrendingUp, User, Pencil } from "lucide-react-native";
-import { colors } from "@/src/lib/colors";
+import { colors } from "@/src/theme/tokens";
 import { supabase } from "@/src/lib/supabase";
 import { fetchProgramById } from "@/src/lib/supabase/training";
 import type { ProgramTemplateWithRelations } from "@/src/types/training";
@@ -100,7 +100,7 @@ export default function ProgramDetail() {
       <>
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.brand} />
           <Text style={styles.loadingText}>Loading program...</Text>
         </View>
       </>
@@ -114,7 +114,7 @@ export default function ProgramDetail() {
         <StatusBar barStyle="light-content" />
         <View style={[styles.container, styles.centerContent, { paddingTop: insets.top }]}>
           <TouchableOpacity onPress={() => router.replace("/(tabs)/training")} style={styles.errorBackButton}>
-            <ChevronLeft size={24} color={colors.foreground} />
+            <ChevronLeft size={24} color={colors.text} />
             <Text style={styles.errorBackText}>Back</Text>
           </TouchableOpacity>
           <View style={styles.errorContent}>
@@ -136,7 +136,7 @@ export default function ProgramDetail() {
         {/* Fixed Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.replace("/(tabs)/training")} style={styles.headerButton}>
-            <ChevronLeft size={24} color={colors.foreground} />
+            <ChevronLeft size={24} color={colors.text} />
             <Text style={styles.headerText}>Training</Text>
           </TouchableOpacity>
           {currentUserId === program.creator_id && (
@@ -144,7 +144,7 @@ export default function ProgramDetail() {
               onPress={() => setEditModalVisible(true)}
               style={styles.editButton}
             >
-              <Pencil size={20} color={colors.foreground} />
+              <Pencil size={20} color={colors.text} />
             </TouchableOpacity>
           )}
         </View>
@@ -157,10 +157,10 @@ export default function ProgramDetail() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
+              tintColor={colors.brand}
+              colors={[colors.brand]}
               title="Pull to refresh"
-              titleColor={colors.mutedForeground}
+              titleColor={colors.textMuted}
             />
           }
         >
@@ -184,22 +184,22 @@ export default function ProgramDetail() {
           {/* Program Stats Row */}
           <View style={styles.statsContainer}>
             <View style={styles.statBox}>
-              <Calendar size={18} color={colors.primary} strokeWidth={2} />
+              <Calendar size={18} color={colors.brand} strokeWidth={2} />
               <Text style={styles.statValue} numberOfLines={1}>{program.duration_weeks} weeks</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <Clock size={18} color={colors.primary} strokeWidth={2} />
+              <Clock size={18} color={colors.brand} strokeWidth={2} />
               <Text style={styles.statValue} numberOfLines={1}>{program.minutes_per_session} min</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <BarChart3 size={18} color={colors.primary} strokeWidth={2} />
+              <BarChart3 size={18} color={colors.brand} strokeWidth={2} />
               <Text style={styles.statValue} numberOfLines={1}>{program.days_per_week} days/wk</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <TrendingUp size={18} color="#F59E0B" strokeWidth={2} />
+              <TrendingUp size={18} color={colors.warning} strokeWidth={2} />
               <Text style={styles.statValue} numberOfLines={1}>{program.difficulty_level}</Text>
             </View>
           </View>
@@ -250,7 +250,7 @@ export default function ProgramDetail() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   header: {
     flexDirection: "row",
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
   },
   headerButton: {
     flexDirection: "row",
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     fontSize: 17,
-    color: colors.foreground,
+    color: colors.text,
     fontWeight: "500",
   },
   editButton: {
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   errorBackButton: {
     position: "absolute",
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   },
   errorBackText: {
     fontSize: 17,
-    color: colors.foreground,
+    color: colors.text,
     fontWeight: "500",
   },
   errorContent: {
@@ -307,17 +307,17 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: colors.foreground,
+    color: colors.text,
     marginBottom: 8,
   },
   errorText: {
     fontSize: 14,
-    color: colors.mutedForeground,
+    color: colors.textMuted,
     textAlign: "center",
     marginBottom: 20,
   },
   retryButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   retryButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: colors.primaryForeground,
+    color: colors.onBrand,
   },
   bannerContainer: {
     position: "relative",
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
   bannerImage: {
     width: "100%",
     height: "100%",
-    backgroundColor: colors.muted,
+    backgroundColor: colors.surface2,
   },
   bannerContent: {
     position: "absolute",
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingHorizontal: 12,
     paddingVertical: 16,
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.surface2,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -381,12 +381,12 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 11,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.text,
     textAlign: "center",
   },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -402,10 +402,10 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 14,
     fontWeight: "500",
-    color: colors.mutedForeground,
+    color: colors.textMuted,
   },
   tabTextActive: {
-    color: colors.primary,
+    color: colors.brand,
     fontWeight: "600",
   },
   tabIndicator: {
@@ -414,6 +414,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.brand,
   },
 });
