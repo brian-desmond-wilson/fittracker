@@ -3,7 +3,7 @@
 // and the support blocks render compact, expanding on tap. Every card gets
 // the same controls (lock, adjust, swap); a built-in adds dismiss. Approved
 // mockup A is the decision record for this layout.
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import {
   ChevronDown, ChevronRight, ChevronUp, Lock, LockOpen, RotateCw, Sparkles, X,
@@ -11,6 +11,7 @@ import {
 import { colors, tint, radii, spacing } from "@/src/theme/tokens";
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
 import { BLOCK_TITLES, SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
+import { roundsBadge } from "@/src/lib/dailyRounds";
 import { SessionItemList } from "./SessionItemList";
 import type { StoredBlock } from "@/src/types/dailyBlocks";
 import type { SessionSection, StoredSessionItem } from "@/src/types/daily";
@@ -52,6 +53,10 @@ export function BlockCard({
   const builtin = block.builtinKey ? builtinByKey(block.builtinKey) : null;
   const orphaned = !block.builtinKey && !block.workoutId;
   const accent = colors.blocks[block.block];
+  // The hero shows the round count as a badge and keeps the full protocol
+  // behind a tap: the coach writes the whole round into rounds_note.
+  const badge = roundsBadge(block.roundsNote);
+  const [protocolOpen, setProtocolOpen] = useState(false);
 
   // A dismissed built-in collapses to one honest line and its way back.
   if (block.dismissed) {
@@ -162,6 +167,34 @@ export function BlockCard({
   // never the block name, so a drag reports its position with this.
   const section = SECTION_FOR_BLOCK[block.block];
 
+  // The hero keeps the plain list Brian reviews the day from: one line per
+  // movement, the reps on the right, the coach's load call under the name.
+  // Decision 2026-10-08: the rich cards stay on the support blocks only.
+  const compactRows = items.map((item) => (
+    <TouchableOpacity
+      key={item.id}
+      style={styles.itemRow}
+      activeOpacity={0.7}
+      onPress={() => onOpenExercise(item.exerciseId)}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}. Open the exercise.`}
+    >
+      <View style={styles.itemText}>
+        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+        {item.weightNote ? (
+          <Text style={styles.itemWeight} numberOfLines={2}>{item.weightNote}</Text>
+        ) : null}
+      </View>
+      <Text style={styles.itemMeta}>
+        {[
+          item.targetSets ? `${item.targetSets} × ${item.targetReps ?? "?"}` : item.targetReps,
+          item.restSeconds ? `${item.restSeconds}s` : null,
+        ].filter(Boolean).join(" · ")}
+      </Text>
+      <ChevronRight size={15} color={colors.textFaint} />
+    </TouchableOpacity>
+  ));
+
   // Built-in movements are app data, not exercise rows: they stay a plain list
   // (no id, nothing to reorder or remove). Everything else renders as the rich
   // draggable, swipe-to-remove card, hosted by a DraggableFlatList. The list is
@@ -201,16 +234,40 @@ export function BlockCard({
           {controls}
         </View>
         {nameRow}
-        {(items.length > 0 || block.roundsNote) && (
-          <Text style={styles.meta}>
-            {[
-              items.length > 0 ? `${items.length} exercises · from your catalog` : null,
-              block.roundsNote,
-            ].filter(Boolean).join(" · ")}
-          </Text>
+        {(items.length > 0 || badge) && (
+          <View style={styles.metaRow}>
+            {items.length > 0 && (
+              <Text style={styles.meta}>{items.length} exercises · from your catalog</Text>
+            )}
+            {badge && (
+              <Text style={[styles.roundsBadge, { color: accent, borderColor: tint(accent, 0.5) }]}>
+                {badge}
+              </Text>
+            )}
+          </View>
+        )}
+        {block.roundsNote && (
+          <TouchableOpacity
+            onPress={() => setProtocolOpen((v) => !v)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={protocolOpen ? "Hide the round protocol" : "Show the round protocol"}
+            accessibilityState={{ expanded: protocolOpen }}
+            style={styles.protocolToggle}
+          >
+            <Text style={styles.protocolToggleText}>
+              {protocolOpen ? "Hide protocol" : "Show protocol"}
+            </Text>
+            {protocolOpen
+              ? <ChevronUp size={13} color={colors.textMuted} />
+              : <ChevronDown size={13} color={colors.textMuted} />}
+          </TouchableOpacity>
+        )}
+        {block.roundsNote && protocolOpen && (
+          <Text style={styles.protocol}>{block.roundsNote}</Text>
         )}
         {block.reason && <Text style={styles.reason}>{block.reason}</Text>}
-        <View style={styles.itemList}>{itemRows}</View>
+        <View style={styles.itemList}>{builtin ? itemRows : compactRows}</View>
         {emptyLine}
         {rerollNote && <Text style={styles.emptyLine}>Couldn't swap this block right now.</Text>}
       </View>
@@ -301,7 +358,15 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1, overflow: "hidden",
     letterSpacing: 0.5,
   },
-  meta: { fontSize: 12.5, color: colors.textMuted },
+  meta: { fontSize: 12.5, color: colors.textMuted, flexShrink: 1 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
+  roundsBadge: {
+    fontSize: 10.5, fontWeight: "700", letterSpacing: 1, borderWidth: 1,
+    borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2, overflow: "hidden",
+  },
+  protocolToggle: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", marginTop: 2 },
+  protocolToggleText: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
+  protocol: { fontSize: 12.5, color: colors.textMuted, lineHeight: 17 },
   reason: { fontSize: 12.5, color: colors.brand, fontStyle: "italic", lineHeight: 17 },
   itemList: { marginTop: 4 },
   itemRow: {
@@ -309,7 +374,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
+  itemText: { flex: 1, gap: 2 },
   itemName: { fontSize: 14, color: colors.text, flex: 1 },
+  itemWeight: { fontSize: 12, color: colors.textMuted, fontStyle: "italic", lineHeight: 16 },
   itemMeta: { fontSize: 12.5, color: colors.textMuted },
   emptyLine: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
   nudge: { fontSize: 12, color: colors.warning, marginTop: 6, fontStyle: "italic" },

@@ -16,6 +16,7 @@ import { colors, radii, spacing, tint, typography } from "@/src/theme/tokens";
 import { useDailySession } from "@/src/hooks/useDailySession";
 import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySectionMinutes";
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
+import { sessionTitle } from "@/src/lib/dailyFocus";
 import {
   blockDayShape, plannedBlockMinutes, BLOCK_TITLES, SECTION_FOR_BLOCK,
 } from "@/src/lib/dailyBlockCompose";
@@ -623,10 +624,15 @@ export default function TodayTab() {
                   split) is neither, so it gets a neutral title rather than
                   falling through to "Leg day"; only a real legs split is
                   named one. */}
+              {/* An AI-composed day is titled by its focus, read out of the
+                  composer's own sentence, so the header and the main block
+                  card stop saying the workout's name twice. */}
               <Text style={styles.sessionTitle}>
                 {served
                   ? served.name
-                  : mainBlock
+                  : session.source === "ai" && mainBlock
+                    ? sessionTitle(session.dayReason)
+                    : mainBlock
                     ? mainBlock.name
                     : dayShape === "recovery"
                       ? "Recovery day"
