@@ -433,6 +433,27 @@ export async function fetchTodaySession(
   return mapDaySession(rows);
 }
 
+/** The inputs a session was composed from, as the Coach view reads them. A
+ *  snapshot written as a JSON string (one early agent save did that) is
+ *  unwrapped; anything that isn't an object reads as null. */
+export async function fetchSessionSnapshot(
+  sessionId: string,
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await supabase
+    .from("generated_sessions")
+    .select("inputs_snapshot")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (error || !data) return null;
+  let snap: unknown = (data as { inputs_snapshot: unknown }).inputs_snapshot;
+  if (typeof snap === "string") {
+    try { snap = JSON.parse(snap); } catch { return null; }
+  }
+  return snap && typeof snap === "object" && !Array.isArray(snap)
+    ? (snap as Record<string, unknown>)
+    : null;
+}
+
 /** Same read as fetchTodaySession, but a query error throws instead of
  *  reading as "no session". For writers whose "nothing there" branch creates
  *  a session: a failed read must not be mistaken for an empty day. */

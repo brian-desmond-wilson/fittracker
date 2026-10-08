@@ -14,6 +14,7 @@ import WODsTab from "@/src/components/training/crossfit/WODsTab";
 import MovementsTab from "@/src/components/training/crossfit/MovementsTab";
 import CatalogTab from "@/src/components/training/daily/CatalogTab";
 import TodayTab from "@/src/components/training/daily/TodayTab";
+import CoachTab from "@/src/components/training/daily/CoachTab";
 // Aliased: Strength mode has its own WorkoutsTab, and both are on this screen.
 import DailyWorkoutsTab from "@/src/components/training/daily/WorkoutsTab";
 import { fetchPublishedPrograms } from "@/src/lib/supabase/training";
@@ -32,7 +33,7 @@ type StrengthTab = "programs" | "workouts" | "exercises";
 // Gym profiles are configuration, not a daily surface — they belong with the
 // check-in (which gym today) and in Profile (what that gym has), not in a
 // permanent tab slot here.
-type DailyTab = "today" | "workouts" | "exercises";
+type DailyTab = "today" | "coach" | "workouts" | "exercises";
 
 /** Props every header mode icon honours, whatever it is drawn from. */
 interface ModeIconProps {
@@ -213,6 +214,7 @@ export default function Training() {
 
   const dailyTabs: { key: DailyTab; label: string }[] = [
     { key: "today", label: "Today" },
+    { key: "coach", label: "Coach" },
     { key: "workouts", label: "Workouts" },
     { key: "exercises", label: "Exercises" },
   ];
@@ -252,6 +254,8 @@ export default function Training() {
       switch (dailyTab) {
         case "today":
           return <TodayTab key={todayKey} />;
+        case "coach":
+          return <CoachTab />;
         case "workouts":
           return (
             <DailyWorkoutsTab
