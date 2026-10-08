@@ -231,6 +231,36 @@ serve(async (req: Request): Promise<Response> => {
     return ok({ resource: name, rows: data });
   }
 
+  // POST /v1/jobs/compose-session — the one allowlisted ACTION. Proxies the
+  // app's own composer (supabase/functions/compose-session) under the service
+  // role and returns its result verbatim inside the envelope. The composer is
+  // suggest-only: it writes nothing, so this is not gated by writeEnabled.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/compose-session`) {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      audit("jobs/compose-session", null, 0, false);
+      return err("bad_json", "Request body must be JSON.", 400);
+    }
+    const upstream = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/compose-session`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      },
+      body: JSON.stringify(body ?? {}),
+    });
+    const payload = await upstream.json().catch(() => null) as
+      { composition?: unknown; error?: string } | null;
+    if (!upstream.ok || !payload || payload.error) {
+      audit("jobs/compose-session", null, 0, false);
+      return err("compose_failed", payload?.error ?? `composer answered ${upstream.status}`, 502);
+    }
+    audit("jobs/compose-session", null, 1, true);
+    return ok(payload);
+  }
+
   // POST /v1/log/:resource — Phase 3, gated by CONFIG.writeEnabled.
   const logMatch = path.match(new RegExp(`^/${VERSION}/log/([a-z_]+)$`));
   if (req.method === "POST" && logMatch) {
