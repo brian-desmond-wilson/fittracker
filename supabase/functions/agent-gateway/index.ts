@@ -46,6 +46,8 @@ const CONFIG: {
     checkins:     { table: "daily_checkins", dateCol: "checkin_date" }, // "set up my day": gym, energy, time, soreness (soreness rows live in daily_checkin_soreness)
     // — training —
     workouts:     { table: "generated_sessions", dateCol: "session_date" }, // the day's training session: status (suggested/accepted/completed/skipped/rested), split, source
+    workout_blocks: { table: "generated_session_blocks", dateCol: "" }, // a session's blocks (warmup/mobility/main/conditioning/cooldown), linked by session_id
+    workout_items:  { table: "generated_session_items", dateCol: "" }, // a session's loggable movements in item_order, linked by session_id
     lifts:        { table: "set_instances", dateCol: "created_at" }, // logged sets; hang off exercise_instances → workout_instances
     exercises:    { table: "exercises", dateCol: "" }, // exercise library
     equipment:    { table: "equipment", dateCol: "" }, // equipment catalog (per-gym availability is the gym_profile_equipment junction)
