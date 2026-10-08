@@ -216,3 +216,58 @@ Two things the route cannot do yet that the recipe needs: step 4 is an
 **update**, and the route only inserts, so the signature has to go in with
 step 1 or stay NULL; and there is no read-back of the inserted id other
 than the route's response (`data.rows[0].id`), which is sufficient.
+
+## 7. Atomic save — `POST /v1/jobs/save-session` (preferred)
+
+Added 2026-10-08 after a three-insert save failed midway and left a session
+with no blocks. One request, one Postgres transaction: the session row, its
+blocks and its items all land, or nothing does.
+
+Request, same auth as every route (`x-agent-key`):
+
+```json
+{
+  "session": {
+    "user_id": "bd91dc7e-7eb8-4655-b05a-c9f72db39e9e",
+    "session_date": "2026-10-08",
+    "gym_profile_id": "abd10c0d-f655-4997-9568-a7c23ce9b614",
+    "checkin_id": null,
+    "ramp_week": 8,
+    "source": "ai",
+    "status": "suggested",
+    "section_minutes": { "warmup": 8, "main": 36, "cooldown": 8 },
+    "day_reason": "Pull emphasis for the stalest groups…",
+    "inputs_snapshot": { "mode": "blocks", "minutes": 60, "energy": 7, "...": "..." },
+    "compose_signature": null
+  },
+  "blocks": [
+    { "block": "warmup", "name": "Full-Body Warm-up", "builtin_key": "builtin-warmup-full", "captured_workout_id": null, "minutes": 8, "rounds_note": null, "reason": "Dynamic warmup before strength work." },
+    { "block": "main", "name": "The Workout", "captured_workout_id": "98d3666f-…", "builtin_key": null, "minutes": 28, "rounds_note": "Do 4 rounds (written: …)", "reason": "Pull-day main…" }
+  ],
+  "items": [
+    { "exercise_id": "…", "item_order": 0, "section": "main", "target_sets": null, "target_reps": "8", "rest_seconds": null, "reason": null, "weight_note": "Ramp 15×8, 20×5, 24×3 → work 26 lb" }
+  ]
+}
+```
+
+Rules enforced before anything is written: `session.user_id`,
+`session_date` and `ramp_week` present; at least one block; every block
+names exactly one of `captured_workout_id` / `builtin_key` and carries
+`name` and `minutes`; no duplicate `block` names; `item_order` contiguous
+from 0. `source` defaults to `ai`, `status` to `suggested`, `locked` and
+`dismissed` to false. A stringified JSON object for `inputs_snapshot` or
+`section_minutes` is unwrapped. `weight_note` is the per-exercise load
+prescription (free text, optional).
+
+Responses:
+
+```json
+{ "ok": true,  "data": { "session_id": "71d4a3ee-…" } }
+{ "ok": false, "error": { "code": "save_failed", "message": "block[2] \"main\": duplicate block name" } }
+```
+
+On any failure nothing is written. Messages name the row: `session: …`,
+`block[<index>] "<block>": …`, `item[<index>]: …`, `items: item_order must
+be contiguous from 0 (got 0,1,3)`. The three-insert flow through
+`/v1/log/workouts`, `/v1/log/workout_blocks` and `/v1/log/workout_items`
+still works, but it is not atomic.

@@ -263,6 +263,32 @@ serve(async (req: Request): Promise<Response> => {
     return ok(payload);
   }
 
+  // POST /v1/jobs/save-session — persist a composed session atomically:
+  // { session, blocks, items } go through agent_save_session (one Postgres
+  // function, one transaction). Any failure unwinds everything and the
+  // function's message names the row ("block[1] \"main\": duplicate block
+  // name"). An action, not gated by writeEnabled; audit-logged like the rest.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/save-session`) {
+    let body: { session?: unknown; blocks?: unknown; items?: unknown } | null = null;
+    try {
+      body = await req.json();
+    } catch {
+      audit("jobs/save-session", null, 0, false);
+      return err("bad_json", "Request body must be JSON.", 400);
+    }
+    const { data, error } = await supabase.rpc("agent_save_session", {
+      p_session: body?.session ?? null,
+      p_blocks: body?.blocks ?? [],
+      p_items: body?.items ?? [],
+    });
+    if (error) {
+      audit("jobs/save-session", "workouts", 0, false);
+      return err("save_failed", error.message, 400);
+    }
+    audit("jobs/save-session", "workouts", 1, true);
+    return ok({ session_id: data });
+  }
+
   // POST /v1/log/:resource — Phase 3, gated by CONFIG.writeEnabled.
   const logMatch = path.match(new RegExp(`^/${VERSION}/log/([a-z_]+)$`));
   if (req.method === "POST" && logMatch) {
