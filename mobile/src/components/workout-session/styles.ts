@@ -429,6 +429,14 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
+  weightNote: {
+    color: t.textMuted,
+    fontSize: 13,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 16,
+  },
   lastPerformance: {
     color: '#6b7280',
     fontSize: 14,

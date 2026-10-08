@@ -474,7 +474,7 @@ export default function WorkoutSessionPage() {
             ),
             items:generated_session_items(
               id, exercise_id, item_order, section, target_sets, target_reps,
-              rest_seconds,
+              rest_seconds, weight_note,
               exercises ( id, name, image_url )
             )
           `)
@@ -551,6 +551,9 @@ export default function WorkoutSessionPage() {
             // raw_reps, the creator's own words.
             target_reps_min: parseInt(item.target_reps ?? '', 10) || 8,
             raw_reps: item.target_reps ?? null,
+            // The coach's load prescription, shown under the reps while
+            // logging; never parsed into the weight input.
+            weight_note: item.weight_note ?? null,
             target_reps_max: null,
             superset_group: null,
             exercises: item.exercises,
@@ -2533,6 +2536,11 @@ export default function WorkoutSessionPage() {
               {currentExercise.exercise.target_sets} sets × {targetRepsDisplay} reps
             </Text>
           )}
+          {currentExercise.exercise.weight_note ? (
+            /* The coach's load call for this movement, verbatim, where the
+               user is about to type a weight. */
+            <Text style={styles.weightNote}>{currentExercise.exercise.weight_note}</Text>
+          ) : null}
           {servedNote && <Text style={styles.lastPerformance}>{servedNote}</Text>}
 
           {/* The video this movement came from — tap to rewatch the form

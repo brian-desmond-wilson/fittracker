@@ -35,6 +35,9 @@ function prescriptionLine(item: StoredSessionItem): string | null {
       ? `${item.targetSets} × ${item.targetReps ?? "?"}`
       : item.targetReps,
     item.restSeconds ? `${item.restSeconds}s` : null,
+    // The coach's load call rides on the same line as the reps — one
+    // prescription, read in one glance.
+    item.weightNote,
   ]
     .filter(Boolean)
     .join(" · ");

@@ -110,6 +110,10 @@ export interface SessionItem {
   targetReps: string | null;
   restSeconds: number | null;
   reason: string | null;
+  /** The coach's load prescription for this movement, verbatim — "Ramp
+   *  15×8, 20×5 → work 26 lb". Optional: the app's own composer never
+   *  writes one; only a stored row read back can carry it. */
+  weightNote?: string | null;
 }
 
 /**

@@ -458,7 +458,7 @@ function queryDaySessions(userId: string, date: string) {
       assumed:inputs_snapshot->assumed,
       items:generated_session_items(
         id, exercise_id, item_order, section, target_sets, target_reps,
-        rest_seconds, reason, was_performed,
+        rest_seconds, reason, weight_note, was_performed,
         exercise:exercises(
           name, image_url, skill_level, core_default_equipment, tier,
           scoring_rows:exercise_scoring_types(scoring_type:scoring_types(name)),
@@ -505,6 +505,7 @@ function mapDaySession(rows: any[]): StoredSession | null {
         targetReps: i.target_reps,
         restSeconds: i.rest_seconds,
         reason: i.reason,
+        weightNote: i.weight_note ?? null,
         wasPerformed: i.was_performed,
         imageUrl: i.exercise?.image_url ?? null,
         skillLevel: i.exercise?.skill_level ?? null,

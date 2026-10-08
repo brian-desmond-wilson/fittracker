@@ -25,6 +25,9 @@ export interface ProgramWorkoutExercise {
    *  into "5 reps" (or "30 sec" into "8 reps") asserted numbers the creator
    *  never wrote. */
   raw_reps?: string | null;
+  /** The coach's load prescription for a daily item, verbatim. Shown under
+   *  the reps call while logging; the weight input stays the user's. */
+  weight_note?: string | null;
 }
 
 export interface WorkoutTemplate {
