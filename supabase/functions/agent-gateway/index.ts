@@ -60,6 +60,12 @@ const CONFIG: {
     measurements: { table: "body_measurements", dateCol: "date" },
     inventory:    { table: "food_inventory", dateCol: "" }, // food inventory (current state)
     shopping:     { table: "shopping_list", dateCol: "created_at" }, // shopping list
+    // — joined views (migration 20261008110000) —
+    soreness:               { table: "agent_soreness", dateCol: "checkin_date" }, // soreness per region per check-in day
+    equipment_availability: { table: "agent_gym_equipment", dateCol: "" }, // which equipment each gym profile has
+    exercise_muscles:       { table: "agent_exercise_muscles", dateCol: "" }, // exercise → muscle region names
+    session_muscles:        { table: "agent_session_muscles", dateCol: "session_date" }, // session day → muscle regions trained
+    lift_exercises:         { table: "exercise_instances", dateCol: "created_at" }, // lifts' exercise_instance_id → exercise_id
   },
   writeEnabled: false,
   maxLimit: 500,
