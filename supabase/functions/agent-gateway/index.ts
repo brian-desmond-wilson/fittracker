@@ -66,6 +66,9 @@ const CONFIG: {
     exercise_muscles:       { table: "agent_exercise_muscles", dateCol: "" }, // exercise → muscle region names
     session_muscles:        { table: "agent_session_muscles", dateCol: "session_date" }, // session day → muscle regions trained
     lift_exercises:         { table: "exercise_instances", dateCol: "created_at" }, // lifts' exercise_instance_id → exercise_id
+    // — workout library (migration 20261008120000) —
+    workout_library:           { table: "agent_workout_library", dateCol: "created_at" }, // captured creator workouts: name, creator, format, muscles, equipment
+    workout_library_exercises: { table: "agent_workout_library_exercises", dateCol: "" }, // a workout's exercises in order with sets/reps; filter ?where[workout_id]=
   },
   writeEnabled: false,
   maxLimit: 500,
