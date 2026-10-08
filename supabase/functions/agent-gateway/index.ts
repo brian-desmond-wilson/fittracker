@@ -70,7 +70,7 @@ const CONFIG: {
     workout_library:           { table: "agent_workout_library", dateCol: "created_at" }, // captured creator workouts: name, creator, format, muscles, equipment
     workout_library_exercises: { table: "agent_workout_library_exercises", dateCol: "" }, // a workout's exercises in order with sets/reps; filter ?where[workout_id]=
   },
-  writeEnabled: false,
+  writeEnabled: true,
   maxLimit: 500,
 };
 
