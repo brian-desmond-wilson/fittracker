@@ -7,6 +7,7 @@ import { supabase } from "@/src/lib/supabase";
 import { getLocalDateString } from "@/src/components/workout-session/helpers";
 import { fetchTodaySession } from "@/src/lib/supabase/daily";
 import { blockDayShape } from "@/src/lib/dailyBlockCompose";
+import { sessionTitle } from "@/src/lib/dailyFocus";
 import type { StoredSession } from "@/src/types/daily";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -42,6 +43,8 @@ export function DailySessionHomeCard() {
   // and the shared derivation is what keeps the card from calling the second
   // one the first. Neither stamps a split, so falling through to the
   // push/pull/legs ternary called every one of them a leg day.
+  // An AI-composed day takes the same day title the Today view derives from
+  // the composer's sentence, so the card and the tab agree on what today is.
   const mainBlock = session?.blocks.find((b) => b.block === "main") ?? null;
   const shape = blockDayShape(session?.blocks ?? []);
   const title = !session
@@ -50,6 +53,8 @@ export function DailySessionHomeCard() {
       ? "Today's session — done 💪"
       : session.status === "rested"
         ? "Rest day — on purpose 😌"
+      : !session.servedCapturedWorkoutId && session.source === "ai" && mainBlock
+        ? sessionTitle(session.dayReason)
       : mainBlock ? `${mainBlock.name} is ready`
       : shape === "recovery" ? "Recovery day is ready"
       : shape === "thin" ? "Support work is ready"
