@@ -24,8 +24,11 @@ interface ReorderableItem {
 /**
  * Recompute `item_order` for the whole session after a within-block drag.
  *
- * Every other section keeps its existing relative order; the target section's
- * order is replaced by `orderedIdsInBlock`. Sections are then concatenated in
+ * Every other section keeps its existing relative order; inside the target
+ * section, the dragged block's items take the order `orderedIdsInBlock`
+ * gives, in the slot that group already occupied. Items of the same section
+ * that were NOT in the drag — a second main's movements, on a 2-hour day —
+ * keep their places around it. Sections are then concatenated in
  * section-rank order and numbered 0..n-1, matching how renumberSessionItems
  * writes the sequence.
  */
@@ -36,11 +39,12 @@ export function reorderBlock<T extends ReorderableItem>(
 ): { id: string; itemOrder: number }[] {
   const byId = new Map(allItems.map((i) => [i.id, i]));
 
-  // The target section, in the caller's new order. Ignore any id that isn't
+  // The target block, in the caller's new order. Ignore any id that isn't
   // actually in this section — the drag can't cross blocks, but stay defensive.
   const targetOrdered = orderedIdsInBlock
     .map((id) => byId.get(id))
     .filter((i): i is T => i !== undefined && i.section === section);
+  const dragged = new Set(targetOrdered.map((i) => i.id));
 
   // Distinct sections present, walked in rank order.
   const sections = Array.from(new Set(allItems.map((i) => i.section))).sort(
@@ -49,14 +53,28 @@ export function reorderBlock<T extends ReorderableItem>(
 
   const sequence: T[] = [];
   for (const s of sections) {
-    if (s === section) {
-      sequence.push(...targetOrdered);
-    } else {
+    const existing = allItems
+      .filter((i) => i.section === s)
+      .sort((a, b) => a.itemOrder - b.itemOrder);
+    if (s !== section) {
       // Other sections keep their existing relative order.
-      sequence.push(
-        ...allItems.filter((i) => i.section === s).sort((a, b) => a.itemOrder - b.itemOrder),
-      );
+      sequence.push(...existing);
+      continue;
     }
+    // The dragged group lands where its first member sat; everything else in
+    // the section stays put around it.
+    let placed = false;
+    for (const item of existing) {
+      if (!dragged.has(item.id)) {
+        sequence.push(item);
+        continue;
+      }
+      if (!placed) {
+        sequence.push(...targetOrdered);
+        placed = true;
+      }
+    }
+    if (!placed) sequence.push(...targetOrdered);
   }
 
   return sequence.map((item, itemOrder) => ({ id: item.id, itemOrder }));

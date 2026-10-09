@@ -121,6 +121,11 @@ export interface BlockPick {
 /** A generated_session_blocks row, ready for display. */
 export interface StoredBlock extends BlockPick {
   id: string;
+  /** The block's place in the session, 0-based (`block_position`). A role
+   *  may repeat — a 2-hour day carries two mains — so this, not the role,
+   *  is what orders the day. Rows written before the column existed are all
+   *  0 and fall back to the canonical role order; see sortSessionBlocks. */
+  position: number;
   /** Pinned by the user: recomposes merge this row back in verbatim. */
   locked: boolean;
   /** A waved-off built-in: still on the row for undo and history, but not

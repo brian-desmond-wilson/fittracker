@@ -45,7 +45,9 @@ import { colors } from '@/src/lib/colors';
 import { colors as tokens } from '@/src/theme/tokens';
 import { supabase } from '@/src/lib/supabase';
 import { acceptSession, completeSession } from '@/src/lib/supabase/daily';
-import { blockDayShape, BLOCK_TITLES } from '@/src/lib/dailyBlockCompose';
+import {
+  blockDayShape, blockTitle, BLOCK_TITLES, sortSessionBlocks,
+} from '@/src/lib/dailyBlockCompose';
 import {
   buildChapterSteps,
   chapterBlocks,
@@ -54,7 +56,6 @@ import {
 } from '@/src/lib/dailyChapters';
 import type { ChapterBlockRow } from '@/src/lib/dailyChapters';
 import { builtinByKey } from '@/src/lib/dailyBuiltins';
-import type { BlockRole } from '@/src/types/dailyBlocks';
 import type { SessionSection } from '@/src/types/daily';
 import { fetchCapturedWorkout } from '@/src/lib/supabase/capture';
 import { formatWorkoutItem } from '@/src/lib/workoutFormat';
@@ -151,7 +152,9 @@ export default function WorkoutSessionPage() {
   const [sessionBlocks, setSessionBlocks] = useState<ChapterBlockRow[]>([]);
   const [stepIndex, setStepIndex] = useState(0);
   // The chapter card between blocks. Shown once per seam, crossing forward.
-  const [transition, setTransition] = useState<{ from: BlockRole; to: BlockRole } | null>(null);
+  // Named by chapter (block row id): the seam between the first main and the
+  // second is a seam like any other.
+  const [transition, setTransition] = useState<{ from: string; to: string } | null>(null);
   // Built-in movements you've ticked off, keyed `${builtinKey}:${movement}`.
   // Local to the session: a built-in has no exercise rows, so there is nothing
   // to write and nothing to resume.
@@ -159,7 +162,7 @@ export default function WorkoutSessionPage() {
   // When each block was entered, for the chapter card's recap. A block the
   // session resumed into mid-way has no honest start time, so it has no entry
   // here and the card simply omits the time.
-  const blockEnteredAtRef = React.useRef<Partial<Record<BlockRole, number>>>({});
+  const blockEnteredAtRef = React.useRef<Record<string, number>>({});
   // Seams whose chapter card has already been shown. A ref, not state: it must
   // survive re-renders without causing them, and it is deliberately not
   // persisted — swiping back and forth re-shows nothing, a fresh session does.
@@ -169,10 +172,11 @@ export default function WorkoutSessionPage() {
   // exact programming being performed; an exercise that arrived from some
   // other post falls back to its own newest capture. Keyed maps rather than
   // per-item fields because the same exercise can appear under two blocks.
+  // Keyed by block ROW id, not role: a 2-hour day's two mains are two videos.
   const [blockSource, setBlockSource] =
-    useState<Partial<Record<BlockRole, ExerciseSourceLink>>>({});
+    useState<Record<string, ExerciseSourceLink>>({});
   // The creator's per-movement note from the block's workout, keyed
-  // `${block}:${exerciseId}` — often the form cue you want mid-set.
+  // `${blockRowId}:${exerciseId}` — often the form cue you want mid-set.
   const [blockNotes, setBlockNotes] = useState<Record<string, string>>({});
   const [exerciseSource, setExerciseSource] =
     useState<Record<string, ExerciseSourceLink>>({});
@@ -466,14 +470,14 @@ export default function WorkoutSessionPage() {
           .select(`
             id, split_day, workout_instance_id, served_captured_workout_id,
             blocks:generated_session_blocks(
-              block, name, minutes, builtin_key, captured_workout_id, dismissed,
+              id, block, block_position, name, minutes, builtin_key, captured_workout_id, dismissed,
               workout:captured_workouts(
                 source:captured_sources(platform, source_url, poster_handle, thumbnail_url),
                 movements:captured_workout_exercises(exercise_id, notes)
               )
             ),
             items:generated_session_items(
-              id, exercise_id, item_order, section, target_sets, target_reps,
+              id, exercise_id, item_order, section, block_id, target_sets, target_reps,
               rest_seconds, weight_note,
               exercises ( id, name, image_url )
             )
@@ -494,7 +498,13 @@ export default function WorkoutSessionPage() {
         // the header. Only an exercise-level session is named after a split —
         // a block day stamps none, and reading a NULL split as legs called
         // every one of them a leg day.
-        const blocks = (sessionData as any).blocks ?? [];
+        // Walked in block_position order: a 2-hour day carries two mains,
+        // and the first of them names the session.
+        const blocks = sortSessionBlocks(
+          (((sessionData as any).blocks ?? []) as any[]).map((b) => ({
+            ...b, position: b.block_position ?? 0,
+          })),
+        ) as any[];
         const mainBlock = blocks.find((b: any) => b.block === 'main');
         const shape = blockDayShape(blocks);
         templateName = served
@@ -508,7 +518,9 @@ export default function WorkoutSessionPage() {
         // ride in the order they were stored; buildChapterSteps orders them.
         setSessionBlocks(
           (blocks as any[]).map((b) => ({
+            id: b.id,
             block: b.block,
+            position: b.position,
             name: b.name,
             minutes: b.minutes ?? 0,
             builtinKey: b.builtin_key ?? null,
@@ -517,13 +529,14 @@ export default function WorkoutSessionPage() {
           })),
         );
         // Each block's tap-back and the creator's per-movement notes, off the
-        // same rows. A block whose workout was deleted simply has neither.
-        const perBlockSource: Partial<Record<BlockRole, ExerciseSourceLink>> = {};
+        // same rows, keyed by block ROW — two mains are two workouts with two
+        // videos. A block whose workout was deleted simply has neither.
+        const perBlockSource: Record<string, ExerciseSourceLink> = {};
         const perBlockNotes: Record<string, string> = {};
         for (const b of blocks as any[]) {
           const src = b.workout?.source;
           if (src?.source_url) {
-            perBlockSource[b.block as BlockRole] = {
+            perBlockSource[b.id] = {
               url: src.source_url,
               platform: src.platform ?? 'other',
               handle: src.poster_handle ?? null,
@@ -531,7 +544,7 @@ export default function WorkoutSessionPage() {
             };
           }
           for (const m of b.workout?.movements ?? []) {
-            if (m.notes) perBlockNotes[`${b.block}:${m.exercise_id}`] = m.notes;
+            if (m.notes) perBlockNotes[`${b.id}:${m.exercise_id}`] = m.notes;
           }
         }
         setBlockSource(perBlockSource);
@@ -558,8 +571,10 @@ export default function WorkoutSessionPage() {
             superset_group: null,
             exercises: item.exercises,
             // Carried so the screen can chapter the walk; the logger itself
-            // never reads it.
+            // never reads them. block_id names the block ROW the item was
+            // exploded from; null falls back to the section's first block.
             section: item.section ?? null,
+            block_id: item.block_id ?? null,
           }));
         setTemplate({
           id: sessionData.id,
@@ -911,9 +926,10 @@ export default function WorkoutSessionPage() {
   // ---- Chapter derivations ----
   const steps = React.useMemo(
     () => buildChapterSteps(
-      exerciseStates.map(
-        (s) => (s.exercise.section ?? null) as SessionSection | null,
-      ),
+      exerciseStates.map((s) => ({
+        section: (s.exercise.section ?? null) as SessionSection | null,
+        blockId: ((s.exercise as any).block_id ?? null) as string | null,
+      })),
       sessionBlocks,
     ),
     [exerciseStates, sessionBlocks],
@@ -927,23 +943,36 @@ export default function WorkoutSessionPage() {
   const chaptered = chapters.length > 0;
   const currentStep = steps[stepIndex] ?? null;
   const progress = blockProgress(steps, stepIndex);
-  const currentChapterIdx = chapters.findIndex((c) => c.block === currentStep?.block);
+  // Chapters are block ROWS: the two mains of a 2-hour day are two chapters,
+  // so every lookup is by chapter id, never by role.
+  const currentChapterIdx = chapters.findIndex((c) => c.id === currentStep?.chapter);
   const builtinRoutine =
     currentStep?.kind === 'builtin' ? builtinByKey(currentStep.builtinKey) : null;
+  /** "Main workout" alone, "Main workout 2 of 2" when the role repeats. */
+  const chapterTitle = (idx: number) => blockTitle(chapters, idx);
+  // The two sides of the chapter card, resolved from the seam it marks.
+  const fromChapterIdx = transition ? chapters.findIndex((c) => c.id === transition.from) : -1;
+  const toChapterIdx = transition ? chapters.findIndex((c) => c.id === transition.to) : -1;
+  const fromChapter = chapters[fromChapterIdx] ?? null;
+  const toChapter = chapters[toChapterIdx] ?? null;
+  const fromColor = fromChapter ? tokens.blocks[fromChapter.block] : colors.mutedForeground;
+  const toColor = toChapter ? tokens.blocks[toChapter.block] : colors.mutedForeground;
+  const fromTitle = fromChapter ? chapterTitle(fromChapterIdx) : 'block';
+  const toTitle = toChapter ? chapterTitle(toChapterIdx) : 'block';
 
   /** The tap-back for the exercise on screen: its block's workout first (the
    *  exact programming being performed), its own newest capture otherwise.
    *  Null for stock movements that were never captured from anywhere. */
   const currentSource: ExerciseSourceLink | null =
     currentStep?.kind === 'exercise'
-      ? (currentStep.block ? blockSource[currentStep.block] : undefined)
+      ? (currentStep.chapter ? blockSource[currentStep.chapter] : undefined)
           ?? exerciseSource[exerciseStates[currentStep.exerciseIndex]?.exercise.exercise_id]
           ?? null
       : null;
   const currentSourceNote =
-    currentStep?.kind === 'exercise' && currentStep.block
+    currentStep?.kind === 'exercise' && currentStep.chapter
       ? blockNotes[
-          `${currentStep.block}:${exerciseStates[currentStep.exerciseIndex]?.exercise.exercise_id}`
+          `${currentStep.chapter}:${exerciseStates[currentStep.exerciseIndex]?.exercise.exercise_id}`
         ] ?? null
       : null;
 
@@ -960,7 +989,7 @@ export default function WorkoutSessionPage() {
    *  A built-in step keeps no completion record, so it counts as done. */
   const finishedBlock = React.useMemo(() => {
     if (!transition) return { done: 0, total: 0, allDone: false };
-    const mine = steps.filter((s) => s.block === transition.from);
+    const mine = steps.filter((s) => s.chapter === transition.from);
     const done = mine.filter(
       (s) => s.kind === 'builtin' || exerciseStates[s.exerciseIndex]?.completed,
     ).length;
@@ -997,10 +1026,10 @@ export default function WorkoutSessionPage() {
   // the chapter card. Only the first entry counts — swiping back into a block
   // does not restart it.
   React.useEffect(() => {
-    const block = steps[stepIndex]?.block;
-    if (!block) return;
-    if (blockEnteredAtRef.current[block] === undefined) {
-      blockEnteredAtRef.current[block] = Date.now();
+    const chapter = steps[stepIndex]?.chapter;
+    if (!chapter) return;
+    if (blockEnteredAtRef.current[chapter] === undefined) {
+      blockEnteredAtRef.current[chapter] = Date.now();
     }
   }, [stepIndex, steps]);
 
@@ -1918,12 +1947,10 @@ export default function WorkoutSessionPage() {
                 // Lit as far as you have got. Under the chapter card that is
                 // the block it is congratulating you for, not the one waiting
                 // behind it — the walk has moved, the story has not yet.
-                const reached = transition
-                  ? chapters.findIndex((x) => x.block === transition.from)
-                  : currentChapterIdx;
+                const reached = transition ? fromChapterIdx : currentChapterIdx;
                 return (
                   <View
-                    key={c.block}
+                    key={c.id}
                     style={[
                       styles.dayStripSegment,
                       {
@@ -1951,7 +1978,9 @@ export default function WorkoutSessionPage() {
                 {showSummary
                   ? 'SESSION OVERVIEW'
                   : currentStep?.block
-                    ? `${BLOCK_TITLES[currentStep.block].toUpperCase()}${
+                    ? `${(currentChapterIdx >= 0
+                        ? chapterTitle(currentChapterIdx)
+                        : BLOCK_TITLES[currentStep.block]).toUpperCase()}${
                         currentStep.kind === 'builtin' ? ' · BUILT-IN' : ''
                       }`
                     : 'EXTRA WORK'}
@@ -1972,7 +2001,7 @@ export default function WorkoutSessionPage() {
             {transition ? null : (
             <View style={styles.exerciseDots}>
               {steps.map((step, idx) => {
-                if (step.block !== currentStep?.block) return null;
+                if (step.chapter !== currentStep?.chapter) return null;
                 const done = step.kind === 'exercise'
                   ? exerciseStates[step.exerciseIndex]?.completed
                   : false;
@@ -2079,28 +2108,28 @@ export default function WorkoutSessionPage() {
             <View
               style={[
                 styles.chapterRing,
-                { borderColor: tokens.blocks[transition.from] },
+                { borderColor: fromColor },
               ]}
             >
-              <Check size={40} color={tokens.blocks[transition.from]} />
+              <Check size={40} color={fromColor} />
             </View>
             {/* Only "complete" when it actually is. You can walk off the end
                 of a block having logged none of it, and a card congratulating
                 you for work you skipped is the app inventing a fact. */}
             <Text style={styles.chapterDoneTitle}>
               {finishedBlock.allDone
-                ? `${BLOCK_TITLES[transition.from]} complete`
-                : `Leaving the ${BLOCK_TITLES[transition.from].toLowerCase()}`}
+                ? `${fromTitle} complete`
+                : `Leaving the ${fromTitle.toLowerCase()}`}
             </Text>
             <Text style={styles.chapterDoneSubtitle}>
-              {chapters.find((c) => c.block === transition.from)?.name ?? ''}
+              {fromChapter?.name ?? ''}
             </Text>
 
             <View style={styles.chapterStats}>
               {(() => {
-                const finished = chapters.find((c) => c.block === transition.from);
+                const finished = fromChapter;
                 const enteredAt = blockEnteredAtRef.current[transition.from];
-                const doneIdx = chapters.findIndex((c) => c.block === transition.from);
+                const doneIdx = fromChapterIdx;
                 return (
                   <>
                     {/* Only when we watched the whole block: a session resumed
@@ -2135,7 +2164,7 @@ export default function WorkoutSessionPage() {
             </View>
 
             {(() => {
-              const next = chapters.find((c) => c.block === transition.to);
+              const next = toChapter;
               if (!next) return null;
               const preview = steps
                 .slice(next.firstStep, next.firstStep + next.stepCount)
@@ -2161,13 +2190,13 @@ export default function WorkoutSessionPage() {
                 <View
                   style={[
                     styles.chapterNext,
-                    { borderColor: tokens.blocks[transition.to] },
+                    { borderColor: toColor },
                   ]}
                 >
                   <Text
-                    style={[styles.chapterNextKicker, { color: tokens.blocks[transition.to] }]}
+                    style={[styles.chapterNextKicker, { color: toColor }]}
                   >
-                    UP NEXT — {BLOCK_TITLES[transition.to].toUpperCase()} · ~{next.minutes} MIN
+                    UP NEXT — {toTitle.toUpperCase()} · ~{next.minutes} MIN
                   </Text>
                   <Text style={styles.chapterNextName}>{next.name}</Text>
                   <View style={styles.chapterNextList}>
@@ -2187,11 +2216,11 @@ export default function WorkoutSessionPage() {
                       accessibilityRole="link"
                       accessibilityLabel="Watch the next block's video"
                     >
-                      <Play size={13} color={tokens.blocks[transition.to]} />
+                      <Play size={13} color={toColor} />
                       <Text
                         style={[
                           styles.chapterWatchText,
-                          { color: tokens.blocks[transition.to] },
+                          { color: toColor },
                         ]}
                         numberOfLines={1}
                       >
@@ -2211,10 +2240,10 @@ export default function WorkoutSessionPage() {
               onPress={() => setTransition(null)}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel={`Start the ${BLOCK_TITLES[transition.to].toLowerCase()}`}
+              accessibilityLabel={`Start the ${toTitle.toLowerCase()}`}
             >
               <Text style={styles.chapterStartText}>
-                Start {BLOCK_TITLES[transition.to].toLowerCase()} →
+                Start {toTitle.toLowerCase()} →
               </Text>
             </TouchableOpacity>
             <Text style={styles.chapterHint}>or swipe — shows once per block</Text>
@@ -2239,13 +2268,13 @@ export default function WorkoutSessionPage() {
                   : undefined;
                 const heading = chapterHere ? (
                   <Text
-                    key={`h-${chapterHere.block}`}
+                    key={`h-${chapterHere.id}`}
                     style={[
                       styles.summaryBlockHeading,
                       { color: tokens.blocks[chapterHere.block] },
                     ]}
                   >
-                    {BLOCK_TITLES[chapterHere.block].toUpperCase()}
+                    {chapterTitle(chapters.indexOf(chapterHere)).toUpperCase()}
                     {chapterHere.builtinKey ? ' · BUILT-IN' : ''} · ~{chapterHere.minutes} MIN
                   </Text>
                 ) : null;
@@ -2262,7 +2291,7 @@ export default function WorkoutSessionPage() {
                         <Circle size={20} color="#6b7280" />
                         <View style={styles.summaryRowContent}>
                           <Text style={styles.summaryExerciseName} numberOfLines={1}>
-                            {chapters.find((c) => c.block === step.block)?.name
+                            {chapters.find((c) => c.id === step.chapter)?.name
                               ?? routine?.name ?? 'Routine'}
                           </Text>
                           <Text style={styles.summarySetCount}>

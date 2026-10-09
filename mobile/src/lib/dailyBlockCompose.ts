@@ -37,6 +37,66 @@ export const SECTION_FOR_BLOCK: Record<BlockRole, SessionSection> = {
   cooldown: "cooldown",
 };
 
+/**
+ * Blocks in the order the session is performed.
+ *
+ * `block_position` leads: a 2-hour day is warmup → main → main → abs →
+ * conditioning → cooldown, and the role alone cannot say which main comes
+ * first. Ties fall back to the canonical role order, which is how every row
+ * written before the column existed (all zero) keeps the order it always
+ * had. The app's own composer still writes one block per role at position
+ * 0; only the agent gateway writes repeated roles.
+ */
+export function sortSessionBlocks<T extends { block: BlockRole; position?: number }>(
+  blocks: readonly T[],
+): T[] {
+  return [...blocks].sort(
+    (a, b) =>
+      (a.position ?? 0) - (b.position ?? 0)
+      || BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block),
+  );
+}
+
+/**
+ * The heading for one block of an ordered plan: "Main workout" when the role
+ * stands alone, "Main workout 2 of 3" when it repeats. Repeated mains read as
+ * one continuous session with numbered parts, not as separate sessions.
+ */
+export function blockTitle(
+  blocks: readonly { block: BlockRole }[],
+  index: number,
+): string {
+  const role = blocks[index]?.block;
+  if (!role) return "";
+  const siblings = blocks.filter((b) => b.block === role);
+  if (siblings.length <= 1) return BLOCK_TITLES[role];
+  const n = blocks.slice(0, index + 1).filter((b) => b.block === role).length;
+  return `${BLOCK_TITLES[role]} ${n} of ${siblings.length}`;
+}
+
+/**
+ * The items one block of an ordered plan owns.
+ *
+ * An item that names its block (`blockId`) belongs to it and nothing else.
+ * Items that name none — every row written before repeated roles existed,
+ * and everything the app's own composer writes — belong to the FIRST block
+ * whose role owns their section, so a legacy session reads exactly as it did
+ * and a second main never shows the first main's movements twice.
+ */
+export function itemsForBlock<I extends { section: SessionSection; blockId?: string | null }>(
+  items: readonly I[],
+  block: { id: string; block: BlockRole },
+  orderedBlocks: readonly { id: string; block: BlockRole }[],
+): I[] {
+  const own = items.filter((i) => i.blockId === block.id);
+  const firstOfRole = orderedBlocks.find((b) => b.block === block.block);
+  if (firstOfRole && firstOfRole.id !== block.id) return own;
+  const section = SECTION_FOR_BLOCK[block.block];
+  return items.filter(
+    (i) => i.blockId === block.id || (!i.blockId && i.section === section),
+  );
+}
+
 /** The model may overrun the day slightly; past this it stopped adding. */
 const OVERRUN_TOLERANCE = 1.1;
 

@@ -46,8 +46,8 @@ const CONFIG: {
     checkins:     { table: "daily_checkins", dateCol: "checkin_date" }, // "set up my day": gym, energy, time, soreness (soreness rows live in daily_checkin_soreness)
     // — training —
     workouts:     { table: "generated_sessions", dateCol: "session_date" }, // the day's training session: status (suggested/accepted/completed/skipped/rested), split, source
-    workout_blocks: { table: "generated_session_blocks", dateCol: "" }, // a session's blocks (warmup/mobility/main/conditioning/cooldown), linked by session_id
-    workout_items:  { table: "generated_session_items", dateCol: "" }, // a session's loggable movements in item_order, linked by session_id
+    workout_blocks: { table: "generated_session_blocks", dateCol: "" }, // a session's blocks (warmup/mobility/main/conditioning/cooldown) in block_position order, linked by session_id; a role may repeat
+    workout_items:  { table: "generated_session_items", dateCol: "" }, // a session's loggable movements in item_order, linked by session_id (and by block_id to their block row)
     lifts:        { table: "set_instances", dateCol: "created_at" }, // logged sets; hang off exercise_instances → workout_instances
     exercises:    { table: "exercises", dateCol: "" }, // exercise library
     equipment:    { table: "equipment", dateCol: "" }, // equipment catalog (per-gym availability is the gym_profile_equipment junction)
@@ -265,9 +265,14 @@ serve(async (req: Request): Promise<Response> => {
 
   // POST /v1/jobs/save-session — persist a composed session atomically:
   // { session, blocks, items } go through agent_save_session (one Postgres
-  // function, one transaction). Any failure unwinds everything and the
-  // function's message names the row ("block[1] \"main\": duplicate block
-  // name"). An action, not gated by writeEnabled; audit-logged like the rest.
+  // function, one transaction). The blocks array is the performance order
+  // and a role may repeat (a 2-hour day: warmup, main, main, abs,
+  // conditioning, cooldown); each item may name its block with block_index
+  // and must when its role repeats. Any failure unwinds everything and the
+  // function's message names the row ("item[3]: block_index is required
+  // because block \"main\" appears more than once"). An action, not gated
+  // by writeEnabled; audit-logged like the rest. Recipe:
+  // docs/agent-session-save-recipe.md §7.
   if (req.method === "POST" && path === `/${VERSION}/jobs/save-session`) {
     let body: { session?: unknown; blocks?: unknown; items?: unknown } | null = null;
     try {

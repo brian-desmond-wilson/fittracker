@@ -58,3 +58,33 @@ describe("reorderBlock", () => {
     expect(idOrder(result)).toEqual(["w1", "w2", "m1", "m2", "m3", "c1"]);
   });
 });
+
+describe("reorderBlock on a 2-hour day with two mains", () => {
+  // Both mains explode into the `main` section; a drag inside the first must
+  // leave the second's movements exactly where they were.
+  const twoMains: Row[] = [
+    { id: "w1", section: "warmup", itemOrder: 0 },
+    { id: "a1", section: "main", itemOrder: 1 },
+    { id: "a2", section: "main", itemOrder: 2 },
+    { id: "a3", section: "main", itemOrder: 3 },
+    { id: "b1", section: "main", itemOrder: 4 },
+    { id: "b2", section: "main", itemOrder: 5 },
+    { id: "c1", section: "cooldown", itemOrder: 6 },
+  ];
+
+  it("reorders the dragged main in place; the other main keeps its slot", () => {
+    const result = reorderBlock(twoMains, "main", ["a3", "a1", "a2"]);
+    expect(idOrder(result)).toEqual(["w1", "a3", "a1", "a2", "b1", "b2", "c1"]);
+  });
+
+  it("works for the second main too", () => {
+    const result = reorderBlock(twoMains, "main", ["b2", "b1"]);
+    expect(idOrder(result)).toEqual(["w1", "a1", "a2", "a3", "b2", "b1", "c1"]);
+  });
+
+  it("numbers the whole session 0..n-1 with no gaps", () => {
+    const result = reorderBlock(twoMains, "main", ["b2", "b1"]);
+    expect([...result].sort((a, b) => a.itemOrder - b.itemOrder).map((r) => r.itemOrder))
+      .toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+});

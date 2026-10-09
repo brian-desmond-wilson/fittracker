@@ -18,7 +18,12 @@ import type { SessionSection, StoredSessionItem } from "@/src/types/daily";
 
 interface BlockCardProps {
   block: StoredBlock;
+  /** Only this block's items — the caller resolves them (itemsForBlock), so a
+   *  second main never shows the first main's movements. */
   items: StoredSessionItem[];
+  /** The heading: "Main workout", or "Main workout 2 of 2" when the role
+   *  repeats on a 2-hour day (blockTitle). */
+  title: string;
   hero: boolean;
   /** Still a suggestion — locks, adjusts, swaps and dismissals are live. */
   canEdit: boolean;
@@ -46,7 +51,7 @@ interface BlockCardProps {
 }
 
 export function BlockCard({
-  block, items, hero, canEdit, busy, rerolling, rerollNote, expanded,
+  block, items, title, hero, canEdit, busy, rerolling, rerollNote, expanded,
   onToggleExpand, onOpenWorkout, onOpenExercise, onToggleLock, onAdjust,
   onReroll, onToggleDismissed, nudge, onReorder, onRemove,
 }: BlockCardProps) {
@@ -229,7 +234,7 @@ export function BlockCard({
       <View style={[styles.card, styles.heroCard]}>
         <View style={styles.headRow}>
           <Text style={[styles.kicker, { color: accent }]}>
-            {BLOCK_TITLES[block.block].toUpperCase()} · {block.minutes} MIN
+            {title.toUpperCase()} · {block.minutes} MIN
           </Text>
           {controls}
         </View>
@@ -280,13 +285,13 @@ export function BlockCard({
         onPress={onToggleExpand}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={`${BLOCK_TITLES[block.block]}: ${block.name}. ${expanded ? "Collapse" : "Expand"}.`}
+        accessibilityLabel={`${title}: ${block.name}. ${expanded ? "Collapse" : "Expand"}.`}
         accessibilityState={{ expanded }}
       >
         <View style={styles.headRow}>
           <Text style={styles.kicker}>
             <Text style={{ color: accent }}>●</Text>
-            {"  "}{BLOCK_TITLES[block.block].toUpperCase()} · {block.minutes} MIN
+            {"  "}{title.toUpperCase()} · {block.minutes} MIN
           </Text>
           <View style={styles.headRight}>
             {controls}

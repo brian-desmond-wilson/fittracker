@@ -7,6 +7,9 @@ import {
   mergeLockedPicks,
   plannedBlockMinutes,
   extractDayReason,
+  sortSessionBlocks,
+  blockTitle,
+  itemsForBlock,
   BLOCK_ORDER,
   SECTION_FOR_BLOCK,
 } from "../dailyBlockCompose";
@@ -503,5 +506,101 @@ describe("bfrFinisherPick", () => {
   });
   it("declines with no main focus (thin day)", () => {
     expect(bfrFinisherPick({ ...ok, mainFocus: null })).toBeNull();
+  });
+});
+
+// ---- Multi-workout sessions: order, headings, item ownership ----
+
+describe("sortSessionBlocks", () => {
+  it("falls back to the canonical role order when every position is 0 (pre-column rows)", () => {
+    const rows = [
+      { block: "cooldown" as BlockRole, position: 0 },
+      { block: "main" as BlockRole, position: 0 },
+      { block: "warmup" as BlockRole },
+      { block: "mobility" as BlockRole, position: 0 },
+    ];
+    expect(sortSessionBlocks(rows).map((b) => b.block))
+      .toEqual(["warmup", "mobility", "main", "cooldown"]);
+  });
+
+  it("block_position leads: two mains and two conditioning blocks keep the coach's order", () => {
+    const rows = [
+      { id: "c2", block: "conditioning" as BlockRole, position: 4 },
+      { id: "m2", block: "main" as BlockRole, position: 2 },
+      { id: "cd", block: "cooldown" as BlockRole, position: 5 },
+      { id: "wu", block: "warmup" as BlockRole, position: 0 },
+      { id: "c1", block: "conditioning" as BlockRole, position: 3 },
+      { id: "m1", block: "main" as BlockRole, position: 1 },
+    ];
+    expect(sortSessionBlocks(rows).map((b) => b.id))
+      .toEqual(["wu", "m1", "m2", "c1", "c2", "cd"]);
+  });
+
+  it("does not mutate its input", () => {
+    const rows = [{ block: "main" as BlockRole, position: 1 }, { block: "warmup" as BlockRole, position: 0 }];
+    sortSessionBlocks(rows);
+    expect(rows[0].block).toBe("main");
+  });
+});
+
+describe("blockTitle", () => {
+  const day = [
+    { block: "warmup" as BlockRole },
+    { block: "main" as BlockRole },
+    { block: "main" as BlockRole },
+    { block: "conditioning" as BlockRole },
+    { block: "conditioning" as BlockRole },
+    { block: "cooldown" as BlockRole },
+  ];
+  it("is the plain title when the role stands alone", () => {
+    expect(blockTitle(day, 0)).toBe("Warm-up");
+    expect(blockTitle(day, 5)).toBe("Cool-down");
+  });
+  it("numbers a repeated role so two mains read as one session in parts", () => {
+    expect(blockTitle(day, 1)).toBe("Main workout 1 of 2");
+    expect(blockTitle(day, 2)).toBe("Main workout 2 of 2");
+    expect(blockTitle(day, 3)).toBe("Conditioning 1 of 2");
+    expect(blockTitle(day, 4)).toBe("Conditioning 2 of 2");
+  });
+  it("is empty off the end", () => {
+    expect(blockTitle(day, 9)).toBe("");
+  });
+});
+
+describe("itemsForBlock", () => {
+  const m1 = { id: "m1", block: "main" as BlockRole };
+  const m2 = { id: "m2", block: "main" as BlockRole };
+  const c1 = { id: "c1", block: "conditioning" as BlockRole };
+  const ordered = [m1, m2, c1];
+  const items = [
+    { id: "a", section: "main" as const, blockId: "m1" },
+    { id: "b", section: "main" as const, blockId: "m2" },
+    { id: "c", section: "accessory" as const, blockId: "c1" },
+    { id: "d", section: "main" as const, blockId: null },
+  ];
+
+  it("gives each block the items that name it", () => {
+    expect(itemsForBlock(items, m2, ordered).map((i) => i.id)).toEqual(["b"]);
+    expect(itemsForBlock(items, c1, ordered).map((i) => i.id)).toEqual(["c"]);
+  });
+
+  it("an unattributed item belongs to the FIRST block of its role only", () => {
+    expect(itemsForBlock(items, m1, ordered).map((i) => i.id)).toEqual(["a", "d"]);
+    expect(itemsForBlock(items, m2, ordered).map((i) => i.id)).not.toContain("d");
+  });
+
+  it("a legacy session (no block ids anywhere) reads by section, as it always did", () => {
+    const legacy = [
+      { id: "w", section: "warmup" as const },
+      { id: "x", section: "main" as const },
+      { id: "y", section: "accessory" as const },
+    ];
+    const blocks = [
+      { id: "wu", block: "warmup" as BlockRole },
+      { id: "mn", block: "main" as BlockRole },
+      { id: "cn", block: "conditioning" as BlockRole },
+    ];
+    expect(itemsForBlock(legacy, blocks[1], blocks).map((i) => i.id)).toEqual(["x"]);
+    expect(itemsForBlock(legacy, blocks[2], blocks).map((i) => i.id)).toEqual(["y"]);
   });
 });

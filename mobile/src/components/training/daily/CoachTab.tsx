@@ -17,7 +17,7 @@ import { addDays, getLocalDateString, parseLocalDate } from "@/src/lib/dates";
 import { sessionTitle } from "@/src/lib/dailyFocus";
 import { roundsBadge } from "@/src/lib/dailyRounds";
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
-import { BLOCK_ORDER, BLOCK_TITLES, SECTION_FOR_BLOCK } from "@/src/lib/dailyBlockCompose";
+import { blockTitle, itemsForBlock, sortSessionBlocks } from "@/src/lib/dailyBlockCompose";
 import { catalogCardFacts } from "@/src/lib/catalogCardFacts";
 import { sessionItemToCatalogEntry } from "@/src/lib/sessionItemFacts";
 import { ExerciseCardContent } from "./ExerciseCardContent";
@@ -164,11 +164,11 @@ export default function CoachTab() {
   }
 
   const { session, day } = loaded;
-  const blocks: StoredBlock[] = [...session.blocks]
-    .filter((b) => !b.dismissed)
-    .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block));
-  const itemsFor = (block: StoredBlock) =>
-    session.items.filter((i) => i.section === SECTION_FOR_BLOCK[block.block]);
+  // In performed order — block_position first, so a 2-hour day's two mains
+  // read as one continuous session, each with only its own movements.
+  const blocks: StoredBlock[] = sortSessionBlocks(session.blocks.filter((b) => !b.dismissed));
+  const itemsFor = (block: StoredBlock) => itemsForBlock(session.items, block, blocks);
+  const titleFor = (block: StoredBlock) => blockTitle(blocks, blocks.indexOf(block));
   const weighted = session.items.filter((i) => !!i.weightNote);
   const title = sessionTitle(
     session.dayReason,
@@ -208,7 +208,7 @@ export default function CoachTab() {
         return (
           <View key={block.id} style={styles.blockCard}>
             <Text style={[styles.kicker, { color: accent }]}>
-              {BLOCK_TITLES[block.block].toUpperCase()} · {block.minutes} MIN
+              {titleFor(block).toUpperCase()} · {block.minutes} MIN
             </Text>
             <View style={styles.blockNameRow}>
               <Text style={styles.blockName}>{block.name}</Text>
@@ -257,7 +257,7 @@ export default function CoachTab() {
         {blocks.filter((b) => b.reason).map((b) => (
           <View key={b.id} style={styles.reasonRow}>
             <Text style={[styles.reasonKicker, { color: colors.blocks[b.block] }]}>
-              {BLOCK_TITLES[b.block]}
+              {titleFor(b)}
             </Text>
             <Text style={styles.reasonText}>{b.reason}</Text>
           </View>
