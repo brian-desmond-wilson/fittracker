@@ -8,7 +8,9 @@ import { lastStampedSplitDay, rampWeek } from "../dailySplit";
 import { applyRating } from "../dailySkill";
 import type { MovementRating } from "../dailySkill";
 import { capturedWorkoutToSessionItems, pickDaySession } from "../dailyAdopt";
-import { BLOCK_ORDER, SECTION_FOR_BLOCK, nextCandidate } from "../dailyBlockCompose";
+import {
+  BLOCK_ORDER, SECTION_FOR_BLOCK, nextCandidate, sortSessionBlocks,
+} from "../dailyBlockCompose";
 import { fetchCapturedWorkout } from "./capture";
 import { recordUsage } from "./workoutTags";
 import type {
@@ -478,7 +480,7 @@ function queryDaySessions(userId: string, date: string) {
       compose_signature, day_reason, created_at,
       assumed:inputs_snapshot->assumed,
       items:generated_session_items(
-        id, exercise_id, item_order, section, target_sets, target_reps,
+        id, exercise_id, item_order, section, block_id, target_sets, target_reps,
         rest_seconds, reason, weight_note, was_performed,
         exercise:exercises(
           name, image_url, skill_level, core_default_equipment, tier,
@@ -488,7 +490,7 @@ function queryDaySessions(userId: string, date: string) {
         )
       ),
       blocks:generated_session_blocks(
-        id, block, name, captured_workout_id, builtin_key, minutes,
+        id, block, block_position, name, captured_workout_id, builtin_key, minutes,
         rounds_note, reason, locked, dismissed
       )
     `)
@@ -521,6 +523,7 @@ function mapDaySession(rows: any[]): StoredSession | null {
         exerciseId: i.exercise_id,
         name: i.exercise?.name ?? "Unknown",
         section: i.section,
+        blockId: i.block_id ?? null,
         itemOrder: i.item_order,
         targetSets: i.target_sets,
         targetReps: i.target_reps,
@@ -543,10 +546,13 @@ function mapDaySession(rows: any[]): StoredSession | null {
     // Empty is the truthful answer for a session composed before blocks and
     // for a workout served whole. The name comes off the row rather than a
     // join, so a block whose workout was later deleted still reads as history.
-    blocks: (((data as any).blocks ?? []) as any[])
-      .map((b): StoredBlock => ({
+    // Ordered by block_position, then role — a 2-hour day carries two mains,
+    // and the role alone cannot say which is first.
+    blocks: sortSessionBlocks(
+      (((data as any).blocks ?? []) as any[]).map((b): StoredBlock => ({
         id: b.id,
         block: b.block,
+        position: b.block_position ?? 0,
         workoutId: b.captured_workout_id,
         builtinKey: b.builtin_key,
         minutes: b.minutes,
@@ -555,8 +561,8 @@ function mapDaySession(rows: any[]): StoredSession | null {
         name: b.name,
         locked: !!b.locked,
         dismissed: !!b.dismissed,
-      }))
-      .sort((a, b) => BLOCK_ORDER.indexOf(a.block) - BLOCK_ORDER.indexOf(b.block)),
+      })),
+    ),
     composeSignature: data.compose_signature ?? null,
     dayReason: data.day_reason ?? null,
     assumedInputs: ((data as any).assumed ?? null) as AssumedInputs | null,
@@ -871,8 +877,11 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
       return false;
     });
 
-    // Upsert onto UNIQUE (session_id, block), then prune what this plan no
-    // longer claims — the same shape workoutTags uses, and for the same reason.
+    // Upsert onto UNIQUE (session_id, block, block_position), then prune what
+    // this plan no longer claims — the same shape workoutTags uses, and for
+    // the same reason. The app's composer writes one block per role, all at
+    // position 0; repeated roles are the agent gateway's to write, and a
+    // recompose over an agent-written day prunes its extra rows below.
     // Deleting first would open a window in which a failed insert leaves the
     // session with items and no plan to explain them, and a suggestion is only
     // recomposed when its inputs change, so that window does not close by
@@ -887,6 +896,7 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
         blocks.map((b) => ({
           session_id: data.id,
           block: b.block,
+          block_position: 0,
           name: b.name,
           captured_workout_id: b.workoutId,
           builtin_key: b.builtinKey,
@@ -894,12 +904,12 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
           rounds_note: b.roundsNote,
           reason: b.reason,
         })),
-        { onConflict: "session_id,block" },
+        { onConflict: "session_id,block,block_position" },
       );
       if (blkError) throw blkError;
     }
 
-    const keptBlocks = new Set(blocks.map((b) => b.block));
+    const keptBlocks = new Set(blocks.map((b) => `${b.block}:0`));
     // On an append, `existing` is the day's COMPLETED session — history, not
     // the row being written. Pruning against it would delete the finished
     // day's block record wherever the new plan drops a role. A fresh insert
@@ -907,7 +917,7 @@ export async function saveGeneratedSession(input: SaveSessionInput): Promise<str
     const staleBlockIds = appending
       ? []
       : (existing?.blocks ?? [])
-          .filter((b) => !keptBlocks.has(b.block))
+          .filter((b) => !keptBlocks.has(`${b.block}:${b.position}`))
           .map((b) => b.id);
     if (staleBlockIds.length > 0) {
       const { error: pruneError } = await supabase
@@ -1167,10 +1177,13 @@ export async function completeSession(
 
   // The ledger records what actually ran — composed blocks and workouts served
   // whole alike. Muscles are denormalized now, so a later retag never rewrites
-  // history.
+  // history. One ledger row per (workout, role): the ledger is unique on that
+  // pair, and a 2-hour day may run the same role twice.
   const entries: { capturedWorkoutId: string; block: BlockRole }[] = [];
+  const seenEntry = new Set<string>();
   for (const b of ((sess as any).blocks ?? []) as any[]) {
-    if (b.captured_workout_id) {
+    if (b.captured_workout_id && !seenEntry.has(`${b.captured_workout_id}:${b.block}`)) {
+      seenEntry.add(`${b.captured_workout_id}:${b.block}`);
       entries.push({ capturedWorkoutId: b.captured_workout_id, block: b.block });
     }
   }
@@ -1251,13 +1264,18 @@ export async function completeSession(
 export async function rerollBlock(
   sessionId: string,
   block: BlockRole,
+  /** Which row, when the role repeats on a 2-hour day. Omitted = the first
+   *  block of that role, which is the only one the app's composer writes. */
+  blockId?: string,
 ): Promise<boolean> {
   try {
     const { data: sess, error } = await supabase
       .from("generated_sessions")
       .select(`
         status, inputs_snapshot, section_minutes,
-        blocks:generated_session_blocks(id, block, minutes, captured_workout_id, builtin_key)
+        blocks:generated_session_blocks(
+          id, block, block_position, minutes, captured_workout_id, builtin_key, dismissed
+        )
       `)
       .eq("id", sessionId)
       .single();
@@ -1266,9 +1284,16 @@ export async function rerollBlock(
 
     const shortlists = (sess.inputs_snapshot as any)?.shortlists ?? {};
     const list = (shortlists[block] ?? []) as BlockCandidate[];
-    const blockRows = ((sess as any).blocks ?? []) as any[];
-    const current = blockRows.find((b) => b.block === block);
-    if (!current) return false;
+    const blockRows = sortSessionBlocks(
+      (((sess as any).blocks ?? []) as any[]).map((b) => ({
+        ...b, position: b.block_position ?? 0,
+      })),
+    ) as any[];
+    const current = blockId
+      ? blockRows.find((b) => b.id === blockId)
+      : blockRows.find((b) => b.block === block);
+    if (!current || current.block !== block) return false;
+    const roleRepeats = blockRows.filter((b) => b.block === block).length > 1;
     const next = nextCandidate(list, current.captured_workout_id ?? current.builtin_key ?? "");
     if (!next) return false;
     // Both columns NULL is legal now — it is how a deleted workout leaves named
@@ -1295,20 +1320,26 @@ export async function rerollBlock(
       items = read;
     }
 
-    // Replace just this block's loggable items. Safe to key on the section
-    // because the block→section map is injective: conditioning is the only
-    // block that lands in `accessory`, and `bfr` has no block at all. A
-    // built-in replacement contributes none, so the delete stands alone.
-    const { error: delError } = await supabase
+    // Replace just this block's loggable items. When the role stands alone it
+    // is safe to key on the section — the block→section map is injective:
+    // conditioning is the only block that lands in `accessory`, and `bfr` has
+    // no block at all — and that also sweeps up rows written before items
+    // named their block. When the role repeats, only the rows that name THIS
+    // block go; the other main's movements are not ours to touch. A built-in
+    // replacement contributes none, so the delete stands alone.
+    const delQuery = supabase
       .from("generated_session_items")
       .delete()
-      .eq("session_id", sessionId)
-      .eq("section", SECTION_FOR_BLOCK[block]);
+      .eq("session_id", sessionId);
+    const { error: delError } = roleRepeats
+      ? await delQuery.eq("block_id", current.id)
+      : await delQuery.eq("section", SECTION_FOR_BLOCK[block]);
     if (delError) throw delError;
     if (items.length > 0) {
       const { error: insError } = await supabase.from("generated_session_items").insert(
         items.map((i) => ({
           session_id: sessionId,
+          block_id: current.id,
           exercise_id: i.exerciseId,
           // A staging value, not the answer: renumberSessionItems below puts
           // the sequence back. It is deliberately past every composed item's
@@ -1345,12 +1376,17 @@ export async function rerollBlock(
 
     // Derived from the swap rather than part of it, so it is not allowed to
     // report a reroll that happened as one that didn't.
+    // A section's minutes are the SUM of its blocks — two mains, one `main`
+    // entry.
     const reflowed: SectionMinutes = { ...((sess.section_minutes ?? {}) as SectionMinutes) };
+    const summed: Partial<Record<SessionSection, number>> = {};
     for (const b of blockRows) {
       const section = SECTION_FOR_BLOCK[b.block as BlockRole];
       if (!section) continue;
-      reflowed[section] = b.id === current.id ? next.minutes : b.minutes;
+      const minutes = b.id === current.id ? next.minutes : b.minutes;
+      summed[section] = (summed[section] ?? 0) + minutes;
     }
+    Object.assign(reflowed, summed);
     const { error: minError } = await supabase
       .from("generated_sessions")
       .update({ section_minutes: reflowed })

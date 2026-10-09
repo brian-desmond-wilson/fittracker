@@ -18,7 +18,7 @@ import { estimateSectionMinutes, totalSectionMinutes } from "@/src/lib/dailySect
 import { builtinByKey } from "@/src/lib/dailyBuiltins";
 import { sessionTitle } from "@/src/lib/dailyFocus";
 import {
-  blockDayShape, plannedBlockMinutes, BLOCK_TITLES, SECTION_FOR_BLOCK,
+  blockDayShape, plannedBlockMinutes, BLOCK_TITLES, blockTitle, itemsForBlock,
 } from "@/src/lib/dailyBlockCompose";
 import { wouldBeRecoveryDay } from "@/src/lib/dailyBlockShortlist";
 import { ACTIVE_RECOVERY_MINUTES, ASSUMED_ENERGY } from "@/src/lib/dailyRest";
@@ -47,7 +47,7 @@ import {
 } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
 import type { DailyCheckin, SessionSection, StoredSession, StoredSessionItem } from "@/src/types/daily";
-import type { BlockRole } from "@/src/types/dailyBlocks";
+import type { BlockRole, StoredBlock } from "@/src/types/dailyBlocks";
 import type { CapturedWorkoutEntry } from "@/src/types/capture";
 
 const SECTION_TITLES: Record<SessionSection, string> = {
@@ -106,7 +106,8 @@ export default function TodayTab() {
   // Set when today's session is a workout served whole — either one you
   // started from the catalog, or one the composer chose to serve.
   const [served, setServed] = useState<CapturedWorkoutEntry | null>(null);
-  const [rerolling, setRerolling] = useState<BlockRole | null>(null);
+  // Keyed by block ROW id: a 2-hour day's two mains swap independently.
+  const [rerolling, setRerolling] = useState<string | null>(null);
   // A declined reroll, kept beside the block that declined it. `rerollBlock`
   // answers a plain false whether the block has nowhere left to go, the day
   // has moved past `suggested`, or a write failed part-way — so the line it
@@ -114,15 +115,15 @@ export default function TodayTab() {
   // matters: it can leave the new workout's items under the old block's name,
   // and telling the user there was simply nothing to swap in would be the one
   // reading with consequences behind it.
-  const [rerollNote, setRerollNote] = useState<BlockRole | null>(null);
+  const [rerollNote, setRerollNote] = useState<string | null>(null);
   const [markingDone, setMarkingDone] = useState(false);
   // Set once a mark-done write has been sent. `completeSession` logs its own
   // failures and answers nothing, so the only thing that can say the write
   // didn't land is the day coming back still unfinished.
   const [doneAttempted, setDoneAttempted] = useState(false);
-  // Which support cards are open. Keyed by block, cleared by nothing — an
-  // expanded card surviving a reload is what you want.
-  const [expanded, setExpanded] = useState<Partial<Record<BlockRole, boolean>>>({});
+  // Which support cards are open. Keyed by block row id, cleared by nothing —
+  // an expanded card surviving a reload is what you want.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Whether today's completed session already has a debrief — null while
   // unknown. Drives both the inline card and the one auto-open per mount.
   const [hasDebrief, setHasDebrief] = useState<boolean | null>(null);
@@ -299,14 +300,14 @@ export default function TodayTab() {
   // out of action for its duration as well as for another block's swap.
   const rerollBusy = rerolling !== null || loading;
 
-  const reroll = async (block: BlockRole) => {
+  const reroll = async (block: StoredBlock) => {
     if (!session || rerollBusy) return;
-    setRerolling(block);
+    setRerolling(block.id);
     setRerollNote(null);
-    const changed = await rerollBlock(session.id, block);
+    const changed = await rerollBlock(session.id, block.block, block.id);
     setRerolling(null);
     if (changed) bump();
-    else setRerollNote(block);
+    else setRerollNote(block.id);
   };
 
   // Lock and dismiss are metadata, not compose inputs: the signature ignores
@@ -749,31 +750,32 @@ export default function TodayTab() {
                   );
                 })
               : blocks.length > 0
-                ? blocks.map((block) => (
+                ? blocks.map((block, i) => (
                     <BlockCard
                       key={block.id}
                       block={block}
-                      // Items are stored under the SECTION the block explodes
-                      // into, never under the block's own name — conditioning
-                      // logs as `accessory`, and the map is what keeps the two
-                      // vocabularies from crossing.
-                      items={session.items.filter(
-                        (i) => i.section === SECTION_FOR_BLOCK[block.block],
-                      )}
+                      // Only this block's items. An item that names its block
+                      // row belongs to it; one that names none belongs to the
+                      // first block whose role owns its section — conditioning
+                      // logs as `accessory`, and the map inside itemsForBlock
+                      // keeps the two vocabularies from crossing. A 2-hour
+                      // day's second main never repeats the first's rows.
+                      items={itemsForBlock(session.items, block, blocks)}
+                      title={blockTitle(blocks, i)}
                       hero={block.block === "main"}
                       canEdit={canEdit === true}
                       busy={rerollBusy}
-                      rerolling={rerolling === block.block}
-                      rerollNote={canEdit === true && rerollNote === block.block}
-                      expanded={expanded[block.block] === true}
+                      rerolling={rerolling === block.id}
+                      rerollNote={canEdit === true && rerollNote === block.id}
+                      expanded={expanded[block.id] === true}
                       onToggleExpand={() =>
-                        setExpanded((e) => ({ ...e, [block.block]: !e[block.block] }))
+                        setExpanded((e) => ({ ...e, [block.id]: !e[block.id] }))
                       }
                       onOpenWorkout={() => block.workoutId && openWorkout(block.workoutId)}
                       onOpenExercise={openExercise}
                       onToggleLock={() => toggleLock(block.id, block.locked)}
                       onAdjust={() => setAdjustScope(block.block)}
-                      onReroll={() => reroll(block.block)}
+                      onReroll={() => reroll(block)}
                       onToggleDismissed={() => toggleDismissed(block.id, block.dismissed)}
                       nudge={block.builtinKey !== null ? gapNudge(block.builtinKey) : null}
                       onReorder={reorderWithinBlock}

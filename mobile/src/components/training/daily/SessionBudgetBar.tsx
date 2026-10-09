@@ -4,7 +4,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { colors, spacing } from "@/src/theme/tokens";
-import { plannedBlockMinutes, BLOCK_TITLES } from "@/src/lib/dailyBlockCompose";
+import { plannedBlockMinutes, blockTitle, sortSessionBlocks } from "@/src/lib/dailyBlockCompose";
 import type { StoredBlock } from "@/src/types/dailyBlocks";
 
 interface SessionBudgetBarProps {
@@ -20,6 +20,8 @@ export function SessionBudgetBar({ blocks, minutesAvailable }: SessionBudgetBarP
   // the creators'); the bar says so instead of pretending it fits.
   const runsLong = spare < 0;
   const total = Math.max(planned, minutesAvailable);
+  // Performed order; a repeated role is numbered in the legend.
+  const live = sortSessionBlocks(blocks.filter((b) => !b.dismissed));
 
   return (
     <View style={styles.wrap}>
@@ -32,7 +34,7 @@ export function SessionBudgetBar({ blocks, minutesAvailable }: SessionBudgetBarP
         </Text>
       </View>
       <View style={styles.bar}>
-        {blocks.filter((b) => !b.dismissed).map((b) => (
+        {live.map((b) => (
           <View
             key={b.id}
             style={{ flex: b.minutes / total, backgroundColor: colors.blocks[b.block] }}
@@ -43,10 +45,7 @@ export function SessionBudgetBar({ blocks, minutesAvailable }: SessionBudgetBarP
         )}
       </View>
       <Text style={styles.legend} numberOfLines={1}>
-        {blocks
-          .filter((b) => !b.dismissed)
-          .map((b) => BLOCK_TITLES[b.block].toLowerCase())
-          .join(" · ")}
+        {live.map((_, i) => blockTitle(live, i).toLowerCase()).join(" · ")}
       </Text>
     </View>
   );

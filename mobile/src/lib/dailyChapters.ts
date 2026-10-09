@@ -1,31 +1,42 @@
 // The live session's chapter model: what the day looks like when you are
-// performing it, rather than when you are reading it. A composed day is five
-// blocks, and the logging screen walks them one chapter at a time — so this
-// turns the flat exercise list plus the session's block rows into an ordered
-// list of STEPS, some of which are built-in routines with nothing to log.
+// performing it, rather than when you are reading it. A composed day is a
+// handful of blocks, and the logging screen walks them one chapter at a time
+// — so this turns the flat exercise list plus the session's block rows into
+// an ordered list of STEPS, some of which are built-in routines with nothing
+// to log.
+//
+// A chapter is a block ROW, not a block role: a 2-hour day carries two mains
+// back to back, and each is its own chapter with its own name, minutes and
+// movements. Every step names the row it belongs to (`chapter`, the row id)
+// as well as the role (`block`), which the screen still uses for colour and
+// titles.
 //
 // Pure, and deliberately ignorant of components: the screen owns navigation
 // and rendering, this owns the shape of the walk. Approved mockups
 // "Live session — segmented flow" (2026-08-19) are the decision record.
-import { BLOCK_ORDER, SECTION_FOR_BLOCK } from "./dailyBlockCompose";
+import { SECTION_FOR_BLOCK, sortSessionBlocks } from "./dailyBlockCompose";
 import type { SessionSection } from "../types/daily";
 import type { BlockRole } from "../types/dailyBlocks";
 
 /**
  * One stop in the walk.
  *
- * `block` is null for an exercise no block claims — a `bfr` item, or one whose
- * block row is missing. Those are still logged; they simply have no chapter,
- * and the header falls back to the flat presentation for them.
+ * `block` and `chapter` are null for an exercise no block claims — a `bfr`
+ * item, or one whose block row is missing. Those are still logged; they
+ * simply have no chapter, and the header falls back to the flat presentation
+ * for them.
  */
 export type ChapterStep =
-  | { kind: "exercise"; block: BlockRole | null; exerciseIndex: number }
-  | { kind: "builtin"; block: BlockRole; builtinKey: string };
+  | { kind: "exercise"; block: BlockRole | null; chapter: string | null; exerciseIndex: number }
+  | { kind: "builtin"; block: BlockRole; chapter: string; builtinKey: string };
 
 /** What a block row has to tell this module. A subset of StoredBlock, so the
  *  screen can pass its rows straight in. */
 export interface ChapterBlockRow {
+  id: string;
   block: BlockRole;
+  /** `block_position`; see sortSessionBlocks. */
+  position: number;
   name: string;
   minutes: number;
   builtinKey: string | null;
@@ -33,8 +44,17 @@ export interface ChapterBlockRow {
   dismissed: boolean;
 }
 
+/** What an exercise row has to tell this module: the section it was stored
+ *  under, and the block row it was exploded from when that is known. */
+export interface ChapterExercise {
+  section: SessionSection | null;
+  blockId: string | null;
+}
+
 /** A block as the header, the interstitial and the overview need it. */
 export interface ChapterBlockSummary {
+  /** The block row id — the chapter's identity. */
+  id: string;
   block: BlockRole;
   name: string;
   minutes: number;
@@ -49,9 +69,12 @@ export interface ChapterBlockSummary {
  *
  * Blocks lead: every block that has work contributes its steps, in the order
  * the day is trained, and the exercises inside a block keep the order the
- * composer gave them. An exercise whose section no block claims is appended
- * afterwards rather than dropped — a session that hides a movement you are
- * meant to log is worse than one with an unchaptered tail.
+ * composer gave them. An exercise that names its block row goes to that row;
+ * one that names none goes to the first block whose role owns its section —
+ * the only reading that existed before roles could repeat. An exercise no
+ * block claims is appended afterwards rather than dropped — a session that
+ * hides a movement you are meant to log is worse than one with an
+ * unchaptered tail.
  *
  * With no block rows at all — a program workout, a captured workout served
  * whole, a session composed before blocks existed — this is the flat list
@@ -59,63 +82,68 @@ export interface ChapterBlockSummary {
  * behaviour byte-identical for everything that is not a composed day.
  */
 export function buildChapterSteps(
-  sections: (SessionSection | null)[],
-  blocks: ChapterBlockRow[],
+  exercises: readonly ChapterExercise[],
+  blocks: readonly ChapterBlockRow[],
 ): ChapterStep[] {
-  const live = blocks.filter((b) => !b.dismissed);
+  const live = sortSessionBlocks(blocks.filter((b) => !b.dismissed));
   if (live.length === 0) {
-    return sections.map((_, exerciseIndex) => ({
-      kind: "exercise", block: null, exerciseIndex,
+    return exercises.map((_, exerciseIndex) => ({
+      kind: "exercise", block: null, chapter: null, exerciseIndex,
     }));
   }
 
   const steps: ChapterStep[] = [];
   const claimed = new Set<number>();
-  const byRole = new Map(live.map((b) => [b.block, b]));
+  const seenRole = new Set<BlockRole>();
 
-  for (const role of BLOCK_ORDER) {
-    const row = byRole.get(role);
-    if (!row) continue;
-    const section = SECTION_FOR_BLOCK[role];
-    const mine = sections
-      .map((s, i) => ({ s, i }))
-      .filter(({ s, i }) => s === section && !claimed.has(i));
+  for (const row of live) {
+    const section = SECTION_FOR_BLOCK[row.block];
+    const firstOfRole = !seenRole.has(row.block);
+    seenRole.add(row.block);
+    const mine = exercises
+      .map((e, i) => ({ e, i }))
+      .filter(({ e, i }) =>
+        !claimed.has(i)
+        && (e.blockId === row.id || (firstOfRole && !e.blockId && e.section === section)));
     if (mine.length > 0) {
       for (const { i } of mine) {
         claimed.add(i);
-        steps.push({ kind: "exercise", block: role, exerciseIndex: i });
+        steps.push({ kind: "exercise", block: row.block, chapter: row.id, exerciseIndex: i });
       }
       continue;
     }
     // No loggable work: a built-in routine is the block, and anything else is
     // a block whose workout is gone — nothing to perform, so nothing to show.
     if (row.builtinKey) {
-      steps.push({ kind: "builtin", block: role, builtinKey: row.builtinKey });
+      steps.push({ kind: "builtin", block: row.block, chapter: row.id, builtinKey: row.builtinKey });
     }
   }
 
-  for (let i = 0; i < sections.length; i++) {
-    if (!claimed.has(i)) steps.push({ kind: "exercise", block: null, exerciseIndex: i });
+  for (let i = 0; i < exercises.length; i++) {
+    if (!claimed.has(i)) {
+      steps.push({ kind: "exercise", block: null, chapter: null, exerciseIndex: i });
+    }
   }
   return steps;
 }
 
 /** The chapters, in step order — only blocks that actually contribute steps. */
 export function chapterBlocks(
-  steps: ChapterStep[],
-  blocks: ChapterBlockRow[],
+  steps: readonly ChapterStep[],
+  blocks: readonly ChapterBlockRow[],
 ): ChapterBlockSummary[] {
-  const byRole = new Map(blocks.map((b) => [b.block, b]));
+  const byId = new Map(blocks.map((b) => [b.id, b]));
   const out: ChapterBlockSummary[] = [];
   steps.forEach((step, i) => {
-    if (step.block === null) return;
+    if (step.chapter === null || step.block === null) return;
     const last = out[out.length - 1];
-    if (last && last.block === step.block) {
+    if (last && last.id === step.chapter) {
       last.stepCount += 1;
       return;
     }
-    const row = byRole.get(step.block);
+    const row = byId.get(step.chapter);
     out.push({
+      id: step.chapter,
       block: step.block,
       name: row?.name ?? step.block,
       minutes: row?.minutes ?? 0,
@@ -130,17 +158,18 @@ export function chapterBlocks(
 /** Where you are inside your current chapter — "exercise 2 of 5", not
  *  "7 of 25". Null when the step belongs to no block. */
 export function blockProgress(
-  steps: ChapterStep[],
+  steps: readonly ChapterStep[],
   stepIndex: number,
-): { block: BlockRole; index: number; count: number } | null {
+): { block: BlockRole; chapter: string; index: number; count: number } | null {
   const step = steps[stepIndex];
-  if (!step || step.block === null) return null;
+  if (!step || step.chapter === null || step.block === null) return null;
   const siblings: number[] = [];
   steps.forEach((s, i) => {
-    if (s.block === step.block) siblings.push(i);
+    if (s.chapter === step.chapter) siblings.push(i);
   });
   return {
     block: step.block,
+    chapter: step.chapter,
     index: siblings.indexOf(stepIndex),
     count: siblings.length,
   };
@@ -148,7 +177,8 @@ export function blockProgress(
 
 /**
  * The seam between two chapters, when walking off the end of one into the
- * next — the moment a chapter card marks.
+ * next — the moment a chapter card marks. Named by chapter (block row id):
+ * walking from the first main into the second is a seam like any other.
  *
  * The NEXT step, and only that. Two exclusions, both learned the hard way:
  * backwards is not a finish (swiping back to fix a set you mislogged is not
@@ -160,13 +190,13 @@ export function blockProgress(
  * Null whenever either side is unchaptered, so a flat workout never sees one.
  */
 export function crossedBoundary(
-  steps: ChapterStep[],
+  steps: readonly ChapterStep[],
   fromIndex: number,
   toIndex: number,
-): { from: BlockRole; to: BlockRole } | null {
+): { from: string; to: string } | null {
   if (toIndex !== fromIndex + 1) return null;
-  const from = steps[fromIndex]?.block ?? null;
-  const to = steps[toIndex]?.block ?? null;
+  const from = steps[fromIndex]?.chapter ?? null;
+  const to = steps[toIndex]?.chapter ?? null;
   if (from === null || to === null || from === to) return null;
   return { from, to };
 }

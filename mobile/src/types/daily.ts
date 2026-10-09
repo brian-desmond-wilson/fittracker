@@ -114,6 +114,11 @@ export interface SessionItem {
    *  15×8, 20×5 → work 26 lb". Optional: the app's own composer never
    *  writes one; only a stored row read back can carry it. */
   weightNote?: string | null;
+  /** The block row this item was exploded from (`block_id`). Null means
+   *  "the first block whose role owns my section" — every item written
+   *  before repeated roles existed reads that way. The app's own composer
+   *  never sets it; the agent gateway does. */
+  blockId?: string | null;
 }
 
 /**
@@ -142,6 +147,7 @@ export interface ComposedSession {
 export interface StoredSessionItem extends SessionItem {
   id: string;
   name: string;
+  blockId: string | null;
   wasPerformed: boolean | null;
   /** The exercise's own generated picture — the row thumbnail. Null shows an
    *  empty square. */
