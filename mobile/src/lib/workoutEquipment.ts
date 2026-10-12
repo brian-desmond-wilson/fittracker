@@ -91,6 +91,18 @@ export function deriveWorkoutEquipment(items: CapturedWorkoutItemEntry[]): Deriv
   return { derivedEquipment, isBodyweight: bodyweightMovements === n };
 }
 
+/** Every distinct piece any movement needs — what a person has to have on hand
+ *  to do the whole workout. Surfaces and Bodyweight dropped, in grid order.
+ *  The card's icon row and the page's "You'll need" both read this. The
+ *  majority rule above answers a different question — "is this a kettlebell
+ *  workout?" — and is for the filter only: a single Kettlebell Push Out in a
+ *  cable session still needs a kettlebell. */
+export function allWorkoutEquipment(items: CapturedWorkoutItemEntry[]): string[] {
+  const names = new Set<string>();
+  for (const it of items) for (const name of needsOf(it)) names.add(name);
+  return [...names].sort(byGridOrder);
+}
+
 /** The one word a card shows. */
 export function primaryEquipmentLabel(d: DerivedEquipment): string | null {
   if (d.derivedEquipment.length > 0) return equipmentLabel(d.derivedEquipment[0]);

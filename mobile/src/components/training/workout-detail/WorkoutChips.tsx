@@ -115,9 +115,10 @@ interface NeedsSectionProps {
   onFilter: (link: WorkoutFilterLink) => void;
 }
 
-/** One outlined tile per derived equipment name; bodyweight-only shows one
- *  untappable "Bodyweight" tile. Nothing derived and not bodyweight: the
- *  section is omitted rather than guessed. */
+/** One outlined tile per piece of equipment any movement needs — every piece,
+ *  not the majority the filter uses, because a person has to have all of it
+ *  on hand. Bodyweight-only shows one untappable "Bodyweight" tile. Nothing
+ *  needed and not bodyweight: the section is omitted rather than guessed. */
 export function NeedsSection({ equipment, isBodyweight, onFilter }: NeedsSectionProps) {
   const tiles = equipment.length > 0 ? equipment : isBodyweight ? ["Bodyweight"] : [];
   if (tiles.length === 0) return null;

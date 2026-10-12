@@ -23,6 +23,7 @@ import {
   updateCapturedWorkout,
 } from "@/src/lib/supabase/capture";
 import { formatWorkoutItem, formatBanner } from "@/src/lib/workoutFormat";
+import { allWorkoutEquipment } from "@/src/lib/workoutEquipment";
 import { sanitizeInteger } from "@/src/lib/numericInput";
 import { ExerciseSearchModal } from "@/src/components/training/program-detail/workout-wizard/ExerciseSearchModal";
 import {
@@ -950,7 +951,7 @@ export function CapturedWorkoutScreen() {
           {!editing && <HitsSection muscles={workout.tags.muscles} onFilter={openFiltered} />}
           {!editing && (
             <NeedsSection
-              equipment={workout.derivedEquipment}
+              equipment={allWorkoutEquipment(workout.items)}
               isBodyweight={workout.isBodyweight}
               onFilter={openFiltered}
             />

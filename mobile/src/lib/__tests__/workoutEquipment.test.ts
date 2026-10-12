@@ -1,4 +1,4 @@
-import { deriveWorkoutEquipment, EQUIPMENT_GRID, primaryEquipmentLabel } from "../workoutEquipment";
+import { allWorkoutEquipment, deriveWorkoutEquipment, EQUIPMENT_GRID, primaryEquipmentLabel } from "../workoutEquipment";
 import type { CapturedWorkoutItemEntry } from "../../types/capture";
 
 const item = (equipment?: string[]): CapturedWorkoutItemEntry => ({
@@ -55,6 +55,26 @@ describe("deriveWorkoutEquipment", () => {
   it("orders derived names by the grid order, unknown names last alphabetically", () => {
     const items = [item(["Zebra Machine", "Bench", "Kettlebell"]), item(["Zebra Machine", "Bench", "Kettlebell"])];
     expect(deriveWorkoutEquipment(items).derivedEquipment).toEqual(["Kettlebell", "Bench", "Zebra Machine"]);
+  });
+});
+
+describe("allWorkoutEquipment", () => {
+  it("keeps a minority implement the majority rule would hide", () => {
+    // Five cable movements and one Kettlebell Push Out: the page must say
+    // kettlebell, even though the filter does not call this a kettlebell workout.
+    const items = [...Array(5)].map(() => item(["Cable"])).concat(item(["Kettlebell"]));
+    expect(deriveWorkoutEquipment(items).derivedEquipment).toEqual(["Cable"]);
+    expect(allWorkoutEquipment(items)).toEqual(["Kettlebell", "Cable"]);
+  });
+
+  it("lists each piece once, in grid order, dropping surfaces and Bodyweight", () => {
+    const items = [item(["Barbell", "Bench", "Floor"]), item(["Barbell", "Bench"]), item(["Kettlebell", "Bodyweight"]), item(["Wall"])];
+    expect(allWorkoutEquipment(items)).toEqual(["Kettlebell", "Barbell", "Bench"]);
+  });
+
+  it("is empty for bodyweight-only or unjoined items", () => {
+    expect(allWorkoutEquipment([item(["Bodyweight"]), item([])])).toEqual([]);
+    expect(allWorkoutEquipment([item(undefined)])).toEqual([]);
   });
 });
 

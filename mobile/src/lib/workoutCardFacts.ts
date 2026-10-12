@@ -10,7 +10,7 @@
 import type { CapturedWorkoutEntry } from "../types/capture";
 import type { BlockRole } from "../types/dailyBlocks";
 import { BLOCK_ORDER } from "./dailyBlockCompose";
-import { SUPPORT_SURFACES, byGridOrder } from "./workoutEquipment";
+import { allWorkoutEquipment } from "./workoutEquipment";
 import { FORMAT_LABELS } from "./workoutFormatVocab";
 
 const BODYWEIGHT = "Bodyweight";
@@ -42,10 +42,7 @@ export interface WorkoutCardFacts {
 }
 
 export function workoutCardFacts(entry: CapturedWorkoutEntry): WorkoutCardFacts {
-  const raw = entry.items
-    .flatMap((it) => it.equipment ?? [])
-    .filter((n) => !SUPPORT_SURFACES.has(n) && n !== BODYWEIGHT);
-  let equipment = uniq(raw).sort(byGridOrder);
+  let equipment = allWorkoutEquipment(entry.items);
   if (equipment.length === 0 && entry.isBodyweight) equipment = [BODYWEIGHT];
 
   const muscles = entry.tags.muscles;
