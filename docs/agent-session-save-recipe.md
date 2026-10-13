@@ -224,8 +224,9 @@ Before step 1, read `workouts?date=<day>`: if a session for that day already
 exists with status other than `suggested`, or with `source = user_pick`, the
 app would refuse to overwrite it and the agent should too. If a `suggested`
 + `ai` session exists, the app's own behaviour is to update it in place and
-replace its blocks and items; the gateway has no update or delete route, so
-the agent can only add a second suggestion beside it.
+replace its blocks and items; the gateway has no delete route and its only
+update route is the scoped item edit in §8, so for anything larger the agent
+can only add a second suggestion beside it.
 
 ## 6. Gateway coverage
 
@@ -374,3 +375,71 @@ order (item_order 7 is in block[1] but item_order 6 is in block[2])`,
 three-insert flow through `/v1/log/workouts`, `/v1/log/workout_blocks` and
 `/v1/log/workout_items` still works, but it is not atomic, and it would
 have to set `block_position` and `block_id` itself.
+
+## 8. Correcting a saved session — `POST /v1/jobs/update-session-items`
+
+Added 2026-10-09. Until now the gateway was insert-only: once a session was
+saved, a wrong load note or rep target could only be fixed by saving a
+second session beside it. This route edits the **prescription fields of an
+already-saved `suggested` session's items** in place — the coach notices
+after saving that an exercise should read "work 26 lb" rather than
+"work 24 lb", or that a movement should be 12 reps instead of 10, and
+corrects it before Brian trains.
+
+**When to use it:** the session is still `suggested` (Brian has not tapped
+Start) and only `weight_note`, `target_reps` or `target_sets` need to
+change. Anything else — a different exercise, a different block, a new
+session order — is a new `save-session`. Once the session is `accepted`,
+`completed`, `skipped` or `rested` the app owns it and the route refuses.
+
+Request, same auth as every route (`x-agent-key`):
+
+```json
+{
+  "session_id": "71d4a3ee-…",
+  "items": [
+    { "id": "e0c1…", "weight_note": "Ramp 15×8, 20×5 → work 26 lb", "target_reps": "12" },
+    { "id": "f8a2…", "target_sets": 4 }
+  ]
+}
+```
+
+Each item names its `generated_session_items.id` and **at least one** of the
+three editable fields. `weight_note` and `target_reps` are text or `null`
+(`target_reps` is text in the schema: `"10"`, `"8-12"`, `"AMRAP"`);
+`target_sets` is an integer or `null`. Sending `null` clears the field.
+Fields not named are left as they are.
+
+Response:
+
+```json
+{ "ok": true, "data": { "session_id": "71d4a3ee-…", "updated": 2, "item_ids": ["e0c1…", "f8a2…"] } }
+```
+
+**The four guards.** Every one is checked before the first UPDATE runs, so
+a single bad item rejects the whole request and nothing is written:
+
+| # | guard | error code | message |
+|---|---|---|---|
+| 1 | `session_id` is a uuid and the session exists | `session_not_found` | `No session with id <session_id>.` |
+| 2 | the session's status is exactly `suggested` | `session_not_editable` | `Only suggested sessions can be edited (status is '<status>').` |
+| 3 | an item carries only `id`, `weight_note`, `target_reps`, `target_sets` | `invalid_field` | `item[<i>]: field '<f>' is not editable.` |
+| 4 | every item id exists **and** has `session_id` equal to the request's | `item_not_found` | `item[<i>]: id <id> does not belong to session <session_id>.` |
+
+Other rejections: `no_items` (`items` missing or empty), `no_fields`
+(`item[<i>]: at least one of weight_note, target_reps, target_sets is
+required.`), `invalid_value` (wrong type, e.g. `target_sets: "3"`),
+`bad_json`. All are `ok: false` with the usual `{ code, message }` envelope,
+and every outcome is audit-logged as route `jobs/update-session-items`,
+resource `workout_items`, `rows` = items updated (0 on rejection).
+
+Guard 4 is deliberately a single "does not belong" error for both a
+nonexistent id and an id from some other session, so a mistaken id can
+never leak which session it belongs to. The UPDATE itself also filters on
+`session_id`, so the row can't be edited across sessions even in a race.
+The route needs no migration: it issues plain UPDATEs under the service
+role, exactly like `/v1/log/:resource` issues inserts.
+
+Item ids come from `GET /v1/read/workout_items?where[session_id]=<id>`
+(`ft.py read workout_items --where session_id=<id>`); the save route
+returns only the session id.

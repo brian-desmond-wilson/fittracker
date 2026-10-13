@@ -294,6 +294,115 @@ serve(async (req: Request): Promise<Response> => {
     return ok({ session_id: data });
   }
 
+  // POST /v1/jobs/update-session-items — correct an already-saved SUGGESTED
+  // session's prescription: { session_id, items: [{ id, weight_note?,
+  // target_reps?, target_sets? }] }. Scoped on purpose: only those three
+  // columns, only items of the named session, only while the session is still
+  // `suggested` (once Brian starts it the app owns it). Everything is
+  // validated before the first UPDATE so a bad item rejects the whole batch
+  // and nothing is written. An action, not gated by writeEnabled;
+  // audit-logged like the rest. Recipe: docs/agent-session-save-recipe.md §8.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/update-session-items`) {
+    const ROUTE = "jobs/update-session-items";
+    const RESOURCE = "workout_items";
+    const EDITABLE = ["weight_note", "target_reps", "target_sets"] as const;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const reject = (code: string, message: string, status = 400) => {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err(code, message, status);
+    };
+
+    let body: { session_id?: unknown; items?: unknown } | null = null;
+    try {
+      body = await req.json();
+    } catch {
+      return reject("bad_json", "Request body must be JSON.", 400);
+    }
+
+    const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+    if (!UUID_RE.test(sessionId)) {
+      return reject("session_not_found", `No session with id ${String(body?.session_id ?? "")}.`);
+    }
+    const items = body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return reject("no_items", "items must be a non-empty array.");
+    }
+
+    // Shape-check every item before touching the database.
+    const edits: { id: string; patch: Record<string, unknown> }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return reject("invalid_item", `item[${i}]: must be an object.`);
+      }
+      const rec = item as Record<string, unknown>;
+      for (const f of Object.keys(rec)) {
+        if (f !== "id" && !(EDITABLE as readonly string[]).includes(f)) {
+          return reject("invalid_field", `item[${i}]: field '${f}' is not editable.`);
+        }
+      }
+      if (typeof rec.id !== "string" || !UUID_RE.test(rec.id)) {
+        return reject("item_not_found", `item[${i}]: id ${String(rec.id ?? "")} does not belong to session ${sessionId}.`);
+      }
+      const patch: Record<string, unknown> = {};
+      for (const f of EDITABLE) {
+        if (!(f in rec)) continue;
+        const v = rec[f];
+        if (f === "target_sets") {
+          if (v !== null && (typeof v !== "number" || !Number.isInteger(v))) {
+            return reject("invalid_value", `item[${i}]: target_sets must be an integer or null.`);
+          }
+        } else if (v !== null && typeof v !== "string") {
+          return reject("invalid_value", `item[${i}]: ${f} must be a string or null.`);
+        }
+        patch[f] = v;
+      }
+      if (Object.keys(patch).length === 0) {
+        return reject("no_fields", `item[${i}]: at least one of weight_note, target_reps, target_sets is required.`);
+      }
+      edits.push({ id: rec.id, patch });
+    }
+
+    // Guard 1 + 2: the session exists and is still suggested.
+    const sessions = CONFIG.resources.workouts.table;
+    const { data: session, error: sErr } = await supabase
+      .from(sessions).select("id, status").eq("id", sessionId).maybeSingle();
+    if (sErr) return reject("query_failed", sErr.message, 500);
+    if (!session) return reject("session_not_found", `No session with id ${sessionId}.`);
+    if (session.status !== "suggested") {
+      return reject("session_not_editable", `Only suggested sessions can be edited (status is '${session.status}').`);
+    }
+
+    // Guard 4: every item belongs to this session.
+    const table = CONFIG.resources.workout_items.table;
+    const { data: owned, error: oErr } = await supabase
+      .from(table).select("id").eq("session_id", sessionId)
+      .in("id", edits.map((e) => e.id));
+    if (oErr) return reject("query_failed", oErr.message, 500);
+    const ownedIds = new Set((owned ?? []).map((r: { id: string }) => r.id));
+    for (let i = 0; i < edits.length; i++) {
+      if (!ownedIds.has(edits[i].id)) {
+        return reject("item_not_found", `item[${i}]: id ${edits[i].id} does not belong to session ${sessionId}.`);
+      }
+    }
+
+    // All checks passed — apply the patches (session_id repeated as a belt
+    // and braces filter so a row can never be edited across sessions).
+    const updatedIds: string[] = [];
+    for (const e of edits) {
+      const { data: row, error: uErr } = await supabase
+        .from(table).update(e.patch).eq("id", e.id).eq("session_id", sessionId)
+        .select("id").maybeSingle();
+      if (uErr) {
+        audit(ROUTE, RESOURCE, updatedIds.length, false);
+        return err("update_failed", `item ${e.id}: ${uErr.message}`, 500);
+      }
+      if (row) updatedIds.push(row.id);
+    }
+    audit(ROUTE, RESOURCE, updatedIds.length, true);
+    return ok({ session_id: sessionId, updated: updatedIds.length, item_ids: updatedIds });
+  }
+
   // POST /v1/log/:resource — Phase 3, gated by CONFIG.writeEnabled.
   const logMatch = path.match(new RegExp(`^/${VERSION}/log/([a-z_]+)$`));
   if (req.method === "POST" && logMatch) {
