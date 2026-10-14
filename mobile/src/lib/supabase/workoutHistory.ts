@@ -1,8 +1,10 @@
 // The reader's completed sessions of ONE captured workout, for the workout
-// page's history block. Counted the way fetchWorkoutCompletions counts: a
-// completed generated_session whose served_captured_workout_id is this
-// workout — a day that WAS this workout, served whole. A day where it was
-// one block inside a composed session is deliberately not this workout.
+// page's history block. Counted the way fetchWorkoutCompletions counts — the
+// same read, in fact: a completed generated_session that either served this
+// workout whole (served_captured_workout_id) or ran it as a non-dismissed
+// block of a composed day. Either way the day is a day this workout was
+// done, and a day that lists it both ways is one row here, not two
+// (workoutsPerformedIn owns that rule).
 //
 // Two reads rather than one nested filter: the Track session (the row the
 // history opens, and the duration it shows) hangs off the same
@@ -15,20 +17,19 @@
 // without bars.
 import { supabase } from "../supabase";
 import { fetchWorkoutScores } from "./sessionScores";
+import { fetchCompletedSessions } from "./workoutCompletions";
+import { workoutsPerformedIn } from "../workoutCompletion";
 import type { WorkoutSessionRow } from "../workoutHistory";
 
 export async function fetchWorkoutHistory(userId: string, workoutId: string): Promise<WorkoutSessionRow[]> {
-  const { data: gens, error } = await supabase
-    .from("generated_sessions")
-    .select("id, session_date, workout_instance_id")
-    .eq("user_id", userId)
-    .eq("status", "completed")
-    .eq("served_captured_workout_id", workoutId);
-  if (error) {
-    console.error("fetchWorkoutHistory failed:", error.message, error.details ?? "");
+  const sessions = await fetchCompletedSessions(userId);
+  if (sessions === null) {
+    console.error("fetchWorkoutHistory failed: completed sessions unavailable");
     return [];
   }
-  const rows = (gens ?? []) as { id: string; session_date: string; workout_instance_id: string | null }[];
+  const rows = sessions
+    .filter((s) => workoutsPerformedIn(s).has(workoutId))
+    .map((s) => ({ id: s.id, session_date: s.sessionDate, workout_instance_id: s.workoutInstanceId }));
   const instanceIds = rows.map((g) => g.workout_instance_id).filter((v): v is string => !!v);
   const scores = await fetchWorkoutScores(userId, workoutId);
 
