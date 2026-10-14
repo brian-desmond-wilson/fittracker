@@ -24,6 +24,79 @@ export interface WorkoutCompletion {
 /** captured_workouts.id → its history. Missing key means never completed. */
 export type CompletionMap = Record<string, WorkoutCompletion>;
 
+/** One completed generated_session, as the completion reads see it: the
+ *  workout it served whole (if any) and the block rows it ran. */
+export interface CompletedSessionRecord {
+  id: string;
+  /** Local calendar date (YYYY-MM-DD). */
+  sessionDate: string;
+  /** `served_captured_workout_id`: the session WAS this workout, served whole. */
+  servedWorkoutId: string | null;
+  /** `generated_session_blocks` rows. A built-in block has a null workout id. */
+  blocks: readonly { capturedWorkoutId: string | null; dismissed: boolean }[];
+}
+
+/**
+ * Every captured workout a completed session counts as a performance of.
+ *
+ * Both sources count, once each: the workout served whole, and every block
+ * row naming a workout. A day that served a workout whole AND lists it as a
+ * block (the composer's serve-whole answer writes it both ways) is one
+ * performance, not two — a Set, because a day is performed once however
+ * many rows describe it. Same for a 2-hour day that ran the same workout in
+ * two mains: still one day on which it was done.
+ *
+ * A dismissed block is not a performance. `dismissed` is NOT NULL, defaults
+ * false, and flips only when the user waves the block off for the day; the
+ * row stays for undo and history but the Today tab neither shows it as work
+ * nor counts its minutes, and the gateway's recency view already reads
+ * `NOT dismissed` as "actually ran". Nothing else on a block row says
+ * whether it ran — `locked` is a compose-time pin, and there is no
+ * block-level performed flag — so a live block in a completed session is
+ * taken as performed. (The ledger in captured_workout_usage does not make
+ * this distinction, which is one reason it is not the source here.)
+ */
+export function workoutsPerformedIn(session: CompletedSessionRecord): Set<string> {
+  const ids = new Set<string>();
+  if (session.servedWorkoutId) ids.add(session.servedWorkoutId);
+  for (const block of session.blocks) {
+    if (block.capturedWorkoutId && !block.dismissed) ids.add(block.capturedWorkoutId);
+  }
+  return ids;
+}
+
+/**
+ * Fold completed sessions into the per-workout map the card labels read.
+ *
+ * `count` is the number of completed sessions the workout appeared in (see
+ * workoutsPerformedIn for what "appeared" means); `lastCompleted` is the
+ * latest of their dates, whichever way the workout got into that day.
+ * Sessions may arrive in any order. A session with no date is skipped
+ * rather than counted with nothing to date it: the column is NOT NULL, but
+ * the client is untyped and a zero-length string would otherwise become
+ * the "latest" date of nothing.
+ */
+export function tallyCompletions(sessions: readonly CompletedSessionRecord[]): CompletionMap {
+  const completions: CompletionMap = {};
+  for (const session of sessions) {
+    if (!session.sessionDate) continue;
+    for (const id of workoutsPerformedIn(session)) {
+      const previous = completions[id];
+      completions[id] = {
+        count: (previous?.count ?? 0) + 1,
+        // YYYY-MM-DD compares correctly as a string, so the latest date needs
+        // no parsing — and parsing here would be a second place dates could
+        // drift.
+        lastCompleted:
+          previous && previous.lastCompleted > session.sessionDate
+            ? previous.lastCompleted
+            : session.sessionDate,
+      };
+    }
+  }
+  return completions;
+}
+
 /**
  * Past this many days the count stops being drawn as current.
  *

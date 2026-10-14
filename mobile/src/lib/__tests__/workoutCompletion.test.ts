@@ -3,12 +3,124 @@ import {
   formatLastCompleted,
   isStale,
   sortByStaleness,
+  tallyCompletions,
+  workoutsPerformedIn,
 } from "../workoutCompletion";
-import type { CompletionMap, WorkoutCompletion } from "../workoutCompletion";
+import type {
+  CompletedSessionRecord,
+  CompletionMap,
+  WorkoutCompletion,
+} from "../workoutCompletion";
 
 const done = (lastCompleted: string, count = 1): WorkoutCompletion => ({
   count,
   lastCompleted,
+});
+
+const session = (
+  sessionDate: string,
+  o: Partial<Omit<CompletedSessionRecord, "sessionDate">> = {},
+): CompletedSessionRecord => ({
+  id: `g-${sessionDate}`,
+  sessionDate,
+  servedWorkoutId: null,
+  blocks: [],
+  ...o,
+});
+const block = (capturedWorkoutId: string | null, dismissed = false) => ({ capturedWorkoutId, dismissed });
+
+describe("workoutsPerformedIn", () => {
+  it("names the workout served whole", () => {
+    expect([...workoutsPerformedIn(session("2026-08-01", { servedWorkoutId: "w1" }))]).toEqual(["w1"]);
+  });
+
+  it("names every workout a block row carries; built-ins have none to name", () => {
+    const s = session("2026-08-01", { blocks: [block(null), block("w1"), block("w2")] });
+    expect([...workoutsPerformedIn(s)].sort()).toEqual(["w1", "w2"]);
+  });
+
+  it("served whole and listed as a block is one performance, not two", () => {
+    const s = session("2026-08-01", { servedWorkoutId: "w1", blocks: [block("w1")] });
+    expect([...workoutsPerformedIn(s)]).toEqual(["w1"]);
+  });
+
+  it("the same workout in two blocks of one day is one performance", () => {
+    const s = session("2026-08-01", { blocks: [block("w1"), block("w1")] });
+    expect([...workoutsPerformedIn(s)]).toEqual(["w1"]);
+  });
+
+  it("leaves out a dismissed block", () => {
+    const s = session("2026-08-01", { blocks: [block("w1", true), block("w2")] });
+    expect([...workoutsPerformedIn(s)]).toEqual(["w2"]);
+  });
+
+  it("is empty for a day of built-ins only", () => {
+    expect(workoutsPerformedIn(session("2026-08-01", { blocks: [block(null), block(null)] })).size).toBe(0);
+  });
+});
+
+describe("tallyCompletions", () => {
+  it("counts a block-level performance", () => {
+    expect(tallyCompletions([session("2026-08-01", { blocks: [block("w1")] })])).toEqual({
+      w1: done("2026-08-01", 1),
+    });
+  });
+
+  it("counts a day served whole and a day run as a block as two performances", () => {
+    expect(
+      tallyCompletions([
+        session("2026-08-01", { servedWorkoutId: "w1" }),
+        session("2026-08-05", { blocks: [block("w1")] }),
+      ]),
+    ).toEqual({ w1: done("2026-08-05", 2) });
+  });
+
+  it("dedupes a session that served a workout whole AND lists it as a block", () => {
+    expect(
+      tallyCompletions([session("2026-08-01", { servedWorkoutId: "w1", blocks: [block("w1")] })]),
+    ).toEqual({ w1: done("2026-08-01", 1) });
+  });
+
+  it("lastCompleted is the latest date across both sources, in any order", () => {
+    expect(
+      tallyCompletions([
+        session("2026-08-10", { blocks: [block("w1")] }),
+        session("2026-08-20", { servedWorkoutId: "w1" }),
+        session("2026-08-15", { blocks: [block("w1")] }),
+      ]).w1,
+    ).toEqual(done("2026-08-20", 3));
+    expect(
+      tallyCompletions([
+        session("2026-08-20", { servedWorkoutId: "w1" }),
+        session("2026-08-25", { blocks: [block("w1")] }),
+      ]).w1,
+    ).toEqual(done("2026-08-25", 2));
+  });
+
+  it("a dismissed block does not count, and leaves the workout absent if it was the only one", () => {
+    expect(
+      tallyCompletions([
+        session("2026-08-01", { blocks: [block("w1", true), block("w2")] }),
+      ]),
+    ).toEqual({ w2: done("2026-08-01", 1) });
+  });
+
+  it("keeps each workout's tally separate", () => {
+    expect(
+      tallyCompletions([
+        session("2026-08-01", { servedWorkoutId: "w1", blocks: [block("w2")] }),
+        session("2026-08-02", { blocks: [block("w2"), block(null)] }),
+      ]),
+    ).toEqual({ w1: done("2026-08-01", 1), w2: done("2026-08-02", 2) });
+  });
+
+  it("skips a session with no date rather than counting it", () => {
+    expect(tallyCompletions([session("", { servedWorkoutId: "w1" })])).toEqual({});
+  });
+
+  it("is empty when nothing has been completed", () => {
+    expect(tallyCompletions([])).toEqual({});
+  });
 });
 
 // A Wednesday, so the weekday branch has somewhere unambiguous to land.
