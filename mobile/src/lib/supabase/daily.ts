@@ -20,7 +20,6 @@ import type {
   StoredBlock,
 } from "../../types/dailyBlocks";
 import type {
-  AssumedInputs,
   ComposedSession,
   DailyCheckin,
   DebriefVerdict,
@@ -36,7 +35,7 @@ import type {
   StoredSession,
 } from "../../types/daily";
 import { getLocalDateString, addDays, parseLocalDate } from "../dates";
-import { wasRestDay } from "../dailyRest";
+import { wasRestDay, coerceAssumedInputs } from "../dailyRest";
 
 /**
  * The order a session's sections are shown and trained in. `item_order` is one
@@ -259,7 +258,17 @@ export interface SaveCheckinInput {
   forceRecovery?: boolean;
 }
 
-export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin | null> {
+export interface SaveCheckinResult {
+  checkin: DailyCheckin | null;
+  /** Present when the save failed — surfaced in the UI so a failure is
+   *  diagnosable without a debugger attached. */
+  error: string | null;
+}
+
+/** saveCheckin with the failure reason attached. */
+export async function saveCheckinDetailed(
+  input: SaveCheckinInput,
+): Promise<SaveCheckinResult> {
   try {
     const { data, error } = await supabase
       .from("daily_checkins")
@@ -284,7 +293,7 @@ export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin
       .eq("checkin_id", data.id);
     if (delError) throw delError;
 
-    const soreNames = Object.keys(input.soreness);
+    const soreNames = Object.keys(input.soreness ?? {});
     if (soreNames.length > 0) {
       const { data: regions, error: regError } = await supabase
         .from("muscle_regions")
@@ -303,11 +312,17 @@ export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin
         if (insError) throw insError;
       }
     }
-    return fetchTodayCheckin(input.userId, input.date);
+    return { checkin: await fetchTodayCheckin(input.userId, input.date), error: null };
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
     console.error("saveCheckin failed:", e);
-    return null;
+    return { checkin: null, error: message };
   }
+}
+
+/** Legacy wrapper — prefer saveCheckinDetailed when the failure reason matters. */
+export async function saveCheckin(input: SaveCheckinInput): Promise<DailyCheckin | null> {
+  return (await saveCheckinDetailed(input)).checkin;
 }
 
 // ---------- Candidate data assembly ----------
@@ -565,7 +580,10 @@ function mapDaySession(rows: any[]): StoredSession | null {
     ),
     composeSignature: data.compose_signature ?? null,
     dayReason: data.day_reason ?? null,
-    assumedInputs: ((data as any).assumed ?? null) as AssumedInputs | null,
+    // The stored `assumed` is validated, not cast: a malformed snapshot (the
+    // coach once wrote prose here) falls back to the documented default
+    // instead of reaching the check-in save as `energy: undefined`.
+    assumedInputs: coerceAssumedInputs((data as any).assumed),
   };
 }
 

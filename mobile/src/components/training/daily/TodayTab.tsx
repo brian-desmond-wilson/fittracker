@@ -42,7 +42,8 @@ import { takeHandedOffToast } from "@/src/components/ui/pendingToast";
 import { fetchCapturedWorkout } from "@/src/lib/supabase/capture";
 import {
   completeSession, fetchDebrief, fetchLatestCheckin, fetchSessionRatings,
-  fetchTodaySession, rerollBlock, restToday, saveCheckin, setBlockDismissed,
+  fetchTodaySession, rerollBlock, restToday, saveCheckin, saveCheckinDetailed,
+  setBlockDismissed,
   setBlockLocked, setRecoveryOverride, unrestToday,
 } from "@/src/lib/supabase/daily";
 import { formatWorkoutHeadline, formatWorkoutItem } from "@/src/lib/workoutFormat";
@@ -404,18 +405,25 @@ export default function TodayTab() {
     if (!session?.assumedInputs || restBusy) return;
     setRestBusy(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const saved = user
-      ? await saveCheckin({
+    const result = user
+      ? await saveCheckinDetailed({
           userId: user.id,
           date: getLocalDateString(),
           energy: session.assumedInputs.energy,
           minutesAvailable: session.assumedInputs.minutesAvailable,
           soreness: session.assumedInputs.soreness,
         })
-      : null;
+      : { checkin: null, error: "not signed in" };
     setRestBusy(false);
-    if (!saved) {
-      Alert.alert("Couldn't confirm the plan", "Check your connection and try again.");
+    if (!result.checkin) {
+      // The second line carries the underlying failure so a repeat is
+      // diagnosable without a debugger attached.
+      Alert.alert(
+        "Couldn't confirm the plan",
+        result.error
+          ? `Check your connection and try again.\n\nDetails: ${result.error}`
+          : "Check your connection and try again.",
+      );
       return;
     }
     // A day of built-ins has nothing loggable under it — the logging screen
