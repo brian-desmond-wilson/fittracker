@@ -443,3 +443,48 @@ role, exactly like `/v1/log/:resource` issues inserts.
 Item ids come from `GET /v1/read/workout_items?where[session_id]=<id>`
 (`ft.py read workout_items --where session_id=<id>`); the save route
 returns only the session id.
+
+## 9. Correcting a saved session's top-level fields — `POST /v1/jobs/update-session`
+
+Added 2026-10-15. The item route (§8) covers prescription fields; this one
+covers the **session row's own fields** — `inputs_snapshot`, `day_reason`,
+`section_minutes`, `compose_signature` — for an already-saved `suggested`
+session. Motivating case: the coach saved `inputs_snapshot.assumed` as a
+prose string instead of the `{ energy, minutesAvailable, soreness }` object
+the app expects, and the morning confirm failed cryptically; the fix was a
+single `update-session` call rewriting `inputs_snapshot`, not a delete and
+re-save.
+
+Request, same auth as every route (`x-agent-key`):
+
+```json
+{
+  "session_id": "b2ceacaf-…",
+  "patch": {
+    "inputs_snapshot": { "mode": "daily-prescription", "assumed": { "energy": 6, "minutesAvailable": 120, "soreness": {} } }
+  }
+}
+```
+
+`patch` names **at least one** of the four editable fields; fields not named
+are left as they are. `inputs_snapshot` and `section_minutes` must be
+objects (or `null` to clear); `day_reason` and `compose_signature` must be
+strings (or `null`). `inputs_snapshot.assumed`, when present, must be the
+structured object — the route rejects a non-object, but the coach should
+always write `{ energy, minutesAvailable, soreness }`, never prose.
+
+Response:
+
+```json
+{ "ok": true, "data": { "session_id": "b2ceacaf-…", "updated": 1, "fields": ["inputs_snapshot"] } }
+```
+
+**The guards**, all checked before the UPDATE runs: `session_id` is a uuid
+and the session exists (`session_not_found`); the session's status is
+exactly `suggested` (`session_not_editable`); every patched field is on the
+allowlist (`invalid_field`); every value has the right shape
+(`invalid_value`); the patch is non-empty (`no_fields`); the body is JSON
+(`bad_json`). The UPDATE is a single statement filtered on both `id` and
+`status = 'suggested'`, so it is all-or-nothing and cannot land past
+suggested even in a race. Every outcome is audit-logged as route
+`jobs/update-session`, resource `workouts`. No migration needed.

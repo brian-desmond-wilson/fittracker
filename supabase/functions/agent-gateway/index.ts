@@ -403,6 +403,91 @@ serve(async (req: Request): Promise<Response> => {
     return ok({ session_id: sessionId, updated: updatedIds.length, item_ids: updatedIds });
   }
 
+  // POST /v1/jobs/update-session — correct an already-saved SUGGESTED
+  // session's top-level fields: { session_id, patch: { inputs_snapshot?,
+  // day_reason?, section_minutes?, compose_signature? } }. Scoped on purpose:
+  // only those four columns, only while the session is still `suggested`
+  // (once Brian starts it the app owns it). Everything is validated before
+  // the UPDATE so a bad value rejects the whole batch and nothing is
+  // written. An action, not gated by writeEnabled; audit-logged like the
+  // rest. Recipe: docs/agent-session-save-recipe.md §8.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/update-session`) {
+    const ROUTE = "jobs/update-session";
+    const RESOURCE = "workouts";
+    const EDITABLE = ["inputs_snapshot", "day_reason", "section_minutes", "compose_signature"] as const;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const reject = (code: string, message: string, status = 400) => {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err(code, message, status);
+    };
+
+    let body: { session_id?: unknown; patch?: unknown } | null = null;
+    try {
+      body = await req.json();
+    } catch {
+      return reject("bad_json", "Request body must be JSON.", 400);
+    }
+
+    const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+    if (!UUID_RE.test(sessionId)) {
+      return reject("session_not_found", `No session with id ${String(body?.session_id ?? "")}.`);
+    }
+    const patch = body?.patch;
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+      return reject("no_patch", "patch must be an object.");
+    }
+    const rec = patch as Record<string, unknown>;
+    const fields = Object.keys(rec);
+    for (const f of fields) {
+      if (!(EDITABLE as readonly string[]).includes(f)) {
+        return reject("invalid_field", `field '${f}' is not editable.`);
+      }
+    }
+    if (fields.length === 0) {
+      return reject("no_fields", `at least one of ${EDITABLE.join(", ")} is required.`);
+    }
+
+    // Shape-check every value before touching the database. inputs_snapshot
+    // must stay an object: the app reads inputs_snapshot.assumed as
+    // { energy, minutesAvailable, soreness }, and a prose string there breaks
+    // the morning confirm with a cryptic error.
+    const update: Record<string, unknown> = {};
+    for (const f of EDITABLE) {
+      if (!(f in rec)) continue;
+      const v = rec[f];
+      if (f === "inputs_snapshot" || f === "section_minutes") {
+        if (v !== null && (typeof v !== "object" || Array.isArray(v))) {
+          return reject("invalid_value", `${f} must be an object or null.`);
+        }
+      } else if (v !== null && typeof v !== "string") {
+        return reject("invalid_value", `${f} must be a string or null.`);
+      }
+      update[f] = v;
+    }
+
+    // Guard: the session exists and is still suggested.
+    const sessions = CONFIG.resources.workouts.table;
+    const { data: session, error: sErr } = await supabase
+      .from(sessions).select("id, status").eq("id", sessionId).maybeSingle();
+    if (sErr) return reject("query_failed", sErr.message, 500);
+    if (!session) return reject("session_not_found", `No session with id ${sessionId}.`);
+    if (session.status !== "suggested") {
+      return reject("session_not_editable", `Only suggested sessions can be edited (status is '${session.status}').`);
+    }
+
+    // Single UPDATE — all-or-nothing by construction. The status is repeated
+    // as a belt-and-braces filter so a row can never be edited past suggested.
+    const { data: row, error: uErr } = await supabase
+      .from(sessions).update(update).eq("id", sessionId).eq("status", "suggested")
+      .select("id").maybeSingle();
+    if (uErr) {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err("update_failed", uErr.message, 500);
+    }
+    audit(ROUTE, RESOURCE, row ? 1 : 0, true);
+    return ok({ session_id: sessionId, updated: row ? 1 : 0, fields });
+  }
+
   // POST /v1/log/:resource — Phase 3, gated by CONFIG.writeEnabled.
   const logMatch = path.match(new RegExp(`^/${VERSION}/log/([a-z_]+)$`));
   if (req.method === "POST" && logMatch) {

@@ -1,5 +1,6 @@
 import {
-  assumedInputs, decayedSoreness, medianMinutes, snapToMinutesOption,
+  assumedInputs, coerceAssumedInputs, decayedSoreness, defaultAssumedInputs,
+  medianMinutes, snapToMinutesOption,
   wasRestDay, ASSUMED_ENERGY, MINUTES_OPTIONS,
 } from "../dailyRest";
 
@@ -68,5 +69,55 @@ describe("wasRestDay", () => {
   });
   it("no rows is not a rest day — it is an unknown day", () => {
     expect(wasRestDay([])).toBe(false);
+  });
+});
+
+describe("defaultAssumedInputs", () => {
+  it("is the documented fallback: mid energy, two hours, no soreness", () => {
+    expect(defaultAssumedInputs()).toEqual({
+      energy: ASSUMED_ENERGY,
+      minutesAvailable: 120,
+      soreness: {},
+    });
+  });
+});
+
+describe("coerceAssumedInputs", () => {
+  const valid = { energy: 7, minutesAvailable: 90, soreness: { Quads: 2 } };
+
+  it("passes a well-formed object through", () => {
+    expect(coerceAssumedInputs(valid)).toEqual(valid);
+  });
+
+  it("absent reads as null so callers keep no-draft semantics", () => {
+    expect(coerceAssumedInputs(null)).toBeNull();
+    expect(coerceAssumedInputs(undefined)).toBeNull();
+  });
+
+  it("the prose-string bug falls back to the default instead of undefined energy", () => {
+    const out = coerceAssumedInputs("usual gym Trans Bay, ~2h, rested");
+    expect(out).toEqual(defaultAssumedInputs());
+    expect(typeof out?.energy).toBe("number");
+  });
+
+  it("other non-objects fall back to the default", () => {
+    expect(coerceAssumedInputs(42)).toEqual(defaultAssumedInputs());
+    expect(coerceAssumedInputs(["energy"])).toEqual(defaultAssumedInputs());
+  });
+
+  it("missing or mistyped fields fall back to the default", () => {
+    expect(coerceAssumedInputs({})).toEqual(defaultAssumedInputs());
+    expect(coerceAssumedInputs({ energy: "7", minutesAvailable: 90, soreness: {} }))
+      .toEqual(defaultAssumedInputs());
+    expect(coerceAssumedInputs({ energy: 7, minutesAvailable: 90 }))
+      .toEqual(defaultAssumedInputs());
+    expect(coerceAssumedInputs({ energy: 7, minutesAvailable: 90, soreness: "quads" }))
+      .toEqual(defaultAssumedInputs());
+    expect(coerceAssumedInputs({ energy: 7, minutesAvailable: 90, soreness: null }))
+      .toEqual(defaultAssumedInputs());
+  });
+
+  it("extra fields are ignored, not rejected", () => {
+    expect(coerceAssumedInputs({ ...valid, mode: "daily-prescription" })).toEqual(valid);
   });
 });

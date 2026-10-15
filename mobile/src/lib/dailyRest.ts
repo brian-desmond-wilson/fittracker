@@ -56,6 +56,40 @@ export function assumedInputs(
   };
 }
 
+/** The documented fallback when a session's stored assumed inputs are
+ *  missing or malformed: mid-scale energy, a full two-hour budget, no
+ *  soreness. The morning confirm can always save a check-in from this. */
+export function defaultAssumedInputs(): AssumedInputs {
+  return { energy: ASSUMED_ENERGY, minutesAvailable: 120, soreness: {} };
+}
+
+/** Coerce a stored `inputs_snapshot.assumed` value into AssumedInputs.
+ *  The coach once wrote prose here; a string (or any other non-AssumedInputs
+ *  shape) must never reach the check-in save, where `energy: undefined` is
+ *  stripped from the upsert and violates the NOT NULL constraint — the
+ *  morning confirm then fails with a cryptic connection error. Absent reads
+ *  as null so callers keep their "no draft" semantics; present-but-malformed
+ *  falls back to the documented default. */
+export function coerceAssumedInputs(value: unknown): AssumedInputs | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return defaultAssumedInputs();
+  }
+  const v = value as Record<string, unknown>;
+  const valid =
+    typeof v.energy === "number" &&
+    typeof v.minutesAvailable === "number" &&
+    typeof v.soreness === "object" &&
+    v.soreness !== null &&
+    !Array.isArray(v.soreness);
+  if (!valid) return defaultAssumedInputs();
+  return {
+    energy: v.energy as number,
+    minutesAvailable: v.minutesAvailable as number,
+    soreness: v.soreness as Record<string, number>,
+  };
+}
+
 /** One day's generated_sessions rows, as rest-detection needs them. */
 export interface DayRestRow {
   status: string;
