@@ -1,6 +1,7 @@
 // mobile/src/lib/supabase/mealLibrary.ts
 // Data access for Nutrition OS Phase 2 (house pattern: domain query module).
 import { supabase } from "../supabase";
+import { fetchAll } from "./fetchAll";
 import { resolveInventoryMatches, type ResolutionInventoryRow } from "../inventoryResolution";
 import { projectItemStock, type AssemblabilityInventoryRow } from "../stockState";
 import { buildBorrowedFoodImages, withBorrowedImage } from "../foodImageBorrow";
@@ -205,15 +206,19 @@ async function fetchMealLibraryUncached(): Promise<MealLibraryData> {
     // C1. Only rows that name a meal — a free-typed log has nothing to date.
     // Every row, not a distinct date: the library counts HOW OFTEN as well as
     // how recently, and one meal logged twice in a day is twice eaten.
-    supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null),
+    fetchAll<{ meal_id: string; date: string }>((from, to) =>
+      supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null)
+        .order("id").range(from, to)),
     // The other half of "every meal you have ever eaten": logs that never
     // became meals. Repeat ones are offered for promotion (`adHocCandidates`).
-    supabase
-      .from("meal_logs")
-      .select("name, date, calories, protein, carbs, fats, sugars, saturated_fat_g, sodium_mg, fiber_g, saved_food_id")
-      .is("meal_id", null),
+    fetchAll<any>((from, to) =>
+      supabase
+        .from("meal_logs")
+        .select("name, date, calories, protein, carbs, fats, sugars, saturated_fat_g, sodium_mg, fiber_g, saved_food_id")
+        .is("meal_id", null)
+        .order("id").range(from, to)),
   ]);
-  const errors = [meals.error, mealCategories.error, vendors.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
+  const errors = [meals.error, mealCategories.error, mealRoles.error, vendors.error, items.error, concepts.error, links.error, inventory.error, profile.error, constraints.error, logs.error, adHocLogs.error]
     .filter((e) => e !== null);
   if (errors.length > 0) {
     errors.slice(1).forEach((e) => console.error("fetchMealLibrary:", e));

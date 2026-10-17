@@ -1110,7 +1110,7 @@ export async function completeSession(
     .from("generated_sessions")
     .select(`
       user_id, session_date, served_captured_workout_id, workout_instance_id,
-      blocks:generated_session_blocks(block, captured_workout_id)
+      blocks:generated_session_blocks(block, captured_workout_id, dismissed)
     `)
     .eq("id", sessionId)
     .maybeSingle();
@@ -1156,11 +1156,19 @@ export async function completeSession(
     }
   }
 
-  for (const item of items ?? []) {
-    const { error: upError } = await supabase
-      .from("generated_session_items")
-      .update({ was_performed: performed.has(item.exercise_id) })
-      .eq("id", item.id);
+  // Two bulk writes (performed / not), not one round trip per item.
+  const performedIds = (items ?? []).filter((i) => performed.has(i.exercise_id)).map((i) => i.id);
+  const skippedIds = (items ?? []).filter((i) => !performed.has(i.exercise_id)).map((i) => i.id);
+  const itemWrites = await Promise.all(
+    ([[performedIds, true], [skippedIds, false]] as const)
+      .filter(([ids]) => ids.length > 0)
+      .map(([ids, wasPerformed]) =>
+        supabase
+          .from("generated_session_items")
+          .update({ was_performed: wasPerformed })
+          .in("id", ids as string[])),
+  );
+  for (const { error: upError } of itemWrites) {
     if (upError) console.error("completeSession item update failed:", upError);
   }
   const { error: sessError } = await supabase
@@ -1182,6 +1190,9 @@ export async function completeSession(
   const entries: { capturedWorkoutId: string; block: BlockRole }[] = [];
   const seenEntry = new Set<string>();
   for (const b of ((sess as any).blocks ?? []) as any[]) {
+    // A dismissed block was waved off, not trained — the same rule
+    // workoutCompletions and agent_session_muscles apply.
+    if (b.dismissed) continue;
     if (b.captured_workout_id && !seenEntry.has(`${b.captured_workout_id}:${b.block}`)) {
       seenEntry.add(`${b.captured_workout_id}:${b.block}`);
       entries.push({ capturedWorkoutId: b.captured_workout_id, block: b.block });

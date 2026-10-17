@@ -17,6 +17,7 @@
 // The station screens keep their own full fetches; this is a second, cheaper
 // question ("how many?") asked of the same tables, not a replacement for them.
 import { supabase } from "../supabase";
+import { fetchAll } from "./fetchAll";
 import { fetchPendingDeliveries } from "./preparedMeals";
 import { formatArrivalShort, getLocalDateString } from "../dates";
 import {
@@ -164,7 +165,11 @@ async function foodCaptions(
     supabase.from("food_concept_links").select("saved_food_id, food_inventory_id, concept_id"),
     // Dates only: the retirement rule asks how long a meal has been idle, not
     // what it contained.
-    supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null),
+    // Paged: a year of logs passes the API's row cap, and a truncated read
+    // would make meals still in use look idle.
+    fetchAll<{ meal_id: string; date: string }>((from, to) =>
+      supabase.from("meal_logs").select("meal_id, date").not("meal_id", "is", null)
+        .order("id").range(from, to)),
   ]);
   const firstError = [inventory.error, meals.error, items.error, links.error, mealLogs.error]
     .find((e) => e !== null);

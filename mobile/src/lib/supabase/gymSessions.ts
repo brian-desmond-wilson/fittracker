@@ -8,6 +8,7 @@
 // captured workout started from the catalog — goes through the same instance
 // chain, so one query covers all three.
 import { supabase } from "../supabase";
+import { fetchAll } from "./fetchAll";
 import { gymSessionDeletePlan } from "../gymSessionDelete";
 import type { HistorySession, SessionSource } from "../../types/gymSessions";
 import type { SetFact } from "../../types/records";
@@ -254,18 +255,23 @@ export async function fetchWeightSeries(
  * columns across every set, so a leaner query keeps the all-time scan cheap.
  */
 export async function fetchSetFacts(userId: string): Promise<SetFact[]> {
-  const { data, error } = await supabase
-    .from("workout_sessions")
-    .select(`
-      id, session_date, session_number,
-      exercises:exercise_instances(
-        exercise_id,
-        exercise:exercises(name),
-        sets:set_instances(actual_reps, actual_weight_lbs, volume_lbs, is_warmup)
-      )
-    `)
-    .eq("user_id", userId)
-    .order("session_date", { ascending: true });
+  // Paged like fetchGymSessions: past the API's row cap an unpaged read
+  // silently drops the newest sessions, and with them current records.
+  const { data, error } = await fetchAll<any>((from, to) =>
+    supabase
+      .from("workout_sessions")
+      .select(`
+        id, session_date, session_number,
+        exercises:exercise_instances(
+          exercise_id,
+          exercise:exercises(name),
+          sets:set_instances(actual_reps, actual_weight_lbs, volume_lbs, is_warmup)
+        )
+      `)
+      .eq("user_id", userId)
+      .order("session_date", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to));
   if (error) {
     console.error("fetchSetFacts failed:", error.message);
     return [];
