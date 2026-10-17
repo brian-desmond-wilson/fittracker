@@ -34,6 +34,9 @@ const VERSION = "v1";
 interface Resource {
   table: string;
   dateCol: string;
+  // Ascending sort for resources without a dateCol whose row order matters;
+  // without one Postgres returns heap order, which shifts after an UPDATE.
+  orderCol?: string;
 }
 
 const CONFIG: {
@@ -46,8 +49,8 @@ const CONFIG: {
     checkins:     { table: "daily_checkins", dateCol: "checkin_date" }, // "set up my day": gym, energy, time, soreness (soreness rows live in daily_checkin_soreness)
     // — training —
     workouts:     { table: "generated_sessions", dateCol: "session_date" }, // the day's training session: status (suggested/accepted/completed/skipped/rested), split, source
-    workout_blocks: { table: "generated_session_blocks", dateCol: "" }, // a session's blocks (warmup/mobility/main/conditioning/cooldown) in block_position order, linked by session_id; a role may repeat
-    workout_items:  { table: "generated_session_items", dateCol: "" }, // a session's loggable movements in item_order, linked by session_id (and by block_id to their block row)
+    workout_blocks: { table: "generated_session_blocks", dateCol: "", orderCol: "block_position" }, // a session's blocks (warmup/mobility/main/conditioning/cooldown) in block_position order, linked by session_id; a role may repeat
+    workout_items:  { table: "generated_session_items", dateCol: "", orderCol: "item_order" }, // a session's loggable movements in item_order, linked by session_id (and by block_id to their block row)
     lifts:        { table: "set_instances", dateCol: "created_at" }, // logged sets; hang off exercise_instances → workout_instances
     exercises:    { table: "exercises", dateCol: "" }, // exercise library
     equipment:    { table: "equipment", dateCol: "" }, // equipment catalog (per-gym availability is the gym_profile_equipment junction)
@@ -70,7 +73,7 @@ const CONFIG: {
     lift_exercises:         { table: "exercise_instances", dateCol: "created_at" }, // lifts' exercise_instance_id → exercise_id
     // — workout library (migration 20261008120000) —
     workout_library:           { table: "agent_workout_library", dateCol: "created_at" }, // captured creator workouts: name, creator, format, muscles, equipment
-    workout_library_exercises: { table: "agent_workout_library_exercises", dateCol: "" }, // a workout's exercises in order with sets/reps; filter ?where[workout_id]=
+    workout_library_exercises: { table: "agent_workout_library_exercises", dateCol: "", orderCol: "exercise_order" }, // a workout's exercises in order with sets/reps; filter ?where[workout_id]=
   },
   writeEnabled: true,
   maxLimit: 500,
@@ -122,6 +125,22 @@ function nextDay(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function isDate(s: string): boolean {
+  return DATE_RE.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+}
+
+// The app stores calendar days (checkin_date, session_date, logs' date) in
+// the owner's local time, so "today" must be computed there, not in UTC —
+// otherwise every evening the snapshot asks for tomorrow and comes back empty.
+const AGENT_TIMEZONE = Deno.env.get("AGENT_TIMEZONE") ?? "America/Los_Angeles";
+function localToday(): string {
+  // en-CA formats as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: AGENT_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+}
+
 // ── server ───────────────────────────────────────────────────────────────────
 
 serve(async (req: Request): Promise<Response> => {
@@ -147,12 +166,16 @@ serve(async (req: Request): Promise<Response> => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Audit every call (best-effort — never fail the request over it).
+  // Audit every call (best-effort — never fail the request over it). The
+  // insert is handed to EdgeRuntime.waitUntil so the isolate is not torn down
+  // before it lands once the response has been sent.
   const audit = (route: string, resource: string | null, rows: number, okFlag: boolean) => {
-    supabase
+    const pending = supabase
       .from("agent_audit_log")
       .insert({ at: new Date().toISOString(), route, resource, rows, ok: okFlag })
       .then(() => {}, () => {});
+    // deno-lint-ignore no-explicit-any
+    (globalThis as any).EdgeRuntime?.waitUntil?.(pending);
   };
 
   // GET /v1/health
@@ -167,23 +190,28 @@ serve(async (req: Request): Promise<Response> => {
   // GET /v1/today — composite daily snapshot, best-effort per resource.
   // Never 500s because one piece is unconfigured; reports what it skipped.
   if (req.method === "GET" && path === `/${VERSION}/today`) {
-    const date = url.searchParams.get("date") ?? new Date().toISOString().slice(0, 10);
+    const date = url.searchParams.get("date") ?? localToday();
+    if (!isDate(date)) {
+      audit("today", null, 0, false);
+      return err("bad_date", "date must be YYYY-MM-DD.", 400);
+    }
     const want = ["checkins", "workouts", "meals", "hydration", "weight"];
     const snapshot: Record<string, unknown> = { date };
     const skipped: string[] = [];
-    for (const name of want) {
+    // The pieces are independent: fetch them together, not one after another.
+    const results = await Promise.all(want.map(async (name) => {
       const res = CONFIG.resources[name];
-      if (!res?.table) {
-        skipped.push(name);
-        continue;
-      }
+      if (!res?.table) return { name, skipped: name };
       let q = supabase.from(res.table).select("*").limit(50);
       if (res.dateCol) {
         q = q.gte(res.dateCol, date).lt(res.dateCol, nextDay(date));
       }
       const { data, error } = await q;
-      if (error) skipped.push(`${name} (${error.message})`);
-      else snapshot[name] = data;
+      return error ? { name, skipped: `${name} (${error.message})` } : { name, data };
+    }));
+    for (const r of results) {
+      if ("skipped" in r) skipped.push(r.skipped as string);
+      else snapshot[r.name] = r.data;
     }
     // Latest weight even if none logged today — useful context, cheap.
     if (CONFIG.resources.weight?.table && !(snapshot.weight as unknown[] | undefined)?.length) {
@@ -207,13 +235,17 @@ serve(async (req: Request): Promise<Response> => {
       audit("read", name, 0, false);
       return err("unknown_resource", `Resource '${name}' is not configured.`, 404);
     }
-    const limit = Math.min(
+    const limit = Math.max(1, Math.min(
       parseInt(url.searchParams.get("limit") ?? "50", 10) || 50,
       CONFIG.maxLimit,
-    );
-    let q = supabase.from(res.table).select("*").limit(limit);
+    ));
     const since = url.searchParams.get("since");
     const date = url.searchParams.get("date");
+    if (date && !isDate(date)) {
+      audit("read", name, 0, false);
+      return err("bad_date", "date must be YYYY-MM-DD.", 400);
+    }
+    let q = supabase.from(res.table).select("*").limit(limit);
     if (since && res.dateCol) q = q.gte(res.dateCol, since);
     if (date && res.dateCol) {
       q = q.gte(res.dateCol, date).lt(res.dateCol, nextDay(date));
@@ -224,6 +256,7 @@ serve(async (req: Request): Promise<Response> => {
       if (m) q = q.eq(m[1], v);
     }
     if (res.dateCol) q = q.order(res.dateCol, { ascending: false });
+    else if (res.orderCol) q = q.order(res.orderCol, { ascending: true });
     const { data, error } = await q;
     if (error) {
       audit("read", name, 0, false);
@@ -266,8 +299,9 @@ serve(async (req: Request): Promise<Response> => {
   // POST /v1/jobs/save-session — persist a composed session atomically:
   // { session, blocks, items } go through agent_save_session (one Postgres
   // function, one transaction). The blocks array is the performance order
-  // and a role may repeat (a 2-hour day: warmup, main, main, abs,
-  // conditioning, cooldown); each item may name its block with block_index
+  // and a role may repeat (a 2-hour day: warmup, main, main,
+  // conditioning, cooldown — roles are warmup, mobility, main, conditioning,
+  // bfr, cooldown); each item may name its block with block_index
   // and must when its role repeats. Any failure unwinds everything and the
   // function's message names the row ("item[3]: block_index is required
   // because block \"main\" appears more than once"). An action, not gated
@@ -388,16 +422,21 @@ serve(async (req: Request): Promise<Response> => {
 
     // All checks passed — apply the patches (session_id repeated as a belt
     // and braces filter so a row can never be edited across sessions).
-    const updatedIds: string[] = [];
-    for (const e of edits) {
-      const { data: row, error: uErr } = await supabase
+    // The patches are independent rows: send them together, not one round
+    // trip at a time.
+    const outcomes = await Promise.all(edits.map((e) =>
+      supabase
         .from(table).update(e.patch).eq("id", e.id).eq("session_id", sessionId)
-        .select("id").maybeSingle();
-      if (uErr) {
-        audit(ROUTE, RESOURCE, updatedIds.length, false);
-        return err("update_failed", `item ${e.id}: ${uErr.message}`, 500);
-      }
-      if (row) updatedIds.push(row.id);
+        .select("id").maybeSingle()
+        .then(({ data: row, error: uErr }) => ({ e, row, uErr }))
+    ));
+    const updatedIds = outcomes
+      .filter((o) => !o.uErr && o.row)
+      .map((o) => (o.row as { id: string }).id);
+    const failed = outcomes.find((o) => o.uErr);
+    if (failed) {
+      audit(ROUTE, RESOURCE, updatedIds.length, false);
+      return err("update_failed", `item ${failed.e.id}: ${failed.uErr!.message}`, 500);
     }
     audit(ROUTE, RESOURCE, updatedIds.length, true);
     return ok({ session_id: sessionId, updated: updatedIds.length, item_ids: updatedIds });
@@ -420,6 +459,7 @@ serve(async (req: Request): Promise<Response> => {
     try {
       body = await req.json();
     } catch {
+      audit("log", name, 0, false);
       return err("bad_json", "Request body must be JSON.", 400);
     }
     const { data, error } = await supabase.from(res.table).insert(body as never).select();
