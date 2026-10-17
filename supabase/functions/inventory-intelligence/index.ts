@@ -92,7 +92,13 @@ serve(async (req) => {
       userId = userData.user.id;
     }
 
-    const { inventoryIds = [], savedFoodIds = [], dryRun = false } = body;
+    // Ids are interpolated into a PostgREST filter below, so only UUIDs pass.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const asIds = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && UUID_RE.test(x)) : [];
+    const inventoryIds = asIds(body.inventoryIds);
+    const savedFoodIds = asIds(body.savedFoodIds);
+    const dryRun = body.dryRun === true;
     if (inventoryIds.length === 0 && savedFoodIds.length === 0) {
       return new Response(JSON.stringify({ results: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -101,10 +107,15 @@ serve(async (req) => {
 
     // ---- Catalogs (the model may only pick from these) ----
     const [conceptsRes, categoriesRes, subcatsRes] = await Promise.all([
-      admin.from('food_concepts').select('id, name'),
+      // Concepts are per-user (RLS scopes them to the owner); the admin client
+      // must too, or other users' concepts leak into the prompt and can be
+      // linked to this user's items.
+      admin.from('food_concepts').select('id, name').eq('user_id', userId),
       admin.from('food_categories').select('id, name, slug'),
       admin.from('food_subcategories').select('id, name, category_id'),
     ]);
+    const catalogErr = conceptsRes.error ?? categoriesRes.error ?? subcatsRes.error;
+    if (catalogErr) throw new Error(`catalog query failed: ${catalogErr.message}`);
     const concepts = conceptsRes.data ?? [];
     // Pseudo-categories are navigation, not taxonomy — the model must not
     // file anything under them.
@@ -121,8 +132,18 @@ serve(async (req) => {
       savedFoodIds.length
         ? admin.from('saved_foods').select('id, name, user_id').in('id', savedFoodIds).eq('user_id', userId)
         : Promise.resolve({ data: [] }),
-      admin.from('food_concept_links').select('saved_food_id, food_inventory_id').eq('user_id', userId),
+      // Only the targets' links matter — an unfiltered read is capped at the
+      // API's row limit and would drop links once a user has more than that.
+      admin.from('food_concept_links').select('saved_food_id, food_inventory_id').eq('user_id', userId)
+        .or([
+          inventoryIds.length ? `food_inventory_id.in.(${inventoryIds.join(',')})` : null,
+          savedFoodIds.length ? `saved_food_id.in.(${savedFoodIds.join(',')})` : null,
+        ].filter(Boolean).join(',')),
     ]);
+    const targetErr = (invRes as { error?: { message: string } | null }).error
+      ?? (sfRes as { error?: { message: string } | null }).error
+      ?? linksRes.error;
+    if (targetErr) throw new Error(`target query failed: ${targetErr.message}`);
     const already = new Set(
       (linksRes.data ?? []).flatMap((l: { saved_food_id: string | null; food_inventory_id: string | null }) =>
         [l.saved_food_id, l.food_inventory_id].filter(Boolean) as string[]),
@@ -130,7 +151,8 @@ serve(async (req) => {
 
     const catMapRes = inventoryIds.length
       ? await admin.from('food_inventory_category_map').select('food_inventory_id').in('food_inventory_id', inventoryIds)
-      : { data: [] };
+      : { data: [], error: null };
+    if (catMapRes.error) throw new Error(`category map query failed: ${catMapRes.error.message}`);
     const hasCategory = new Set((catMapRes.data ?? []).map((r: { food_inventory_id: string }) => r.food_inventory_id));
 
     // Link-need and category-need are INDEPENDENT: an item can carry a
@@ -194,7 +216,12 @@ serve(async (req) => {
       });
     }
     const aiJson = await aiRes.json();
-    const proposals: Proposal[] = JSON.parse(aiJson.choices[0].message.content).proposals ?? [];
+    let proposals: Proposal[] = [];
+    try {
+      proposals = JSON.parse(aiJson.choices?.[0]?.message?.content ?? '{}').proposals ?? [];
+    } catch {
+      console.error('unparseable model output:', aiJson.choices?.[0]?.message?.content);
+    }
 
     // ---- Validate + apply ----
     const conceptIds = new Set(concepts.map((c) => c.id));
@@ -242,8 +269,9 @@ serve(async (req) => {
             if (!error) {
               (out.applied as Record<string, boolean>).category = true;
               if (sub && sub.category_id === p.categoryId) {
-                await admin.from('food_inventory_subcategory_map')
+                const { error: subErr } = await admin.from('food_inventory_subcategory_map')
                   .insert({ food_inventory_id: id, subcategory_id: sub.id, user_id: userId });
+                if (subErr) console.error('subcategory insert failed:', subErr);
               }
             } else console.error('category insert failed:', error);
           }
