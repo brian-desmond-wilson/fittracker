@@ -21,6 +21,7 @@
 // one download, at the moment of choice, and never again.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,6 +91,71 @@ function sniffImageType(bytes: Uint8Array): string | null {
   return null;
 }
 
+// 8 MB cap: a picked photo decorates a list row, and anything bigger is a
+// wallpaper, not a product shot. Also bounds what a hostile URL can cost —
+// enforced while streaming, so an oversized body is never buffered whole.
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_REDIRECTS = 5;
+
+/** http(s) only, and never a loopback, private, link-local or metadata host. */
+function isFetchableUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return false;
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 0 || a === 10 || a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+  }
+  if (host.includes(':')) {
+    if (host === '::' || host === '::1') return false;
+    if (/^(fc|fd|fe8|fe9|fea|feb)/.test(host)) return false;
+    if (host.startsWith('::ffff:')) return false;
+  }
+  return true;
+}
+
+/** The body, refused as soon as it passes `cap` bytes. */
+async function readCapped(res: Response, cap: number): Promise<Uint8Array> {
+  const declaredLength = Number(res.headers.get('content-length') ?? '0');
+  if (declaredLength > cap) {
+    await res.body?.cancel();
+    throw new Error('image too large');
+  }
+  if (!res.body) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel();
+      throw new Error('image too large');
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
+
 async function fetchOne(target: string): Promise<{ bytes: Uint8Array; contentType: string }> {
   const headers: Record<string, string> = {
     'User-Agent':
@@ -103,15 +169,27 @@ async function fetchOne(target: string): Promise<{ bytes: Uint8Array; contentTyp
     // An unparseable URL fails the fetch below on its own terms.
   }
 
-  const res = await fetch(target, { headers, redirect: 'follow' });
+  // Redirects are followed by hand so every hop gets the same address check
+  // as the first: a public URL must not bounce the fetch onto an internal one.
+  let res: Response | null = null;
+  let current = target;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!isFetchableUrl(current)) throw new Error('is not a public http(s) address');
+    res = await fetch(current, {
+      headers, redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    const location = res.headers.get('location');
+    if (res.status < 300 || res.status >= 400 || !location) break;
+    await res.body?.cancel();
+    current = new URL(location, current).toString();
+    res = null;
+  }
+  if (!res) throw new Error('redirected too many times');
   if (!res.ok) throw new Error(`refused (${res.status})`);
 
   const declared = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  const bytes = new Uint8Array(await res.arrayBuffer());
+  const bytes = await readCapped(res, MAX_IMAGE_BYTES);
   if (bytes.byteLength === 0) throw new Error('empty response');
-  // 8 MB cap: a picked photo decorates a list row, and anything bigger is a
-  // wallpaper, not a product shot. Also bounds what a hostile URL can cost.
-  if (bytes.byteLength > 8 * 1024 * 1024) throw new Error('image too large');
 
   const sniffed = sniffImageType(bytes);
   if (sniffed) return { bytes, contentType: sniffed };
@@ -154,6 +232,9 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('missing Authorization header');
+    // Both actions spend (Google CSE, outbound fetches); verify_jwt alone
+    // also admits the public anon key.
+    if (!(await resolveCaller(req))) return json({ error: 'unauthorized' }, 401);
 
     const body = await req.json();
     const action = body.action === 'pick' ? 'pick' : 'search';
@@ -187,7 +268,7 @@ serve(async (req) => {
       // of which is a picture of food.
       url.searchParams.set('imgType', 'photo');
 
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (!res.ok) {
         const detail = await res.text();
         throw new Error(`google search ${res.status}: ${detail.slice(0, 300)}`);

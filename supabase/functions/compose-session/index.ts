@@ -21,6 +21,7 @@
 //   round adjustments arrive as constraints; the model selects and explains.
 // Model: gpt-5.6-terra — judgment tier.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { resolveCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -320,7 +321,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
-    if (!req.headers.get('Authorization')) throw new Error('missing Authorization header');
+    if (!(await resolveCaller(req))) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const bodyIn = await req.json();
     if (bodyIn?.mode === 'blocks') return await composeBlocks(bodyIn);

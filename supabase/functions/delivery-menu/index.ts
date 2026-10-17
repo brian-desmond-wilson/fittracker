@@ -13,6 +13,7 @@
 // - It writes nothing. The output prefills a form the owner reviews and
 //   saves; the delivery is still written by their tap.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { resolveCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,7 +79,11 @@ serve(async (req) => {
 
   try {
     if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
-    if (!req.headers.get('Authorization')) throw new Error('missing Authorization header');
+    if (!(await resolveCaller(req))) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const { imageBase64, single } = await req.json();
     if (!imageBase64) throw new Error('imageBase64 is required');

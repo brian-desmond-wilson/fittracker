@@ -17,6 +17,7 @@
 //   beyond the assignment itself.
 // - Model: gpt-5.6-terra — judgement tier, same split as the rest of the app.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { resolveCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -71,7 +72,11 @@ serve(async (req) => {
 
   try {
     if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
-    if (!req.headers.get('Authorization')) throw new Error('missing Authorization header');
+    if (!(await resolveCaller(req))) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const { windows = [], candidates = [] } = await req.json();
     const wins = windows as WindowInput[];

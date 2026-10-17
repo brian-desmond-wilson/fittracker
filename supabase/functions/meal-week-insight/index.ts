@@ -17,6 +17,7 @@
 // Model: gpt-5.6-terra — this is judgement about a pattern, not mechanical
 // extraction, which is the split the app already draws between the two tiers.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { resolveCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,11 +58,15 @@ serve(async (req) => {
 
   try {
     if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is not configured');
-    // Auth is enforced by verify_jwt. This function reads no database of its
-    // own — the caller passes the rows it already has on screen — so there is
-    // nothing here to scope beyond confirming the caller is who the gateway
-    // says they are.
-    if (!req.headers.get('Authorization')) throw new Error('missing Authorization header');
+    // This function reads no database of its own — the caller passes the rows
+    // it already has on screen — so there is nothing here to scope beyond
+    // confirming the caller is a signed-in user (verify_jwt alone also admits
+    // the public anon key).
+    if (!(await resolveCaller(req))) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const { logs = [], calorieGoal = null, proteinGoal = null } = await req.json();
     const rows = logs as LogRow[];

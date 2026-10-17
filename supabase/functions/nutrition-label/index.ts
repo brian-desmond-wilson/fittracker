@@ -10,7 +10,7 @@
 //
 // Never writes. It returns what it read; the edit form fills its fields and
 // the human presses Save.
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { resolveCaller } from "../_shared/auth.ts";
 
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
 const MODEL = "gpt-5.6-terra"; // vision + judgment tier
@@ -61,11 +61,14 @@ Deno.serve(async (req) => {
     const { imageBase64 } = await req.json();
     if (!imageBase64) throw new Error("imageBase64 is required");
 
-    // Auth is enforced by verify_jwt on the function; this call reads nothing
-    // from the database and writes nothing to it, so no client is needed
-    // beyond confirming the caller is who the gateway says they are.
-    const authHeader = req.headers.get("Authorization") ?? "";
-    if (!authHeader) throw new Error("missing Authorization header");
+    // This call reads nothing from the database and writes nothing to it;
+    // it only has to confirm the caller is a signed-in user (verify_jwt alone
+    // also admits the public anon key).
+    if (!(await resolveCaller(req))) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
 
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
