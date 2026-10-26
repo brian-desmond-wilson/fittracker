@@ -403,6 +403,304 @@ serve(async (req: Request): Promise<Response> => {
     return ok({ session_id: sessionId, updated: updatedIds.length, item_ids: updatedIds });
   }
 
+  // POST /v1/jobs/delete-session — delete an entire SUGGESTED session.
+  // { session_id }. The one-pending-session-per-day partial unique index
+  // (generated_sessions_pending_day) means a replacement session for the
+  // same day cannot be saved while a suggested one stands, so deleting the
+  // standing session is the only way back to a clean day. Blocks and items
+  // go with it via ON DELETE CASCADE (as do debriefs and movement ratings);
+  // captured_workout_usage and session_adjustments rows are SET NULL.
+  // Suggested-only (once Brian starts it the app owns it), and the DELETE
+  // itself filters on status as belt-and-braces, so a concurrent start
+  // leaves the row untouched and the route reports deleted: 0. An action,
+  // not gated by writeEnabled; audit-logged like the rest.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/delete-session`) {
+    const ROUTE = "jobs/delete-session";
+    const RESOURCE = "workouts";
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const reject = (code: string, message: string, status = 400) => {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err(code, message, status);
+    };
+
+    let body: { session_id?: unknown } | null = null;
+    try {
+      body = await req.json();
+    } catch {
+      return reject("bad_json", "Request body must be JSON.", 400);
+    }
+
+    const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+    if (!UUID_RE.test(sessionId)) {
+      return reject("session_not_found", `No session with id ${String(body?.session_id ?? "")}.`);
+    }
+
+    const sessions = CONFIG.resources.workouts.table;
+    const { data: session, error: sErr } = await supabase
+      .from(sessions).select("id, status").eq("id", sessionId).maybeSingle();
+    if (sErr) return reject("query_failed", sErr.message, 500);
+    if (!session) return reject("session_not_found", `No session with id ${sessionId}.`);
+    if (session.status !== "suggested") {
+      return reject("session_not_editable", `Only suggested sessions can be deleted (status is '${session.status}').`);
+    }
+
+    const { data: row, error: dErr } = await supabase
+      .from(sessions).delete().eq("id", sessionId).eq("status", "suggested")
+      .select("id").maybeSingle();
+    if (dErr) {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err("delete_failed", dErr.message, 500);
+    }
+    audit(ROUTE, RESOURCE, row ? 1 : 0, true);
+    return ok({ session_id: sessionId, deleted: row ? 1 : 0 });
+  }
+
+  // POST /v1/jobs/delete-session-blocks — dismiss or delete blocks of a
+  // SUGGESTED session, with their items. { session_id, block_ids: [...],
+  // action?: "dismiss" | "delete" } — action defaults to "dismiss".
+  //
+  // Dismiss vs delete is a real choice, not a synonym. Dismiss sets the
+  // block's existing `dismissed` flag — exactly what the app's own
+  // setBlockDismissed does when Brian waves a block off: the Today tab
+  // hides the block, the recency view reads NOT dismissed as "actually
+  // ran", and nothing is lost (Brian can still see the block in the app).
+  // Delete removes the block rows and their items outright — the shape
+  // for "these blocks should never have been here", e.g. rebuilding a
+  // day around one appended block. Dismiss is the default because it is
+  // reversible and matches the app's semantics; delete is irreversible.
+  //
+  // Items of a deleted block are the items whose block_id names the block.
+  // Items with a NULL block_id predate repeated roles (the column's own
+  // comment: NULL means "the first block whose role owns this section"),
+  // so they are deleted too only when their section's role is unique
+  // among the session's blocks — otherwise the section alone cannot say
+  // which block they belonged to, and they are left and reported as
+  // skipped_null_items instead of risking a surviving block's items.
+  // Block role "conditioning" maps to item section "accessory"; every
+  // other role maps to its own name.
+  // Suggested-only, block-belongs-to-session validated before any write,
+  // audit-logged like the rest.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/delete-session-blocks`) {
+    const ROUTE = "jobs/delete-session-blocks";
+    const RESOURCE = "workout_blocks";
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const reject = (code: string, message: string, status = 400) => {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err(code, message, status);
+    };
+    const roleToSection = (role: string) => (role === "conditioning" ? "accessory" : role);
+
+    let body: { session_id?: unknown; block_ids?: unknown; action?: unknown } | null = null;
+    try {
+      body = await req.json();
+    } catch {
+      return reject("bad_json", "Request body must be JSON.", 400);
+    }
+
+    const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+    if (!UUID_RE.test(sessionId)) {
+      return reject("session_not_found", `No session with id ${String(body?.session_id ?? "")}.`);
+    }
+    const blockIds = body?.block_ids;
+    if (!Array.isArray(blockIds) || blockIds.length === 0) {
+      return reject("no_blocks", "block_ids must be a non-empty array.");
+    }
+    for (let i = 0; i < blockIds.length; i++) {
+      if (typeof blockIds[i] !== "string" || !UUID_RE.test(blockIds[i])) {
+        return reject("block_not_found", `block[${i}]: id ${String(blockIds[i] ?? "")} does not belong to session ${sessionId}.`);
+      }
+    }
+    const action = body?.action === undefined ? "dismiss" : body.action;
+    if (action !== "dismiss" && action !== "delete") {
+      return reject("invalid_action", `action must be "dismiss" or "delete".`);
+    }
+
+    const sessions = CONFIG.resources.workouts.table;
+    const { data: session, error: sErr } = await supabase
+      .from(sessions).select("id, status").eq("id", sessionId).maybeSingle();
+    if (sErr) return reject("query_failed", sErr.message, 500);
+    if (!session) return reject("session_not_found", `No session with id ${sessionId}.`);
+    if (session.status !== "suggested") {
+      return reject("session_not_editable", `Only suggested sessions can be edited (status is '${session.status}').`);
+    }
+
+    const blocksTable = CONFIG.resources.workout_blocks.table;
+    const { data: owned, error: oErr } = await supabase
+      .from(blocksTable).select("id, block").eq("session_id", sessionId)
+      .in("id", blockIds as string[]);
+    if (oErr) return reject("query_failed", oErr.message, 500);
+    const ownedIds = new Set((owned ?? []).map((r: { id: string }) => r.id));
+    for (let i = 0; i < blockIds.length; i++) {
+      if (!ownedIds.has(blockIds[i] as string)) {
+        return reject("block_not_found", `block[${i}]: id ${blockIds[i]} does not belong to session ${sessionId}.`);
+      }
+    }
+
+    if (action === "dismiss") {
+      const { data: rows, error: uErr } = await supabase
+        .from(blocksTable).update({ dismissed: true })
+        .eq("session_id", sessionId).in("id", blockIds as string[]).select("id");
+      if (uErr) {
+        audit(ROUTE, RESOURCE, 0, false);
+        return err("update_failed", uErr.message, 500);
+      }
+      const ids = (rows ?? []).map((r: { id: string }) => r.id);
+      audit(ROUTE, RESOURCE, ids.length, true);
+      return ok({ session_id: sessionId, action: "dismiss", block_ids: ids });
+    }
+
+    // action === "delete": items first, then blocks. All filters repeat
+    // session_id so a row can never be deleted across sessions.
+    const itemsTable = CONFIG.resources.workout_items.table;
+    const { data: linked, error: liErr } = await supabase
+      .from(itemsTable).delete().eq("session_id", sessionId)
+      .in("block_id", blockIds as string[]).select("id");
+    if (liErr) {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err("delete_failed", liErr.message, 500);
+    }
+    let itemsDeleted = (linked ?? []).length;
+
+    // NULL-block_id items: only when their section's role is unique in
+    // the session, so the section alone identifies their block.
+    const { data: allBlocks, error: abErr } = await supabase
+      .from(blocksTable).select("id, block").eq("session_id", sessionId);
+    if (abErr) {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err("delete_failed", abErr.message, 500);
+    }
+    const roleCounts = new Map<string, number>();
+    for (const b of (allBlocks ?? []) as { id: string; block: string }[]) {
+      roleCounts.set(b.block, (roleCounts.get(b.block) ?? 0) + 1);
+    }
+    const ownedById = new Map<string, string>();
+    for (const r of (owned ?? []) as { id: string; block: string }[]) {
+      ownedById.set(r.id, r.block);
+    }
+    const uniqueSections = new Set<string>();
+    for (const id of blockIds as string[]) {
+      const role = ownedById.get(id);
+      if (role && roleCounts.get(role) === 1) uniqueSections.add(roleToSection(role));
+    }
+    let skippedNullItems = 0;
+    if (uniqueSections.size > 0) {
+      const { data: nullItems, error: niErr } = await supabase
+        .from(itemsTable).select("id, section").eq("session_id", sessionId)
+        .is("block_id", null).in("section", [...uniqueSections]);
+      if (niErr) {
+        audit(ROUTE, RESOURCE, 0, false);
+        return err("delete_failed", niErr.message, 500);
+      }
+      if ((nullItems ?? []).length > 0) {
+        const { error: ndErr } = await supabase
+          .from(itemsTable).delete().eq("session_id", sessionId)
+          .in("id", (nullItems as { id: string }[]).map((r) => r.id));
+        if (ndErr) {
+          audit(ROUTE, RESOURCE, 0, false);
+          return err("delete_failed", ndErr.message, 500);
+        }
+        itemsDeleted += (nullItems as { id: string }[]).length;
+      }
+    }
+    // Count NULL-block_id items left behind because their role repeats.
+    const deletedRoles = new Set([...(owned ?? [])].map((r: { block: string }) => r.block));
+    const repeatedSections = [...deletedRoles]
+      .filter((role) => (roleCounts.get(role) ?? 0) > 1)
+      .map(roleToSection);
+    if (repeatedSections.length > 0) {
+      const { data: skipped, error: skErr } = await supabase
+        .from(itemsTable).select("id").eq("session_id", sessionId)
+        .is("block_id", null).in("section", repeatedSections);
+      if (skErr) {
+        audit(ROUTE, RESOURCE, 0, false);
+        return err("delete_failed", skErr.message, 500);
+      }
+      skippedNullItems = (skipped ?? []).length;
+    }
+
+    const { data: rows, error: dErr } = await supabase
+      .from(blocksTable).delete().eq("session_id", sessionId)
+      .in("id", blockIds as string[]).select("id");
+    if (dErr) {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err("delete_failed", dErr.message, 500);
+    }
+    const ids = (rows ?? []).map((r: { id: string }) => r.id);
+    audit(ROUTE, RESOURCE, ids.length, true);
+    return ok({
+      session_id: sessionId, action: "delete", block_ids: ids,
+      items_deleted: itemsDeleted, skipped_null_items: skippedNullItems,
+    });
+  }
+
+  // POST /v1/jobs/delete-session-items — delete individual items of a
+  // SUGGESTED session. { session_id, item_ids: [...] }. Items carry no
+  // dismissed flag, so delete is the only shape. Suggested-only,
+  // item-belongs-to-session validated before any write, audit-logged
+  // like the rest.
+  if (req.method === "POST" && path === `/${VERSION}/jobs/delete-session-items`) {
+    const ROUTE = "jobs/delete-session-items";
+    const RESOURCE = "workout_items";
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const reject = (code: string, message: string, status = 400) => {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err(code, message, status);
+    };
+
+    let body: { session_id?: unknown; item_ids?: unknown } | null = null;
+    try {
+      body = await req.json();
+    } catch {
+      return reject("bad_json", "Request body must be JSON.", 400);
+    }
+
+    const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+    if (!UUID_RE.test(sessionId)) {
+      return reject("session_not_found", `No session with id ${String(body?.session_id ?? "")}.`);
+    }
+    const itemIds = body?.item_ids;
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return reject("no_items", "item_ids must be a non-empty array.");
+    }
+    for (let i = 0; i < itemIds.length; i++) {
+      if (typeof itemIds[i] !== "string" || !UUID_RE.test(itemIds[i])) {
+        return reject("item_not_found", `item[${i}]: id ${String(itemIds[i] ?? "")} does not belong to session ${sessionId}.`);
+      }
+    }
+
+    const sessions = CONFIG.resources.workouts.table;
+    const { data: session, error: sErr } = await supabase
+      .from(sessions).select("id, status").eq("id", sessionId).maybeSingle();
+    if (sErr) return reject("query_failed", sErr.message, 500);
+    if (!session) return reject("session_not_found", `No session with id ${sessionId}.`);
+    if (session.status !== "suggested") {
+      return reject("session_not_editable", `Only suggested sessions can be edited (status is '${session.status}').`);
+    }
+
+    const itemsTable = CONFIG.resources.workout_items.table;
+    const { data: owned, error: oErr } = await supabase
+      .from(itemsTable).select("id").eq("session_id", sessionId)
+      .in("id", itemIds as string[]);
+    if (oErr) return reject("query_failed", oErr.message, 500);
+    const ownedIds = new Set((owned ?? []).map((r: { id: string }) => r.id));
+    for (let i = 0; i < itemIds.length; i++) {
+      if (!ownedIds.has(itemIds[i] as string)) {
+        return reject("item_not_found", `item[${i}]: id ${itemIds[i]} does not belong to session ${sessionId}.`);
+      }
+    }
+
+    const { data: rows, error: dErr } = await supabase
+      .from(itemsTable).delete().eq("session_id", sessionId)
+      .in("id", itemIds as string[]).select("id");
+    if (dErr) {
+      audit(ROUTE, RESOURCE, 0, false);
+      return err("delete_failed", dErr.message, 500);
+    }
+    const ids = (rows ?? []).map((r: { id: string }) => r.id);
+    audit(ROUTE, RESOURCE, ids.length, true);
+    return ok({ session_id: sessionId, deleted: ids.length, item_ids: ids });
+  }
+
   // POST /v1/log/:resource — Phase 3, gated by CONFIG.writeEnabled.
   const logMatch = path.match(new RegExp(`^/${VERSION}/log/([a-z_]+)$`));
   if (req.method === "POST" && logMatch) {
