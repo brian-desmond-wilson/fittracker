@@ -443,3 +443,62 @@ role, exactly like `/v1/log/:resource` issues inserts.
 Item ids come from `GET /v1/read/workout_items?where[session_id]=<id>`
 (`ft.py read workout_items --where session_id=<id>`); the save route
 returns only the session id.
+
+## 9. Deleting from a saved session — `POST /v1/jobs/delete-session`, `delete-session-blocks`, `delete-session-items`
+
+Added 2026-10-26. Until now the gateway was insert-and-patch-only: a
+saved `suggested` session could be corrected field by field, but a block
+that should never have been there, or a whole day that needs rebuilding,
+could only be fixed by hand in the dashboard. These three routes close
+that gap. All three are **suggested-only** — once Brian starts a session
+the app owns it — and all three validate everything before the first
+write, audit-log, and repeat `session_id` (and `status`, for the whole
+session) in the write filter itself, so a row can never be deleted
+across sessions or past a concurrent start.
+
+**`delete-session`** — `{ "session_id": "…" }`. Deletes the whole
+session. Blocks and items go with it via `ON DELETE CASCADE` (as do
+debriefs and movement ratings); `captured_workout_usage` and
+`session_adjustments` rows are `SET NULL`. This is the route that frees
+a day: the `generated_sessions_pending_day` partial unique index
+permits only one `suggested`/`accepted` session per day, so a
+replacement session for the same day cannot be saved until the standing
+one is deleted. Response: `{ "session_id", "deleted": 1 }` (`0` if the
+session left `suggested` between the check and the delete).
+
+**`delete-session-blocks`** — `{ "session_id", "block_ids": […],
+"action"?: "dismiss" | "delete" }` (default `"dismiss"`). Dismiss sets
+the blocks' existing `dismissed` flag — exactly what the app's own
+wave-off does: the Today tab hides the block, the recency view reads
+`NOT dismissed` as "actually ran", and nothing is lost. Delete removes
+the block rows and their items outright, for "these blocks should never
+have been here". Dismiss is the default because it is reversible and
+matches the app's semantics; delete is irreversible.
+
+Items of a deleted block are the items whose `block_id` names the
+block. Items with a `NULL` `block_id` predate repeated roles (the
+column's own comment: `NULL` means "the first block whose role owns
+this section"), so they are deleted too only when their section's role
+is unique among the session's blocks — otherwise the section alone
+cannot say which block they belonged to, and they are left and reported
+as `skipped_null_items`. Block role `conditioning` maps to item section
+`accessory`; every other role maps to its own name. Response:
+`{ "session_id", "action", "block_ids", "items_deleted",
+"skipped_null_items" }` (the last two are `delete` only).
+
+**`delete-session-items`** — `{ "session_id", "item_ids": […] }`.
+Deletes individual items. Items carry no `dismissed` flag, so delete is
+the only shape. Response: `{ "session_id", "deleted", "item_ids" }`.
+
+Guards, shared by all three (same error envelope as §8): `session_id`
+must be a uuid and the session must exist (`session_not_found`);
+status must be exactly `suggested` (`session_not_editable`); every
+block/item id must exist **and** have `session_id` equal to the
+request's (`block_not_found` / `item_not_found`, deliberately one error
+for a nonexistent id and an id from another session, as in §8).
+`delete-session-blocks` also rejects a missing/empty `block_ids`
+(`no_blocks`) and an `action` other than `"dismiss"`/`"delete"`
+(`invalid_action`); `delete-session-items` rejects a missing/empty
+`item_ids` (`no_items`). Block and item ids come from
+`GET /v1/read/workout_blocks` / `workout_items` with
+`?where[session_id]=<id>`.
